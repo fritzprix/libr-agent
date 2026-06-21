@@ -7,6 +7,7 @@ use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
 use serde_json::json;
 use std::str::FromStr;
 use std::sync::Arc;
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResponseResult};
 use tauri_mcp_agent_lib::migration::Migrator;
@@ -138,8 +139,7 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         })
         .await
@@ -259,8 +259,7 @@ async fn external_call_reconfigures_existing_builtin_only_proxy() {
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         })
         .await

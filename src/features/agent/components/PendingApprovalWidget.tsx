@@ -21,15 +21,17 @@ import { useTranslation } from 'react-i18next';
 import { PendingApproval } from '@/context/AgentSessionContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+import type { ExecutionMode } from '@/context/agent-session/types';
+
 interface PendingApprovalWidgetProps {
   approvals: PendingApproval[];
-  yoloModeEnabled: boolean;
+  executionMode: ExecutionMode;
   onRespond: (toolCallId: string, approved: boolean) => Promise<void>;
 }
 
 export function PendingApprovalWidget({
   approvals,
-  yoloModeEnabled,
+  executionMode,
   onRespond,
 }: PendingApprovalWidgetProps) {
   const { t } = useTranslation();
@@ -62,7 +64,7 @@ export function PendingApprovalWidget({
           ? t('agent.approval.hardTitle', 'Hard Approval Required')
           : t('agent.approval.title', 'Approval Required');
         const subtitle = isHardApproval
-          ? yoloModeEnabled
+          ? executionMode === 'yolo'
             ? t(
                 'agent.approval.hardDescriptionYolo',
                 'YOLO mode is on, but this high-risk action still requires manual approval.',

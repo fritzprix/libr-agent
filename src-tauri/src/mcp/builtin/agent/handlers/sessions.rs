@@ -96,40 +96,15 @@ async fn start_session_impl(
         _ => None,
     };
 
-    let include_current_org = args
-        .get("includeCurrentOrg")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(caller_explicit_org.is_some());
+    let explicit_org = caller_explicit_org.clone();
     let requested_workspace_override = args
         .get("workspaceOverride")
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    let explicit_org = if include_current_org {
-        match caller_explicit_org {
-            Some(org) => Some(org),
-            None => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    "Current session does not belong to an explicit org. Call createOrg first."
-                        .to_string(),
-                    ToolGroup::Agent,
-                )
-                .with_guidance(vec![
-                    "Use createOrg(name=\"...\") from the root session first.".to_string(),
-                    "Then call startSession(...) to create org-visible member sessions."
-                        .to_string(),
-                ])
-                .to_mcp_result())
-            }
-        }
-    } else {
-        None
-    };
-
     let effective_workspace_path = if let Some(workspace_override) = requested_workspace_override {
         Some(workspace_override)
-    } else if include_current_org {
+    } else if explicit_org.is_some() {
         let (_, _, org_root_session_id) = explicit_org
             .as_ref()
             .ok_or_else(|| "Explicit org metadata missing after org validation".to_string())?;
@@ -146,12 +121,8 @@ async fn start_session_impl(
     let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(json!({
         "parentSessionId": caller_session_id,
         "assistantId": read_required_string(&args, "agentId")?,
-        "model": args.get("model").and_then(|v| v.as_str()),
-        "provider": args.get("provider").and_then(|v| v.as_str()),
         "request": read_required_string(&args, "task")?,
         "workspacePath": effective_workspace_path.as_deref(),
-        "maxDepth": args.get("maxDepth").and_then(|v| v.as_u64()),
-        "maxFanout": args.get("maxFanout").and_then(|v| v.as_u64()),
         "orgId": explicit_org.as_ref().map(|(org_id, _, _)| org_id.as_str()),
         "orgName": explicit_org.as_ref().map(|(_, org_name, _)| org_name.as_str()),
         "orgRootSessionId": explicit_org

@@ -1,27 +1,15 @@
 import type { AgentSession } from '@/models/agent';
 import type { AgentSessionMetadata } from '@/models/agent-ipc';
 import type { Assistant } from '@/models/chat';
+import type { ExecutionMode } from '@/context/agent-session/types';
 
-export function coalesceExecutionModeFlags(
-  yoloMode: boolean | undefined,
-  unsafeMode: boolean | undefined,
-): {
-  executionMode: 'normal' | 'yolo' | 'unsafe';
-  yoloMode: boolean;
-  unsafeMode: boolean;
-} {
-  const normalizedUnsafeMode = unsafeMode === true;
-  const normalizedYoloMode = normalizedUnsafeMode ? false : yoloMode === true;
-
-  return {
-    executionMode: normalizedUnsafeMode
-      ? 'unsafe'
-      : normalizedYoloMode
-        ? 'yolo'
-        : 'normal',
-    yoloMode: normalizedYoloMode,
-    unsafeMode: normalizedUnsafeMode,
-  };
+export function normalizeExecutionMode(
+  mode: ExecutionMode | undefined,
+): ExecutionMode {
+  if (mode === 'yolo' || mode === 'unsafe') {
+    return mode;
+  }
+  return 'normal';
 }
 
 export function mapSessionMetadataToAgentSession(
@@ -32,10 +20,7 @@ export function mapSessionMetadataToAgentSession(
   const parentSessionId = metadata.parentSessionId;
   const lineageId = metadata.lineageId ?? parentSessionId ?? metadata.id;
   const depth = metadata.depth ?? (parentSessionId ? 1 : 0);
-  const executionMode = coalesceExecutionModeFlags(
-    metadata.yoloMode,
-    metadata.unsafeMode,
-  );
+  const executionMode = normalizeExecutionMode(metadata.executionMode);
 
   return {
     id: metadata.id,
@@ -63,8 +48,7 @@ export function mapSessionMetadataToAgentSession(
       : undefined,
     lastAttentionReason: metadata.lastAttentionReason,
     isBookmarked: metadata.isBookmarked ?? false,
-    yoloMode: executionMode.yoloMode,
-    unsafeMode: executionMode.unsafeMode,
+    executionMode,
     pendingApprovalCount,
   };
 }

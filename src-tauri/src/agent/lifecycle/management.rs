@@ -109,6 +109,7 @@ pub async fn resume_session(
             "Session {} not in memory, initializing new active session state",
             session_id
         );
+        let (yolo_enabled, unsafe_enabled) = session.execution_mode.runtime_flags();
         active.insert(
             session_id.to_string(),
             AgentSession {
@@ -118,8 +119,8 @@ pub async fn resume_session(
                 status_transition: Arc::new(RwLock::new(None)),
                 transition_lock: Arc::new(tokio::sync::Mutex::new(())),
                 cancellation_token: CancellationToken::new(),
-                yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
-                unsafe_mode: Arc::new(AtomicBool::new(session.unsafe_mode)),
+                yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
+                unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
                 cancel_pending: Arc::new(AtomicBool::new(false)),
                 pending_execution: None,
                 messages: Arc::new(RwLock::new(Vec::new())),

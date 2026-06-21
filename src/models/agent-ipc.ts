@@ -254,8 +254,7 @@ export interface AgentSessionMetadata {
   lastAttentionAt?: number;
   lastAttentionReason?: SessionAttentionReason;
   isBookmarked?: boolean;
-  yoloMode: boolean;
-  unsafeMode?: boolean;
+  executionMode: 'normal' | 'yolo' | 'unsafe';
 }
 
 export interface AgentSessionListCursor {

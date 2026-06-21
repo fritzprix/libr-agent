@@ -319,8 +319,7 @@ export function useAgentSessionEvents(
 
         setters.setSession(sessionData);
         setters.setWorkflowStatus(sessionData.status);
-        setters.setYoloModeEnabled(sessionData.yoloMode);
-        setters.setUnsafeModeEnabled(sessionData.unsafeMode ?? false);
+        setters.applyExecutionMode(sessionData.executionMode);
         setters.setMessages(response.messages.items.map(rustMessageToMessage));
         setters.setHasOlderMessages(response.messages.hasMoreBefore);
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
@@ -346,7 +345,7 @@ export function useAgentSessionEvents(
         setters.setHasOlderMessages(false);
         setters.setOldestMessageCursor(null);
         setters.setPendingApprovals([]);
-        setters.setYoloModeEnabled(false);
+        setters.applyExecutionMode('normal');
         setters.setWorkflowStatus('error');
         setters.setWorkflowPhase('error');
         setters.setLlmError(null);

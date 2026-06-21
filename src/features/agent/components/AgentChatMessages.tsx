@@ -115,7 +115,7 @@ export function AgentChatMessages() {
     session,
     pendingApprovals,
     respondToToolApproval,
-    yoloModeEnabled,
+    executionMode,
     hasOlderMessages,
     isLoadingOlderMessages,
     loadOlderMessages,
@@ -223,7 +223,7 @@ export function AgentChatMessages() {
       ),
       sessionAssistantName: assistantName,
       workflowStatus,
-      yoloModeEnabled,
+      executionMode,
     }),
     [
       error,
@@ -237,7 +237,7 @@ export function AgentChatMessages() {
       retryMessage,
       assistantName,
       workflowStatus,
-      yoloModeEnabled,
+      executionMode,
     ],
   );
 

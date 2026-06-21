@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 import {
   Clock,
   FolderOpen,
-  Layers3,
   Loader2,
   Pencil,
   Trash2,
   Zap,
+  DatabaseZap,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,6 @@ import {
 } from '@/components/ui/tooltip';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { describeCron, getDisplayCron } from './ScheduleBuilder';
-import type { ScheduledTaskGroupSection } from '../scheduled-task-utils';
 
 interface ScheduledTaskRowProps {
   task: ScheduledTask;
@@ -75,7 +74,7 @@ export const ScheduledTaskRow = memo(function ScheduledTaskRow({
               {t('scheduledTasks.utcLegacy', 'UTC legacy')}
             </Badge>
           )}
-          {task.yoloMode && (
+          {task.executionMode === 'yolo' && (
             <Badge
               variant="default"
               className="shrink-0 bg-primary/80 text-xs hover:bg-primary/80"
@@ -84,12 +83,10 @@ export const ScheduledTaskRow = memo(function ScheduledTaskRow({
               YOLO
             </Badge>
           )}
-          {task.groupName && (
-            <Badge variant="outline" className="shrink-0 text-xs">
-              {t('scheduledTasks.groupBadge', {
-                name: task.groupName,
-                defaultValue: 'Group: {{name}}',
-              })}
+          {task.executionMode === 'unsafe' && (
+            <Badge variant="destructive" className="shrink-0 text-xs">
+              <DatabaseZap size={10} className="mr-1" />
+              {t('scheduledTasks.executionModeUnsafe', 'Unsafe')}
             </Badge>
           )}
           {!task.enabled && (
@@ -181,12 +178,11 @@ function SummaryCard({ title, value, description }: SummaryCardProps) {
 interface ScheduledTasksContentProps {
   enabledTaskCount: number;
   formatNextRun: (ms: number | null) => string;
-  groupedSections: ScheduledTaskGroupSection[];
   onCreate: () => void;
   onDelete: (id: string) => Promise<void>;
   onEdit: (task: ScheduledTask) => void;
   onToggle: (task: ScheduledTask) => Promise<void>;
-  personalTasks: ScheduledTask[];
+  sortedTasks: ScheduledTask[];
   tasks: ScheduledTask[];
   deletingIds: Set<string>;
   togglingIds: Set<string>;
@@ -195,12 +191,11 @@ interface ScheduledTasksContentProps {
 export function ScheduledTasksContent({
   enabledTaskCount,
   formatNextRun,
-  groupedSections,
   onCreate,
   onDelete,
   onEdit,
   onToggle,
-  personalTasks,
+  sortedTasks,
   tasks,
   deletingIds,
   togglingIds,
@@ -221,21 +216,13 @@ export function ScheduledTasksContent({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2">
         <SummaryCard
           title={t('scheduledTasks.summary.totalTasks', 'Total Tasks')}
           value={tasks.length}
           description={t(
             'scheduledTasks.summary.totalTasksDescription',
             'All recurring runs currently configured.',
-          )}
-        />
-        <SummaryCard
-          title={t('scheduledTasks.summary.taskGroups', 'Task Groups')}
-          value={groupedSections.length}
-          description={t(
-            'scheduledTasks.summary.taskGroupsDescription',
-            'Grouped automation teams sharing a recurring schedule surface.',
           )}
         />
         <SummaryCard
@@ -248,88 +235,20 @@ export function ScheduledTasksContent({
         />
       </div>
 
-      {groupedSections.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <Layers3 className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">
-              {t('scheduledTasks.groupsTitle', 'Scheduled Task Groups')}
-            </h2>
-          </div>
-          {groupedSections.map((group) => {
-            const nextGroupRun =
-              group.tasks.find(
-                (task) => task.enabled && task.nextRunAt !== null,
-              )?.nextRunAt ?? null;
-
-            return (
-              <Card key={group.key} className="gap-4 py-4">
-                <CardHeader className="gap-2 pb-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle>{group.groupName}</CardTitle>
-                    <Badge variant="secondary" className="text-xs">
-                      {t('scheduledTasks.groupTaskCount', {
-                        count: group.tasks.length,
-                        defaultValue: '{{count}} tasks',
-                      })}
-                    </Badge>
-                    <Badge variant="outline" className="text-xs">
-                      {t('scheduledTasks.groupEnabledCount', {
-                        count: group.enabledCount,
-                        defaultValue: '{{count}} enabled',
-                      })}
-                    </Badge>
-                  </div>
-                  <CardDescription>
-                    {t('scheduledTasks.groupNextRun', {
-                      time: formatNextRun(nextGroupRun),
-                      defaultValue: 'Next group run: {{time}}',
-                    })}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="px-4">
-                  <ul className="flex flex-col gap-3">
-                    {group.tasks.map((task) => (
-                      <ScheduledTaskRow
-                        key={task.id}
-                        task={task}
-                        formatNextRun={formatNextRun}
-                        onEdit={onEdit}
-                        onToggle={onToggle}
-                        onDelete={onDelete}
-                        isToggling={togglingIds.has(task.id)}
-                        isDeleting={deletingIds.has(task.id)}
-                      />
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </section>
-      )}
-
-      {personalTasks.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">
-            {t('scheduledTasks.personalTitle', 'Standalone Tasks')}
-          </h2>
-          <ul className="flex flex-col gap-3">
-            {personalTasks.map((task) => (
-              <ScheduledTaskRow
-                key={task.id}
-                task={task}
-                formatNextRun={formatNextRun}
-                onEdit={onEdit}
-                onToggle={onToggle}
-                onDelete={onDelete}
-                isToggling={togglingIds.has(task.id)}
-                isDeleting={deletingIds.has(task.id)}
-              />
-            ))}
-          </ul>
-        </section>
-      )}
+      <ul className="flex flex-col gap-3">
+        {sortedTasks.map((task) => (
+          <ScheduledTaskRow
+            key={task.id}
+            task={task}
+            formatNextRun={formatNextRun}
+            onEdit={onEdit}
+            onToggle={onToggle}
+            onDelete={onDelete}
+            isToggling={togglingIds.has(task.id)}
+            isDeleting={deletingIds.has(task.id)}
+          />
+        ))}
+      </ul>
     </div>
   );
 }

@@ -4,12 +4,17 @@ use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
 /// Helper to create a tool definition
-fn create_tool_def(name: &str, description: &str, input_schema: JSONSchema) -> MCPTool {
+fn create_tool_def(
+    name: &str,
+    title: &str,
+    description: &str,
+    input_schema: JSONSchema,
+) -> MCPTool {
     MCPTool {
         name: name.to_string(),
         description: description.to_string(),
         input_schema,
-        title: None,
+        title: Some(title.to_string()),
         output_schema: None,
         annotations: None,
     }
@@ -81,6 +86,7 @@ fn success_criteria_schema() -> JSONSchema {
 pub fn create_playbook_tool() -> MCPTool {
     create_tool_def(
         "createPlaybook",
+        "Create Playbook",
         &tool_description(
             "Create a new reusable playbook with goal, workflow steps, and success criteria.",
             &[],
@@ -130,6 +136,7 @@ pub fn create_playbook_tool() -> MCPTool {
 pub fn select_playbook_tool() -> MCPTool {
     create_tool_def(
         "selectPlaybook",
+        "Select Playbook",
         &tool_description(
             "Select and prepare a playbook for execution.",
             &["Playbook ID from playbook__listPlaybooks or playbook__getPlaybook."],
@@ -151,6 +158,7 @@ pub fn select_playbook_tool() -> MCPTool {
 pub fn list_playbooks_tool() -> MCPTool {
     create_tool_def(
         "listPlaybooks",
+        "List Playbooks",
         &tool_description(
             "List saved playbooks with pagination and sorting.",
             &[],
@@ -214,6 +222,7 @@ pub fn list_playbooks_tool() -> MCPTool {
 pub fn get_playbook_page_tool() -> MCPTool {
     create_tool_def(
         "getPlaybookPage",
+        "Get Playbook Page",
         &tool_description(
             "Navigate the playbook UI listing with pagination.",
             &[],
@@ -252,6 +261,7 @@ pub fn get_playbook_page_tool() -> MCPTool {
 pub fn delete_playbook_tool() -> MCPTool {
     create_tool_def(
         "deletePlaybook",
+        "Delete Playbook",
         &tool_description(
             "Permanently delete a playbook by ID.",
             &["Playbook ID from playbook__listPlaybooks or playbook__getPlaybook."],
@@ -270,6 +280,7 @@ pub fn delete_playbook_tool() -> MCPTool {
 pub fn get_playbook_tool() -> MCPTool {
     create_tool_def(
         "getPlaybook",
+        "Get Playbook",
         &tool_description(
             "Get full playbook details including workflow steps and success criteria.",
             &["Playbook ID from playbook__listPlaybooks."],
@@ -291,6 +302,7 @@ pub fn get_playbook_tool() -> MCPTool {
 pub fn update_playbook_tool() -> MCPTool {
     create_tool_def(
         "updatePlaybook",
+        "Update Playbook",
         &tool_description(
             "Update an existing playbook's goal, workflow, or success criteria.",
             &["Playbook ID from playbook__getPlaybook or playbook__listPlaybooks."],

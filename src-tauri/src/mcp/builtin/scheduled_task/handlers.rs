@@ -1,11 +1,13 @@
 use super::formatting::{format_timestamp, render_task_detail, render_task_line, task_to_json};
 use super::ScheduledTaskServer;
+use crate::agent::ExecutionMode;
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, not_found_error, operation_failed_error, permission_denied_error,
     SuccessHint, ToolGroup,
 };
 use crate::repositories::{AssistantRepository, SessionRepository, UpdateScheduledTaskParams};
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
+use crate::scheduled::task_input::reject_legacy_scheduled_task_fields;
 use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::{
@@ -21,11 +23,7 @@ pub struct CreateScheduledTaskArgs {
     cron_expression: String,
     schedule_timezone: Option<String>,
     assistant_id: String,
-    group_id: Option<String>,
-    group_name: Option<String>,
     message: String,
-    yolo_mode: Option<bool>,
-    unsafe_mode: Option<bool>,
     workspace_override: Option<String>,
 }
 
@@ -50,14 +48,9 @@ pub struct UpdateScheduledTaskArgs {
     cron_expression: Option<String>,
     schedule_timezone: Option<String>,
     assistant_id: Option<String>,
-    group_id: Option<String>,
-    group_name: Option<String>,
     message: Option<String>,
-    yolo_mode: Option<bool>,
-    unsafe_mode: Option<bool>,
     workspace_override: Option<String>,
     clear_workspace_override: Option<bool>,
-    clear_group: Option<bool>,
     enabled: Option<bool>,
 }
 
@@ -75,7 +68,6 @@ pub struct ScheduleCallbackArgs {
     name: Option<String>,
     delay_seconds: Option<u64>,
     cron_expression: Option<String>,
-    unsafe_mode: Option<bool>,
 }
 
 pub async fn handle_create_scheduled_task(
@@ -83,6 +75,15 @@ pub async fn handle_create_scheduled_task(
     args: Value,
     session_id: Option<String>,
 ) -> Result<crate::mcp::types::MCPResult, String> {
+    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
+        return Ok(result);
+    }
+
+    let execution_mode = match parse_execution_mode_for_create(&args) {
+        Ok(mode) => mode,
+        Err(result) => return Ok(result),
+    };
+
     let args: CreateScheduledTaskArgs = match parse_args(args, "createScheduledTask") {
         Ok(value) => value,
         Err(result) => return Ok(result),
@@ -107,11 +108,8 @@ pub async fn handle_create_scheduled_task(
                 .schedule_timezone
                 .unwrap_or_else(|| default_schedule_timezone().to_string()),
             assistant_id: args.assistant_id,
-            group_id: args.group_id,
-            group_name: args.group_name,
             message: args.message,
-            yolo_mode: args.yolo_mode.unwrap_or(false),
-            unsafe_mode: args.unsafe_mode.unwrap_or(false),
+            execution_mode,
             created_by_session_id: session_id,
             session_id: None,
             workspace_override: args.workspace_override,
@@ -302,6 +300,15 @@ pub async fn handle_update_scheduled_task(
     server: &ScheduledTaskServer,
     args: Value,
 ) -> Result<crate::mcp::types::MCPResult, String> {
+    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
+        return Ok(result);
+    }
+
+    let execution_mode_update = match parse_execution_mode_for_update(&args) {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
+
     let args: UpdateScheduledTaskArgs = match parse_args(args, "updateScheduledTask") {
         Ok(value) => value,
         Err(result) => return Ok(result),
@@ -334,12 +341,6 @@ pub async fn handle_update_scheduled_task(
     if args.clear_workspace_override.unwrap_or(false) && args.workspace_override.is_some() {
         return Ok(invalid_input_error(
             "workspaceOverride and clearWorkspaceOverride=true cannot be used together",
-            ToolGroup::ScheduledTask,
-        ));
-    }
-    if args.clear_group.unwrap_or(false) && (args.group_id.is_some() || args.group_name.is_some()) {
-        return Ok(invalid_input_error(
-            "groupId/groupName and clearGroup=true cannot be used together",
             ToolGroup::ScheduledTask,
         ));
     }
@@ -378,18 +379,10 @@ pub async fn handle_update_scheduled_task(
         "assistantId",
         args.assistant_id.is_some(),
     );
-    collect_changed_field(
-        &mut changed_fields,
-        "group",
-        args.group_id.is_some() || args.group_name.is_some() || args.clear_group.is_some(),
-    );
     collect_changed_field(&mut changed_fields, "message", args.message.is_some());
-    collect_changed_field(&mut changed_fields, "yoloMode", args.yolo_mode.is_some());
-    collect_changed_field(
-        &mut changed_fields,
-        "unsafeMode",
-        args.unsafe_mode.is_some(),
-    );
+    if execution_mode_update.is_some() {
+        changed_fields.push("executionMode".to_string());
+    }
     collect_changed_field(
         &mut changed_fields,
         "workspaceOverride",
@@ -412,19 +405,8 @@ pub async fn handle_update_scheduled_task(
             cron_expression: args.cron_expression,
             schedule_timezone: args.schedule_timezone,
             assistant_id: args.assistant_id,
-            group_id: if args.clear_group.unwrap_or(false) {
-                Some(None)
-            } else {
-                args.group_id.map(Some)
-            },
-            group_name: if args.clear_group.unwrap_or(false) {
-                Some(None)
-            } else {
-                args.group_name.map(Some)
-            },
             message: args.message,
-            yolo_mode: args.yolo_mode,
-            unsafe_mode: args.unsafe_mode,
+            execution_mode: execution_mode_update,
             workspace_override,
             enabled: args.enabled,
             next_run_at: None,
@@ -544,6 +526,15 @@ pub async fn handle_schedule_callback(
     args: Value,
     session_id: Option<String>,
 ) -> Result<crate::mcp::types::MCPResult, String> {
+    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
+        return Ok(result);
+    }
+
+    let execution_mode = match parse_execution_mode_for_create(&args) {
+        Ok(mode) => mode,
+        Err(result) => return Ok(result),
+    };
+
     let args: ScheduleCallbackArgs = match parse_args(args, "scheduleCallback") {
         Ok(value) => value,
         Err(result) => return Ok(result),
@@ -595,11 +586,8 @@ pub async fn handle_schedule_callback(
             cron_expression,
             schedule_timezone,
             assistant_id,
-            group_id: None,
-            group_name: None,
             message: args.message,
-            yolo_mode: false,
-            unsafe_mode: args.unsafe_mode.unwrap_or(false),
+            execution_mode,
             created_by_session_id: Some(session_id.clone()),
             session_id: Some(session_id),
             workspace_override: None,
@@ -679,6 +667,37 @@ pub async fn handle_delete_scheduled_task(
     .to_mcp_result_with_data(Some(json!({
         "deletedTask": task_to_json(&existing)
     }))))
+}
+
+fn parse_execution_mode_for_create(
+    args: &Value,
+) -> Result<ExecutionMode, crate::mcp::types::MCPResult> {
+    match args.get("executionMode") {
+        None => Ok(ExecutionMode::Normal),
+        Some(value) => parse_execution_mode_value(value),
+    }
+}
+
+fn parse_execution_mode_for_update(
+    args: &Value,
+) -> Result<Option<ExecutionMode>, crate::mcp::types::MCPResult> {
+    match args.get("executionMode") {
+        None => Ok(None),
+        Some(value) => parse_execution_mode_value(value).map(Some),
+    }
+}
+
+fn parse_execution_mode_value(
+    value: &Value,
+) -> Result<ExecutionMode, crate::mcp::types::MCPResult> {
+    let mode = value.as_str().ok_or_else(|| {
+        invalid_input_error(
+            "executionMode must be one of: normal, yolo, unsafe",
+            ToolGroup::ScheduledTask,
+        )
+    })?;
+    mode.parse::<ExecutionMode>()
+        .map_err(|error| invalid_input_error(&error, ToolGroup::ScheduledTask))
 }
 
 fn check_session_ownership(

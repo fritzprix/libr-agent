@@ -25,8 +25,7 @@ export interface AgentSession {
   orgName?: string;
   orgRootSessionId?: string;
   isBookmarked?: boolean;
-  yoloMode: boolean;
-  unsafeMode?: boolean;
+  executionMode: 'normal' | 'yolo' | 'unsafe';
   pendingApprovalCount?: number;
 }
 /**

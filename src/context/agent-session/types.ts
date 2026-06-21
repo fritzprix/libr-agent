@@ -125,8 +125,6 @@ export interface AgentSessionStateContextValue {
   } | null;
   pendingApprovals: PendingApproval[];
   pendingInteractiveShellPrompt: PendingInteractiveShellPrompt | null;
-  yoloModeEnabled: boolean;
-  unsafeModeEnabled: boolean;
   executionMode: ExecutionMode;
 }
 
@@ -144,8 +142,6 @@ export interface AgentSessionActionsContextValue {
     approved: boolean,
   ) => Promise<void>;
   setExecutionMode: (mode: ExecutionMode) => Promise<void>;
-  toggleYoloMode: () => void;
-  toggleUnsafeMode: () => void;
   updateSessionConfig: (model: string, provider: string) => void;
   renameSession: (name: string) => Promise<void>;
 }

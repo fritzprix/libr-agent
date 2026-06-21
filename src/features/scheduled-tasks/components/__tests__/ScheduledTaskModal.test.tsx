@@ -110,6 +110,9 @@ vi.mock('@/components/ui/switch', () => ({
 
 vi.mock('lucide-react', () => ({
   Zap: () => <span />,
+  Shield: () => <span />,
+  DatabaseZap: () => <span />,
+  Loader2: () => <span />,
   FolderOpen: () => <span />,
   Upload: () => <span />,
   X: () => <span />,

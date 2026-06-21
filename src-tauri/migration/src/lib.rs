@@ -39,6 +39,8 @@ mod m20260607_000034_add_session_scheduling_to_scheduled_tasks;
 mod m20260611_000035_add_assistant_id_to_sessions;
 mod m20260612_000036_drop_agent_config_from_sessions;
 mod m20260613_000037_add_unsafe_mode_to_scheduled_tasks;
+mod m20260614_000038_drop_group_fields_from_scheduled_tasks;
+mod m20260621_000039_normalize_execution_mode_columns;
 
 pub struct Migrator;
 
@@ -83,6 +85,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260611_000035_add_assistant_id_to_sessions::Migration),
             Box::new(m20260612_000036_drop_agent_config_from_sessions::Migration),
             Box::new(m20260613_000037_add_unsafe_mode_to_scheduled_tasks::Migration),
+            Box::new(m20260614_000038_drop_group_fields_from_scheduled_tasks::Migration),
+            Box::new(m20260621_000039_normalize_execution_mode_columns::Migration),
         ]
     }
 }

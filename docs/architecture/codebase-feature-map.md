@@ -20,7 +20,7 @@ The core Think-Act-Observe loop managed entirely in Rust.
 | **Concurrency Control** | `src-tauri/src/agent/concurrency.rs` (10 KB)     | Global concurrency gate, limits parallel agent sessions                                                                       |
 | **Session Bus**         | `src-tauri/src/agent/session_bus.rs` (10 KB)     | Channel-based messaging between session lifecycle and workflow threads                                                        |
 | **Channel Routing**     | `src-tauri/src/agent/channel_routing.rs`         | Routes messages to correct session channel                                                                                    |
-| **Yolo Mode**           | `agent_set_yolo_mode`                            | Bypass tool approval gates for trusted operations                                                                             |
+| **Execution Mode**      | `agent_set_execution_mode`                       | Tool approval policy: `normal`, `yolo` (auto-approve), or `unsafe` (elevated privileges)                                      |
 | **State Machine**       | `src-tauri/src/agent/state.rs`                   | Session state transitions (Idle → Running → Paused → Completed → Error)                                                       |
 
 ### Frontend Hooks

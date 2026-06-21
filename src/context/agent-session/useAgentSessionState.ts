@@ -53,13 +53,7 @@ export function useAgentSessionState() {
   );
   const [pendingInteractiveShellPrompt, setPendingInteractiveShellPrompt] =
     useState<PendingInteractiveShellPrompt | null>(null);
-  const [yoloModeEnabled, setYoloModeEnabled] = useState(false);
-  const [unsafeModeEnabled, setUnsafeModeEnabled] = useState(false);
-  const executionMode: ExecutionMode = unsafeModeEnabled
-    ? 'unsafe'
-    : yoloModeEnabled
-      ? 'yolo'
-      : 'normal';
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>('normal');
 
   const workflowPhaseRef = useRef(workflowPhase);
   workflowPhaseRef.current = workflowPhase;
@@ -99,16 +93,9 @@ export function useAgentSessionState() {
   }, []);
 
   const applyExecutionMode = useCallback((mode: ExecutionMode) => {
-    setYoloModeEnabled(mode === 'yolo');
-    setUnsafeModeEnabled(mode === 'unsafe');
+    setExecutionMode(mode);
     setSession((previous) =>
-      previous
-        ? {
-            ...previous,
-            yoloMode: mode === 'yolo',
-            unsafeMode: mode === 'unsafe',
-          }
-        : previous,
+      previous ? { ...previous, executionMode: mode } : previous,
     );
   }, []);
 
@@ -146,8 +133,7 @@ export function useAgentSessionState() {
       setPreflightTokenMetrics,
       setPendingApprovals,
       setPendingInteractiveShellPrompt,
-      setYoloModeEnabled,
-      setUnsafeModeEnabled,
+      setExecutionMode,
       applyLocalViewedAt,
       addMessage,
       prependMessages,
@@ -168,8 +154,7 @@ export function useAgentSessionState() {
       setPreflightTokenMetrics,
       setPendingApprovals,
       setPendingInteractiveShellPrompt,
-      setYoloModeEnabled,
-      setUnsafeModeEnabled,
+      setExecutionMode,
       applyLocalViewedAt,
       addMessage,
       prependMessages,
@@ -213,8 +198,6 @@ export function useAgentSessionState() {
       initializationStep,
       pendingApprovals,
       pendingInteractiveShellPrompt,
-      yoloModeEnabled,
-      unsafeModeEnabled,
       executionMode,
     },
     refs: {

@@ -126,7 +126,7 @@ export function createOpenSessionResponse(
       provider: 'test-provider',
       createdAt: timestamp,
       updatedAt: timestamp,
-      yoloMode: false,
+      executionMode: 'normal',
       ...overrides.session,
     },
     messages: {

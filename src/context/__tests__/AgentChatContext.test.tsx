@@ -348,8 +348,6 @@ describe('AgentChatContext', () => {
     });
   });
 
-
-
   describe('Submit Action', () => {
     it('should submit message to backend', async () => {
       const { result } = renderHook(() => useAgentChat(), {

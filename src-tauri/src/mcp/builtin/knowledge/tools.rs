@@ -8,12 +8,11 @@ pub fn record_knowledge_tool() -> MCPTool {
         name: "recordKnowledge".to_string(),
         title: Some("Record Knowledge".to_string()),
         description: tool_description(
-            "Save a knowledge entry to the local knowledge base with optional structured entities and relationships.",
+            "Save a knowledge entry to the local knowledge base.\n\nCore fields: content (required), tags, source.\nAdvanced fields (graph): entities, relationships, auto_extract — use only when you already know the entity/relationship structure or need heuristic graph extraction.",
             &[],
             &[
-                "Provide full content text to store.",
-                "Prefer caller-supplied entities and relationships; heuristic extraction only fills gaps when structured graph data is missing.",
-                "Add tags and source labels when they aid future retrieval.",
+                "Start with content plus optional tags and source for most recordings.",
+                "Supply entities and relationships explicitly when you know the graph; set auto_extract=true only to fill gaps heuristically.",
             ],
             &[
                 "Verify retrieval with knowledge__searchKnowledge.",

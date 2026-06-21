@@ -3,7 +3,7 @@ use super::lineage::{
 };
 use super::{normalize_explicit_org, resolve_child_session_model_provider, AgentService};
 use crate::agent::types::{CreateSessionRequest, CreateSessionResponse, SessionLineageMeta};
-use crate::agent::{AgentConfig, AgentSessionManager};
+use crate::agent::{AgentConfig, AgentSessionManager, ExecutionMode};
 use crate::entity::assistant::Model as AssistantModel;
 use crate::models::chat::{Message, MessageSource};
 
@@ -92,11 +92,9 @@ impl AgentService {
         drop(parent_spawn_guard);
 
         if let Some(parent_id) = lineage_meta.parent_session_id.as_deref() {
-            if manager.get_yolo_mode(parent_id).await {
-                let _ = manager.set_yolo_mode(&session_id, true).await;
-            }
-            if manager.get_unsafe_mode(parent_id).await {
-                let _ = manager.set_unsafe_mode(&session_id, true).await;
+            let parent_mode = manager.get_execution_mode(parent_id).await;
+            if parent_mode != ExecutionMode::Normal {
+                let _ = manager.set_execution_mode(&session_id, parent_mode).await;
             }
         }
 

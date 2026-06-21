@@ -49,7 +49,9 @@ fn export_dataset_tool() -> MCPTool {
             ),
         ],
         vec![],
-        Some("Quality filters for dataset extraction"),
+        Some(
+            "Optional quality filters applied before export. Use minTurns/maxTurns for conversation length bounds, excludeErrors to drop error sessions, excludeShort to drop single-turn chats, and minTokens for a token floor.",
+        ),
     );
 
     MCPTool {
@@ -61,7 +63,7 @@ fn export_dataset_tool() -> MCPTool {
             &[
                 "Choose format (llamaFactory, alpaca, shareGpt, or openAiJsonl).",
                 "Set outputPath to an absolute local file path.",
-                "Apply optional filters for quality control.",
+                "Tune filters when exporting noisy data: minTurns/maxTurns, excludeErrors, excludeShort, minTokens.",
             ],
             &[
                 "Verify the exported file on disk.",

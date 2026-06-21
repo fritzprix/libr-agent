@@ -66,7 +66,7 @@ Coordination model and execution substrate are not the same thing.
 Pick the execution substrate that matches the job:
 
 - **Plain child sessions** - use `agent__startSession(...)` for one-off delegation that does not need org visibility.
-- **Explicit org lineage** - call `agent__prepareTeamworkWorkspace()` first, then use `agent__createOrg(...)` once from the root session, then use `agent__startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic unless you set `includeCurrentOrg=false`. Org-visible children inherit the governing session's effective workspace by default.
+- **Explicit org lineage** - call `agent__prepareTeamworkWorkspace()` first, then use `agent__createOrg(...)` once from the root session, then use `agent__startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic. Org-visible children inherit the governing session's effective workspace by default.
 - **Scheduled task groups** - use `scheduled_task__createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
 - **Session-bound follow-ups** - use `session-schedule` with `scheduled_task__scheduleCallback(...)` when a delay or reminder must stay inside the current conversation. This does not require teamwork scaffolding.
 
@@ -149,7 +149,7 @@ Shared files are the coordination contract. Keep the loop explicit.
 
 ### 6. Handle persistence honestly
 
-If global recurring execution is needed, switch to `schedule` and define the loops with the `scheduled_task` builtin tools. Use `scheduled_task__createScheduledTask(...)` for a single global task, or add `groupName` / `groupId` when grouped automation is intentional.
+If global recurring execution is needed, switch to `schedule` and define the loops with the `scheduled_task` builtin tools. Use `scheduled_task__createScheduledTask(...)` for each global recurring task.
 
 If the user only wants a delay or reminder inside the current conversation, switch to `session-schedule` instead. That path uses `scheduled_task__scheduleCallback(...)` and does not require teamwork scaffolding.
 

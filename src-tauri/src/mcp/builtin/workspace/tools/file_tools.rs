@@ -41,7 +41,7 @@ pub fn create_read_file_tool() -> MCPTool {
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file. Large responses are chunked automatically to stay inline; use the returned startLine/endLine guidance to continue reading. Use showLineAnchors=true when you need anchors for editFiles."
+        description: "Read the contents of a file. Large responses are chunked automatically to stay inline; use the returned startLine/endLine guidance to continue reading. Use showLineAnchors=true when you need anchors for editFile."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -79,7 +79,7 @@ pub fn create_write_file_tool() -> MCPTool {
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Append writes content verbatim—include \\n in content when starting a new line. Responses include current line anchors so follow-up editFiles calls can usually reuse them directly. mode='overwrite' returns a diff of the changes."
+        description: "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Append writes content verbatim—include \\n in content when starting a new line. Responses include current line anchors so follow-up editFile calls can usually reuse them directly. mode='overwrite' returns a diff of the changes."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
@@ -223,7 +223,7 @@ pub fn create_search_tool() -> MCPTool {
     props.insert(
         "showLineAnchors".to_string(),
         boolean_prop(Some(
-            "Include edit anchors in results for use with editFiles (default: false). Anchored lines look like '42:a31f2c|...'; for edit tools, pass only the 6-character anchor (for example 'a31f2c').",
+            "Include edit anchors in results for use with editFile (default: false). Anchored lines look like '42:a31f2c|...'; for edit tools, pass only the 6-character anchor (for example 'a31f2c').",
         )),
     );
 
@@ -547,9 +547,7 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
     }
 }
 
-fn create_edit_item_schema(path_required: bool) -> JSONSchema {
-    let path_desc =
-        "Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.";
+fn create_edit_item_schema() -> JSONSchema {
     let start_line_desc = "Target start line number. Existing lines are 1-based. Use 0 only to prepend at the file top; to insert below an existing line, keep that line's 1-based number and set op='insert_after'.";
     let end_line_desc =
         "Inclusive end line for a multi-line replace/delete range. Omit for a single-line edit.";
@@ -561,12 +559,6 @@ fn create_edit_item_schema(path_required: bool) -> JSONSchema {
         "Replacement or inserted content. Omit it to delete. Existing lines stay 1-based; use startLine=0 only for prepend, or keep a 1-based existing line number with op='insert_after' to insert below it.";
 
     let mut props = HashMap::new();
-    if path_required {
-        props.insert(
-            "path".to_string(),
-            string_prop(Some(1), Some(1000), Some(path_desc)),
-        );
-    }
     props.insert(
         "op".to_string(),
         enum_prop_optional(
@@ -597,16 +589,9 @@ fn create_edit_item_schema(path_required: bool) -> JSONSchema {
         string_prop(None, None, Some(content_desc)),
     );
 
-    let mut schema = object_schema(
-        props,
-        if path_required {
-            vec!["path".to_string(), "startLine".to_string()]
-        } else {
-            vec!["startLine".to_string()]
-        },
-    );
+    let mut schema = object_schema(props, vec!["startLine".to_string()]);
     schema.description = Some(
-        "A single edit operation. Provide path + startLine, plus anchors for existing-line edits. Existing content uses 1-based line numbers; only startLine=0 prepends at the file top. op is optional for common replace/delete flows but still useful for insert_after.".to_string(),
+        "A single edit operation. Provide startLine plus anchors for existing-line edits. Existing content uses 1-based line numbers; only startLine=0 prepends at the file top. op is optional for common replace/delete flows but still useful for insert_after.".to_string(),
     );
     schema
 }
@@ -624,7 +609,7 @@ pub fn create_edit_file_input_schema() -> JSONSchema {
     props.insert(
         "edits".to_string(),
         array_schema(
-            create_edit_item_schema(false),
+            create_edit_item_schema(),
             Some("Ordered list of edit operations to apply atomically to one file. All edits are schema-validated and anchor-validated before any write. Edits must not overlap."),
         ),
     );
@@ -632,42 +617,27 @@ pub fn create_edit_file_input_schema() -> JSONSchema {
     object_schema(props, vec!["path".to_string(), "edits".to_string()])
 }
 
-pub fn create_edit_files_input_schema() -> JSONSchema {
-    let edit_item_schema = create_edit_item_schema(true);
-
-    let mut props = HashMap::new();
-    props.insert(
-        "edits".to_string(),
-        array_schema(
-            edit_item_schema,
-            Some("Ordered list of edit operations to apply atomically across one or more files. Every item includes its own path. All edits are schema-validated and anchor-validated before any write. Edits must not overlap within the same file."),
-        ),
-    );
-
-    object_schema(props, vec!["edits".to_string()])
-}
-
-pub fn create_edit_files_tool() -> MCPTool {
+pub fn create_edit_file_tool() -> MCPTool {
     MCPTool {
-        name: "editFiles".to_string(),
-        title: Some("Edit Files (Batch)".to_string()),
-        description: "Apply multiple line edits across one or more files atomically in a single operation.
+        name: "editFile".to_string(),
+        title: Some("Edit File (Batch)".to_string()),
+        description: "Apply multiple line edits to one file atomically in a single operation.
 
-PREREQUISITE: Obtain anchors from a prior readFile(showLineAnchors=true), writeFile response, or previous editFiles response. Anchored lines look like `42:a31f2c|...`; for anchors, pass only the 6-character code such as `a31f2c`, not `42:a31f2c`.
+PREREQUISITE: Obtain anchors from a prior readFile(showLineAnchors=true), writeFile response, or previous editFile response. Anchored lines look like `42:a31f2c|...`; for anchors, pass only the 6-character code such as `a31f2c`, not `42:a31f2c`.
 
 Line numbering is 1-based for existing content. The only valid 0 value is startLine=0, which prepends at the file top.
 
-Each edit item carries its own path. Keep the payload simple and let the server infer the common cases:
-- replace single line: path + startLine + startAnchor + content
-- replace range: path + startLine + startAnchor + endLine + endAnchor + content
-- delete single line: path + startLine + startAnchor
-- delete range: path + startLine + startAnchor + endLine + endAnchor
-- prepend at file top: path + startLine=0 + content
-- insert below an existing line: add op='insert_after' + path + startLine + startAnchor + content
+Keep the payload simple and let the server infer the common cases:
+- replace single line: startLine + startAnchor + content
+- replace range: startLine + startAnchor + endLine + endAnchor + content
+- delete single line: startLine + startAnchor
+- delete range: startLine + startAnchor + endLine + endAnchor
+- prepend at file top: startLine=0 + content
+- insert below an existing line: add op='insert_after' + startLine + startAnchor + content
 
-All files are validated before any write begins."
+All edits are validated before any write begins."
             .to_string(),
-        input_schema: create_edit_files_input_schema(),
+        input_schema: create_edit_file_input_schema(),
         output_schema: None,
         annotations: None,
     }

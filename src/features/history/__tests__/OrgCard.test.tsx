@@ -54,7 +54,7 @@ const mockOrg: OrgSummary = {
     orgId: 'org-1',
     orgName: 'Research Org',
     orgRootSessionId: 'root-1',
-    yoloMode: false,
+    executionMode: 'normal',
   } as unknown as AgentSession,
   members: [],
   memberCount: 5,

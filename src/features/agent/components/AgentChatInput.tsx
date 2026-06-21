@@ -47,8 +47,7 @@ interface AgentChatInputProps {
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
-  const { session, messages, yoloModeEnabled, unsafeModeEnabled } =
-    useAgentSessionState();
+  const { session, messages, executionMode } = useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
   const { submit, isSessionLoading, workflowStatus, cancel, resume } =
     useAgentChat();
@@ -355,12 +354,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
 
   return (
     <div className="relative">
-      {yoloModeEnabled && (
+      {executionMode === 'yolo' && (
         <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 select-none animate-pulse z-10">
           ⚡ YOLO Mode Active
         </div>
       )}
-      {unsafeModeEnabled && (
+      {executionMode === 'unsafe' && (
         <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-destructive/10 border border-destructive/20 px-2.5 py-0.5 text-[10px] font-medium text-destructive select-none animate-pulse z-10">
           ⚠️ Unsafe Mode Active
         </div>

@@ -2,6 +2,19 @@ use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 
+const EXECUTION_MODE_PARAM_DESC: &str = "Tool approval mode when the task fires. \
+normal: require user approval for sensitive tools. \
+yolo: auto-approve standard tools (still subject to workspace/shell policy). \
+unsafe: auto-approve hard-approval tools too — use only for trusted automation. \
+Defaults to normal.";
+
+fn execution_mode_workflow_steps() -> [&'static str; 2] {
+    [
+        "Choose executionMode: normal (default) for routine schedules; yolo only when unattended standard-tool runs are acceptable; unsafe only when hard-approval tools must run without a human present.",
+        "Unsafe does not bypass workspace shell policy blocks — it only skips approval prompts.",
+    ]
+}
+
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
         schedule_callback_tool(),
@@ -24,6 +37,8 @@ fn schedule_callback_tool() -> MCPTool {
             &[
                 "Provide message text to inject when the callback fires.",
                 "Use delaySeconds for one-shot OR cronExpression for recurring — not both.",
+                execution_mode_workflow_steps()[0],
+                execution_mode_workflow_steps()[1],
             ],
             &[
                 "List session callbacks via scheduled_task__listScheduledTasks if applicable.",
@@ -65,8 +80,11 @@ fn schedule_callback_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "unsafeMode".to_string(),
-                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
+                    "executionMode".to_string(),
+                    enum_prop_optional(
+                        vec!["normal", "yolo", "unsafe"],
+                        Some(EXECUTION_MODE_PARAM_DESC),
+                    ),
                 ),
             ],
             vec!["message".to_string()],
@@ -86,6 +104,8 @@ fn create_scheduled_task_tool() -> MCPTool {
             &["Assistant configuration ID and valid cron expression."],
             &[
                 "Set name, cronExpression, and assistantId.",
+                execution_mode_workflow_steps()[0],
+                execution_mode_workflow_steps()[1],
                 "The system returns a task ID for follow-up management.",
             ],
             &[
@@ -93,7 +113,7 @@ fn create_scheduled_task_tool() -> MCPTool {
                 "Pause with scheduled_task__toggleScheduledTask.",
             ],
         )
-            .to_string(),
+        .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -117,22 +137,10 @@ fn create_scheduled_task_tool() -> MCPTool {
                 ),
                 (
                     "assistantId".to_string(),
-                    string_prop(Some(1), Some(120), Some("Assistant configuration ID to run.")),
-                ),
-                (
-                    "groupId".to_string(),
                     string_prop(
                         Some(1),
                         Some(120),
-                        Some("Optional scheduled task group ID. Provide this to join an existing group."),
-                    ),
-                ),
-                (
-                    "groupName".to_string(),
-                    string_prop(
-                        Some(1),
-                        Some(120),
-                        Some("Optional human-readable scheduled task group name."),
+                        Some("Assistant configuration ID to run."),
                     ),
                 ),
                 (
@@ -144,12 +152,11 @@ fn create_scheduled_task_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "yoloMode".to_string(),
-                    boolean_prop(Some("Whether the run should execute in YOLO mode.")),
-                ),
-                (
-                    "unsafeMode".to_string(),
-                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
+                    "executionMode".to_string(),
+                    enum_prop_optional(
+                        vec!["normal", "yolo", "unsafe"],
+                        Some(EXECUTION_MODE_PARAM_DESC),
+                    ),
                 ),
                 (
                     "workspaceOverride".to_string(),
@@ -250,6 +257,7 @@ fn update_scheduled_task_tool() -> MCPTool {
             &[
                 "Pass the task ID and only fields to change.",
                 "Confirm schedule impact before saving cron changes.",
+                execution_mode_workflow_steps()[0],
             ],
             &[
                 "Verify with scheduled_task__getScheduledTask.",
@@ -291,22 +299,6 @@ fn update_scheduled_task_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "groupId".to_string(),
-                    string_prop(
-                        Some(1),
-                        Some(120),
-                        Some("Optional scheduled task group ID. Provide together with groupName to move to a different group."),
-                    ),
-                ),
-                (
-                    "groupName".to_string(),
-                    string_prop(
-                        Some(1),
-                        Some(120),
-                        Some("Optional scheduled task group name."),
-                    ),
-                ),
-                (
                     "message".to_string(),
                     string_prop(
                         Some(1),
@@ -315,12 +307,11 @@ fn update_scheduled_task_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "yoloMode".to_string(),
-                    boolean_prop(Some("Updated YOLO mode flag.")),
-                ),
-                (
-                    "unsafeMode".to_string(),
-                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
+                    "executionMode".to_string(),
+                    enum_prop_optional(
+                        vec!["normal", "yolo", "unsafe"],
+                        Some(EXECUTION_MODE_PARAM_DESC),
+                    ),
                 ),
                 (
                     "workspaceOverride".to_string(),
@@ -333,10 +324,6 @@ fn update_scheduled_task_tool() -> MCPTool {
                 (
                     "clearWorkspaceOverride".to_string(),
                     boolean_prop(Some("Set true to remove the workspace override.")),
-                ),
-                (
-                    "clearGroup".to_string(),
-                    boolean_prop(Some("Set true to remove scheduled task group metadata.")),
                 ),
                 (
                     "enabled".to_string(),

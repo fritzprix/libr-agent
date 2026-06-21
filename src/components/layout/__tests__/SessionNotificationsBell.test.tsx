@@ -17,7 +17,7 @@ const notificationSession: AgentSession = {
   createdAt: new Date('2026-03-22T00:00:00.000Z'),
   updatedAt: new Date('2026-03-22T00:10:00.000Z'),
   assistant: undefined,
-  yoloMode: false,
+  executionMode: 'normal',
   lastAttentionAt: new Date('2026-03-22T00:10:00.000Z'),
   lastAttentionReason: 'recurringStop',
   pendingApprovalCount: 1,

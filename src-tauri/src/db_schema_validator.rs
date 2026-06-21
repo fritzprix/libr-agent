@@ -42,13 +42,8 @@ pub async fn validate_schema(db: &DatabaseConnection) -> Result<(), SchemaValida
     validate_table_exists(db, "messages").await?;
     validate_table_exists(db, "assistants").await?;
 
-    // Validate sessions table has is_bookmarked, yolo_mode, and unsafe_mode columns
-    validate_table_columns(
-        db,
-        "sessions",
-        &["id", "is_bookmarked", "yolo_mode", "unsafe_mode"],
-    )
-    .await?;
+    // Validate sessions table has is_bookmarked and execution_mode columns
+    validate_table_columns(db, "sessions", &["id", "is_bookmarked", "execution_mode"]).await?;
 
     // Validate planning module tables with specific columns
     validate_table_columns(
@@ -214,7 +209,7 @@ mod tests {
         // Create test tables
         db.execute(Statement::from_string(
             db.get_database_backend(),
-            "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, is_bookmarked INTEGER, yolo_mode INTEGER, unsafe_mode INTEGER)".to_string(),
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, is_bookmarked INTEGER, execution_mode TEXT NOT NULL DEFAULT 'normal')".to_string(),
         ))
         .await
         .expect("Failed to create sessions table");

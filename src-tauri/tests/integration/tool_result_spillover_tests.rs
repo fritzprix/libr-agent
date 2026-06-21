@@ -5,6 +5,7 @@ use tauri_mcp_agent_lib::agent::tools::{
     spill_oversized_tool_result_messages, tool_result_preview_content_limit_bytes,
     TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
 };
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, ServiceInfo};
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 use tauri_mcp_agent_lib::repositories::{
@@ -52,8 +53,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }

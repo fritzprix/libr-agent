@@ -419,7 +419,7 @@ impl SuccessHint {
             ],
             ("readFile", ToolGroup::Workspace) => vec![
                 "Use writeFile to modify the content".to_string(),
-                "Use editFiles to make targeted edits".to_string(),
+                "Use editFile to make targeted edits".to_string(),
             ],
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),
@@ -427,7 +427,7 @@ impl SuccessHint {
                 "Use searchFiles with filePattern to narrow down names".to_string(),
             ],
             (
-                "editFiles" | "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
+                "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
                 ToolGroup::Workspace,
             ) => vec![
                 "Use readFile to verify your edits".to_string(),

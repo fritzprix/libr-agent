@@ -121,8 +121,7 @@ mod tests {
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: crate::execution_mode::ExecutionMode::Normal,
             workspace_override: None,
         }
     }

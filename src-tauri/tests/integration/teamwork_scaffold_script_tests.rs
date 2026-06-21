@@ -128,8 +128,8 @@ fn scaffold_script_writes_expected_teamwork_manifest_contract() {
         "inherit-governing-session-workspace-by-default"
     );
     assert_eq!(
-        manifest["executionSubstrate"]["orgLineage"]["childArgs"]["includeCurrentOrg"],
-        true
+        manifest["executionSubstrate"]["orgLineage"]["childArgs"],
+        serde_json::json!({})
     );
     assert_eq!(
         manifest["executionSubstrate"]["orgLineage"]["workspaceSharing"],

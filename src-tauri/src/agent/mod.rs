@@ -20,8 +20,9 @@ pub mod tools;
 pub mod types;
 pub mod workflow;
 
+pub use crate::execution_mode::ExecutionMode;
 pub use config::AgentConfig;
 pub use config_resolve::{
     extract_assistant_id_from_session, resolve_agent_config, stable_prompt_source_key,
 };
-pub use session_manager::{AgentSessionManager, ExecutionMode};
+pub use session_manager::AgentSessionManager;

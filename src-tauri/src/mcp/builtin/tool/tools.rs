@@ -116,7 +116,9 @@ pub fn register_server_tool() -> MCPTool {
 
 /// Update configuration for an existing MCP server
 pub fn update_server_tool() -> MCPTool {
-    let transport_schema = transport_config_schema(Some("New transport configuration"));
+    let transport_schema = transport_config_schema(Some(
+        "Replacement transport configuration. Set type to stdio (command, args, env) or http/http-sse (url, headers, enableSSE). Supply the full transport object for the target type.",
+    ));
 
     MCPTool {
         name: "updateServer".to_string(),
@@ -126,7 +128,8 @@ pub fn update_server_tool() -> MCPTool {
             &["Know the server slug from tool__listServers."],
             &[
                 "Provide the server name (slug) to update.",
-                "Supply new transport settings or an optional description change.",
+                "Pass transport with the correct type and required fields for that transport.",
+                "Optionally change description; omit fields you want to leave unchanged.",
             ],
             &[
                 "Confirm the update with tool__verifyServer.",
@@ -223,14 +226,14 @@ pub fn verify_server_tool() -> MCPTool {
 pub fn list_tools_tool() -> MCPTool {
     MCPTool {
         name: "listServers".to_string(),
-        title: Some("Find Tools".to_string()),
+        title: Some("List Servers".to_string()),
         description: tool_description(
             "Browse builtin tools and saved external MCP servers. Add query to filter results.",
             &[],
             &[
                 "Choose scope (all, internal, external) and availability (inventory vs session).",
                 "Use query to filter by tool name, description, or server name.",
-                "Set forceVerify=true only when live external metadata is required.",
+                "Leave forceVerify=false (default) for fast cached external metadata; set true only when you need live re-verification.",
             ],
             &[
                 "Register missing servers with tool__registerServer.",
@@ -272,7 +275,7 @@ pub fn list_tools_tool() -> MCPTool {
                 (
                     "forceVerify".to_string(),
                     boolean_prop(Some(
-                        "If true (default: false), fetch live external server metadata. If omitted/false, use cached metadata from the last verification.",
+                        "If true, live-verify each external server and refresh cached tool metadata (slower). If false or omitted (default), use metadata from the last tool__verifyServer run.",
                     )),
                 ),
                 (

@@ -74,7 +74,7 @@ async fn read_file_truncates_large_output_and_guides_next_chunk() {
     );
     assert!(
         text.contains(
-            "If you plan to use editFiles next, rerun with showLineAnchors=true to get anchors"
+            "If you plan to use editFile next, rerun with showLineAnchors=true to get anchors"
         ),
         "plain readFile should keep anchor guidance optional instead of sounding mandatory: {text}"
     );

@@ -8,7 +8,6 @@ import { buildTestMessage } from './agent-session-test-utils';
 import { __resetLLMListenerStartupLogStateForTests } from '../llm/useLLMListener';
 import * as streamEvents from '@/lib/ai-service/stream-events';
 
-
 describe('LLMServiceContext – Completion Execution', () => {
   const mockUnlisten = vi.fn();
   const mockStreamChat = vi.fn();
@@ -47,8 +46,6 @@ describe('LLMServiceContext – Completion Execution', () => {
       },
     ]);
   });
-
-
 
   describe('Execute Completion Request', () => {
     it('should execute completion and return message', async () => {

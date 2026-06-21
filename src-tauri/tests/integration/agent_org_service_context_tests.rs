@@ -1,5 +1,6 @@
 use crate::common;
 
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::repositories::{
     build_child_sessions_context, build_explicit_org_layer_context, SessionMetadata,
     SessionRepository, SessionStatus, SqliteSessionRepository,
@@ -36,8 +37,7 @@ fn build_session(
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }

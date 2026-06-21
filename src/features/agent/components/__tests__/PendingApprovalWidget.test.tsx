@@ -25,7 +25,7 @@ describe('PendingApprovalWidget', () => {
             inputPreview: 'rm -rf /important',
           },
         ]}
-        yoloModeEnabled
+        executionMode="yolo"
         onRespond={vi.fn().mockResolvedValue(undefined)}
       />,
     );

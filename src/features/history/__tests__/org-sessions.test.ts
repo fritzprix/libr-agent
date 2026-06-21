@@ -14,7 +14,7 @@ function createSession(
     model: 'test-model',
     provider: 'test-provider',
     createdAt: new Date('2026-04-05T00:00:00Z'),
-    yoloMode: false,
+    executionMode: 'normal',
     ...overrides,
   };
 }

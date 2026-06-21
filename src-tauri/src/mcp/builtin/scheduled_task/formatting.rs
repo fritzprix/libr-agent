@@ -9,17 +9,14 @@ pub fn render_task_line(task: &ScheduledTaskModel) -> String {
         _ => "?",
     };
     format!(
-        "- {} | {} | {} | {} | next: {} | assistant: {}{}",
+        "- {} | {} | {} | {} | next: {} | assistant: {} | mode: {}",
         category,
         task.id,
         task.name,
         if task.enabled { "enabled" } else { "disabled" },
         format_timestamp(task.next_run_at),
         task.assistant_id,
-        task.group_name
-            .as_ref()
-            .map(|group| format!(" | group: {}", group))
-            .unwrap_or_default()
+        execution_mode_label(task),
     )
 }
 
@@ -29,8 +26,6 @@ pub fn render_task_detail(task: &ScheduledTaskModel) -> String {
         .as_deref()
         .unwrap_or("none")
         .to_string();
-    let group = task.group_name.as_deref().unwrap_or("none").to_string();
-    let group_id = task.group_id.as_deref().unwrap_or("none").to_string();
     let pinned_session = task.session_id.as_deref().unwrap_or("none").to_string();
     let created_by_session = task
         .created_by_session_id
@@ -49,11 +44,10 @@ pub fn render_task_detail(task: &ScheduledTaskModel) -> String {
 Category: {}\n\
 Name: {}\n\
 Assistant: {}\n\
-Group: {} ({})\n\
 Enabled: {}\n\
 Cron: {}\n\
 Timezone: {}\n\
-YOLO mode: {}\n\
+Execution mode: {}\n\
 Next run: {}\n\
 Last run: {}\n\
 Created by session: {}\n\
@@ -64,12 +58,10 @@ Message:\n{}",
         category,
         task.name,
         task.assistant_id,
-        group,
-        group_id,
         if task.enabled { "yes" } else { "no" },
         task.cron_expression.as_deref().unwrap_or("(one-shot)"),
         task.schedule_timezone,
-        if task.yolo_mode { "yes" } else { "no" },
+        execution_mode_label(task),
         format_timestamp(task.next_run_at),
         format_timestamp(task.last_run_at),
         created_by_session,
@@ -87,10 +79,8 @@ pub fn task_to_json(task: &ScheduledTaskModel) -> Value {
         "cronExpression": task.cron_expression,
         "scheduleTimezone": task.schedule_timezone,
         "assistantId": task.assistant_id,
-        "groupId": task.group_id,
-        "groupName": task.group_name,
         "message": task.message,
-        "yoloMode": task.yolo_mode,
+        "executionMode": execution_mode_label(task),
         "createdBySessionId": task.created_by_session_id,
         "sessionId": task.session_id,
         "workspaceOverride": task.workspace_override,
@@ -110,4 +100,8 @@ pub fn format_timestamp(timestamp_ms: Option<i64>) -> String {
     chrono::DateTime::<chrono::Utc>::from_timestamp_millis(timestamp_ms)
         .map(|value| value.format("%Y-%m-%d %H:%M:%S UTC").to_string())
         .unwrap_or_else(|| timestamp_ms.to_string())
+}
+
+fn execution_mode_label(task: &ScheduledTaskModel) -> &'static str {
+    task.execution_mode().as_str()
 }

@@ -19,11 +19,7 @@ export function useAgentSessionActionsLogic(
   },
 ) {
   const { state, setters } = stateProps;
-  const currentExecutionMode: ExecutionMode = state.unsafeModeEnabled
-    ? 'unsafe'
-    : state.yoloModeEnabled
-      ? 'yolo'
-      : 'normal';
+  const currentExecutionMode = state.executionMode;
 
   const applyExecutionModeLocally = useCallback(
     (mode: ExecutionMode) => {
@@ -209,16 +205,6 @@ export function useAgentSessionActionsLogic(
     ],
   );
 
-  const toggleYoloMode = useCallback(async () => {
-    await setExecutionMode(currentExecutionMode === 'yolo' ? 'normal' : 'yolo');
-  }, [currentExecutionMode, setExecutionMode]);
-
-  const toggleUnsafeMode = useCallback(async () => {
-    await setExecutionMode(
-      currentExecutionMode === 'unsafe' ? 'normal' : 'unsafe',
-    );
-  }, [currentExecutionMode, setExecutionMode]);
-
   const updateSessionConfig = useCallback(
     (model: string, provider: string) => {
       setters.setSession((prev) =>
@@ -271,8 +257,6 @@ export function useAgentSessionActionsLogic(
     resumeSession,
     respondToToolApproval,
     setExecutionMode,
-    toggleYoloMode,
-    toggleUnsafeMode,
     updateSessionConfig,
     renameSession,
   };

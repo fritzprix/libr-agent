@@ -5,6 +5,7 @@ use sea_orm_migration::MigratorTrait;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::history::HistoryServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
@@ -98,8 +99,7 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
                     last_attention_at: None,
                     last_attention_reason: None,
                     is_bookmarked: false,
-                    yolo_mode: false,
-                    unsafe_mode: false,
+                    execution_mode: ExecutionMode::Normal,
                     workspace_override: None,
                 })
                 .await
@@ -128,8 +128,7 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
                     last_attention_at: None,
                     last_attention_reason: None,
                     is_bookmarked: false,
-                    yolo_mode: false,
-                    unsafe_mode: false,
+                    execution_mode: ExecutionMode::Normal,
                     workspace_override: None,
                 })
                 .await

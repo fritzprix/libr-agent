@@ -6,6 +6,7 @@ use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
 use serde_json::json;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
     list_agent_configs_for_test, list_delegated_sessions_for_test,
 };
@@ -107,8 +108,7 @@ fn build_session(
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }

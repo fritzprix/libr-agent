@@ -48,8 +48,6 @@ function createBaseSessionState(): AgentSessionStateContextValue {
     pendingApprovals: [],
     pendingInteractiveShellPrompt: null,
     executionMode: 'normal',
-    yoloModeEnabled: false,
-    unsafeModeEnabled: false,
   };
 }
 
@@ -80,7 +78,7 @@ function createMockSession(): AgentSession {
     },
     createdAt: new Date(),
     updatedAt: new Date(),
-    yoloMode: false,
+    executionMode: 'normal',
   };
 }
 

@@ -5,6 +5,7 @@ use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
 use serde_json::json;
 use std::str::FromStr;
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::tool::ToolServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
@@ -145,8 +146,7 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         })
         .await
@@ -233,8 +233,7 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         })
         .await
@@ -297,8 +296,7 @@ async fn tool_list_uses_builtin_service_alias_for_session_status() {
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         })
         .await

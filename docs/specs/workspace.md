@@ -66,8 +66,34 @@ Atomic file creation and overwriting with strict safety controls.
   - If file exists + `overwrite: false`: suggest `overwrite: true` or `editFile`.
   - If permission denied: suggest `listDirectory`.
 
-## Legacy/Related Tools
+### `editFile` (Canonical Name)
 
-- `editFiles`: Use for targeted replacements, insertions, and deletions across one or more files. Each `edits[]` item includes its own `path`, and the contract remains op-specific and schema-defined.
-- `editFile`: Legacy single-file compatibility alias that normalizes into `editFiles`.
+#### Purpose
+
+Apply targeted replacements, insertions, and deletions to one file.
+
+#### Schema
+
+```json
+{
+  "name": "editFile",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Relative path from workspace root"
+      },
+      "edits": {
+        "type": "array",
+        "description": "Ordered edit operations for the file"
+      }
+    },
+    "required": ["path", "edits"]
+  }
+}
+```
+
+## Related Tools
+
 - `deleteFile`: Destructive removal.

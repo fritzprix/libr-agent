@@ -1,5 +1,6 @@
 import { safeInvoke } from './core';
 import { getLogger } from '@/lib/logger';
+import type { ExecutionMode } from '@/context/agent-session/types';
 
 const logger = getLogger('ScheduledTasksBackend');
 
@@ -12,12 +13,9 @@ export interface ScheduledTask {
   cronExpression: string;
   scheduleTimezone: ScheduledTaskTimezone;
   assistantId: string;
-  groupId: string | null;
-  groupName: string | null;
   /** Supports @playbook:name and @skill:name mention syntax */
   message: string;
-  yoloMode: boolean;
-  unsafeMode: boolean;
+  executionMode: ExecutionMode;
   createdBySessionId: string | null;
   sessionId: string | null;
   taskCategory: string;
@@ -44,11 +42,8 @@ export interface CreateScheduledTaskRequest {
   cronExpression: string;
   scheduleTimezone?: ScheduledTaskTimezone;
   assistantId: string;
-  groupId?: string | null;
-  groupName?: string | null;
   message: string;
-  yoloMode: boolean;
-  unsafeMode: boolean;
+  executionMode?: ExecutionMode;
   workspaceOverride?: string | null;
 }
 
@@ -57,13 +52,9 @@ export interface UpdateScheduledTaskRequest {
   cronExpression?: string;
   scheduleTimezone?: ScheduledTaskTimezone;
   assistantId?: string;
-  groupId?: string | null;
-  groupName?: string | null;
   message?: string;
-  yoloMode?: boolean;
-  unsafeMode?: boolean;
+  executionMode?: ExecutionMode;
   workspaceOverride?: string | null;
-  clearGroup?: boolean;
   enabled?: boolean;
 }
 

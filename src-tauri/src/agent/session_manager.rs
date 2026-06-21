@@ -4,6 +4,7 @@ use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
 use crate::agent::tauri_events::TauriEventDispatcher;
+use crate::execution_mode::ExecutionMode;
 use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -37,8 +38,6 @@ pub use compact::should_retry_budget_related_blocking_compaction;
 pub use compact::validate_compact_summary_for_testing;
 pub use compact::CompactContextView;
 pub use compact::CompactSummaryClampResult;
-pub use execution_mode::ExecutionMode;
-
 /// Manages agent sessions and their workflows
 ///
 /// This struct acts as a facade, delegating actual logic to specialized modules:
@@ -490,39 +489,24 @@ impl AgentSessionManager {
         approvals::respond_channel_permission(self, session_id, request_id, approved).await
     }
 
-    /// Set YOLO mode for a session
-    pub async fn set_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), String> {
-        self.set_execution_mode(
-            session_id,
-            if enabled {
-                ExecutionMode::Yolo
-            } else {
-                ExecutionMode::Normal
-            },
-        )
-        .await
-    }
+    pub async fn get_execution_mode(&self, session_id: &str) -> ExecutionMode {
+        {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                return ExecutionMode::from_runtime_flags(
+                    session.yolo_mode.load(std::sync::atomic::Ordering::Relaxed),
+                    session
+                        .unsafe_mode
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                );
+            }
+        }
 
-    /// Returns the current yolo_mode for a session
-    pub async fn get_yolo_mode(&self, session_id: &str) -> bool {
-        let active = self.active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|s| s.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
-            .unwrap_or(false)
-    }
+        if let Ok(Some(metadata)) = self.session_repo.get_session(session_id).await {
+            return metadata.execution_mode;
+        }
 
-    /// Set unsafe mode for a session
-    pub async fn set_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), String> {
-        self.set_execution_mode(
-            session_id,
-            if enabled {
-                ExecutionMode::Unsafe
-            } else {
-                ExecutionMode::Normal
-            },
-        )
-        .await
+        ExecutionMode::Normal
     }
 
     pub async fn set_execution_mode(
@@ -531,15 +515,6 @@ impl AgentSessionManager {
         mode: ExecutionMode,
     ) -> Result<(), String> {
         execution_mode::set_execution_mode(self, session_id, mode).await
-    }
-
-    /// Returns the current unsafe_mode for a session
-    pub async fn get_unsafe_mode(&self, session_id: &str) -> bool {
-        let active = self.active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|s| s.unsafe_mode.load(std::sync::atomic::Ordering::Relaxed))
-            .unwrap_or(false)
     }
 
     /// Handle LLM error from frontend

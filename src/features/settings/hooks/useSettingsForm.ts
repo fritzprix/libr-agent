@@ -68,7 +68,6 @@ function getSystemComparableState(settings: SettingsFormState) {
     mcpToolTimeoutSeconds: settings.system.mcpToolTimeoutSeconds,
     scheduledTaskMinimumIntervalMinutes:
       settings.system.scheduledTaskMinimumIntervalMinutes,
-    maxScheduledTaskGroups: settings.system.maxScheduledTaskGroups,
     httpServerPort: settings.system.httpServerPort,
     httpServerExpose: settings.system.httpServerExpose,
   };

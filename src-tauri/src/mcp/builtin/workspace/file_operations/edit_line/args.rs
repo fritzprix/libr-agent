@@ -1,9 +1,9 @@
-use super::super::super::tools::file_tools::create_edit_files_input_schema;
+use super::super::super::tools::file_tools::create_edit_file_input_schema;
 use super::types::{EditAction, LineEdit};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 use once_cell::sync::Lazy;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 fn normalize_edit_op_value(value: &str) -> String {
     match value {
@@ -32,17 +32,17 @@ fn infer_legacy_edit_op(edit_obj: &Map<String, Value>) -> Option<&'static str> {
     }
 }
 
-static EDIT_FILES_SCHEMA_JSON: Lazy<Result<Value, String>> = Lazy::new(|| {
-    serde_json::to_value(create_edit_files_input_schema())
-        .map_err(|error| format!("Failed to serialize editFiles schema: {error}"))
+static EDIT_FILE_SCHEMA_JSON: Lazy<Result<Value, String>> = Lazy::new(|| {
+    serde_json::to_value(create_edit_file_input_schema())
+        .map_err(|error| format!("Failed to serialize editFile schema: {error}"))
 });
 
-static EDIT_FILES_VALIDATOR: Lazy<Result<jsonschema::Validator, String>> = Lazy::new(|| {
-    let schema_json = EDIT_FILES_SCHEMA_JSON
+static EDIT_FILE_VALIDATOR: Lazy<Result<jsonschema::Validator, String>> = Lazy::new(|| {
+    let schema_json = EDIT_FILE_SCHEMA_JSON
         .as_ref()
         .map_err(|error| error.clone())?;
     jsonschema::validator_for(schema_json)
-        .map_err(|error| format!("Failed to build editFiles validator: {error}"))
+        .map_err(|error| format!("Failed to build editFile validator: {error}"))
 });
 
 fn canonicalize_edit_object(edit: &Value) -> Value {
@@ -124,7 +124,7 @@ fn canonicalize_edit_object(edit: &Value) -> Value {
     Value::Object(canonical)
 }
 
-fn canonicalize_edit_file_args(args: &Value) -> Value {
+pub(super) fn canonicalize_edit_file_args(args: &Value) -> Value {
     let Some(args_obj) = args.as_object() else {
         return args.clone();
     };
@@ -180,65 +180,8 @@ pub(super) fn format_edit_label(edit_obj: &Map<String, Value>, idx: usize) -> St
     }
 }
 
-pub(super) fn canonicalize_edit_files_args(args: &Value) -> Value {
-    let Some(args_obj) = args.as_object() else {
-        return args.clone();
-    };
-
-    let mut canonical = Map::new();
-
-    for (key, value) in args_obj {
-        if key == "edits" {
-            if let Some(edits) = value.as_array() {
-                canonical.insert(
-                    "edits".to_string(),
-                    Value::Array(edits.iter().map(canonicalize_edit_object).collect()),
-                );
-            } else {
-                canonical.insert("edits".to_string(), value.clone());
-            }
-        } else {
-            canonical.insert(key.clone(), value.clone());
-        }
-    }
-
-    Value::Object(canonical)
-}
-
-pub(super) fn canonicalize_legacy_edit_file_args_as_edit_files(args: &Value) -> Value {
-    let canonical = canonicalize_edit_file_args(args);
-    let root_path = canonical.get("path").cloned();
-    let edits = canonical
-        .get("edits")
-        .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .map(|item| {
-                    let Some(edit_obj) = item.as_object() else {
-                        return item.clone();
-                    };
-
-                    let mut with_path = edit_obj.clone();
-                    if !with_path.contains_key("path") {
-                        if let Some(path) = &root_path {
-                            if !path.is_null() {
-                                with_path.insert("path".to_string(), path.clone());
-                            }
-                        }
-                    }
-
-                    Value::Object(with_path)
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    json!({ "edits": edits })
-}
-
-pub(super) fn validate_edit_files_arguments(args: &Value) -> Result<(), String> {
-    let validator = EDIT_FILES_VALIDATOR
+pub(super) fn validate_edit_file_arguments(args: &Value) -> Result<(), String> {
+    let validator = EDIT_FILE_VALIDATOR
         .as_ref()
         .map_err(|error| error.clone())?;
     let errors = validator
