@@ -9,12 +9,14 @@ use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
-    CompactContextRecord, SessionListCursor, SessionListPage, SessionMetadata, SessionRepository,
+    compact_context_repository::CompactContextRepository, message_repository::MessageRepository,
+    planning_repository::PlanningRepository, CompactContextRecord, SessionListCursor,
+    SessionListPage, SessionMetadata, SessionRepository,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::sync::RwLock;
 
 #[path = "session_manager/approvals.rs"]
@@ -711,6 +713,87 @@ impl AgentSessionManager {
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
         crate::agent::compact_recovery::clear_compact_in_flight(&self.active_sessions, session_id)
             .await;
+    }
+
+    pub async fn reset_session(&self, session_id: &str) -> Result<(), String> {
+        // 0. Cancel workflow if running
+        {
+            let sessions = self.active_sessions.read().await;
+            if let Some(session) = sessions.get(session_id) {
+                session.cancellation_token.cancel();
+            }
+        }
+
+        // 0b. Transition session status to Idle (DB and Memory) and release active permit
+        let is_active = {
+            let sessions = self.active_sessions.read().await;
+            sessions.contains_key(session_id)
+        };
+        if is_active {
+            crate::agent::lifecycle::update_session_status(
+                &self.session_repo,
+                &self.active_sessions,
+                &self.app_handle,
+                session_id,
+                crate::repositories::SessionStatus::Idle,
+            )
+            .await?;
+        } else {
+            self.session_repo
+                .update_status(session_id, crate::repositories::SessionStatus::Idle)
+                .await
+                .map_err(|e| format!("Failed to update session status in DB: {}", e))?;
+        }
+
+        // 0c. Close browser sessions associated with the agent
+        let browser_server = self
+            .app_handle
+            .try_state::<crate::services::InteractiveBrowserServer>();
+        if let Some(browser_svc) = browser_server {
+            if let Err(e) = browser_svc
+                .inner()
+                .close_agent_browser_sessions(session_id)
+                .await
+            {
+                log::warn!("Failed to close browser session during reset: {}", e);
+            }
+        }
+
+        // 1. Delete messages from DB
+        let repo = crate::state::get_message_repository();
+        repo.delete_by_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to delete messages from DB: {}", e))?;
+
+        // 2. Clear planning data (goal, todo, scratchpad)
+        let planning_repo = crate::state::get_planning_repository();
+        planning_repo
+            .clear_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to clear planning data during reset: {}", e))?;
+
+        // 3. Delete compact context
+        let compact_repo = crate::state::get_compact_context_repository();
+        if let Err(e) = compact_repo.delete_by_session_id(session_id).await {
+            log::warn!("Failed to clear compact context during reset: {}", e);
+        }
+
+        // 4. Clear in-memory active session cache
+        {
+            let mut sessions = self.active_sessions.write().await;
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.clear().await;
+            }
+        }
+
+        // 5. Notify frontend
+        crate::agent::tauri_events::emit_resource_updated(
+            "session",
+            "clear",
+            Some(session_id.to_string()),
+        );
+
+        Ok(())
     }
 
     /// Trigger a non-resuming manual compaction pass for an already-active session.

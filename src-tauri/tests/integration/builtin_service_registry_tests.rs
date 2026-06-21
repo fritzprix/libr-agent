@@ -660,6 +660,10 @@ fn message_to_session_tool_schema_supports_inline_waiting() {
         props.contains_key("timeout"),
         "messageToSession input_schema must include 'timeout'"
     );
+    assert!(
+        props.contains_key("reset"),
+        "messageToSession input_schema must include 'reset'"
+    );
 }
 
 #[test]

@@ -358,6 +358,22 @@ pub async fn handle_llm_response(
         }
     }
 
+    // [Race Mitigation] Verify session has not been reset/cancelled during async yields
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            if session.cancellation_token.is_cancelled() {
+                log::info!(
+                    "Workflow was cancelled or reset for session {} after admission. Discarding LLM response.",
+                    session_id
+                );
+                return Ok(());
+            }
+        } else {
+            return Err(format!("Session not found: {}", session_id));
+        }
+    }
+
     if let Some(prompt_tokens) = extract_prompt_tokens(&assistant_message) {
         persist_prompt_token_checkpoint(active_sessions, &session_id, prompt_tokens).await;
     }

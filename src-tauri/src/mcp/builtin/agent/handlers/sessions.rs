@@ -225,6 +225,7 @@ pub async fn message_to_session(
         .ok_or("AgentSessionManager not available")?;
     let session_id = read_required_string(&args, "sessionId")?;
     let message_text = read_required_string(&args, "message")?;
+    let reset = args.get("reset").and_then(|v| v.as_bool()).unwrap_or(false);
     let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
         Ok(config) => config,
         Err(result) => return Ok(result),
@@ -244,6 +245,7 @@ pub async fn message_to_session(
         &session_id,
         message_text,
         Some(MessageSource::AgentTool),
+        reset,
     )
     .await
     {

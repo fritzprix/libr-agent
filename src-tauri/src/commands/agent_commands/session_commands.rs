@@ -5,16 +5,14 @@ use super::contracts::{
 };
 use crate::agent::{AgentSessionManager, ExecutionMode};
 use crate::mcp::types::{MCPTool, ServiceContext};
-use crate::repositories::compact_context_repository::CompactContextRepository;
 use crate::repositories::message_repository::MessageRepository;
-use crate::repositories::planning_repository::PlanningRepository;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
 use crate::services::agent_service::remove_lineage;
 use crate::services::AgentService;
 use crate::state::get_session_repository;
 use std::collections::HashMap;
-use tauri::{command, AppHandle, Manager, State};
+use tauri::{command, AppHandle, State};
 
 const DEFAULT_SESSION_LIST_LIMIT: u64 = 20;
 const MAX_SESSION_LIST_LIMIT: u64 = 200;
@@ -386,7 +384,7 @@ pub struct CommandResult {
 #[command]
 pub async fn agent_execute_command(
     manager: State<'_, AgentSessionManager>,
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
     session_id: String,
     command_text: String,
 ) -> Result<CommandResult, String> {
@@ -397,61 +395,7 @@ pub async fn agent_execute_command(
 
     match command {
         Command::Clear => {
-            let active_sessions = manager.active_sessions_arc();
-
-            // 0. 먼저 워크플로우 강제 취소
-            {
-                let sessions = active_sessions.read().await;
-                if let Some(session) = sessions.get(&session_id) {
-                    session.cancellation_token.cancel();
-                }
-            }
-
-            // 1. DB 메시지 삭제
-            let repo = crate::state::get_message_repository();
-            repo.delete_by_session(&session_id)
-                .await
-                .map_err(|e| format!("Failed to delete messages from DB: {}", e))?;
-
-            // 2. Planning 데이터 삭제 (goal, todo, scratchpad)
-            let planning_repo = crate::state::get_planning_repository();
-            if let Err(e) = planning_repo.clear_session(&session_id).await {
-                log::warn!("Failed to clear planning data during /clear: {}", e);
-            }
-
-            // 3. 컴팩션 컨텍스트 삭제
-            let compact_repo = crate::state::get_compact_context_repository();
-            if let Err(e) = compact_repo.delete_by_session_id(&session_id).await {
-                log::warn!("Failed to clear compact context during /clear: {}", e);
-            }
-
-            // 4. 브라우저 세션 종료
-            let browser_server =
-                app_handle.try_state::<crate::services::InteractiveBrowserServer>();
-            if let Some(browser_svc) = browser_server {
-                if let Err(e) = browser_svc
-                    .inner()
-                    .close_agent_browser_sessions(&session_id)
-                    .await
-                {
-                    log::warn!("Failed to close browser session during /clear: {}", e);
-                }
-            }
-
-            // 5. active session의 메모리 캐시 및 잔여 상태 비우기 (get_mut 사용)
-            {
-                let mut sessions = active_sessions.write().await;
-                if let Some(session) = sessions.get_mut(&session_id) {
-                    session.clear().await;
-                }
-            }
-
-            // 6. Notify frontend that session messages were cleared (distinct from rename/mode updates)
-            crate::agent::tauri_events::emit_resource_updated(
-                "session",
-                "clear",
-                Some(session_id.clone()),
-            );
+            manager.reset_session(&session_id).await?;
 
             Ok(CommandResult {
                 success: true,

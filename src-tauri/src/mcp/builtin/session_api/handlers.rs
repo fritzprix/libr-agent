@@ -392,6 +392,7 @@ pub async fn handle_tool_call(
                 &session_id,
                 content,
                 Some(MessageSource::SwarmLegacy),
+                false,
             )
             .await
             {
