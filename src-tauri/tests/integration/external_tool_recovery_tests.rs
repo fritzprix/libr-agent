@@ -188,19 +188,19 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
         "guidance should surface the concrete server id needed for attachment: {text}"
     );
     assert!(
-        text.contains("tool__list({\"availability\":\"session\"})"),
+        text.contains("tool__listServers({\"availability\":\"session\"})"),
         "guidance should teach session-visible inventory inspection: {text}"
     );
     assert!(
-        text.contains("tool__list({\"availability\":\"inventory\"})"),
+        text.contains("tool__listServers({\"availability\":\"inventory\"})"),
         "guidance should teach global inventory inspection: {text}"
     );
     assert!(
-        text.contains("agent__update"),
+        text.contains("agent__updateAgent"),
         "guidance should explain how to attach the missing server: {text}"
     );
     assert!(
-        text.contains("agent__list(type=\"configs\")"),
+        text.contains("agent__listAgents(type=\"configs\")"),
         "guidance should point toward alternative agents: {text}"
     );
     assert!(
@@ -276,7 +276,7 @@ async fn external_call_reconfigures_existing_builtin_only_proxy() {
     manager
         .call_tool(
             session_id,
-            "tool__list",
+            "tool__listServers",
             json!({ "availability": "session" }),
         )
         .await

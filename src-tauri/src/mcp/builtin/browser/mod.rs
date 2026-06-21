@@ -305,7 +305,7 @@ impl BuiltinMCPServer for BrowserServer {
             "inputText" => interaction::input_text(self, args).await,
             "scrollPage" => interaction::scroll_page(self, args).await,
             "listInteractable" => interaction::list_interactable(self, args).await,
-            "fetch" => content::fetch_url(self, args, session_id).await,
+            "fetchUrl" => content::fetch_url(self, args, session_id).await,
             "evaluateJS" => evaluate::evaluate_js(self, args).await,
             "getConsoleLogs" => evaluate::get_console_logs(self, args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),

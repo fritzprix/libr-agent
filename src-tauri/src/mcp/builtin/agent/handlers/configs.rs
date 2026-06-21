@@ -38,9 +38,9 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
     .await?;
     Ok(normalize_agent_config_result(
         result,
-        "create",
+        "createAgent",
         vec![json!({
-            "toolName": "list",
+            "toolName": "listAgents",
             "reason": "Review the available agent configurations after creating this one.",
             "args": {
                 "type": "configs"
@@ -76,9 +76,9 @@ pub async fn update_agent(
     .await?;
     Ok(normalize_agent_config_result(
         result,
-        "update",
+        "updateAgent",
         vec![json!({
-            "toolName": "list",
+            "toolName": "listAgents",
             "reason": "Review the updated agent configurations after this change.",
             "args": {
                 "type": "configs"
@@ -254,13 +254,13 @@ async fn list_agent_configs_from_db(
     let mut hint_lines = vec!["Use startSession(agentId=\"...\") to delegate work".to_string()];
     if any_truncated {
         hint_lines.push(
-            "Use list(type=\"configs\", verbose=true) to show full descriptions.".to_string(),
+            "Use listAgents(type=\"configs\", verbose=true) to show full descriptions.".to_string(),
         );
     }
     let hint = SuccessHint::new(text_summary, hint_lines);
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
-        "list",
+        "listAgents",
         "agentConfigCollection",
         None,
         &response_message,
@@ -366,7 +366,7 @@ async fn list_delegated_sessions(
     );
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
-        "list",
+        "listAgents",
         "sessionCollection",
         None,
         &response_message,

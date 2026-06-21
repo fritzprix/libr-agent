@@ -22,7 +22,7 @@ fn object_properties(
 
 #[test]
 fn scratchpad_list_schema_uses_open_ended_positive_pagination_bounds() {
-    let list_tool = scratchpad_tool("list");
+    let list_tool = scratchpad_tool("listNote");
     let properties = object_properties(&list_tool);
 
     let page_schema = properties.get("page").expect("list should expose page");
@@ -52,7 +52,7 @@ fn scratchpad_list_schema_uses_open_ended_positive_pagination_bounds() {
 
 #[test]
 fn scratchpad_read_schema_leaves_note_ids_unbounded() {
-    let read_tool = scratchpad_tool("read");
+    let read_tool = scratchpad_tool("readNote");
     let properties = object_properties(&read_tool);
     let ids_schema = properties.get("ids").expect("read should expose ids");
 
@@ -76,7 +76,7 @@ fn scratchpad_read_schema_leaves_note_ids_unbounded() {
 
 #[test]
 fn scratchpad_clear_schema_leaves_note_id_unbounded() {
-    let clear_tool = scratchpad_tool("clear");
+    let clear_tool = scratchpad_tool("clearNote");
     let properties = object_properties(&clear_tool);
     let id_schema = properties.get("id").expect("clear should expose id");
 

@@ -215,8 +215,8 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
             name, id
         ),
         vec![
-            "Use tool__list to verify the registered server.".to_string(),
-            "To enable this server, add its Server ID to an agent using agent__update(id:\"<agentId>\", externalMcpServers:[...]).".to_string(),
+            "Use tool__listServers to verify the registered server.".to_string(),
+            "To enable this server, add its Server ID to an agent using agent__updateAgent(id:\"<agentId>\", externalMcpServers:[...]).".to_string(),
         ],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
@@ -255,7 +255,7 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         )
         .with_guidance(vec![
             "Verify database permissions".to_string(),
-            "Use tool__list({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to confirm the name exists".to_string(),
+            "Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to confirm the name exists".to_string(),
         ])
         .to_mcp_result());
     }
@@ -270,7 +270,7 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     let hint = SuccessHint::new(
         format!("Excluded server '{}' from configuration", name),
         vec![
-            "Use tool__list({\"availability\":\"inventory\"}) to verify remaining servers"
+            "Use tool__listServers({\"availability\":\"inventory\"}) to verify remaining servers"
                 .to_string(),
         ],
     );
@@ -374,7 +374,7 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
 
     let hint = SuccessHint::new(
         format!("✓ Server configuration updated for '{}' (ID: {})", name, id),
-        vec!["Use tool__list({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to verify changes".to_string()],
+        vec!["Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to verify changes".to_string()],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
 }
@@ -445,7 +445,7 @@ pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResul
                 Transport: {}\n\
                 {}\n\
                 Status: Connected and responsive\n\
-                Available tools: {} (cached — use tool__list to inspect inventory)\n\
+                Available tools: {} (cached — use tool__listServers to inspect inventory)\n\
                 Connection latency: {}ms\n\n\
                 The server is properly configured and ready to use.",
                 name, id, transport_type, transport_details, tool_count, latency_ms
@@ -698,7 +698,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     if total_results == 0 {
         let hint_text = if query.is_empty() {
-            "No tools found. Use tool__register to add external MCP servers.".to_string()
+            "No tools found. Use tool__registerServer to add external MCP servers.".to_string()
         } else {
             format!(
                 "No tools found matching '{}'. Try a broader query, scope='all', or availability='inventory'.",
@@ -710,7 +710,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             vec![
                 "Use scope='all' to search both builtin and external tools".to_string(),
                 "Use availability='inventory' to browse platform/server inventory regardless of current session access".to_string(),
-                "Use tool__list({\"availability\":\"inventory\"}) to browse all available tools".to_string(),
+                "Use tool__listServers({\"availability\":\"inventory\"}) to browse all available tools".to_string(),
             ],
         )
         .to_mcp_result());
@@ -806,8 +806,8 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         format!(
             "\n\n---\n📌 To enable these external servers:\n\
             Server IDs found:\n(this page only)\n{}\n\n\
-            To assign them to an agent, call:\n  agent__update(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
-            Use agent__list(type: \"configs\") to find your target agent ID.",
+            To assign them to an agent, call:\n  agent__updateAgent(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
+            Use agent__listAgents(type: \"configs\") to find your target agent ID.",
             ids_list.join("\n")
         )
     } else {

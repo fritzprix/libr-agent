@@ -147,7 +147,7 @@ async fn list_tools_limits_server_ids_to_visible_page() {
 
     let result = ToolServer::new()
         .call_tool(
-            "list",
+            "listServers",
             json!({
                 "scope": "external",
                 "query": "page-bound-",
@@ -196,7 +196,7 @@ async fn list_tools_distinguishes_placeholder_server_rows_from_tool_count() {
 
     let result = ToolServer::new()
         .call_tool(
-            "list",
+            "listServers",
             json!({
                 "scope": "external",
                 "query": "empty-placeholder"
@@ -243,7 +243,7 @@ async fn list_tools_rejects_offsets_past_total_results() {
 
     let result = ToolServer::new()
         .call_tool(
-            "list",
+            "listServers",
             json!({
                 "scope": "external",
                 "query": "offset-check",

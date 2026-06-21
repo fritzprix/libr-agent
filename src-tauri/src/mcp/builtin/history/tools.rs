@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 
@@ -54,8 +55,19 @@ fn export_dataset_tool() -> MCPTool {
     MCPTool {
         name: "exportDataset".to_string(),
         title: Some("Export Dataset".to_string()),
-        description: "Export conversational logs from LibrAgent into structured formats for model fine-tuning. Use list or search first to pick session IDs when exporting a subset."
-            .to_string(),
+        description: tool_description(
+            "Export conversational logs from LibrAgent into structured formats for model fine-tuning.",
+            &["Session IDs from history__listSessions or history__searchHistory when exporting a subset."],
+            &[
+                "Choose format (llamaFactory, alpaca, shareGpt, or openAiJsonl).",
+                "Set outputPath to an absolute local file path.",
+                "Apply optional filters for quality control.",
+            ],
+            &[
+                "Verify the exported file on disk.",
+                "Inspect source sessions with history__readSession if quality issues appear.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -88,15 +100,29 @@ fn export_dataset_tool() -> MCPTool {
 
 fn list_tool() -> MCPTool {
     MCPTool {
-        name: "list".to_string(),
+        name: "listSessions".to_string(),
         title: Some("List History Sessions".to_string()),
-        description: "List historical sessions with pagination and lightweight filters. Use this to find session IDs before reading session details."
-            .to_string(),
+        description: tool_description(
+            "List historical sessions with pagination and lightweight filters.",
+            &[],
+            &[
+                "Apply agentId, date range, or status filters as needed.",
+                "Paginate with page and pageSize for large histories.",
+            ],
+            &[
+                "Read session details with history__readSession using returned session IDs.",
+                "Search message content with history__searchHistory.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
                     "agentId".to_string(),
-                    string_prop(None, None, Some("Optional agent/assistant configuration ID filter.")),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional agent/assistant configuration ID filter."),
+                    ),
                 ),
                 (
                     "from".to_string(),
@@ -119,12 +145,7 @@ fn list_tool() -> MCPTool {
                 ),
                 (
                     "pageSize".to_string(),
-                    integer_prop_with_default(
-                        Some(1),
-                        Some(100),
-                        20,
-                        Some("Items per page."),
-                    ),
+                    integer_prop_with_default(Some(1), Some(100), 20, Some("Items per page.")),
                 ),
             ],
             vec![],
@@ -139,8 +160,18 @@ fn read_session_tool() -> MCPTool {
     MCPTool {
         name: "readSession".to_string(),
         title: Some("Read Session".to_string()),
-        description: "Read one session's metadata plus a paginated message list. Returns message previews only; use readMessage for full content."
-            .to_string(),
+        description: tool_description(
+            "Read one session's metadata plus a paginated message list (previews only).",
+            &["Session ID from history__listSessions or history__searchHistory."],
+            &[
+                "Pass the exact sessionId.",
+                "Paginate messages with page and pageSize.",
+            ],
+            &[
+                "Read full message bodies with history__readMessage.",
+                "Export sessions with history__exportDataset.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -149,21 +180,11 @@ fn read_session_tool() -> MCPTool {
                 ),
                 (
                     "page".to_string(),
-                    integer_prop_with_default(
-                        Some(1),
-                        None,
-                        1,
-                        Some("Message list page number."),
-                    ),
+                    integer_prop_with_default(Some(1), None, 1, Some("Message list page number.")),
                 ),
                 (
                     "pageSize".to_string(),
-                    integer_prop_with_default(
-                        Some(1),
-                        Some(100),
-                        50,
-                        Some("Messages per page."),
-                    ),
+                    integer_prop_with_default(Some(1), Some(100), 50, Some("Messages per page.")),
                 ),
             ],
             vec!["sessionId".to_string()],
@@ -178,8 +199,18 @@ fn read_message_tool() -> MCPTool {
     MCPTool {
         name: "readMessage".to_string(),
         title: Some("Read Message".to_string()),
-        description: "Read one message object with paginated content. Use this when a message body is too large for a preview."
-            .to_string(),
+        description: tool_description(
+            "Read one message object with paginated content when previews are too large.",
+            &["Message ID from history__readSession or history__searchHistory."],
+            &[
+                "Pass the exact messageId.",
+                "Use offsetChars and maxChars to paginate long bodies.",
+            ],
+            &[
+                "Return to session context with history__readSession.",
+                "Continue searching with history__searchHistory.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -214,11 +245,20 @@ fn read_message_tool() -> MCPTool {
 
 fn search_tool() -> MCPTool {
     MCPTool {
-        name: "search".to_string(),
+        name: "searchHistory".to_string(),
         title: Some("Search History".to_string()),
-        description:
-            "Search message history and return bounded snippets plus IDs for follow-up reads."
-                .to_string(),
+        description: tool_description(
+            "Search message history and return bounded snippets plus IDs for follow-up reads.",
+            &[],
+            &[
+                "Provide a search query string.",
+                "Narrow with agentId, sessionId, date range, or role filters.",
+            ],
+            &[
+                "Read full messages with history__readMessage using returned message IDs.",
+                "Open parent sessions with history__readSession.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (

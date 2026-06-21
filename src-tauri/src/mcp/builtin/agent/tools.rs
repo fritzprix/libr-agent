@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use serde_json::json;
 
 use crate::mcp::utils::schema_builder::*;
@@ -22,9 +23,21 @@ pub fn all_tools() -> Vec<MCPTool> {
 
 fn create_tool() -> MCPTool {
     MCPTool {
-        name: "create".to_string(),
+        name: "createAgent".to_string(),
         title: Some("Create Agent Configuration".to_string()),
-        description: "Create a new named agent configuration (assistant) with a specific system prompt, temperature, and tool capabilities. Model selection is controlled at session or global settings level, not here.".to_string(),
+        description: tool_description(
+            "Create a new named agent configuration (assistant) with system prompt, temperature, and tool capabilities.",
+            &[],
+            &[
+                "Choose a unique name and optional description.",
+                "Set systemPrompt, temperature, and tool access lists as needed.",
+                "Model selection is controlled at session or global settings — not here.",
+            ],
+            &[
+                "Discover configs with agent__listAgents(type='configs').",
+                "Spawn sessions with agent__startSession using the returned ID.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 ("name".to_string(), string_prop_required("Unique name for the agent configuration.")),
@@ -44,9 +57,20 @@ fn create_tool() -> MCPTool {
 
 fn list_tool() -> MCPTool {
     MCPTool {
-        name: "list".to_string(),
+        name: "listAgents".to_string(),
         title: Some("List Agents and Sessions".to_string()),
-        description: "List available agent configurations or active sub-agent sessions. Use this to discover specialized agents by name or description.".to_string(),
+        description: tool_description(
+            "List agent configurations or active delegated sub-agent sessions.",
+            &[],
+            &[
+                "Set type='configs' for assistant definitions or type='sessions' for delegated sessions.",
+                "Use query to filter configs by name or description.",
+            ],
+            &[
+                "Start delegation with agent__startSession (configs) or agent__checkSession (sessions).",
+                "Update configs with agent__updateAgent.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -92,9 +116,20 @@ fn list_tool() -> MCPTool {
 
 fn update_tool() -> MCPTool {
     MCPTool {
-        name: "update".to_string(),
+        name: "updateAgent".to_string(),
         title: Some("Update Agent Configuration".to_string()),
-        description: "Update an existing agent configuration (assistant) including its system prompt, temperature, and tool access. Model selection is controlled elsewhere.".to_string(),
+        description: tool_description(
+            "Update an existing agent configuration including system prompt, temperature, and tool access.",
+            &["Configuration ID from agent__listAgents(type='configs')."],
+            &[
+                "Pass the config id and only the fields to change.",
+                "Model selection is controlled elsewhere — not via this tool.",
+            ],
+            &[
+                "Verify capabilities with agent__listAgents(verbose=true).",
+                "Attach MCP servers using IDs from tool__listServers.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -132,7 +167,18 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
     MCPTool {
         name: "prepareTeamworkWorkspace".to_string(),
         title: Some("Prepare Teamwork Artifact Directory".to_string()),
-        description: "Create or reuse an app-local teamwork artifact directory for the current governing/root session. This path is for coordination/scaffolding artifacts only and does not change the session workspace. Use it when you need to keep teamwork metadata out of a repo workspace.".to_string(),
+        description: tool_description(
+            "Create or reuse an app-local teamwork artifact directory for the current governing/root session.",
+            &["Caller should be a root or governing session."],
+            &[
+                "Call when coordination metadata must live outside the repo workspace.",
+                "This path is for scaffolding artifacts only — it does not change the session workspace.",
+            ],
+            &[
+                "Create an explicit org with agent__createOrg if team coordination is needed.",
+                "Spawn org members with agent__startSession.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -143,10 +189,22 @@ fn start_session_tool() -> MCPTool {
     MCPTool {
         name: "startSession".to_string(),
         title: Some("Start Agent Session".to_string()),
-        description: "Spawn a new child agent session to delegate a specific task. When the current session already belongs to an explicit org, the child joins that org automatically and, unless workspaceOverride is provided, shares the org root workspace by default. Set includeCurrentOrg=false to opt out. Returns immediately with session info unless waitForResult=true.".to_string(),
+        description: tool_description(
+            "Spawn a new child agent session to delegate a specific task.",
+            &["Agent configuration ID from agent__listAgents(type='configs')."],
+            &[
+                "Pass agentId (config ID, not name) and a clear task description.",
+                "Org children inherit org workspace by default unless workspaceOverride is set.",
+                "Set waitForResult=true to block until the child finishes.",
+            ],
+            &[
+                "Poll or wait with agent__checkSession.",
+                "Send follow-ups with agent__messageToSession.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
-                ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then use the returned ID. Do not put the agent name here.")),
+                ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call agent__listAgents(type='configs') first, then use the returned ID. Do not put the agent name here.")),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
                 ("model".to_string(), string_prop(None, None, Some("Optional model override for the child session. If omitted, the child inherits the caller session model."))),
@@ -172,7 +230,18 @@ fn create_org_tool() -> MCPTool {
     MCPTool {
         name: "createOrg".to_string(),
         title: Some("Create Explicit Org".to_string()),
-        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session. If teamwork scaffold artifacts are missing or inconsistent, the result will tell you to use teamwork next.".to_string(),
+        description: tool_description(
+            "Mark the current root session as an explicit org root so its lineage appears in Org view.",
+            &["Caller must be a top-level/root session."],
+            &[
+                "Provide a human-readable org name.",
+                "If teamwork scaffold artifacts are missing, follow the tool result guidance.",
+            ],
+            &[
+                "Prepare artifacts with agent__prepareTeamworkWorkspace if needed.",
+                "Spawn org members with agent__startSession.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
@@ -190,11 +259,26 @@ fn get_org_tool() -> MCPTool {
     MCPTool {
         name: "getOrg".to_string(),
         title: Some("Get Org Summary".to_string()),
-        description: "Get the current explicit org summary, including root session and member sessions. If orgId is omitted, the current session's org is used.".to_string(),
+        description: tool_description(
+            "Get the current explicit org summary including root session and member sessions.",
+            &[],
+            &[
+                "Omit orgId to use the caller session's org.",
+                "Pass orgId when inspecting a specific org.",
+            ],
+            &[
+                "Check member status with agent__checkSession.",
+                "Message members with agent__messageToSession.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "orgId".to_string(),
-                string_prop(None, None, Some("Optional explicit org ID. If omitted, uses the caller session's org.")),
+                string_prop(
+                    None,
+                    None,
+                    Some("Optional explicit org ID. If omitted, uses the caller session's org."),
+                ),
             )],
             vec![],
             None,
@@ -208,9 +292,19 @@ fn message_to_session_tool() -> MCPTool {
     MCPTool {
         name: "messageToSession".to_string(),
         title: Some("Message Agent Session".to_string()),
-        description:
-            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state. Waits for the child's response unless waitForResponse=false."
-                .to_string(),
+        description: tool_description(
+            "Send a follow-up message to an existing sub-agent session to continue or recover the conversation.",
+            &["Session ID from agent__startSession or agent__listAgents(type='sessions')."],
+            &[
+                "Pass sessionId and the message or instruction.",
+                "Use to wake paused or error sessions and retry from the latest stable state.",
+                "Set waitForResponse=false to send without blocking.",
+            ],
+            &[
+                "Check outcome with agent__checkSession(wait=true).",
+                "Stop stuck sessions with agent__stopSession.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -251,7 +345,18 @@ fn check_session_tool() -> MCPTool {
     MCPTool {
         name: "checkSession".to_string(),
         title: Some("Check Session Status".to_string()),
-        description: "Check the status of a sub-agent session or wait for it to complete. Returns the latest known status and turn count, preserves that progress metadata even when a blocking wait times out, and explicitly reports when a paused/error session needs recovery via messageToSession.".to_string(),
+        description: tool_description(
+            "Check a sub-agent session status or wait for it to complete.",
+            &["Session ID from agent__startSession or agent__listAgents(type='sessions')."],
+            &[
+                "Call with wait=false for a snapshot or wait=true to block until terminal state.",
+                "Paused or error sessions need recovery via agent__messageToSession.",
+            ],
+            &[
+                "Recover paused sessions with agent__messageToSession.",
+                "Terminate unnecessary sessions with agent__stopSession.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to check.")),
@@ -282,11 +387,23 @@ fn stop_session_tool() -> MCPTool {
     MCPTool {
         name: "stopSession".to_string(),
         title: Some("Stop Agent Session".to_string()),
-        description: "Forcefully terminate an active sub-agent session. Use this when a delegated task is no longer needed or if the sub-agent appears stuck. If the session is already non-running, the tool reports that no action was needed.".to_string(),
-        input_schema: object_prop(
-            vec![
-                ("sessionId".to_string(), string_prop_required("ID of the session to stop.")),
+        description: tool_description(
+            "Forcefully terminate an active sub-agent session.",
+            &["Session ID from agent__checkSession or agent__listAgents(type='sessions')."],
+            &[
+                "Use when delegation is no longer needed or the child appears stuck.",
+                "No-op if the session is already non-running.",
             ],
+            &[
+                "Delete session data with agent__deleteSession if permanent removal is needed.",
+                "Start fresh delegation with agent__startSession.",
+            ],
+        ),
+        input_schema: object_prop(
+            vec![(
+                "sessionId".to_string(),
+                string_prop_required("ID of the session to stop."),
+            )],
             vec!["sessionId".to_string()],
             None,
         ),
@@ -299,7 +416,18 @@ fn compact_session_context_tool() -> MCPTool {
     MCPTool {
         name: "compactSessionContext".to_string(),
         title: Some("Compact Another Session Context".to_string()),
-        description: "Force a compaction pass for another active delegated session and wait for the compact summary result. Cross-session only: you cannot compact the current session with this tool. Use it when a child session has accumulated too much history and you want to refresh its stored compact summary before sending more work.".to_string(),
+        description: tool_description(
+            "Force compaction for another delegated session and wait for the compact summary (cross-session only).",
+            &["Target must be a delegated session — not the current session."],
+            &[
+                "Pass the child sessionId.",
+                "Wait for compaction to finish (configurable timeout).",
+            ],
+            &[
+                "Send more work with agent__messageToSession after compaction.",
+                "Verify status with agent__checkSession.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -328,7 +456,18 @@ fn delete_session_tool() -> MCPTool {
     MCPTool {
         name: "deleteSession".to_string(),
         title: Some("Delete Agent Session".to_string()),
-        description: "Permanently delete a delegated descendant session and all its data. Self-deletion is not allowed. Only descendant sessions of the current session can be deleted via this tool.".to_string(),
+        description: tool_description(
+            "Permanently delete a delegated descendant session and all its data.",
+            &["Session must be a descendant of the current session — self-deletion is not allowed."],
+            &[
+                "Confirm the session is no longer needed.",
+                "Pass the descendant sessionId.",
+            ],
+            &[
+                "Stop running sessions first with agent__stopSession if needed.",
+                "Verify org membership with agent__getOrg after deletion.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to delete.")),

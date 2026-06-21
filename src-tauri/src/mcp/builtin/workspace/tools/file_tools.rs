@@ -228,7 +228,7 @@ pub fn create_search_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "search".to_string(),
+        name: "searchFiles".to_string(),
         title: Some("Search Workspace".to_string()),
         description: "Search files by name or content. Content search uses regex against full file text with multiline mode enabled, reports line-based hits, and paginates by matching lines rather than files. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),

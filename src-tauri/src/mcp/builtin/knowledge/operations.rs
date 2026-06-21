@@ -216,10 +216,11 @@ pub async fn record_knowledge(
                 details.push("Graph enrichment was skipped for this entry.".to_string());
             }
 
-            let mut next_steps = vec!["Use search_knowledge to query this information".to_string()];
+            let mut next_steps =
+                vec!["Use knowledge__searchKnowledge to query this information".to_string()];
             if !extraction_plan.entities.is_empty() {
                 next_steps.push(
-                    "Use explore_context with one of the extracted entities to inspect the relationship graph."
+                    "Use knowledge__exploreContext with one of the extracted entities to inspect the relationship graph."
                         .to_string(),
                 );
             }
@@ -396,8 +397,8 @@ pub async fn prune_knowledge(
                     ToolGroup::Knowledge,
                 )
                 .with_guidance(vec![
-                    "Use search_knowledge to find valid chunk IDs.".to_string(),
-                    "Retry prune_knowledge with IDs copied from search_knowledge results."
+                    "Use knowledge__searchKnowledge to find valid chunk IDs.".to_string(),
+                    "Retry knowledge__pruneKnowledge with IDs copied from knowledge__searchKnowledge results."
                         .to_string(),
                     "Knowledge chunk IDs are assistant-scoped.".to_string(),
                 ])
@@ -453,8 +454,8 @@ pub async fn prune_knowledge(
                     )
                     .with_guidance(vec![
                         "Another request modified these chunks during pruning.".to_string(),
-                        "Use search_knowledge to refresh chunk IDs.".to_string(),
-                        "Retry prune_knowledge with IDs copied from fresh search_knowledge results."
+                        "Use knowledge__searchKnowledge to refresh chunk IDs.".to_string(),
+                        "Retry knowledge__pruneKnowledge with IDs copied from fresh knowledge__searchKnowledge results."
                             .to_string(),
                     ])
                     .to_mcp_result();
@@ -483,7 +484,9 @@ pub async fn prune_knowledge(
                     "Deleted knowledge chunks: {}.",
                     format_chunk_id_list(&validated_ids)
                 ),
-                vec!["Use search_knowledge to confirm the remaining entries.".to_string()],
+                vec![
+                    "Use knowledge__searchKnowledge to confirm the remaining entries.".to_string(),
+                ],
             )
             .to_mcp_result_with_data(Some(json!({
                 "action": action,
@@ -495,7 +498,10 @@ pub async fn prune_knowledge(
         }
         _ => Ok(guided_error(
             ErrorCategory::InvalidInput,
-            format!("Action '{}' is not supported for prune_knowledge.", action),
+            format!(
+                "Action '{}' is not supported for knowledge__pruneKnowledge.",
+                action
+            ),
             ToolGroup::Knowledge,
         )
         .with_guidance(vec![
@@ -513,7 +519,7 @@ fn parse_prune_target_ids(target_ids: &[Value]) -> Result<Vec<i32>, MCPResult> {
             ToolGroup::Knowledge,
         )
         .with_guidance(vec![
-            "Use search_knowledge to find chunk IDs before pruning.".to_string(),
+            "Use knowledge__searchKnowledge to find chunk IDs before pruning.".to_string(),
             "Provide target_ids as an array of integers.".to_string(),
         ])
         .to_mcp_result());
@@ -530,8 +536,9 @@ fn parse_prune_target_ids(target_ids: &[Value]) -> Result<Vec<i32>, MCPResult> {
                 ToolGroup::Knowledge,
             )
             .with_guidance(vec![
-                "Use search_knowledge to copy valid chunk IDs.".to_string(),
-                "Remove non-integer values from target_ids and retry prune_knowledge.".to_string(),
+                "Use knowledge__searchKnowledge to copy valid chunk IDs.".to_string(),
+                "Remove non-integer values from target_ids and retry knowledge__pruneKnowledge."
+                    .to_string(),
             ])
             .to_mcp_result());
         };
@@ -546,8 +553,8 @@ fn parse_prune_target_ids(target_ids: &[Value]) -> Result<Vec<i32>, MCPResult> {
                 ToolGroup::Knowledge,
             )
             .with_guidance(vec![
-                "Copy chunk IDs directly from search_knowledge results.".to_string(),
-                "Retry prune_knowledge with valid integer IDs.".to_string(),
+                "Copy chunk IDs directly from knowledge__searchKnowledge results.".to_string(),
+                "Retry knowledge__pruneKnowledge with valid integer IDs.".to_string(),
             ])
             .to_mcp_result());
         };

@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::schema::JSONSchema;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
@@ -80,7 +81,18 @@ fn success_criteria_schema() -> JSONSchema {
 pub fn create_playbook_tool() -> MCPTool {
     create_tool_def(
         "createPlaybook",
-        "Create a new playbook",
+        &tool_description(
+            "Create a new reusable playbook with goal, workflow steps, and success criteria.",
+            &[],
+            &[
+                "Define a clear goal and optional initialCommand.",
+                "List workflow steps with toolName and purpose for each action.",
+            ],
+            &[
+                "Select the playbook with playbook__selectPlaybook.",
+                "List playbooks with playbook__listPlaybooks.",
+            ],
+        ),
         object_prop(
             vec![
                 ("goal".to_string(), string_prop_required("Goal description")),
@@ -118,7 +130,15 @@ pub fn create_playbook_tool() -> MCPTool {
 pub fn select_playbook_tool() -> MCPTool {
     create_tool_def(
         "selectPlaybook",
-        "Select and prepare a playbook",
+        &tool_description(
+            "Select and prepare a playbook for execution.",
+            &["Playbook ID from playbook__listPlaybooks or playbook__getPlaybook."],
+            &["Pass the playbook id to load it into the active workflow context."],
+            &[
+                "Review steps with playbook__getPlaybook.",
+                "Update the playbook with playbook__updatePlaybook if steps need changes.",
+            ],
+        ),
         object_prop(
             vec![("id".to_string(), string_prop_required("Playbook ID"))],
             vec!["id".to_string()],
@@ -131,7 +151,18 @@ pub fn select_playbook_tool() -> MCPTool {
 pub fn list_playbooks_tool() -> MCPTool {
     create_tool_def(
         "listPlaybooks",
-        "List playbooks (text only)",
+        &tool_description(
+            "List saved playbooks with pagination and sorting.",
+            &[],
+            &[
+                "Use page and pageSize for pagination.",
+                "Sort by created_at or assistant; bookmarkFirst prioritizes bookmarked items.",
+            ],
+            &[
+                "Open details with playbook__getPlaybook.",
+                "Select for use with playbook__selectPlaybook.",
+            ],
+        ),
         object_prop(
             vec![
                 (
@@ -183,7 +214,15 @@ pub fn list_playbooks_tool() -> MCPTool {
 pub fn get_playbook_page_tool() -> MCPTool {
     create_tool_def(
         "getPlaybookPage",
-        "Navigate playbook UI",
+        &tool_description(
+            "Navigate the playbook UI listing with pagination.",
+            &[],
+            &["Set page and pageSize to browse the playbook catalog."],
+            &[
+                "Load a playbook with playbook__getPlaybook.",
+                "Select a playbook with playbook__selectPlaybook.",
+            ],
+        ),
         object_prop(
             vec![
                 (
@@ -213,7 +252,12 @@ pub fn get_playbook_page_tool() -> MCPTool {
 pub fn delete_playbook_tool() -> MCPTool {
     create_tool_def(
         "deletePlaybook",
-        "Delete a playbook",
+        &tool_description(
+            "Permanently delete a playbook by ID.",
+            &["Playbook ID from playbook__listPlaybooks or playbook__getPlaybook."],
+            &["Confirm the playbook is no longer needed before deleting."],
+            &["List remaining playbooks with playbook__listPlaybooks."],
+        ),
         object_prop(
             vec![("id".to_string(), string_prop_required("Playbook ID"))],
             vec!["id".to_string()],
@@ -226,7 +270,15 @@ pub fn delete_playbook_tool() -> MCPTool {
 pub fn get_playbook_tool() -> MCPTool {
     create_tool_def(
         "getPlaybook",
-        "Get playbook details",
+        &tool_description(
+            "Get full playbook details including workflow steps and success criteria.",
+            &["Playbook ID from playbook__listPlaybooks."],
+            &["Pass the playbook id."],
+            &[
+                "Select for execution with playbook__selectPlaybook.",
+                "Edit with playbook__updatePlaybook.",
+            ],
+        ),
         object_prop(
             vec![("id".to_string(), string_prop_required("Playbook ID"))],
             vec!["id".to_string()],
@@ -239,7 +291,18 @@ pub fn get_playbook_tool() -> MCPTool {
 pub fn update_playbook_tool() -> MCPTool {
     create_tool_def(
         "updatePlaybook",
-        "Update a playbook",
+        &tool_description(
+            "Update an existing playbook's goal, workflow, or success criteria.",
+            &["Playbook ID from playbook__getPlaybook or playbook__listPlaybooks."],
+            &[
+                "Pass id and a playbook object with only fields to change.",
+                "Omit fields to leave them unchanged.",
+            ],
+            &[
+                "Verify changes with playbook__getPlaybook.",
+                "Re-select with playbook__selectPlaybook if actively running.",
+            ],
+        ),
         object_prop(
             vec![
                 ("id".to_string(), string_prop_required("Playbook ID")),

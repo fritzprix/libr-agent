@@ -41,7 +41,7 @@ fn navigate_to_url_description_warns_about_stateful_overwrites() {
     );
     assert!(
         description.contains(
-            "use `getPageContent({})` or listInteractable before another `navigateToUrl`"
+            "browser__getPageContent({}) or browser__listInteractable before another browser__navigateToUrl"
         ),
         "navigateToUrl should require a read step before another navigation"
     );
@@ -116,7 +116,7 @@ fn close_session_description_mentions_state_reset() {
 
 #[test]
 fn fetch_description_marks_stateless_alternative() {
-    let description = browser_tool_description("fetch");
+    let description = browser_tool_description("fetchUrl");
 
     assert!(
         description.contains("Stateless one-off fetch"),

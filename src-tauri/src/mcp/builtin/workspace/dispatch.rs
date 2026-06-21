@@ -37,7 +37,7 @@ impl WorkspaceServer {
             "writeFile" => self.handle_write_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "importFiles" => self.handle_import_files(args, session_id).await,
-            "search" => self.handle_search(args, session_id).await,
+            "searchFiles" => self.handle_search(args, session_id).await,
             // editFiles is the model-facing mutation tool. The legacy editFile and per-operation
             // aliases remain dispatchable for backward compatibility and internally normalize
             // into editFiles.

@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 
@@ -17,7 +18,17 @@ fn schedule_callback_tool() -> MCPTool {
     MCPTool {
         name: "scheduleCallback".to_string(),
         title: Some("Schedule Session Callback".to_string()),
-        description: "Schedule a one-shot delay or recurring callback for the current session. Use delaySeconds for a single future injection, or cronExpression for recurring callbacks."
+        description: tool_description(
+            "Schedule a one-shot delay or recurring callback for the current session.",
+            &[],
+            &[
+                "Provide message text to inject when the callback fires.",
+                "Use delaySeconds for one-shot OR cronExpression for recurring — not both.",
+            ],
+            &[
+                "List session callbacks via scheduled_task__listScheduledTasks if applicable.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -70,7 +81,18 @@ fn create_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "createScheduledTask".to_string(),
         title: Some("Create Scheduled Task".to_string()),
-        description: "Create a recurring scheduled task that can wake an assistant later. The system generates the task ID automatically and returns it for follow-up management calls."
+        description: tool_description(
+            "Create a recurring scheduled task that can wake an assistant later.",
+            &["Assistant configuration ID and valid cron expression."],
+            &[
+                "Set name, cronExpression, and assistantId.",
+                "The system returns a task ID for follow-up management.",
+            ],
+            &[
+                "Inspect with scheduled_task__getScheduledTask.",
+                "Pause with scheduled_task__toggleScheduledTask.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -155,7 +177,18 @@ fn list_scheduled_tasks_tool() -> MCPTool {
     MCPTool {
         name: "listScheduledTasks".to_string(),
         title: Some("List Scheduled Tasks".to_string()),
-        description: "List scheduled tasks, optionally filtered by assistant or enabled state. Use this to discover task IDs before reading, updating, toggling, or deleting."
+        description: tool_description(
+            "List scheduled tasks, optionally filtered by assistant or enabled state.",
+            &[],
+            &[
+                "Apply assistant or enabled filters when needed.",
+                "Paginate if many tasks exist.",
+            ],
+            &[
+                "Read details with scheduled_task__getScheduledTask.",
+                "Update with scheduled_task__updateScheduledTask or toggle with scheduled_task__toggleScheduledTask.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -184,7 +217,15 @@ fn get_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "getScheduledTask".to_string(),
         title: Some("Get Scheduled Task".to_string()),
-        description: "Read one scheduled task in detail. Use this after listScheduledTasks() when you need the exact message, schedule, or pinned session state."
+        description: tool_description(
+            "Read one scheduled task in detail including message, schedule, and pinned session state.",
+            &["Task ID from scheduled_task__createScheduledTask or scheduled_task__listScheduledTasks."],
+            &["Pass the exact task ID."],
+            &[
+                "Update fields with scheduled_task__updateScheduledTask.",
+                "Delete with scheduled_task__deleteScheduledTask when no longer needed.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![(
@@ -203,7 +244,18 @@ fn update_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "updateScheduledTask".to_string(),
         title: Some("Update Scheduled Task".to_string()),
-        description: "Update mutable fields on an existing scheduled task. Obtain the exact ID from createScheduledTask() or listScheduledTasks() first."
+        description: tool_description(
+            "Update mutable fields on an existing scheduled task.",
+            &["Task ID from scheduled_task__listScheduledTasks or scheduled_task__getScheduledTask."],
+            &[
+                "Pass the task ID and only fields to change.",
+                "Confirm schedule impact before saving cron changes.",
+            ],
+            &[
+                "Verify with scheduled_task__getScheduledTask.",
+                "Pause safely with scheduled_task__toggleScheduledTask.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -303,8 +355,19 @@ fn toggle_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "toggleScheduledTask".to_string(),
         title: Some("Toggle Scheduled Task".to_string()),
-        description: "Enable or disable a scheduled task without changing its other fields. Use this for safe pause/resume control."
-            .to_string(),
+        description: tool_description(
+            "Enable or disable a scheduled task without changing other fields.",
+            &["Task ID from scheduled_task__getScheduledTask."],
+            &[
+                "Pass the task ID and enabled flag.",
+                "Use for safe pause/resume without editing the schedule.",
+            ],
+            &[
+                "Confirm state with scheduled_task__getScheduledTask.",
+                "Permanently remove with scheduled_task__deleteScheduledTask if obsolete.",
+            ],
+        )
+        .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -328,8 +391,16 @@ fn delete_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "deleteScheduledTask".to_string(),
         title: Some("Delete Scheduled Task".to_string()),
-        description: "Delete a scheduled task permanently. Use getScheduledTask() first if you need to confirm the schedule before removal."
-            .to_string(),
+        description: tool_description(
+            "Permanently delete a scheduled task.",
+            &["Task ID from scheduled_task__getScheduledTask."],
+            &[
+                "Confirm the schedule with scheduled_task__getScheduledTask if unsure.",
+                "Deletion cannot be undone.",
+            ],
+            &["Verify removal with scheduled_task__listScheduledTasks."],
+        )
+        .to_string(),
         input_schema: object_prop(
             vec![(
                 "id".to_string(),

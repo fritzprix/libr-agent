@@ -183,7 +183,7 @@ impl MCPServiceProxy {
     /// - External MCP server (stdio-based)
     ///
     /// # Arguments
-    /// * `tool_name` - Full tool name (e.g., "attachments__add")
+    /// * `tool_name` - Full tool name (e.g., "attachments__addAttachment")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -220,7 +220,7 @@ impl MCPServiceProxy {
                         Err(format!(
                             "Built-in server '{}' not enabled in this session.\n\n\
                                      Available servers: [{}]\n\n\
-                                     💡 To fix: Use agent__update(id=\"<agentId>\", \
+                                     💡 To fix: Use agent__updateAgent(id=\"<agentId>\", \
                                      builtinCapabilities:[..., \"{}\", ...]) to enable it for this agent, \
                                      or delegate to an agent that already has access.",
                             server_id, available, server_id
@@ -283,7 +283,7 @@ impl MCPServiceProxy {
                         Err(format!(
                             "Built-in server '{}' not enabled in this session.\n\n\
                                      Available servers: [{}]\n\n\
-                                     💡 To fix: Use agent__update(id=\"<agentId>\", \
+                                     💡 To fix: Use agent__updateAgent(id=\"<agentId>\", \
                                      builtinCapabilities:[..., \"{}\", ...]) to enable it for this agent, \
                                      or delegate to an agent that already has access.",
                             server_id, available, server_id
@@ -404,7 +404,7 @@ impl MCPServiceProxy {
                         vec![
                             "Verify the HTTP MCP server URL and headers are valid".to_string(),
                             "If this server is session-scoped, ensure it is enabled for this agent/session".to_string(),
-                            "Use tool__list to inspect the current session's callable tool set".to_string(),
+                            "Use tool__listServers to inspect the current session's callable tool set".to_string(),
                         ],
                     );
                     MCPResponse {
@@ -439,7 +439,7 @@ impl MCPServiceProxy {
                         vec![
                             "Verify the MCP server command can be spawned".to_string(),
                             "Check server stderr logs for startup errors".to_string(),
-                            "Use tool__list to inspect the current session's callable tool set"
+                            "Use tool__listServers to inspect the current session's callable tool set"
                                 .to_string(),
                         ],
                     );
@@ -529,7 +529,7 @@ impl MCPServiceProxy {
     ///
     /// # Arguments
     /// * `server_id` - Builtin server key (e.g. `"attachments"`)
-    /// * `method` - Method name dispatched to `BuiltinMCPServer::call_tool` (e.g. `"add"`)
+    /// * `method` - Method name dispatched to `BuiltinMCPServer::call_tool` (e.g. `"addAttachment"`)
     /// * `args`   - JSON arguments forwarded verbatim
     ///
     /// # Errors

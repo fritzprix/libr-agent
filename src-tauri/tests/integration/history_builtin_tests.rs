@@ -287,7 +287,7 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
 fn history_list_tool_status_filter_has_no_default() {
     let list_tool = HistoryServer::tools_static()
         .into_iter()
-        .find(|tool| tool.name == "list")
+        .find(|tool| tool.name == "listSessions")
         .expect("list tool should exist");
 
     let properties = match &list_tool.input_schema.schema_type {
@@ -313,7 +313,7 @@ fn history_tool_schemas_expose_runtime_defaults() {
 
     let list_tool = tools
         .iter()
-        .find(|tool| tool.name == "list")
+        .find(|tool| tool.name == "listSessions")
         .expect("list tool should exist");
     let read_session_tool = tools
         .iter()
@@ -325,7 +325,7 @@ fn history_tool_schemas_expose_runtime_defaults() {
         .expect("readMessage tool should exist");
     let search_tool = tools
         .iter()
-        .find(|tool| tool.name == "search")
+        .find(|tool| tool.name == "searchHistory")
         .expect("search tool should exist");
 
     let list_properties = match &list_tool.input_schema.schema_type {
@@ -381,7 +381,7 @@ async fn history_list_filters_sessions_and_exposes_ids() {
 
     let result = server
         .call_tool(
-            "list",
+            "listSessions",
             json!({
                 "agentId": "agent-alpha",
                 "status": "idle",
@@ -470,7 +470,7 @@ async fn history_search_returns_filtered_snippets() {
 
     let result = server
         .call_tool(
-            "search",
+            "searchHistory",
             json!({
                 "query": "knowledge extraction summary",
                 "agentId": "agent-alpha",
@@ -514,7 +514,7 @@ async fn history_list_is_stably_sorted_for_pagination() {
 
     let first_page = server
         .call_tool(
-            "list",
+            "listSessions",
             json!({
                 "page": 1,
                 "pageSize": 1
@@ -533,7 +533,7 @@ async fn history_list_is_stably_sorted_for_pagination() {
 
     let second_page = server
         .call_tool(
-            "list",
+            "listSessions",
             json!({
                 "page": 2,
                 "pageSize": 1
@@ -561,7 +561,7 @@ async fn history_search_handles_multibyte_snippets_without_panic() {
 
     let result = server
         .call_tool(
-            "search",
+            "searchHistory",
             json!({
                 "query": "HEADER",
                 "agentId": "agent-alpha",
@@ -605,7 +605,7 @@ async fn history_search_reports_missing_session_as_not_found() {
 
     let result = server
         .call_tool(
-            "search",
+            "searchHistory",
             json!({
                 "query": "history",
                 "sessionId": "missing-session"

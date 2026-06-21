@@ -46,7 +46,7 @@ async fn knowledge_prune_blocks_partial_delete_when_any_id_is_missing() {
 
     let result = server
         .call_tool(
-            "prune_knowledge",
+            "pruneKnowledge",
             json!({
                 "target_ids": [existing_chunk_id, existing_chunk_id, missing_chunk_id],
                 "action": "delete"
@@ -59,7 +59,7 @@ async fn knowledge_prune_blocks_partial_delete_when_any_id_is_missing() {
     assert_eq!(result.is_error, Some(true));
     let text = extract_text_content(&result);
     assert!(text.contains(&missing_chunk_id.to_string()));
-    assert!(text.contains("search_knowledge"));
+    assert!(text.contains("searchKnowledge"));
 
     let structured = result
         .structured_content
@@ -104,7 +104,7 @@ async fn knowledge_prune_success_reports_deleted_ids_in_text_and_json() {
 
     let result = server
         .call_tool(
-            "prune_knowledge",
+            "pruneKnowledge",
             json!({
                 "target_ids": [chunk_id],
                 "action": "delete"
@@ -117,7 +117,7 @@ async fn knowledge_prune_success_reports_deleted_ids_in_text_and_json() {
     assert_eq!(result.is_error, Some(false));
     let text = extract_text_content(&result);
     assert!(text.contains(&chunk_id.to_string()));
-    assert!(text.contains("search_knowledge"));
+    assert!(text.contains("searchKnowledge"));
 
     let structured = result
         .structured_content
@@ -143,9 +143,10 @@ fn knowledge_not_found_guidance_uses_real_tool_names() {
     .to_mcp_result();
 
     let text = extract_text_content(&result);
-    assert!(text.contains("search_knowledge"));
-    assert!(text.contains("explore_context"));
-    assert!(!text.contains("searchKnowledge"));
+    // Guidance should use new camelCase tool names, not old snake_case names
+    assert!(text.contains("exploreContext"));
+    assert!(text.contains("searchKnowledge"));
+    assert!(!text.contains("explore_context"));
     assert!(!text.contains("listKnowledge"));
 }
 

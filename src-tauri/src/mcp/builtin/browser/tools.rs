@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
@@ -55,9 +56,9 @@ Behavior:
 - 404: Page not found - check URL or search homepage
 - Timeout: Page too complex or blocking - try different URL
 
-Next Steps:
-- use `getPageContent({})` or listInteractable before another `navigateToUrl`
-- Use listInteractable to inspect actionable elements"
+💡 Next Steps:
+- Use browser__getPageContent({}) or browser__listInteractable before another browser__navigateToUrl
+- Use browser__listInteractable to inspect actionable elements"
             .to_string(),
         input_schema: object_prop(
             vec![(
@@ -79,7 +80,15 @@ pub fn navigate_back_tool() -> MCPTool {
     MCPTool {
         name: "navigateBack".to_string(),
         title: None,
-        description: "Navigate back in browser history to the previous page.".to_string(),
+        description: tool_description(
+            "Navigate back in browser history to the previous page.",
+            &["Active browser session from browser__createSession."],
+            &["Requires prior navigation history in the active session."],
+            &[
+                "Extract content with browser__getPageContent.",
+                "Inspect elements with browser__listInteractable.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -91,7 +100,15 @@ pub fn navigate_forward_tool() -> MCPTool {
     MCPTool {
         name: "navigateForward".to_string(),
         title: None,
-        description: "Navigate forward in browser history to the next page.".to_string(),
+        description: tool_description(
+            "Navigate forward in browser history to the next page.",
+            &["Active browser session from browser__createSession."],
+            &["Requires having navigated back previously."],
+            &[
+                "Extract content with browser__getPageContent.",
+                "Inspect elements with browser__listInteractable.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -103,7 +120,15 @@ pub fn get_current_url_tool() -> MCPTool {
     MCPTool {
         name: "getCurrentUrl".to_string(),
         title: None,
-        description: "Get the current URL of the page.".to_string(),
+        description: tool_description(
+            "Get the current URL of the active browser page.",
+            &["Active browser session from browser__createSession."],
+            &[],
+            &[
+                "Extract page content with browser__getPageContent.",
+                "Navigate elsewhere with browser__navigateToUrl.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -115,7 +140,15 @@ pub fn get_page_title_tool() -> MCPTool {
     MCPTool {
         name: "getPageTitle".to_string(),
         title: None,
-        description: "Get the title of the current page.".to_string(),
+        description: tool_description(
+            "Get the title of the current active browser page.",
+            &["Active browser session from browser__createSession."],
+            &[],
+            &[
+                "Read page content with browser__getPageContent.",
+                "Verify navigation succeeded after browser__navigateToUrl.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -318,7 +351,7 @@ pub fn fetch_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "fetch".to_string(),
+        name: "fetchUrl".to_string(),
         title: Some("Fetch Content".to_string()),
         description: "Stateless one-off fetch: extract markdown content from a URL or download a file without creating or reusing the visible stateful browser workflow.
 
