@@ -1,4 +1,5 @@
 use crate::entity::{assistant, mcp_server, playbook, scheduled_task, settings};
+use crate::execution_mode::ExecutionMode;
 use crate::lifecycle::database_backup::BackupManager;
 use crate::mcp::builtin::utils::SecurityValidator;
 use crate::services::skill_service::get_user_skills_directory;
@@ -131,11 +132,14 @@ pub struct ScheduledTaskRecord {
     pub cron_expression: Option<String>,
     pub schedule_timezone: String,
     pub assistant_id: String,
-    pub group_id: Option<String>,
-    pub group_name: Option<String>,
     pub message: String,
-    pub yolo_mode: bool,
-    pub unsafe_mode: bool,
+    #[serde(default = "default_execution_mode")]
+    pub execution_mode: String,
+    /// Legacy export field — used when importing backups created before execution_mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yolo_mode: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsafe_mode: Option<bool>,
     pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace_override: Option<String>,
@@ -144,6 +148,25 @@ pub struct ScheduledTaskRecord {
     pub next_run_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+fn default_execution_mode() -> String {
+    ExecutionMode::Normal.as_str().to_string()
+}
+
+impl ScheduledTaskRecord {
+    fn resolved_execution_mode(&self) -> String {
+        if self.yolo_mode.is_some() || self.unsafe_mode.is_some() {
+            return ExecutionMode::from_runtime_flags(
+                self.yolo_mode.unwrap_or(false),
+                self.unsafe_mode.unwrap_or(false),
+            )
+            .as_str()
+            .to_string();
+        }
+
+        ExecutionMode::from_db(&self.execution_mode).as_str().to_string()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -488,11 +511,10 @@ pub async fn export_migration(
             cron_expression: t.cron_expression,
             schedule_timezone: t.schedule_timezone,
             assistant_id: t.assistant_id,
-            group_id: t.group_id,
-            group_name: t.group_name,
             message: t.message,
-            yolo_mode: t.yolo_mode,
-            unsafe_mode: t.unsafe_mode,
+            execution_mode: t.execution_mode,
+            yolo_mode: None,
+            unsafe_mode: None,
             created_by_session_id: t.created_by_session_id,
             session_id: t.session_id,
             workspace_override: t.workspace_override,
@@ -1376,6 +1398,7 @@ async fn import_tasks_data(
         }
 
         let now = chrono::Utc::now().timestamp_millis();
+        let execution_mode = r.resolved_execution_mode();
         if let Some(existing_model) = existing {
             let mut active: scheduled_task::ActiveModel = existing_model.into();
             active.name = Set(r.name);
@@ -1383,11 +1406,8 @@ async fn import_tasks_data(
             active.cron_expression = Set(r.cron_expression);
             active.schedule_timezone = Set(r.schedule_timezone);
             active.assistant_id = Set(r.assistant_id);
-            active.group_id = Set(r.group_id);
-            active.group_name = Set(r.group_name);
             active.message = Set(r.message);
-            active.yolo_mode = Set(r.yolo_mode);
-            active.unsafe_mode = Set(r.unsafe_mode);
+            active.execution_mode = Set(execution_mode.clone());
             active.created_by_session_id = Set(r.created_by_session_id);
             active.session_id = Set(r.session_id);
             active.workspace_override = Set(r.workspace_override);
@@ -1408,11 +1428,8 @@ async fn import_tasks_data(
                 cron_expression: Set(r.cron_expression),
                 schedule_timezone: Set(r.schedule_timezone),
                 assistant_id: Set(r.assistant_id),
-                group_id: Set(r.group_id),
-                group_name: Set(r.group_name),
                 message: Set(r.message),
-                yolo_mode: Set(r.yolo_mode),
-                unsafe_mode: Set(r.unsafe_mode),
+                execution_mode: Set(execution_mode),
                 created_by_session_id: Set(r.created_by_session_id),
                 session_id: Set(r.session_id),
                 workspace_override: Set(r.workspace_override),
