@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import type { SystemSettings } from '@/context/SettingsContext';
 import { SystemPerformanceSettings } from '../components/SystemPerformanceSettings';
 import { Button, Slider } from '@/components/ui';
@@ -27,6 +28,7 @@ function findNearestStorageIndex(value: number): number {
 
 function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
   const { t } = useTranslation('common');
+  const navigate = useNavigate();
   const { localSystemSettings, onChange } = systemSettingsProps;
 
   return (
@@ -103,6 +105,26 @@ function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
 
       <div className="border-t pt-6">
         <SystemPerformanceSettings {...systemSettingsProps} />
+      </div>
+
+      <div className="border-t pt-6">
+        <h3 className="mb-2 text-lg font-medium text-foreground">
+          {t('settings.system.migrationTitle', 'Backup & Data Migration')}
+        </h3>
+        <p className="mb-4 text-xs text-muted-foreground leading-relaxed max-w-lg">
+          {t(
+            'settings.system.migrationDescription',
+            'Export your assistant configurations, playbooks, scheduled tasks, and custom skills to another device, or restore settings from a backup file.',
+          )}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => navigate('/settings/migration')}
+          className="rounded-xl gap-2 font-medium"
+        >
+          {t('settings.system.migrationButton', 'Open Migration Dashboard')}
+        </Button>
       </div>
     </div>
   );
