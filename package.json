@@ -27,11 +27,12 @@
     "pnpm": "9.15.9"
   },
   "scripts": {
-    "dev": "node scripts/sync-builtin-services.cjs && vite",
-    "build": "node scripts/sync-builtin-services.cjs && pnpm build:nosync",
+    "dev": "node scripts/sync-builtin-services.cjs && node scripts/sync-execution-mode.cjs && vite",
+    "build": "node scripts/sync-builtin-services.cjs && node scripts/sync-execution-mode.cjs && pnpm build:nosync",
     "build:nosync": "tsc && vite build",
     "perf:bundle": "pnpm tsx scripts/check-bundle-size.ts",
     "sync-builtin-services": "node scripts/sync-builtin-services.cjs && pnpm exec prettier --write --log-level warn src/lib/generated/builtin-services.ts",
+    "sync-execution-mode": "node scripts/sync-execution-mode.cjs && pnpm exec prettier --write --log-level warn src/lib/generated/execution-mode.ts",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",

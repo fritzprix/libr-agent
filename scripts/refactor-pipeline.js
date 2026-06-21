@@ -25,6 +25,12 @@ const PREPARE_STAGES = [
     env: { nodeHeapMb: 512 },
   },
   {
+    name: 'sync-execution-mode',
+    command: pnpmCommand,
+    args: ['sync-execution-mode'],
+    env: { nodeHeapMb: 512 },
+  },
+  {
     name: 'format',
     command: pnpmCommand,
     args: ['format'],

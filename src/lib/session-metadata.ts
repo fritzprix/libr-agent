@@ -1,16 +1,9 @@
 import type { AgentSession } from '@/models/agent';
 import type { AgentSessionMetadata } from '@/models/agent-ipc';
 import type { Assistant } from '@/models/chat';
-import type { ExecutionMode } from '@/context/agent-session/types';
+import { normalizeExecutionMode } from '@/lib/generated/execution-mode';
 
-export function normalizeExecutionMode(
-  mode: ExecutionMode | undefined,
-): ExecutionMode {
-  if (mode === 'yolo' || mode === 'unsafe') {
-    return mode;
-  }
-  return 'normal';
-}
+export { normalizeExecutionMode } from '@/lib/generated/execution-mode';
 
 export function mapSessionMetadataToAgentSession(
   metadata: AgentSessionMetadata,

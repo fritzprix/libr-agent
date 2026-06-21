@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+/// Canonical DB/API string values. Keep in sync with frontend via `scripts/sync-execution-mode.cjs`.
+pub const EXECUTION_MODE_DB_VALUES: &[&str] = &["normal", "yolo", "unsafe"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionMode {
@@ -86,6 +89,19 @@ mod tests {
             ExecutionMode::Unsafe,
         ] {
             assert_eq!(mode.as_str().parse::<ExecutionMode>().unwrap(), mode);
+        }
+    }
+
+    #[test]
+    fn db_values_match_as_str() {
+        let variants = [
+            ExecutionMode::Normal,
+            ExecutionMode::Yolo,
+            ExecutionMode::Unsafe,
+        ];
+        assert_eq!(EXECUTION_MODE_DB_VALUES.len(), variants.len());
+        for mode in variants {
+            assert!(EXECUTION_MODE_DB_VALUES.contains(&mode.as_str()));
         }
     }
 }

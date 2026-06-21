@@ -103,7 +103,15 @@ export type WorkflowPhase =
   | 'waiting_approval'
   | 'error';
 
-export type ExecutionMode = 'normal' | 'yolo' | 'unsafe';
+import type { ExecutionMode } from '@/lib/generated/execution-mode';
+
+export type { ExecutionMode } from '@/lib/generated/execution-mode';
+export {
+  DEFAULT_EXECUTION_MODE,
+  EXECUTION_MODE_VALUES,
+  isExecutionMode,
+  normalizeExecutionMode,
+} from '@/lib/generated/execution-mode';
 
 export type PendingApproval = PendingApprovalSnapshot;
 

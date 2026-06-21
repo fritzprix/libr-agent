@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import type { ExecutionMode } from '@/context/agent-session/types';
+import { normalizeExecutionMode } from '@/lib/generated/execution-mode';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { MentionTextarea } from './MentionTextarea';
 import { getDisplayCron, ScheduleBuilder } from './ScheduleBuilder';
@@ -472,7 +473,7 @@ function ScheduledTaskForm({
             <Select
               value={executionMode}
               onValueChange={(value) =>
-                setExecutionMode(value as ExecutionMode)
+                setExecutionMode(normalizeExecutionMode(value))
               }
             >
               <SelectTrigger>

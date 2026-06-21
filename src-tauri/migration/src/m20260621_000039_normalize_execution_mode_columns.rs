@@ -1,6 +1,8 @@
-use crate::helpers::column_exists;
+use crate::helpers::{
+    backfill_execution_mode_from_legacy_flags, column_exists,
+    restore_legacy_flags_from_execution_mode,
+};
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::sea_orm::Statement;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -31,7 +33,7 @@ async fn normalize_execution_mode_for_table<T>(
     table: T,
 ) -> Result<(), DbErr>
 where
-    T: IntoIden + Clone + 'static,
+    T: IntoIden + Clone + IntoTableRef + 'static,
 {
     if !column_exists(manager, table_name, "execution_mode").await? {
         manager
@@ -52,18 +54,7 @@ where
     if column_exists(manager, table_name, "yolo_mode").await?
         && column_exists(manager, table_name, "unsafe_mode").await?
     {
-        manager
-            .get_connection()
-            .execute(Statement::from_string(
-                manager.get_database_backend(),
-                format!(
-                    "UPDATE {table_name} SET execution_mode = CASE \
-                     WHEN unsafe_mode = 1 THEN 'unsafe' \
-                     WHEN yolo_mode = 1 THEN 'yolo' \
-                     ELSE 'normal' END"
-                ),
-            ))
-            .await?;
+        backfill_execution_mode_from_legacy_flags(manager, table.clone()).await?;
 
         manager
             .alter_table(
@@ -93,7 +84,7 @@ async fn restore_execution_mode_flags_for_table<T>(
     table: T,
 ) -> Result<(), DbErr>
 where
-    T: IntoIden + Clone + 'static,
+    T: IntoIden + Clone + IntoTableRef + 'static,
 {
     if !column_exists(manager, table_name, "execution_mode").await? {
         return Ok(());
@@ -131,17 +122,7 @@ where
             .await?;
     }
 
-    manager
-        .get_connection()
-        .execute(Statement::from_string(
-            manager.get_database_backend(),
-            format!(
-                "UPDATE {table_name} SET \
-                 yolo_mode = CASE WHEN execution_mode = 'yolo' THEN 1 ELSE 0 END, \
-                 unsafe_mode = CASE WHEN execution_mode = 'unsafe' THEN 1 ELSE 0 END"
-            ),
-        ))
-        .await?;
+    restore_legacy_flags_from_execution_mode(manager, table.clone()).await?;
 
     manager
         .alter_table(
