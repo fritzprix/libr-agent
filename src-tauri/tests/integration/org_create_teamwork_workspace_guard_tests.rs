@@ -1,5 +1,6 @@
 use crate::common;
 
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
     create_org_scaffold_preflight, existing_explicit_org_identity, inspect_teamwork_scaffold,
 };
@@ -32,8 +33,7 @@ fn make_session(session_id: &str) -> SessionMetadata {
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }

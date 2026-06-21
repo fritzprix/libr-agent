@@ -103,7 +103,15 @@ export type WorkflowPhase =
   | 'waiting_approval'
   | 'error';
 
-export type ExecutionMode = 'normal' | 'yolo' | 'unsafe';
+import type { ExecutionMode } from '@/lib/generated/execution-mode';
+
+export type { ExecutionMode } from '@/lib/generated/execution-mode';
+export {
+  DEFAULT_EXECUTION_MODE,
+  EXECUTION_MODE_VALUES,
+  isExecutionMode,
+  normalizeExecutionMode,
+} from '@/lib/generated/execution-mode';
 
 export type PendingApproval = PendingApprovalSnapshot;
 
@@ -125,8 +133,6 @@ export interface AgentSessionStateContextValue {
   } | null;
   pendingApprovals: PendingApproval[];
   pendingInteractiveShellPrompt: PendingInteractiveShellPrompt | null;
-  yoloModeEnabled: boolean;
-  unsafeModeEnabled: boolean;
   executionMode: ExecutionMode;
 }
 
@@ -144,8 +150,6 @@ export interface AgentSessionActionsContextValue {
     approved: boolean,
   ) => Promise<void>;
   setExecutionMode: (mode: ExecutionMode) => Promise<void>;
-  toggleYoloMode: () => void;
-  toggleUnsafeMode: () => void;
   updateSessionConfig: (model: string, provider: string) => void;
   renameSession: (name: string) => Promise<void>;
 }

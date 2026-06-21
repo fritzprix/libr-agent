@@ -1,4 +1,5 @@
 // server.rs - AttachmentsServer implementation
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::types::{ContextVolatility, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::session::SessionManager;
@@ -99,25 +100,58 @@ impl AttachmentsServer {
     pub fn tools_static() -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "list".to_string(),
+                name: "listAttachments".to_string(),
                 title: Option::None,
-                description: "List files attached to the current session with pagination".to_string(),
+                description: tool_description(
+                    "List files attached to the current session with pagination.",
+                    &[],
+                    &[
+                        "Use pagination parameters when many attachments exist.",
+                        "Review filenames and metadata before reading content.",
+                    ],
+                    &[
+                        "Read file content with attachments__readAttachment.",
+                        "Search attachment text with attachments__searchAttachments.",
+                    ],
+                ),
                 input_schema: schemas::tool_list_content_schema(),
                 output_schema: Option::None,
                 annotations: Option::None,
             },
             MCPTool {
-                name: "read".to_string(),
+                name: "readAttachment".to_string(),
                 title: Option::None,
-                description: "Read attachment content with line range filtering".to_string(),
+                description: tool_description(
+                    "Read attachment content with optional line range filtering.",
+                    &["Attachment ID from attachments__listAttachments."],
+                    &[
+                        "Pass the attachment content ID.",
+                        "Use line range filters for large files.",
+                    ],
+                    &[
+                        "Search across attachments with attachments__searchAttachments.",
+                        "Cross-reference paths in scratchpad__addNote if needed later.",
+                    ],
+                ),
                 input_schema: schemas::tool_read_content_schema(),
                 output_schema: Option::None,
                 annotations: Option::None,
             },
             MCPTool {
-                name: "search".to_string(),
+                name: "searchAttachments".to_string(),
                 title: Some("Search Attachments".to_string()),
-                description: "Search session attachments using BM25 keyword ranking. Only finds files uploaded in the current session.".to_string(),
+                description: tool_description(
+                    "Search session attachments using BM25 keyword ranking (current session uploads only).",
+                    &[],
+                    &[
+                        "Provide a search query string.",
+                        "Tune topN and threshold in options when needed.",
+                    ],
+                    &[
+                        "Read matching files with attachments__readAttachment.",
+                        "List all attachments with attachments__listAttachments.",
+                    ],
+                ),
                 input_schema: serde_json::from_value(serde_json::json!({
                     "type": "object",
                     "properties": {

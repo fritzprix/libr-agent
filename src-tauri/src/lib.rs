@@ -9,6 +9,7 @@ pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity
 pub mod entity; // SeaORM entity definitions
+pub mod execution_mode;
 pub mod lifecycle; // New lifecycle module
 mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
@@ -42,8 +43,8 @@ use commands::agent_commands::{
     agent_list_sessions, agent_mark_session_viewed, agent_open_session, agent_pause_workflow,
     agent_report_llm_streaming_issue, agent_respond_channel_permission,
     agent_respond_tool_approval, agent_resume_session, agent_resume_workflow, agent_send_message,
-    agent_set_execution_mode, agent_set_unsafe_mode, agent_set_yolo_mode, agent_terminate_workflow,
-    agent_toggle_session_bookmark, agent_update_session_config, agent_update_session_name,
+    agent_set_execution_mode, agent_terminate_workflow, agent_toggle_session_bookmark,
+    agent_update_session_config, agent_update_session_name,
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant,
@@ -283,8 +284,6 @@ pub fn run() {
                 agent_toggle_session_bookmark,
                 agent_update_session_name,
                 agent_mark_session_viewed,
-                agent_set_yolo_mode,
-                agent_set_unsafe_mode,
                 agent_set_execution_mode,
                 agent_respond_tool_approval,
                 agent_get_compact_context,

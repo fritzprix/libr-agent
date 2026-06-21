@@ -98,7 +98,7 @@ function createSession(
     provider: 'test-provider',
     createdAt: new Date('2026-03-19T00:00:00Z'),
     updatedAt: new Date('2026-03-19T00:00:00Z'),
-    yoloMode: false,
+    executionMode: 'normal',
     ...overrides,
   };
 }

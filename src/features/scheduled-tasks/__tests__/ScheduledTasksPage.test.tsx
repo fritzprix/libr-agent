@@ -1,10 +1,9 @@
 
 import { expect, test, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { ScheduledTasksPage } from '@/features/scheduled-tasks/ScheduledTasksPage';
 
-// Mock the hook we created
 vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
   useScheduledTasks: () => ({
     tasks: [
@@ -14,12 +13,11 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         cronExpression: '* * * * *',
         scheduleTimezone: 'local',
         assistantId: 'ast-1',
-        groupId: 'group-1',
-        groupName: 'Research Team',
         message: 'Hello World',
-        yoloMode: false,
+      executionMode: 'normal' as const,
         createdBySessionId: null,
         sessionId: null,
+        taskCategory: 'GLOBAL',
         workspaceOverride: '/tmp/scheduled-task-workspace',
         enabled: true,
         lastRunAt: null,
@@ -33,12 +31,11 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         cronExpression: '0 9 * * *',
         scheduleTimezone: 'local',
         assistantId: 'ast-1',
-        groupId: null,
-        groupName: null,
         message: 'Review metrics',
-        yoloMode: false,
+      executionMode: 'normal' as const,
         createdBySessionId: null,
         sessionId: null,
+        taskCategory: 'GLOBAL',
         workspaceOverride: null,
         enabled: false,
         lastRunAt: null,
@@ -57,16 +54,12 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
   }),
 }));
 
-// Mock the assistant context
 vi.mock('@/context/AssistantContext', () => ({
   useAssistantContext: () => ({
-    assistants: [
-      { id: 'ast-1', name: 'Test Assistant' },
-    ],
+    assistants: [{ id: 'ast-1', name: 'Test Assistant' }],
   }),
 }));
 
-// Mock translation
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: { name?: string }) =>
@@ -75,9 +68,6 @@ vi.mock('react-i18next', () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-// No longer need to mock the backend directly since useScheduledTasks is mocked
-
-// Mock logger
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
     info: vi.fn(),
@@ -86,7 +76,6 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
-// Mock Tooltip components
 vi.mock('@/components/ui/tooltip', () => {
   return {
     TooltipProvider: ({ children }: { children: ReactNode }) => (
@@ -107,30 +96,27 @@ vi.mock('@/components/ui/tooltip', () => {
   };
 });
 
-// Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
     onchange: null,
-    addListener: vi.fn(), // Deprecated
-    removeListener: vi.fn(), // Deprecated
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   })),
 });
 
-test('ScheduledTasksPage renders grouped and standalone scheduled task sections', async () => {
+test('ScheduledTasksPage renders scheduled tasks in a flat list', async () => {
   render(<ScheduledTasksPage />);
 
-  // Wait for tasks to load
   await waitFor(() => {
     expect(screen.getByText('Test Task 1')).toBeInTheDocument();
   });
 
-  // Find edit and delete buttons
   const editButton = screen.getByRole('button', {
     name: /scheduledTasks.editTaskAria Test Task 1/i,
   });
@@ -140,38 +126,9 @@ test('ScheduledTasksPage renders grouped and standalone scheduled task sections'
 
   expect(editButton).toBeInTheDocument();
   expect(deleteButton).toBeInTheDocument();
-
-  // Verify Tooltips exist
-  const tooltips = screen.getAllByTestId('tooltip');
-  expect(tooltips.length).toBeGreaterThanOrEqual(2);
-
-  // Verify Tooltip content matches short labels
+  expect(screen.getAllByTestId('tooltip').length).toBeGreaterThanOrEqual(2);
   expect(screen.getAllByText('scheduledTasks.editTask')).toHaveLength(2);
   expect(screen.getAllByText('scheduledTasks.deleteTask')).toHaveLength(2);
   expect(screen.getByText('/tmp/scheduled-task-workspace')).toBeInTheDocument();
-  expect(
-    screen.getByText('scheduledTasks.groupBadge Research Team'),
-  ).toBeInTheDocument();
-  expect(screen.getByText('scheduledTasks.groupsTitle')).toBeInTheDocument();
-  expect(screen.getByText('scheduledTasks.personalTitle')).toBeInTheDocument();
   expect(screen.getByText('Solo Task')).toBeInTheDocument();
-
-  const groupedSection = screen
-    .getByText('scheduledTasks.groupsTitle')
-    .closest('section');
-  const standaloneSection = screen
-    .getByText('scheduledTasks.personalTitle')
-    .closest('section');
-
-  expect(groupedSection).not.toBeNull();
-  expect(standaloneSection).not.toBeNull();
-
-  expect(within(groupedSection as HTMLElement).getByText('Test Task 1')).toBeInTheDocument();
-  expect(
-    within(groupedSection as HTMLElement).queryByText('Solo Task'),
-  ).not.toBeInTheDocument();
-  expect(within(standaloneSection as HTMLElement).getByText('Solo Task')).toBeInTheDocument();
-  expect(
-    within(standaloneSection as HTMLElement).queryByText('Test Task 1'),
-  ).not.toBeInTheDocument();
 });

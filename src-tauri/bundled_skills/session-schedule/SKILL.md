@@ -66,13 +66,12 @@ The user can also cancel from the session Planning panel Schedules section.
 ## Guardrails
 
 - Do not use `createScheduledTask` for in-session delays; it creates global tasks and requires `assistantId` plus cron.
-- Do not use `groupName` or `groupId`; session schedules do not support groups.
 - Do not require `.libragent/teamwork.json` or teamwork scaffold files.
 - Prefer `delaySeconds` for relative delays; use cron when the user names a wall-clock recurrence.
 - When scheduling multiple callbacks, give each a distinct `name` when possible so the Planning panel stays readable.
 
 ## Related skills
 
-- **`schedule`** — global cron tasks, optional groups, survives beyond the current session
+- **`schedule`** — global cron tasks that survive beyond the current session
 - **`delegate`** — spawn a child session now, not a future injection into this one
 - **`teamwork`** — only when building multi-agent workspace constitution; not needed for simple session schedules

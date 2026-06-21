@@ -101,7 +101,7 @@ export function AgentChatMessagesFooter({
         <div className="flex justify-start mb-8 mt-3">
           <PendingApprovalWidget
             approvals={context.pendingApprovals}
-            yoloModeEnabled={context.yoloModeEnabled}
+            executionMode={context.executionMode}
             onRespond={context.respondToToolApproval}
           />
         </div>

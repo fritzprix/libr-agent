@@ -100,7 +100,7 @@ async fn register_rejects_duplicate_server_names_without_mutating_existing_confi
 
     let result = server
         .call_tool(
-            "register",
+            "registerServer",
             json!({
                 "name": "github-duplicate-check",
                 "description": "Replacement config that should be rejected",
@@ -162,7 +162,7 @@ async fn register_aborts_when_existing_server_config_cannot_be_loaded() {
 
     let result = server
         .call_tool(
-            "register",
+            "registerServer",
             json!({
                 "name": "github-broken-config-check",
                 "description": "Replacement config that should be rejected on lookup error",
@@ -226,7 +226,7 @@ async fn list_returns_structured_results_for_ui_consumers() {
 
     let result = server
         .call_tool(
-            "list",
+            "listServers",
             json!({
                 "query": "search_issues",
                 "scope": "external",

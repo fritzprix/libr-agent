@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
@@ -72,11 +73,22 @@ pub fn register_server_tool() -> MCPTool {
     let transport_schema = transport_config_schema(Some("Transport configuration"));
 
     MCPTool {
-        name: "register".to_string(),
+        name: "registerServer".to_string(),
         title: Some("Register Server".to_string()),
-        description:
-            "Save an external MCP server configuration and return its server ID for assistant attachment."
-                .to_string(),
+        description: tool_description(
+            "Save an external MCP server configuration and return its server ID for assistant attachment.",
+            &["Have transport details ready (stdio command or HTTP URL)."],
+            &[
+                "Choose a unique slug name (e.g., 'github', 'local-fs').",
+                "Provide a short description of when agents should use this server.",
+                "Configure transport (stdio, http, or http-sse) with required fields.",
+            ],
+            &[
+                "Verify connectivity with tool__verifyServer.",
+                "Attach the server ID to an agent via agent__updateAgent.",
+                "Discover available tools with tool__listServers.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -104,13 +116,26 @@ pub fn register_server_tool() -> MCPTool {
 
 /// Update configuration for an existing MCP server
 pub fn update_server_tool() -> MCPTool {
-    let transport_schema = transport_config_schema(Some("New transport configuration"));
+    let transport_schema = transport_config_schema(Some(
+        "Replacement transport configuration. Set type to stdio (command, args, env) or http/http-sse (url, headers, enableSSE). Supply the full transport object for the target type.",
+    ));
 
     MCPTool {
-        name: "update".to_string(),
+        name: "updateServer".to_string(),
         title: Some("Update Server".to_string()),
-        description: "Update a saved external MCP server configuration and re-verify it."
-            .to_string(),
+        description: tool_description(
+            "Update a saved external MCP server configuration and re-verify it.",
+            &["Know the server slug from tool__listServers."],
+            &[
+                "Provide the server name (slug) to update.",
+                "Pass transport with the correct type and required fields for that transport.",
+                "Optionally change description; omit fields you want to leave unchanged.",
+            ],
+            &[
+                "Confirm the update with tool__verifyServer.",
+                "Refresh agent tool lists if assistants reference this server.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -140,9 +165,20 @@ pub fn update_server_tool() -> MCPTool {
 /// Delete an MCP server configuration
 pub fn delete_server_tool() -> MCPTool {
     MCPTool {
-        name: "delete".to_string(),
+        name: "deleteServer".to_string(),
         title: Some("Delete Server".to_string()),
-        description: "Delete a saved external MCP server configuration.".to_string(),
+        description: tool_description(
+            "Permanently delete a saved external MCP server configuration.",
+            &["Confirm no active agents depend on this server (check agent__listAgents)."],
+            &[
+                "Identify the server slug from tool__listServers.",
+                "Remove the configuration — this cannot be undone.",
+            ],
+            &[
+                "Remove the server ID from agent configs via agent__updateAgent if needed.",
+                "Register a replacement with tool__registerServer if required.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
@@ -159,11 +195,20 @@ pub fn delete_server_tool() -> MCPTool {
 /// Verify server connectivity and configuration
 pub fn verify_server_tool() -> MCPTool {
     MCPTool {
-        name: "verify".to_string(),
+        name: "verifyServer".to_string(),
         title: Some("Verify Server".to_string()),
-        description:
-            "Verify a saved external MCP server configuration and refresh its cached tools."
-                .to_string(),
+        description: tool_description(
+            "Verify a saved external MCP server configuration and refresh its cached tools.",
+            &["Server must already be registered via tool__registerServer."],
+            &[
+                "Pass the server slug name.",
+                "Wait for connectivity check and tool cache refresh.",
+            ],
+            &[
+                "Browse refreshed tools with tool__listServers (scope='external').",
+                "Fix transport settings with tool__updateServer if verification fails.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
@@ -180,11 +225,21 @@ pub fn verify_server_tool() -> MCPTool {
 /// Find tools across all sources in one call (unified discovery)
 pub fn list_tools_tool() -> MCPTool {
     MCPTool {
-        name: "list".to_string(),
-        title: Some("Find Tools".to_string()),
-        description:
-            "Browse builtin tools and saved external MCP servers. Add `query` to filter results."
-                .to_string(),
+        name: "listServers".to_string(),
+        title: Some("List Servers".to_string()),
+        description: tool_description(
+            "Browse builtin tools and saved external MCP servers. Add query to filter results.",
+            &[],
+            &[
+                "Choose scope (all, internal, external) and availability (inventory vs session).",
+                "Use query to filter by tool name, description, or server name.",
+                "Leave forceVerify=false (default) for fast cached external metadata; set true only when you need live re-verification.",
+            ],
+            &[
+                "Register missing servers with tool__registerServer.",
+                "Attach external server IDs to agents via agent__updateAgent.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -220,7 +275,7 @@ pub fn list_tools_tool() -> MCPTool {
                 (
                     "forceVerify".to_string(),
                     boolean_prop(Some(
-                        "If true (default: false), fetch live external server metadata. If omitted/false, use cached metadata from the last verification.",
+                        "If true, live-verify each external server and refresh cached tool metadata (slower). If false or omitted (default), use metadata from the last tool__verifyServer run.",
                     )),
                 ),
                 (

@@ -335,6 +335,7 @@ mod tests {
     use super::*;
     use crate::agent::context::registry::ContextRegistry;
     use crate::agent::state::{AgentSession, CompactionRuntimeState, PendingEventManager};
+    use crate::agent::ExecutionMode;
     use crate::repositories::{SessionMetadata, SessionStatus};
     use crate::session::SessionManager;
     use std::collections::HashMap;
@@ -368,8 +369,7 @@ mod tests {
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: true,
+            execution_mode: ExecutionMode::Unsafe,
             workspace_override: None,
         }
     }

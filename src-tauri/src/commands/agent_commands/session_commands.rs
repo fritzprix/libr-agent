@@ -349,26 +349,6 @@ pub async fn agent_mark_session_viewed(
         .map_err(|e| format!("Failed to update last viewed timestamp: {}", e))
 }
 
-/// Set YOLO mode for a session
-#[command]
-pub async fn agent_set_yolo_mode(
-    manager: State<'_, AgentSessionManager>,
-    session_id: String,
-    enabled: bool,
-) -> Result<(), String> {
-    manager.set_yolo_mode(&session_id, enabled).await
-}
-
-/// Set unsafe mode for a session
-#[command]
-pub async fn agent_set_unsafe_mode(
-    manager: State<'_, AgentSessionManager>,
-    session_id: String,
-    enabled: bool,
-) -> Result<(), String> {
-    manager.set_unsafe_mode(&session_id, enabled).await
-}
-
 /// Set the exclusive execution mode for a session.
 #[command]
 pub async fn agent_set_execution_mode(

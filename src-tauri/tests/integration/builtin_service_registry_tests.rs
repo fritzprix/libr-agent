@@ -607,8 +607,8 @@ fn agent_create_tool_name_is_unprefixed() {
         .expect("create tool must exist");
 
     assert_eq!(
-        create_tool.name, "create",
-        "builtin agent tool names must remain unprefixed; the proxy adds 'agent__'"
+        create_tool.name, "createAgent",
+        "builtin agent tool names use domain prefix (createAgent → agent__createAgent)"
     );
 }
 
@@ -634,9 +634,9 @@ fn compact_session_context_tool_schema_is_exposed() {
 fn agent_list_tool_schema_supports_verbose_descriptions() {
     let list_tool = agent_tools::all_tools()
         .into_iter()
-        .find(|tool| tool.name == "list")
-        .expect("list tool must exist");
-    let props = extract_object_properties(&list_tool.input_schema, "list");
+        .find(|tool| tool.name == "listAgents")
+        .expect("listAgents tool must exist");
+    let props = extract_object_properties(&list_tool.input_schema, "listAgents");
 
     assert!(
         props.contains_key("verbose"),
@@ -679,7 +679,7 @@ fn delete_session_tool_schema_is_exposed() {
 #[test]
 fn tool_transport_schema_allows_env_and_header_maps() {
     let register_tool = tool_tools::register_server_tool();
-    let props = extract_object_properties(&register_tool.input_schema, "register");
+    let props = extract_object_properties(&register_tool.input_schema, "registerServer");
     let transport = props
         .get("transport")
         .expect("register input_schema must contain transport");

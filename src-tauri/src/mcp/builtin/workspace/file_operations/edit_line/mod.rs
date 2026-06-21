@@ -2,7 +2,6 @@ use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
 
 mod apply;
 mod args;
@@ -10,12 +9,9 @@ mod response;
 mod types;
 
 use apply::prepare_file_edit_batch;
-use args::{
-    canonicalize_edit_files_args, canonicalize_legacy_edit_file_args_as_edit_files,
-    format_edit_label, parse_line_edit, validate_edit_files_arguments,
-};
-use response::build_edit_files_success;
-use types::{LineEdit, ParsedEdit, PreparedFileEdit};
+use args::{canonicalize_edit_file_args, parse_line_edit, validate_edit_file_arguments};
+use response::build_edit_file_success;
+use types::PreparedFileEdit;
 
 fn build_single_file_delegated_args(args: &Value, edits: Vec<Value>) -> Value {
     json!({
@@ -74,7 +70,7 @@ fn validate_edit_target_path(
         return Err(guided_error(
             ErrorCategory::ResourceNotFound,
             format!(
-                "File '{}' does not exist, so editFiles cannot modify it",
+                "File '{}' does not exist, so editFile cannot modify it",
                 path_str
             ),
             ToolGroup::Workspace,
@@ -99,7 +95,7 @@ fn validate_edit_target_path(
                 "Select a file path inside '{}', not the directory itself",
                 path_str
             ),
-            "editFiles only works on existing files".to_string(),
+            "editFile only works on existing files".to_string(),
         ])
         .to_mcp_result());
     }
@@ -250,63 +246,70 @@ impl WorkspaceServer {
         self.handle_edit_file(delegated, session_id).await
     }
 
-    pub async fn handle_edit_files(
+    pub async fn handle_edit_file(
         &self,
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let canonical_args = canonicalize_edit_files_args(&args);
+        let canonical_args = canonicalize_edit_file_args(&args);
 
-        if let Err(validation_error) = validate_edit_files_arguments(&canonical_args) {
+        if let Err(validation_error) = validate_edit_file_arguments(&canonical_args) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "editFiles arguments do not match the declared schema: {validation_error}"
+                    "editFile arguments do not match the declared schema: {validation_error}"
                 ),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Replace: [{\"path\": \"src/a.ts\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
-                "Insert top: [{\"path\": \"src/a.ts\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
-                "Insert below a line: [{\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
-                "Delete range: [{\"path\": \"src/b.ts\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
+                "Replace: {\"path\": \"src/a.ts\", \"edits\": [{\"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
+                "Insert top: {\"path\": \"src/a.ts\", \"edits\": [{\"startLine\": 0, \"content\": \"header\"}]}".to_string(),
+                "Insert below a line: {\"path\": \"src/a.ts\", \"edits\": [{\"op\": \"insert_after\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
+                "Delete range: {\"path\": \"src/b.ts\", \"edits\": [{\"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]}".to_string(),
                 "Existing lines are 1-based; use startLine=0 only to prepend at the top".to_string(),
                 "Use readFile(showLineAnchors=true) first to get anchor values".to_string(),
             ])
             .to_mcp_result());
         }
 
-        let edits_array = match canonical_args
-            .get("edits")
-            .and_then(|value| value.as_array())
+        let path = match canonical_args
+            .get("path")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
         {
-            Some(edits) => edits,
+            Some(path) => path.to_string(),
             None => {
                 return Ok(guided_error(
                     ErrorCategory::MissingRequiredParam,
-                    "Parameter 'edits' is required and must be an array",
+                    "Parameter 'path' is required and must be a non-empty string",
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Replace: [{\"path\": \"src/a.ts\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
-                    "Insert-top: [{\"path\": \"src/a.ts\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
-                    "Insert below a line: [{\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
-                    "Delete range: [{\"path\": \"src/b.ts\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
-                    "Existing lines are 1-based; use startLine=0 only to prepend at the top".to_string(),
-                    "Use readFile(showLineAnchors=true) to get anchor values first".to_string(),
+                    "Provide the target file once at the root: {\"path\": \"src/main.rs\", \"edits\": [...]}".to_string(),
                 ])
                 .to_mcp_result());
             }
         };
 
-        if edits_array.is_empty() {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                "Parameter 'edits' cannot be empty",
-                ToolGroup::Workspace,
-            )
-            .guidance(vec!["Provide at least one edit operation".to_string()])
-            .to_mcp_result());
+        let edits_array = match canonical_args
+            .get("edits")
+            .and_then(|value| value.as_array())
+        {
+            Some(edits) if !edits.is_empty() => edits,
+            _ => {
+                return Ok(guided_error(
+                    ErrorCategory::MissingRequiredParam,
+                    "Parameter 'edits' is required and must be a non-empty array",
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec!["Provide at least one edit operation".to_string()])
+                .to_mcp_result());
+            }
+        };
+
+        if let Err(result) = validate_edit_target_path(self, &path, session_id.clone()) {
+            return Ok(result);
         }
 
         let mut parsed_edits = Vec::with_capacity(edits_array.len());
@@ -314,83 +317,41 @@ impl WorkspaceServer {
             let edit_obj = match edit_value.as_object() {
                 Some(obj) => obj,
                 None => {
-                    let context = format!("Edit at index {}", idx);
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
-                        format!("{context} must be an object"),
+                        format!("Edit at index {idx} must be an object"),
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Single-line: {\"path\": \"src/a.ts\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
-                        "Range: {\"path\": \"src/a.ts\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}".to_string(),
+                        "Single-line: {\"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
+                        "Range: {\"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}".to_string(),
                     ])
                     .to_mcp_result());
                 }
             };
-
-            let path = match edit_obj.get("path").and_then(|value| value.as_str()) {
-                Some(path) if !path.trim().is_empty() => path.trim().to_string(),
-                _ => {
-                    let edit_label = format_edit_label(edit_obj, idx);
-                    return Ok(guided_error(
-                        ErrorCategory::InvalidInput,
-                        format!(
-                            "{edit_label}: 'path' field is required and must be a non-empty string"
-                        ),
-                        ToolGroup::Workspace,
-                    )
-                    .guidance(vec![
-                        "Each edit item must include its own path".to_string(),
-                        "Example: {\"path\": \"src/main.rs\", ...}".to_string(),
-                    ])
-                    .to_mcp_result());
-                }
-            };
-
-            if let Err(result) = validate_edit_target_path(self, &path, session_id.clone()) {
-                return Ok(result);
-            }
 
             let edit = match parse_line_edit(edit_obj, idx) {
                 Ok(edit) => edit,
                 Err(result) => return Ok(result),
             };
 
-            parsed_edits.push(ParsedEdit { path, edit });
+            parsed_edits.push(edit);
         }
 
-        let mut grouped: BTreeMap<String, Vec<LineEdit>> = BTreeMap::new();
-        for parsed in parsed_edits {
-            grouped.entry(parsed.path).or_default().push(parsed.edit);
-        }
-
-        let mut prepared_batches = Vec::with_capacity(grouped.len());
-        for (path, edits) in grouped {
-            let prepared =
-                match prepare_file_edit_batch(self, &path, edits, session_id.clone()).await {
-                    Ok(batch) => batch,
-                    Err(result) => return Ok(result),
-                };
-            prepared_batches.push(prepared);
-        }
+        let prepared =
+            match prepare_file_edit_batch(self, &path, parsed_edits, session_id.clone()).await {
+                Ok(batch) => batch,
+                Err(result) => return Ok(result),
+            };
 
         if let Err(result) =
-            write_prepared_batches(self, &prepared_batches, session_id.clone()).await
+            write_prepared_batches(self, std::slice::from_ref(&prepared), session_id.clone()).await
         {
             return Ok(result);
         }
 
         self.invalidate_context_cache().await;
 
-        Ok(build_edit_files_success(&prepared_batches))
-    }
-
-    pub async fn handle_edit_file(
-        &self,
-        args: Value,
-        session_id: Option<String>,
-    ) -> Result<MCPResult, String> {
-        let canonical_args = canonicalize_legacy_edit_file_args_as_edit_files(&args);
-        self.handle_edit_files(canonical_args, session_id).await
+        Ok(build_edit_file_success(&[prepared]))
     }
 }

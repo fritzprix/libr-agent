@@ -92,6 +92,94 @@ pub async fn column_exists(
     Ok(false)
 }
 
+/// Backfill `execution_mode` from legacy `yolo_mode` / `unsafe_mode` boolean columns.
+pub async fn backfill_execution_mode_from_legacy_flags<T>(
+    manager: &SchemaManager<'_>,
+    table: T,
+) -> Result<(), DbErr>
+where
+    T: IntoTableRef + Clone,
+{
+    let query = Query::update()
+        .table(table)
+        .value(
+            Alias::new("execution_mode"),
+            execution_mode_from_legacy_flags_expr(),
+        )
+        .to_owned();
+
+    manager
+        .get_connection()
+        .execute(manager.get_database_backend().build(&query))
+        .await?;
+
+    Ok(())
+}
+
+/// Restore legacy boolean flags from a normalized `execution_mode` column.
+pub async fn restore_legacy_flags_from_execution_mode<T>(
+    manager: &SchemaManager<'_>,
+    table: T,
+) -> Result<(), DbErr>
+where
+    T: IntoTableRef + Clone,
+{
+    let query = Query::update()
+        .table(table)
+        .values([
+            (
+                Alias::new("yolo_mode"),
+                legacy_yolo_mode_from_execution_mode_expr(),
+            ),
+            (
+                Alias::new("unsafe_mode"),
+                legacy_unsafe_mode_from_execution_mode_expr(),
+            ),
+        ])
+        .to_owned();
+
+    manager
+        .get_connection()
+        .execute(manager.get_database_backend().build(&query))
+        .await?;
+
+    Ok(())
+}
+
+fn execution_mode_from_legacy_flags_expr() -> SimpleExpr {
+    CaseStatement::new()
+        .case(
+            Expr::col(Alias::new("unsafe_mode")).eq(1),
+            Expr::value("unsafe"),
+        )
+        .case(
+            Expr::col(Alias::new("yolo_mode")).eq(1),
+            Expr::value("yolo"),
+        )
+        .finally(Expr::value("normal"))
+        .into()
+}
+
+fn legacy_yolo_mode_from_execution_mode_expr() -> SimpleExpr {
+    CaseStatement::new()
+        .case(
+            Expr::col(Alias::new("execution_mode")).eq("yolo"),
+            Expr::value(1),
+        )
+        .finally(Expr::value(0))
+        .into()
+}
+
+fn legacy_unsafe_mode_from_execution_mode_expr() -> SimpleExpr {
+    CaseStatement::new()
+        .case(
+            Expr::col(Alias::new("execution_mode")).eq("unsafe"),
+            Expr::value(1),
+        )
+        .finally(Expr::value(0))
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

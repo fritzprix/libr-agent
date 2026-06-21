@@ -17,6 +17,7 @@ use tauri_mcp_agent_lib::agent::lifecycle::{
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
 use tauri_mcp_agent_lib::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::entity::session;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
@@ -139,8 +140,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }
@@ -154,8 +154,7 @@ async fn insert_sqlite_session(db: &sea_orm::DatabaseConnection, session_id: &st
         created_at: Set(now),
         updated_at: Set(now),
         is_bookmarked: Set(false),
-        yolo_mode: Set(false),
-        unsafe_mode: Set(false),
+        execution_mode: Set("normal".to_string()),
         ..Default::default()
     };
     session::Entity::insert(session)

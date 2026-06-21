@@ -25,8 +25,7 @@ async fn insert_parent_session(db: &DatabaseConnection, session_id: &str) {
         created_at: Set(123456789),
         updated_at: Set(123456789),
         is_bookmarked: Set(false),
-        yolo_mode: Set(false),
-        unsafe_mode: Set(false),
+        execution_mode: Set("normal".to_string()),
         ..Default::default()
     };
     session::Entity::insert(model)

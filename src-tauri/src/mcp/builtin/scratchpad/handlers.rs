@@ -47,8 +47,8 @@ pub async fn add(
                     ToolGroup::Scratchpad,
                 )
                 .with_guidance(vec![
-                    "Use scratchpad__update to modify existing notes".to_string(),
-                    "Use scratchpad__clear to remove old items".to_string(),
+                    "Use scratchpad__updateNote to modify existing notes".to_string(),
+                    "Use scratchpad__clearNote to remove old items".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -74,7 +74,7 @@ pub async fn add(
                         ToolGroup::Scratchpad,
                     )
                     .with_guidance(vec![
-                        "Use scratchpad__update to modify the existing note".to_string(),
+                        "Use scratchpad__updateNote to modify the existing note".to_string(),
                         "Choose a different title for the new note".to_string(),
                     ])
                     .to_mcp_result());
@@ -114,8 +114,8 @@ pub async fn add(
                     id, count
                 ),
                 vec![
-                    "Use scratchpad__list to see all items".to_string(),
-                    "Use scratchpad__read to view full content".to_string(),
+                    "Use scratchpad__listNote to see all items".to_string(),
+                    "Use scratchpad__readNote to view full content".to_string(),
                 ],
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
@@ -177,8 +177,8 @@ pub async fn update(
                 let hint = SuccessHint::new(
                     format!("✓ Scratchpad note (ID: {}) updated", id_val),
                     vec![
-                        "Use scratchpad__read or scratchpad__list to verify".to_string(),
-                        "Use scratchpad__list to see all items".to_string(),
+                        "Use scratchpad__readNote or scratchpad__listNote to verify".to_string(),
+                        "Use scratchpad__listNote to see all items".to_string(),
                     ],
                 );
                 Ok(hint.to_mcp_result_with_data(Some(json!({
@@ -194,7 +194,7 @@ pub async fn update(
                     ToolGroup::Scratchpad,
                 )
                 .with_guidance(vec![
-                    "Use scratchpad__list to see available notes".to_string(),
+                    "Use scratchpad__listNote to see available notes".to_string(),
                     "Verify the ID is correct".to_string(),
                 ])
                 .to_mcp_result())
@@ -347,11 +347,11 @@ pub async fn list(
         .collect();
 
     let guidance = if total_items == 0 {
-        vec!["Use scratchpad__add to create new notes".to_string()]
+        vec!["Use scratchpad__addNote to create new notes".to_string()]
     } else {
         vec![
-            "Use scratchpad__read(ids) to read full content of specific items".to_string(),
-            "Use scratchpad__add to create new notes".to_string(),
+            "Use scratchpad__readNote(ids) to read full content of specific items".to_string(),
+            "Use scratchpad__addNote to create new notes".to_string(),
         ]
     };
 
@@ -435,13 +435,13 @@ pub async fn read(
 
     let guidance = if items.is_empty() {
         vec![
-            "Use scratchpad__list to see all available items and their IDs".to_string(),
+            "Use scratchpad__listNote to see all available items and their IDs".to_string(),
             "Verify the IDs you provided are correct".to_string(),
         ]
     } else {
         vec![
-            "Use scratchpad__update to modify these items".to_string(),
-            "Use scratchpad__clear to remove them".to_string(),
+            "Use scratchpad__updateNote to modify these items".to_string(),
+            "Use scratchpad__clearNote to remove them".to_string(),
         ]
     };
 
@@ -474,8 +474,8 @@ pub async fn clear(
                 let hint = SuccessHint::new(
                     format!("✓ Scratchpad note {} removed", target_id),
                     vec![
-                        "Use scratchpad__add to add new items".to_string(),
-                        "Use scratchpad__list to see remaining items".to_string(),
+                        "Use scratchpad__addNote to add new items".to_string(),
+                        "Use scratchpad__listNote to see remaining items".to_string(),
                     ],
                 );
                 Ok(hint.to_mcp_result_with_data(Some(json!({
@@ -490,7 +490,7 @@ pub async fn clear(
                     ToolGroup::Scratchpad,
                 )
                 .with_guidance(vec![
-                    "Use scratchpad__list to verify item exists".to_string()
+                    "Use scratchpad__listNote to verify item exists".to_string()
                 ])
                 .to_mcp_result())
             }
@@ -502,7 +502,7 @@ pub async fn clear(
         )
         .with_guidance(vec![
             "Try again".to_string(),
-            "Use scratchpad__list to verify item exists".to_string(),
+            "Use scratchpad__listNote to verify item exists".to_string(),
         ])
         .to_mcp_result()),
     }

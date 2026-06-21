@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 
@@ -19,9 +20,18 @@ fn create_goal_tool() -> MCPTool {
     MCPTool {
         name: "createGoal".to_string(),
         title: Some("Create Goal".to_string()),
-        description:
-            "Create a single goal for the session. Use when starting a new or complex task."
-                .to_string(),
+        description: tool_description(
+            "Create a single outcome-focused goal for the session when starting a new or complex task.",
+            &[],
+            &[
+                "Set one clear goal before adding todos.",
+                "Describe the desired outcome, not individual steps.",
+            ],
+            &[
+                "Break the goal into todos with planning__addTodo.",
+                "Review progress with planning__getCurrentState.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "goal".to_string(),
@@ -41,7 +51,18 @@ fn update_goal_tool() -> MCPTool {
     MCPTool {
         name: "updateGoal".to_string(),
         title: Some("Update Goal".to_string()),
-        description: "Update the current goal. Use when the goal needs refinement or correction without clearing context.".to_string(),
+        description: tool_description(
+            "Refine or correct the current session goal without clearing todos or other planning state.",
+            &["An active goal should already exist (use planning__createGoal if none)."],
+            &[
+                "Confirm the goal still matches the user's intent.",
+                "Replace the goal text with a clearer outcome statement.",
+            ],
+            &[
+                "Align todos with planning__updateTodo if steps changed.",
+                "Inspect full state with planning__getCurrentState.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "goal".to_string(),
@@ -59,8 +80,18 @@ fn clear_goal_tool() -> MCPTool {
     MCPTool {
         name: "clearGoal".to_string(),
         title: Some("Clear Goal".to_string()),
-        description: "Clear the current goal when the objective is complete or no longer relevant."
-            .to_string(),
+        description: tool_description(
+            "Remove the current goal when the objective is complete or no longer relevant.",
+            &[],
+            &[
+                "Confirm the goal is finished or abandoned.",
+                "Clear only the goal; todos remain unless you clear them separately.",
+            ],
+            &[
+                "Start a new objective with planning__createGoal.",
+                "Reset everything with planning__clearSession if needed.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -71,7 +102,18 @@ fn add_todo_tool() -> MCPTool {
     MCPTool {
         name: "addTodo".to_string(),
         title: Some("Add Todo".to_string()),
-        description: "Add a todo item. Flat structure only — no subtasks or nesting.".to_string(),
+        description: tool_description(
+            "Add a flat todo item to track a concrete step toward the session goal.",
+            &[],
+            &[
+                "Ensure a goal exists or is implied before adding todos.",
+                "Write one actionable step per todo (flat list only — no subtasks).",
+            ],
+            &[
+                "Mark progress with planning__updateTodo (action='done').",
+                "Review the list with planning__getCurrentState.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -99,13 +141,19 @@ fn update_todo_tool() -> MCPTool {
     MCPTool {
         name: "updateTodo".to_string(),
         title: Some("Update Todo".to_string()),
-        description: r#"Update a todo's status or permanently remove it.
-
-action semantics:
-  'done'    — Completes the todo; stays in list for history.
-  'pending' — Reopens a previously completed todo.
-  'cancel'  — Permanently removes it. Only when the task should never have existed; prefer 'done' to preserve history."#
-            .to_string(),
+        description: tool_description(
+            "Update a todo's status or permanently remove it from the plan.",
+            &["Know the todo ID from planning__getCurrentState or system context."],
+            &[
+                "Use action='done' to complete a todo (keeps history in the list).",
+                "Use action='pending' to reopen a completed todo.",
+                "Use action='cancel' only when the task should never have existed; prefer 'done' to preserve history.",
+            ],
+            &[
+                "Add follow-up work with planning__addTodo.",
+                "Run planning__reflect after completing a batch of todos.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -145,8 +193,18 @@ fn clear_session_tool() -> MCPTool {
     MCPTool {
         name: "clearSession".to_string(),
         title: Some("Clear Session".to_string()),
-        description: "Clear all session planning state (goal and todos). Use to reset the plan and start fresh."
-            .to_string(),
+        description: tool_description(
+            "Clear all session planning state (goal and todos) to start fresh.",
+            &[],
+            &[
+                "Confirm the user wants to discard the current plan.",
+                "This removes both goal and todos in one call.",
+            ],
+            &[
+                "Set a new goal with planning__createGoal.",
+                "Add fresh todos with planning__addTodo.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -157,7 +215,18 @@ fn get_current_state_tool() -> MCPTool {
     MCPTool {
         name: "getCurrentState".to_string(),
         title: Some("Get Current State".to_string()),
-        description: "Get current planning state (goal and todos). Use when you need detailed visibility beyond what's shown in the system context.".to_string(),
+        description: tool_description(
+            "Get the current planning state (goal and todos) when you need IDs or details beyond system context.",
+            &[],
+            &[
+                "Call when you need todo IDs before planning__updateTodo or planning__readNote-style lookups.",
+                "Use include_checked=false to hide completed todos.",
+            ],
+            &[
+                "Update todos with planning__updateTodo using returned IDs.",
+                "Adjust the goal with planning__updateGoal if drifted.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -179,7 +248,19 @@ fn reflect_tool() -> MCPTool {
     MCPTool {
         name: "reflect".to_string(),
         title: Some("Reflect".to_string()),
-        description: "Record a structured self-critique after completing todos, then commit to a concrete corrective action.".to_string(),
+        description: tool_description(
+            "Record a structured self-critique after completing todos, then commit to a concrete corrective action.",
+            &["Complete or review recent todos before reflecting."],
+            &[
+                "State what went wrong or could improve in critique.",
+                "Capture what you learned in reflection.",
+                "Define one concrete nextAction you will execute immediately.",
+            ],
+            &[
+                "Add nextAction as a todo with planning__addTodo.",
+                "Execute the corrective action before starting unrelated work.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (

@@ -175,7 +175,7 @@ impl WorkspaceServer {
                         path_str
                     ),
                     format!(
-                        "Use editFiles for targeted edits to \"{}\" instead of rewriting the whole file.",
+                        "Use editFile for targeted edits to \"{}\" instead of rewriting the whole file.",
                         path_str
                     ),
                 ])
@@ -376,7 +376,7 @@ impl WorkspaceServer {
                     || path_str.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "Use editFiles for targeted edits to \"{}\"",
+                        "Use editFile for targeted edits to \"{}\"",
                         path_str
                     ));
                 }

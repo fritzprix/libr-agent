@@ -76,7 +76,7 @@ impl BuiltinMCPServer for AssistantServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         log::warn!("Call to deprecated assistant tool: {}", tool_name);
-        Err("The 'assistant' domain is deprecated. Please use the 'agent' domain instead (e.g. agent__create, agent__list).".to_string())
+        Err("The 'assistant' domain is deprecated. Please use the 'agent' domain instead (e.g. agent__createAgent, agent__listAgents).".to_string())
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::is_delegated_descendant_session;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
 
@@ -30,8 +31,7 @@ fn session(id: &str, parent_session_id: Option<&str>) -> SessionMetadata {
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }

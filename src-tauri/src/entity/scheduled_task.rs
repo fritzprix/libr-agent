@@ -22,16 +22,10 @@ pub struct Model {
     pub schedule_timezone: String,
     /// Assistant (agent) that owns and executes this task
     pub assistant_id: String,
-    /// Optional scheduled task group identity for grouped recurring automation
-    pub group_id: Option<String>,
-    /// Human-readable group name shown in grouped schedule UX
-    pub group_name: Option<String>,
     /// Message to inject as a user turn; supports @playbook:name, @skill:name mentions
     pub message: String,
-    /// Whether tools should execute without approval
-    pub yolo_mode: bool,
-    /// Whether tools should execute with unsafe permissions (higher privilege than yolo)
-    pub unsafe_mode: bool,
+    /// Tool approval mode when the task fires: normal, yolo, or unsafe
+    pub execution_mode: String,
 
     /// Session that created this task through agent tooling, if any
     pub created_by_session_id: Option<String>,
@@ -53,3 +47,9 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Model {
+    pub fn execution_mode(&self) -> crate::execution_mode::ExecutionMode {
+        crate::execution_mode::ExecutionMode::from_db(&self.execution_mode)
+    }
+}

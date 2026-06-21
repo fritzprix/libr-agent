@@ -72,11 +72,11 @@ impl BuiltinMCPServer for ScratchpadServer {
         );
 
         match tool_name {
-            "add" => handlers::add(self.db.as_ref(), &target_session_id, args).await,
-            "update" => handlers::update(self.db.as_ref(), &target_session_id, args).await,
-            "list" => handlers::list(self.db.as_ref(), &target_session_id, args).await,
-            "read" => handlers::read(self.db.as_ref(), &target_session_id, args).await,
-            "clear" => handlers::clear(self.db.as_ref(), &target_session_id, args).await,
+            "addNote" => handlers::add(self.db.as_ref(), &target_session_id, args).await,
+            "updateNote" => handlers::update(self.db.as_ref(), &target_session_id, args).await,
+            "listNote" => handlers::list(self.db.as_ref(), &target_session_id, args).await,
+            "readNote" => handlers::read(self.db.as_ref(), &target_session_id, args).await,
+            "clearNote" => handlers::clear(self.db.as_ref(), &target_session_id, args).await,
             "think" => handlers::think(args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }

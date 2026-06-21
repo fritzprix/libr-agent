@@ -106,6 +106,7 @@ fn build_recovered_session(
     session: &crate::repositories::SessionMetadata,
     context_registry: Arc<ContextRegistry>,
 ) -> AgentSession {
+    let (yolo_enabled, unsafe_enabled) = session.execution_mode.runtime_flags();
     AgentSession {
         metadata: session.clone(),
         is_running: false,
@@ -113,8 +114,8 @@ fn build_recovered_session(
         status_transition: Arc::new(RwLock::new(None)),
         transition_lock: Arc::new(tokio::sync::Mutex::new(())),
         cancellation_token: CancellationToken::new(),
-        yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
-        unsafe_mode: Arc::new(AtomicBool::new(session.unsafe_mode)),
+        yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
+        unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
         cancel_pending: Arc::new(AtomicBool::new(false)),
         pending_execution: None,
         messages: Arc::new(RwLock::new(Vec::new())),

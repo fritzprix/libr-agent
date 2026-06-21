@@ -7,8 +7,8 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 | Need | Tool / action |
 | --- | --- |
 | Create the org (once, from root session) | `agent__createOrg(name="...")` |
-| Spawn an org-visible child session | `agent__startSession(agentId, task)` |
-| Spawn a one-off child that stays out of Org view | `agent__startSession(agentId, task, includeCurrentOrg=false)` |
+| Spawn an org-visible child session | `agent__startSession(agentId, task)` from a session already in the org |
+| Delegate outside Org view | `agent__startSession(agentId, task)` from a session that is not in an explicit org |
 | Identify the org root session | Read `orgLineage.rootSessionId` from `.libragent/teamwork.json` |
 | Resume org work | Resume the session matching `orgLineage.rootSessionId`, not a child |
 | Inspect org membership | `agent__getOrg(orgId)` if available |
@@ -119,9 +119,7 @@ The backend automatically updates the scaffolded `.libragent/teamwork.json` file
       "rootSessionId": "<returned-orgRootSessionId>",
       "rootAction": "agent__createOrg",
       "childAction": "agent__startSession",
-      "childArgs": {
-        "includeCurrentOrg": true
-      },
+      "childArgs": {},
       "compatibilityAlias": "spawnOrgAgent",
       "workspaceSharing": "inherit-parent-workspace-by-default"
     },
@@ -159,7 +157,7 @@ Fix: restart the child under the org root so it inherits the parent effective wo
 
 Likely cause: sessions inherited explicit org membership unintentionally, or lineage-only sessions are being surfaced incorrectly.
 
-Fix: confirm that sessions not intended for Org view were started with `includeCurrentOrg=false`. Org membership still requires explicit org inheritance, not just having a `parentSessionId`.
+Fix: spawn non-org children from a session that is not part of an explicit org. Org membership still requires explicit org inheritance at session creation, not just having a `parentSessionId`.
 
 ### Cannot identify org root
 

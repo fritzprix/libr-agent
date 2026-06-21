@@ -82,22 +82,15 @@ Do not use org for:
 
 ## 4. Scheduled collaboration contract
 
-Scheduled collaboration uses **scheduled task groups**, not org identity.
+Scheduled tasks are a **flat list** per assistant. Task grouping (`groupId`, `groupName`) was removed; use org identity for hierarchical collaboration and flat scheduled tasks for periodic automation.
 
-Scheduled task groups are for:
+Scheduled tasks are for:
 
-- recurring automation bundles
+- recurring automation
 - horizontal or loosely coupled periodic work
-- grouped status display in scheduled task UX
+- session callbacks (`scheduleCallback`)
 
 They are not a substitute for org identity.
-
-Minimum model direction:
-
-- `groupId`
-- `groupName`
-- optional role/kind metadata
-- provenance
 
 ## 5. Operational trigger pattern
 

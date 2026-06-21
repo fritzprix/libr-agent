@@ -1,5 +1,6 @@
 import { Assistant } from './chat';
 import type { SessionAttentionReason } from './agent-ipc';
+import type { ExecutionMode } from '@/lib/generated/execution-mode';
 
 /**
  * Runtime agent session metadata from Rust backend.
@@ -25,8 +26,7 @@ export interface AgentSession {
   orgName?: string;
   orgRootSessionId?: string;
   isBookmarked?: boolean;
-  yoloMode: boolean;
-  unsafeMode?: boolean;
+  executionMode: ExecutionMode;
   pendingApprovalCount?: number;
 }
 /**

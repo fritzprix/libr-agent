@@ -61,7 +61,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
 
         const result = await agentCallBuiltinTool(
           file.sessionId,
-          'attachments__read',
+          'attachments__readAttachment',
           {
             sessionId: file.sessionId,
             contentId: file.contentId,

@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 
@@ -15,13 +16,20 @@ pub fn all_tools() -> Vec<MCPTool> {
 
 fn add_tool() -> MCPTool {
     MCPTool {
-        name: "add".to_string(),
+        name: "addNote".to_string(),
         title: Some("Add Scratchpad Note".to_string()),
-        description: r#"Add a note to the Working Scratchpad. Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.
-
-NOTE: Scratchpad has a strict limit of 10 items. If you reach this limit, use update to modify existing items or clear to remove old ones before adding more.
-"#
-        .to_string(),
+        description: tool_description(
+            "Add a note to the Working Scratchpad. Content here is always visible in your context — use it for findings, file paths, IDs, or intermediate results you reference often.",
+            &["Scratchpad holds at most 10 items."],
+            &[
+                "If at the limit, update or clear existing notes first.",
+                "Keep entries concise; use title and tags for scanability.",
+            ],
+            &[
+                "Find note IDs with scratchpad__listNote.",
+                "Update in place with scratchpad__updateNote instead of duplicating.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -64,9 +72,20 @@ NOTE: Scratchpad has a strict limit of 10 items. If you reach this limit, use up
 
 fn update_tool() -> MCPTool {
     MCPTool {
-        name: "update".to_string(),
+        name: "updateNote".to_string(),
         title: Some("Update Scratchpad Note".to_string()),
-        description: "Update an existing scratchpad note. Use the ID shown in the scratchpad context or from list to identify which note to update.".to_string(),
+        description: tool_description(
+            "Update an existing scratchpad note by ID.",
+            &["Note ID from scratchpad context or scratchpad__listNote."],
+            &[
+                "Identify the note ID to update.",
+                "Replace content (and optionally title) with the latest information.",
+            ],
+            &[
+                "Read full content with scratchpad__readNote if needed.",
+                "Clear obsolete notes with scratchpad__clearNote.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -74,7 +93,7 @@ fn update_tool() -> MCPTool {
                     integer_prop(
                         None,
                         None,
-                        Some("The ID of the scratchpad note to update (get from list or context)."),
+                        Some("The ID of the scratchpad note to update (get from listNote or context)."),
                     ),
                 ),
                 (
@@ -96,9 +115,20 @@ fn update_tool() -> MCPTool {
 
 fn list_tool() -> MCPTool {
     MCPTool {
-        name: "list".to_string(),
+        name: "listNote".to_string(),
         title: Some("List Scratchpad Notes".to_string()),
-        description: "List scratchpad notes with metadata (ID, title, tags) and content preview. Use this to find the IDs of items you want to read fully. Supports pagination and tag filtering.".to_string(),
+        description: tool_description(
+            "List scratchpad notes with metadata (ID, title, tags) and content preview.",
+            &[],
+            &[
+                "Use pagination when many notes exist.",
+                "Filter by tags when looking for a category of notes.",
+            ],
+            &[
+                "Read full content with scratchpad__readNote using returned IDs.",
+                "Update notes with scratchpad__updateNote.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -111,10 +141,7 @@ fn list_tool() -> MCPTool {
                 ),
                 (
                     "tags".to_string(),
-                    array_schema(
-                        string_prop(None, None, None),
-                        Some("Filter items by tags"),
-                    ),
+                    array_schema(string_prop(None, None, None), Some("Filter items by tags")),
                 ),
             ],
             vec![],
@@ -127,9 +154,20 @@ fn list_tool() -> MCPTool {
 
 fn read_tool() -> MCPTool {
     MCPTool {
-        name: "read".to_string(),
+        name: "readNote".to_string(),
         title: Some("Read Scratchpad Note".to_string()),
-        description: "Read the FULL content of specific scratchpad notes by their IDs. Use list first to find IDs.".to_string(),
+        description: tool_description(
+            "Read the full content of specific scratchpad notes by ID.",
+            &["Note IDs from scratchpad__listNote or system context."],
+            &[
+                "Pass one or more IDs in the ids array.",
+                "Use when previews from listNote are insufficient.",
+            ],
+            &[
+                "Update content with scratchpad__updateNote.",
+                "Remove stale notes with scratchpad__clearNote.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "ids".to_string(),
@@ -148,9 +186,20 @@ fn read_tool() -> MCPTool {
 
 fn clear_tool() -> MCPTool {
     MCPTool {
-        name: "clear".to_string(),
+        name: "clearNote".to_string(),
         title: Some("Clear Scratchpad Note".to_string()),
-        description: "Remove a note from the Working Scratchpad. Use this to clear information that is no longer relevant to free up context window space.".to_string(),
+        description: tool_description(
+            "Remove a note from the Working Scratchpad to free context window space.",
+            &["Note ID from scratchpad__listNote."],
+            &[
+                "Confirm the information is no longer needed.",
+                "Remove by ID — other notes remain.",
+            ],
+            &[
+                "Add fresh notes with scratchpad__addNote when under the 10-item limit.",
+                "List remaining notes with scratchpad__listNote.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "id".to_string(),
@@ -168,7 +217,18 @@ fn think_tool() -> MCPTool {
     MCPTool {
         name: "think".to_string(),
         title: Some("Think".to_string()),
-        description: "Pause to reason through a problem before acting. Use this to process complex situations, evaluate options, or plan your next move. Helps avoid hasty decisions.".to_string(),
+        description: tool_description(
+            "Pause to reason through a problem before acting — evaluate options and plan the next move.",
+            &[],
+            &[
+                "Write your analysis in thought.",
+                "Optionally specify nextAction for what you will do immediately after.",
+            ],
+            &[
+                "Execute the planned action with appropriate domain tools.",
+                "Capture durable findings with scratchpad__addNote.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (

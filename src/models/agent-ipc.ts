@@ -1,5 +1,6 @@
 import type { MessageError, RustMessage } from './chat';
 import { MCPContent } from '@/lib/mcp';
+import type { ExecutionMode } from '@/lib/generated/execution-mode';
 
 /**
  * Agent configuration defining behavior and capabilities.
@@ -254,8 +255,7 @@ export interface AgentSessionMetadata {
   lastAttentionAt?: number;
   lastAttentionReason?: SessionAttentionReason;
   isBookmarked?: boolean;
-  yoloMode: boolean;
-  unsafeMode?: boolean;
+  executionMode: ExecutionMode;
 }
 
 export interface AgentSessionListCursor {

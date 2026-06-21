@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde_json::Value;
+use tracing::warn;
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
@@ -61,11 +62,19 @@ impl BuiltinMCPServer for HistoryServer {
         let caller_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
 
         let result = match tool_name {
-            "list" => handlers::list_sessions(self, args).await,
+            "listSessions" => handlers::list_sessions(self, args).await,
             "readSession" => handlers::read_session(self, args).await,
             "readMessage" => handlers::read_message(self, args).await,
-            "search" => handlers::search_history(self, args, &caller_session_id).await,
-            "exportDataset" | "export_dataset" => handlers::export_dataset(args).await,
+            "searchHistory" => handlers::search_history(self, args, &caller_session_id).await,
+            "exportDataset" | "export_dataset" => {
+                if tool_name == "export_dataset" {
+                    warn!(
+                        tool = tool_name,
+                        "deprecated history tool name; use exportDataset"
+                    );
+                }
+                handlers::export_dataset(args).await
+            }
             _ => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
@@ -73,7 +82,7 @@ impl BuiltinMCPServer for HistoryServer {
                     ToolGroup::Agent,
                 )
                 .with_guidance(vec![
-                    "Use one of the available history tools: list, readSession, readMessage, search, or exportDataset."
+                    "Use one of the available history tools: listSessions, readSession, readMessage, searchHistory, or exportDataset."
                         .to_string(),
                 ])
                 .to_mcp_result());

@@ -48,8 +48,6 @@ describe('LLMServiceContext – Core', () => {
     ]);
   });
 
-
-
   describe('Provider Setup', () => {
     it('should provide context value', () => {
       const { result } = renderHook(() => useLLMServiceHarness(), {

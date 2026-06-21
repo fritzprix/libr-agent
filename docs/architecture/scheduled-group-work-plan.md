@@ -1,5 +1,10 @@
 # 📑 LibrAgent: Scheduled Group Work (SGW) 구현 계획서
 
+> **Status: Superseded (2026-06)**  
+> Scheduled task **grouping** (`groupId`, `groupName`, `group_role`) was removed in favor of a flat task list per assistant. Multi-agent collaboration now uses the **teamwork substrate** (org identity + coordination workspace), not scheduled-task groups.  
+> See `.github/skills/teamwork-spec-refactor/references/contract.md` for the current model.  
+> This document is kept for historical context only.
+
 ## 1. 개요 (Vision)
 
 LibrAgent의 **Agent V2** 아키텍처와 **Scheduled Task** 시스템을 결합하여, 사용자가 정의한 워크스페이스 내에서 다수의 에이전트가 정해진 시간표에 따라 비동기적으로 협업하는 **'자율 협업 에이전트 허브'**를 구축합니다.
@@ -26,9 +31,11 @@ LibrAgent의 **Agent V2** 아키텍처와 **Scheduled Task** 시스템을 결합
 └── docs/                   # 공유 문서 및 결과물
 ```
 
-### 2.2 백엔드 확장 (`src-tauri/src/`)
+### 2.2 백엔드 확장 (`src-tauri/src/`) — **historical; not implemented as designed**
 
-- **Entity (`scheduled_task.rs`)**:
+> **Removed:** `group_id`, `group_name`, and related grouping APIs were dropped. Scheduled tasks use `execution_mode` (`normal` | `yolo` | `unsafe`) and flat per-assistant lists instead.
+
+- **Entity (`scheduled_task.rs`)** _(original plan)_:
   - `group_id: Option<String>`: 태스크들을 하나의 그룹으로 묶는 식별자.
   - `group_role: Option<String>`: 그룹 내 역할 명칭 (Analyst, Fixer 등).
 - **Service (`scheduled_task_service.rs`)**:

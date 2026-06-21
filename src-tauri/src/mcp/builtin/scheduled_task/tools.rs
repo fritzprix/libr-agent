@@ -1,5 +1,19 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
+
+const EXECUTION_MODE_PARAM_DESC: &str = "Tool approval mode when the task fires. \
+normal: require user approval for sensitive tools. \
+yolo: auto-approve standard tools (still subject to workspace/shell policy). \
+unsafe: auto-approve hard-approval tools too — use only for trusted automation. \
+Defaults to normal.";
+
+fn execution_mode_workflow_steps() -> [&'static str; 2] {
+    [
+        "Choose executionMode: normal (default) for routine schedules; yolo only when unattended standard-tool runs are acceptable; unsafe only when hard-approval tools must run without a human present.",
+        "Unsafe does not bypass workspace shell policy blocks — it only skips approval prompts.",
+    ]
+}
 
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
@@ -17,7 +31,19 @@ fn schedule_callback_tool() -> MCPTool {
     MCPTool {
         name: "scheduleCallback".to_string(),
         title: Some("Schedule Session Callback".to_string()),
-        description: "Schedule a one-shot delay or recurring callback for the current session. Use delaySeconds for a single future injection, or cronExpression for recurring callbacks."
+        description: tool_description(
+            "Schedule a one-shot delay or recurring callback for the current session.",
+            &[],
+            &[
+                "Provide message text to inject when the callback fires.",
+                "Use delaySeconds for one-shot OR cronExpression for recurring — not both.",
+                execution_mode_workflow_steps()[0],
+                execution_mode_workflow_steps()[1],
+            ],
+            &[
+                "List session callbacks via scheduled_task__listScheduledTasks if applicable.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -54,8 +80,11 @@ fn schedule_callback_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "unsafeMode".to_string(),
-                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
+                    "executionMode".to_string(),
+                    enum_prop_optional(
+                        vec!["normal", "yolo", "unsafe"],
+                        Some(EXECUTION_MODE_PARAM_DESC),
+                    ),
                 ),
             ],
             vec!["message".to_string()],
@@ -70,8 +99,21 @@ fn create_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "createScheduledTask".to_string(),
         title: Some("Create Scheduled Task".to_string()),
-        description: "Create a recurring scheduled task that can wake an assistant later. The system generates the task ID automatically and returns it for follow-up management calls."
-            .to_string(),
+        description: tool_description(
+            "Create a recurring scheduled task that can wake an assistant later.",
+            &["Assistant configuration ID and valid cron expression."],
+            &[
+                "Set name, cronExpression, and assistantId.",
+                execution_mode_workflow_steps()[0],
+                execution_mode_workflow_steps()[1],
+                "The system returns a task ID for follow-up management.",
+            ],
+            &[
+                "Inspect with scheduled_task__getScheduledTask.",
+                "Pause with scheduled_task__toggleScheduledTask.",
+            ],
+        )
+        .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -95,22 +137,10 @@ fn create_scheduled_task_tool() -> MCPTool {
                 ),
                 (
                     "assistantId".to_string(),
-                    string_prop(Some(1), Some(120), Some("Assistant configuration ID to run.")),
-                ),
-                (
-                    "groupId".to_string(),
                     string_prop(
                         Some(1),
                         Some(120),
-                        Some("Optional scheduled task group ID. Provide this to join an existing group."),
-                    ),
-                ),
-                (
-                    "groupName".to_string(),
-                    string_prop(
-                        Some(1),
-                        Some(120),
-                        Some("Optional human-readable scheduled task group name."),
+                        Some("Assistant configuration ID to run."),
                     ),
                 ),
                 (
@@ -122,12 +152,11 @@ fn create_scheduled_task_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "yoloMode".to_string(),
-                    boolean_prop(Some("Whether the run should execute in YOLO mode.")),
-                ),
-                (
-                    "unsafeMode".to_string(),
-                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
+                    "executionMode".to_string(),
+                    enum_prop_optional(
+                        vec!["normal", "yolo", "unsafe"],
+                        Some(EXECUTION_MODE_PARAM_DESC),
+                    ),
                 ),
                 (
                     "workspaceOverride".to_string(),
@@ -155,7 +184,18 @@ fn list_scheduled_tasks_tool() -> MCPTool {
     MCPTool {
         name: "listScheduledTasks".to_string(),
         title: Some("List Scheduled Tasks".to_string()),
-        description: "List scheduled tasks, optionally filtered by assistant or enabled state. Use this to discover task IDs before reading, updating, toggling, or deleting."
+        description: tool_description(
+            "List scheduled tasks, optionally filtered by assistant or enabled state.",
+            &[],
+            &[
+                "Apply assistant or enabled filters when needed.",
+                "Paginate if many tasks exist.",
+            ],
+            &[
+                "Read details with scheduled_task__getScheduledTask.",
+                "Update with scheduled_task__updateScheduledTask or toggle with scheduled_task__toggleScheduledTask.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -184,7 +224,15 @@ fn get_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "getScheduledTask".to_string(),
         title: Some("Get Scheduled Task".to_string()),
-        description: "Read one scheduled task in detail. Use this after listScheduledTasks() when you need the exact message, schedule, or pinned session state."
+        description: tool_description(
+            "Read one scheduled task in detail including message, schedule, and pinned session state.",
+            &["Task ID from scheduled_task__createScheduledTask or scheduled_task__listScheduledTasks."],
+            &["Pass the exact task ID."],
+            &[
+                "Update fields with scheduled_task__updateScheduledTask.",
+                "Delete with scheduled_task__deleteScheduledTask when no longer needed.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![(
@@ -203,7 +251,19 @@ fn update_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "updateScheduledTask".to_string(),
         title: Some("Update Scheduled Task".to_string()),
-        description: "Update mutable fields on an existing scheduled task. Obtain the exact ID from createScheduledTask() or listScheduledTasks() first."
+        description: tool_description(
+            "Update mutable fields on an existing scheduled task.",
+            &["Task ID from scheduled_task__listScheduledTasks or scheduled_task__getScheduledTask."],
+            &[
+                "Pass the task ID and only fields to change.",
+                "Confirm schedule impact before saving cron changes.",
+                execution_mode_workflow_steps()[0],
+            ],
+            &[
+                "Verify with scheduled_task__getScheduledTask.",
+                "Pause safely with scheduled_task__toggleScheduledTask.",
+            ],
+        )
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -239,22 +299,6 @@ fn update_scheduled_task_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "groupId".to_string(),
-                    string_prop(
-                        Some(1),
-                        Some(120),
-                        Some("Optional scheduled task group ID. Provide together with groupName to move to a different group."),
-                    ),
-                ),
-                (
-                    "groupName".to_string(),
-                    string_prop(
-                        Some(1),
-                        Some(120),
-                        Some("Optional scheduled task group name."),
-                    ),
-                ),
-                (
                     "message".to_string(),
                     string_prop(
                         Some(1),
@@ -263,12 +307,11 @@ fn update_scheduled_task_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "yoloMode".to_string(),
-                    boolean_prop(Some("Updated YOLO mode flag.")),
-                ),
-                (
-                    "unsafeMode".to_string(),
-                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
+                    "executionMode".to_string(),
+                    enum_prop_optional(
+                        vec!["normal", "yolo", "unsafe"],
+                        Some(EXECUTION_MODE_PARAM_DESC),
+                    ),
                 ),
                 (
                     "workspaceOverride".to_string(),
@@ -281,10 +324,6 @@ fn update_scheduled_task_tool() -> MCPTool {
                 (
                     "clearWorkspaceOverride".to_string(),
                     boolean_prop(Some("Set true to remove the workspace override.")),
-                ),
-                (
-                    "clearGroup".to_string(),
-                    boolean_prop(Some("Set true to remove scheduled task group metadata.")),
                 ),
                 (
                     "enabled".to_string(),
@@ -303,8 +342,19 @@ fn toggle_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "toggleScheduledTask".to_string(),
         title: Some("Toggle Scheduled Task".to_string()),
-        description: "Enable or disable a scheduled task without changing its other fields. Use this for safe pause/resume control."
-            .to_string(),
+        description: tool_description(
+            "Enable or disable a scheduled task without changing other fields.",
+            &["Task ID from scheduled_task__getScheduledTask."],
+            &[
+                "Pass the task ID and enabled flag.",
+                "Use for safe pause/resume without editing the schedule.",
+            ],
+            &[
+                "Confirm state with scheduled_task__getScheduledTask.",
+                "Permanently remove with scheduled_task__deleteScheduledTask if obsolete.",
+            ],
+        )
+        .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -328,8 +378,16 @@ fn delete_scheduled_task_tool() -> MCPTool {
     MCPTool {
         name: "deleteScheduledTask".to_string(),
         title: Some("Delete Scheduled Task".to_string()),
-        description: "Delete a scheduled task permanently. Use getScheduledTask() first if you need to confirm the schedule before removal."
-            .to_string(),
+        description: tool_description(
+            "Permanently delete a scheduled task.",
+            &["Task ID from scheduled_task__getScheduledTask."],
+            &[
+                "Confirm the schedule with scheduled_task__getScheduledTask if unsure.",
+                "Deletion cannot be undone.",
+            ],
+            &["Verify removal with scheduled_task__listScheduledTasks."],
+        )
+        .to_string(),
         input_schema: object_prop(
             vec![(
                 "id".to_string(),

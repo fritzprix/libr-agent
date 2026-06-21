@@ -17,7 +17,7 @@
 ///
 /// ## What these tests cover
 ///
-/// 1. `attachments__list` — the exact tool that triggered the original bug — is
+/// 1. `attachments__listAttachments` — the exact tool that triggered the original bug — is
 ///    correctly classified as a builtin tool by the routing guard in `call_tool`.
 /// 2. HTTP MCP tools such as `exa__web_search_exa` are NOT misidentified as builtins,
 ///    which would incorrectly send them into the lazy-proxy path.
@@ -27,7 +27,7 @@
 ///    - `None` → all non-optional builtins (including `attachments`) are enabled.
 ///    - `Some([…])` → only the specified subset is enabled.
 /// 5. `attachments` appears in the core fallback list so the lazy proxy path can always
-///    serve `attachments__list` even when the DB is unavailable.
+///    serve `attachments__listAttachments` even when the DB is unavailable.
 use tauri_mcp_agent_lib::agent::tools::extract_builtin_tool_ids;
 use tauri_mcp_agent_lib::agent::AgentConfig;
 use tauri_mcp_agent_lib::mcp::builtin::service_id::{
@@ -51,14 +51,14 @@ fn config_from_json(json: &str) -> AgentConfig {
 
 // ─── test 1: exact repro tool is classified as builtin ─────────────────────────────────
 
-/// Regression: `attachments__list` (the exact tool call that produced the original
+/// Regression: `attachments__listAttachments` (the exact tool call that produced the original
 /// "No proxy found" error) must be identified as a builtin so `call_tool` enters the
 /// lazy-proxy path instead of the external-MCP path (which would immediately fail).
 #[test]
 fn attachments_list_content_is_classified_as_builtin() {
     assert!(
-        is_builtin_tool("attachments__list"),
-        "`attachments__list` must be detected as a builtin tool; \
+        is_builtin_tool("attachments__listAttachments"),
+        "`attachments__listAttachments` must be detected as a builtin tool; \
          if this fails the lazy-proxy path is never reached"
     );
 }
@@ -126,7 +126,7 @@ fn core_builtin_fallback_aliases_all_resolve() {
 
 // ─── test 6: attachments is in the core fallback ────────────────────────────────────────
 
-/// The lazy-proxy fallback must include `attachments` so that `attachments__list`
+/// The lazy-proxy fallback must include `attachments` so that `attachments__listAttachments`
 /// can always be served even when the DB lookup fails.
 #[test]
 fn core_builtin_fallback_includes_attachments() {
@@ -211,7 +211,7 @@ fn extract_builtin_tool_ids_respects_explicit_allowlist() {
 #[test]
 fn is_builtin_check_is_idempotent() {
     let cases = [
-        ("attachments__list", true),
+        ("attachments__listAttachments", true),
         ("exa__web_search_exa", false),
         ("planning__addTask", true),
     ];

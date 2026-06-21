@@ -98,9 +98,9 @@ impl BuiltinMCPServer for AgentServer {
         let session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
 
         let result = match tool_name {
-            "create" => handlers::create_agent(self, args).await,
-            "update" => handlers::update_agent(self, args, Some(session_id.clone())).await,
-            "list" => handlers::list_agents_or_sessions(self, args, &session_id).await,
+            "createAgent" => handlers::create_agent(self, args).await,
+            "updateAgent" => handlers::update_agent(self, args, Some(session_id.clone())).await,
+            "listAgents" => handlers::list_agents_or_sessions(self, args, &session_id).await,
             "prepareTeamworkWorkspace" => {
                 handlers::prepare_teamwork_workspace(self, args, &session_id).await
             }

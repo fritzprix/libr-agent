@@ -269,13 +269,13 @@ impl WorkspaceServer {
                 };
 
                 let first_hint = if show_line_anchors {
-                    "Use editFiles with path plus only the 6-character startAnchor; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
+                    "Use editFile with only the 6-character startAnchor in edits[]; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
                 } else {
-                    "If you plan to use editFiles next, rerun with showLineAnchors=true to get anchors".to_string()
+                    "If you plan to use editFile next, rerun with showLineAnchors=true to get anchors".to_string()
                 };
                 let mut next_actions = vec![
                     first_hint,
-                    "Use editFiles with path, op='insert_after', startLine, and startAnchor to insert below an existing line".to_string(),
+                    "Use editFile with op='insert_after', startLine, and startAnchor in edits[] to insert below an existing line".to_string(),
                     "writeFile for full file replacement".to_string(),
                 ];
                 if let (Some(next_start_line), Some(suggested_end_line)) =

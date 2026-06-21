@@ -28,12 +28,6 @@ impl LineEdit {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ParsedEdit {
-    pub(super) path: String,
-    pub(super) edit: LineEdit,
-}
-
-#[derive(Debug, Clone)]
 pub(super) struct PreparedFileEdit {
     pub(super) path: String,
     pub(super) edits: Vec<LineEdit>,

@@ -1,7 +1,7 @@
 import type { MessageError } from '@/models/chat';
 import type { AgentRuntimeError } from '@/models/agent-ipc';
 import { getAgentSessionMetadata } from '@/lib/backend/agent-commands';
-import { coalesceExecutionModeFlags } from '@/lib/session-metadata';
+import { normalizeExecutionMode } from '@/lib/session-metadata';
 import { getLogger } from '@/lib/logger';
 import type { useAgentSessionState } from './useAgentSessionState';
 
@@ -36,20 +36,16 @@ export async function syncSessionMetadataFromBackend(
       return;
     }
 
-    const executionMode = coalesceExecutionModeFlags(
-      metadata.yoloMode,
-      metadata.unsafeMode,
-    );
+    const executionMode = normalizeExecutionMode(metadata.executionMode);
 
-    setters.applyExecutionMode(executionMode.executionMode);
+    setters.applyExecutionMode(executionMode);
     setters.setSession((previous) =>
       previous
         ? {
             ...previous,
             name: metadata.name,
             status: metadata.status,
-            yoloMode: executionMode.yoloMode,
-            unsafeMode: executionMode.unsafeMode,
+            executionMode,
           }
         : previous,
     );

@@ -130,16 +130,10 @@ When uncertain, apply these rules in order:
    - teamwork base information including the original user request
    - coordination scaffold
    - optional machine-readable teamwork manifest
-2. Extend scheduled task support with:
-   - `groupId`
-   - `groupName`
-   - optional role/kind metadata
-   - provenance
-3. Redesign Scheduled Tasks UX around:
+2. Redesign Scheduled Tasks UX around:
    - personal tasks
-   - scheduled task groups
    - governance settings
-4. Replace the provisional lineage-filtered Org view with:
+3. Replace the provisional lineage-filtered Org view with:
    - explicit org metadata
    - minimal org tool group
    - org-card / org-chart UX

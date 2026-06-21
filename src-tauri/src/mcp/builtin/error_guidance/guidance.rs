@@ -133,7 +133,7 @@ impl ErrorGuidance {
             ],
             (ErrorCategory::DuplicateResource, ToolGroup::Agent) => vec![
                 "Use a different name for the new Agent or Assistant".to_string(),
-                "Use agent__update to modify existing configurations".to_string(),
+                "Use agent__updateAgent to modify existing configurations".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Agent) => vec![
                 "Verify all required parameters (goal, inputs) are provided".to_string(),
@@ -167,8 +167,8 @@ impl ErrorGuidance {
 
             // Knowledge tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Knowledge) => vec![
-                "Use search_knowledge to find relevant knowledge chunks and their IDs".to_string(),
-                "Use explore_context when you need graph context around a known entity".to_string(),
+                "Use knowledge__searchKnowledge to find relevant knowledge chunks and their IDs".to_string(),
+                "Use knowledge__exploreContext when you need graph context around a known entity".to_string(),
                 "Retry the request with IDs copied from prior knowledge results".to_string(),
             ],
 
@@ -201,10 +201,10 @@ impl ErrorGuidance {
 
             // MCP Manager tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Tool) => vec![
-                "Use tool__list({\"availability\":\"inventory\"}) to see available MCP servers"
+                "Use tool__listServers({\"availability\":\"inventory\"}) to see available MCP servers"
                     .to_string(),
                 "Verify the server name is correct".to_string(),
-                "Use tool__list({\"availability\":\"inventory\",\"query\":\"<name>\"}) to search servers by name".to_string(),
+                "Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<name>\"}) to search servers by name".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Tool) => vec![
                 "Ensure server name is provided".to_string(),
@@ -214,7 +214,7 @@ impl ErrorGuidance {
             (ErrorCategory::OperationFailed, ToolGroup::Tool) => vec![
                 "Check server configuration is correct".to_string(),
                 "Verify the server binary/command exists".to_string(),
-                "Use tool__list({\"availability\":\"inventory\"}) to see server status"
+                "Use tool__listServers({\"availability\":\"inventory\"}) to see server status"
                     .to_string(),
             ],
 
@@ -239,20 +239,20 @@ impl ErrorGuidance {
 
             // Scratchpad tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Scratchpad) => vec![
-                "Use scratchpad__list to see available notes".to_string(),
+                "Use scratchpad__listNote to see available notes".to_string(),
                 "Verify the ID is correct".to_string(),
             ],
             (ErrorCategory::DuplicateResource, ToolGroup::Scratchpad) => vec![
                 "Use a different title for the new note".to_string(),
-                "Use scratchpad__update to modify the existing note".to_string(),
+                "Use scratchpad__updateNote to modify the existing note".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Scratchpad) => vec![
                 "Ensure all required parameters are provided".to_string(),
-                "Use scratchpad__list to see current notes for reference".to_string(),
+                "Use scratchpad__listNote to see current notes for reference".to_string(),
             ],
             (ErrorCategory::InvalidState, ToolGroup::Scratchpad) => vec![
-                "Use scratchpad__clear to remove old items".to_string(),
-                "Use scratchpad__update to modify existing notes".to_string(),
+                "Use scratchpad__clearNote to remove old items".to_string(),
+                "Use scratchpad__updateNote to modify existing notes".to_string(),
             ],
 
             // Media tool errors
@@ -419,33 +419,33 @@ impl SuccessHint {
             ],
             ("readFile", ToolGroup::Workspace) => vec![
                 "Use writeFile to modify the content".to_string(),
-                "Use editFiles to make targeted edits".to_string(),
+                "Use editFile to make targeted edits".to_string(),
             ],
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
-                "Use search with filePattern to narrow down names".to_string(),
+                "Use searchFiles with filePattern to narrow down names".to_string(),
             ],
             (
-                "editFiles" | "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
+                "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
                 ToolGroup::Workspace,
             ) => vec![
                 "Use readFile to verify your edits".to_string(),
                 "Use runShell to execute the updated code".to_string(),
             ],
-            ("search", ToolGroup::Workspace) => vec![
+            ("searchFiles", ToolGroup::Workspace) => vec![
                 "Use readFile on interesting matches".to_string(),
                 "Use listDirectory to explore the surrounding module".to_string(),
             ],
 
             // Agent tools (Unified)
-            ("create", ToolGroup::Agent) => vec![
-                "Use list to see all agents".to_string(),
-                "Use update to modify configuration".to_string(),
+            ("createAgent", ToolGroup::Agent) => vec![
+                "Use listAgents to see all agents".to_string(),
+                "Use updateAgent to modify configuration".to_string(),
                 "Use startSession to begin work with this agent".to_string(),
             ],
-            ("update", ToolGroup::Agent) => vec![
-                "Use list to verify the configuration updates".to_string(),
+            ("updateAgent", ToolGroup::Agent) => vec![
+                "Use listAgents to verify the configuration updates".to_string(),
                 "Use startSession to apply changes in a new session".to_string(),
             ],
             ("startSession", ToolGroup::Agent) => vec![
@@ -490,15 +490,15 @@ impl SuccessHint {
             ],
 
             // Tool Management (Unified)
-            ("list", ToolGroup::Tool) => vec![
-                "Use register to add new external servers".to_string(),
-                "Use update to refresh server configuration".to_string(),
+            ("listServers", ToolGroup::Tool) => vec![
+                "Use registerServer to add new external servers".to_string(),
+                "Use updateServer to refresh server configuration".to_string(),
             ],
-            ("register", ToolGroup::Tool) => vec![
-                "Use list to verify server was created".to_string(),
-                "Use verify to check server health".to_string(),
+            ("registerServer", ToolGroup::Tool) => vec![
+                "Use listServers to verify server was created".to_string(),
+                "Use verifyServer to check server health".to_string(),
             ],
-            ("verify", ToolGroup::Tool) => {
+            ("verifyServer", ToolGroup::Tool) => {
                 vec!["Server is ready for tool calls if verification passed".to_string()]
             }
             ("connectServer", ToolGroup::Tool) => {

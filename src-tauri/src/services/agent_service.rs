@@ -143,7 +143,7 @@ impl AgentService {
 
         if let Some(proxy) = proxy_manager.get_proxy(&session_id).await {
             let result = proxy
-                .call_builtin_internal("attachments", "add", args)
+                .call_builtin_internal("attachments", "addAttachment", args)
                 .await?;
             return serde_json::to_value(result)
                 .map_err(|e| format!("Failed to serialize MCPResult: {}", e));
@@ -185,7 +185,7 @@ impl AgentService {
 
         if let Some(proxy) = proxy_manager.get_proxy(&session_id).await {
             let result = proxy
-                .call_builtin_internal("attachments", "delete", args)
+                .call_builtin_internal("attachments", "deleteAttachment", args)
                 .await?;
             return serde_json::to_value(result)
                 .map_err(|e| format!("Failed to serialize MCPResult: {}", e));

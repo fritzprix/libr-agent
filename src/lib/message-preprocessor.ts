@@ -68,7 +68,7 @@ function deriveAttachmentAgentAccess(
     return {
       mode: 'indexed',
       reason: 'indexed',
-      note: 'Indexed in the attachments store. Use attachments tools such as attachments__list, attachments__read, and attachments__search.',
+      note: 'Indexed in the attachments store. Use attachments tools such as attachments__listAttachments, attachments__readAttachment, and attachments__searchAttachments.',
     };
   }
 
@@ -120,10 +120,10 @@ function buildAttachmentGuidanceLines(
     case 'indexed':
       if (attachment.contentId) {
         lines.push(
-          '- Valid tools: attachments__list, attachments__read, attachments__search',
-          `- Read full content: attachments__read(contentId: "${attachment.contentId}", fromLine: 1, toLine: 200)`,
-          '- Search indexed content: attachments__search(query: "your search query")',
-          '- List indexed attachments: attachments__list()',
+          '- Valid tools: attachments__listAttachments, attachments__readAttachment, attachments__searchAttachments',
+          `- Read full content: attachments__readAttachment(contentId: "${attachment.contentId}", fromLine: 1, toLine: 200)`,
+          '- Search indexed content: attachments__searchAttachments(query: "your search query")',
+          '- List indexed attachments: attachments__listAttachments()',
         );
       }
       break;

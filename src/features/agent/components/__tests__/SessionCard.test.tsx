@@ -34,7 +34,7 @@ const mockSession: AgentSession = {
   createdAt: new Date(),
   updatedAt: new Date(),
   assistant: undefined,
-  yoloMode: false,
+  executionMode: 'normal',
 };
 
 describe('SessionCard', () => {

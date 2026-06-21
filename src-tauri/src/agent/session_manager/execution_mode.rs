@@ -1,43 +1,6 @@
 use super::AgentSessionManager;
+use crate::execution_mode::ExecutionMode;
 use std::sync::atomic::Ordering;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExecutionMode {
-    Normal,
-    Yolo,
-    Unsafe,
-}
-
-impl ExecutionMode {
-    pub fn runtime_flags(self) -> (bool, bool) {
-        match self {
-            Self::Normal => (false, false),
-            Self::Yolo => (true, false),
-            Self::Unsafe => (false, true),
-        }
-    }
-
-    pub fn include_hard_approvals(self) -> Option<bool> {
-        match self {
-            Self::Normal => None,
-            Self::Yolo => Some(false),
-            Self::Unsafe => Some(true),
-        }
-    }
-}
-
-impl std::str::FromStr for ExecutionMode {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "normal" => Ok(Self::Normal),
-            "yolo" => Ok(Self::Yolo),
-            "unsafe" => Ok(Self::Unsafe),
-            _ => Err(format!("Unknown execution mode: {}", value)),
-        }
-    }
-}
 
 pub async fn set_execution_mode(
     manager: &AgentSessionManager,
@@ -47,7 +10,7 @@ pub async fn set_execution_mode(
     let (yolo_enabled, unsafe_enabled) = mode.runtime_flags();
     manager
         .session_repo
-        .update_execution_mode(session_id, yolo_enabled, unsafe_enabled)
+        .update_execution_mode(session_id, mode)
         .await
         .map_err(|e| format!("Failed to update session execution mode: {}", e))?;
 

@@ -289,8 +289,6 @@ describe('retry-utils', () => {
       expect(operation).toHaveBeenCalledTimes(2);
     });
 
-
-
     it('withRetry: uses exact base delay unchanged if exponentialBackoff=false', async () => {
       const operation = vi.fn()
         .mockRejectedValueOnce(new Error('fail'))

@@ -84,10 +84,10 @@ impl BuiltinMCPServer for KnowledgeServer {
         let assistant_id = &self.assistant_id;
 
         match tool_name {
-            "record_knowledge" => operations::record_knowledge(self, args, assistant_id).await,
-            "search_knowledge" => queries::search_knowledge(self, args, assistant_id).await,
-            "explore_context" => queries::explore_context(self, args, assistant_id).await,
-            "prune_knowledge" => operations::prune_knowledge(self, args, assistant_id).await,
+            "recordKnowledge" => operations::record_knowledge(self, args, assistant_id).await,
+            "searchKnowledge" => queries::search_knowledge(self, args, assistant_id).await,
+            "exploreContext" => queries::explore_context(self, args, assistant_id).await,
+            "pruneKnowledge" => operations::prune_knowledge(self, args, assistant_id).await,
             _ => Err(format!("Tool {} not found", tool_name)),
         }
     }

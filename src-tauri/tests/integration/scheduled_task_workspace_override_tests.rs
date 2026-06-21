@@ -1,5 +1,6 @@
 use crate::common;
 
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::repositories::{
     ScheduledTaskRepository, SessionMetadata, SessionRepository, SessionStatus,
     SqliteScheduledTaskRepository, SqliteSessionRepository,
@@ -34,8 +35,7 @@ fn make_session(session_id: &str) -> SessionMetadata {
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }
@@ -65,11 +65,8 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
             cron_expression: Some("0 9 * * *".to_string()),
             schedule_timezone: "local".to_string(),
             assistant_id: "assistant-1".to_string(),
-            group_id: None,
-            group_name: None,
             message: "Generate report".to_string(),
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             created_by_session_id: Some(session_id.to_string()),
             session_id: None,
             workspace_override: Some(missing_workspace_str.clone()),

@@ -25,9 +25,8 @@ SUBSTRATE_DISPLAY = {
         "Follow org for org-specific operating rules."
     ),
     SUBSTRATE_SCHEDULED: (
-        "Scheduled task groups via scheduled_task__createScheduledTask(...) and related scheduled_task tools. "
-        "Use a stable groupName for the first task and groupId for subsequent tasks in the same group. "
-        "Follow schedule for scheduled-group operating rules."
+        "Scheduled tasks via scheduled_task__createScheduledTask(...) and related scheduled_task tools. "
+        "Follow schedule for scheduled-task operating rules."
     ),
 }
 
@@ -236,7 +235,7 @@ def build_teamwork_manifest(
                 "intended": is_org,
                 "rootAction": "agent__createOrg",
                 "childAction": "agent__startSession",
-                "childArgs": {"includeCurrentOrg": True},
+                "childArgs": {},
                 "compatibilityAlias": "spawnOrgAgent",
                 "workspaceSharing": "inherit-parent-workspace-by-default",
             },
@@ -349,7 +348,7 @@ Active specialist skill: `{SUBSTRATE_SPECIALIST_SKILL[substrate_mode]}`
 
 ## Execution Notes
 - Plain child sessions: `agent__startSession(...)`, use `delegate` for delegation mechanics
-- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__startSession(..., includeCurrentOrg=true)`, follow `org`
+- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__startSession(...)`, follow `org`
 - Recurring automation: `scheduled_task__createScheduledTask(...)` and related scheduled-task tools, follow `schedule`
 
 ## Definition of Done

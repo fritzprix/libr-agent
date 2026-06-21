@@ -62,7 +62,6 @@ export interface SystemSettings {
   mcpToolTimeoutSeconds: number;
   searchIndexFrequencyMinutes: number;
   scheduledTaskMinimumIntervalMinutes: number;
-  maxScheduledTaskGroups: number;
   shellIsolationLevel: IsolationLevel;
   shellRuntimeBootstrap: boolean;
   skillsDirectory?: string;
@@ -140,7 +139,6 @@ export const DEFAULT_SETTING: Settings = {
     mcpToolTimeoutSeconds: 0,
     searchIndexFrequencyMinutes: 5,
     scheduledTaskMinimumIntervalMinutes: 0,
-    maxScheduledTaskGroups: 10,
     shellIsolationLevel: 'medium',
     shellRuntimeBootstrap: false,
     skillsDirectory: '',

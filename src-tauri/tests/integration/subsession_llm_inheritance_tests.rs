@@ -1,4 +1,5 @@
 use tauri_mcp_agent_lib::agent::types::CreateSessionRequest;
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
 use tauri_mcp_agent_lib::services::agent_service::resolve_child_session_model_provider;
 
@@ -26,8 +27,7 @@ fn build_parent_session(model: &str, provider: &str) -> SessionMetadata {
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }
