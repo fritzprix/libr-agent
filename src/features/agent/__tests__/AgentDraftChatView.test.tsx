@@ -41,6 +41,7 @@ const createDraftChatState = () => ({
   textareaRef: createRef<HTMLTextAreaElement>(),
   handleFileAdd: vi.fn(),
   handleFileRemove: vi.fn(),
+  addFiles: vi.fn(),
   handleSubmit: vi.fn(),
   stage: { kind: 'typing-arg', typeName: 'file', query: 'src' } as const,
   typeResults: [],

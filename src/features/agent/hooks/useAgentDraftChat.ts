@@ -521,6 +521,7 @@ export function useAgentDraftChat() {
     textareaRef,
     handleFileAdd,
     handleFileRemove,
+    addFiles,
     handleSubmit,
     stage,
     typeResults,

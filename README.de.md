@@ -205,6 +205,7 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 Lade das neueste Installationsprogramm für deine Plattform von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.17_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.17/LibrAgent_0.8.17_x64-setup.exe) · [`LibrAgent_0.8.17_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.17/LibrAgent_0.8.17_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.17_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.17/LibrAgent_0.8.17_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.17_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.17/LibrAgent_0.8.17_amd64.AppImage) · [`LibrAgent_0.8.17_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.17/LibrAgent_0.8.17_amd64.deb) · [`LibrAgent-0.8.17-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.17/LibrAgent-0.8.17-1.x86_64.rpm)

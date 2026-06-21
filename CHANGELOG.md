@@ -20,7 +20,6 @@ All notable changes to this project will be documented in this file.
 
 - **Workspace Clear Tooltip**: Add tooltip to the clear workspace button in the palette for better discoverability.
 
-
 ## [0.8.16] - 2026-06-19
 
 ### 🚀 Features
