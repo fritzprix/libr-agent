@@ -367,8 +367,8 @@ fn zip_dir<W: Write + std::io::Seek>(
             buffer.clear();
         }
 
-        if total_files > 0 {
-            let progress = base_progress + ((i + 1) as u32 * progress_span / total_files as u32);
+        if let Some(div) = ((i + 1) as u32 * progress_span).checked_div(total_files as u32) {
+            let progress = base_progress + div;
             window.emit("migration:progress", progress).ok();
         }
     }
@@ -1031,8 +1031,8 @@ pub async fn import_migration(
                         }
                     }
                 }
-                if total_files > 0 {
-                    let progress = 90 + ((idx + 1) * 10 / total_files);
+                if let Some(div) = ((idx + 1) * 10).checked_div(total_files) {
+                    let progress = 90 + div;
                     window.emit("migration:progress", progress as u32).ok();
                 }
             }
