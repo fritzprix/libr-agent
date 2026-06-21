@@ -79,6 +79,9 @@ use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_messages_before,
     messages_get_page, messages_search, messages_upsert, messages_upsert_many,
 };
+use commands::migration_commands::{
+    export_migration, import_migration, inspect_migration, reverify_mcp_servers,
+};
 use commands::playbook_commands::{
     create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
     update_playbook,
@@ -320,6 +323,10 @@ pub fn run() {
                 get_setting,
                 delete_setting,
                 list_settings,
+                export_migration,
+                import_migration,
+                inspect_migration,
+                reverify_mcp_servers,
                 scan_skills_directory,
                 get_default_skills_directory,
                 open_skills_directory_in_explorer,

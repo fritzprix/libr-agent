@@ -36,6 +36,7 @@ const PlaybookList = lazy(() => import('@/features/playbook/List'));
 const History = lazy(() => import('@/features/history/History'));
 const Org = lazy(() => import('@/features/history/Org'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
+const MigrationPage = lazy(() => import('@/features/migration/MigrationPage'));
 const MCPServerPage = lazy(
   () => import('@/features/mcp-servers/MCPServerPage'),
 );
@@ -210,6 +211,14 @@ function App() {
                                     element={
                                       <StartupRouteMountMarker routeName="settings">
                                         <SettingsPage />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/settings/migration"
+                                    element={
+                                      <StartupRouteMountMarker routeName="migration">
+                                        <MigrationPage />
                                       </StartupRouteMountMarker>
                                     }
                                   />
