@@ -165,7 +165,9 @@ impl ScheduledTaskRecord {
             .to_string();
         }
 
-        ExecutionMode::from_db(&self.execution_mode).as_str().to_string()
+        ExecutionMode::from_db(&self.execution_mode)
+            .as_str()
+            .to_string()
     }
 }
 
