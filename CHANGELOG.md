@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.19] - 2026-06-23
+
+### 🚀 Features
+
+- **OAuth 2.1 for Remote MCP Servers**: Add OAuth 2.1 authentication flow for HTTP MCP servers, compliant with the 2025-06-18 MCP authorization spec. Includes discovery, authorization, token exchange, and secure token storage via the OS keychain.
+- **MCP Server OAuth UI**: Configure OAuth 2.1 in the MCP server dialog, authorize/disconnect from server cards, and save auth-required server configs before completing the OAuth handshake.
+- **Planning Goal Nudges**: Planning context now frames a missing goal as a required action with explicit tool names, guiding agents to create a goal before proceeding.
+
+### 🐛 Fixes
+
+- **`messageToSession` Stale Output**: When `wait=true`, prefer fresh in-memory session cache over stale database reads so delegated session polling returns the latest assistant output after workflow completion.
+
+### 🔧 Internal
+
+- **OAuth Hardening**: Validate OAuth discovery and endpoint hosts (HTTPS-only, reject private/local networks).
+- **Test Suite Stability**: Repair lib test fixtures, assistant-scoped playbook isolation, and global-state locking for parallel test runs.
+- **CI**: Bump `actions/checkout` from v6 to v7.
+
 ## [0.8.18] - 2026-06-22
 
 ### 🚀 Features
