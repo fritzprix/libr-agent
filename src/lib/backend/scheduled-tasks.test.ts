@@ -36,11 +36,8 @@ describe('scheduled-tasks backend wrapper', () => {
     cronExpression: '* * * * *',
     scheduleTimezone: 'local',
     assistantId: 'assistant-1',
-    groupId: null,
-    groupName: null,
     message: 'Hello',
-    yoloMode: false,
-    unsafeMode: false,
+    executionMode: 'normal' as const,
     createdBySessionId: null,
     sessionId: null,
     workspaceOverride: null,
@@ -59,8 +56,7 @@ describe('scheduled-tasks backend wrapper', () => {
       cronExpression: '* * * * *',
       assistantId: 'assistant-1',
       message: 'Hello',
-      yoloMode: false,
-      unsafeMode: false,
+      executionMode: 'normal' as const,
       workspaceOverride: '/tmp/project',
     };
 

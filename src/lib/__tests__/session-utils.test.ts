@@ -31,7 +31,7 @@ function makeSession(
     createdAt: new Date('2026-03-18T00:00:00.000Z'),
     updatedAt: new Date('2026-03-18T00:00:01.000Z'),
     assistant: makeAssistant({ id: 'assistant-default' }),
-    yoloMode: false,
+    executionMode: 'normal',
     ...restOverrides,
   };
 }

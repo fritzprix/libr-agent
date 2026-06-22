@@ -31,7 +31,7 @@ vi.mock('@/lib/backend/core', () => ({
       createdAt: new Date('2026-04-05T00:00:00Z').getTime(),
       updatedAt: new Date('2026-04-05T00:00:00Z').getTime(),
       lineageId: 'lineage-1',
-      yoloMode: false,
+      executionMode: 'normal',
     },
     {
       id: 'root',
@@ -44,7 +44,7 @@ vi.mock('@/lib/backend/core', () => ({
       orgId: 'org-1',
       orgName: 'Research Org',
       orgRootSessionId: 'root',
-      yoloMode: false,
+      executionMode: 'normal',
     },
     {
       id: 'child',
@@ -60,7 +60,7 @@ vi.mock('@/lib/backend/core', () => ({
       orgId: 'org-1',
       orgName: 'Research Org',
       orgRootSessionId: 'root',
-      yoloMode: false,
+      executionMode: 'normal',
     },
   ]),
 }));

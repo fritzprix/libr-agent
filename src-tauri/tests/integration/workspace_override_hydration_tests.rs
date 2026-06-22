@@ -3,6 +3,7 @@ use crate::common;
 use migration::MigratorTrait;
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };
@@ -79,8 +80,7 @@ fn make_session(session_id: &str, workspace_override: Option<String>) -> Session
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override,
     }
 }

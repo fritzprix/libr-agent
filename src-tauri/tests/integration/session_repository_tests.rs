@@ -2,6 +2,7 @@ use crate::common;
 
 use sea_orm::{ActiveModelTrait, Set};
 use std::str::FromStr;
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::entity::session;
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
@@ -35,8 +36,7 @@ fn build_session(id: &str, updated_at: i64) -> SessionMetadata {
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }
@@ -251,7 +251,7 @@ async fn update_name_persists_title_without_touching_updated_at() {
 }
 
 #[tokio::test]
-async fn get_session_coalesces_legacy_execution_flags() {
+async fn get_session_reads_execution_mode_column() {
     let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteSessionRepository::new(db.clone());
 
@@ -277,8 +277,7 @@ async fn get_session_coalesces_legacy_execution_flags() {
         last_attention_at: Set(None),
         last_attention_reason: Set(None),
         is_bookmarked: Set(false),
-        yolo_mode: Set(true),
-        unsafe_mode: Set(true),
+        execution_mode: Set("unsafe".to_string()),
         workspace_override: Set(None),
     }
     .insert(&db)
@@ -291,6 +290,5 @@ async fn get_session_coalesces_legacy_execution_flags() {
         .expect("session lookup should succeed")
         .expect("session should exist");
 
-    assert!(!retrieved.yolo_mode);
-    assert!(retrieved.unsafe_mode);
+    assert_eq!(retrieved.execution_mode, ExecutionMode::Unsafe);
 }

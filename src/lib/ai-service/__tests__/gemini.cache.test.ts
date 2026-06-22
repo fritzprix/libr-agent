@@ -273,7 +273,7 @@ describe('GeminiService request assembly', () => {
         [
           createUserMessage('hello'),
           createSessionContextMessage(
-            `[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]`,
+            `<!-- session context: background reference only -->\n\n# Current Context Information\nvolatile bits\n\n<!-- end of session context -->`,
           ),
         ],
         {
@@ -304,7 +304,7 @@ describe('GeminiService request assembly', () => {
       role: 'user',
       parts: [
         {
-          text: '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
+          text: '<!-- session context: background reference only -->\n\n# Current Context Information\nvolatile bits\n\n<!-- end of session context -->',
         },
       ],
     });

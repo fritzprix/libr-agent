@@ -9,6 +9,7 @@ import type { useAgentChat } from '@/context/AgentChatContext';
 import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { safeInvoke } from '@/lib/backend/core';
 import type { ExecutionMode } from '@/context/agent-session/types';
+import { isExecutionMode } from '@/lib/generated/execution-mode';
 
 const logger = getLogger('useChatSubmit');
 const OBVIOUS_OVERSIZE_CHAR_MULTIPLIER = 2;
@@ -21,7 +22,8 @@ function parsePermissionCommand(commandText: string): ExecutionMode | null {
     return null;
   }
 
-  return match[1].toLowerCase() as ExecutionMode;
+  const mode = match[1].toLowerCase();
+  return isExecutionMode(mode) ? mode : null;
 }
 
 interface UseChatSubmitProps {

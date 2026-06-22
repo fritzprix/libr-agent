@@ -11,11 +11,8 @@ import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { getDateTimeFormatter } from '@/lib/date-utils';
-import {
-  buildScheduledTaskGroups,
-  compareScheduledTasks,
-  type ScheduledTaskGroupSection,
-} from './scheduled-task-utils';
+import { compareScheduledTasks } from './scheduled-task-utils';
+import type { ExecutionMode } from '@/context/agent-session/types';
 
 const logger = getLogger('ScheduledTasksPage');
 
@@ -24,12 +21,9 @@ interface ScheduledTaskFormData {
   cronExpression: string;
   scheduleTimezone: 'local';
   assistantId: string;
-  groupName: string | null;
   message: string;
-  yoloMode: boolean;
-  unsafeMode: boolean;
+  executionMode: ExecutionMode;
   workspaceOverride: string | null;
-  clearGroup?: boolean;
 }
 
 export function ScheduledTasksPage() {
@@ -107,17 +101,12 @@ export function ScheduledTasksPage() {
     [t],
   );
 
-  const groupedSections = useMemo<ScheduledTaskGroupSection[]>(() => {
-    return buildScheduledTaskGroups(tasks);
-  }, [tasks]);
-
-  const personalTasks = useMemo(
-    () => tasks.filter((task) => !task.groupName).sort(compareScheduledTasks),
+  const sortedTasks = useMemo(
+    () => [...tasks].sort(compareScheduledTasks),
     [tasks],
   );
 
   const enabledTaskCount = useMemo(() => {
-    // ⚡ Bolt: Replaced .reduce() with a loop to avoid per-element callback overhead.
     let count = 0;
     for (const task of tasks) {
       if (task.enabled) {
@@ -181,12 +170,11 @@ export function ScheduledTasksPage() {
           <ScheduledTasksContent
             enabledTaskCount={enabledTaskCount}
             formatNextRun={formatNextRun}
-            groupedSections={groupedSections}
             onCreate={openCreate}
             onDelete={handleDelete}
             onEdit={openEdit}
             onToggle={handleToggle}
-            personalTasks={personalTasks}
+            sortedTasks={sortedTasks}
             tasks={tasks}
             deletingIds={deletingIds}
             togglingIds={togglingIds}

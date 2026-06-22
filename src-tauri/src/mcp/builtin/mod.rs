@@ -24,6 +24,7 @@ pub mod session_api;
 pub mod setup_wizard;
 pub mod skills;
 pub mod tool;
+pub mod tool_description;
 pub mod ui;
 pub mod utils;
 pub mod workspace;

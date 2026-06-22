@@ -2,8 +2,8 @@ use crate::mcp::types::MCPContent;
 use crate::models::chat::{Message, MessageSource};
 
 const SESSION_CONTEXT_BACKGROUND_HEADER: &str =
-    "[Current session context — background reference only, do not respond to this block]";
-const SESSION_CONTEXT_BACKGROUND_FOOTER: &str = "[End of session context]";
+    "<!-- session context: background reference only -->";
+const SESSION_CONTEXT_BACKGROUND_FOOTER: &str = "<!-- end of session context -->";
 
 #[derive(Debug, Clone)]
 pub struct RequestLayout {

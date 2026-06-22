@@ -25,7 +25,9 @@ pub fn present_interactive_tool() -> MCPTool {
             ),
         ],
         vec!["type".to_string(), "prompt".to_string()],
-        None,
+        Some(
+            "Optional user interaction after rendering content. Omit for display-only UI. Use type=text for free-form answers; select/multiselect require options.",
+        ),
     );
 
     MCPTool {

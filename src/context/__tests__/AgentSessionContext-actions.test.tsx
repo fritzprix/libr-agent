@@ -119,7 +119,7 @@ describe('AgentSessionContext – User Actions', () => {
             mockClearPendingApproval.mockClear();
 
             await act(async () => {
-                await result.current.actions.toggleYoloMode();
+                await result.current.actions.setExecutionMode('yolo');
             });
 
             expect(safeInvokeMock).toHaveBeenCalledWith('agent_set_execution_mode', {
@@ -168,8 +168,6 @@ describe('AgentSessionContext – User Actions', () => {
                 mode: 'unsafe',
             });
             expect(result.current.state.executionMode).toBe('unsafe');
-            expect(result.current.state.yoloModeEnabled).toBe(false);
-            expect(result.current.state.unsafeModeEnabled).toBe(true);
         });
 
         it('updates local session title and persists it through the list action', async () => {

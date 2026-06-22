@@ -20,6 +20,7 @@ import { useAgentDraftChat } from './hooks/useAgentDraftChat';
 import { useWorkspaceFiles } from './hooks/useWorkspaceFiles';
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from './lib/attachment-picker';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
+import { useClipboardImage } from './hooks/useClipboardImage';
 
 const textareaStyle = {
   msOverflowStyle: 'none',
@@ -53,6 +54,7 @@ function DraftChatInner() {
     textareaRef,
     handleFileAdd,
     handleFileRemove,
+    addFiles,
     handleSubmit,
     stage,
     typeResults,
@@ -77,6 +79,14 @@ function DraftChatInner() {
     textareaRef,
     value: input,
     maxHeight: 128,
+  });
+
+  const { handlePaste } = useClipboardImage({
+    input,
+    setInput,
+    onInputChange,
+    textareaRef,
+    attachFiles: addFiles,
   });
 
   if (isLoadingAssistant) {
@@ -300,6 +310,7 @@ function DraftChatInner() {
                         e.target.selectionStart ?? e.target.value.length,
                       );
                     }}
+                    onPaste={handlePaste}
                     placeholder={inputPlaceholder}
                     rows={1}
                     autoComplete="off"

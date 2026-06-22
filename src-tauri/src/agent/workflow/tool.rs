@@ -39,6 +39,20 @@ pub async fn continue_workflow_after_tool(
                 session_id
             );
 
+            // [Race Mitigation] Verify session was not reset/cancelled before injecting results
+            {
+                let active = active_sessions.read().await;
+                if let Some(session) = active.get(&session_id) {
+                    if session.cancellation_token.is_cancelled() {
+                        log::info!(
+                            "Workflow was cancelled or reset for session {} before tool message injection. Discarding tool results.",
+                            session_id
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+
             let accumulated_messages = crate::agent::tools::spill_oversized_tool_result_messages(
                 &session_id,
                 accumulated_messages,

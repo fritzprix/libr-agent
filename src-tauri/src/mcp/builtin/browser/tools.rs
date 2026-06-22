@@ -1,3 +1,4 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
@@ -5,21 +6,21 @@ use crate::mcp::utils::schema_builder::*;
 pub fn create_session_tool() -> MCPTool {
     MCPTool {
         name: "createSession".to_string(),
-        title: None,
-        description: "Create or replace the active browser session for this agent.
-
-One agent has one active browser session/page at a time.
-
-Behavior:
-1. Call createSession before browser tools if no active session exists
-2. Other browser tools automatically use the active session stored by the backend
-3. If a session already exists, createSession closes it and starts a fresh one
-4. Session automatically closes if the agent terminates
-
-If `url` is omitted, the session opens https://www.google.com.
-
-Returns a success message confirming the active session is ready."
-            .to_string(),
+        title: Some("Create Browser Session".to_string()),
+        description: tool_description(
+            "Create or replace the active browser session for this agent. One agent has one active browser session/page at a time.",
+            &[],
+            &[
+                "Call createSession before other browser tools if no active session exists.",
+                "If a session already exists, createSession closes it and starts a fresh one.",
+                "If url is omitted, the session opens https://www.google.com.",
+            ],
+            &[
+                "Navigate with browser__navigateToUrl.",
+                "Read page content with browser__getPageContent.",
+            ],
+        )
+        .to_string(),
         input_schema: object_prop(
             vec![(
                 "url".to_string(),
@@ -41,7 +42,7 @@ Returns a success message confirming the active session is ready."
 pub fn navigate_to_url_tool() -> MCPTool {
     MCPTool {
         name: "navigateToUrl".to_string(),
-        title: None,
+        title: Some("Navigate to URL".to_string()),
         description: "Navigate the single active browser session to a specific URL.
 
 Behavior:
@@ -55,9 +56,9 @@ Behavior:
 - 404: Page not found - check URL or search homepage
 - Timeout: Page too complex or blocking - try different URL
 
-Next Steps:
-- use `getPageContent({})` or listInteractable before another `navigateToUrl`
-- Use listInteractable to inspect actionable elements"
+💡 Next Steps:
+- Use browser__getPageContent({}) or browser__listInteractable before another browser__navigateToUrl
+- Use browser__listInteractable to inspect actionable elements"
             .to_string(),
         input_schema: object_prop(
             vec![(
@@ -78,8 +79,16 @@ Next Steps:
 pub fn navigate_back_tool() -> MCPTool {
     MCPTool {
         name: "navigateBack".to_string(),
-        title: None,
-        description: "Navigate back in browser history to the previous page.".to_string(),
+        title: Some("Navigate Back".to_string()),
+        description: tool_description(
+            "Navigate back in browser history to the previous page.",
+            &["Active browser session from browser__createSession."],
+            &["Requires prior navigation history in the active session."],
+            &[
+                "Extract content with browser__getPageContent.",
+                "Inspect elements with browser__listInteractable.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -90,8 +99,16 @@ pub fn navigate_back_tool() -> MCPTool {
 pub fn navigate_forward_tool() -> MCPTool {
     MCPTool {
         name: "navigateForward".to_string(),
-        title: None,
-        description: "Navigate forward in browser history to the next page.".to_string(),
+        title: Some("Navigate Forward".to_string()),
+        description: tool_description(
+            "Navigate forward in browser history to the next page.",
+            &["Active browser session from browser__createSession."],
+            &["Requires having navigated back previously."],
+            &[
+                "Extract content with browser__getPageContent.",
+                "Inspect elements with browser__listInteractable.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -102,8 +119,16 @@ pub fn navigate_forward_tool() -> MCPTool {
 pub fn get_current_url_tool() -> MCPTool {
     MCPTool {
         name: "getCurrentUrl".to_string(),
-        title: None,
-        description: "Get the current URL of the page.".to_string(),
+        title: Some("Get Current URL".to_string()),
+        description: tool_description(
+            "Get the current URL of the active browser page.",
+            &["Active browser session from browser__createSession."],
+            &[],
+            &[
+                "Extract page content with browser__getPageContent.",
+                "Navigate elsewhere with browser__navigateToUrl.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -114,8 +139,16 @@ pub fn get_current_url_tool() -> MCPTool {
 pub fn get_page_title_tool() -> MCPTool {
     MCPTool {
         name: "getPageTitle".to_string(),
-        title: None,
-        description: "Get the title of the current page.".to_string(),
+        title: Some("Get Page Title".to_string()),
+        description: tool_description(
+            "Get the title of the current active browser page.",
+            &["Active browser session from browser__createSession."],
+            &[],
+            &[
+                "Read page content with browser__getPageContent.",
+                "Verify navigation succeeded after browser__navigateToUrl.",
+            ],
+        ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -126,7 +159,7 @@ pub fn get_page_title_tool() -> MCPTool {
 pub fn get_page_content_tool() -> MCPTool {
     MCPTool {
         name: "getPageContent".to_string(),
-        title: None,
+        title: Some("Get Page Content".to_string()),
         description: "Get content from the active browser session page as markdown.
 
 This is the normal next step after `navigateToUrl`.
@@ -170,7 +203,7 @@ Call `getPageContent({})` again after any navigation."
 pub fn click_element_tool() -> MCPTool {
     MCPTool {
         name: "clickElement".to_string(),
-        title: None,
+        title: Some("Click Element".to_string()),
         description: "Click an element on the page using a CSS selector.
 
 ⚠️ PREREQUISITE:
@@ -194,7 +227,7 @@ pub fn click_element_tool() -> MCPTool {
 pub fn input_text_tool() -> MCPTool {
     MCPTool {
         name: "inputText".to_string(),
-        title: None,
+        title: Some("Input Text".to_string()),
         description: "Input text into an element on the page.
 
 ⚠️ PREREQUISITE:
@@ -221,7 +254,7 @@ pub fn input_text_tool() -> MCPTool {
 pub fn scroll_page_tool() -> MCPTool {
     MCPTool {
         name: "scrollPage".to_string(),
-        title: None,
+        title: Some("Scroll Page".to_string()),
         description: "Scroll the page to a specific position.
 
 Use this for interaction or lazy-loaded pages. It does not advance cached `getPageContent` pages.
@@ -250,7 +283,7 @@ If `getPageContent({})` returned `[Page 1/N]`, use `getPageContent({ \"page\": 2
 pub fn list_interactable_tool() -> MCPTool {
     MCPTool {
         name: "listInteractable".to_string(),
-        title: None,
+        title: Some("List Interactable Elements".to_string()),
         description: "List interactable elements on the page.
 
 Use this before `clickElement` or `inputText` to discover valid CSS selectors instead of guessing.
@@ -287,7 +320,7 @@ Prefer this over getPageContent when you only need to find elements for interact
 pub fn close_session_tool() -> MCPTool {
     MCPTool {
         name: "closeSession".to_string(),
-        title: None,
+        title: Some("Close Browser Session".to_string()),
         description: "Explicitly close the browser session and clear the stored session state.
 
 Good practice after finishing a task to free resources.
@@ -318,8 +351,8 @@ pub fn fetch_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "fetch".to_string(),
-        title: Some("Fetch Content".to_string()),
+        name: "fetchUrl".to_string(),
+        title: Some("Fetch URL".to_string()),
         description: "Stateless one-off fetch: extract markdown content from a URL or download a file without creating or reusing the visible stateful browser workflow.
 
 Use this instead of chaining multiple `navigateToUrl` calls when you only need the content of a single, independent URL.
@@ -369,7 +402,7 @@ pub fn all_tools() -> Vec<MCPTool> {
 pub fn evaluate_js_tool() -> MCPTool {
     MCPTool {
         name: "evaluateJS".to_string(),
-        title: None,
+        title: Some("Evaluate JavaScript".to_string()),
         description: "Execute JavaScript code in the active browser session.\n\n\
             Use this to:\n\
             - Read page state (e.g., 'document.querySelector(...)')\n\
@@ -397,7 +430,7 @@ pub fn evaluate_js_tool() -> MCPTool {
 pub fn get_console_logs_tool() -> MCPTool {
     MCPTool {
         name: "getConsoleLogs".to_string(),
-        title: None,
+        title: Some("Get Console Logs".to_string()),
         description: "Get browser console logs (console.log, console.error, etc.) from the active session.\n\n\
             Returns recent console entries with level (log/error/warn/info), message text, and timestamp.\n\
             \n\

@@ -8,8 +8,20 @@ impl AgentService {
         session_id: &str,
         content: String,
         source: Option<MessageSource>,
+        reset: bool,
     ) -> Result<SendSessionMessageResponse, String> {
+        // First verify that the session exists in the database
+        let exists = manager.get_session(session_id).await?.is_some();
+        if !exists {
+            return Err(format!("Session not found: {}", session_id));
+        }
+
+        if reset {
+            manager.reset_session(session_id).await?;
+        }
+
         let session = load_or_resume_session(manager, session_id).await?;
+
         let message = Message::new_user_message(
             session_id.to_string(),
             content,

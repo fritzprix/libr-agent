@@ -1,12 +1,24 @@
+use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
 /// Record new knowledge into the local vector DB and graph.
 pub fn record_knowledge_tool() -> MCPTool {
     MCPTool {
-        name: "record_knowledge".to_string(),
+        name: "recordKnowledge".to_string(),
         title: Some("Record Knowledge".to_string()),
-        description: "Save a knowledge entry to the local knowledge base. Prefer caller-supplied entities and relationships; heuristic extraction only fills gaps when structured graph data is missing.".to_string(),
+        description: tool_description(
+            "Save a knowledge entry to the local knowledge base.\n\nCore fields: content (required), tags, source.\nAdvanced fields (graph): entities, relationships, auto_extract — use only when you already know the entity/relationship structure or need heuristic graph extraction.",
+            &[],
+            &[
+                "Start with content plus optional tags and source for most recordings.",
+                "Supply entities and relationships explicitly when you know the graph; set auto_extract=true only to fill gaps heuristically.",
+            ],
+            &[
+                "Verify retrieval with knowledge__searchKnowledge.",
+                "Explore graph links with knowledge__exploreContext.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -106,10 +118,21 @@ pub fn record_knowledge_tool() -> MCPTool {
 /// Search the knowledge base using a hybrid approach (Keyword + Semantic).
 pub fn search_knowledge_tool() -> MCPTool {
     MCPTool {
-        name: "search_knowledge".to_string(),
+        name: "searchKnowledge".to_string(),
         title: Some("Search Knowledge".to_string()),
-        description: "Search the knowledge base using keyword, semantic, or fused hybrid ranking."
-            .to_string(),
+        description: tool_description(
+            "Search the knowledge base using keyword, semantic, or fused hybrid ranking.",
+            &[],
+            &[
+                "Formulate a natural-language query or precise keywords.",
+                "Choose mode: keyword (FTS), semantic (embeddings), or hybrid (default).",
+                "Use returned chunk IDs for follow-up reads or pruning.",
+            ],
+            &[
+                "Explore entity graphs with knowledge__exploreContext.",
+                "Remove stale entries with knowledge__pruneKnowledge using returned IDs.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -145,9 +168,20 @@ pub fn search_knowledge_tool() -> MCPTool {
 /// Explore relationships around a central entity.
 pub fn explore_context_tool() -> MCPTool {
     MCPTool {
-        name: "explore_context".to_string(),
+        name: "exploreContext".to_string(),
         title: Some("Explore Context".to_string()),
-        description: "Explore the graph of relationships around a specific entity and return agent-readable graph and linked chunk summaries.".to_string(),
+        description: tool_description(
+            "Explore the graph of relationships around a specific entity and return agent-readable graph and linked chunk summaries.",
+            &["Entity should exist in the knowledge base (use knowledge__searchKnowledge to find names)."],
+            &[
+                "Provide the central entity_name (e.g., 'LibrAgent').",
+                "Set depth (1–3 hops) based on how broad the exploration should be.",
+            ],
+            &[
+                "Read linked chunks via knowledge__searchKnowledge with entity-specific terms.",
+                "Record new findings with knowledge__recordKnowledge.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -177,18 +211,27 @@ pub fn explore_context_tool() -> MCPTool {
 /// Prune or manage existing knowledge.
 pub fn prune_knowledge_tool() -> MCPTool {
     MCPTool {
-        name: "prune_knowledge".to_string(),
+        name: "pruneKnowledge".to_string(),
         title: Some("Prune Knowledge".to_string()),
-        description: "Delete knowledge entries from the database.".to_string(),
+        description: tool_description(
+            "Delete knowledge entries from the local database by chunk ID.",
+            &["Obtain target_ids from knowledge__searchKnowledge results."],
+            &[
+                "Collect chunk IDs to remove.",
+                "Set action='delete' and pass target_ids array.",
+            ],
+            &[
+                "Confirm removal with knowledge__searchKnowledge.",
+                "Record corrected knowledge with knowledge__recordKnowledge if needed.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
                     "target_ids".to_string(),
                     array_schema(
                         integer_prop(None, None, None),
-                        Some(
-                            "Knowledge chunk IDs to delete. Use IDs returned by search_knowledge.",
-                        ),
+                        Some("Knowledge chunk IDs to delete. Use IDs returned by searchKnowledge."),
                     ),
                 ),
                 (

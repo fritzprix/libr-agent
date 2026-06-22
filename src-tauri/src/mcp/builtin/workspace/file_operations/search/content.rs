@@ -246,10 +246,10 @@ pub(super) async fn search_content_in_file(
         }
 
         if show_hashes {
-            s.push_str("Use the returned anchors with editFiles. For range replacement/deletion, also copy endAnchor from the exact end line.\n");
+            s.push_str("Use the returned anchors with editFile. For range replacement/deletion, also copy endAnchor from the exact end line.\n");
         } else {
             s.push_str(
-                "If you plan to use editFiles next, run again with `showLineAnchors: true` to get anchors.\n",
+                "If you plan to use editFile next, run again with `showLineAnchors: true` to get anchors.\n",
             );
         }
         s
@@ -612,7 +612,7 @@ pub(super) async fn search_content_in_dir(
         vec!["Use search with a specific file path to see all matches in that file".to_string()];
     if show_hashes {
         next_steps.push(
-            "Use the returned anchors with editFiles; add endAnchor for range replacement/deletion"
+            "Use the returned anchors with editFile; add endAnchor for range replacement/deletion"
                 .to_string(),
         );
     } else {

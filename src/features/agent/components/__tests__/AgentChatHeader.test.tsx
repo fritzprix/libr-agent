@@ -20,7 +20,7 @@ vi.mock('@/context/AgentSessionContext', () => ({
       provider: 'openai',
       createdAt: new Date(),
       isBookmarked: false,
-      yoloMode: false,
+      executionMode: 'normal',
     },
   }),
   useOptionalAgentSessionState: () => ({
@@ -32,7 +32,7 @@ vi.mock('@/context/AgentSessionContext', () => ({
       provider: 'openai',
       createdAt: new Date(),
       isBookmarked: false,
-      yoloMode: false,
+      executionMode: 'normal',
     },
   }),
   useAgentSessionActions: () => ({
@@ -54,7 +54,7 @@ vi.mock('@/context/AgentSessionListContext', () => ({
         provider: 'openai',
         createdAt: new Date(),
         isBookmarked: true,
-        yoloMode: false,
+        executionMode: 'normal',
       },
     ],
     notificationSessions: [],

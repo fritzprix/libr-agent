@@ -19,6 +19,7 @@ use tauri_mcp_agent_lib::agent::state::{
     AgentSession, CompactionKind, CompactionPhase, CompactionRecoveryPhase, InFlightCompaction,
     PendingEventManager,
 };
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::repositories::{
     InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
 };
@@ -100,8 +101,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }

@@ -155,8 +155,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         last_message_at: None,
         last_attention_at: None,
         last_attention_reason: None,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: crate::execution_mode::ExecutionMode::Normal,
         workspace_override,
     };
 
@@ -209,6 +208,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         .await;
     } else {
         log::info!("Initializing new active state for session: {}", session_id);
+        let (yolo_enabled, unsafe_enabled) = session.execution_mode.runtime_flags();
         active.insert(
             session_id.clone(),
             AgentSession {
@@ -218,8 +218,8 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 status_transition: Arc::new(RwLock::new(None)),
                 transition_lock: Arc::new(tokio::sync::Mutex::new(())),
                 cancellation_token: CancellationToken::new(),
-                yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
-                unsafe_mode: Arc::new(AtomicBool::new(session.unsafe_mode)),
+                yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
+                unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
                 cancel_pending: Arc::new(AtomicBool::new(false)),
                 pending_execution: None,
                 messages: Arc::new(RwLock::new(Vec::new())),

@@ -4,16 +4,19 @@ use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
 use crate::agent::tauri_events::TauriEventDispatcher;
+use crate::execution_mode::ExecutionMode;
 use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
-    CompactContextRecord, SessionListCursor, SessionListPage, SessionMetadata, SessionRepository,
+    compact_context_repository::CompactContextRepository, message_repository::MessageRepository,
+    planning_repository::PlanningRepository, CompactContextRecord, SessionListCursor,
+    SessionListPage, SessionMetadata, SessionRepository,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::sync::RwLock;
 
 #[path = "session_manager/approvals.rs"]
@@ -37,8 +40,6 @@ pub use compact::should_retry_budget_related_blocking_compaction;
 pub use compact::validate_compact_summary_for_testing;
 pub use compact::CompactContextView;
 pub use compact::CompactSummaryClampResult;
-pub use execution_mode::ExecutionMode;
-
 /// Manages agent sessions and their workflows
 ///
 /// This struct acts as a facade, delegating actual logic to specialized modules:
@@ -490,39 +491,24 @@ impl AgentSessionManager {
         approvals::respond_channel_permission(self, session_id, request_id, approved).await
     }
 
-    /// Set YOLO mode for a session
-    pub async fn set_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), String> {
-        self.set_execution_mode(
-            session_id,
-            if enabled {
-                ExecutionMode::Yolo
-            } else {
-                ExecutionMode::Normal
-            },
-        )
-        .await
-    }
+    pub async fn get_execution_mode(&self, session_id: &str) -> ExecutionMode {
+        {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                return ExecutionMode::from_runtime_flags(
+                    session.yolo_mode.load(std::sync::atomic::Ordering::Relaxed),
+                    session
+                        .unsafe_mode
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                );
+            }
+        }
 
-    /// Returns the current yolo_mode for a session
-    pub async fn get_yolo_mode(&self, session_id: &str) -> bool {
-        let active = self.active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|s| s.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
-            .unwrap_or(false)
-    }
+        if let Ok(Some(metadata)) = self.session_repo.get_session(session_id).await {
+            return metadata.execution_mode;
+        }
 
-    /// Set unsafe mode for a session
-    pub async fn set_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), String> {
-        self.set_execution_mode(
-            session_id,
-            if enabled {
-                ExecutionMode::Unsafe
-            } else {
-                ExecutionMode::Normal
-            },
-        )
-        .await
+        ExecutionMode::Normal
     }
 
     pub async fn set_execution_mode(
@@ -531,15 +517,6 @@ impl AgentSessionManager {
         mode: ExecutionMode,
     ) -> Result<(), String> {
         execution_mode::set_execution_mode(self, session_id, mode).await
-    }
-
-    /// Returns the current unsafe_mode for a session
-    pub async fn get_unsafe_mode(&self, session_id: &str) -> bool {
-        let active = self.active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|s| s.unsafe_mode.load(std::sync::atomic::Ordering::Relaxed))
-            .unwrap_or(false)
     }
 
     /// Handle LLM error from frontend
@@ -736,6 +713,87 @@ impl AgentSessionManager {
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
         crate::agent::compact_recovery::clear_compact_in_flight(&self.active_sessions, session_id)
             .await;
+    }
+
+    pub async fn reset_session(&self, session_id: &str) -> Result<(), String> {
+        // 0. Cancel workflow if running
+        {
+            let sessions = self.active_sessions.read().await;
+            if let Some(session) = sessions.get(session_id) {
+                session.cancellation_token.cancel();
+            }
+        }
+
+        // 0b. Transition session status to Idle (DB and Memory) and release active permit
+        let is_active = {
+            let sessions = self.active_sessions.read().await;
+            sessions.contains_key(session_id)
+        };
+        if is_active {
+            crate::agent::lifecycle::update_session_status(
+                &self.session_repo,
+                &self.active_sessions,
+                &self.app_handle,
+                session_id,
+                crate::repositories::SessionStatus::Idle,
+            )
+            .await?;
+        } else {
+            self.session_repo
+                .update_status(session_id, crate::repositories::SessionStatus::Idle)
+                .await
+                .map_err(|e| format!("Failed to update session status in DB: {}", e))?;
+        }
+
+        // 0c. Close browser sessions associated with the agent
+        let browser_server = self
+            .app_handle
+            .try_state::<crate::services::InteractiveBrowserServer>();
+        if let Some(browser_svc) = browser_server {
+            if let Err(e) = browser_svc
+                .inner()
+                .close_agent_browser_sessions(session_id)
+                .await
+            {
+                log::warn!("Failed to close browser session during reset: {}", e);
+            }
+        }
+
+        // 1. Delete messages from DB
+        let repo = crate::state::get_message_repository();
+        repo.delete_by_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to delete messages from DB: {}", e))?;
+
+        // 2. Clear planning data (goal, todo, scratchpad)
+        let planning_repo = crate::state::get_planning_repository();
+        planning_repo
+            .clear_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to clear planning data during reset: {}", e))?;
+
+        // 3. Delete compact context
+        let compact_repo = crate::state::get_compact_context_repository();
+        if let Err(e) = compact_repo.delete_by_session_id(session_id).await {
+            log::warn!("Failed to clear compact context during reset: {}", e);
+        }
+
+        // 4. Clear in-memory active session cache
+        {
+            let mut sessions = self.active_sessions.write().await;
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.clear().await;
+            }
+        }
+
+        // 5. Notify frontend
+        crate::agent::tauri_events::emit_resource_updated(
+            "session",
+            "clear",
+            Some(session_id.to_string()),
+        );
+
+        Ok(())
     }
 
     /// Trigger a non-resuming manual compaction pass for an already-active session.

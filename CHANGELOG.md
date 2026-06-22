@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.18] - 2026-06-22
+
+### 🚀 Features
+
+- **Reset Session Race Conditions**: Resolve reset session race conditions (permit leaks, busy status locks, concurrent writes) and unify browser closure. Add `reset` parameter to `messageToSession` MCP tool.
+- **Clipboard Image Pasting**: Support sharing clipboard image paste via the `useClipboardImage` React hook.
+- **Secure Backups**: Implement secure backup with password encryption and fix backup argument casing.
+
+### 🐛 Fixes
+
+- **Session Context Headers**: Change session context header/footer to HTML comments to prevent LLM silencing.
+- **Checked Division in Migrations**: Use `checked_div` for progress calculations to prevent division-by-zero panics.
+- **Backup Schema Alignment**: Align backup import/export with `executionMode` schema.
+
+### 🔧 Internal
+
+- **Execution Mode Refactor**: Unify `executionMode` types, use SeaORM for migration backfill, simplify MCP tools, and remove scheduled task groups.
+- **MCP Tool Name Standardization**: Standardize builtin MCP tool names and descriptions.
+
 ## [0.8.17] - 2026-06-20
 
 ### 🚀 Features
@@ -19,7 +38,6 @@ All notable changes to this project will be documented in this file.
 ### 🎨 Polish
 
 - **Workspace Clear Tooltip**: Add tooltip to the clear workspace button in the palette for better discoverability.
-
 
 ## [0.8.16] - 2026-06-19
 

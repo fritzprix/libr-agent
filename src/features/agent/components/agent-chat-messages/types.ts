@@ -40,7 +40,7 @@ export interface AgentChatVirtuosoContext {
   scrollToLoadOlderLabel: string;
   sessionAssistantName: string;
   workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'];
-  yoloModeEnabled: ReturnType<typeof useAgentSession>['yoloModeEnabled'];
+  executionMode: ReturnType<typeof useAgentSession>['executionMode'];
 }
 
 export type AgentChatVirtuosoContextProps = {

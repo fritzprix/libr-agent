@@ -65,7 +65,7 @@ pub fn external_tool_error_result(
     if recovery.is_empty() {
         text.push_str("Recovery:\n");
         text.push_str(
-            "- Use tool__list({\"availability\":\"inventory\",\"query\":\"<server or tool>\"}) to confirm the tool name\n",
+            "- Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<server or tool>\"}) to confirm the tool name\n",
         );
         text.push_str("- Verify the server is configured and reachable\n");
     } else {
@@ -120,13 +120,13 @@ pub async fn missing_external_tool_result(
                 full_tool_name, server_name, server.id, session_id
             ),
             vec![
-                "Use tool__list({\"availability\":\"session\"}) to inspect the tools callable right now in this session.".to_string(),
-                "Use tool__list({\"availability\":\"inventory\"}) to inspect registered external servers, inventory, and Server IDs.".to_string(),
+                "Use tool__listServers({\"availability\":\"session\"}) to inspect the tools callable right now in this session.".to_string(),
+                "Use tool__listServers({\"availability\":\"inventory\"}) to inspect registered external servers, inventory, and Server IDs.".to_string(),
                 format!(
-                    "If this session should gain access, attach Server ID \"{}\" with agent__update(id:\"<agentId>\", externalMcpServers:[\"{}\", ...]).",
+                    "If this session should gain access, attach Server ID \"{}\" with agent__updateAgent(id:\"<agentId>\", externalMcpServers:[\"{}\", ...]).",
                     server.id, server.id
                 ),
-                "If changing the current agent is the wrong move, use agent__list(type=\"configs\") to find a better-equipped agent and delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\").".to_string(),
+                "If changing the current agent is the wrong move, use agent__listAgents(type=\"configs\") to find a better-equipped agent and delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\").".to_string(),
             ],
         ),
         Ok(None) => external_tool_error_result(
@@ -139,10 +139,10 @@ pub async fn missing_external_tool_result(
                 full_tool_name, session_id, server_name
             ),
             vec![
-                "Use tool__list({\"availability\":\"session\"}) to inspect the tools callable in the current session.".to_string(),
-                "Use tool__list({\"availability\":\"inventory\"}) to inspect all registered external servers and tool inventory.".to_string(),
+                "Use tool__listServers({\"availability\":\"session\"}) to inspect the tools callable in the current session.".to_string(),
+                "Use tool__listServers({\"availability\":\"inventory\"}) to inspect all registered external servers and tool inventory.".to_string(),
                 "Verify the server name and tool name match the registered inventory exactly.".to_string(),
-                "If you expected another agent environment to provide this tool, use agent__list(type=\"configs\") and delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\").".to_string(),
+                "If you expected another agent environment to provide this tool, use agent__listAgents(type=\"configs\") and delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\").".to_string(),
             ],
         ),
         Err(error) => external_tool_error_result(
@@ -155,8 +155,8 @@ pub async fn missing_external_tool_result(
                 server_name, error
             ),
             vec![
-                "Use tool__list({\"availability\":\"session\"}) to inspect currently callable tools.".to_string(),
-                "Use tool__list({\"availability\":\"inventory\"}) to inspect registered external servers if repository access recovers.".to_string(),
+                "Use tool__listServers({\"availability\":\"session\"}) to inspect currently callable tools.".to_string(),
+                "Use tool__listServers({\"availability\":\"inventory\"}) to inspect registered external servers if repository access recovers.".to_string(),
                 "Retry the operation or delegate to another agent with a known-good tool environment if the task is urgent.".to_string(),
             ],
         ),

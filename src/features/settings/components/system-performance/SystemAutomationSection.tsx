@@ -47,33 +47,6 @@ function SystemAutomationSectionComponent({
         }
         containerClassName="min-w-0"
       />
-
-      <NumberSettingField
-        label={t(
-          'settings.system.maxScheduledTaskGroups',
-          'Max Scheduled Task Groups',
-        )}
-        description={t(
-          'settings.system.maxScheduledTaskGroupsDescription',
-          'Maximum number of distinct scheduled task groups allowed across recurring teamwork automation.',
-        )}
-        placeholder={t(
-          'settings.system.placeholders.maxScheduledTaskGroups',
-          'e.g., 10',
-        )}
-        min={1}
-        max={100}
-        value={localSystemSettings.maxScheduledTaskGroups}
-        parseValue={(rawValue) =>
-          parseIntegerInput(rawValue, {
-            fallback: 10,
-            min: 1,
-            max: 100,
-          })
-        }
-        onValueChange={(value) => onChange('maxScheduledTaskGroups', value)}
-        containerClassName="min-w-0"
-      />
     </div>
   );
 }

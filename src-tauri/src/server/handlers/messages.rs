@@ -61,6 +61,7 @@ pub async fn send_message(
         &id,
         body.content,
         body.source.or(Some(MessageSource::Api)),
+        false,
     )
     .await
     {

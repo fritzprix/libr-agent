@@ -5,6 +5,7 @@ use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
 use serde_json::json;
 use std::str::FromStr;
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::tool::ToolServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
@@ -145,8 +146,7 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         })
         .await
@@ -154,7 +154,7 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
 
     let result = ToolServer::new()
         .call_tool(
-            "list",
+            "listServers",
             json!({ "scope": "external" }),
             Some("session-tool-list".to_string()),
         )
@@ -167,15 +167,15 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
         "inventory mode should still summarize discovered external server ids: {text}"
     );
     assert!(
-        text.contains("agent__update"),
-        "tool discovery guidance should point to canonical agent__update: {text}"
+        text.contains("agent__updateAgent"),
+        "tool discovery guidance should point to canonical agent__updateAgent: {text}"
     );
     assert!(
         !text.contains("updateAssistant("),
         "tool discovery guidance should not mention legacy updateAssistant alias: {text}"
     );
     assert!(
-        !text.contains("[Requires agent__update]"),
+        !text.contains("[Requires agent__updateAgent]"),
         "inventory mode should not annotate session readiness by default: {text}"
     );
     assert!(
@@ -233,8 +233,7 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         })
         .await
@@ -242,7 +241,7 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
 
     let result = ToolServer::new()
         .call_tool(
-            "list",
+            "listServers",
             json!({
                 "scope": "external",
                 "query": "web_search",
@@ -259,7 +258,7 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
         "session mode should show external availability status: {text}"
     );
     assert!(
-        !text.contains("agent__update"),
+        !text.contains("agent__updateAgent"),
         "session mode should not suggest self-update or follow-up update actions: {text}"
     );
     assert!(
@@ -297,8 +296,7 @@ async fn tool_list_uses_builtin_service_alias_for_session_status() {
             last_attention_at: None,
             last_attention_reason: None,
             is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         })
         .await
@@ -306,7 +304,7 @@ async fn tool_list_uses_builtin_service_alias_for_session_status() {
 
     let result = ToolServer::new()
         .call_tool(
-            "list",
+            "listServers",
             json!({
                 "scope": "internal",
                 "query": "createGoal",

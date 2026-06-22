@@ -56,8 +56,6 @@ interface MockAgentSessionContextValue {
   session: MockSession;
   executionMode: ExecutionMode;
   preflightTokenMetrics: PreflightTokenMetrics | null;
-  yoloModeEnabled: boolean;
-  unsafeModeEnabled: boolean;
   setExecutionMode: typeof mocks.setExecutionMode;
   updateSessionConfig: typeof mocks.updateSessionConfig;
 }
@@ -78,8 +76,6 @@ const mockAgentSession: MockAgentSessionContextValue = {
   session: mockSession,
   executionMode: 'normal' as ExecutionMode,
   preflightTokenMetrics: null,
-  yoloModeEnabled: false,
-  unsafeModeEnabled: false,
   setExecutionMode: mocks.setExecutionMode,
   updateSessionConfig: mocks.updateSessionConfig,
 };
@@ -249,8 +245,6 @@ describe('AgentChatStatusBar', () => {
     mockAgentSession.session = { ...mockSession };
     mockAgentSession.executionMode = 'normal';
     mockAgentSession.preflightTokenMetrics = null;
-    mockAgentSession.yoloModeEnabled = false;
-    mockAgentSession.unsafeModeEnabled = false;
     mockAgentChat.messages = [];
     mockAgentChat.workflowStatus = 'idle';
     mockAgentChat.error = null;
@@ -309,7 +303,6 @@ describe('AgentChatStatusBar', () => {
 
   it('explains that hard approvals still require manual confirmation in YOLO mode', () => {
     mockAgentSession.executionMode = 'yolo';
-    mockAgentSession.yoloModeEnabled = true;
 
     render(<AgentChatStatusBar />);
 

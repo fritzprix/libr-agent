@@ -242,7 +242,7 @@ describe('AgentSessionContext (Local)', () => {
                 return Promise.resolve(
                     createOpenSessionResponse(sessionId, {
                         session: {
-                            yoloMode: true,
+                            executionMode: 'yolo',
                         },
                 messages: [
                     {

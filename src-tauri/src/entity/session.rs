@@ -25,8 +25,7 @@ pub struct Model {
     pub last_attention_at: Option<i64>,
     pub last_attention_reason: Option<String>,
     pub is_bookmarked: bool,
-    pub yolo_mode: bool,
-    pub unsafe_mode: bool,
+    pub execution_mode: String,
     pub workspace_override: Option<String>,
 }
 
@@ -43,3 +42,9 @@ impl Related<super::message::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Model {
+    pub fn parsed_execution_mode(&self) -> crate::execution_mode::ExecutionMode {
+        crate::execution_mode::ExecutionMode::from_db(&self.execution_mode)
+    }
+}

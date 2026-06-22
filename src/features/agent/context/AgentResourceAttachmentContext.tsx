@@ -98,7 +98,7 @@ export function AgentResourceAttachmentProvider({
         // Use Agent V2 session-specific proxy to call list
         const response = await agentCallBuiltinTool<{
           contents: AttachmentItem[];
-        }>(sessionId, 'attachments__list', {
+        }>(sessionId, 'attachments__listAttachments', {
           sessionId,
         });
 

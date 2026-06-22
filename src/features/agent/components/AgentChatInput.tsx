@@ -32,6 +32,7 @@ import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from '../lib/attachment-picker';
+import { useClipboardImage } from '../hooks/useClipboardImage';
 
 const logger = getLogger('AgentChatInput');
 
@@ -40,59 +41,13 @@ const textareaStyle = {
   scrollbarWidth: 'none',
 } as const;
 
-function extractImagesFromHTML(htmlText: string): File[] {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(htmlText, 'text/html');
-  const imgs = doc.querySelectorAll('img');
-  const files: File[] = [];
-
-  imgs.forEach((img) => {
-    const src = img.getAttribute('src');
-    if (src && src.startsWith('data:image/')) {
-      try {
-        const parts = src.split(',');
-        if (parts.length < 2 || !parts[1]) return;
-        const mimeMatch = parts[0].match(/data:(image\/[^;]+)/);
-        const isBase64 = parts[0].includes('base64');
-        if (!mimeMatch) return;
-        const mime = mimeMatch[1];
-
-        let u8arr: Uint8Array;
-        if (isBase64) {
-          const bstr = atob(parts[1]);
-          let n = bstr.length;
-          u8arr = new Uint8Array(n);
-          while (n--) {
-            u8arr[n] = bstr.charCodeAt(n);
-          }
-        } else {
-          const decoded = decodeURIComponent(parts[1]);
-          let n = decoded.length;
-          u8arr = new Uint8Array(n);
-          while (n--) {
-            u8arr[n] = decoded.charCodeAt(n);
-          }
-        }
-
-        const file = new File([u8arr], '', { type: mime });
-        files.push(file);
-      } catch (err) {
-        logger.error('Failed to parse image from HTML:', err);
-      }
-    }
-  });
-
-  return files;
-}
-
 interface AgentChatInputProps {
   children?: React.ReactNode;
 }
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
-  const { session, messages, yoloModeEnabled, unsafeModeEnabled } =
-    useAgentSessionState();
+  const { session, messages, executionMode } = useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
   const { submit, isSessionLoading, workflowStatus, cancel, resume } =
     useAgentChat();
@@ -252,29 +207,6 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     void refreshScopedSkills();
   }, [refreshScopedSkills]);
 
-  const insertTextAtSelection = useCallback(
-    (text: string) => {
-      const textarea = textareaRef.current;
-      const selectionStart = textarea?.selectionStart ?? input.length;
-      const selectionEnd = textarea?.selectionEnd ?? input.length;
-      const nextValue =
-        input.slice(0, selectionStart) + text + input.slice(selectionEnd);
-      const nextCursorPosition = selectionStart + text.length;
-
-      setInput(nextValue);
-      onTokenInputChange(nextValue, nextCursorPosition);
-
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-        textareaRef.current?.setSelectionRange(
-          nextCursorPosition,
-          nextCursorPosition,
-        );
-      });
-    },
-    [input, onTokenInputChange, setInput],
-  );
-
   // Handle Enter/Shift+Enter for line breaks and submission
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -341,83 +273,13 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     }
   }, [resume]);
 
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const clipboardData = e.clipboardData;
-      if (!clipboardData) return;
-
-      const items = clipboardData.items ? Array.from(clipboardData.items) : [];
-      const files = clipboardData.files ? Array.from(clipboardData.files) : [];
-
-      const imageFilesFromItems = items
-        .filter(
-          (item) => item.kind === 'file' && item.type.startsWith('image/'),
-        )
-        .flatMap((item) => {
-          const file = item.getAsFile();
-          return file ? [file] : [];
-        });
-      let imageFiles =
-        imageFilesFromItems.length > 0
-          ? imageFilesFromItems
-          : files.filter((file) => file.type.startsWith('image/'));
-
-      if (imageFiles.length === 0) {
-        const htmlText = clipboardData.getData('text/html');
-        if (htmlText) {
-          imageFiles = extractImagesFromHTML(htmlText);
-        }
-      }
-
-      if (imageFiles.length === 0) {
-        // Fallback: Try reading from Async Clipboard API if types/items/files were empty
-        if (
-          navigator.clipboard &&
-          typeof navigator.clipboard.read === 'function'
-        ) {
-          navigator.clipboard
-            .read()
-            .then(async (clipboardItems) => {
-              const extractedFiles: File[] = [];
-              for (const item of clipboardItems) {
-                const imageTypes = item.types.filter((t) =>
-                  t.startsWith('image/'),
-                );
-                for (const type of imageTypes) {
-                  try {
-                    const blob = await item.getType(type);
-                    const file = new File([blob], '', { type });
-                    extractedFiles.push(file);
-                  } catch (err) {
-                    logger.error(
-                      'Failed to get blob from clipboard item:',
-                      err,
-                    );
-                  }
-                }
-              }
-              if (extractedFiles.length > 0) {
-                void attachFiles(extractedFiles);
-              }
-            })
-            .catch((err) => {
-              logger.warn('Failed to read from Async Clipboard API:', err);
-            });
-        }
-        return;
-      }
-
-      e.preventDefault();
-
-      const pastedText = clipboardData.getData('text/plain');
-      if (pastedText) {
-        insertTextAtSelection(pastedText);
-      }
-
-      void attachFiles(imageFiles);
-    },
-    [attachFiles, insertTextAtSelection],
-  );
+  const { handlePaste } = useClipboardImage({
+    input,
+    setInput,
+    onInputChange: onTokenInputChange,
+    textareaRef,
+    attachFiles,
+  });
 
   // Drag-and-drop handlers
   useEffect(() => {
@@ -492,12 +354,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
 
   return (
     <div className="relative">
-      {yoloModeEnabled && (
+      {executionMode === 'yolo' && (
         <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 select-none animate-pulse z-10">
           ⚡ YOLO Mode Active
         </div>
       )}
-      {unsafeModeEnabled && (
+      {executionMode === 'unsafe' && (
         <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-destructive/10 border border-destructive/20 px-2.5 py-0.5 text-[10px] font-medium text-destructive select-none animate-pulse z-10">
           ⚠️ Unsafe Mode Active
         </div>

@@ -143,7 +143,10 @@ pub async fn explore_context(
             if context.get("error").is_some() {
                 return Ok(SuccessHint::new(
                     format!("Entity '{}' not found in graph.", entity_name),
-                    vec!["Use record_knowledge to add information about this entity.".to_string()],
+                    vec![
+                        "Use knowledge__recordKnowledge to add information about this entity."
+                            .to_string(),
+                    ],
                 )
                 .to_mcp_result());
             }

@@ -1,7 +1,7 @@
 use serde_json::json;
 use std::sync::Arc;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::file_operations::utils::format_as_hashlines;
-use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_files_input_schema;
+use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_file_input_schema;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::WorkspaceServer;
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResult};
 use tauri_mcp_agent_lib::session::SessionManager;
@@ -64,9 +64,20 @@ fn later_prefix_hash_changes_when_earlier_content_changes() {
 }
 
 #[test]
-fn edit_files_schema_uses_single_object_item_contract() {
+fn edit_file_schema_uses_single_object_item_contract() {
     let schema_json =
-        serde_json::to_value(create_edit_files_input_schema()).expect("serialize editFiles schema");
+        serde_json::to_value(create_edit_file_input_schema()).expect("serialize editFile schema");
+    let root_required = schema_json
+        .get("required")
+        .and_then(|value| value.as_array())
+        .expect("root required array");
+    assert!(root_required
+        .iter()
+        .any(|value| value.as_str() == Some("path")));
+    assert!(root_required
+        .iter()
+        .any(|value| value.as_str() == Some("edits")));
+
     let edits_items = schema_json
         .get("properties")
         .and_then(|properties| properties.get("edits"))
@@ -85,10 +96,13 @@ fn edit_files_schema_uses_single_object_item_contract() {
         .get("required")
         .and_then(|value| value.as_array())
         .expect("required array");
-    assert!(required.iter().any(|value| value.as_str() == Some("path")));
     assert!(required
         .iter()
         .any(|value| value.as_str() == Some("startLine")));
+    assert!(
+        !required.iter().any(|value| value.as_str() == Some("path")),
+        "edit items should not repeat path; path belongs at the root"
+    );
 
     let start_line_description = edits_items
         .get("properties")
@@ -297,8 +311,8 @@ async fn edit_file_rejects_start_line_zero_for_replace_and_delete() {
         let result = server
             .handle_edit_file(
                 json!({
-                    "path": "sample.txt",
-                    "edits": [edit]
+                "path": "sample.txt",
+                "edits": [edit]
                 }),
                 Some(session_id.to_string()),
             )
@@ -337,18 +351,17 @@ async fn edit_files_preserve_replace_and_insert_order_with_single_file_batch() {
         .expect("second anchor");
 
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "sample.txt",
                 "edits": [
                     {
-                        "path": "sample.txt",
                         "op": "replace",
                         "startLine": 1,
                         "startAnchor": first_anchor,
                         "content": "A"
                     },
                     {
-                        "path": "sample.txt",
                         "op": "insert_after",
                         "startLine": 2,
                         "startAnchor": second_anchor,
@@ -384,11 +397,11 @@ async fn edit_files_allows_replace_without_explicit_op() {
         .expect("first anchor");
 
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "sample.txt",
                 "edits": [
                     {
-                        "path": "sample.txt",
                         "startLine": 1,
                         "startAnchor": first_anchor,
                         "content": "ALPHA"
@@ -404,7 +417,7 @@ async fn edit_files_allows_replace_without_explicit_op() {
     let text = extract_text_content(&result);
     assert!(
         text.contains("Anchors above are current for the edited ranges")
-            && text.contains("reuse them directly with editFiles"),
+            && text.contains("reuse them directly with editFile"),
         "success response should explain anchor reuse without rereading: {text}"
     );
     let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
@@ -430,11 +443,11 @@ async fn edit_files_delete_only_response_does_not_claim_new_anchors_exist() {
         .expect("second anchor");
 
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "sample.txt",
                 "edits": [
                     {
-                        "path": "sample.txt",
                         "op": "delete",
                         "startLine": 2,
                         "startAnchor": second_anchor
@@ -479,11 +492,11 @@ async fn edit_files_success_response_includes_diff_block_with_anchor_annotations
     let new_second_anchor = extract_anchor(&new_hashlines, 1);
 
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "sample.txt",
                 "edits": [
                     {
-                        "path": "sample.txt",
                         "op": "replace",
                         "startLine": 1,
                         "startAnchor": first_anchor,
@@ -533,11 +546,11 @@ async fn edit_files_delete_only_response_includes_diff_block() {
     let gamma_anchor = extract_anchor(&new_hashlines, 1);
 
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "sample.txt",
                 "edits": [
                     {
-                        "path": "sample.txt",
                         "op": "delete",
                         "startLine": 2,
                         "startAnchor": second_anchor,
@@ -591,11 +604,11 @@ async fn edit_files_diff_preview_truncates_large_changes() {
     let end_anchor = extract_anchor(&original_hashlines, 219);
 
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "sample.txt",
                 "edits": [
                     {
-                        "path": "sample.txt",
                         "op": "replace",
                         "startLine": 1,
                         "endLine": 220,
@@ -646,7 +659,6 @@ async fn edit_files_diff_preview_omitted_count_ignores_gap_markers() {
                 .expect("start anchor");
 
             json!({
-                "path": "sample.txt",
                 "op": "replace",
                 "startLine": line_number,
                 "startAnchor": start_anchor,
@@ -656,7 +668,10 @@ async fn edit_files_diff_preview_omitted_count_ignores_gap_markers() {
         .collect::<Vec<_>>();
 
     let result = server
-        .handle_edit_files(json!({ "edits": edits }), Some(session_id.to_string()))
+        .handle_edit_file(
+            json!({ "path": "sample.txt", "edits": edits }),
+            Some(session_id.to_string()),
+        )
         .await
         .expect("edit batch should succeed");
 
@@ -699,11 +714,11 @@ async fn edit_files_delete_range_at_eof_does_not_panic() {
         .expect("end anchor");
 
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "sample.txt",
                 "edits": [
                     {
-                        "path": "sample.txt",
                         "op": "delete",
                         "startLine": 3,
                         "endLine": 4,
@@ -747,11 +762,11 @@ async fn edit_files_error_messages_include_edit_context() {
         .expect("start anchor");
 
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "sample.txt",
                 "edits": [
                     {
-                        "path": "sample.txt",
                         "op": "insert_after",
                         "startLine": 1,
                         "startAnchor": start_anchor
@@ -766,7 +781,7 @@ async fn edit_files_error_messages_include_edit_context() {
     assert_eq!(result.is_error, Some(true));
     let text = extract_text_content(&result);
     assert!(
-        text.contains("Edit at index 0 [path='sample.txt', op='insert_after', startLine=1]")
+        text.contains("Edit at index 0 [op='insert_after', startLine=1]")
             && text.contains("'content' is required"),
         "error should include offending edit context: {text}"
     );
@@ -973,96 +988,20 @@ async fn legacy_edit_file_empty_new_value_still_deletes() {
 }
 
 #[tokio::test]
-async fn edit_files_applies_multi_file_batch_atomically() {
+async fn edit_file_rejects_stale_anchor_without_partial_write() {
     let temp_dir = tempdir().expect("temp dir");
-    let session_id = "edit-files-multi-file";
+    let session_id = "edit-file-stale-anchor";
     let server = build_workspace_server(temp_dir.path(), session_id);
     let workspace_dir = server.get_workspace_dir(session_id);
 
-    std::fs::write(workspace_dir.join("a.txt"), "alpha\nbeta\n").expect("write a");
     std::fs::write(workspace_dir.join("b.txt"), "one\ntwo\n").expect("write b");
 
-    let a_anchors = format_as_hashlines("alpha\nbeta\n");
-    let a_anchor = a_anchors
-        .lines()
-        .next()
-        .and_then(|line| line.split('|').next())
-        .and_then(|prefix| prefix.split(':').nth(1))
-        .expect("a anchor");
-    let b_anchors = format_as_hashlines("one\ntwo\n");
-    let b_anchor = b_anchors
-        .lines()
-        .nth(1)
-        .and_then(|line| line.split('|').next())
-        .and_then(|prefix| prefix.split(':').nth(1))
-        .expect("b anchor");
-
     let result = server
-        .handle_edit_files(
+        .handle_edit_file(
             json!({
+                "path": "b.txt",
                 "edits": [
                     {
-                        "path": "a.txt",
-                        "op": "replace",
-                        "startLine": 1,
-                        "startAnchor": a_anchor,
-                        "content": "ALPHA"
-                    },
-                    {
-                        "path": "b.txt",
-                        "op": "delete",
-                        "startLine": 2,
-                        "startAnchor": b_anchor
-                    }
-                ]
-            }),
-            Some(session_id.to_string()),
-        )
-        .await
-        .expect("multi-file edit should succeed");
-
-    assert_eq!(result.is_error, Some(false));
-    assert_eq!(
-        std::fs::read_to_string(workspace_dir.join("a.txt")).expect("read a"),
-        "ALPHA\nbeta\n"
-    );
-    assert_eq!(
-        std::fs::read_to_string(workspace_dir.join("b.txt")).expect("read b"),
-        "one\n"
-    );
-}
-
-#[tokio::test]
-async fn edit_files_rejects_stale_anchor_without_partial_write() {
-    let temp_dir = tempdir().expect("temp dir");
-    let session_id = "edit-files-rollback";
-    let server = build_workspace_server(temp_dir.path(), session_id);
-    let workspace_dir = server.get_workspace_dir(session_id);
-
-    std::fs::write(workspace_dir.join("a.txt"), "alpha\nbeta\n").expect("write a");
-    std::fs::write(workspace_dir.join("b.txt"), "one\ntwo\n").expect("write b");
-
-    let a_anchors = format_as_hashlines("alpha\nbeta\n");
-    let a_anchor = a_anchors
-        .lines()
-        .next()
-        .and_then(|line| line.split('|').next())
-        .and_then(|prefix| prefix.split(':').nth(1))
-        .expect("a anchor");
-
-    let result = server
-        .handle_edit_files(
-            json!({
-                "edits": [
-                    {
-                        "path": "a.txt",
-                        "op": "replace",
-                        "startLine": 1,
-                        "startAnchor": a_anchor,
-                        "content": "ALPHA"
-                    },
-                    {
-                        "path": "b.txt",
                         "op": "replace",
                         "startLine": 1,
                         "startAnchor": "deadbe",
@@ -1073,17 +1012,13 @@ async fn edit_files_rejects_stale_anchor_without_partial_write() {
             Some(session_id.to_string()),
         )
         .await
-        .expect("multi-file edit should return MCPResult");
+        .expect("editFile should return MCPResult");
 
     assert_eq!(result.is_error, Some(true));
     let text = extract_text_content(&result);
     assert!(
         text.contains("STALE ANCHOR"),
         "expected stale anchor error, got: {text}"
-    );
-    assert_eq!(
-        std::fs::read_to_string(workspace_dir.join("a.txt")).expect("read a"),
-        "alpha\nbeta\n"
     );
     assert_eq!(
         std::fs::read_to_string(workspace_dir.join("b.txt")).expect("read b"),

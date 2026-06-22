@@ -381,7 +381,7 @@ pub async fn create_org(
     }
 
     let message = format!(
-        "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nChild sessions started from this org root now join Org view automatically. Use includeCurrentOrg=false only when you intentionally want a one-off child to stay out of Org view.",
+        "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nChild sessions started from this org root automatically join Org view and inherit the org workspace unless workspaceOverride is set.",
         org_name, org_id, org_root_session_id
     );
     let mut response_data = build_agent_tool_data(

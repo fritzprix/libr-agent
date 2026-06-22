@@ -272,7 +272,7 @@ fn build_diff_with_anchors(batch: &PreparedFileEdit) -> String {
         .join("\n")
 }
 
-pub(super) fn build_edit_files_success(prepared_batches: &[PreparedFileEdit]) -> MCPResult {
+pub(super) fn build_edit_file_success(prepared_batches: &[PreparedFileEdit]) -> MCPResult {
     let mut file_sections = Vec::new();
     let total_edits: usize = prepared_batches.iter().map(|batch| batch.edits.len()).sum();
     let has_new_anchors = prepared_batches
@@ -324,7 +324,7 @@ pub(super) fn build_edit_files_success(prepared_batches: &[PreparedFileEdit]) ->
 
     let next_actions = if has_new_anchors {
         vec![
-            "Anchors above are current for the edited ranges — reuse them directly with editFiles for follow-up edits in those same ranges".to_string(),
+            "Anchors above are current for the edited ranges — reuse them directly with editFile for follow-up edits in those same ranges".to_string(),
             "Use readFile only when you need broader context, untouched lines, or fresh anchors outside the ranges shown above".to_string(),
         ]
     } else {

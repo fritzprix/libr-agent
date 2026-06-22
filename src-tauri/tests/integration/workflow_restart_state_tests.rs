@@ -9,6 +9,7 @@ use tauri_mcp_agent_lib::agent::state::{
     PendingEventManager,
 };
 use tauri_mcp_agent_lib::agent::workflow::reset_session_execution_state;
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -37,8 +38,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: false,
+        execution_mode: ExecutionMode::Normal,
         workspace_override: None,
     }
 }

@@ -14,6 +14,7 @@ use tauri_mcp_agent_lib::agent::state::{
     AgentSession, CompactionRuntimeState, PendingEventManager,
 };
 use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 use tauri_mcp_agent_lib::repositories::{
@@ -50,8 +51,7 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
         last_attention_at: None,
         last_attention_reason: None,
         is_bookmarked: false,
-        yolo_mode: false,
-        unsafe_mode: true,
+        execution_mode: ExecutionMode::Unsafe,
         workspace_override: None,
     }
 }

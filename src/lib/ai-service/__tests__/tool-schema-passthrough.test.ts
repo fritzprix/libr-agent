@@ -46,8 +46,8 @@ describe('tool schema passthrough', () => {
   it('preserves nested oneOf contracts when converting OpenAI tools', () => {
     const service = new OpenAIService('sk-test');
     const tool: MCPTool = {
-      name: 'editFiles',
-      description: 'Unified multi-file edit tool',
+      name: 'editFile',
+      description: 'Unified single-file edit tool',
       inputSchema: {
         type: 'object',
         properties: {

@@ -1,5 +1,6 @@
 //! Tauri commands for managing scheduled tasks.
 
+use crate::agent::ExecutionMode;
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
 use crate::repositories::UpdateScheduledTaskParams;
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
@@ -18,12 +19,9 @@ pub struct ScheduledTaskDto {
     pub cron_expression: String,
     pub schedule_timezone: String,
     pub assistant_id: String,
-    pub group_id: Option<String>,
-    pub group_name: Option<String>,
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
-    pub yolo_mode: bool,
-    pub unsafe_mode: bool,
+    pub execution_mode: String,
     pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
     pub task_category: String,
@@ -78,17 +76,16 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
             })
         });
 
+        let execution_mode = m.execution_mode().as_str().to_string();
+
         Self {
             id: m.id,
             name: m.name,
             cron_expression: m.cron_expression.unwrap_or_default(),
             schedule_timezone: m.schedule_timezone,
             assistant_id: m.assistant_id,
-            group_id: m.group_id,
-            group_name: m.group_name,
             message: m.message,
-            yolo_mode: m.yolo_mode,
-            unsafe_mode: m.unsafe_mode,
+            execution_mode,
             created_by_session_id: m.created_by_session_id,
             session_id: m.session_id,
             task_category: m.task_category,
@@ -104,37 +101,37 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
 
 /// Request to create a new scheduled task
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateScheduledTaskRequest {
     pub name: String,
     pub cron_expression: String,
     pub schedule_timezone: Option<String>,
     pub assistant_id: String,
-    pub group_id: Option<String>,
-    pub group_name: Option<String>,
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
-    pub yolo_mode: bool,
-    pub unsafe_mode: bool,
+    #[serde(default)]
+    pub execution_mode: Option<String>,
     pub workspace_override: Option<String>,
 }
 
 /// Request to update a scheduled task
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateScheduledTaskRequest {
     pub name: Option<String>,
     pub cron_expression: Option<String>,
     pub schedule_timezone: Option<String>,
     pub assistant_id: Option<String>,
-    pub group_id: Option<String>,
-    pub group_name: Option<String>,
     pub message: Option<String>,
-    pub yolo_mode: Option<bool>,
-    pub unsafe_mode: Option<bool>,
+    pub execution_mode: Option<String>,
     pub workspace_override: Option<Option<String>>,
-    pub clear_group: Option<bool>,
     pub enabled: Option<bool>,
+}
+
+fn parse_execution_mode(mode: Option<&str>) -> Result<ExecutionMode, String> {
+    mode.unwrap_or("normal")
+        .parse::<ExecutionMode>()
+        .map_err(|error| format!("Invalid executionMode: {error}"))
 }
 
 /// Create a new scheduled task
@@ -142,6 +139,8 @@ pub struct UpdateScheduledTaskRequest {
 pub async fn create_scheduled_task(
     request: CreateScheduledTaskRequest,
 ) -> Result<ScheduledTaskDto, String> {
+    let execution_mode = parse_execution_mode(request.execution_mode.as_deref())?;
+
     ScheduledTaskService::create_scheduled_task(
         get_scheduled_task_repository(),
         CreateScheduledTaskInput {
@@ -152,11 +151,8 @@ pub async fn create_scheduled_task(
                 .schedule_timezone
                 .unwrap_or_else(|| default_schedule_timezone().to_string()),
             assistant_id: request.assistant_id,
-            group_id: request.group_id,
-            group_name: request.group_name,
             message: request.message,
-            yolo_mode: request.yolo_mode,
-            unsafe_mode: request.unsafe_mode,
+            execution_mode,
             created_by_session_id: None,
             session_id: None,
             workspace_override: request.workspace_override,
@@ -202,34 +198,24 @@ pub async fn update_scheduled_task(
     id: String,
     request: UpdateScheduledTaskRequest,
 ) -> Result<ScheduledTaskDto, String> {
-    ScheduledTaskService::update_scheduled_task(
-        get_scheduled_task_repository(),
-        &id,
-        UpdateScheduledTaskParams {
-            name: request.name,
-            cron_expression: request.cron_expression,
-            schedule_timezone: request.schedule_timezone,
-            assistant_id: request.assistant_id,
-            group_id: if request.clear_group.unwrap_or(false) {
-                Some(None)
-            } else {
-                request.group_id.map(Some)
-            },
-            group_name: if request.clear_group.unwrap_or(false) {
-                Some(None)
-            } else {
-                request.group_name.map(Some)
-            },
-            message: request.message,
-            yolo_mode: request.yolo_mode,
-            unsafe_mode: request.unsafe_mode,
-            workspace_override: request.workspace_override,
-            enabled: request.enabled,
-            next_run_at: None,
-        },
-    )
-    .await
-    .map(ScheduledTaskDto::from)
+    let params = UpdateScheduledTaskParams {
+        name: request.name,
+        cron_expression: request.cron_expression,
+        schedule_timezone: request.schedule_timezone,
+        assistant_id: request.assistant_id,
+        message: request.message,
+        execution_mode: request
+            .execution_mode
+            .map(|mode| parse_execution_mode(Some(mode.as_str())))
+            .transpose()?,
+        workspace_override: request.workspace_override,
+        enabled: request.enabled,
+        next_run_at: None,
+    };
+
+    ScheduledTaskService::update_scheduled_task(get_scheduled_task_repository(), &id, params)
+        .await
+        .map(ScheduledTaskDto::from)
 }
 
 /// Toggle enabled/disabled state of a scheduled task

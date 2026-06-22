@@ -152,7 +152,7 @@ Execution Instructions:
 }
 ```
 
-Spawn the session using `agent__startSession` with `waitForResult: false` and `includeCurrentOrg: false`.
+Spawn the session using `agent__startSession` with `waitForResult: false`.
 
 #### Parent Judgment Rule with Fallback Strategy:
 1. **Try JSON parsing:** Attempt to extract and parse the JSON block from the child's final response (using regex like `/\{[\s\S]*?\}/`).

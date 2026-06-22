@@ -59,15 +59,15 @@ impl BuiltinMCPServer for AttachmentsServer {
         let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
 
         match tool_name {
-            // Internal UI-only write paths.
-            // These are intentionally NOT included in `tools_static()`, so agents cannot
-            // discover or call them, but session-bound internal callers (via proxy) can
-            // still reuse the same server instance and keep in-memory state synchronized.
-            "add" => operations::add_content(self, args, &target_session_id).await,
-            "delete" => operations::delete_content(self, args, &target_session_id).await,
-            "list" => queries::list_content(self, args, &target_session_id).await,
-            "read" => queries::read_content(self, args, &target_session_id).await,
-            "search" => queries::keyword_similarity_search(self, args, &target_session_id).await,
+            // Internal UI-only writes (addAttachment, deleteAttachment — not in tools_static()).
+            "addAttachment" => operations::add_content(self, args, &target_session_id).await,
+            "deleteAttachment" => operations::delete_content(self, args, &target_session_id).await,
+            // Agent-facing read/search tools (also in tools_static()).
+            "listAttachments" => queries::list_content(self, args, &target_session_id).await,
+            "readAttachment" => queries::read_content(self, args, &target_session_id).await,
+            "searchAttachments" => {
+                queries::keyword_similarity_search(self, args, &target_session_id).await
+            }
             _ => Err(format!("Unknown tool: {tool_name}")),
         }
     }

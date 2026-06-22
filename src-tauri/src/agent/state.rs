@@ -484,6 +484,12 @@ impl AgentSession {
         *self.cached_stable_prompt.write().await = None;
         self.pending_approvals.write().await.clear();
         self.pending_execution = None;
+        *self.compact_context.write().await = None;
+        self.compaction.clear_runtime_state(true).await;
+        self.pending_events.write().await.clear();
+        *self.expected_response_id.write().await = None;
+        *self.last_completion_request.write().await = None;
+        *self.last_submitted_input_message_id.write().await = None;
     }
 }
 
@@ -517,5 +523,150 @@ mod tests {
         assert!(!manager.has_pending());
         assert_eq!(manager.count(), 0);
         assert!(manager.drain_messages().is_empty());
+    }
+
+    fn build_test_session(session_id: &str) -> AgentSession {
+        use crate::repositories::SessionMetadata;
+        use crate::repositories::SessionStatus;
+        use std::sync::atomic::AtomicBool;
+        use tokio_util::sync::CancellationToken;
+
+        let now = chrono::Utc::now().timestamp_millis();
+        AgentSession {
+            metadata: SessionMetadata {
+                id: session_id.to_string(),
+                name: None,
+                status: SessionStatus::Busy,
+                model: "gpt-5.4".to_string(),
+                provider: "openai".to_string(),
+                assistant_id: None,
+                parent_session_id: None,
+                lineage_id: None,
+                depth: None,
+                max_depth: None,
+                max_fanout: None,
+                org_id: None,
+                org_name: None,
+                org_root_session_id: None,
+                created_at: now,
+                updated_at: now,
+                last_viewed_at: None,
+                last_message_at: None,
+                last_attention_at: None,
+                last_attention_reason: None,
+                is_bookmarked: false,
+                execution_mode: crate::execution_mode::ExecutionMode::Normal,
+                workspace_override: None,
+            },
+            is_running: true,
+            active_permit: None,
+            status_transition: Arc::new(RwLock::new(None)),
+            transition_lock: Arc::new(tokio::sync::Mutex::new(())),
+            cancellation_token: CancellationToken::new(),
+            yolo_mode: Arc::new(AtomicBool::new(false)),
+            unsafe_mode: Arc::new(AtomicBool::new(false)),
+            cancel_pending: Arc::new(AtomicBool::new(false)),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            cache_initialized: Arc::new(AtomicBool::new(true)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+            repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
+            repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+            pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
+            pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+            context_registry: Arc::new(ContextRegistry::new()),
+            compact_context: Arc::new(RwLock::new(None)),
+            compaction: CompactionRuntimeState::new(),
+            expected_response_id: Arc::new(RwLock::new(None)),
+            cached_stable_prompt: Arc::new(RwLock::new(None)),
+            last_completion_request: Arc::new(RwLock::new(None)),
+            last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_agent_session_clear() {
+        let mut session = build_test_session("test-sess");
+
+        // 1. Populate some data
+        session
+            .messages
+            .write()
+            .await
+            .push(Message::new_user_message(
+                "test-sess".to_string(),
+                "hello".to_string(),
+                None,
+                None,
+            ));
+        *session.cached_stable_prompt.write().await = Some("cached-prompt".to_string());
+        *session.expected_response_id.write().await = Some("expected-id".to_string());
+        *session.last_submitted_input_message_id.write().await = Some("input-id".to_string());
+        *session.last_completion_request.write().await = Some(CompactionParentRequest {
+            model: "test-model".to_string(),
+            provider: "test-provider".to_string(),
+            system_prompt: Some("system".to_string()),
+            session_context: None,
+            available_tools: None,
+        });
+        session.pending_approvals.write().await.insert(
+            "call-1".to_string(),
+            PendingApprovalData {
+                sender: tokio::sync::oneshot::channel().0,
+                tool_name: "test_tool".to_string(),
+                arguments: "{}".to_string(),
+                approval_kind: PendingApprovalKind::Standard,
+                request_id: None,
+                description: None,
+                input_preview: None,
+            },
+        );
+        session.pending_execution = Some("exec-1".to_string());
+        *session.compact_context.write().await = Some(CompactContextRecord {
+            id: "cc-1".to_string(),
+            session_id: "test-sess".to_string(),
+            to_id: "msg-1".to_string(),
+            condensed_count: Some(5),
+            summary: "summary".to_string(),
+            created_at: 0,
+        });
+        session
+            .pending_events
+            .write()
+            .await
+            .add(PendingEvent::Message("event-1".to_string()));
+
+        // Run compaction active work (change phase to something non-Idle)
+        *session.compaction.phase.write().await = CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::Manual,
+            current_tail_id: Some("tail-1".to_string()),
+            started_at_ms: 12345,
+        });
+
+        // 2. Run clear
+        session.clear().await;
+
+        // 3. Assert cleared
+        assert!(session.messages.read().await.is_empty());
+        assert!(session.cached_stable_prompt.read().await.is_none());
+        assert!(session.expected_response_id.read().await.is_none());
+        assert!(session
+            .last_submitted_input_message_id
+            .read()
+            .await
+            .is_none());
+        assert!(session.last_completion_request.read().await.is_none());
+        assert!(session.pending_approvals.read().await.is_empty());
+        assert!(session.pending_execution.is_none());
+        assert!(session.compact_context.read().await.is_none());
+        assert!(session
+            .pending_events
+            .read()
+            .await
+            .drain_messages()
+            .is_empty());
+
+        let snapshot = session.compaction.snapshot().await;
+        assert!(matches!(snapshot.phase, CompactionPhase::Idle));
     }
 }

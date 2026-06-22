@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  coalesceExecutionModeFlags,
   mapSessionMetadataToAgentSession,
+  normalizeExecutionMode,
 } from '../session-metadata';
 import type { AgentSessionMetadata } from '@/models/agent-ipc';
 import type { Assistant } from '@/models/chat';
@@ -23,7 +23,7 @@ describe('mapSessionMetadataToAgentSession', () => {
     orgRootSessionId: 'root-1',
     createdAt: 1_000,
     updatedAt: 2_000,
-    yoloMode: false,
+    executionMode: 'normal',
   };
 
   const assistant: Assistant = {
@@ -48,6 +48,7 @@ describe('mapSessionMetadataToAgentSession', () => {
     expect(session.orgName).toBe('Org One');
     expect(session.orgRootSessionId).toBe('root-1');
     expect(session.pendingApprovalCount).toBe(3);
+    expect(session.executionMode).toBe('normal');
   });
 
   it('derives lineage defaults when optional metadata is missing', () => {
@@ -63,20 +64,16 @@ describe('mapSessionMetadataToAgentSession', () => {
   });
 });
 
-describe('coalesceExecutionModeFlags', () => {
-  it('maps legacy yolo-only sessions to yolo mode', () => {
-    expect(coalesceExecutionModeFlags(true, undefined)).toEqual({
-      executionMode: 'yolo',
-      yoloMode: true,
-      unsafeMode: false,
-    });
+describe('normalizeExecutionMode', () => {
+  it('returns yolo when explicitly set', () => {
+    expect(normalizeExecutionMode('yolo')).toBe('yolo');
   });
 
-  it('prefers unsafe mode when legacy flags are both enabled', () => {
-    expect(coalesceExecutionModeFlags(true, true)).toEqual({
-      executionMode: 'unsafe',
-      yoloMode: false,
-      unsafeMode: true,
-    });
+  it('returns unsafe when explicitly set', () => {
+    expect(normalizeExecutionMode('unsafe')).toBe('unsafe');
+  });
+
+  it('defaults to normal for missing or unknown values', () => {
+    expect(normalizeExecutionMode(undefined)).toBe('normal');
   });
 });

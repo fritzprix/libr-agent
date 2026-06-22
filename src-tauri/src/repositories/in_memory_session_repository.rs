@@ -3,6 +3,7 @@ use super::session_repository::{
     SessionAttentionReason, SessionListCursor, SessionListPage, SessionMetadata, SessionRepository,
     SessionStatus,
 };
+use crate::execution_mode::ExecutionMode;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -319,32 +320,14 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(())
     }
 
-    async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
-        let mut sessions = self.sessions.write().await;
-        if let Some(session) = sessions.get_mut(session_id) {
-            session.yolo_mode = enabled;
-        }
-        Ok(())
-    }
-
-    async fn update_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
-        let mut sessions = self.sessions.write().await;
-        if let Some(session) = sessions.get_mut(session_id) {
-            session.unsafe_mode = enabled;
-        }
-        Ok(())
-    }
-
     async fn update_execution_mode(
         &self,
         session_id: &str,
-        yolo_enabled: bool,
-        unsafe_enabled: bool,
+        mode: ExecutionMode,
     ) -> Result<(), DbError> {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(session_id) {
-            session.yolo_mode = yolo_enabled;
-            session.unsafe_mode = unsafe_enabled;
+            session.execution_mode = mode;
         }
         Ok(())
     }
@@ -449,8 +432,7 @@ mod tests {
             last_message_at: None,
             last_attention_at: None,
             last_attention_reason: None,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         };
 
@@ -489,8 +471,7 @@ mod tests {
             last_message_at: None,
             last_attention_at: None,
             last_attention_reason: None,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         };
 
@@ -541,8 +522,7 @@ mod tests {
             last_message_at: None,
             last_attention_at: None,
             last_attention_reason: None,
-            yolo_mode: false,
-            unsafe_mode: false,
+            execution_mode: ExecutionMode::Normal,
             workspace_override: None,
         };
 
@@ -586,8 +566,7 @@ mod tests {
                 last_message_at: None,
                 last_attention_at: None,
                 last_attention_reason: None,
-                yolo_mode: false,
-                unsafe_mode: false,
+                execution_mode: ExecutionMode::Normal,
                 workspace_override: None,
             };
             repo.upsert_session(&session).await.unwrap();
@@ -626,8 +605,7 @@ mod tests {
                 last_message_at: None,
                 last_attention_at: None,
                 last_attention_reason: None,
-                yolo_mode: false,
-                unsafe_mode: false,
+                execution_mode: ExecutionMode::Normal,
                 workspace_override: None,
             };
             repo.upsert_session(&session).await.unwrap();
@@ -674,8 +652,7 @@ mod tests {
                     org_id: None,
                     org_name: None,
                     org_root_session_id: None,
-                    yolo_mode: false,
-                    unsafe_mode: false,
+                    execution_mode: ExecutionMode::Normal,
                     workspace_override: None,
                 };
                 repo_clone.upsert_session(&session).await.unwrap();

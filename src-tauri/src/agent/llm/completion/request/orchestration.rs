@@ -288,13 +288,15 @@ async fn validate_session_status(
     })?;
 
     if session.cancel_pending.load(Ordering::SeqCst)
+        || session.cancellation_token.is_cancelled()
         || session.metadata.status != SessionStatus::Busy
     {
         log::info!(
-            "Rejecting LLM request for session {} (status: {:?}, cancel_pending={})",
+            "Rejecting LLM request for session {} (status: {:?}, cancel_pending={}, is_cancelled={})",
             session_id,
             session.metadata.status,
-            session.cancel_pending.load(Ordering::SeqCst)
+            session.cancel_pending.load(Ordering::SeqCst),
+            session.cancellation_token.is_cancelled()
         );
         return Err(AgentRuntimeError::new(
             AgentRuntimeErrorType::AiServiceError,
