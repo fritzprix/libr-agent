@@ -66,7 +66,7 @@ impl std::str::FromStr for ExecutionMode {
 
 #[cfg(test)]
 mod tests {
-    use super::ExecutionMode;
+    use super::{ExecutionMode, EXECUTION_MODE_DB_VALUES};
 
     #[test]
     fn from_runtime_flags_prefers_unsafe_over_yolo() {

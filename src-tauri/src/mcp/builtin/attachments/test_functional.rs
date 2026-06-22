@@ -16,6 +16,7 @@ mod tests {
         let url = crate::utils::sqlite::format_sqlite_url(&db_path.to_string_lossy());
 
         // Connect to database and run migrations
+        crate::lifecycle::database::register_sqlite_vec();
         let db = sea_orm::Database::connect(&url)
             .await
             .expect("Failed to connect to database");

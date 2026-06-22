@@ -362,3 +362,12 @@ impl MCPServiceProxyManager {
             .map_err(|error| error.to_string())
     }
 }
+
+#[cfg(test)]
+impl MCPServiceProxyManager {
+    pub(crate) async fn mark_runtime_proxy_not_ready_for_test(&self, session_id: &str) {
+        let mut state = self.get_runtime_state(session_id).await;
+        state.proxy.ready = false;
+        self.set_runtime_state(session_id, state, None).await;
+    }
+}

@@ -341,10 +341,10 @@ fn test_env_clear_in_spawn_logic() {
         "stdio_manager MUST call env_clear() to isolate process environment"
     );
 
-    // Verify that we are whitelisting PATH
+    // Verify that isolated env vars are applied after env_clear()
     assert!(
-        source.contains("\"PATH\""),
-        "stdio_manager must whitelist PATH"
+        source.contains("get_isolated_env"),
+        "stdio_manager must apply whitelisted env via get_isolated_env()"
     );
 
     assert!(

@@ -1,79 +1,111 @@
 use super::*;
 use crate::entity::{
-    assistant, knowledge, planning_goal, planning_scratchpad, planning_todo, playbook, session,
+    assistant, knowledge, mcp_server, planning_goal, planning_scratchpad, planning_todo, playbook,
+    session,
 };
 use sea_orm::{ConnectionTrait, Database, EntityTrait, Schema, Set};
 use serde_json::json;
+use std::sync::Arc;
 
-async fn create_test_manager() -> Arc<MCPServiceProxyManager> {
+struct TestHarness {
+    _guard: tokio::sync::MutexGuard<'static, ()>,
+    manager: Arc<MCPServiceProxyManager>,
+}
+
+fn test_session_active_model(id: impl Into<String>) -> session::ActiveModel {
+    session::ActiveModel {
+        id: Set(id.into()),
+        created_at: Set(chrono::Utc::now().timestamp()),
+        updated_at: Set(0),
+        status: Set("idle".to_string()),
+        model: Set("gpt-4".to_string()),
+        provider: Set("openai".to_string()),
+        execution_mode: Set("normal".to_string()),
+        is_bookmarked: Set(false),
+        ..Default::default()
+    }
+}
+
+async fn insert_test_session(manager: &MCPServiceProxyManager, session_id: &str) {
+    let assistant_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().timestamp();
+
+    assistant::Entity::insert(assistant::ActiveModel {
+        id: Set(assistant_id.clone()),
+        name: Set(format!("Test Assistant for {session_id}")),
+        config: Set("{}".to_string()),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    })
+    .exec(&*manager.db)
+    .await
+    .expect("failed to insert test assistant");
+
+    let mut model = test_session_active_model(session_id);
+    model.assistant_id = Set(Some(assistant_id));
+
+    session::Entity::insert(model)
+        .exec(&*manager.db)
+        .await
+        .expect("failed to insert test session");
+}
+
+async fn create_test_harness() -> TestHarness {
+    let guard = crate::state::lock_test_global_state().await;
+    crate::state::reset_state();
+
     let db = Database::connect("sqlite::memory:")
         .await
         .expect("Failed to connect to in-memory database");
 
     let schema = Schema::new(db.get_database_backend());
 
-    // Create tables
-    let stmt = schema.create_table_from_entity(session::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create session table");
+    for create in [
+        schema.create_table_from_entity(session::Entity),
+        schema.create_table_from_entity(playbook::Entity),
+        schema.create_table_from_entity(assistant::Entity),
+        schema.create_table_from_entity(knowledge::Entity),
+        schema.create_table_from_entity(planning_goal::Entity),
+        schema.create_table_from_entity(planning_todo::Entity),
+        schema.create_table_from_entity(planning_scratchpad::Entity),
+        schema.create_table_from_entity(crate::entity::settings::Entity),
+        schema.create_table_from_entity(mcp_server::Entity),
+    ] {
+        db.execute(db.get_database_backend().build(&create))
+            .await
+            .expect("Failed to create test table");
+    }
 
-    let stmt = schema.create_table_from_entity(playbook::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create playbook table");
-
-    let stmt = schema.create_table_from_entity(assistant::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create assistant table");
-
-    let stmt = schema.create_table_from_entity(knowledge::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create knowledge table");
-
-    let stmt = schema.create_table_from_entity(planning_goal::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create planning_goal table");
-
-    let stmt = schema.create_table_from_entity(planning_todo::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create planning_todo table");
-
-    let stmt = schema.create_table_from_entity(planning_scratchpad::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create planning_scratchpad table");
+    crate::lifecycle::repositories::init_repositories(&db).await;
+    crate::state::init_session_bus(crate::agent::session_bus::SessionBus::new());
+    crate::state::init_concurrency_gate(crate::agent::concurrency::ConcurrencyGate::new(
+        crate::agent::concurrency::DEFAULT_MAX_ACTIVE_AGENTS,
+        crate::agent::concurrency::DEFAULT_MAX_SUSPENDED_AGENTS,
+        crate::agent::concurrency::DEFAULT_MAX_ACTIVE_PROCESSES,
+        crate::agent::concurrency::DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
 
     // Create a minimal SessionManager
     let session_manager = Arc::new(crate::session::SessionManager::new().unwrap());
 
-    Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager))
+    TestHarness {
+        _guard: guard,
+        manager: Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager)),
+    }
 }
 
 #[tokio::test]
 async fn test_phase3_playbook_and_assistant_integration() {
-    let manager = create_test_manager().await;
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
 
     // Create session 1 with all Phase 3 tools
     let session1 = "test-session-1".to_string();
-    let tool_ids1 = vec!["playbook".to_string(), "assistant".to_string()];
+    let tool_ids1 = vec!["playbook".to_string(), "agent".to_string()];
 
     // Insert session 1 into sessions table
-    let new_session = session::ActiveModel {
-        id: Set(session1.clone()),
-        created_at: Set(chrono::Utc::now().timestamp()),
-        updated_at: Set(0),
-        status: Set("idle".to_string()),
-        ..Default::default()
-    };
-    session::Entity::insert(new_session)
-        .exec(&*manager.db)
-        .await
-        .unwrap();
+    insert_test_session(&manager, &session1).await;
 
     manager
         .create_proxy(session1.clone(), tool_ids1, vec![], None)
@@ -112,7 +144,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let assistant_result = manager
         .call_tool(
             &session1,
-            "assistant__createAssistant",
+            "agent__createAssistant",
             json!({
                 "id": "assistant1",
                 "name": "Test Assistant",
@@ -129,23 +161,26 @@ async fn test_phase3_playbook_and_assistant_integration() {
         assistant_result.error.is_none(),
         "Assistant create should succeed"
     );
+    let created_assistant_id = assistant_result
+        .result
+        .as_ref()
+        .and_then(|result| match result {
+            crate::mcp::types::MCPResponseResult::ToolCall(tool_result) => tool_result
+                .structured_content
+                .as_ref()
+                .and_then(|data| data.get("id"))
+                .and_then(|id| id.as_str())
+                .map(str::to_string),
+            _ => None,
+        })
+        .expect("createAssistant should return structured assistant id");
 
     // Create session 2 with same tools
     let session2 = "test-session-2".to_string();
-    let tool_ids2 = vec!["playbook".to_string(), "assistant".to_string()];
+    let tool_ids2 = vec!["playbook".to_string(), "agent".to_string()];
 
     // Insert session 2 into sessions table
-    let new_session = session::ActiveModel {
-        id: Set(session2.clone()),
-        created_at: Set(chrono::Utc::now().timestamp()),
-        updated_at: Set(0),
-        status: Set("idle".to_string()),
-        ..Default::default()
-    };
-    session::Entity::insert(new_session)
-        .exec(&*manager.db)
-        .await
-        .unwrap();
+    insert_test_session(&manager, &session2).await;
 
     manager
         .create_proxy(session2.clone(), tool_ids2, vec![], None)
@@ -186,9 +221,9 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let get_assistant_result = manager
         .call_tool(
             &session2,
-            "assistant__getAssistant",
+            "agent__getAssistant",
             json!({
-                "id": "assistant1"
+                "id": created_assistant_id
             }),
         )
         .await
@@ -301,7 +336,8 @@ async fn test_phase3_playbook_and_assistant_integration() {
 
 #[tokio::test]
 async fn test_phase3_concurrent_operations() {
-    let manager = create_test_manager().await;
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
 
     // Create 3 concurrent sessions
     let sessions = vec![
@@ -312,20 +348,9 @@ async fn test_phase3_concurrent_operations() {
 
     // Insert sessions into database and create proxies
     for session_id in &sessions {
-        let new_session = session::ActiveModel {
-            id: Set(session_id.clone()),
-            model: Set("test_model".to_string()),
-            created_at: Set(chrono::Utc::now().timestamp()),
-            updated_at: Set(0),
-            status: Set("idle".to_string()),
-            ..Default::default()
-        };
-        session::Entity::insert(new_session)
-            .exec(&*manager.db)
-            .await
-            .unwrap();
+        insert_test_session(&manager, session_id).await;
 
-        let tool_ids = vec!["playbook".to_string(), "assistant".to_string()];
+        let tool_ids = vec!["playbook".to_string(), "agent".to_string()];
         manager
             .create_proxy(session_id.clone(), tool_ids, vec![], None)
             .await
@@ -412,33 +437,20 @@ async fn test_phase3_concurrent_operations() {
 
 #[tokio::test]
 async fn test_phase3_all_servers_integration() {
-    let manager = create_test_manager().await;
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
 
     let session_id = "integration-test".to_string();
 
-    // Insert session into database
-    use crate::entity::session;
-    use sea_orm::Set;
-
-    let new_session = session::ActiveModel {
-        id: Set(session_id.clone()),
-        created_at: Set(chrono::Utc::now().timestamp()),
-        updated_at: Set(0),
-        status: Set("idle".to_string()),
-        ..Default::default()
-    };
-    session::Entity::insert(new_session)
-        .exec(&*manager.db)
-        .await
-        .unwrap();
+    insert_test_session(&manager, &session_id).await;
 
     // Create proxy with ALL builtin servers
     let all_tools = vec![
         "bootstrap".to_string(),
-        "knowledge".to_string(),
+        "attachments".to_string(),
         "planning".to_string(),
         "playbook".to_string(),
-        "assistant".to_string(),
+        "agent".to_string(),
     ];
 
     manager
@@ -448,7 +460,7 @@ async fn test_phase3_all_servers_integration() {
 
     // Test Bootstrap (stateless)
     let bootstrap_result = manager
-        .call_tool(&session_id, "bootstrap__detectPlatform", json!({}))
+        .call_tool(&session_id, "setup-wizard__detectPlatform", json!({}))
         .await
         .unwrap();
     assert!(bootstrap_result.error.is_none(), "Bootstrap should work");
@@ -512,7 +524,7 @@ async fn test_phase3_all_servers_integration() {
     let assistant_result = manager
         .call_tool(
             &session_id,
-            "assistant__createAssistant",
+            "agent__createAssistant",
             json!({
                 "id": "integration-assistant",
                 "name": "Integration Test Assistant",
@@ -542,25 +554,12 @@ async fn test_phase3_all_servers_integration() {
 
 #[tokio::test]
 async fn test_empty_mcp_server_ids_means_no_external_servers() {
-    let manager = create_test_manager().await;
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
 
     let session_id = "no-external-test".to_string();
 
-    // Insert session into database
-    use crate::entity::session;
-    use sea_orm::Set;
-
-    let new_session = session::ActiveModel {
-        id: Set(session_id.clone()),
-        created_at: Set(chrono::Utc::now().timestamp()),
-        updated_at: Set(0),
-        status: Set("idle".to_string()),
-        ..Default::default()
-    };
-    session::Entity::insert(new_session)
-        .exec(&*manager.db)
-        .await
-        .unwrap();
+    insert_test_session(&manager, &session_id).await;
 
     // Create proxy with builtin tools but EMPTY mcp_server_ids
     // This should result in NO external MCP servers being loaded
@@ -610,26 +609,17 @@ async fn test_empty_mcp_server_ids_means_no_external_servers() {
 /// The method should treat that as ready and return `Ok(())` without blocking.
 #[tokio::test]
 async fn test_proxy_ready_immediately_for_builtin_only_sessions() {
-    let manager = create_test_manager().await;
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
     let session_id = "readiness-builtin-only";
 
-    let new_session = session::ActiveModel {
-        id: Set(session_id.to_string()),
-        created_at: Set(chrono::Utc::now().timestamp()),
-        updated_at: Set(0),
-        status: Set("idle".to_string()),
-        ..Default::default()
-    };
-    session::Entity::insert(new_session)
-        .exec(&*manager.db)
-        .await
-        .unwrap();
+    insert_test_session(&manager, session_id).await;
 
     // No external MCP server IDs → background task is never spawned.
     manager
         .create_proxy(
             session_id.to_string(),
-            vec!["bootstrap".to_string()],
+            vec!["setup-wizard".to_string()],
             vec![],
             None,
         )
@@ -670,7 +660,8 @@ async fn test_proxy_ready_immediately_for_builtin_only_sessions() {
 /// MCP managers.
 #[tokio::test]
 async fn test_wait_fails_when_proxy_does_not_exist() {
-    let manager = create_test_manager().await;
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
     let session_id = "readiness-missing-proxy";
 
     let result = tokio::time::timeout(
@@ -698,8 +689,23 @@ async fn test_wait_fails_when_proxy_does_not_exist() {
 /// completes before proceeding.
 #[tokio::test]
 async fn test_wait_blocks_until_ready_signal_fires() {
-    let manager = create_test_manager().await;
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
     let session_id = "readiness-signal-test";
+
+    insert_test_session(&manager, session_id).await;
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["playbook".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    manager
+        .mark_runtime_proxy_not_ready_for_test(session_id)
+        .await;
 
     // Inject a pending (false) entry simulating a session with external servers
     // whose background loading has not finished yet.
@@ -739,8 +745,23 @@ async fn test_wait_blocks_until_ready_signal_fires() {
 /// during tool discovery — the workflow start must not block forever.
 #[tokio::test]
 async fn test_wait_times_out_if_never_signaled() {
-    let manager = create_test_manager().await;
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
     let session_id = "readiness-timeout-test";
+
+    insert_test_session(&manager, session_id).await;
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["playbook".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    manager
+        .mark_runtime_proxy_not_ready_for_test(session_id)
+        .await;
 
     // Inject a pending entry but intentionally never send true.
     let _tx = manager.inject_pending_readiness_for_test(session_id).await;

@@ -31,7 +31,7 @@ pub fn extract_db_file_path(db_url: &str) -> Option<&str> {
         .and_then(|p| p.split('?').next())
 }
 
-fn register_sqlite_vec() {
+pub(crate) fn register_sqlite_vec() {
     static REGISTER_SQLITE_VEC: Once = Once::new();
 
     REGISTER_SQLITE_VEC.call_once(|| unsafe {

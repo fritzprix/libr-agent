@@ -213,8 +213,7 @@ impl McpServerService {
 
                 Ok(model)
             }
-            Err(err) if is_oauth_auth_required_error(&err) =>
-            {
+            Err(err) if is_oauth_auth_required_error(&err) => {
                 // Save config even if verification failed with AuthRequired, but mark status as error/auth required
                 let model = repo
                     .create(&name, config)
@@ -305,8 +304,7 @@ impl McpServerService {
 
                     return Ok(updated);
                 }
-                Err(err) if is_oauth_auth_required_error(&err) =>
-                {
+                Err(err) if is_oauth_auth_required_error(&err) => {
                     let updated = repo
                         .update(&id, name.as_deref(), config)
                         .await

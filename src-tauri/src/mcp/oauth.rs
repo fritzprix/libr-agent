@@ -30,9 +30,7 @@ fn is_private_or_local_host(host: &str) -> bool {
                     let octets = ipv6.octets();
                     let first = octets[0];
                     // ULA (fc00::/7) or link-local unicast (fe80::/10)
-                    first == 0xfc
-                        || first == 0xfd
-                        || (first == 0xfe && (octets[1] & 0xc0) == 0x80)
+                    first == 0xfc || first == 0xfd || (first == 0xfe && (octets[1] & 0xc0) == 0x80)
                 }
             };
     }
@@ -42,8 +40,7 @@ fn is_private_or_local_host(host: &str) -> bool {
 
 /// Rejects non-HTTPS OAuth endpoints and hosts on private/local networks.
 fn validate_oauth_https_endpoint(url_str: &str, label: &str) -> Result<(), String> {
-    let parsed =
-        url::Url::parse(url_str).map_err(|e| format!("Invalid {label} URL: {e}"))?;
+    let parsed = url::Url::parse(url_str).map_err(|e| format!("Invalid {label} URL: {e}"))?;
 
     if parsed.scheme() != "https" {
         return Err(format!("{label} must use HTTPS scheme for security"));
@@ -304,10 +301,7 @@ impl OAuthManager {
 
         log::debug!("Discovered endpoints: {metadata:?}");
 
-        validate_oauth_https_endpoint(
-            &metadata.authorization_endpoint,
-            "authorization endpoint",
-        )?;
+        validate_oauth_https_endpoint(&metadata.authorization_endpoint, "authorization endpoint")?;
         validate_oauth_https_endpoint(&metadata.token_endpoint, "token endpoint")?;
 
         Ok(OAuthEndpoints {
@@ -461,11 +455,10 @@ mod tests {
             "authorization endpoint"
         )
         .is_err());
-        assert!(validate_oauth_https_endpoint(
-            "https://169.254.169.254/token",
-            "token endpoint"
-        )
-        .is_err());
+        assert!(
+            validate_oauth_https_endpoint("https://169.254.169.254/token", "token endpoint")
+                .is_err()
+        );
         assert!(validate_oauth_https_endpoint(
             "https://auth.example.com/authorize",
             "authorization endpoint"

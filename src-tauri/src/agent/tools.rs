@@ -835,7 +835,7 @@ mod tests {
         // The agent must see the full guided error, not a bare "Unknown error"
         assert!(
             msg.content.iter().any(|c| matches!(c,
-                MCPContent::Text { text, .. } if text.contains("STALE HASH")
+                MCPContent::Text { text, .. } if text.contains("STALE ANCHOR")
             )),
             "guided_error text must be preserved in the tool message"
         );
