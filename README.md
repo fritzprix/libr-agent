@@ -209,10 +209,10 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 Download the latest installer for your platform from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.18_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.18/LibrAgent_0.8.18_x64-setup.exe) · [`LibrAgent_0.8.18_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.18/LibrAgent_0.8.18_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.18_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.18/LibrAgent_0.8.18_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.18_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.18/LibrAgent_0.8.18_amd64.AppImage) · [`LibrAgent_0.8.18_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.18/LibrAgent_0.8.18_amd64.deb) · [`LibrAgent-0.8.18-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.18/LibrAgent-0.8.18-1.x86_64.rpm)
-- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.18)
+- **Windows:** [`LibrAgent_0.8.19_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_x64-setup.exe) · [`LibrAgent_0.8.19_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.19_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.19_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_amd64.AppImage) · [`LibrAgent_0.8.19_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_amd64.deb) · [`LibrAgent-0.8.19-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent-0.8.19-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.19)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Developer Setup:**
