@@ -99,3 +99,61 @@ pub async fn revoke_oauth_token(server_id: String) -> Result<String, String> {
         "OAuth token revoked successfully for server: {server_id}"
     ))
 }
+
+/// Starts the OAuth 2.1 authorization flow: opens browser, runs loopback listener,
+/// exchanges code, and saves token in keychain.
+#[tauri::command]
+pub async fn start_oauth_flow(
+    app_handle: tauri::AppHandle,
+    server_id: String,
+    config: crate::mcp::types::OAuthConfig,
+) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let oauth_manager = crate::mcp::oauth::OAuthManager::new();
+
+    // Step 1: Start auth flow and get URL + state
+    let (auth_url, state) = oauth_manager
+        .start_authorization_flow(&config, &server_id)
+        .await?;
+
+    // Step 2: Open browser
+    log::info!("Opening authorization URL in browser: {}", auth_url);
+    app_handle
+        .opener()
+        .open_url(&auth_url, Option::<String>::None)
+        .map_err(|e| format!("Failed to open browser: {e}"))?;
+
+    // Step 3: Run temporary loopback server and wait for code
+    let redirect_uri = config
+        .redirect_uri
+        .clone()
+        .unwrap_or_else(|| "http://localhost:14207/callback".to_string());
+
+    // Verify it is a localhost loopback callback
+    if !redirect_uri.starts_with("http://localhost")
+        && !redirect_uri.starts_with("http://127.0.0.1")
+    {
+        return Err(format!(
+            "Unsupported redirect URI: {}. Only http://localhost or http://127.0.0.1 are supported.",
+            redirect_uri
+        ));
+    }
+
+    let code = oauth_manager
+        .wait_for_callback(&redirect_uri, &state)
+        .await?;
+
+    // Step 4: Exchange code for token
+    let access_token = oauth_manager
+        .exchange_code_for_token(&config, &server_id, &code, &state)
+        .await?;
+
+    // Step 5: Save token in keychain
+    crate::mcp::keychain::store_token_securely(&server_id, &access_token).await?;
+
+    Ok(format!(
+        "OAuth integration successful for server: {}",
+        server_id
+    ))
+}

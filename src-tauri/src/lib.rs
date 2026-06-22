@@ -70,7 +70,7 @@ use commands::log_commands::{
 use commands::mcp_commands::{
     get_oauth_token, has_oauth_token, list_available_builtin_server_definitions,
     list_builtin_servers, list_builtin_servers_with_metadata, list_builtin_tools, probe_mcp_server,
-    revoke_oauth_token, validate_tool_schema,
+    revoke_oauth_token, start_oauth_flow, validate_tool_schema,
 };
 use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
@@ -237,6 +237,7 @@ pub fn run() {
                 has_oauth_token,
                 get_oauth_token,
                 revoke_oauth_token,
+                start_oauth_flow,
                 // Message management commands
                 messages_get_page,
                 messages_get_messages_before,

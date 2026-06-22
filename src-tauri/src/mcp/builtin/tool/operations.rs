@@ -3,7 +3,7 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::builtin::utils::load_session_tool_access;
-use crate::mcp::types::{MCPResult, MCPServerConfig, TransportConfig};
+use crate::mcp::types::{MCPResult, MCPServerConfig, OAuthConfig, TransportConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
@@ -176,10 +176,14 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
             version: None,
         });
 
+    let authentication = args
+        .get("authentication")
+        .and_then(|v| serde_json::from_value::<OAuthConfig>(v.clone()).ok());
+
     let config = MCPServerConfig {
         name: Some(name.clone()),
         transport,
-        authentication: None,
+        authentication,
         metadata,
     };
 
@@ -341,10 +345,14 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
             version: None,
         });
 
+    let authentication = args
+        .get("authentication")
+        .and_then(|v| serde_json::from_value::<OAuthConfig>(v.clone()).ok());
+
     let config = MCPServerConfig {
         name: Some(name.to_string()),
         transport: transport_config,
-        authentication: None,
+        authentication,
         metadata,
     };
 

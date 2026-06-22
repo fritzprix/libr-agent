@@ -1,5 +1,6 @@
 use super::MCPServerManager;
 use crate::mcp::types::{MCPConnection, MCPServerConfig, TransportConfig};
+use crate::repositories::mcp_server_repository::MCPServerRepository;
 use anyhow::Result;
 use log::{debug, error, info};
 use rmcp::{
@@ -147,6 +148,28 @@ async fn start_http_server(
             } else {
                 error!("Invalid header ignored: {}: {}", k, v);
             }
+        }
+    }
+
+    // Attempt to load OAuth token from OS keychain
+    let mut oauth_token = None;
+    // Step 1: Check using server name (slug)
+    if let Ok(Some(tok)) = crate::mcp::keychain::get_cached_token(&name).await {
+        oauth_token = Some(tok);
+    } else {
+        // Step 2: Fallback to DB query to retrieve UUID, then check keychain using UUID
+        let repo = crate::state::get_mcp_server_repository();
+        if let Ok(Some(model)) = repo.get_by_name(&name).await {
+            if let Ok(Some(tok)) = crate::mcp::keychain::get_cached_token(&model.id).await {
+                oauth_token = Some(tok);
+            }
+        }
+    }
+
+    if let Some(token) = oauth_token {
+        if let Ok(auth_val) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token)) {
+            header_map.insert(reqwest::header::AUTHORIZATION, auth_val);
+            log::info!("Injected OAuth Bearer token for HTTP MCP server '{}'", name);
         }
     }
 

@@ -260,6 +260,113 @@ impl OAuthManager {
             token_endpoint: metadata.token_endpoint,
         })
     }
+
+    /// Parses port from a redirect URI string.
+    /// E.g. "http://localhost:14207/callback" -> 14207
+    /// Defaults to 14207 if parsing fails.
+    fn parse_port_from_uri(uri_str: &str) -> u16 {
+        if let Ok(u) = url::Url::parse(uri_str) {
+            u.port().unwrap_or(14207)
+        } else {
+            14207
+        }
+    }
+
+    /// Starts a temporary localhost listener to wait for the OAuth authorization code.
+    /// This runs asynchronously and times out after 2 minutes.
+    pub async fn wait_for_callback(
+        &self,
+        redirect_uri: &str,
+        expected_state: &str,
+    ) -> Result<String, String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let port = Self::parse_port_from_uri(redirect_uri);
+        log::info!("Starting temporary OAuth callback listener on port {port}");
+
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
+            .await
+            .map_err(|e| format!("Failed to bind OAuth listener to port {port}: {e}"))?;
+
+        let timeout_dur = std::time::Duration::from_secs(120);
+        let timeout = tokio::time::sleep(timeout_dur);
+        tokio::pin!(timeout);
+
+        loop {
+            tokio::select! {
+                accept_res = listener.accept() => {
+                    match accept_res {
+                        Ok((mut stream, _)) => {
+                            let mut buffer = [0; 1024];
+                            match stream.read(&mut buffer).await {
+                                Ok(n) if n > 0 => {
+                                    let request = String::from_utf8_lossy(&buffer[..n]);
+                                    if request.starts_with("GET ") {
+                                        let first_line = request.lines().next().unwrap_or("");
+                                        let parts: Vec<&str> = first_line.split_whitespace().collect();
+                                        if parts.len() >= 2 {
+                                            let path = parts[1];
+                                            if let Some(query_start) = path.find('?') {
+                                                let query = &path[query_start + 1..];
+                                                let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+                                                    .into_owned()
+                                                    .collect();
+
+                                                let code = params.get("code");
+                                                let state = params.get("state");
+
+                                                if let (Some(code), Some(state)) = (code, state) {
+                                                    if state == expected_state {
+                                                        // Send success HTML page response
+                                                        let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n\
+                                                            <html>\
+                                                            <head>\
+                                                                <title>LibrAgent - Authentication Successful</title>\
+                                                                <style>\
+                                                                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding-top: 100px; background-color: #0d1117; color: #c9d1d9; }\
+                                                                    .card { background: #161b22; padding: 40px; border-radius: 12px; border: 1px solid #30363d; display: inline-block; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }\
+                                                                    h1 { color: #2ea043; margin-top: 0; }\
+                                                                    p { color: #8b949e; line-height: 1.5; }\
+                                                                </style>\
+                                                            </head>\
+                                                            <body>\
+                                                                <div class='card'>\
+                                                                    <h1>✓ Authentication Successful</h1>\
+                                                                    <p>LibrAgent has been authorized successfully. You can now close this browser tab and return to the application.</p>\
+                                                                </div>\
+                                                            </body>\
+                                                            </html>";
+                                                        let _ = stream.write_all(response.as_bytes()).await;
+                                                        let _ = stream.flush().await;
+                                                        return Ok(code.clone());
+                                                    } else {
+                                                        log::warn!("OAuth state mismatch. Expected {}, got {:?}", expected_state, state);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Invalid request fall-through
+                                    let response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nConnection: close\r\n\r\nFailed to authenticate. State mismatch or missing code.";
+                                    let _ = stream.write_all(response.as_bytes()).await;
+                                    let _ = stream.flush().await;
+                                }
+                                _ => {}
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Error accepting connection in OAuth callback listener: {e}");
+                        }
+                    }
+                }
+                _ = &mut timeout => {
+                    return Err("OAuth authorization timed out after 2 minutes".to_string());
+                }
+            }
+        }
+    }
 }
 
 impl Default for OAuthManager {
