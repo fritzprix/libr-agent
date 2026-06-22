@@ -40,6 +40,7 @@ export {
   hasOAuthToken,
   getOAuthToken,
   revokeOAuthToken,
+  startOAuthFlow,
   sampleFromModel,
   validateToolSchema,
 } from './mcp-server';

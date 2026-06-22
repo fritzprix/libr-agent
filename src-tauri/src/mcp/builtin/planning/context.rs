@@ -61,13 +61,17 @@ pub async fn get_service_context(
 
     // Goal Section
     parts.push("### Stable Context".to_string());
+    let goal_missing = goal_notice.is_none() && goal.is_none();
     if let Some(notice) = &goal_notice {
         parts.push("- Current Goal: unavailable".to_string());
         parts.push(format!("- {}", notice.hint));
     } else if let Some(g) = &goal {
         parts.push(format!("- Current Goal: \"{}\"", g));
     } else {
-        parts.push("- No goal set".to_string());
+        parts.push(
+            "- Current Goal: missing — required: call planning__createGoal before task work"
+                .to_string(),
+        );
     }
 
     // Todos Section
@@ -153,6 +157,11 @@ pub async fn get_service_context(
                 parts.push(format!("- [✓] (Todo ID {}) {}{}", t.id, t.content, summary));
             }
         }
+    } else if goal_missing {
+        parts.push(
+            "- Tasks: none yet (add todos with planning__addTodo after planning__createGoal)"
+                .to_string(),
+        );
     } else {
         parts.push("- Tasks: None".to_string());
     }

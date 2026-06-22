@@ -49,6 +49,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     handleDelete,
     confirmDelete,
     handleToggleActive,
+    mutateServers,
   } = useMCPServerManagement(service);
 
   return (
@@ -104,6 +105,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
                   onDelete={handleDelete}
                   onToggleActive={handleToggleActive}
                   isToggling={!!togglingStatus[server.id]}
+                  onRevalidate={mutateServers}
                 />
               ))}
             </div>

@@ -2,6 +2,66 @@ use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
+fn oauth_config_schema(description: Option<&str>) -> crate::mcp::schema::JSONSchema {
+    object_prop(
+        vec![
+            (
+                "type".to_string(),
+                string_const_prop("oauth2.1", Some("Authentication type (always 'oauth2.1')")),
+            ),
+            (
+                "discoveryUrl".to_string(),
+                string_prop(
+                    None,
+                    None,
+                    Some("RFC 8414 OAuth 2.0 Authorization Server Metadata discovery endpoint."),
+                ),
+            ),
+            (
+                "authorizationEndpoint".to_string(),
+                string_prop(None, None, Some("Authorization endpoint URL.")),
+            ),
+            (
+                "tokenEndpoint".to_string(),
+                string_prop(None, None, Some("Token endpoint URL.")),
+            ),
+            (
+                "registrationEndpoint".to_string(),
+                string_prop(None, None, Some("Client registration endpoint URL.")),
+            ),
+            (
+                "clientId".to_string(),
+                string_prop(None, None, Some("OAuth client ID.")),
+            ),
+            (
+                "redirectUri".to_string(),
+                string_prop(None, None, Some("OAuth redirect URI.")),
+            ),
+            (
+                "scopes".to_string(),
+                array_schema(
+                    string_prop(None, None, None),
+                    Some("List of OAuth scopes to request."),
+                ),
+            ),
+            (
+                "usePkce".to_string(),
+                boolean_prop(Some("Whether to use PKCE. Default is true.")),
+            ),
+            (
+                "resourceParameter".to_string(),
+                string_prop(
+                    None,
+                    None,
+                    Some("Resource parameter for target audience/endpoint."),
+                ),
+            ),
+        ],
+        vec!["type".to_string()],
+        description,
+    )
+}
+
 fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSONSchema {
     object_prop(
         vec![
@@ -71,6 +131,7 @@ fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSO
 /// Register a new MCP server configuration
 pub fn register_server_tool() -> MCPTool {
     let transport_schema = transport_config_schema(Some("Transport configuration"));
+    let oauth_schema = oauth_config_schema(Some("Optional OAuth 2.1 authentication configuration"));
 
     MCPTool {
         name: "registerServer".to_string(),
@@ -105,6 +166,7 @@ pub fn register_server_tool() -> MCPTool {
                     string_prop_required("Short purpose statement describing when this server should be used."),
                 ),
                 ("transport".to_string(), transport_schema),
+                ("authentication".to_string(), oauth_schema),
             ],
             vec!["name".to_string(), "description".to_string(), "transport".to_string()],
             None,
@@ -119,6 +181,8 @@ pub fn update_server_tool() -> MCPTool {
     let transport_schema = transport_config_schema(Some(
         "Replacement transport configuration. Set type to stdio (command, args, env) or http/http-sse (url, headers, enableSSE). Supply the full transport object for the target type.",
     ));
+    let oauth_schema =
+        oauth_config_schema(Some("Replacement OAuth 2.1 authentication configuration"));
 
     MCPTool {
         name: "updateServer".to_string(),
@@ -143,6 +207,7 @@ pub fn update_server_tool() -> MCPTool {
                     string_prop_required("Target server name (slug) to update"),
                 ),
                 ("transport".to_string(), transport_schema),
+                ("authentication".to_string(), oauth_schema),
                 (
                     "description".to_string(),
                     string_prop(

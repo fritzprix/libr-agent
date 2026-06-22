@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
-import { Server, CheckCircle2, XCircle, Loader2, Wrench } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Server,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Wrench,
+  ShieldCheck,
+  ShieldAlert,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import {
@@ -12,6 +20,9 @@ import {
 import { Switch } from '@/components/ui/switch';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ServerToolsModal } from './ServerToolsModal';
+import { hasOAuthToken, startOAuthFlow, revokeOAuthToken } from '@/lib/backend';
+import { safeInvoke } from '@/lib/backend/core';
+import { toast } from 'sonner';
 
 interface ServerCardProps {
   server: MCPServerEntity;
@@ -19,6 +30,7 @@ interface ServerCardProps {
   onDelete: (server: MCPServerEntity) => void;
   onToggleActive: (server: MCPServerEntity, checked: boolean) => void;
   isToggling?: boolean;
+  onRevalidate?: () => void;
 }
 
 export const ServerCard = React.memo(
@@ -28,11 +40,63 @@ export const ServerCard = React.memo(
     onDelete,
     onToggleActive,
     isToggling,
+    onRevalidate,
   }: ServerCardProps) => {
     const { t } = useTranslation('common');
     const serverName = server.name || t('mcpServer.unnamed', 'Unnamed Server');
     const [isToolsOpen, setIsToolsOpen] = useState(false);
     const verificationStatus = server.verificationStatus;
+
+    const [hasToken, setHasToken] = useState<boolean>(false);
+    const [isAuthorizing, setIsAuthorizing] = useState<boolean>(false);
+
+    useEffect(() => {
+      if (server.authentication?.type === 'oauth2.1') {
+        hasOAuthToken(server.id)
+          .then(setHasToken)
+          .catch(() => setHasToken(false));
+      }
+    }, [server.id, server.authentication]);
+
+    const handleAuthorize = useCallback(async () => {
+      if (!server.authentication) return;
+      setIsAuthorizing(true);
+      try {
+        await startOAuthFlow(server.id, server.authentication);
+        setHasToken(true);
+        toast.success(
+          t('mcpServer.toasts.authSuccess', 'Successfully authenticated!'),
+        );
+        // Probe to trigger re-verification and fetch tools
+        await safeInvoke('probe_mcp_server', { serverId: server.id });
+        if (onRevalidate) onRevalidate();
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        toast.error(
+          t('mcpServer.toasts.authFailed', `Authorization failed: ${msg}`),
+        );
+      } finally {
+        setIsAuthorizing(false);
+      }
+    }, [server.id, server.authentication, t, onRevalidate]);
+
+    const handleDisconnect = useCallback(async () => {
+      try {
+        await revokeOAuthToken(server.id);
+        setHasToken(false);
+        toast.success(
+          t('mcpServer.toasts.disconnectSuccess', 'Successfully disconnected.'),
+        );
+        // Probe to reset status to connection failed/AuthRequired
+        await safeInvoke('probe_mcp_server', { serverId: server.id });
+        if (onRevalidate) onRevalidate();
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        toast.error(
+          t('mcpServer.toasts.disconnectFailed', `Disconnect failed: ${msg}`),
+        );
+      }
+    }, [server.id, t, onRevalidate]);
 
     return (
       <Card className="relative overflow-hidden">
@@ -117,7 +181,27 @@ export const ServerCard = React.memo(
                   })()}`}
               </p>
               {/* Tool count / verification status — mutually exclusive display */}
-              <div className="mt-1">
+              <div className="mt-1 flex flex-col gap-1">
+                {server.authentication?.type === 'oauth2.1' && (
+                  <span
+                    className={`inline-flex items-center gap-1 text-xs font-semibold ${hasToken ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-500'}`}
+                  >
+                    {hasToken ? (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        {t('mcpServer.authorizedStatus', 'Authorized')}
+                      </>
+                    ) : (
+                      <>
+                        <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                        {t(
+                          'mcpServer.unauthorizedStatus',
+                          'Authorization Required',
+                        )}
+                      </>
+                    )}
+                  </span>
+                )}
                 {verificationStatus === 'pending' && (
                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -225,6 +309,31 @@ export const ServerCard = React.memo(
               >
                 {t('mcpServer.edit', 'Edit')}
               </Button>
+
+              {server.authentication?.type === 'oauth2.1' &&
+                (hasToken ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDisconnect}
+                    className="text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                  >
+                    {t('mcpServer.disconnect', 'Disconnect')}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={isAuthorizing}
+                    onClick={handleAuthorize}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                  >
+                    {isAuthorizing && (
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    )}
+                    {t('mcpServer.authorize', 'Authorize')}
+                  </Button>
+                ))}
             </div>
             <Button
               variant="destructive"

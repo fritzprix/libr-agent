@@ -27,6 +27,10 @@ pub(crate) fn summarize_tool_names(tools: &[MCPTool]) -> String {
     }
 }
 
+fn is_oauth_auth_required_error(err: &str) -> bool {
+    err.contains("Auth required") || err.contains("AuthRequired")
+}
+
 impl McpServerService {
     fn requires_reverification(existing_config: &Value, incoming_config: &Value) -> bool {
         let existing_transport = existing_config.get("transport");
@@ -100,31 +104,46 @@ impl McpServerService {
         config.name = Some(server_name.clone());
 
         // 3. Verify config
-        let tools = Self::verify_config(config).await?;
+        let verify_result = Self::verify_config(config).await;
 
-        log::info!(
-            "[probe] '{}' ({}) → {} tool(s): [{}]",
-            server_name,
-            server_id,
-            tools.len(),
-            summarize_tool_names(&tools)
-        );
+        match verify_result {
+            Ok(tools) => {
+                log::info!(
+                    "[probe] '{}' ({}) → {} tool(s): [{}]",
+                    server_name,
+                    server_id,
+                    tools.len(),
+                    summarize_tool_names(&tools)
+                );
 
-        // 4. Persist tool list (names + descriptions) to DB (best-effort)
-        let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
+                // 4. Persist tool list (names + descriptions) to DB (best-effort)
+                let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
 
-        if let Err(e) = repo
-            .update_cached_tools(server_id, tools.len() as i32, tools_json_str)
-            .await
-        {
-            log::warn!(
-                "[probe] Failed to cache tool list for '{}': {}",
-                server_id,
-                e
-            );
+                if let Err(e) = repo
+                    .update_cached_tools(server_id, tools.len() as i32, tools_json_str)
+                    .await
+                {
+                    log::warn!(
+                        "[probe] Failed to cache tool list for '{}': {}",
+                        server_id,
+                        e
+                    );
+                }
+
+                Ok(tools)
+            }
+            Err(err) => {
+                // Set verification status to error so it doesn't get stuck in pending
+                if let Err(e) = repo.set_verification_error(server_id, err.clone()).await {
+                    log::warn!(
+                        "[probe] Failed to update verification error status for '{}': {}",
+                        server_id,
+                        e
+                    );
+                }
+                Err(err)
+            }
         }
-
-        Ok(tools)
     }
 
     async fn persist_verified_tools(
@@ -138,7 +157,8 @@ impl McpServerService {
             .map_err(|e| format!("Failed to persist verification result: {}", e))
     }
 
-    async fn reload_server(
+    /// Reloads the server row from the database after a write. Does not re-verify connectivity.
+    async fn fetch_server_model(
         repo: &dyn MCPServerRepository,
         server_id: &str,
     ) -> Result<crate::entity::mcp_server::Model, String> {
@@ -169,29 +189,55 @@ impl McpServerService {
         mcp_config.name = Some(name.clone());
 
         // 2. Verify the configuration connects and provides tools before saving
-        let tools = Self::verify_config(mcp_config)
-            .await
-            .map_err(|e| format!("Verification failed: {}", e))?;
+        let verify_result = Self::verify_config(mcp_config).await;
 
-        // 3. Save to database
-        let model = repo
-            .create(&name, config)
-            .await
-            .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+        match verify_result {
+            Ok(tools) => {
+                // 3. Save to database
+                let model = repo
+                    .create(&name, config)
+                    .await
+                    .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
 
-        Self::persist_verified_tools(repo, &model.id, &tools).await?;
+                Self::persist_verified_tools(repo, &model.id, &tools).await?;
 
-        let model = Self::reload_server(repo, &model.id).await?;
+                let model = Self::fetch_server_model(repo, &model.id).await?;
 
-        log::info!(
-            "'{}' ({}) saved after verification with {} tool(s): [{}]",
-            model.name,
-            model.id,
-            tools.len(),
-            summarize_tool_names(&tools)
-        );
+                log::info!(
+                    "'{}' ({}) saved after verification with {} tool(s): [{}]",
+                    model.name,
+                    model.id,
+                    tools.len(),
+                    summarize_tool_names(&tools)
+                );
 
-        Ok(model)
+                Ok(model)
+            }
+            Err(err) if is_oauth_auth_required_error(&err) =>
+            {
+                // Save config even if verification failed with AuthRequired, but mark status as error/auth required
+                let model = repo
+                    .create(&name, config)
+                    .await
+                    .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+
+                let auth_err_msg = format!("Authentication required: {}", err);
+                repo.set_verification_error(&model.id, auth_err_msg.clone())
+                    .await
+                    .map_err(|e| format!("Failed to set verification error: {}", e))?;
+
+                let model = Self::fetch_server_model(repo, &model.id).await?;
+                log::info!(
+                    "'{}' ({}) saved with pending authentication status: {}",
+                    model.name,
+                    model.id,
+                    auth_err_msg
+                );
+
+                Ok(model)
+            }
+            Err(err) => Err(format!("Verification failed: {}", err)),
+        }
     }
 
     pub async fn update_server_config(
@@ -236,28 +282,55 @@ impl McpServerService {
             Self::requires_reverification(&existing_config_val, &final_config_val);
 
         if requires_reverification {
-            let tools = Self::verify_config(mcp_config)
-                .await
-                .map_err(|e| format!("Verification failed: {}", e))?;
+            let verify_result = Self::verify_config(mcp_config).await;
 
-            let updated = repo
-                .update(&id, name.as_deref(), config)
-                .await
-                .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
+            match verify_result {
+                Ok(tools) => {
+                    let updated = repo
+                        .update(&id, name.as_deref(), config)
+                        .await
+                        .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
 
-            Self::persist_verified_tools(repo, &updated.id, &tools).await?;
+                    Self::persist_verified_tools(repo, &updated.id, &tools).await?;
 
-            let updated = Self::reload_server(repo, &updated.id).await?;
+                    let updated = Self::fetch_server_model(repo, &updated.id).await?;
 
-            log::info!(
-                "'{}' ({}) updated after verification with {} tool(s): [{}]",
-                updated.name,
-                updated.id,
-                tools.len(),
-                summarize_tool_names(&tools)
-            );
+                    log::info!(
+                        "'{}' ({}) updated after verification with {} tool(s): [{}]",
+                        updated.name,
+                        updated.id,
+                        tools.len(),
+                        summarize_tool_names(&tools)
+                    );
 
-            return Ok(updated);
+                    return Ok(updated);
+                }
+                Err(err) if is_oauth_auth_required_error(&err) =>
+                {
+                    let updated = repo
+                        .update(&id, name.as_deref(), config)
+                        .await
+                        .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
+
+                    let auth_err_msg = format!("Authentication required: {}", err);
+                    repo.set_verification_error(&updated.id, auth_err_msg.clone())
+                        .await
+                        .map_err(|e| format!("Failed to set verification error: {}", e))?;
+
+                    let updated = Self::fetch_server_model(repo, &updated.id).await?;
+                    log::info!(
+                        "'{}' ({}) updated with pending authentication status: {}",
+                        updated.name,
+                        updated.id,
+                        auth_err_msg
+                    );
+
+                    return Ok(updated);
+                }
+                Err(err) => {
+                    return Err(format!("Verification failed: {}", err));
+                }
+            }
         }
 
         // Name-only or metadata-only updates do not require transport re-verification.
@@ -273,6 +346,15 @@ impl McpServerService {
         repo: &dyn MCPServerRepository,
         id: &str,
     ) -> Result<(), String> {
+        // Cleanup token from keychain if present
+        if let Err(e) = crate::mcp::keychain::delete_token(id).await {
+            log::warn!(
+                "Failed to delete OAuth token from keychain for server '{}': {}",
+                id,
+                e
+            );
+        }
+
         repo.delete(id)
             .await
             .map_err(|e| format!("Failed to delete MCP server config: {}", e))?;
