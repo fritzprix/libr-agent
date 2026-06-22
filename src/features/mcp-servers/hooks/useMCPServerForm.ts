@@ -194,6 +194,32 @@ export function useMCPServerForm(server: MCPServerEntity) {
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // OAuth specific state
+  const [authType, setAuthType] = useState<'none' | 'oauth2.1'>(() => {
+    return server.authentication?.type === 'oauth2.1' ? 'oauth2.1' : 'none';
+  });
+  const [discoveryUrl, setDiscoveryUrl] = useState(() => {
+    return server.authentication?.discoveryUrl || '';
+  });
+  const [authorizationEndpoint, setAuthorizationEndpoint] = useState(() => {
+    return server.authentication?.authorizationEndpoint || '';
+  });
+  const [tokenEndpoint, setTokenEndpoint] = useState(() => {
+    return server.authentication?.tokenEndpoint || '';
+  });
+  const [clientId, setClientId] = useState(() => {
+    return server.authentication?.clientId || '';
+  });
+  const [clientSecret, setClientSecret] = useState(() => {
+    return server.authentication?.clientSecret || '';
+  });
+  const [scopes, setScopes] = useState(() => {
+    return server.authentication?.scopes?.join(', ') || '';
+  });
+  const [usePkce, setUsePkce] = useState(() => {
+    return server.authentication?.usePKCE ?? true;
+  });
+
   const isNewServer = !server.createdAt || draft.name === '';
 
   const isReservedName = () =>
@@ -229,6 +255,18 @@ export function useMCPServerForm(server: MCPServerEntity) {
       draft.transport.type === 'http-sse'
     ) {
       if (!draft.transport.url.trim()) return false;
+
+      // If OAuth 2.1 is enabled, clientId is required and we need either discoveryUrl OR authorization & token endpoints
+      if (authType === 'oauth2.1') {
+        if (!clientId.trim()) return false;
+        if (
+          !discoveryUrl.trim() &&
+          (!authorizationEndpoint.trim() || !tokenEndpoint.trim())
+        ) {
+          return false;
+        }
+      }
+
       const httpDefs = (server.metadata as MCPServerMetadata | undefined)
         ?.variableDefinitions;
       if (httpDefs) {
@@ -378,6 +416,25 @@ export function useMCPServerForm(server: MCPServerEntity) {
             headers,
             enableSSE: enableSSE,
           } as TransportConfig,
+          authentication:
+            authType === 'oauth2.1'
+              ? {
+                  type: 'oauth2.1',
+                  discoveryUrl: discoveryUrl.trim() || undefined,
+                  authorizationEndpoint:
+                    authorizationEndpoint.trim() || undefined,
+                  tokenEndpoint: tokenEndpoint.trim() || undefined,
+                  clientId: clientId.trim() || undefined,
+                  clientSecret: clientSecret.trim() || undefined,
+                  scopes: scopes.trim()
+                    ? scopes
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                    : undefined,
+                  usePKCE: usePkce,
+                }
+              : undefined,
         };
 
         await onSave(updatedDraft);
@@ -416,5 +473,21 @@ export function useMCPServerForm(server: MCPServerEntity) {
     handleRemoveHeader,
     handleUpdateHeader,
     submit,
+    authType,
+    setAuthType,
+    discoveryUrl,
+    setDiscoveryUrl,
+    authorizationEndpoint,
+    setAuthorizationEndpoint,
+    tokenEndpoint,
+    setTokenEndpoint,
+    clientId,
+    setClientId,
+    clientSecret,
+    setClientSecret,
+    scopes,
+    setScopes,
+    usePkce,
+    setUsePkce,
   };
 }

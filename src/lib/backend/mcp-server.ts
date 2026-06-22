@@ -4,6 +4,7 @@ import type {
   MCPResponse,
   SamplingOptions,
   SamplingResponse,
+  OAuthConfig,
 } from '@/lib/mcp';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -66,6 +67,21 @@ export async function getOAuthToken(serverId: string): Promise<string | null> {
  */
 export async function revokeOAuthToken(serverId: string): Promise<string> {
   return safeInvoke<string>('revoke_oauth_token', { serverId });
+}
+
+/**
+ * Starts the OAuth 2.1 authorization flow: opens browser, runs loopback listener,
+ * exchanges code, and saves token in keychain.
+ *
+ * @param serverId - Unique identifier for the MCP server
+ * @param config - The OAuthConfig object
+ * @returns Success message
+ */
+export async function startOAuthFlow(
+  serverId: string,
+  config: OAuthConfig,
+): Promise<string> {
+  return safeInvoke<string>('start_oauth_flow', { serverId, config });
 }
 
 /**

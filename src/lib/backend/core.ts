@@ -49,6 +49,6 @@ export async function safeInvoke<T>(
     } else {
       logger.error('invoke failed', { cmd, err });
     }
-    throw err;
+    throw err instanceof Error ? err : new Error(typeof err === 'string' ? err : String(err));
   }
 }

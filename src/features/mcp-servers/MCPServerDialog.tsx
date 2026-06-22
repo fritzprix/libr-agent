@@ -65,6 +65,22 @@ function MCPServerDialogComponent({
     handleRemoveHeader,
     handleUpdateHeader,
     submit,
+    authType,
+    setAuthType,
+    discoveryUrl,
+    setDiscoveryUrl,
+    authorizationEndpoint,
+    setAuthorizationEndpoint,
+    tokenEndpoint,
+    setTokenEndpoint,
+    clientId,
+    setClientId,
+    clientSecret,
+    setClientSecret,
+    scopes,
+    setScopes,
+    usePkce,
+    setUsePkce,
   } = useMCPServerForm(server);
 
   return (
@@ -249,6 +265,22 @@ function MCPServerDialogComponent({
               handleAddHeader={handleAddHeader}
               handleRemoveHeader={handleRemoveHeader}
               handleUpdateHeader={handleUpdateHeader}
+              authType={authType}
+              setAuthType={setAuthType}
+              discoveryUrl={discoveryUrl}
+              setDiscoveryUrl={setDiscoveryUrl}
+              authorizationEndpoint={authorizationEndpoint}
+              setAuthorizationEndpoint={setAuthorizationEndpoint}
+              tokenEndpoint={tokenEndpoint}
+              setTokenEndpoint={setTokenEndpoint}
+              clientId={clientId}
+              setClientId={setClientId}
+              clientSecret={clientSecret}
+              setClientSecret={setClientSecret}
+              scopes={scopes}
+              setScopes={setScopes}
+              usePkce={usePkce}
+              setUsePkce={setUsePkce}
             />
           )}
         </div>

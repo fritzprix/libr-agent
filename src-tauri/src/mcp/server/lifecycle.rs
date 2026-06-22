@@ -151,17 +151,19 @@ async fn start_http_server(
         }
     }
 
-    // Attempt to load OAuth token from OS keychain
+    // Attempt to load OAuth token from OS keychain if authentication is configured
     let mut oauth_token = None;
-    // Step 1: Check using server name (slug)
-    if let Ok(Some(tok)) = crate::mcp::keychain::get_cached_token(&name).await {
-        oauth_token = Some(tok);
-    } else {
-        // Step 2: Fallback to DB query to retrieve UUID, then check keychain using UUID
-        let repo = crate::state::get_mcp_server_repository();
-        if let Ok(Some(model)) = repo.get_by_name(&name).await {
-            if let Ok(Some(tok)) = crate::mcp::keychain::get_cached_token(&model.id).await {
-                oauth_token = Some(tok);
+    if config.authentication.is_some() {
+        // Step 1: Check using server name (slug)
+        if let Ok(Some(tok)) = crate::mcp::keychain::get_cached_token(&name).await {
+            oauth_token = Some(tok);
+        } else {
+            // Step 2: Fallback to DB query to retrieve UUID, then check keychain using UUID
+            let repo = crate::state::get_mcp_server_repository();
+            if let Ok(Some(model)) = repo.get_by_name(&name).await {
+                if let Ok(Some(tok)) = crate::mcp::keychain::get_cached_token(&model.id).await {
+                    oauth_token = Some(tok);
+                }
             }
         }
     }

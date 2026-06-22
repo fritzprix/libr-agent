@@ -249,5 +249,6 @@ export function useMCPServerManagement(service?: McpServerService) {
     handleDelete,
     confirmDelete,
     handleToggleActive,
+    mutateServers,
   };
 }

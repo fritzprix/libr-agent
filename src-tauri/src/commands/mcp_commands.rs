@@ -128,16 +128,28 @@ pub async fn start_oauth_flow(
     let redirect_uri = config
         .redirect_uri
         .clone()
-        .unwrap_or_else(|| "http://localhost:14207/callback".to_string());
+        .unwrap_or_else(|| crate::mcp::oauth::DEFAULT_CALLBACK_URL.to_string());
 
-    // Verify it is a localhost loopback callback
-    if !redirect_uri.starts_with("http://localhost")
-        && !redirect_uri.starts_with("http://127.0.0.1")
-    {
-        return Err(format!(
-            "Unsupported redirect URI: {}. Only http://localhost or http://127.0.0.1 are supported.",
-            redirect_uri
-        ));
+    // Verify it is a localhost loopback callback with a port
+    if let Ok(parsed_url) = url::Url::parse(&redirect_uri) {
+        if parsed_url.scheme() != "http" {
+            return Err("Unsupported redirect URI scheme. Only http:// is supported for loopback listeners.".to_string());
+        }
+        let host = parsed_url.host_str().unwrap_or("");
+        if host != "localhost" && host != "127.0.0.1" {
+            return Err(format!(
+                "Security violation: host '{}' is not allowed for redirect URI. Only 'localhost' or '127.0.0.1' are allowed.",
+                host
+            ));
+        }
+        if parsed_url.port().is_none() {
+            return Err(format!(
+                "Redirect URI must specify a port number (e.g. {}) to bind the loopback listener.",
+                crate::mcp::oauth::DEFAULT_CALLBACK_URL
+            ));
+        }
+    } else {
+        return Err(format!("Invalid redirect URI: {}", redirect_uri));
     }
 
     let code = oauth_manager
