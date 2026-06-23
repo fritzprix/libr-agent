@@ -6,6 +6,22 @@ use tracing::info;
 /// Monotonic counter for unique script filenames within a process lifetime.
 static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Helper to remove Windows UNC path prefix `\\?\` if present.
+/// This prevents crashes in external tools (like node/pnpm) that fail to parse UNC paths.
+///
+/// NOTE: By stripping the `\\?\` prefix from local paths, Windows API support for paths
+/// longer than 260 characters (MAX_PATH) is bypassed unless long path support is enabled
+/// in the Windows registry. However, since the external tools (like node/pnpm) cannot
+/// handle UNC paths anyway, this is a necessary trade-off for compatibility.
+fn simplify_path(path: &std::path::Path) -> std::path::PathBuf {
+    if let Ok(stripped) = path.strip_prefix(r"\\?\") {
+        if !stripped.starts_with(r"UNC\") {
+            return stripped.to_path_buf();
+        }
+    }
+    path.to_path_buf()
+}
+
 /// Basic isolation: environment variables and working directory
 pub async fn create_basic_isolated_command(
     config: IsolatedProcessConfig,
@@ -28,8 +44,10 @@ pub async fn create_basic_isolated_command(
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
+    let clean_workspace = simplify_path(&config.workspace_path);
+
     // Set working directory
-    cmd.current_dir(&config.workspace_path);
+    cmd.current_dir(&clean_workspace);
 
     // Apply environment isolation: clear all inherited environment variables
     cmd.env_clear();
@@ -40,8 +58,8 @@ pub async fn create_basic_isolated_command(
     }
 
     // Keep host home directories so CLI tools can discover their config, but isolate temp files.
-    cmd.env("TEMP", config.workspace_path.join(".libragent/tmp"));
-    cmd.env("TMP", config.workspace_path.join(".libragent/tmp"));
+    cmd.env("TEMP", clean_workspace.join(".libragent/tmp"));
+    cmd.env("TMP", clean_workspace.join(".libragent/tmp"));
 
     // Add user-specified environment variables
     for (key, value) in &config.env_vars {
@@ -72,7 +90,7 @@ pub async fn create_basic_isolated_command(
 
     // Write the command to a temp .ps1 file so AV can inspect it in plaintext.
     // Base64+Invoke-Expression was flagged as malware obfuscation; plain .ps1 is not.
-    let tmp_dir = config.workspace_path.join(".libragent/tmp");
+    let tmp_dir = clean_workspace.join(".libragent/tmp");
     tokio::fs::create_dir_all(&tmp_dir)
         .await
         .map_err(|e| format!("Failed to create tmp dir: {}", e))?;
@@ -183,6 +201,36 @@ pub async fn create_high_isolated_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_simplify_path_local_drive() {
+        let path = std::path::Path::new(r"\\?\C:\Users\SKTelecom\project");
+        let simplified = simplify_path(path);
+        assert_eq!(
+            simplified,
+            std::path::Path::new(r"C:\Users\SKTelecom\project")
+        );
+    }
+
+    #[test]
+    fn test_simplify_path_unc_share() {
+        let path = std::path::Path::new(r"\\?\UNC\server\share\project");
+        let simplified = simplify_path(path);
+        assert_eq!(
+            simplified,
+            std::path::Path::new(r"\\?\UNC\server\share\project")
+        );
+    }
+
+    #[test]
+    fn test_simplify_path_no_prefix() {
+        let path = std::path::Path::new(r"C:\Users\SKTelecom\project");
+        let simplified = simplify_path(path);
+        assert_eq!(
+            simplified,
+            std::path::Path::new(r"C:\Users\SKTelecom\project")
+        );
+    }
 
     /// Mirrors the script content format used by `create_basic_isolated_command`.
     fn build_script_content(full_command: &str) -> String {
