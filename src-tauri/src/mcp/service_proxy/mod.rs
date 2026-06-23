@@ -9,6 +9,7 @@ use super::builtin::BuiltinMCPServer;
 use super::error_normalization::{external_tool_error_result, ExternalMcpErrorCategory};
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::types::{ContextVolatility, MCPResponse, MCPTool, ServiceContext};
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::session::SessionManager;
 
 pub mod builder;
@@ -148,7 +149,10 @@ impl MCPServiceProxy {
             )
             .await?
             {
-                builtin_servers.insert(tool_id.to_string(), server);
+                let storage_key = BuiltinServiceId::from_alias(tool_id)
+                    .map(|service_id| service_id.name().to_string())
+                    .unwrap_or_else(|| tool_id.to_string());
+                builtin_servers.insert(storage_key, server);
                 log::debug!(
                     "Initialized builtin server '{}' for session '{}'",
                     tool_id,

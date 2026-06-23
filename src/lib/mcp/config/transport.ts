@@ -36,6 +36,7 @@ export interface OAuthConfig {
   tokenEndpoint?: string;
   registrationEndpoint?: string; // RFC 7591 Dynamic Client Registration
   clientId?: string;
+  clientSecret?: string;
   redirectUri?: string;
   scopes?: string[];
   usePKCE?: boolean; // Default: true

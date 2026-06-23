@@ -56,25 +56,36 @@ pub struct SecurityConfig {
 /// OAuth 2.1 authentication configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthConfig {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", alias = "oauth_type", alias = "oauthType")]
     pub oauth_type: String, // Always "oauth2.1"
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "discoveryUrl", alias = "discovery_url")]
     pub discovery_url: Option<String>, // RFC 8414 discovery endpoint
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "authorizationEndpoint", alias = "authorization_endpoint")]
     pub authorization_endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "tokenEndpoint", alias = "token_endpoint")]
     pub token_endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "registrationEndpoint", alias = "registration_endpoint")]
     pub registration_endpoint: Option<String>, // RFC 7591
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "clientId", alias = "client_id")]
     pub client_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "clientSecret", alias = "client_secret")]
+    pub client_secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "redirectUri", alias = "redirect_uri")]
     pub redirect_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scopes: Option<Vec<String>>,
     #[serde(default = "default_use_pkce")]
+    #[serde(rename = "usePkce", alias = "use_pkce", alias = "usePKCE")]
     pub use_pkce: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "resourceParameter", alias = "resource_parameter")]
     pub resource_parameter: Option<String>, // RFC 9728
 }
 
@@ -683,6 +694,7 @@ mod tests {
                 token_endpoint: None,
                 registration_endpoint: None,
                 client_id: Some("test-client".to_string()),
+                client_secret: None,
                 redirect_uri: Some("libr-agent://oauth/callback".to_string()),
                 scopes: Some(vec!["read".to_string(), "write".to_string()]),
                 use_pkce: true,

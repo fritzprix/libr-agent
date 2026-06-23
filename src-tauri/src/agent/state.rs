@@ -621,7 +621,14 @@ mod tests {
                 input_preview: None,
             },
         );
-        session.pending_execution = Some("exec-1".to_string());
+        session.pending_execution = Some(PendingToolExecution {
+            message_id: "exec-1".to_string(),
+            total_expected: 0,
+            results: Vec::new(),
+            tool_names: HashMap::new(),
+            expected_tool_call_ids: HashSet::new(),
+            completed_tool_call_ids: HashSet::new(),
+        });
         *session.compact_context.write().await = Some(CompactContextRecord {
             id: "cc-1".to_string(),
             session_id: "test-sess".to_string(),
@@ -659,12 +666,7 @@ mod tests {
         assert!(session.pending_approvals.read().await.is_empty());
         assert!(session.pending_execution.is_none());
         assert!(session.compact_context.read().await.is_none());
-        assert!(session
-            .pending_events
-            .read()
-            .await
-            .drain_messages()
-            .is_empty());
+        assert!(!session.pending_events.read().await.has_pending());
 
         let snapshot = session.compaction.snapshot().await;
         assert!(matches!(snapshot.phase, CompactionPhase::Idle));

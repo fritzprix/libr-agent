@@ -22,6 +22,21 @@ mod tests {
 
     static TEST_DB: OnceLock<Arc<DatabaseConnection>> = OnceLock::new();
 
+    fn test_session_active_model(id: impl Into<String>) -> session::ActiveModel {
+        session::ActiveModel {
+            id: Set(id.into()),
+            name: Set(None),
+            status: Set("idle".to_string()),
+            model: Set("gpt-4".to_string()),
+            provider: Set("openai".to_string()),
+            execution_mode: Set("normal".to_string()),
+            is_bookmarked: Set(false),
+            created_at: Set(0),
+            updated_at: Set(0),
+            ..Default::default()
+        }
+    }
+
     /// Helper to create or get the singleton test database connection
     async fn create_test_db() -> Arc<DatabaseConnection> {
         if let Some(db) = TEST_DB.get() {
@@ -112,8 +127,13 @@ mod tests {
         TEST_DB.get().expect("DB should be set").clone()
     }
 
+    async fn acquire_integration_test_lock() -> tokio::sync::MutexGuard<'static, ()> {
+        state::lock_test_global_state().await
+    }
+
     #[tokio::test]
     async fn test_proxy_manager_lifecycle() {
+        let _integration_test_lock = acquire_integration_test_lock().await;
         // Create test dependencies
         let db = create_test_db().await;
         let session_manager = Arc::new(
@@ -133,7 +153,9 @@ mod tests {
 
         assert_eq!(proxy.session_id(), "test-session-1");
         assert_eq!(proxy.builtin_server_count(), 1);
-        assert!(proxy.builtin_tool_ids().contains(&"bootstrap".to_string()));
+        assert!(proxy
+            .builtin_tool_ids()
+            .contains(&"setup-wizard".to_string()));
 
         // Test 2: Get existing proxy
         let retrieved_proxy = proxy_manager
@@ -163,11 +185,11 @@ mod tests {
             _ => panic!("Expected ToolCall result"),
         }
 
-        // Test 4: Call getBootstrapGuide tool
+        // Test 4: Call getSetupGuide tool
         let result = proxy_manager
             .call_tool(
                 "test-session-1",
-                "bootstrap__getBootstrapGuide",
+                "setup-wizard__getSetupGuide",
                 json!({
                     "tool": "node",
                     "platform": "auto"
@@ -201,6 +223,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_isolation() {
+        let _integration_test_lock = acquire_integration_test_lock().await;
         // Create test dependencies
         let db = create_test_db().await;
         let session_manager = Arc::new(
@@ -266,6 +289,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_tool_calls() {
+        let _integration_test_lock = acquire_integration_test_lock().await;
         // Create test dependencies
         let db = create_test_db().await;
         let session_manager = Arc::new(
@@ -293,7 +317,7 @@ mod tests {
             let tool = if i % 2 == 0 {
                 "bootstrap__detectPlatform"
             } else {
-                "bootstrap__getBootstrapGuide"
+                "setup-wizard__getSetupGuide"
             };
 
             let args = if i % 2 == 0 {
@@ -332,6 +356,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_handling() {
+        let _integration_test_lock = acquire_integration_test_lock().await;
         // Create test dependencies
         let db = create_test_db().await;
         let session_manager = Arc::new(
@@ -372,19 +397,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_playbook_ui_rendering_integration() {
+        let _integration_test_lock = acquire_integration_test_lock().await;
         // Setup
         let db = create_test_db().await;
 
-        // Insert test session
-        let new_session = session::ActiveModel {
-            id: Set("playbook-ui-test".to_string()),
-            name: Set(Some("Test".to_string())),
-            status: Set("idle".to_string()),
-            assistant_id: Set(Some("asst-s1".to_string())),
-            created_at: Set(0),
-            updated_at: Set(0),
+        // Insert test session with an isolated assistant scope
+        let assistant_id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().timestamp();
+        assistant::Entity::insert(assistant::ActiveModel {
+            id: Set(assistant_id.clone()),
+            name: Set("Playbook UI Test Assistant".to_string()),
+            config: Set("{}".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
             ..Default::default()
-        };
+        })
+        .exec(db.as_ref())
+        .await
+        .expect("Failed to insert test assistant");
+
+        let mut new_session = test_session_active_model("playbook-ui-test");
+        new_session.name = Set(Some("Test".to_string()));
+        new_session.assistant_id = Set(Some(assistant_id));
         // Defensive cleanup
         let _ = session::Entity::delete_by_id("playbook-ui-test".to_string())
             .exec(db.as_ref())
@@ -481,7 +515,13 @@ mod tests {
 
             let html = resource["text"].as_str().unwrap();
             assert!(html.contains("<!DOCTYPE html>"));
-            assert!(html.contains("📚 Playbooks (2)"));
+
+            let structured = result.structured_content.expect("No structured content");
+            let total_items = structured["page"]["totalItems"]
+                .as_i64()
+                .expect("totalItems in structured content");
+            assert_eq!(total_items, 2);
+            assert!(html.contains(&format!("Playbooks ({total_items})")));
             assert!(html.contains("Data Processing Workflow"));
             assert!(html.contains("API Integration"));
             assert!(html.contains("btn-select"));
@@ -491,29 +531,20 @@ mod tests {
             panic!("Expected Resource content");
         }
 
-        // Verify structured content
-        let structured = result.structured_content.expect("No structured content");
-        assert_eq!(structured["page"]["totalItems"], 2);
-
         // Cleanup
         proxy_manager.destroy_proxy(&session_id).await;
     }
 
     #[tokio::test]
     async fn test_playbook_session_isolation_with_ui() {
+        let _integration_test_lock = acquire_integration_test_lock().await;
         // Setup
         let db = create_test_db().await;
 
         // Insert test sessions
-        let s1 = session::ActiveModel {
-            id: Set("session-ui-1".to_string()),
-            name: Set(Some("S1".to_string())),
-            status: Set("idle".to_string()),
-            assistant_id: Set(Some("asst-ui-test".to_string())),
-            created_at: Set(0),
-            updated_at: Set(0),
-            ..Default::default()
-        };
+        let mut s1 = test_session_active_model("session-ui-1");
+        s1.name = Set(Some("S1".to_string()));
+        s1.assistant_id = Set(Some("asst-ui-test".to_string()));
         // Defensive cleanup
         let _ = session::Entity::delete_by_id("session-ui-1".to_string())
             .exec(db.as_ref())
@@ -523,15 +554,9 @@ mod tests {
             .await
             .expect("Failed to insert session 1");
 
-        let s2 = session::ActiveModel {
-            id: Set("session-ui-2".to_string()),
-            name: Set(Some("S2".to_string())),
-            status: Set("idle".to_string()),
-            assistant_id: Set(Some("asst-s1".to_string())),
-            created_at: Set(0),
-            updated_at: Set(0),
-            ..Default::default()
-        };
+        let mut s2 = test_session_active_model("session-ui-2");
+        s2.name = Set(Some("S2".to_string()));
+        s2.assistant_id = Set(Some("asst-s1".to_string()));
         // Defensive cleanup
         let _ = session::Entity::delete_by_id("session-ui-2".to_string())
             .exec(db.as_ref())
@@ -659,6 +684,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_workspace_path_resolution() {
+        let _integration_test_lock = acquire_integration_test_lock().await;
         // Create test dependencies
         let db = create_test_db().await;
         let session_manager = Arc::new(

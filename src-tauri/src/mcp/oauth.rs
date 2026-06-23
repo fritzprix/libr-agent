@@ -3,14 +3,58 @@ use oauth2::reqwest::async_http_client;
 ///
 /// Implements RFC 7636 (PKCE), RFC 8414 (Discovery), and RFC 7591 (Dynamic Registration)
 use oauth2::{
-    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge,
-    PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::mcp::types::OAuthConfig;
+
+pub const DEFAULT_CALLBACK_PORT: u16 = 14207;
+pub const DEFAULT_CALLBACK_URL: &str = "http://localhost:14207/callback";
+
+fn is_private_or_local_host(host: &str) -> bool {
+    if host.is_empty() || host == "localhost" || host == "127.0.0.1" {
+        return true;
+    }
+
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return ip.is_loopback()
+            || ip.is_unspecified()
+            || ip.is_multicast()
+            || match ip {
+                std::net::IpAddr::V4(ipv4) => ipv4.is_private() || ipv4.is_link_local(),
+                std::net::IpAddr::V6(ipv6) => {
+                    let octets = ipv6.octets();
+                    let first = octets[0];
+                    // ULA (fc00::/7) or link-local unicast (fe80::/10)
+                    first == 0xfc || first == 0xfd || (first == 0xfe && (octets[1] & 0xc0) == 0x80)
+                }
+            };
+    }
+
+    false
+}
+
+/// Rejects non-HTTPS OAuth endpoints and hosts on private/local networks.
+fn validate_oauth_https_endpoint(url_str: &str, label: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(url_str).map_err(|e| format!("Invalid {label} URL: {e}"))?;
+
+    if parsed.scheme() != "https" {
+        return Err(format!("{label} must use HTTPS scheme for security"));
+    }
+
+    let host = parsed.host_str().unwrap_or("");
+    if is_private_or_local_host(host) {
+        return Err(format!(
+            "Security violation: Local/private {label} is not allowed"
+        ));
+    }
+
+    Ok(())
+}
 
 /// Manages OAuth 2.1 flows for MCP servers
 #[derive(Debug)]
@@ -63,35 +107,11 @@ impl OAuthManager {
         log::info!("Starting OAuth flow for server: {server_id}");
 
         // Step 1: Discover or use configured endpoints
-        let endpoints = if let Some(discovery_url) = &config.discovery_url {
-            log::debug!("Using RFC 8414 discovery: {discovery_url}");
-            self.discover_endpoints(discovery_url).await?
-        } else {
-            // Use fallback endpoints from config
-            OAuthEndpoints {
-                authorization_endpoint: config
-                    .authorization_endpoint
-                    .clone()
-                    .ok_or("Missing authorization_endpoint")?,
-                token_endpoint: config
-                    .token_endpoint
-                    .clone()
-                    .ok_or("Missing token_endpoint")?,
-            }
-        };
+        let endpoints = self.resolve_endpoints(config).await?;
 
         log::debug!("OAuth endpoints: {endpoints:?}");
 
-        // Step 2: Create PKCE challenge
-        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-
-        // Store verifier for later use in token exchange
-        {
-            let mut verifiers = self.pkce_verifiers.lock().await;
-            verifiers.insert(server_id.to_string(), pkce_verifier);
-        }
-
-        // Step 3: Build OAuth client
+        // Step 2: Build OAuth client
         let client_id = config
             .client_id
             .clone()
@@ -100,11 +120,13 @@ impl OAuthManager {
         let redirect_uri = config
             .redirect_uri
             .clone()
-            .unwrap_or_else(|| "libr-agent://oauth/callback".to_string());
+            .unwrap_or_else(|| DEFAULT_CALLBACK_URL.to_string());
+
+        let client_secret = config.client_secret.clone().map(ClientSecret::new);
 
         let client = BasicClient::new(
             ClientId::new(client_id),
-            None, // Client secret not used with PKCE
+            client_secret,
             AuthUrl::new(endpoints.authorization_endpoint)
                 .map_err(|e| format!("Invalid authorization URL: {e}"))?,
             Some(
@@ -116,10 +138,17 @@ impl OAuthManager {
             RedirectUrl::new(redirect_uri).map_err(|e| format!("Invalid redirect URI: {e}"))?,
         );
 
-        // Step 4: Generate authorization URL with PKCE
-        let mut auth_request = client
-            .authorize_url(CsrfToken::new_random)
-            .set_pkce_challenge(pkce_challenge);
+        // Step 3: Generate authorization URL
+        let mut auth_request = client.authorize_url(CsrfToken::new_random);
+
+        if config.use_pkce {
+            let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+            {
+                let mut verifiers = self.pkce_verifiers.lock().await;
+                verifiers.insert(server_id.to_string(), pkce_verifier);
+            }
+            auth_request = auth_request.set_pkce_challenge(pkce_challenge);
+        }
 
         // Add scopes if configured
         if let Some(scopes) = &config.scopes {
@@ -171,31 +200,10 @@ impl OAuthManager {
             }
         }
 
-        // Step 2: Retrieve PKCE verifier
-        let verifier = {
-            let mut verifiers = self.pkce_verifiers.lock().await;
-            verifiers
-                .remove(server_id)
-                .ok_or("No PKCE verifier found for server")?
-        };
+        // Step 2: Get endpoints
+        let endpoints = self.resolve_endpoints(config).await?;
 
-        // Step 3: Get endpoints
-        let endpoints = if let Some(discovery_url) = &config.discovery_url {
-            self.discover_endpoints(discovery_url).await?
-        } else {
-            OAuthEndpoints {
-                authorization_endpoint: config
-                    .authorization_endpoint
-                    .clone()
-                    .ok_or("Missing authorization_endpoint")?,
-                token_endpoint: config
-                    .token_endpoint
-                    .clone()
-                    .ok_or("Missing token_endpoint")?,
-            }
-        };
-
-        // Step 4: Build client and exchange code
+        // Step 3: Build client and exchange code
         let client_id = config
             .client_id
             .clone()
@@ -204,11 +212,13 @@ impl OAuthManager {
         let redirect_uri = config
             .redirect_uri
             .clone()
-            .unwrap_or_else(|| "libr-agent://oauth/callback".to_string());
+            .unwrap_or_else(|| DEFAULT_CALLBACK_URL.to_string());
+
+        let client_secret = config.client_secret.clone().map(ClientSecret::new);
 
         let client = BasicClient::new(
             ClientId::new(client_id),
-            None,
+            client_secret,
             AuthUrl::new(endpoints.authorization_endpoint)
                 .map_err(|e| format!("Invalid authorization URL: {e}"))?,
             Some(
@@ -220,9 +230,21 @@ impl OAuthManager {
             RedirectUrl::new(redirect_uri).map_err(|e| format!("Invalid redirect URI: {e}"))?,
         );
 
-        let token_result = client
-            .exchange_code(AuthorizationCode::new(authorization_code.to_string()))
-            .set_pkce_verifier(verifier)
+        let mut exchange =
+            client.exchange_code(AuthorizationCode::new(authorization_code.to_string()));
+
+        if config.use_pkce {
+            // Retrieve PKCE verifier
+            let verifier = {
+                let mut verifiers = self.pkce_verifiers.lock().await;
+                verifiers
+                    .remove(server_id)
+                    .ok_or("No PKCE verifier found for server")?
+            };
+            exchange = exchange.set_pkce_verifier(verifier);
+        }
+
+        let token_result = exchange
             .request_async(async_http_client)
             .await
             .map_err(|e| format!("Token exchange failed: {e}"))?;
@@ -231,6 +253,28 @@ impl OAuthManager {
 
         log::info!("Successfully obtained access token for {server_id}");
         Ok(access_token)
+    }
+
+    async fn resolve_endpoints(&self, config: &OAuthConfig) -> Result<OAuthEndpoints, String> {
+        if let Some(discovery_url) = &config.discovery_url {
+            log::debug!("Using RFC 8414 discovery: {discovery_url}");
+            self.discover_endpoints(discovery_url).await
+        } else {
+            let authorization_endpoint = config
+                .authorization_endpoint
+                .clone()
+                .ok_or("Missing authorization_endpoint")?;
+            let token_endpoint = config
+                .token_endpoint
+                .clone()
+                .ok_or("Missing token_endpoint")?;
+            validate_oauth_https_endpoint(&authorization_endpoint, "authorization endpoint")?;
+            validate_oauth_https_endpoint(&token_endpoint, "token endpoint")?;
+            Ok(OAuthEndpoints {
+                authorization_endpoint,
+                token_endpoint,
+            })
+        }
     }
 
     /// Discovers OAuth endpoints using RFC 8414
@@ -242,6 +286,8 @@ impl OAuthManager {
     /// The discovered OAuth endpoints
     async fn discover_endpoints(&self, discovery_url: &str) -> Result<OAuthEndpoints, String> {
         log::debug!("Discovering OAuth endpoints from: {discovery_url}");
+
+        validate_oauth_https_endpoint(discovery_url, "discovery URL")?;
 
         let client = reqwest::Client::new();
         let metadata: AuthServerMetadata = client
@@ -255,10 +301,128 @@ impl OAuthManager {
 
         log::debug!("Discovered endpoints: {metadata:?}");
 
+        validate_oauth_https_endpoint(&metadata.authorization_endpoint, "authorization endpoint")?;
+        validate_oauth_https_endpoint(&metadata.token_endpoint, "token endpoint")?;
+
         Ok(OAuthEndpoints {
             authorization_endpoint: metadata.authorization_endpoint,
             token_endpoint: metadata.token_endpoint,
         })
+    }
+
+    /// Parses port from a redirect URI string.
+    /// E.g. "http://localhost:14207/callback" -> 14207
+    /// Defaults to DEFAULT_CALLBACK_PORT if parsing fails.
+    fn parse_port_from_uri(uri_str: &str) -> u16 {
+        if let Ok(u) = url::Url::parse(uri_str) {
+            u.port().unwrap_or(DEFAULT_CALLBACK_PORT)
+        } else {
+            DEFAULT_CALLBACK_PORT
+        }
+    }
+
+    /// Starts a temporary localhost listener to wait for the OAuth authorization code.
+    /// This runs asynchronously and times out after 2 minutes.
+    pub async fn wait_for_callback(
+        &self,
+        redirect_uri: &str,
+        expected_state: &str,
+    ) -> Result<String, String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let port = Self::parse_port_from_uri(redirect_uri);
+        log::info!("Starting temporary OAuth callback listener on port {port}");
+
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
+            .await
+            .map_err(|e| format!("Failed to bind OAuth listener to port {port}: {e}"))?;
+
+        let timeout_dur = std::time::Duration::from_secs(120);
+        let timeout = tokio::time::sleep(timeout_dur);
+        tokio::pin!(timeout);
+
+        loop {
+            tokio::select! {
+                accept_res = listener.accept() => {
+                    match accept_res {
+                        Ok((mut stream, _)) => {
+                            let mut buffer = [0; 1024];
+                            match stream.read(&mut buffer).await {
+                                Ok(n) if n > 0 => {
+                                    let request = String::from_utf8_lossy(&buffer[..n]);
+                                    if request.starts_with("GET ") {
+                                        let first_line = request.lines().next().unwrap_or("");
+                                        let parts: Vec<&str> = first_line.split_whitespace().collect();
+                                        if parts.len() >= 2 {
+                                            let path = parts[1];
+                                            if let Some(query_start) = path.find('?') {
+                                                let query = &path[query_start + 1..];
+                                                let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+                                                    .into_owned()
+                                                    .collect();
+
+                                                let code = params.get("code");
+                                                let state = params.get("state");
+
+                                                if let (Some(code), Some(state)) = (code, state) {
+                                                    if state == expected_state {
+                                                         // Send success HTML page response
+                                                         let html = "<html>\
+                                                             <head>\
+                                                                 <title>LibrAgent - Authentication Successful</title>\
+                                                                 <style>\
+                                                                     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding-top: 100px; background-color: #0d1117; color: #c9d1d9; }\
+                                                                     .card { background: #161b22; padding: 40px; border-radius: 12px; border: 1px solid #30363d; display: inline-block; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }\
+                                                                     h1 { color: #2ea043; margin-top: 0; }\
+                                                                     p { color: #8b949e; line-height: 1.5; }\
+                                                                 </style>\
+                                                             </head>\
+                                                             <body>\
+                                                                 <div class='card'>\
+                                                                     <h1>✓ Authentication Successful</h1>\
+                                                                     <p>LibrAgent has been authorized successfully. You can now close this browser tab and return to the application.</p>\
+                                                                 </div>\
+                                                             </body>\
+                                                             </html>";
+                                                         let response = format!(
+                                                             "HTTP/1.1 200 OK\r\n\
+                                                             Content-Type: text/html; charset=utf-8\r\n\
+                                                             Content-Length: {}\r\n\
+                                                             Connection: close\r\n\r\n\
+                                                             {}",
+                                                             html.len(),
+                                                             html
+                                                         );
+                                                         let _ = stream.write_all(response.as_bytes()).await;
+                                                         let _ = stream.flush().await;
+                                                         return Ok(code.clone());
+                                                     } else {
+                                                         log::warn!("OAuth state mismatch detected during callback processing");
+                                                     }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Invalid request fall-through
+                                    let response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nConnection: close\r\n\r\nFailed to authenticate. State mismatch or missing code.";
+                                    let _ = stream.write_all(response.as_bytes()).await;
+                                    let _ = stream.flush().await;
+                                }
+                                _ => {}
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Error accepting connection in OAuth callback listener: {e}");
+                        }
+                    }
+                }
+                _ = &mut timeout => {
+                    return Err("OAuth authorization timed out after 2 minutes".to_string());
+                }
+            }
+        }
     }
 }
 
@@ -279,6 +443,29 @@ mod tests {
         assert!(manager.csrf_tokens.lock().await.is_empty());
     }
 
+    #[test]
+    fn validate_oauth_https_endpoint_rejects_private_hosts() {
+        assert!(validate_oauth_https_endpoint(
+            "http://auth.example.com/authorize",
+            "authorization endpoint"
+        )
+        .is_err());
+        assert!(validate_oauth_https_endpoint(
+            "https://127.0.0.1/authorize",
+            "authorization endpoint"
+        )
+        .is_err());
+        assert!(
+            validate_oauth_https_endpoint("https://169.254.169.254/token", "token endpoint")
+                .is_err()
+        );
+        assert!(validate_oauth_https_endpoint(
+            "https://auth.example.com/authorize",
+            "authorization endpoint"
+        )
+        .is_ok());
+    }
+
     #[tokio::test]
     async fn test_start_authorization_flow() {
         let manager = OAuthManager::new();
@@ -289,6 +476,7 @@ mod tests {
             token_endpoint: Some("https://auth.example.com/token".to_string()),
             registration_endpoint: None,
             client_id: Some("test-client".to_string()),
+            client_secret: None,
             redirect_uri: Some("libr-agent://oauth/callback".to_string()),
             scopes: Some(vec!["read".to_string(), "write".to_string()]),
             use_pkce: true,

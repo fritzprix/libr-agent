@@ -347,6 +347,52 @@ async fn fetch_cached_session_messages_newest_first(
     Some(newest_first)
 }
 
+/// Prefer in-memory session messages when SQLite is missing output or lags behind.
+pub(crate) fn select_preferred_session_messages(
+    db_messages: Vec<Value>,
+    cached_messages: Option<Vec<Value>>,
+) -> Vec<Value> {
+    let Some(cached) = cached_messages else {
+        return db_messages;
+    };
+
+    // Verify that the database's latest message is actually present in the cache.
+    // If the DB has a newer message ID that is completely missing from the cache,
+    // the cache is stale/out-of-sync, so we must fall back to db_messages.
+    if let Some(db_latest) = db_messages.first() {
+        if let Some(db_id) = db_latest.get("id").and_then(|id| id.as_str()) {
+            let cache_contains_db_latest = cached
+                .iter()
+                .any(|m| m.get("id").and_then(|id| id.as_str()) == Some(db_id));
+            if !cache_contains_db_latest {
+                return db_messages;
+            }
+        }
+    }
+
+    let db_output = latest_session_output(&db_messages);
+    let cached_output = latest_session_output(&cached);
+
+    if session_output_is_missing(&cached_output) {
+        return db_messages;
+    }
+
+    if session_output_is_missing(&db_output) {
+        return cached;
+    }
+
+    if cached.len() > db_messages.len() {
+        return cached;
+    }
+
+    // DB may have the same number of rows but stale assistant text while persistence catches up.
+    if cached_output != db_output && cached.len() >= db_messages.len() {
+        return cached;
+    }
+
+    db_messages
+}
+
 pub async fn fetch_session_messages_for_result(
     session_id: &str,
     limit: u64,
@@ -357,25 +403,15 @@ pub async fn fetch_session_messages_for_result(
         .await
         .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
 
-    let mut messages_value: Vec<Value> = messages
+    let db_messages: Vec<Value> = messages
         .into_iter()
         .map(serde_json::to_value)
         .collect::<Result<Vec<Value>, serde_json::Error>>()
         .map_err(|e| format!("Failed to serialize session messages: {}", e))?;
 
-    let output = latest_session_output(&messages_value);
-    if session_output_is_missing(&output) {
-        if let Some(cached) =
-            fetch_cached_session_messages_newest_first(session_id, limit as usize).await
-        {
-            let cached_output = latest_session_output(&cached);
-            if !session_output_is_missing(&cached_output) {
-                messages_value = cached;
-            }
-        }
-    }
+    let cached = fetch_cached_session_messages_newest_first(session_id, limit as usize).await;
 
-    Ok(messages_value)
+    Ok(select_preferred_session_messages(db_messages, cached))
 }
 
 /// Consolidates timeout handling for spawnAgent, awaitAgent, and checkSession.
@@ -512,5 +548,112 @@ pub async fn wait_until_session_terminal(
             } => {}
             _ = sleep(sleep_cap) => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_preferred_session_messages;
+    use serde_json::json;
+
+    fn assistant_message(id: &str, text: &str) -> serde_json::Value {
+        json!({
+            "id": id,
+            "role": "assistant",
+            "content": [{ "type": "text", "text": text }]
+        })
+    }
+
+    fn user_message(text: &str) -> serde_json::Value {
+        json!({
+            "role": "user",
+            "content": [{ "type": "text", "text": text }]
+        })
+    }
+
+    #[test]
+    fn prefers_cache_when_db_output_is_missing() {
+        let db = vec![user_message("new task")];
+        let cached = vec![
+            assistant_message("asst-new", "Fresh answer"),
+            user_message("new task"),
+            assistant_message("asst-old", "Old answer"),
+            user_message("old task"),
+        ];
+
+        let selected = select_preferred_session_messages(db, Some(cached.clone()));
+        assert_eq!(selected, cached);
+    }
+
+    #[test]
+    fn prefers_cache_when_it_has_more_messages() {
+        let db = vec![
+            assistant_message("asst-old", "Old answer"),
+            user_message("old task"),
+        ];
+        let cached = vec![
+            assistant_message("asst-new", "Fresh answer"),
+            user_message("new task"),
+            assistant_message("asst-old", "Old answer"),
+            user_message("old task"),
+        ];
+
+        let selected = select_preferred_session_messages(db, Some(cached.clone()));
+        assert_eq!(selected, cached);
+    }
+
+    #[test]
+    fn prefers_cache_when_counts_match_but_assistant_output_differs() {
+        let db = vec![
+            user_message("new task"),
+            assistant_message("asst-old", "Old answer"),
+            user_message("old task"),
+        ];
+        let cached = vec![
+            assistant_message("asst-new", "Fresh answer"),
+            user_message("new task"),
+            assistant_message("asst-old", "Old answer"),
+        ];
+
+        let selected = select_preferred_session_messages(db, Some(cached.clone()));
+        assert_eq!(selected, cached);
+    }
+
+    #[test]
+    fn keeps_db_when_cache_is_unavailable_or_incomplete() {
+        let db = vec![assistant_message("asst-new", "Fresh answer")];
+
+        let selected = select_preferred_session_messages(db.clone(), None);
+        assert_eq!(selected, db);
+
+        let selected = select_preferred_session_messages(
+            db.clone(),
+            Some(vec![user_message("still working")]),
+        );
+        assert_eq!(selected, db);
+    }
+
+    fn user_message_with_id(id: &str, text: &str) -> serde_json::Value {
+        json!({
+            "id": id,
+            "role": "user",
+            "content": [{ "type": "text", "text": text }]
+        })
+    }
+
+    #[test]
+    fn falls_back_to_db_when_cache_is_stale_and_missing_db_latest_id() {
+        let db = vec![
+            assistant_message("asst-new-2", "Updated answer"),
+            user_message_with_id("msg-user-2", "new query"),
+        ];
+        // Cache has different messages and is missing the latest DB ID ("asst-new-2").
+        let cached = vec![
+            assistant_message("asst-old-1", "Stale answer"),
+            user_message_with_id("msg-user-1", "old query"),
+        ];
+
+        let selected = select_preferred_session_messages(db.clone(), Some(cached));
+        assert_eq!(selected, db);
     }
 }

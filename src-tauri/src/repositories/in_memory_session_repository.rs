@@ -397,6 +397,7 @@ impl SessionRepository for InMemorySessionRepository {
 #[cfg(test)]
 mod tests {
     use super::InMemorySessionRepository;
+    use crate::execution_mode::ExecutionMode;
     use crate::repositories::session_repository::{
         SessionMetadata, SessionRepository, SessionStatus,
     };

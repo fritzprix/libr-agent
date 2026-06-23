@@ -747,6 +747,7 @@ mod tests {
     use crate::mcp::types::MCPContent;
 
     async fn setup_test_db() -> SqliteMessageRepository {
+        crate::lifecycle::database::register_sqlite_vec();
         let db = sea_orm::Database::connect("sqlite::memory:")
             .await
             .expect("Failed to create in-memory database");
@@ -766,6 +767,10 @@ mod tests {
             id: Set(session_id.to_string()),
             name: Set(Some("Test Session".to_string())),
             status: Set("idle".to_string()),
+            model: Set("gpt-4".to_string()),
+            provider: Set("openai".to_string()),
+            execution_mode: Set("normal".to_string()),
+            is_bookmarked: Set(false),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()

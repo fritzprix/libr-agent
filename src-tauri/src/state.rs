@@ -609,3 +609,11 @@ pub fn reset_state() {
         reset_lock(&STARTUP_TIMER);
     }
 }
+
+#[cfg(test)]
+pub static TEST_GLOBAL_STATE_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[cfg(test)]
+pub async fn lock_test_global_state() -> tokio::sync::MutexGuard<'static, ()> {
+    TEST_GLOBAL_STATE_MUTEX.lock().await
+}
