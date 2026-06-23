@@ -361,9 +361,9 @@ pub(crate) fn select_preferred_session_messages(
     // the cache is stale/out-of-sync, so we must fall back to db_messages.
     if let Some(db_latest) = db_messages.first() {
         if let Some(db_id) = db_latest.get("id").and_then(|id| id.as_str()) {
-            let cache_contains_db_latest = cached.iter().any(|m| {
-                m.get("id").and_then(|id| id.as_str()) == Some(db_id)
-            });
+            let cache_contains_db_latest = cached
+                .iter()
+                .any(|m| m.get("id").and_then(|id| id.as_str()) == Some(db_id));
             if !cache_contains_db_latest {
                 return db_messages;
             }
