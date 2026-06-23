@@ -259,10 +259,16 @@ export class AnthropicService extends BaseAIService<
     );
 
     try {
-      const compactSummaries = sanitizedMessages
-        .filter(isCompactSummaryMessage)
-        .map((m) => this.processMessageContent(m.content))
-        .filter(Boolean);
+      // ⚡ Bolt: Replace .filter().map().filter() with a single-pass loop to avoid intermediate array allocations
+      const compactSummaries: string[] = [];
+      for (const m of sanitizedMessages) {
+        if (isCompactSummaryMessage(m)) {
+          const content = this.processMessageContent(m.content);
+          if (content) {
+            compactSummaries.push(content);
+          }
+        }
+      }
 
       const compactSummaryText = compactSummaries.join('\n\n');
       const finalSystemPrompt = options.systemPrompt

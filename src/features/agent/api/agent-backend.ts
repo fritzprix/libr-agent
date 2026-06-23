@@ -25,10 +25,16 @@ function extractMcpTextMessage(result: MCPResult): string | null {
     return null;
   }
 
-  const messages = result.content
-    .filter(isTextContent)
-    .map((item) => item.text.trim())
-    .filter((text) => text.length > 0);
+  // ⚡ Bolt: Replace .filter().map().filter() with a single-pass loop to avoid intermediate array allocations
+  const messages: string[] = [];
+  for (const item of result.content) {
+    if (isTextContent(item)) {
+      const text = item.text.trim();
+      if (text.length > 0) {
+        messages.push(text);
+      }
+    }
+  }
 
   return messages.length > 0 ? messages.join('\n\n') : null;
 }

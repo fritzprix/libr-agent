@@ -56,10 +56,16 @@ export function convertToOpenAIMessages(args: {
     [];
 
   let mergedSystemPrompt = args.systemPrompt ?? '';
-  const compactSummaries = args.messages
-    .filter(isCompactSummaryMessage)
-    .map((m) => args.processMessageContent(m.content))
-    .filter(Boolean);
+  // ⚡ Bolt: Replace .filter().map().filter() with a single-pass loop to avoid intermediate array allocations
+  const compactSummaries: string[] = [];
+  for (const m of args.messages) {
+    if (isCompactSummaryMessage(m)) {
+      const content = args.processMessageContent(m.content);
+      if (content) {
+        compactSummaries.push(content);
+      }
+    }
+  }
 
   if (compactSummaries.length > 0) {
     mergedSystemPrompt = mergedSystemPrompt
@@ -115,8 +121,13 @@ export function convertToOpenAIMessages(args: {
         const media = args.extractMediaContent(message.content as MCPContent[]);
         let toolContent = formatToolResultForLlm(message);
         if (media.length > 0) {
-          const imageCount = media.filter((m) => m.type === 'image').length;
-          const audioCount = media.filter((m) => m.type === 'audio').length;
+          // ⚡ Bolt: Replace multiple .filter() passes with a single loop to avoid intermediate array allocations
+          let imageCount = 0;
+          let audioCount = 0;
+          for (const m of media) {
+            if (m.type === 'image') imageCount++;
+            else if (m.type === 'audio') audioCount++;
+          }
           const parts: string[] = [];
           if (toolContent) parts.push(toolContent);
           if (imageCount > 0)

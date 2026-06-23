@@ -25,7 +25,6 @@ import {
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
 import { isCompactSummaryMessage } from '../base-service-context';
-import type { MCPContent } from '@/lib/mcp';
 
 function summarizeLibrAgentMessages(messages: Message[]): {
   count: number;
@@ -51,16 +50,17 @@ function summarizeLibrAgentMessages(messages: Message[]): {
     if (message.id.startsWith('gemini-session-context-')) {
       syntheticSessionContextCount += 1;
     }
-    const text = Array.isArray(message.content)
-      ? message.content
-          .filter(
-            (part): part is MCPContent & { type: 'text'; text: string } => {
-              return part.type === 'text' && typeof part.text === 'string';
-            },
-          )
-          .map((part) => part.text)
-          .join('\n')
-      : '';
+    // ⚡ Bolt: Replace .filter().map().join() with a single-pass loop to avoid intermediate array allocations
+    let text = '';
+    if (Array.isArray(message.content)) {
+      const parts: string[] = [];
+      for (const part of message.content) {
+        if (part.type === 'text' && typeof part.text === 'string') {
+          parts.push(part.text);
+        }
+      }
+      text = parts.join('\n');
+    }
     textChars += text.length;
     textBytes += encoder.encode(text).length;
   }
@@ -274,10 +274,16 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         const model =
           currentOptions.modelName || config.defaultModel || getDefaultModel();
 
-        const compactSummaries = sanitizedMessages
-          .filter(isCompactSummaryMessage)
-          .map((m) => this.processMessageContent(m.content))
-          .filter(Boolean);
+        // ⚡ Bolt: Replace .filter().map().filter() with a single-pass loop to avoid intermediate array allocations
+        const compactSummaries: string[] = [];
+        for (const m of sanitizedMessages) {
+          if (isCompactSummaryMessage(m)) {
+            const content = this.processMessageContent(m.content);
+            if (content) {
+              compactSummaries.push(content);
+            }
+          }
+        }
 
         const compactSummaryText = compactSummaries.join('\n\n');
         const finalSystemInstruction = currentOptions.systemPrompt
