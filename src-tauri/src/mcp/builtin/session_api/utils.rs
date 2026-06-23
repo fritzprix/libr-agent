@@ -356,6 +356,20 @@ pub(crate) fn select_preferred_session_messages(
         return db_messages;
     };
 
+    // Verify that the database's latest message is actually present in the cache.
+    // If the DB has a newer message ID that is completely missing from the cache,
+    // the cache is stale/out-of-sync, so we must fall back to db_messages.
+    if let Some(db_latest) = db_messages.first() {
+        if let Some(db_id) = db_latest.get("id").and_then(|id| id.as_str()) {
+            let cache_contains_db_latest = cached
+                .iter()
+                .any(|m| m.get("id").and_then(|id| id.as_str()) == Some(db_id));
+            if !cache_contains_db_latest {
+                return db_messages;
+            }
+        }
+    }
+
     let db_output = latest_session_output(&db_messages);
     let cached_output = latest_session_output(&cached);
 
@@ -616,6 +630,30 @@ mod tests {
             db.clone(),
             Some(vec![user_message("still working")]),
         );
+        assert_eq!(selected, db);
+    }
+
+    fn user_message_with_id(id: &str, text: &str) -> serde_json::Value {
+        json!({
+            "id": id,
+            "role": "user",
+            "content": [{ "type": "text", "text": text }]
+        })
+    }
+
+    #[test]
+    fn falls_back_to_db_when_cache_is_stale_and_missing_db_latest_id() {
+        let db = vec![
+            assistant_message("asst-new-2", "Updated answer"),
+            user_message_with_id("msg-user-2", "new query"),
+        ];
+        // Cache has different messages and is missing the latest DB ID ("asst-new-2").
+        let cached = vec![
+            assistant_message("asst-old-1", "Stale answer"),
+            user_message_with_id("msg-user-1", "old query"),
+        ];
+
+        let selected = select_preferred_session_messages(db.clone(), Some(cached));
         assert_eq!(selected, db);
     }
 }
