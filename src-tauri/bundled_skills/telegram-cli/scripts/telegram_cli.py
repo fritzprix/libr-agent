@@ -170,12 +170,12 @@ def require_chat_arg(args: argparse.Namespace, action: str) -> bool:
 
 
 def require_query_arg(args: argparse.Namespace) -> bool:
-    """Validate that --query was provided for search_messages."""
-    if args.query:
+    """Validate that --query or --query-file was provided for search_messages."""
+    if args.query or args.query_file:
         return True
 
     emit_error(
-        {"status": "error", "message": "Missing required argument: --query is required for search_messages."}
+        {"status": "error", "message": "Missing required argument: --query or --query-file is required for search_messages."}
     )
     return False
 
@@ -295,10 +295,22 @@ def format_chat(peer: Any) -> dict:
 
 def action_send_message(args: argparse.Namespace, config: dict) -> int:
     """Send a message to a chat."""
-    if not require_chat_arg(args, "send_message") or not args.message:
-        if not args.message:
+    message = args.message
+    if args.message_file:
+        message_file_path = Path(args.message_file)
+        if not message_file_path.exists():
+            emit_error({"status": "error", "message": f"Message file not found: {args.message_file}"})
+            return 3
+        try:
+            message = message_file_path.read_text(encoding="utf-8")
+        except OSError as e:
+            emit_error({"status": "error", "message": f"Failed to read message file: {e}"})
+            return 3
+
+    if not require_chat_arg(args, "send_message") or not message:
+        if not message:
             emit_error(
-                {"status": "error", "message": "Missing required argument: --message is required for send_message."}
+                {"status": "error", "message": "Missing required argument: --message or --message-file is required for send_message."}
             )
         return 3
 
@@ -319,7 +331,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
                 emit_error({"status": "error", "message": f"File not found: {args.file}"})
                 return 3
             result = client.loop.run_until_complete(
-                client.send_file(peer, str(file_path), caption=args.message)
+                client.send_file(peer, str(file_path), caption=message)
             )
             output = {
                 "status": "ok",
@@ -332,7 +344,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
             }
         else:
             result = client.loop.run_until_complete(
-                client.send_message(peer, args.message)
+                client.send_message(peer, message)
             )
             output = {
                 "status": "ok",
@@ -451,7 +463,23 @@ def action_list_chats(args: argparse.Namespace, config: dict) -> int:
 
 def action_search_messages(args: argparse.Namespace, config: dict) -> int:
     """Search messages."""
-    if not require_query_arg(args):
+    query = args.query
+    if args.query_file:
+        query_file_path = Path(args.query_file)
+        if not query_file_path.exists():
+            emit_error({"status": "error", "message": f"Query file not found: {args.query_file}"})
+            return 3
+        try:
+            query = query_file_path.read_text(encoding="utf-8").strip()
+        except OSError as e:
+            emit_error({"status": "error", "message": f"Failed to read query file: {e}"})
+            return 3
+
+    if not require_query_arg(args) or not query:
+        if not query:
+            emit_error(
+                {"status": "error", "message": "Missing required argument: --query or --query-file is required for search_messages."}
+            )
         return 3
 
     client = create_client(config)
@@ -472,7 +500,7 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
                 client,
                 peer,
                 limit=limit,
-                search=args.query,
+                search=query,
                 offset_id=offset_id,
             )
         )
@@ -483,7 +511,7 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
             {
                 "status": "ok",
                 "action": "search_messages",
-                "query": args.query,
+                "query": query,
                 "chat": args.chat,
                 "count": len(msgs),
                 "offset_id": offset_id,
@@ -659,7 +687,9 @@ def main() -> int:
     )
     parser.add_argument("--chat", help="Chat ID or username")
     parser.add_argument("--message", help="Message text (for send_message)")
+    parser.add_argument("--message-file", help="Read message text from a UTF-8 file (avoids PowerShell encoding issues)")
     parser.add_argument("--query", help="Search query (for search_messages)")
+    parser.add_argument("--query-file", help="Read search query from a UTF-8 file (avoids PowerShell encoding issues)")
     parser.add_argument("--limit", type=int, default=20, help="Number of messages (default: 20)")
     parser.add_argument(
         "--offset_id",

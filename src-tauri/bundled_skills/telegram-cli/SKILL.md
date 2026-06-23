@@ -167,6 +167,36 @@ When `--output` is set, stdout prints a compact summary (`status`, `output` path
 
 All CLI output uses UTF-8 (`ensure_ascii=False`). Errors go to stderr as UTF-8 JSON.
 
+### Input encoding (Windows / Unicode workaround)
+
+On Windows, passing Unicode characters (like Korean) as command-line arguments can cause character corruption (mojibake) due to PowerShell's default encoding (`cp949`).
+
+To bypass this bottleneck, **always** write the message or query to a UTF-8 file and use `--message-file` or `--query-file` instead of `--message` or `--query`:
+
+#### Send Message (Windows Recommended)
+```powershell
+# 1. Write the message to a UTF-8 file in the workspace
+$msg = "안녕하세요, 텔레그램 메시지 테스트입니다."
+$msg | Out-File -Encoding utf8 "<workspace>/tg_message.txt"
+
+# 2. Call the CLI with --message-file
+python "<skill-base-dir>/scripts/telegram_cli.py" --action send_message `
+  --chat "<chat_id_or_username>" `
+  --message-file "<workspace>/tg_message.txt"
+```
+
+#### Search Messages (Windows Recommended)
+```powershell
+# 1. Write the query to a UTF-8 file in the workspace
+$query = "테스트"
+$query | Out-File -Encoding utf8 "<workspace>/tg_query.txt"
+
+# 2. Call the CLI with --query-file
+python "<skill-base-dir>/scripts/telegram_cli.py" --action search_messages `
+  --query-file "<workspace>/tg_query.txt" `
+  --output "<workspace>/telegram_search.json"
+```
+
 ### Dispatch CLI Actions
 
 Classify the user's request into one of the actions (`send_message`, `get_messages`, `list_chats`, `search_messages`, `download_file`, `get_chat_info`) and execute the CLI. For a detailed reference of CLI parameters, JSON output schemas, and pagination strategies, see the [cli-reference.md](references/cli-reference.md) guide.
