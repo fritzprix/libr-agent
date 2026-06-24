@@ -129,6 +129,7 @@ export function useMCPServerManagement(service?: McpServerService) {
       updatedAt: new Date(),
       metadata: buildPresetMetadata(preset),
       transport,
+      authentication: preset.authentication,
     };
     setEditingServer(newServer);
   }, []);

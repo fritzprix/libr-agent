@@ -41,4 +41,5 @@ export interface OAuthConfig {
   scopes?: string[];
   usePKCE?: boolean; // Default: true
   resourceParameter?: string; // RFC 9728 Protected Resource Metadata
+  customParams?: Record<string, string>; // Arbitrary custom query parameters for OAuth URL
 }

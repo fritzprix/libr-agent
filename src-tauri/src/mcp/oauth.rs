@@ -56,6 +56,21 @@ fn validate_oauth_https_endpoint(url_str: &str, label: &str) -> Result<(), Strin
     Ok(())
 }
 
+/// Constant-time byte comparison to prevent timing attacks.
+/// Note: Early return on length mismatch is acceptable here because
+/// the CSRF token length is fixed and public knowledge, meaning
+/// it does not leak any secret information.
+fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
+
 /// Manages OAuth 2.1 flows for MCP servers
 #[derive(Debug)]
 pub struct OAuthManager {
@@ -150,10 +165,17 @@ impl OAuthManager {
             auth_request = auth_request.set_pkce_challenge(pkce_challenge);
         }
 
-        // Add scopes if configured
+        // Add scopes if configured using standard OAuth2 scope parameter
         if let Some(scopes) = &config.scopes {
             for scope in scopes {
                 auth_request = auth_request.add_scope(Scope::new(scope.clone()));
+            }
+        }
+
+        // Add any custom parameters (e.g., user_scope for Slack)
+        if let Some(custom_params) = &config.custom_params {
+            for (key, value) in custom_params {
+                auth_request = auth_request.add_extra_param(key.clone(), value.clone());
             }
         }
 
@@ -188,14 +210,14 @@ impl OAuthManager {
     ) -> Result<String, String> {
         log::info!("Exchanging authorization code for token: {server_id}");
 
-        // Step 1: Validate CSRF token
+        // Step 1: Validate CSRF token (constant-time comparison to prevent timing attacks)
         {
             let mut tokens = self.csrf_tokens.lock().await;
             let stored_csrf = tokens
                 .remove(server_id)
                 .ok_or("No CSRF token found for server")?;
 
-            if stored_csrf.secret() != state {
+            if !constant_time_compare(stored_csrf.secret().as_bytes(), state.as_bytes()) {
                 return Err("CSRF token mismatch - potential security issue".to_string());
             }
         }
@@ -214,9 +236,12 @@ impl OAuthManager {
             .clone()
             .unwrap_or_else(|| DEFAULT_CALLBACK_URL.to_string());
 
+        let is_slack_token_exchange =
+            endpoints.token_endpoint == "https://slack.com/api/oauth.v2.user.access";
+
         let client_secret = config.client_secret.clone().map(ClientSecret::new);
 
-        let client = BasicClient::new(
+        let mut client = BasicClient::new(
             ClientId::new(client_id),
             client_secret,
             AuthUrl::new(endpoints.authorization_endpoint)
@@ -229,6 +254,10 @@ impl OAuthManager {
         .set_redirect_uri(
             RedirectUrl::new(redirect_uri).map_err(|e| format!("Invalid redirect URI: {e}"))?,
         );
+
+        if is_slack_token_exchange {
+            client = client.set_auth_type(oauth2::AuthType::RequestBody);
+        }
 
         let mut exchange =
             client.exchange_code(AuthorizationCode::new(authorization_code.to_string()));
@@ -331,6 +360,25 @@ impl OAuthManager {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
 
+        // Security validation: redirect_uri must be whitelisted
+        let parsed_uri =
+            url::Url::parse(redirect_uri).map_err(|e| format!("Invalid redirect URI: {e}"))?;
+
+        let host = parsed_uri.host_str().unwrap_or("");
+        if host != "localhost" && host != "127.0.0.1" {
+            return Err(
+                "Security violation: redirect_uri host must be localhost or 127.0.0.1".to_string(),
+            );
+        }
+
+        if parsed_uri.scheme() != "http" {
+            return Err("Security violation: redirect_uri scheme must be http".to_string());
+        }
+
+        if parsed_uri.path() != "/callback" {
+            return Err("Security violation: redirect_uri path must be /callback".to_string());
+        }
+
         let port = Self::parse_port_from_uri(redirect_uri);
         log::info!("Starting temporary OAuth callback listener on port {port}");
 
@@ -387,12 +435,15 @@ impl OAuthManager {
                                                              </html>";
                                                          let response = format!(
                                                              "HTTP/1.1 200 OK\r\n\
-                                                             Content-Type: text/html; charset=utf-8\r\n\
-                                                             Content-Length: {}\r\n\
-                                                             Connection: close\r\n\r\n\
-                                                             {}",
-                                                             html.len(),
-                                                             html
+                                                              Content-Type: text/html; charset=utf-8\r\n\
+                                                              Content-Length: {}\r\n\
+                                                              Cache-Control: no-store, no-cache, must-revalidate\r\n\
+                                                              Pragma: no-cache\r\n\
+                                                              Expires: 0\r\n\
+                                                              Connection: close\r\n\r\n\
+                                                              {}",
+                                                              html.len(),
+                                                              html
                                                          );
                                                          let _ = stream.write_all(response.as_bytes()).await;
                                                          let _ = stream.flush().await;
@@ -477,10 +528,11 @@ mod tests {
             registration_endpoint: None,
             client_id: Some("test-client".to_string()),
             client_secret: None,
-            redirect_uri: Some("libr-agent://oauth/callback".to_string()),
+            redirect_uri: Some("http://localhost:14207/callback".to_string()),
             scopes: Some(vec!["read".to_string(), "write".to_string()]),
             use_pkce: true,
             resource_parameter: None,
+            custom_params: None,
         };
 
         let result = manager
@@ -500,5 +552,81 @@ mod tests {
             .lock()
             .await
             .contains_key("test-server"));
+    }
+
+    #[tokio::test]
+    async fn test_slack_authorization_url_construction() {
+        let manager = OAuthManager::new();
+        let mut custom_params = HashMap::new();
+        custom_params.insert(
+            "user_scope".to_string(),
+            "channels:read,chat:write".to_string(),
+        );
+
+        let config = OAuthConfig {
+            oauth_type: "oauth2.1".to_string(),
+            discovery_url: None,
+            authorization_endpoint: Some("https://slack.com/oauth/v2_user/authorize".to_string()),
+            token_endpoint: Some("https://slack.com/api/oauth.v2.user.access".to_string()),
+            registration_endpoint: None,
+            client_id: Some("test-client".to_string()),
+            client_secret: None,
+            redirect_uri: Some("http://localhost:14207/callback".to_string()),
+            scopes: None,
+            use_pkce: true,
+            resource_parameter: None,
+            custom_params: Some(custom_params),
+        };
+
+        let result = manager
+            .start_authorization_flow(&config, "slack-server")
+            .await;
+
+        assert!(result.is_ok());
+        let (url, _state) = result.unwrap();
+
+        // Slack user oauth must contain user_scope with comma-separated scopes
+        assert!(url.contains("user_scope=channels%3Aread%2Cchat%3Awrite"));
+        // Slack user oauth must NOT contain standard scope parameter
+        assert!(!url.contains("scope="));
+    }
+
+    #[test]
+    fn test_constant_time_compare() {
+        assert!(constant_time_compare(b"hello", b"hello"));
+        assert!(!constant_time_compare(b"hello", b"world"));
+        assert!(!constant_time_compare(b"hello", b"helloo"));
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_callback_redirect_uri_whitelist() {
+        let manager = OAuthManager::new();
+
+        // Invalid host
+        let res = manager
+            .wait_for_callback("http://malicious.example.com/callback", "state")
+            .await;
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .contains("Security violation: redirect_uri host"));
+
+        // Invalid scheme
+        let res = manager
+            .wait_for_callback("https://localhost/callback", "state")
+            .await;
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .contains("Security violation: redirect_uri scheme"));
+
+        // Invalid path
+        let res = manager
+            .wait_for_callback("http://localhost/badpath", "state")
+            .await;
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .contains("Security violation: redirect_uri path"));
     }
 }

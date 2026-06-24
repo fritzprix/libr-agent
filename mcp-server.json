@@ -328,6 +328,23 @@
           "type": "text"
         }
       }
+    },
+    "slack": {
+      "category": "messaging",
+      "description": "Connect to Slack to search channels, read history, send messages, and manage canvases.",
+      "logo": "https://a.slack-edge.com/80588/img/services/api_256.png",
+      "url": "https://mcp.slack.com/mcp",
+      "authentication": {
+        "type": "oauth2.1",
+        "authorizationEndpoint": "https://slack.com/oauth/v2_user/authorize",
+        "tokenEndpoint": "https://slack.com/api/oauth.v2.user.access",
+        "usePkce": true,
+        "clientId": "YOUR_SLACK_CLIENT_ID",
+        "clientSecret": "YOUR_SLACK_CLIENT_SECRET",
+        "customParams": {
+          "user_scope": "search:read.public,search:read.private,search:read.mpim,search:read.im,search:read.files,files:read,emoji:read,search:read.users,chat:write,channels:history,groups:history,mpim:history,im:history,channels:write,groups:write,im:write,mpim:write,reactions:write,canvases:read,canvases:write,users:read,users:read.email,channels:read,groups:read,mpim:read"
+        }
+      }
     }
   }
 }
