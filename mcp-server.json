@@ -295,7 +295,7 @@
       "args": ["-y", "@fre4x/telegram"],
       "env": {
         "TELEGRAM_MCP_SESSION": "~/.libragent/telegram_mcp",
-        "MOCK": "false"
+        "TELEGRAM_BOT_TOKEN": ""
       },
       "variableDefinitions": {
         "TELEGRAM_MCP_SESSION": {
@@ -303,6 +303,12 @@
           "label": "Telegram MCP Session Path",
           "description": "GramJS StringSession path. Default: ~/.libragent/telegram_mcp",
           "type": "text"
+        },
+        "TELEGRAM_BOT_TOKEN": {
+          "required": true,
+          "label": "Telegram Bot Token",
+          "description": "Get your bot token from @BotFather on Telegram.",
+          "type": "password"
         }
       }
     },
