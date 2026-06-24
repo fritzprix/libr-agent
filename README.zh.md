@@ -205,11 +205,10 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
 
 <!-- RELEASE_DOWNLOADS_START -->
-
-- **Windows：** [`LibrAgent_0.8.19_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_x64-setup.exe) · [`LibrAgent_0.8.19_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_x64_en-US.msi)
-- **macOS（Apple Silicon）：** [`LibrAgent_0.8.19_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_aarch64.dmg)
-- **Linux：** [`LibrAgent_0.8.19_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_amd64.AppImage) · [`LibrAgent_0.8.19_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent_0.8.19_amd64.deb) · [`LibrAgent-0.8.19-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.19/LibrAgent-0.8.19-1.x86_64.rpm)
-- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.19)
+- **Windows：** [`LibrAgent_0.8.20_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.20/LibrAgent_0.8.20_x64-setup.exe) · [`LibrAgent_0.8.20_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.20/LibrAgent_0.8.20_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.8.20_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.20/LibrAgent_0.8.20_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.8.20_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.20/LibrAgent_0.8.20_amd64.AppImage) · [`LibrAgent_0.8.20_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.20/LibrAgent_0.8.20_amd64.deb) · [`LibrAgent-0.8.20-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.20/LibrAgent-0.8.20-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.20)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **开发者设置：**
