@@ -167,11 +167,18 @@ When `--output` is set, stdout prints a compact summary (`status`, `output` path
 
 All CLI output uses UTF-8 (`ensure_ascii=False`). Errors go to stderr as UTF-8 JSON.
 
+### Output handling (Windows 필수)
+On Windows, always set these before invoking any CLI command:
+```powershell
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONUTF8 = "1"
+```
+
 ### Input encoding (Windows / Unicode workaround)
 
 On Windows, passing Unicode characters (like Korean) as command-line arguments can cause character corruption (mojibake) due to PowerShell's default encoding (`cp949`).
 
-To bypass this bottleneck, **always** write the message or query to a UTF-8 file and use `--message-file` or `--query-file` instead of `--message` or `--query`:
+To bypass this bottleneck, it is highly **recommended** to write the message or query to a UTF-8 file and use `--message-file` or `--query-file` instead of `--message` or `--query` (especially on older Windows PowerShell environments; PowerShell 7+ with `$OutputEncoding` set to UTF-8 may work with inline arguments):
 
 #### Send Message (Windows Recommended)
 ```powershell
@@ -183,6 +190,9 @@ $msg | Out-File -Encoding utf8 "<workspace>/tg_message.txt"
 python "<skill-base-dir>/scripts/telegram_cli.py" --action send_message `
   --chat "<chat_id_or_username>" `
   --message-file "<workspace>/tg_message.txt"
+
+# 3. Clean up the temporary file (recommended)
+Remove-Item -Path "<workspace>/tg_message.txt" -ErrorAction SilentlyContinue
 ```
 
 #### Search Messages (Windows Recommended)
@@ -195,6 +205,9 @@ $query | Out-File -Encoding utf8 "<workspace>/tg_query.txt"
 python "<skill-base-dir>/scripts/telegram_cli.py" --action search_messages `
   --query-file "<workspace>/tg_query.txt" `
   --output "<workspace>/telegram_search.json"
+
+# 3. Clean up the temporary file (recommended)
+Remove-Item -Path "<workspace>/tg_query.txt" -ErrorAction SilentlyContinue
 ```
 
 ### Dispatch CLI Actions
