@@ -87,6 +87,9 @@ pub struct OAuthConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "resourceParameter", alias = "resource_parameter")]
     pub resource_parameter: Option<String>, // RFC 9728
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "customParams", alias = "custom_params")]
+    pub custom_params: Option<HashMap<String, String>>,
 }
 
 fn default_use_pkce() -> bool {
@@ -699,6 +702,7 @@ mod tests {
                 scopes: Some(vec!["read".to_string(), "write".to_string()]),
                 use_pkce: true,
                 resource_parameter: None,
+                custom_params: None,
             }),
             metadata: Some(ServerMetadata {
                 description: Some("Test server with OAuth".to_string()),
