@@ -50,7 +50,7 @@ const TYPE_RE = /@([\w]*)$/;
 /** Regex: matches `@word:rest` (typing arg for a type). */
 const ARG_RE = /@([\w]+):([\S]*)$/;
 /** Regex: matches `/command` with potential spaces. */
-const COMMAND_RE = /\/([\w\s-]*)$/;
+const COMMAND_RE = /(?<!\S)\/([\w\s-]*)$/;
 
 export interface UseInputTokenResult {
   /** Current UX stage. */
