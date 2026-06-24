@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.20] - 2026-06-25
+
+### 🚀 Features
+
+- **Slack MCP Integration**: Add official Slack MCP server preset (`https://mcp.slack.com/mcp`) supporting standard OAuth 2.1 authorization with custom query parameters (`customParams` containing the exact 25 scopes for Slack tools).
+- **OAuth Security Hardening**: Mitigate potential OAuth security risks by implementing constant-time CSRF token comparison, strict redirect URI whitelisting (`http://localhost:14207/callback`), exact domain matching for the token endpoint, and Cache-Control headers on the callback page.
+
+### 🐛 Fixes
+
+- **Telegram Preset & CLI Hardening**: Add missing `TELEGRAM_BOT_TOKEN` definition to the Telegram preset, bypass Windows PowerShell command encoding limits via file-based args, and secure the `telegram-cli` script with strict path/size validation.
+- **Slash Command Trigger**: Correct the lookbehind regex for the slash command dropdown in the chat input.
+- **Session Cache & Database Fallback**: Prevent stale session states by falling back to the SQLite database during session checks if the in-memory cache is out of sync.
+- **Windows UNC Path Crashes**: Automatically strip UNC prefixes from TEMP and TMP environment variables, preventing `pnpm` command failures on Windows.
+
 ## [0.8.19] - 2026-06-23
 
 ### 🚀 Features
