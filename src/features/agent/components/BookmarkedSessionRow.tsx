@@ -1,5 +1,10 @@
 import { StarOff, Clock3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { formatRelativeTime } from '@/lib/date-utils';
 import type { AgentSession } from '@/models/agent';
 import { getLatestSessionActivityTimestamp } from '@/lib/session-metadata';
@@ -65,19 +70,26 @@ export function BookmarkedSessionRow({
           </div>
         </div>
       </Button>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 shrink-0"
-        onClick={() => onToggleBookmark?.(session.id)}
-        aria-label={t(
-          'sessionHistory.actions.unbookmarkAria',
-          'Remove bookmark',
-        )}
-      >
-        <StarOff className="h-4 w-4" aria-hidden="true" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0"
+            onClick={() => onToggleBookmark?.(session.id)}
+            aria-label={t(
+              'sessionHistory.actions.unbookmarkAria',
+              'Remove bookmark',
+            )}
+          >
+            <StarOff className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('sessionHistory.actions.unbookmarkAria', 'Remove bookmark')}
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }
