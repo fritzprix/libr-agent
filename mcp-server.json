@@ -295,7 +295,8 @@
       "args": ["-y", "@fre4x/telegram"],
       "env": {
         "TELEGRAM_MCP_SESSION": "~/.libragent/telegram_mcp",
-        "TELEGRAM_BOT_TOKEN": ""
+        "TELEGRAM_BOT_TOKEN": "",
+        "ALLOWED_USER_ID": ""
       },
       "variableDefinitions": {
         "TELEGRAM_MCP_SESSION": {
@@ -309,6 +310,12 @@
           "label": "Telegram Bot Token",
           "description": "Get your bot token from @BotFather on Telegram.",
           "type": "password"
+        },
+        "ALLOWED_USER_ID": {
+          "required": false,
+          "label": "Allowed Telegram User ID",
+          "description": "Telegram user ID allowed to interact with the bot.",
+          "type": "text"
         }
       }
     },
