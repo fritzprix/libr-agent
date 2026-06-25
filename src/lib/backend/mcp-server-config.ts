@@ -1,6 +1,7 @@
 import { safeInvoke } from './core';
 import type { MCPServerEntity } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
+import type { OAuthConfig } from '@/lib/mcp';
 
 /**
  * Backend DTO for MCP Server Config
@@ -194,6 +195,7 @@ export interface MCPServerPreset {
     }
   >;
   url?: string;
+  authentication?: OAuthConfig;
 }
 
 export async function listMCPServerPresets(): Promise<MCPServerPreset[]> {

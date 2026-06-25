@@ -12,7 +12,7 @@ Use `telegram_cli.py` to dispatch actions.
 ```powershell
 python "<skill-base-dir>/scripts/telegram_cli.py" --action send_message `
   --chat "<chat_id_or_username>" `
-  --message "메시지 내용" `
+  [--message "메시지 내용" | --message-file "/path/to/message.txt"] `
   [--file "/path/to/attachment"]
 ```
 - Username: `@username` or `username`
@@ -35,7 +35,7 @@ python "<skill-base-dir>/scripts/telegram_cli.py" --action list_chats
 ### Action: `search_messages` — Search messages
 ```powershell
 python "<skill-base-dir>/scripts/telegram_cli.py" --action search_messages `
-  --query "검색어" `
+  [--query "검색어" | --query-file "/path/to/query.txt"] `
   [--limit N] `
   [--chat "<chat_id_or_username>"] `
   [--offset_id N] `
@@ -177,8 +177,8 @@ python "<skill-base-dir>/scripts/telegram_cli.py" --action get_messages `
 | FloodWait | `"message": "FloodWait: wait N seconds"` (exit `2`) | Wait **N** seconds, retry same command |
 | Not authorized | `"Not authorized. Run setup first."` (exit `1`) | Run `check_config.py`; if not ok, run Step 2 auth flow |
 | Auth restart | `check_config` → `auth_restart_needed` | Delete `~/.libragent/telegram_session.session`, `send_code` → `sign_in` |
-| Missing `--chat` / `--query` | exit `3` | Add required flag and retry |
-| cp949 / garbled stdout | Mojibake in console | Re-run with `--output` and read the UTF-8 file |
+| Missing `--chat` / `--query` | exit `3` | Add required flag (or file-based equivalent) and retry |
+| cp949 / garbled inputs or stdout | Mojibake in console or sent messages | For outputs, re-run with `--output` and read the UTF-8 file. For inputs, write to a UTF-8 file and use `--message-file` or `--query-file` |
 
 ### Error Handling (setup & auth)
 

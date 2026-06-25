@@ -170,12 +170,12 @@ def require_chat_arg(args: argparse.Namespace, action: str) -> bool:
 
 
 def require_query_arg(args: argparse.Namespace) -> bool:
-    """Validate that --query was provided for search_messages."""
-    if args.query:
+    """Validate that --query or --query-file was provided for search_messages."""
+    if args.query or args.query_file:
         return True
 
     emit_error(
-        {"status": "error", "message": "Missing required argument: --query is required for search_messages."}
+        {"status": "error", "message": "Missing required argument: --query or --query-file is required for search_messages."}
     )
     return False
 
@@ -291,14 +291,65 @@ def format_chat(peer: Any) -> dict:
     return {"id": getattr(peer, "id", None), "name": "Unknown", "type": "unknown"}
 
 
+def validate_and_read_file(file_path_str: str, file_type_label: str) -> str | None:
+    """Validate, check size, and read a UTF-8 file, handling errors.
+
+    Returns the file content stripped, or None if an error was emitted.
+    """
+    path = Path(file_path_str)
+    if not path.exists():
+        emit_error({"status": "error", "message": f"{file_type_label} file not found: {file_path_str}"})
+        return None
+
+    # Path traversal validation
+    try:
+        resolved_path = path.resolve()
+        resolved_config_dir = CONFIG_PATH.parent.resolve()
+
+        # Check if the path resides inside the config directory
+        if resolved_path == CONFIG_PATH.resolve() or resolved_config_dir in resolved_path.parents:
+            emit_error({"status": "error", "message": "Access denied: cannot read files from the config directory."})
+            return None
+    except Exception as e:
+        emit_error({"status": "error", "message": f"Path validation failed: {e}"})
+        return None
+
+    # File size limit validation (1 MB)
+    max_file_size = 1024 * 1024  # 1 MB
+    try:
+        if path.stat().st_size > max_file_size:
+            emit_error({"status": "error", "message": f"File size exceeds the limit of {max_file_size} bytes."})
+            return None
+    except OSError as e:
+        emit_error({"status": "error", "message": f"Failed to access file metadata: {e}"})
+        return None
+
+    # Read and strip content
+    try:
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            emit_error({"status": "error", "message": f"The provided {file_type_label.lower()} file is empty."})
+            return None
+        return content
+    except OSError as e:
+        emit_error({"status": "error", "message": f"Failed to read {file_type_label.lower()} file: {e}"})
+        return None
+
+
 # ─── Actions ──────────────────────────────────────────────────────────
 
 def action_send_message(args: argparse.Namespace, config: dict) -> int:
     """Send a message to a chat."""
-    if not require_chat_arg(args, "send_message") or not args.message:
-        if not args.message:
+    message = args.message
+    if args.message_file:
+        message = validate_and_read_file(args.message_file, "Message")
+        if message is None:
+            return 3
+
+    if not require_chat_arg(args, "send_message") or not message:
+        if not message:
             emit_error(
-                {"status": "error", "message": "Missing required argument: --message is required for send_message."}
+                {"status": "error", "message": "Missing required argument: --message or --message-file is required for send_message."}
             )
         return 3
 
@@ -319,7 +370,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
                 emit_error({"status": "error", "message": f"File not found: {args.file}"})
                 return 3
             result = client.loop.run_until_complete(
-                client.send_file(peer, str(file_path), caption=args.message)
+                client.send_file(peer, str(file_path), caption=message)
             )
             output = {
                 "status": "ok",
@@ -332,7 +383,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
             }
         else:
             result = client.loop.run_until_complete(
-                client.send_message(peer, args.message)
+                client.send_message(peer, message)
             )
             output = {
                 "status": "ok",
@@ -451,7 +502,17 @@ def action_list_chats(args: argparse.Namespace, config: dict) -> int:
 
 def action_search_messages(args: argparse.Namespace, config: dict) -> int:
     """Search messages."""
-    if not require_query_arg(args):
+    query = args.query
+    if args.query_file:
+        query = validate_and_read_file(args.query_file, "Query")
+        if query is None:
+            return 3
+
+    if not require_query_arg(args) or not query:
+        if not query:
+            emit_error(
+                {"status": "error", "message": "Missing required argument: --query or --query-file is required for search_messages."}
+            )
         return 3
 
     client = create_client(config)
@@ -472,7 +533,7 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
                 client,
                 peer,
                 limit=limit,
-                search=args.query,
+                search=query,
                 offset_id=offset_id,
             )
         )
@@ -483,7 +544,7 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
             {
                 "status": "ok",
                 "action": "search_messages",
-                "query": args.query,
+                "query": query,
                 "chat": args.chat,
                 "count": len(msgs),
                 "offset_id": offset_id,
@@ -659,7 +720,9 @@ def main() -> int:
     )
     parser.add_argument("--chat", help="Chat ID or username")
     parser.add_argument("--message", help="Message text (for send_message)")
+    parser.add_argument("--message-file", help="Read message text from a UTF-8 file (avoids PowerShell encoding issues)")
     parser.add_argument("--query", help="Search query (for search_messages)")
+    parser.add_argument("--query-file", help="Read search query from a UTF-8 file (avoids PowerShell encoding issues)")
     parser.add_argument("--limit", type=int, default=20, help="Number of messages (default: 20)")
     parser.add_argument(
         "--offset_id",

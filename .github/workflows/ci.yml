@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
       - name: 📥 Checkout
@@ -78,6 +78,10 @@ jobs:
       - name: 🦀 Check Rust
         run: cd src-tauri && cargo check
 
+      - name: 🍎 Fix macOS SDKROOT for Rust linker
+        if: runner.os == 'macOS'
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+
       - name: 🧪 Run Rust integration tests
         run: pnpm rust:test
 
@@ -113,7 +117,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
       - name: 📥 Checkout

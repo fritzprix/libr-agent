@@ -295,13 +295,26 @@
       "args": ["-y", "@fre4x/telegram"],
       "env": {
         "TELEGRAM_MCP_SESSION": "~/.libragent/telegram_mcp",
-        "MOCK": "false"
+        "TELEGRAM_BOT_TOKEN": "",
+        "ALLOWED_USER_ID": ""
       },
       "variableDefinitions": {
         "TELEGRAM_MCP_SESSION": {
           "required": false,
           "label": "Telegram MCP Session Path",
           "description": "GramJS StringSession path. Default: ~/.libragent/telegram_mcp",
+          "type": "text"
+        },
+        "TELEGRAM_BOT_TOKEN": {
+          "required": true,
+          "label": "Telegram Bot Token",
+          "description": "Get your bot token from @BotFather on Telegram.",
+          "type": "password"
+        },
+        "ALLOWED_USER_ID": {
+          "required": false,
+          "label": "Allowed Telegram User ID",
+          "description": "Telegram user ID allowed to interact with the bot.",
           "type": "text"
         }
       }
@@ -320,6 +333,23 @@
           "label": "GAIA Data File Path",
           "description": "Absolute path to the GAIA benchmark challenges JSON file",
           "type": "text"
+        }
+      }
+    },
+    "slack": {
+      "category": "messaging",
+      "description": "Connect to Slack to search channels, read history, send messages, and manage canvases.",
+      "logo": "https://a.slack-edge.com/80588/img/services/api_256.png",
+      "url": "https://mcp.slack.com/mcp",
+      "authentication": {
+        "type": "oauth2.1",
+        "authorizationEndpoint": "https://slack.com/oauth/v2_user/authorize",
+        "tokenEndpoint": "https://slack.com/api/oauth.v2.user.access",
+        "usePkce": true,
+        "clientId": "YOUR_SLACK_CLIENT_ID",
+        "clientSecret": "YOUR_SLACK_CLIENT_SECRET",
+        "customParams": {
+          "user_scope": "search:read.public,search:read.private,search:read.mpim,search:read.im,search:read.files,files:read,emoji:read,search:read.users,chat:write,channels:history,groups:history,mpim:history,im:history,channels:write,groups:write,im:write,mpim:write,reactions:write,canvases:read,canvases:write,users:read,users:read.email,channels:read,groups:read,mpim:read"
         }
       }
     }

@@ -15,6 +15,8 @@ pub struct MCPServerPreset {
     pub env: Option<Value>,
     pub variable_definitions: Option<Value>,
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<crate::mcp::types::OAuthConfig>,
 }
 
 #[derive(Deserialize)]
@@ -32,6 +34,7 @@ struct RawPresetConfig {
     // common
     description: Option<String>,
     logo: Option<String>,
+    authentication: Option<crate::mcp::types::OAuthConfig>,
 }
 
 pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
@@ -82,6 +85,7 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
             env: config.env,
             variable_definitions,
             url,
+            authentication: config.authentication,
         });
     }
 
