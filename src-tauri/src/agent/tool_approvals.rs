@@ -9,8 +9,6 @@ use crate::mcp::builtin::workspace::code_execution::shell::policy::{
     evaluate_shell_policy, is_shell_tool_name, ShellPolicyAction, ShellPolicyContext,
 };
 
-const CHANNEL_PERMISSION_ID_ALPHABET: &[u8] = b"abcdefghijkmnopqrstuvwxyz";
-const CHANNEL_PERMISSION_ID_LENGTH: usize = 5;
 static TOOL_APPROVALS_CONFIG: OnceCell<ToolApprovalsConfig> = OnceCell::const_new();
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -194,15 +192,7 @@ fn requires_approval_by_config(config: &ToolApprovalsConfig, tool_name: &str) ->
 }
 
 pub fn generate_channel_permission_request_id() -> String {
-    let bytes = uuid::Uuid::new_v4().into_bytes();
-    let mut output = String::with_capacity(CHANNEL_PERMISSION_ID_LENGTH);
-
-    for byte in bytes.iter().take(CHANNEL_PERMISSION_ID_LENGTH) {
-        let index = (*byte as usize) % CHANNEL_PERMISSION_ID_ALPHABET.len();
-        output.push(CHANNEL_PERMISSION_ID_ALPHABET[index] as char);
-    }
-
-    output
+    uuid::Uuid::new_v4().simple().to_string()
 }
 
 pub fn build_channel_permission_description(tool_name: &str, arguments: &str) -> String {

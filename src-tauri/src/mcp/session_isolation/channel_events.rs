@@ -1,11 +1,95 @@
 use crate::mcp::types::{ChannelNotification, ChannelPermissionVerdict};
 use log::warn;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc::{self, Sender};
+
+const CHANNEL_DROP_METRICS_LOG_INTERVAL: Duration = Duration::from_secs(60);
+
+static CHANNEL_EVENTS_DROPPED_BUFFER_FULL: AtomicU64 = AtomicU64::new(0);
+static CHANNEL_EVENTS_DROPPED_RECEIVER_CLOSED: AtomicU64 = AtomicU64::new(0);
+static CHANNEL_DROP_METRICS_LAST_LOG: LazyLock<Mutex<Instant>> =
+    LazyLock::new(|| Mutex::new(Instant::now()));
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChannelDropKind {
+    BufferFull,
+    ReceiverClosed,
+}
+
+fn record_channel_event_drop(kind: ChannelDropKind, source: &str) {
+    match kind {
+        ChannelDropKind::BufferFull => {
+            CHANNEL_EVENTS_DROPPED_BUFFER_FULL.fetch_add(1, Ordering::Relaxed);
+        }
+        ChannelDropKind::ReceiverClosed => {
+            CHANNEL_EVENTS_DROPPED_RECEIVER_CLOSED.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    maybe_log_channel_drop_metrics(source);
+}
+
+fn maybe_log_channel_drop_metrics(trigger_source: &str) {
+    let mut last_log = CHANNEL_DROP_METRICS_LAST_LOG
+        .lock()
+        .expect("channel drop metrics lock poisoned");
+    if last_log.elapsed() < CHANNEL_DROP_METRICS_LOG_INTERVAL {
+        return;
+    }
+
+    let buffer_full = CHANNEL_EVENTS_DROPPED_BUFFER_FULL.swap(0, Ordering::Relaxed);
+    let receiver_closed = CHANNEL_EVENTS_DROPPED_RECEIVER_CLOSED.swap(0, Ordering::Relaxed);
+
+    if buffer_full > 0 || receiver_closed > 0 {
+        warn!(
+            "Channel event drops in last {}s (triggered by '{}'): buffer_full={}, receiver_closed={}",
+            CHANNEL_DROP_METRICS_LOG_INTERVAL.as_secs(),
+            trigger_source,
+            buffer_full,
+            receiver_closed
+        );
+    }
+
+    *last_log = Instant::now();
+}
+
+/// Test-only snapshot of channel event drop counters (not reset).
+#[doc(hidden)]
+pub fn channel_drop_metrics_snapshot_for_test() -> (u64, u64) {
+    (
+        CHANNEL_EVENTS_DROPPED_BUFFER_FULL.load(Ordering::Relaxed),
+        CHANNEL_EVENTS_DROPPED_RECEIVER_CLOSED.load(Ordering::Relaxed),
+    )
+}
+
+/// Test-only reset of channel event drop counters.
+#[doc(hidden)]
+pub fn reset_channel_drop_metrics_for_test() {
+    CHANNEL_EVENTS_DROPPED_BUFFER_FULL.store(0, Ordering::Relaxed);
+    CHANNEL_EVENTS_DROPPED_RECEIVER_CLOSED.store(0, Ordering::Relaxed);
+    if let Ok(mut last_log) = CHANNEL_DROP_METRICS_LAST_LOG.lock() {
+        *last_log = Instant::now();
+    }
+}
+
+/// Test-only: move the drop-metrics log window into the past so the next drop flushes counters.
+#[doc(hidden)]
+pub fn advance_channel_drop_metrics_log_window_for_test() {
+    if let Ok(mut last_log) = CHANNEL_DROP_METRICS_LAST_LOG.lock() {
+        *last_log = Instant::now()
+            .checked_sub(CHANNEL_DROP_METRICS_LOG_INTERVAL + Duration::from_secs(1))
+            .unwrap_or_else(Instant::now);
+    }
+}
 
 /// Bounded buffer for native channel events per session.
 pub const CHANNEL_EVENT_BUFFER_SIZE: usize = 1024;
+
+/// Maximum allowed length for channel message `content` (bytes).
+pub const MAX_CHANNEL_CONTENT_BYTES: usize = 8192;
 
 pub type ChannelEventSender = Sender<SessionChannelEvent>;
 pub type ChannelEventReceiver = mpsc::Receiver<SessionChannelEvent>;
@@ -36,16 +120,10 @@ pub fn try_emit_channel_event(tx: &ChannelEventSender, event: SessionChannelEven
     if let Err(error) = tx.try_send(event) {
         match error {
             mpsc::error::TrySendError::Full(_) => {
-                warn!(
-                    "Channel event buffer full (capacity {}) for '{}'; dropping event",
-                    CHANNEL_EVENT_BUFFER_SIZE, source
-                );
+                record_channel_event_drop(ChannelDropKind::BufferFull, source);
             }
             mpsc::error::TrySendError::Closed(_) => {
-                warn!(
-                    "Channel event receiver dropped for '{}'; dropping event",
-                    source
-                );
+                record_channel_event_drop(ChannelDropKind::ReceiverClosed, source);
             }
         }
     }
@@ -114,7 +192,16 @@ pub fn try_parse_channel_event(line: &[u8], server_name: &str) -> Option<Session
 
     match kind {
         ChannelMethodKind::Message => {
-            let content = params.get("content")?.as_str()?.to_string();
+            let content = params.get("content")?.as_str()?;
+            if content.len() > MAX_CHANNEL_CONTENT_BYTES {
+                warn!(
+                    "Channel message content too large ({} bytes) from '{}'; dropping",
+                    content.len(),
+                    server_name
+                );
+                return None;
+            }
+            let content = content.to_string();
             let meta = params
                 .get("meta")
                 .map(flatten_meta_object)
@@ -170,6 +257,38 @@ mod tests {
                 assert_eq!(notification.content, "hello");
                 assert_eq!(notification.meta.get("chat_id"), Some(&"1".to_string()));
                 assert_eq!(notification.meta.get("sender_id"), Some(&"42".to_string()));
+            }
+            SessionChannelEvent::PermissionVerdict { .. } => {
+                panic!("expected message event");
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_oversized_channel_message_content() {
+        let oversized = "x".repeat(MAX_CHANNEL_CONTENT_BYTES + 1);
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","method":"claude/channel","params":{{"content":"{}"}}}}"#,
+            oversized
+        );
+        assert!(
+            try_parse_channel_event(line.as_bytes(), "telegram").is_none(),
+            "oversized channel content should be dropped"
+        );
+    }
+
+    #[test]
+    fn accepts_channel_message_at_content_limit() {
+        let content = "x".repeat(MAX_CHANNEL_CONTENT_BYTES);
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","method":"claude/channel","params":{{"content":"{}"}}}}"#,
+            content
+        );
+        let event = try_parse_channel_event(line.as_bytes(), "telegram")
+            .expect("content at limit should parse");
+        match event {
+            SessionChannelEvent::Message { notification, .. } => {
+                assert_eq!(notification.content.len(), MAX_CHANNEL_CONTENT_BYTES);
             }
             SessionChannelEvent::PermissionVerdict { .. } => {
                 panic!("expected message event");
