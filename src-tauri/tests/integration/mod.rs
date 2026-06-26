@@ -55,6 +55,7 @@ pub mod path_env_recovery_tests;
 pub mod persistent_shell_isolation;
 pub mod persistent_shell_tests;
 pub mod planning_context_visibility_tests;
+pub mod planning_duplicate_tests;
 pub mod planning_error_handling_tests;
 pub mod planning_todo_id_tests;
 pub mod playbook_integration_test;

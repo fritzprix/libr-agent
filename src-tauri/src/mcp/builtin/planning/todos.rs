@@ -89,8 +89,34 @@ pub async fn add_todo(
         description.to_string()
     };
 
-    // 4. Insert todo (no parent, no duplicate check, no subtasks)
+    // 4. Reject duplicate todos (case-insensitive title match on content column)
     let repo = get_planning_repository();
+    match repo.check_todo_duplicate(session_id, &title).await {
+        Ok(true) => {
+            return Ok(guided_error(
+                ErrorCategory::DuplicateResource,
+                format!("Todo '{}' already exists", title),
+                ToolGroup::Planning,
+            )
+            .with_guidance(vec![
+                "Use updateTodo(todoId=..., description='...') to modify the existing todo"
+                    .to_string(),
+                "Use getCurrentState to see existing todos and their IDs".to_string(),
+                "Use a different description if this is a separate task".to_string(),
+            ])
+            .to_mcp_result());
+        }
+        Ok(false) => {}
+        Err(e) => {
+            return Ok(planning_read_error(
+                "check for duplicate todos",
+                &e,
+                vec!["Try again".to_string()],
+            ));
+        }
+    }
+
+    // 5. Insert todo
     match repo
         .add_todo(session_id, &title, Some(description.to_string()), priority)
         .await
