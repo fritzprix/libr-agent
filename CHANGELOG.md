@@ -2,8 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.8.20] - 2026-06-25
+## [0.8.21] - 2026-07-12
 
+### 🚀 Features
+
+- **Planning Duplicate Detection**: Goals and todos now detect duplicate entries with user-friendly nudges — goals use case-insensitive title matching, todos use truncated title matching. Duplicate attempts return guided error messages with actionable suggestions.
+
+### 🐛 Fixes
+
+- **Telegram Preset Hardening**: Add missing `ALLOWED_USER_ID` to Telegram preset and clear placeholder credentials for improved security.
+- **macOS CI Linker Failure**: Pin macOS runner to macos-15 and set `SDKROOT` to resolve `clang_rt.osx` linker errors.
+
+### 🎨 Polish
+
+- **Session Row Tooltip**: Add tooltip to the unbookmark button in the Bookmarked Session Row in the palette for better UX.
+
+### 🔧 Internal
+
+- **MCP Server Implementation Guide**: Add comprehensive guide for external MCP HTTP server implementation to help the server team build LibrAgent-compatible services.
+- **Sync Download Links**: Synchronize direct download links in README files and `Cargo.lock`.
+
+
+## [0.8.20] - 2026-06-25
 ### 🚀 Features
 
 - **Slack MCP Integration**: Add official Slack MCP server preset (`https://mcp.slack.com/mcp`) supporting standard OAuth 2.1 authorization with custom query parameters (`customParams` containing the exact 25 scopes for Slack tools).
