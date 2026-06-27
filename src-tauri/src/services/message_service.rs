@@ -15,6 +15,42 @@ use tokio::sync::RwLock;
 static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEngine>>> =
     once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// Compares two messages for content equality to detect duplicate user messages.
+/// - ⚠️ Designed to work ONLY with user-role messages (user-message-only).
+/// - Returns false if either message is not role "user".
+/// - Returns false if attachments differ.
+/// - Normalizes text content (collapses whitespace) before comparison.
+/// - Returns false if content contains non-Text variants (e.g., Image) for safety.
+fn messages_content_equal(a: &Message, b: &Message) -> bool {
+    if a.role != b.role || a.role != "user" {
+        return false;
+    }
+
+    if a.attachments != b.attachments {
+        return false;
+    }
+
+    if a.content.len() != b.content.len() {
+        return false;
+    }
+
+    for (ca, cb) in a.content.iter().zip(b.content.iter()) {
+        match (ca, cb) {
+            (
+                crate::mcp::types::MCPContent::Text { text: ta, .. },
+                crate::mcp::types::MCPContent::Text { text: tb, .. },
+            ) => {
+                let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+                if normalize(ta) != normalize(tb) {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
 pub struct MessageService;
 
 impl MessageService {
@@ -256,32 +292,62 @@ impl MessageService {
         messages: Vec<Message>,
         emit_events_immediately: bool,
     ) -> Result<(), String> {
-        // 1. Ensure cache is initialized
         crate::agent::lifecycle::ensure_cache_initialized(active_sessions, session_id).await?;
 
-        // 2. Get session reference — note: multiple nested locks are acquired below
-        // (sessions read-guard, then session.messages write-guard and/or session.pending_events write-guard)
         let sessions = active_sessions.read().await;
         let session = sessions
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-        // 3. Add messages to in-memory cache
+        // ── Phase 1: In-memory dedup + push ─────────────────────────────────
         {
             let mut session_messages = session.messages.write().await;
+
             for msg in &messages {
+                // Trailing duplicate user messages discard
+                if msg.role == "user" {
+                    while let Some(last) = session_messages.last() {
+                        if !messages_content_equal(msg, last) {
+                            break;
+                        }
+                        session_messages.pop();
+                        log::info!(
+                            "Discarded trailing duplicate user message (content match): \
+                             session={}, new={}",
+                            session_id,
+                            msg.id
+                        );
+                    }
+                }
+
                 session_messages.push(msg.clone());
+
                 if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                    session_messages.remove(0);
+                    let removed = session_messages.remove(0);
+                    log::debug!("Evicted from sliding window cache: {}", removed.id);
+                }
+            }
+        } // session.messages lock released
+
+        // ── Phase 2: Persist to DB (SYNC — crash-safe) ──────────────────────
+        {
+            let repo = get_message_repository();
+            for msg in &messages {
+                if let Err(e) = repo.insert(msg).await {
+                    log::error!(
+                        "Failed to persist injected message to DB: session={}, msg_id={}, error={}",
+                        session_id,
+                        msg.id,
+                        e
+                    );
+                    return Err(format!("Failed to persist message: {}", e));
                 }
             }
         }
 
-        // 4. Emit MessageAdded events immediately, or queue as pending for the running workflow
+        // ── Phase 3: Emit UI events ─────────────────────────────────────────
         if emit_events_immediately {
-            // Drop session lock before I/O operations
             drop(sessions);
-
             for msg in &messages {
                 let event = crate::agent::events::AgentEvent::MessageAdded {
                     session_id: session_id.to_string(),
@@ -291,7 +357,6 @@ impl MessageService {
                     .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
             }
         } else {
-            // Track these message IDs as pending (will emit when workflow picks them up)
             let mut pending_events = session.pending_events.write().await;
             for msg in &messages {
                 pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
@@ -303,19 +368,7 @@ impl MessageService {
                 messages.iter().map(|m| &m.id).collect::<Vec<_>>()
             );
             drop(pending_events);
-            drop(sessions);
         }
-
-        // 5. Persist to DB asynchronously
-        let msgs_for_db = messages.clone();
-        tokio::spawn(async move {
-            let repo = get_message_repository();
-            for msg in msgs_for_db {
-                if let Err(e) = repo.insert(&msg).await {
-                    log::error!("Failed to inject message to DB: {}", e);
-                }
-            }
-        });
 
         Ok(())
     }
