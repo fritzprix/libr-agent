@@ -15,6 +15,123 @@ use tokio::sync::RwLock;
 static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEngine>>> =
     once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// Compares two messages for content equality to detect duplicate user messages.
+/// - ⚠️ Designed to work ONLY with user-role messages (user-message-only).
+/// - Returns false if either message is not role "user".
+/// - Returns false if attachments differ.
+/// - Normalizes text content (collapses whitespace) before comparison.
+/// - Returns false if content contains non-Text variants (e.g., Image) for safety.
+fn messages_content_equal(a: &Message, b: &Message) -> bool {
+    if a.role != b.role || a.role != "user" {
+        return false;
+    }
+
+    if a.attachments != b.attachments {
+        return false;
+    }
+
+    if a.content.len() != b.content.len() {
+        return false;
+    }
+
+    for (ca, cb) in a.content.iter().zip(b.content.iter()) {
+        match (ca, cb) {
+            (
+                crate::mcp::types::MCPContent::Text { text: ta, .. },
+                crate::mcp::types::MCPContent::Text { text: tb, .. },
+            ) => {
+                let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+                if normalize(ta) != normalize(tb) {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+fn normalize_whitespace(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Generates a normalized signature for a message to detect consecutive duplicates.
+/// Compares content items, thinking, and tool calls while ignoring volatile fields.
+pub(crate) fn message_signature(msg: &Message) -> Option<String> {
+    let mut parts = Vec::new();
+
+    // 1. content (Text, Thinking, Image, Audio, Resource, ToolCall)
+    for c in &msg.content {
+        match c {
+            crate::mcp::types::MCPContent::Text { text, .. } => {
+                parts.push(format!("text:{}", normalize_whitespace(text)));
+            }
+            crate::mcp::types::MCPContent::Thinking { thinking, .. } => {
+                parts.push(format!("thinking:{}", normalize_whitespace(thinking)));
+            }
+            crate::mcp::types::MCPContent::Image {
+                data,
+                uri,
+                mime_type,
+            } => {
+                parts.push(format!(
+                    "image:{}:{}:{}",
+                    data.as_deref().unwrap_or(""),
+                    uri.as_deref().unwrap_or(""),
+                    mime_type
+                ));
+            }
+            crate::mcp::types::MCPContent::Audio {
+                data,
+                uri,
+                mime_type,
+            } => {
+                parts.push(format!(
+                    "audio:{}:{}:{}",
+                    data.as_deref().unwrap_or(""),
+                    uri.as_deref().unwrap_or(""),
+                    mime_type
+                ));
+            }
+            crate::mcp::types::MCPContent::Resource { resource, .. } => {
+                parts.push(format!(
+                    "resource:{}",
+                    serde_json::to_string(resource).unwrap_or_default()
+                ));
+            }
+            crate::mcp::types::MCPContent::ToolCall {
+                name, arguments, ..
+            } => {
+                parts.push(format!(
+                    "toolcall_content:{}:{}",
+                    name,
+                    normalize_whitespace(arguments)
+                ));
+            }
+        }
+    }
+
+    // 2. thinking 별도 필드
+    if let Some(t) = &msg.thinking {
+        parts.push(format!("thinking_field:{}", normalize_whitespace(t)));
+    }
+
+    // 3. tool_calls
+    if let Some(tcs) = &msg.tool_calls {
+        for tc in tcs {
+            parts.push(format!(
+                "toolcall:{}:{}",
+                tc.function.name,
+                normalize_whitespace(&tc.function.arguments)
+            ));
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+    Some(parts.join("|||"))
+}
+
 pub struct MessageService;
 
 impl MessageService {
@@ -253,35 +370,108 @@ impl MessageService {
         active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
         app_handle: &AppHandle,
         session_id: &str,
-        messages: Vec<Message>,
+        mut messages: Vec<Message>,
         emit_events_immediately: bool,
     ) -> Result<(), String> {
-        // 1. Ensure cache is initialized
         crate::agent::lifecycle::ensure_cache_initialized(active_sessions, session_id).await?;
 
-        // 2. Get session reference — note: multiple nested locks are acquired below
-        // (sessions read-guard, then session.messages write-guard and/or session.pending_events write-guard)
         let sessions = active_sessions.read().await;
         let session = sessions
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-        // 3. Add messages to in-memory cache
+        // ── Phase 1: Message dedup + In-memory push ───────────────────────
         {
-            let mut session_messages = session.messages.write().await;
+            // 1a. Capture last-message signature while holding the lock
+            let last_msg_sig = {
+                let session_messages = session.messages.read().await;
+                session_messages.last().and_then(message_signature)
+            };
+
+            // 1b. Filter out repeated messages (no lock needed)
+            // Note: User messages are bypassed here as they have custom pop-and-replace
+            // logic in Phase 1c and need to be recorded in the database.
+            let mut current_last_sig = last_msg_sig;
+            messages.retain(|msg| {
+                if msg.role == "user" {
+                    if let Some(sig) = message_signature(msg) {
+                        current_last_sig = Some(sig);
+                    }
+                    return true;
+                }
+                let sig = message_signature(msg);
+                if let Some(ref last_sig) = current_last_sig {
+                    if sig == Some(last_sig.clone()) {
+                        log::info!(
+                            "Skipping repeated message: session={}, msg_id={}, role={}",
+                            session_id,
+                            msg.id,
+                            msg.role
+                        );
+                        return false;
+                    }
+                }
+                if let Some(ref s) = sig {
+                    current_last_sig = Some(s.clone());
+                }
+                true
+            });
+
+            // Early return if all messages were deduped
+            if messages.is_empty() {
+                return Ok(());
+            }
+
+            // 1c. Push remaining messages (re-acquire write lock)
+            {
+                let mut session_messages = session.messages.write().await;
+
+                for msg in &messages {
+                    // Trailing duplicate user messages discard
+                    if msg.role == "user" {
+                        while let Some(last) = session_messages.last() {
+                            if !messages_content_equal(msg, last) {
+                                break;
+                            }
+                            session_messages.pop();
+                            log::info!(
+                                "Discarded trailing duplicate user message (content match): \
+                                 session={}, new={}",
+                                session_id,
+                                msg.id
+                            );
+                        }
+                    }
+
+                    session_messages.push(msg.clone());
+
+                    if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
+                        let removed = session_messages.remove(0);
+                        log::debug!("Evicted from sliding window cache: {}", removed.id);
+                    }
+                }
+            }
+        } // session.messages lock released
+
+        // ── Phase 2: Persist to DB (SYNC — crash-safe) ──────────────────────
+        {
+            let repo = get_message_repository();
             for msg in &messages {
-                session_messages.push(msg.clone());
-                if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                    session_messages.remove(0);
+                if let Err(e) = repo.insert(msg).await {
+                    log::error!(
+                        "Failed to persist injected message to DB: session={}, msg_id={}, error={}",
+                        session_id,
+                        msg.id,
+                        e
+                    );
+                    return Err(format!("Failed to persist message: {}", e));
                 }
             }
         }
 
-        // 4. Emit MessageAdded events immediately, or queue as pending for the running workflow
+        // ── Phase 3: Emit UI events ─────────────────────────────────────────
         if emit_events_immediately {
-            // Drop session lock before I/O operations
             drop(sessions);
-
             for msg in &messages {
                 let event = crate::agent::events::AgentEvent::MessageAdded {
                     session_id: session_id.to_string(),
@@ -291,7 +481,6 @@ impl MessageService {
                     .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
             }
         } else {
-            // Track these message IDs as pending (will emit when workflow picks them up)
             let mut pending_events = session.pending_events.write().await;
             for msg in &messages {
                 pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
@@ -303,19 +492,7 @@ impl MessageService {
                 messages.iter().map(|m| &m.id).collect::<Vec<_>>()
             );
             drop(pending_events);
-            drop(sessions);
         }
-
-        // 5. Persist to DB asynchronously
-        let msgs_for_db = messages.clone();
-        tokio::spawn(async move {
-            let repo = get_message_repository();
-            for msg in msgs_for_db {
-                if let Err(e) = repo.insert(&msg).await {
-                    log::error!("Failed to inject message to DB: {}", e);
-                }
-            }
-        });
 
         Ok(())
     }
