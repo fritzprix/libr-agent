@@ -33,9 +33,9 @@ fn channel_payload_filters_dangerous_html_meta_attribute_names() {
     let payload = format_channel_payload_for_test("bridge", "hello", &meta);
 
     assert!(payload.contains(r#"<channel source="bridge" safe_meta="ok">"#));
-    assert!(!payload.contains(r#"onclick="#));
-    assert!(!payload.contains(r#"onerror="#));
-    assert!(!payload.contains(r#"style="#));
+    assert!(!payload.contains("onclick=\""));
+    assert!(!payload.contains("onerror=\""));
+    assert!(!payload.contains("style=\""));
     assert!(payload.contains("[channel_meta]"));
     assert!(payload.contains("onclick=alert(1)"));
     assert!(payload.contains("onerror=alert(1)"));
@@ -70,9 +70,9 @@ fn channel_payload_filters_reserved_names_case_insensitively() {
     let payload = format_channel_payload_for_test("bridge", "hello", &meta);
 
     assert!(payload.contains(r#"<channel source="bridge" safe_meta="ok">"#));
-    assert!(!payload.contains(r#"SOURCE="#));
-    assert!(!payload.contains(r#"STYLE="#));
-    assert!(!payload.contains(r#"OnClick="#));
+    assert!(!payload.contains("SOURCE=\""));
+    assert!(!payload.contains("STYLE=\""));
+    assert!(!payload.contains("OnClick=\""));
     assert!(payload.contains("[channel_meta]"));
     assert!(payload.contains("SOURCE=override"));
     assert!(payload.contains("STYLE=color:red"));

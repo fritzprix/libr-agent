@@ -22,8 +22,8 @@ All notable changes to this project will be documented in this file.
 - **MCP Server Implementation Guide**: Add comprehensive guide for external MCP HTTP server implementation to help the server team build LibrAgent-compatible services.
 - **Sync Download Links**: Synchronize direct download links in README files and `Cargo.lock`.
 
-
 ## [0.8.20] - 2026-06-25
+
 ### 🚀 Features
 
 - **Slack MCP Integration**: Add official Slack MCP server preset (`https://mcp.slack.com/mcp`) supporting standard OAuth 2.1 authorization with custom query parameters (`customParams` containing the exact 25 scopes for Slack tools).
