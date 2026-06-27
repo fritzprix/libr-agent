@@ -55,6 +55,10 @@ export const ScheduledTaskRow = memo(function ScheduledTaskRow({
         onCheckedChange={() => void onToggle(task)}
         className="mt-0.5 shrink-0"
         disabled={isToggling || isDeleting}
+        aria-label={t('scheduledTasks.toggleActive', {
+          name: task.name,
+          defaultValue: 'Toggle active state for {{name}}',
+        })}
       />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
