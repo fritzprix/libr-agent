@@ -50,10 +50,10 @@ pub fn build_compaction_markdown(session_id: &str, messages: &[Message]) -> Stri
                 crate::mcp::types::MCPContent::Text { text, .. } => {
                     md.push_str(&format!("{}\n", truncate_text(text, 1500)));
                 }
-                crate::mcp::types::MCPContent::Thinking { thinking, .. } => {
-                    if msg.thinking.is_none() {
-                        md.push_str(&format!("Thinking:\n{}\n\n", truncate_text(thinking, 1500)));
-                    }
+                crate::mcp::types::MCPContent::Thinking { thinking, .. }
+                    if msg.thinking.is_none() =>
+                {
+                    md.push_str(&format!("Thinking:\n{}\n\n", truncate_text(thinking, 1500)));
                 }
                 // Intentionally skip other content variants (such as ToolResult) to prevent token explosion.
                 // Detailed tool results remain accessible via the main workspace or session logs.
