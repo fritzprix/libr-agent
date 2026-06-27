@@ -59,7 +59,7 @@ async fn add_todo_rejects_duplicate_title_with_error_semantics() {
     let text = extract_text(&duplicate);
     assert_eq!(duplicate.is_error, Some(true));
     assert!(
-        text.contains("Todo 'Write the regression test' already exists"),
+        text.contains("Todo 'write the regression test' already exists"),
         "expected duplicate warning in text content, got: {text}"
     );
 }

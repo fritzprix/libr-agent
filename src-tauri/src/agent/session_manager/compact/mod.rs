@@ -1,5 +1,6 @@
 mod context;
 mod fallback;
+mod md_export;
 mod persistence;
 mod recovery;
 mod summary;
@@ -100,7 +101,15 @@ async fn complete_compaction_with_hard_fallback(
         }
     };
 
-    let summary = build_compaction_hard_fallback_summary(
+    // ✅ NEW: Write pre-compaction markdown for AI context recovery in fallback path
+    let markdown_result = md_export::write_compaction_markdown(
+        context.session_id,
+        &compacted_messages,
+        3, // max_epochs
+    )
+    .await;
+
+    let mut summary = build_compaction_hard_fallback_summary(
         &compacted_messages,
         saved_artifact_relative_path,
         &context.to_id,
@@ -108,6 +117,18 @@ async fn complete_compaction_with_hard_fallback(
         snapshot,
         failure_reason,
     );
+
+    if let Ok((relative_path, _)) = &markdown_result {
+        summary.push_str(&format!(
+            "\n\n---\n*Full pre-compaction transcript: {}*",
+            relative_path
+        ));
+    } else if let Err(e) = &markdown_result {
+        log::warn!(
+            "Failed to write pre_compaction markdown in fallback path: {}",
+            e
+        );
+    }
     if saved_artifact_relative_path.is_some() {
         log::warn!(
             "🧯 Stored deterministic compaction fallback for session {} at '{}' after failure: {}",
@@ -244,6 +265,24 @@ pub async fn handle_compact_response(
             .unwrap_or_else(|| "unknown".to_string())
     );
 
+    // ✅ NEW: Write pre-compaction markdown for AI context recovery
+    let markdown_result = md_export::write_compaction_markdown(
+        session_id,
+        &compacted_messages,
+        3, // max_epochs
+    )
+    .await;
+
+    let mut final_summary = clamped_summary.summary;
+    if let Ok((relative_path, _)) = &markdown_result {
+        final_summary.push_str(&format!(
+            "\n\n---\n*Full pre-compaction transcript: {}*",
+            relative_path
+        ));
+    } else if let Err(e) = &markdown_result {
+        log::warn!("Failed to write pre_compaction markdown: {}", e);
+    }
+
     persist_compact_summary_and_resume(
         CompactSummaryPersistenceContext {
             active_sessions,
@@ -255,7 +294,7 @@ pub async fn handle_compact_response(
             to_id,
             compacted_delta_count,
         },
-        clamped_summary.summary,
+        final_summary,
     )
     .await
 }
