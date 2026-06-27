@@ -297,3 +297,91 @@ async fn read_file_guides_single_line_retry_when_next_line_is_too_large() {
     assert_eq!(structured["nextStartLine"], json!(1));
     assert_eq!(structured["suggestedEndLine"], json!(1));
 }
+
+#[tokio::test]
+async fn read_file_supports_offset_and_size_forward() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-file-offset-size";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let path = "test.txt";
+    std::fs::write(
+        workspace_dir.join(path),
+        "line 1\nline 2\nline 3\nline 4\nline 5",
+    )
+    .expect("write file");
+
+    let result = server
+        .handle_read_file(
+            json!({ "path": path, "offset": 2, "size": 3 }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readFile should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(text.contains("line 2"));
+    assert!(text.contains("line 3"));
+    assert!(text.contains("line 4"));
+    assert!(!text.contains("line 1"));
+    assert!(!text.contains("line 5"));
+}
+
+#[tokio::test]
+async fn read_file_supports_size_negative_tail() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-file-tail";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let path = "test.txt";
+    std::fs::write(
+        workspace_dir.join(path),
+        "line 1\nline 2\nline 3\nline 4\nline 5",
+    )
+    .expect("write file");
+
+    let result = server
+        .handle_read_file(
+            json!({ "path": path, "size": -3 }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readFile should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(text.contains("line 3"));
+    assert!(text.contains("line 4"));
+    assert!(text.contains("line 5"));
+    assert!(!text.contains("line 1"));
+    assert!(!text.contains("line 2"));
+}
+
+#[tokio::test]
+async fn read_file_supports_offset_and_size_negative_tail_skip() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-file-tail-skip";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let path = "test.txt";
+    std::fs::write(
+        workspace_dir.join(path),
+        "line 1\nline 2\nline 3\nline 4\nline 5",
+    )
+    .expect("write file");
+
+    let result = server
+        .handle_read_file(
+            json!({ "path": path, "offset": -2, "size": -2 }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readFile should succeed");
+
+    let text = extract_text_content(&result);
+    // skip 2 lines from end (skips line 4 & line 5) and reads 2 lines backwards (line 2 & line 3)
+    assert!(text.contains("line 2"));
+    assert!(text.contains("line 3"));
+    assert!(!text.contains("line 1"));
+    assert!(!text.contains("line 4"));
+    assert!(!text.contains("line 5"));
+}
