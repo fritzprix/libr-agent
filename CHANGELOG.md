@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.22] - 2026-07-13
+
+### 🚀 Features
+
+- **Message Content-Based Deduplication**: User messages and assistant/tool messages are now deduplicated by content hash before injection, preventing duplicate entries in the conversation history.
+- **Compaction Transcript Export**: Pre-compaction transcripts are now exported and the relative path is appended to the compaction summary for better traceability.
+- **Claude Channel Hardening**: Strengthened Claude channel security with enhanced observability and stricter payload validation.
+
+### 🐛 Fixes
+
+- **Clippy Match Warning**: Resolve collapsible match warning in `md_export` MCP tool.
+- **Channel Payload Test**: Fix assertion failure in channel payload integration test.
+
+### 🔧 Internal
+
+- **Migration Command Modularization**: Split `migration_commands` into focused submodules (`crypto`, `export`, `import`, `inspect`, `models`, `reverify`) for better maintainability.
+- **readFile MCP Enhancement**: Add `offset` and `size` parameters to the readFile MCP tool for efficient partial file reading.
 ## [0.8.21] - 2026-07-12
 
 ### 🚀 Features
