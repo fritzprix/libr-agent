@@ -50,6 +50,87 @@ fn messages_content_equal(a: &Message, b: &Message) -> bool {
     }
     true
 }
+fn normalize_whitespace(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Generates a normalized signature for a message to detect consecutive duplicates.
+/// Compares content items, thinking, and tool calls while ignoring volatile fields.
+pub(crate) fn message_signature(msg: &Message) -> Option<String> {
+    let mut parts = Vec::new();
+
+    // 1. content (Text, Thinking, Image, Audio, Resource, ToolCall)
+    for c in &msg.content {
+        match c {
+            crate::mcp::types::MCPContent::Text { text, .. } => {
+                parts.push(format!("text:{}", normalize_whitespace(text)));
+            }
+            crate::mcp::types::MCPContent::Thinking { thinking, .. } => {
+                parts.push(format!("thinking:{}", normalize_whitespace(thinking)));
+            }
+            crate::mcp::types::MCPContent::Image {
+                data,
+                uri,
+                mime_type,
+            } => {
+                parts.push(format!(
+                    "image:{}:{}:{}",
+                    data.as_deref().unwrap_or(""),
+                    uri.as_deref().unwrap_or(""),
+                    mime_type
+                ));
+            }
+            crate::mcp::types::MCPContent::Audio {
+                data,
+                uri,
+                mime_type,
+            } => {
+                parts.push(format!(
+                    "audio:{}:{}:{}",
+                    data.as_deref().unwrap_or(""),
+                    uri.as_deref().unwrap_or(""),
+                    mime_type
+                ));
+            }
+            crate::mcp::types::MCPContent::Resource { resource, .. } => {
+                parts.push(format!(
+                    "resource:{}",
+                    serde_json::to_string(resource).unwrap_or_default()
+                ));
+            }
+            crate::mcp::types::MCPContent::ToolCall {
+                name, arguments, ..
+            } => {
+                parts.push(format!(
+                    "toolcall_content:{}:{}",
+                    name,
+                    normalize_whitespace(arguments)
+                ));
+            }
+        }
+    }
+
+    // 2. thinking 별도 필드
+    if let Some(t) = &msg.thinking {
+        parts.push(format!("thinking_field:{}", normalize_whitespace(t)));
+    }
+
+    // 3. tool_calls
+    if let Some(tcs) = &msg.tool_calls {
+        for tc in tcs {
+            parts.push(format!(
+                "toolcall:{}:{}",
+                tc.function.name,
+                normalize_whitespace(&tc.function.arguments)
+            ));
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+    Some(parts.join("|||"))
+}
 
 pub struct MessageService;
 
@@ -289,7 +370,7 @@ impl MessageService {
         active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
         app_handle: &AppHandle,
         session_id: &str,
-        messages: Vec<Message>,
+        mut messages: Vec<Message>,
         emit_events_immediately: bool,
     ) -> Result<(), String> {
         crate::agent::lifecycle::ensure_cache_initialized(active_sessions, session_id).await?;
@@ -299,32 +380,75 @@ impl MessageService {
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-        // ── Phase 1: In-memory dedup + push ─────────────────────────────────
+        // ── Phase 1: Message dedup + In-memory push ───────────────────────
         {
-            let mut session_messages = session.messages.write().await;
+            // 1a. Capture last-message signature while holding the lock
+            let last_msg_sig = {
+                let session_messages = session.messages.read().await;
+                session_messages.last().and_then(message_signature)
+            };
 
-            for msg in &messages {
-                // Trailing duplicate user messages discard
+            // 1b. Filter out repeated messages (no lock needed)
+            // Note: User messages are bypassed here as they have custom pop-and-replace
+            // logic in Phase 1c and need to be recorded in the database.
+            let mut current_last_sig = last_msg_sig;
+            messages.retain(|msg| {
                 if msg.role == "user" {
-                    while let Some(last) = session_messages.last() {
-                        if !messages_content_equal(msg, last) {
-                            break;
-                        }
-                        session_messages.pop();
+                    if let Some(sig) = message_signature(msg) {
+                        current_last_sig = Some(sig);
+                    }
+                    return true;
+                }
+                let sig = message_signature(msg);
+                if let Some(ref last_sig) = current_last_sig {
+                    if sig == Some(last_sig.clone()) {
                         log::info!(
-                            "Discarded trailing duplicate user message (content match): \
-                             session={}, new={}",
+                            "Skipping repeated message: session={}, msg_id={}, role={}",
                             session_id,
-                            msg.id
+                            msg.id,
+                            msg.role
                         );
+                        return false;
                     }
                 }
+                if let Some(ref s) = sig {
+                    current_last_sig = Some(s.clone());
+                }
+                true
+            });
 
-                session_messages.push(msg.clone());
+            // Early return if all messages were deduped
+            if messages.is_empty() {
+                return Ok(());
+            }
 
-                if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                    let removed = session_messages.remove(0);
-                    log::debug!("Evicted from sliding window cache: {}", removed.id);
+            // 1c. Push remaining messages (re-acquire write lock)
+            {
+                let mut session_messages = session.messages.write().await;
+
+                for msg in &messages {
+                    // Trailing duplicate user messages discard
+                    if msg.role == "user" {
+                        while let Some(last) = session_messages.last() {
+                            if !messages_content_equal(msg, last) {
+                                break;
+                            }
+                            session_messages.pop();
+                            log::info!(
+                                "Discarded trailing duplicate user message (content match): \
+                                 session={}, new={}",
+                                session_id,
+                                msg.id
+                            );
+                        }
+                    }
+
+                    session_messages.push(msg.clone());
+
+                    if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
+                        let removed = session_messages.remove(0);
+                        log::debug!("Evicted from sliding window cache: {}", removed.id);
+                    }
                 }
             }
         } // session.messages lock released

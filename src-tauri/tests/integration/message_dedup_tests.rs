@@ -298,3 +298,422 @@ async fn test_content_dedup_rich_content_different() {
     assert_eq!(cached_msgs[0].id, "msg-1");
     assert_eq!(cached_msgs[1].id, "msg-2");
 }
+
+fn build_tool_message(session_id: &str, id: &str, tool_call_id: &str, text: &str) -> Message {
+    Message {
+        id: id.to_string(),
+        session_id: session_id.to_string(),
+        role: "tool".to_string(),
+        content: vec![MCPContent::Text {
+            text: text.to_string(),
+            is_error: None,
+        }],
+        tool_calls: None,
+        tool_call_id: Some(tool_call_id.to_string()),
+        is_streaming: Some(false),
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at: chrono::Utc::now().timestamp_millis(),
+        updated_at: chrono::Utc::now().timestamp_millis(),
+        source: None,
+        error: None,
+        metadata: None,
+    }
+}
+
+#[tokio::test]
+async fn test_tool_message_deduplication() {
+    let db = common::setup_test_db_with_migrations().await;
+    let _message_repo = SqliteMessageRepository::new(db.clone());
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = "test-session-tool-dedup";
+    session_repo
+        .upsert_session(&build_session_metadata(session_id))
+        .await
+        .expect("session created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.to_string(), build_agent_session(session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    // 1. Inject first tool message (call_1, output: "Success")
+    let tool_msg1 = build_tool_message(session_id, "tool-1", "call_1", "Success");
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![tool_msg1.clone()],
+        false,
+    )
+    .await
+    .expect("inject tool_msg1 succeeds");
+
+    // 2. Inject duplicate tool message (same tool_call_id, same content) -> should be deduplicated (ignored)
+    let tool_msg2 = build_tool_message(session_id, "tool-2", "call_1", "Success");
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![tool_msg2.clone()],
+        false,
+    )
+    .await
+    .expect("inject tool_msg2 succeeds");
+
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session exists");
+        let cached_msgs = session.messages.read().await;
+        // Should only contain the first message because the second one is a duplicate
+        assert_eq!(cached_msgs.len(), 1);
+        assert_eq!(cached_msgs[0].id, "tool-1");
+    }
+
+    // 3. Inject tool message with different tool_call_id but same content -> should also be deduplicated (ignored)
+    let tool_msg3 = build_tool_message(session_id, "tool-3", "call_2", "Success");
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![tool_msg3.clone()],
+        false,
+    )
+    .await
+    .expect("inject tool_msg3 succeeds");
+
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session exists");
+        let cached_msgs = session.messages.read().await;
+        // Still only contain the first message (tool-1) because tool-3 has the exact same content.
+        assert_eq!(cached_msgs.len(), 1);
+        assert_eq!(cached_msgs[0].id, "tool-1");
+    }
+
+    // 4. Inject tool message with different content -> should NOT be deduplicated
+    let tool_msg4 = build_tool_message(session_id, "tool-4", "call_3", "Different Success");
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![tool_msg4.clone()],
+        false,
+    )
+    .await
+    .expect("inject tool_msg4 succeeds");
+
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session exists");
+        let cached_msgs = session.messages.read().await;
+        // Both tool-1 and tool-4 should exist
+        assert_eq!(cached_msgs.len(), 2);
+        assert_eq!(cached_msgs[0].id, "tool-1");
+        assert_eq!(cached_msgs[1].id, "tool-4");
+    }
+}
+
+fn build_assistant_message_with_thinking(
+    session_id: &str,
+    id: &str,
+    thinking: &str,
+    text: &str,
+) -> Message {
+    Message {
+        id: id.to_string(),
+        session_id: session_id.to_string(),
+        role: "assistant".to_string(),
+        content: vec![MCPContent::Text {
+            text: text.to_string(),
+            is_error: None,
+        }],
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: Some(false),
+        thinking: Some(thinking.to_string()),
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at: chrono::Utc::now().timestamp_millis(),
+        updated_at: chrono::Utc::now().timestamp_millis(),
+        source: None,
+        error: None,
+        metadata: None,
+    }
+}
+
+fn build_assistant_message_with_tool_calls(
+    session_id: &str,
+    id: &str,
+    tool_calls: Vec<tauri_mcp_agent_lib::agent::types::ToolCall>,
+) -> Message {
+    Message {
+        id: id.to_string(),
+        session_id: session_id.to_string(),
+        role: "assistant".to_string(),
+        content: Vec::new(),
+        tool_calls: Some(tool_calls),
+        tool_call_id: None,
+        is_streaming: Some(false),
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at: chrono::Utc::now().timestamp_millis(),
+        updated_at: chrono::Utc::now().timestamp_millis(),
+        source: None,
+        error: None,
+        metadata: None,
+    }
+}
+
+#[tokio::test]
+async fn test_assistant_message_deduplication() {
+    let db = common::setup_test_db_with_migrations().await;
+    let _message_repo = SqliteMessageRepository::new(db.clone());
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = "test-session-assistant-dedup";
+    session_repo
+        .upsert_session(&build_session_metadata(session_id))
+        .await
+        .expect("session created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.to_string(), build_agent_session(session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
+
+    // 1. Test thinking-based deduplication
+    let msg1 = build_assistant_message_with_thinking(
+        session_id,
+        "ast-1",
+        "I should run list_dir",
+        "running list_dir",
+    );
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![msg1],
+        false,
+    )
+    .await
+    .expect("inject ast-1 succeeds");
+
+    // Same thinking + same text -> should be deduplicated
+    let msg2 = build_assistant_message_with_thinking(
+        session_id,
+        "ast-2",
+        "I should run list_dir",
+        "running list_dir",
+    );
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![msg2],
+        false,
+    )
+    .await
+    .expect("inject ast-2 succeeds");
+
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session exists");
+        let cached_msgs = session.messages.read().await;
+        assert_eq!(cached_msgs.len(), 1);
+        assert_eq!(cached_msgs[0].id, "ast-1");
+    }
+
+    // Different thinking -> should NOT be deduplicated
+    let msg3 = build_assistant_message_with_thinking(
+        session_id,
+        "ast-3",
+        "Actually I should run grep",
+        "running list_dir",
+    );
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![msg3],
+        false,
+    )
+    .await
+    .expect("inject ast-3 succeeds");
+
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session exists");
+        let cached_msgs = session.messages.read().await;
+        assert_eq!(cached_msgs.len(), 2);
+        assert_eq!(cached_msgs[1].id, "ast-3");
+    }
+
+    // 2. Test tool_calls-based deduplication
+    let tc1 = ToolCall {
+        id: "call_1".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "list_dir".to_string(),
+            arguments: r#"{"path": "/home"}"#.to_string(),
+        },
+    };
+    let msg4 = build_assistant_message_with_tool_calls(session_id, "ast-4", vec![tc1.clone()]);
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![msg4],
+        false,
+    )
+    .await
+    .expect("inject ast-4 succeeds");
+
+    // Same tool_call name + arguments -> should be deduplicated
+    let tc2 = ToolCall {
+        id: "call_2".to_string(), // different ID, but same function details
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "list_dir".to_string(),
+            arguments: r#"{"path": "/home"}"#.to_string(),
+        },
+    };
+    let msg5 = build_assistant_message_with_tool_calls(session_id, "ast-5", vec![tc2]);
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![msg5],
+        false,
+    )
+    .await
+    .expect("inject ast-5 succeeds");
+
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session exists");
+        let cached_msgs = session.messages.read().await;
+        // Total should be 3: ast-1, ast-3, ast-4 (ast-5 was deduped)
+        assert_eq!(cached_msgs.len(), 3);
+        assert_eq!(cached_msgs[2].id, "ast-4");
+    }
+
+    // Different tool_call arguments -> should NOT be deduplicated
+    let tc3 = ToolCall {
+        id: "call_3".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "list_dir".to_string(),
+            arguments: r#"{"path": "/var"}"#.to_string(),
+        },
+    };
+    let msg6 = build_assistant_message_with_tool_calls(session_id, "ast-6", vec![tc3]);
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![msg6],
+        false,
+    )
+    .await
+    .expect("inject ast-6 succeeds");
+
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session exists");
+        let cached_msgs = session.messages.read().await;
+        assert_eq!(cached_msgs.len(), 4);
+        assert_eq!(cached_msgs[3].id, "ast-6");
+    }
+}
+
+#[tokio::test]
+async fn test_batch_message_deduplication() {
+    let db = common::setup_test_db_with_migrations().await;
+    let _message_repo = SqliteMessageRepository::new(db.clone());
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = "test-session-batch-dedup";
+    session_repo
+        .upsert_session(&build_session_metadata(session_id))
+        .await
+        .expect("session created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.to_string(), build_agent_session(session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    // Inject multiple tool messages in a single batch.
+    // tool-1, tool-2 (duplicate of tool-1), and tool-3 (different content)
+    let tool_msg1 = build_tool_message(session_id, "tool-1", "call_1", "Success");
+    let tool_msg2 = build_tool_message(session_id, "tool-2", "call_2", "Success"); // different tool_call_id but same content
+    let tool_msg3 = build_tool_message(session_id, "tool-3", "call_3", "Different Success");
+
+    MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        session_id,
+        vec![tool_msg1, tool_msg2, tool_msg3],
+        false,
+    )
+    .await
+    .expect("batch injection succeeds");
+
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session exists");
+        let cached_msgs = session.messages.read().await;
+        // Should contain tool-1 and tool-3 (tool-2 was deduplicated within the batch)
+        assert_eq!(cached_msgs.len(), 2);
+        assert_eq!(cached_msgs[0].id, "tool-1");
+        assert_eq!(cached_msgs[1].id, "tool-3");
+    }
+}
