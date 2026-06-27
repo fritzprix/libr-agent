@@ -107,12 +107,21 @@ function logToolChainIntegrity(messages: Message[]): void {
     }
   }
 
-  const unmatchedToolUses = Array.from(toolUseIds).filter(
-    (id) => !toolResultIds.has(id),
-  );
-  const unmatchedToolResults = Array.from(toolResultIds).filter(
-    (id) => !toolUseIds.has(id),
-  );
+  // ⚡ Bolt: Replaced Array.from().filter() with for...of loops directly on the Sets
+  // to avoid intermediate array allocations and reduce garbage collection pressure.
+  const unmatchedToolUses: string[] = [];
+  for (const id of toolUseIds) {
+    if (!toolResultIds.has(id)) {
+      unmatchedToolUses.push(id);
+    }
+  }
+
+  const unmatchedToolResults: string[] = [];
+  for (const id of toolResultIds) {
+    if (!toolUseIds.has(id)) {
+      unmatchedToolResults.push(id);
+    }
+  }
 
   if (unmatchedToolUses.length > 0 || unmatchedToolResults.length > 0) {
     logger.warn('Potential tool chain mismatch detected', {
