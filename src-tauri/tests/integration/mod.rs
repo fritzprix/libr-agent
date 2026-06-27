@@ -17,6 +17,8 @@ pub mod builtin_service_registry_tests;
 pub mod bundled_skills_build_mirror_tests;
 pub mod cancel_logic;
 pub mod channel_auto_routing_tests;
+pub mod channel_drop_metrics_tests;
+pub mod channel_event_parsing_tests;
 pub mod channel_payload_format_tests;
 pub mod channel_permission_id_tests;
 pub mod channel_permission_resolution_tests;

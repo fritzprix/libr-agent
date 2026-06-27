@@ -4,14 +4,12 @@ use tauri_mcp_agent_lib::agent::tool_approvals::{
 };
 
 #[test]
-fn channel_permission_request_ids_match_claude_constraints() {
+fn channel_permission_request_ids_are_32_char_uuid_hex() {
     let request_id = generate_channel_permission_request_id();
 
-    assert_eq!(request_id.len(), 5);
-    assert!(request_id
-        .chars()
-        .all(|ch| matches!(ch, 'a'..='k' | 'm'..='z')));
-    assert!(!request_id.contains('l'));
+    assert_eq!(request_id.len(), 32);
+    assert!(request_id.chars().all(|ch| ch.is_ascii_hexdigit()));
+    assert!(request_id.chars().all(|ch| !ch.is_ascii_uppercase()));
 }
 
 #[test]
