@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import React from 'react';
 import '@testing-library/jest-dom/vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MentionTextarea } from '../MentionTextarea';
@@ -48,13 +49,18 @@ vi.mock('@/features/agent/components/InputTokenDropdown', () => ({
 }));
 
 vi.mock('@/components/ui/textarea', () => ({
-  Textarea: ({
-    value,
-    placeholder,
-  }: {
-    value: string;
-    placeholder?: string;
-  }) => <textarea value={value} placeholder={placeholder} readOnly />,
+  Textarea: React.forwardRef(
+    (
+      {
+        value,
+        placeholder,
+      }: {
+        value: string;
+        placeholder?: string;
+      },
+      ref: any,
+    ) => <textarea ref={ref} value={value} placeholder={placeholder} readOnly />,
+  ),
 }));
 
 describe('MentionTextarea', () => {

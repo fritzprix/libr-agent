@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,9 +43,9 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
-  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+  DropdownMenuTrigger: React.forwardRef(({ children }: { children: React.ReactNode }, ref: any) => (
+    <div ref={ref}>{children}</div>
+  )),
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
     <div role="menu">{children}</div>
   ),
