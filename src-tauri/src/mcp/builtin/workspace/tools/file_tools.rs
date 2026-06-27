@@ -20,7 +20,7 @@ pub fn create_read_file_tool() -> MCPTool {
         integer_prop(
             Some(1),
             None,
-            Some("Starting line number (1-based, optional)"),
+            Some("Starting line number (1-based, optional). Legacy parameter; prefer offset/size."),
         ),
     );
     props.insert(
@@ -28,7 +28,23 @@ pub fn create_read_file_tool() -> MCPTool {
         integer_prop(
             Some(1),
             None,
-            Some("Ending line number (1-based, optional)"),
+            Some("Ending line number (1-based, optional). Legacy parameter; prefer offset/size."),
+        ),
+    );
+    props.insert(
+        "offset".to_string(),
+        integer_prop(
+            None,
+            None,
+            Some("Starting line index (1-based or 0-based; both 0 and 1 start at the first line). Alias to startLine. Can be negative in tail mode to skip from the end (e.g. -100)."),
+        ),
+    );
+    props.insert(
+        "size".to_string(),
+        integer_prop(
+            None,
+            None,
+            Some("Number of lines to read. If negative, reads that many lines from the end of the file (tail mode)."),
         ),
     );
     props.insert(
@@ -41,7 +57,7 @@ pub fn create_read_file_tool() -> MCPTool {
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file. Large responses are chunked automatically to stay inline; use the returned startLine/endLine guidance to continue reading. Use showLineAnchors=true when you need anchors for editFile."
+        description: "Read the contents of a file. Supports reading from a specific offset and line count (size), including negative size for tailing the end of the file. Large responses are chunked automatically to stay inline. Use showLineAnchors=true when you need anchors for editFile."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
