@@ -64,7 +64,7 @@ fn later_prefix_hash_changes_when_earlier_content_changes() {
 }
 
 #[test]
-fn edit_file_schema_uses_single_object_item_contract() {
+fn edit_file_schema_uses_discriminated_edit_variants() {
     let schema_json =
         serde_json::to_value(create_edit_file_input_schema()).expect("serialize editFile schema");
     let root_required = schema_json
@@ -78,42 +78,76 @@ fn edit_file_schema_uses_single_object_item_contract() {
         .iter()
         .any(|value| value.as_str() == Some("edits")));
 
-    let edits_items = schema_json
+    let edits_property = schema_json
         .get("properties")
         .and_then(|properties| properties.get("edits"))
-        .and_then(|edits| edits.get("items"))
-        .expect("edits.items schema");
+        .expect("edits property");
     assert_eq!(
-        edits_items.get("type").and_then(|value| value.as_str()),
-        Some("object")
-    );
-    assert!(
-        edits_items.get("oneOf").is_none(),
-        "model-facing schema should avoid oneOf-heavy edit variants"
+        edits_property
+            .get("maxItems")
+            .and_then(|value| value.as_u64()),
+        Some(50)
     );
 
-    let required = edits_items
+    let edits_items = edits_property.get("items").expect("edits.items schema");
+    let one_of = edits_items
+        .get("oneOf")
+        .and_then(|value| value.as_array())
+        .expect("edits.items.oneOf array");
+    assert_eq!(
+        one_of.len(),
+        3,
+        "expected prepend, line-edit, and insert-after variants"
+    );
+
+    let prepend_variant = &one_of[0];
+    let prepend_required = prepend_variant
         .get("required")
         .and_then(|value| value.as_array())
-        .expect("required array");
-    assert!(required
+        .expect("prepend required");
+    assert!(prepend_required
         .iter()
-        .any(|value| value.as_str() == Some("startLine")));
+        .any(|value| value.as_str() == Some("content")));
     assert!(
-        !required.iter().any(|value| value.as_str() == Some("path")),
-        "edit items should not repeat path; path belongs at the root"
+        !prepend_required
+            .iter()
+            .any(|value| value.as_str() == Some("startLine")),
+        "prepend variant should not require startLine"
     );
 
-    let start_line_description = edits_items
+    let line_edit_variant = &one_of[1];
+    let line_edit_required = line_edit_variant
+        .get("required")
+        .and_then(|value| value.as_array())
+        .expect("line edit required");
+    assert!(line_edit_required
+        .iter()
+        .any(|value| value.as_str() == Some("startLine")));
+
+    let insert_after_variant = &one_of[2];
+    let insert_after_required = insert_after_variant
+        .get("required")
+        .and_then(|value| value.as_array())
+        .expect("insert_after required");
+    assert!(insert_after_required
+        .iter()
+        .any(|value| value.as_str() == Some("op")));
+    assert!(insert_after_required
+        .iter()
+        .any(|value| value.as_str() == Some("startLine")));
+    assert!(insert_after_required
+        .iter()
+        .any(|value| value.as_str() == Some("anchor")));
+
+    let start_line_description = line_edit_variant
         .get("properties")
         .and_then(|properties| properties.get("startLine"))
         .and_then(|value| value.get("description"))
         .and_then(|value| value.as_str())
         .expect("startLine description");
     assert!(
-        start_line_description.contains("Existing lines are 1-based")
-            && start_line_description.contains("Use 0 only to prepend"),
-        "startLine description should make the 1-based/0-based exception explicit: {start_line_description}"
+        start_line_description.contains("Existing lines are 1-based"),
+        "startLine description should make the 1-based rule explicit: {start_line_description}"
     );
 }
 
@@ -146,7 +180,7 @@ async fn edit_file_rejects_hashless_replace_of_existing_line() {
     let text = extract_text_content(&result);
     assert_eq!(result.is_error, Some(true));
     assert!(
-        text.contains("requires 'startAnchor'"),
+        text.contains("requires 'anchor'"),
         "expected missing-anchor error, got: {text}"
     );
 }
@@ -212,7 +246,7 @@ async fn edit_file_missing_target_reports_file_not_found_before_anchor_guidance(
         "expected missing-file guidance, got: {text}"
     );
     assert!(
-        !text.contains("requires 'startAnchor'"),
+        !text.contains("requires 'anchor'"),
         "path errors should be reported before anchor guidance: {text}"
     );
 }
@@ -1020,8 +1054,124 @@ async fn edit_file_rejects_stale_anchor_without_partial_write() {
         text.contains("STALE ANCHOR"),
         "expected stale anchor error, got: {text}"
     );
+    assert!(
+        text.contains("edit #1"),
+        "stale anchor error should identify the edit index, got: {text}"
+    );
     assert_eq!(
         std::fs::read_to_string(workspace_dir.join("b.txt")).expect("read b"),
         "one\ntwo\n"
+    );
+}
+
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvVarGuard {
+    fn set_temp(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        // SAFETY: tests run serially within this module; guard restores on drop.
+        unsafe { std::env::set_var(key, value) };
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => unsafe { std::env::set_var(self.key, value) },
+            None => unsafe { std::env::remove_var(self.key) },
+        }
+    }
+}
+
+#[tokio::test]
+async fn edit_file_rejects_oversized_target_file() {
+    let _env_guard = EnvVarGuard::set_temp("LIBRAGENT_MAX_FILE_SIZE", "10");
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-size-limit";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("large.txt"), "01234567890123456789").expect("write file");
+
+    let result = server
+        .handle_edit_file(json!({
+            "path": "large.txt",
+            "edits": [{ "content": "x" }]
+        }))
+        .await
+        .expect("editFile should return");
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "oversized file should fail, got: {:?}",
+        result
+    );
+    let text = result_text(&result);
+    assert!(
+        text.contains("exceeds the maximum allowed size") || text.contains("File size error"),
+        "expected size-limit error, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn edit_file_rejects_more_than_max_edits() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-max-edits";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "line\n").expect("write sample file");
+
+    let edits: Vec<serde_json::Value> = (0..51).map(|_| json!({ "content": "x" })).collect();
+
+    let result = server
+        .handle_edit_file(json!({
+            "path": "sample.txt",
+            "edits": edits
+        }))
+        .await
+        .expect("editFile should return");
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "more than 50 edits should fail, got: {:?}",
+        result
+    );
+    let text = result_text(&result);
+    assert!(
+        text.contains("exceeds the maximum of 50"),
+        "expected max-edits error, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn edit_file_content_only_prepends_without_start_line() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-content-prepend";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "body\n").expect("write sample file");
+
+    let result = server
+        .handle_edit_file(json!({
+            "path": "sample.txt",
+            "edits": [{ "content": "header\n" }]
+        }))
+        .await
+        .expect("editFile should return");
+
+    assert!(
+        !result.is_error.unwrap_or(true),
+        "content-only prepend should succeed, got: {:?}",
+        result
+    );
+    assert_eq!(
+        std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read sample"),
+        "header\nbody\n"
     );
 }

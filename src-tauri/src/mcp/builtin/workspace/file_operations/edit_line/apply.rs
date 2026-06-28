@@ -1,7 +1,7 @@
 use super::super::super::WorkspaceServer;
 use super::super::utils::{
     compute_line_hash, format_hashline, format_prefix_hash, initial_prefix_hash_state,
-    parse_anchor, read_file_as_string, update_prefix_hash_state,
+    parse_anchor, update_prefix_hash_state,
 };
 use super::types::{EditAction, LineEdit, PreparedFileEdit};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
@@ -24,7 +24,8 @@ fn validate_edits_do_not_overlap(edits: &[LineEdit]) -> Result<(), MCPResult> {
                 ErrorCategory::InvalidInput,
                 format!(
                     "Conflicting edits: edit #{} and edit #{} both insert at the beginning of the file",
-                    idx_a, idx_b
+                    idx_a + 1,
+                    idx_b + 1
                 ),
                 ToolGroup::Workspace,
             )
@@ -39,7 +40,8 @@ fn validate_edits_do_not_overlap(edits: &[LineEdit]) -> Result<(), MCPResult> {
                 ErrorCategory::InvalidInput,
                 format!(
                     "Overlapping edits: edit #{} overlaps with edit #{}",
-                    idx_a, idx_b
+                    idx_a + 1,
+                    idx_b + 1
                 ),
                 ToolGroup::Workspace,
             )
@@ -129,6 +131,7 @@ fn build_new_hash_sections(edits: &[LineEdit], new_content: &str) -> Vec<String>
 
 fn validate_edit_anchors(
     path_str: &str,
+    edit_index: usize,
     edit: &LineEdit,
     line_count: usize,
     orig_lines: &[&str],
@@ -142,8 +145,11 @@ fn validate_edit_anchors(
         return Err(guided_error(
             ErrorCategory::InvalidInput,
             format!(
-                "File '{}': line {} does not exist (file has {} lines)",
-                path_str, edit.start_line, line_count
+                "File '{}': edit #{}: line {} does not exist (file has {} lines)",
+                path_str,
+                edit_index + 1,
+                edit.start_line,
+                line_count
             ),
             ToolGroup::Workspace,
         )
@@ -155,8 +161,11 @@ fn validate_edit_anchors(
         return Err(guided_error(
             ErrorCategory::InvalidInput,
             format!(
-                "File '{}': end line {} does not exist (file has {} lines)",
-                path_str, edit.end_line, line_count
+                "File '{}': edit #{}: end line {} does not exist (file has {} lines)",
+                path_str,
+                edit_index + 1,
+                edit.end_line,
+                line_count
             ),
             ToolGroup::Workspace,
         )
@@ -173,8 +182,10 @@ fn validate_edit_anchors(
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "File '{}': invalid anchor for line {}: expected 6-character hexadecimal code",
-                    path_str, edit.start_line
+                    "File '{}': edit #{}: invalid anchor for line {}: expected 6-character hexadecimal code",
+                    path_str,
+                    edit_index + 1,
+                    edit.start_line
                 ),
                 ToolGroup::Workspace,
             )
@@ -194,8 +205,11 @@ fn validate_edit_anchors(
         return Err(guided_error(
             ErrorCategory::InvalidInput,
             format!(
-                "File '{}': STALE ANCHOR on line {} (current line content changed)",
-                path_str, edit.start_line
+                "File '{}': edit #{}: STALE ANCHOR on line {} (current line content changed; anchor {:?})",
+                path_str,
+                edit_index + 1,
+                edit.start_line,
+                expected_anchor
             ),
             ToolGroup::Workspace,
         )
@@ -211,8 +225,11 @@ fn validate_edit_anchors(
         return Err(guided_error(
             ErrorCategory::InvalidInput,
             format!(
-                "File '{}': STALE ANCHOR on line {} (earlier content changed before this line)",
-                path_str, edit.start_line
+                "File '{}': edit #{}: STALE ANCHOR on line {} (earlier content changed before this line; anchor {:?})",
+                path_str,
+                edit_index + 1,
+                edit.start_line,
+                expected_anchor
             ),
             ToolGroup::Workspace,
         )
@@ -234,8 +251,10 @@ fn validate_edit_anchors(
                 return Err(guided_error(
                     ErrorCategory::InvalidInput,
                     format!(
-                        "File '{}': invalid endAnchor for line {}: expected 6-character hexadecimal code",
-                        path_str, edit.end_line
+                        "File '{}': edit #{}: invalid endAnchor for line {}: expected 6-character hexadecimal code",
+                        path_str,
+                        edit_index + 1,
+                        edit.end_line
                     ),
                     ToolGroup::Workspace,
                 )
@@ -254,8 +273,11 @@ fn validate_edit_anchors(
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "File '{}': STALE END ANCHOR on line {} (range boundary changed)",
-                    path_str, edit.end_line
+                    "File '{}': edit #{}: STALE END ANCHOR on line {} (range boundary changed; endAnchor {:?})",
+                    path_str,
+                    edit_index + 1,
+                    edit.end_line,
+                    expected_end_anchor
                 ),
                 ToolGroup::Workspace,
             )
@@ -271,8 +293,11 @@ fn validate_edit_anchors(
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "File '{}': STALE END ANCHOR on line {} (earlier content changed before range boundary)",
-                    path_str, edit.end_line
+                    "File '{}': edit #{}: STALE END ANCHOR on line {} (earlier content changed before range boundary; endAnchor {:?})",
+                    path_str,
+                    edit_index + 1,
+                    edit.end_line,
+                    expected_end_anchor
                 ),
                 ToolGroup::Workspace,
             )
@@ -295,23 +320,21 @@ pub(super) async fn prepare_file_edit_batch(
 ) -> Result<PreparedFileEdit, MCPResult> {
     validate_edits_do_not_overlap(&edits)?;
 
-    let safe_path = match server.validate_path_with_error_for_write(path_str, session_id) {
-        Ok(path) => path,
-        Err(error) => {
-            return Err(guided_error(
-                ErrorCategory::PermissionDenied,
-                format!("Path validation failed for '{}': {}", path_str, error),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Use a normal file path without '..' traversal segments".to_string(),
-                "Use listDirectory to inspect valid target paths".to_string(),
-            ])
-            .to_mcp_result());
-        }
-    };
+    if let Err(error) = server.validate_path_with_error_for_write(path_str, session_id.clone()) {
+        return Err(guided_error(
+            ErrorCategory::PermissionDenied,
+            format!("Path validation failed for '{}': {}", path_str, error),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Use a normal file path without '..' traversal segments".to_string(),
+            "Use listDirectory to inspect valid target paths".to_string(),
+        ])
+        .to_mcp_result());
+    }
 
-    let original_content = match read_file_as_string(&safe_path).await {
+    let file_manager = server.get_file_manager(session_id);
+    let original_content = match file_manager.read_file_as_string(path_str).await {
         Ok(content) => content,
         Err(error) => {
             return Err(
@@ -332,8 +355,15 @@ pub(super) async fn prepare_file_edit_batch(
         })
         .collect();
 
-    for edit in &edits {
-        validate_edit_anchors(path_str, edit, line_count, &orig_lines, &prefix_hashes)?;
+    for (edit_index, edit) in edits.iter().enumerate() {
+        validate_edit_anchors(
+            path_str,
+            edit_index,
+            edit,
+            line_count,
+            &orig_lines,
+            &prefix_hashes,
+        )?;
     }
 
     let modified_lines = apply_edits(&orig_lines, &edits);

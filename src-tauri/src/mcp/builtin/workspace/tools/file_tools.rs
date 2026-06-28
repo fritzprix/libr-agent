@@ -563,25 +563,110 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
     }
 }
 
-fn create_edit_item_schema() -> JSONSchema {
-    let start_line_desc = "Target start line number. Existing lines are 1-based. Use 0 only to prepend at the file top; to insert below an existing line, keep that line's 1-based number and set op='insert_after'.";
-    let end_line_desc =
-        "Inclusive end line for a multi-line replace/delete range. Omit for a single-line edit.";
+// Note: maximum file size is enforced at runtime (LIBRAGENT_MAX_FILE_SIZE).
+// The input schema cannot call runtime functions; therefore `content` has no hard cap here.
+
+/// Maximum number of edit operations allowed in a single editFile call.
+pub const EDIT_FILE_MAX_EDITS: u32 = 50;
+
+fn edit_anchor_props() -> HashMap<String, JSONSchema> {
     let start_anchor_desc =
         "6-character opaque anchor for the start line from readFile(showLineAnchors=true). Required for edits that touch an existing line. Do not include the line number or '|content'.";
     let end_anchor_desc =
         "6-character opaque anchor for the end line. Required when endLine is set for a multi-line replace/delete range.";
-    let content_desc =
-        "Replacement or inserted content. Omit it to delete. Existing lines stay 1-based; use startLine=0 only for prepend, or keep a 1-based existing line number with op='insert_after' to insert below it.";
 
     let mut props = HashMap::new();
     props.insert(
+        "anchor".to_string(),
+        string_prop(None, None, Some(start_anchor_desc)),
+    );
+    props.insert(
+        "startAnchor".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Alias for anchor. Prefer anchor for new edits."),
+        ),
+    );
+    props.insert(
+        "endAnchor".to_string(),
+        string_prop(None, None, Some(end_anchor_desc)),
+    );
+    props
+}
+
+fn create_prepend_edit_variant() -> JSONSchema {
+    let content_desc =
+        "Content to insert at the beginning of the file. startLine defaults to 0 when omitted.";
+
+    let mut props = edit_anchor_props();
+    props.insert(
+        "content".to_string(),
+        string_prop(Some(0), None, Some(content_desc)),
+    );
+    props.insert(
+        "startLine".to_string(),
+        integer_const_prop(
+            0,
+            Some("Must be 0 for prepend. Omit startLine to prepend with content only."),
+        ),
+    );
+
+    let mut schema = object_schema(props, vec!["content".to_string()]);
+    schema.description = Some(
+        "Prepend content at the top of the file. Provide content only, or content with startLine: 0. Do not include anchors."
+            .to_string(),
+    );
+    schema
+}
+
+fn create_line_edit_variant() -> JSONSchema {
+    let start_line_desc = "Target start line number (1-based). Use endLine only for multi-line replace/delete ranges.";
+    let end_line_desc =
+        "Inclusive end line for a multi-line replace/delete range. Omit for a single-line edit.";
+    let content_desc =
+        "Replacement content. Omit to delete the targeted line or range. The server infers replace vs delete from content presence when op is omitted.";
+
+    let mut props = edit_anchor_props();
+    props.insert(
+        "startLine".to_string(),
+        integer_prop(Some(1), None, Some(start_line_desc)),
+    );
+    props.insert(
+        "endLine".to_string(),
+        integer_prop(Some(1), None, Some(end_line_desc)),
+    );
+    props.insert(
+        "content".to_string(),
+        string_prop(None, None, Some(content_desc)),
+    );
+    props.insert(
         "op".to_string(),
         enum_prop_optional(
-            vec!["replace", "insert_after", "delete"],
-            Some(
-                "Optional operation hint. The server infers replace when content is present, delete when content is omitted, and top-of-file insert when startLine is 0. Use op='insert_after' for inserting below an existing line.",
-            ),
+            vec!["replace", "delete"],
+            Some("Optional hint for replace or delete. Omit to let the server infer from content."),
+        ),
+    );
+
+    let mut schema = object_schema(props, vec!["startLine".to_string()]);
+    schema.description = Some(
+        "Replace or delete existing lines. Requires startLine plus anchor for existing-line edits."
+            .to_string(),
+    );
+    schema
+}
+
+fn create_insert_after_edit_variant() -> JSONSchema {
+    let start_line_desc =
+        "Line number to insert after (1-based). Use 0 only to prepend at the file top.";
+    let content_desc = "Content to insert after the anchored line.";
+
+    let mut props = edit_anchor_props();
+    props.insert(
+        "op".to_string(),
+        string_const_prop(
+            "insert_after",
+            Some("Must be insert_after for this edit shape."),
         ),
     );
     props.insert(
@@ -589,27 +674,36 @@ fn create_edit_item_schema() -> JSONSchema {
         integer_prop(Some(0), None, Some(start_line_desc)),
     );
     props.insert(
-        "endLine".to_string(),
-        integer_prop(Some(1), None, Some(end_line_desc)),
-    );
-    props.insert(
-        "startAnchor".to_string(),
-        string_prop(None, None, Some(start_anchor_desc)),
-    );
-    props.insert(
-        "endAnchor".to_string(),
-        string_prop(None, None, Some(end_anchor_desc)),
-    );
-    props.insert(
         "content".to_string(),
-        string_prop(None, None, Some(content_desc)),
+        string_prop(Some(0), None, Some(content_desc)),
     );
 
-    let mut schema = object_schema(props, vec!["startLine".to_string()]);
+    let mut schema = object_schema(
+        props,
+        vec![
+            "op".to_string(),
+            "startLine".to_string(),
+            "content".to_string(),
+        ],
+    );
     schema.description = Some(
-        "A single edit operation. Provide startLine plus anchors for existing-line edits. Existing content uses 1-based line numbers; only startLine=0 prepends at the file top. op is optional for common replace/delete flows but still useful for insert_after.".to_string(),
+        "Insert content after an existing line (or prepend when startLine is 0). Requires anchor unless startLine is 0."
+            .to_string(),
     );
     schema
+}
+
+fn create_edit_item_schema() -> JSONSchema {
+    one_of_object_schema(
+        vec![
+            create_prepend_edit_variant(),
+            create_line_edit_variant(),
+            create_insert_after_edit_variant(),
+        ],
+        Some(
+            "A single edit operation. Choose the variant that matches the intent: prepend, replace/delete existing lines, or insert_after.",
+        ),
+    )
 }
 
 pub fn create_edit_file_input_schema() -> JSONSchema {
@@ -624,8 +718,9 @@ pub fn create_edit_file_input_schema() -> JSONSchema {
     );
     props.insert(
         "edits".to_string(),
-        array_schema(
+        array_schema_with_max_items(
             create_edit_item_schema(),
+            Some(EDIT_FILE_MAX_EDITS),
             Some("Ordered list of edit operations to apply atomically to one file. All edits are schema-validated and anchor-validated before any write. Edits must not overlap."),
         ),
     );
@@ -641,15 +736,12 @@ pub fn create_edit_file_tool() -> MCPTool {
 
 PREREQUISITE: Obtain anchors from a prior readFile(showLineAnchors=true), writeFile response, or previous editFile response. Anchored lines look like `42:a31f2c|...`; for anchors, pass only the 6-character code such as `a31f2c`, not `42:a31f2c`.
 
-Line numbering is 1-based for existing content. The only valid 0 value is startLine=0, which prepends at the file top.
+Edit shapes (one per array item):
+- Prepend: `{ \"content\": \"...\" }` or `{ \"startLine\": 0, \"content\": \"...\" }`
+- Replace/delete existing lines: `{ \"startLine\": N, \"anchor\": \"...\", \"content\": \"...\" }` (omit content to delete)
+- Insert after a line: `{ \"op\": \"insert_after\", \"startLine\": N, \"anchor\": \"...\", \"content\": \"...\" }`
 
-Keep the payload simple and let the server infer the common cases:
-- replace single line: startLine + startAnchor + content
-- replace range: startLine + startAnchor + endLine + endAnchor + content
-- delete single line: startLine + startAnchor
-- delete range: startLine + startAnchor + endLine + endAnchor
-- prepend at file top: startLine=0 + content
-- insert below an existing line: add op='insert_after' + startLine + startAnchor + content
+Line numbering is 1-based for existing content. The only valid 0 value is startLine=0, which prepends at the file top.
 
 All edits are validated before any write begins."
             .to_string(),
