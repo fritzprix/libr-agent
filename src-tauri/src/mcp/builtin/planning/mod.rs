@@ -88,7 +88,17 @@ impl BuiltinMCPServer for PlanningServer {
             "clearSession" => {
                 let repo = crate::state::get_planning_repository();
                 match repo.clear_session(&target_session_id).await {
-                    Ok(_) => Ok(MCPResult::success("✓ Session planning state cleared")),
+                    Ok(_) => {
+                        let hint = SuccessHint::new(
+                            "✓ Session planning state cleared",
+                            vec![
+                                "Use createGoal to set a new objective".to_string(),
+                                "Use addTodo to add tasks for this goal".to_string(),
+                                "Use getCurrentState to verify what is present".to_string(),
+                            ],
+                        );
+                        Ok(hint.to_mcp_result())
+                    }
                     Err(e) => Ok(errors::planning_write_error(
                         "clear the session planning state",
                         &e,

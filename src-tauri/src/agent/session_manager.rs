@@ -709,12 +709,6 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Clear the compact in-flight flag for a session.
-    pub async fn clear_compact_in_flight(&self, session_id: &str) {
-        crate::agent::compact_recovery::clear_compact_in_flight(&self.active_sessions, session_id)
-            .await;
-    }
-
     pub async fn reset_session(&self, session_id: &str) -> Result<(), String> {
         // 0. Cancel workflow if running
         {

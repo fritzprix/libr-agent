@@ -253,12 +253,13 @@ pub(super) fn parse_line_edit(
         }
     };
 
+    let action_name = match action {
+        EditAction::Replace => "replace",
+        EditAction::Delete => "delete",
+        EditAction::InsertAfter => "insert_after",
+    };
+
     if start_line == 0 && action != EditAction::InsertAfter {
-        let action_name = match action {
-            EditAction::Replace => "replace",
-            EditAction::Delete => "delete",
-            EditAction::InsertAfter => "insert_after",
-        };
         return Err(guided_error(
             ErrorCategory::InvalidInput,
             format!(
@@ -298,6 +299,27 @@ pub(super) fn parse_line_edit(
             }
         }
     };
+
+    // Reject unnecessary endLine/endAnchor for single-line replace/delete
+    if (action == EditAction::Replace || action == EditAction::Delete)
+        && end_line == start_line
+        && has_end_line
+    {
+        return Err(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "{edit_label}: 'endLine' must be omitted for single-line {} edits",
+                action_name
+            ),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "For single-line replace: {\"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"new text\"}".to_string(),
+            "For single-line delete: {\"startLine\": 10, \"startAnchor\": \"a31f2c\"}".to_string(),
+            "Use endLine only for multi-line ranges (endLine > startLine)".to_string(),
+        ])
+        .to_mcp_result());
+    }
 
     if action == EditAction::InsertAfter && has_end_line {
         return Err(guided_error(

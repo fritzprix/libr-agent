@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.22] - 2026-07-13
+
+### 🚀 Features
+
+- **Message Content-Based Deduplication**: User messages and assistant/tool messages are now deduplicated by content hash before injection, preventing duplicate entries in the conversation history.
+- **Compaction Transcript Export**: Pre-compaction transcripts are now exported and the relative path is appended to the compaction summary for better traceability.
+- **Claude Channel Hardening**: Strengthened Claude channel security with enhanced observability and stricter payload validation.
+
+### 🐛 Fixes
+
+- **Clippy Match Warning**: Resolve collapsible match warning in `md_export` MCP tool.
+- **Channel Payload Test**: Fix assertion failure in channel payload integration test.
+
+### 🔧 Internal
+
+- **Migration Command Modularization**: Split `migration_commands` into focused submodules (`crypto`, `export`, `import`, `inspect`, `models`, `reverify`) for better maintainability.
+- **readFile MCP Enhancement**: Add `offset` and `size` parameters to the readFile MCP tool for efficient partial file reading.
+
+## [0.8.21] - 2026-07-12
+
+### 🚀 Features
+
+- **Planning Duplicate Detection**: Goals and todos now detect duplicate entries with user-friendly nudges — goals use case-insensitive title matching, todos use truncated title matching. Duplicate attempts return guided error messages with actionable suggestions.
+
+### 🐛 Fixes
+
+- **Telegram Preset Hardening**: Add missing `ALLOWED_USER_ID` to Telegram preset and clear placeholder credentials for improved security.
+- **macOS CI Linker Failure**: Pin macOS runner to macos-15 and set `SDKROOT` to resolve `clang_rt.osx` linker errors.
+
+### 🎨 Polish
+
+- **Session Row Tooltip**: Add tooltip to the unbookmark button in the Bookmarked Session Row in the palette for better UX.
+
+### 🔧 Internal
+
+- **MCP Server Implementation Guide**: Add comprehensive guide for external MCP HTTP server implementation to help the server team build LibrAgent-compatible services.
+- **Sync Download Links**: Synchronize direct download links in README files and `Cargo.lock`.
+
 ## [0.8.20] - 2026-06-25
 
 ### 🚀 Features

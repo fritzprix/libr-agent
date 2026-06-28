@@ -145,8 +145,64 @@ fn format_channel_payload(
     )
 }
 
+/// Known HTML event-handler attribute names blocked when channel XML may render as HTML.
+const UNSAFE_HTML_EVENT_ATTRS: &[&str] = &[
+    "onclick",
+    "onerror",
+    "onload",
+    "onmouseover",
+    "onfocus",
+    "onblur",
+    "onchange",
+    "onsubmit",
+    "onreset",
+    "onselect",
+    "onkeydown",
+    "onkeypress",
+    "onkeyup",
+    "onabort",
+    "oncanplay",
+    "ontoggle",
+    "onanimationend",
+    "ontransitionend",
+    "onpointerdown",
+    "onpointerup",
+    "onpaste",
+    "oncut",
+    "oncopy",
+    "ondrag",
+    "ondrop",
+    "onscroll",
+    "onwheel",
+    "onresize",
+    "onbeforeunload",
+    "onhashchange",
+    "onmessage",
+    "onoffline",
+    "ononline",
+    "onpagehide",
+    "onpageshow",
+    "onpopstate",
+    "onstorage",
+    "onunload",
+];
+
+fn is_unsafe_html_event_attr(key: &str) -> bool {
+    UNSAFE_HTML_EVENT_ATTRS
+        .iter()
+        .any(|attr| key.eq_ignore_ascii_case(attr))
+}
+
 fn is_safe_channel_attribute_name(key: &str) -> bool {
-    if matches!(key, "source") {
+    if key.eq_ignore_ascii_case("source") {
+        return false;
+    }
+
+    if key.eq_ignore_ascii_case("style") {
+        return false;
+    }
+
+    if is_unsafe_html_event_attr(key) {
         return false;
     }
 

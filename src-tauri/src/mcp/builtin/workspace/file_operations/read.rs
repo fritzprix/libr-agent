@@ -28,6 +28,12 @@ struct ReadFileChunk {
     next_line_too_large: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ReadMode {
+    Range { start: usize, end: usize },
+    Tail(usize),
+}
+
 impl WorkspaceServer {
     pub async fn handle_read_file(
         &self,
@@ -81,6 +87,14 @@ impl WorkspaceServer {
             Ok(line) => line,
             Err(result) => return Ok(result),
         };
+        let offset_opt = match parse_offset_parameter(&args) {
+            Ok(off) => off,
+            Err(result) => return Ok(result),
+        };
+        let size_opt = match parse_size_parameter(&args) {
+            Ok(size) => size,
+            Err(result) => return Ok(result),
+        };
         let show_line_anchors = args
             .get("showLineAnchors")
             .and_then(|v| v.as_bool())
@@ -113,6 +127,23 @@ impl WorkspaceServer {
                         end, start
                     ),
                     "Or omit both parameters to read the entire file".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        }
+
+        if let Some(sz) = size_opt {
+            if sz == 0 {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "size must be non-zero",
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "To read a specific number of lines, specify a positive size (e.g. 50)"
+                        .to_string(),
+                    "To read the end of the file (tail mode), specify a negative size (e.g. -20)"
+                        .to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -186,6 +217,8 @@ impl WorkspaceServer {
             read_file_visible_content_limit_bytes(inline_limit_bytes, show_line_anchors);
         let chunk = read_file_lines_range(
             &safe_path,
+            offset_opt,
+            size_opt,
             start_line,
             end_line,
             show_line_anchors,
@@ -391,6 +424,68 @@ fn parse_line_parameter(args: &Value, field_name: &str) -> Result<Option<usize>,
     }
 }
 
+fn parse_offset_parameter(args: &Value) -> Result<Option<isize>, MCPResult> {
+    let Some(value) = args.get("offset") else {
+        return Ok(None);
+    };
+
+    match value {
+        Value::Null => Ok(None),
+        Value::Number(number) => match number.as_i64() {
+            Some(off) => Ok(Some(off as isize)),
+            None => Err(guided_error(
+                ErrorCategory::InvalidInput,
+                "offset must be an integer".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use an integer like {\"offset\": 10} or {\"offset\": -100}".to_string(),
+            ])
+            .to_mcp_result()),
+        },
+        _ => Err(guided_error(
+            ErrorCategory::InvalidInput,
+            "offset must be an integer",
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Use an integer like {\"offset\": 10} or {\"offset\": -100}".to_string(),
+        ])
+        .to_mcp_result()),
+    }
+}
+
+fn parse_size_parameter(args: &Value) -> Result<Option<isize>, MCPResult> {
+    let Some(value) = args.get("size") else {
+        return Ok(None);
+    };
+
+    match value {
+        Value::Null => Ok(None),
+        Value::Number(number) => match number.as_i64() {
+            Some(sz) => Ok(Some(sz as isize)),
+            None => Err(guided_error(
+                ErrorCategory::InvalidInput,
+                "size must be an integer".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use an integer like {\"size\": 50} or {\"size\": -20}".to_string(),
+            ])
+            .to_mcp_result()),
+        },
+        _ => Err(guided_error(
+            ErrorCategory::InvalidInput,
+            "size must be an integer",
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Use an integer like {\"size\": 50} or {\"size\": -20}".to_string(),
+        ])
+        .to_mcp_result()),
+    }
+}
+
 fn is_empty_file_out_of_range_error(message: &str) -> bool {
     message.starts_with(EMPTY_FILE_OUT_OF_RANGE_PREFIX)
 }
@@ -407,10 +502,87 @@ fn parse_start_line_exceeds_error(message: &str) -> Option<(usize, usize)> {
     Some((requested_line.parse().ok()?, total_lines.parse().ok()?))
 }
 
+fn resolve_range(
+    total_lines: usize,
+    offset_opt: Option<isize>,
+    size_opt: Option<isize>,
+    start_line_opt: Option<usize>,
+    end_line_opt: Option<usize>,
+) -> (usize, usize) {
+    match size_opt {
+        Some(sz) => {
+            if sz < 0 {
+                let count = sz.unsigned_abs();
+                match offset_opt {
+                    Some(off) => {
+                        if off < 0 {
+                            let skip = off.unsigned_abs();
+                            let end = total_lines.saturating_sub(skip);
+                            let start = end.saturating_sub(count) + 1;
+                            (start, end)
+                        } else {
+                            let end = off as usize;
+                            let start = end.saturating_sub(count) + 1;
+                            (start, end)
+                        }
+                    }
+                    None => {
+                        let end = total_lines;
+                        let start = end.saturating_sub(count) + 1;
+                        (start, end)
+                    }
+                }
+            } else {
+                let count = sz as usize;
+                match offset_opt {
+                    Some(off) => {
+                        if off < 0 {
+                            let skip = off.unsigned_abs();
+                            let start = total_lines.saturating_sub(skip) + 1;
+                            let end = start + count - 1;
+                            (start, end)
+                        } else {
+                            let start = if off == 0 { 1 } else { off as usize };
+                            let end = start + count - 1;
+                            (start, end)
+                        }
+                    }
+                    None => {
+                        let start = start_line_opt.unwrap_or(1);
+                        let end = start + count - 1;
+                        (start, end)
+                    }
+                }
+            }
+        }
+        None => match offset_opt {
+            Some(off) => {
+                if off < 0 {
+                    let skip = off.unsigned_abs();
+                    let start = total_lines.saturating_sub(skip) + 1;
+                    let end = total_lines;
+                    (start, end)
+                } else {
+                    let start = if off == 0 { 1 } else { off as usize };
+                    let end = end_line_opt.unwrap_or(usize::MAX);
+                    (start, end)
+                }
+            }
+            None => {
+                let start = start_line_opt.unwrap_or(1);
+                let end = end_line_opt.unwrap_or(usize::MAX);
+                (start, end)
+            }
+        },
+    }
+}
+
 async fn read_file_lines_range(
     path: &std::path::Path,
-    start_line: Option<usize>,
-    end_line: Option<usize>,
+    offset_opt: Option<isize>,
+    size_opt: Option<isize>,
+    start_line_opt: Option<usize>,
+    end_line_opt: Option<usize>,
     show_line_anchors: bool,
     visible_content_limit_bytes: usize,
 ) -> Result<ReadFileChunk, String> {
@@ -418,8 +590,6 @@ async fn read_file_lines_range(
 
     // ✅ ENHANCED: Use spawn_blocking for large files to prevent async runtime blocking
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let start = start_line.unwrap_or(1);
-    let end = end_line.unwrap_or(usize::MAX);
 
     if file_size > LARGE_FILE_THRESHOLD {
         // Offload to blocking thread for large files
@@ -428,6 +598,18 @@ async fn read_file_lines_range(
         let result = tokio::task::spawn_blocking(move || {
             // Blocking file I/O for CPU-intensive line enumeration
             use std::io::BufRead;
+            let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+            let reader = std::io::BufReader::new(file);
+            let total_lines = reader.lines().count();
+
+            let (start, end) = resolve_range(
+                total_lines,
+                offset_opt,
+                size_opt,
+                start_line_opt,
+                end_line_opt,
+            );
+
             let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
             let reader = std::io::BufReader::new(file);
             let chunk = read_chunk_from_lines(
@@ -465,6 +647,15 @@ async fn read_file_lines_range(
             }
         }
     }
+
+    let total_lines = collected_lines.len();
+    let (start, end) = resolve_range(
+        total_lines,
+        offset_opt,
+        size_opt,
+        start_line_opt,
+        end_line_opt,
+    );
 
     read_chunk_from_lines(
         collected_lines
@@ -723,5 +914,30 @@ mod tests {
         // Verify determinism: same content → same hash
         let result2 = format_lines_with_numbers(&lines, true);
         assert_eq!(result, result2);
+    }
+
+    #[test]
+    fn test_resolve_range_simple() {
+        // Range mode forward
+        assert_eq!(resolve_range(100, None, None, Some(10), Some(20)), (10, 20));
+        assert_eq!(resolve_range(100, Some(10), Some(5), None, None), (10, 14));
+        assert_eq!(resolve_range(100, Some(0), Some(5), None, None), (1, 5));
+
+        // Tail mode (size is negative)
+        assert_eq!(resolve_range(100, None, Some(-10), None, None), (91, 100));
+        assert_eq!(
+            resolve_range(100, Some(-5), Some(-10), None, None),
+            (86, 95)
+        );
+        assert_eq!(
+            resolve_range(100, Some(50), Some(-10), None, None),
+            (41, 50)
+        );
+
+        // Size positive, offset negative
+        assert_eq!(
+            resolve_range(100, Some(-5), Some(10), None, None),
+            (96, 105)
+        );
     }
 }

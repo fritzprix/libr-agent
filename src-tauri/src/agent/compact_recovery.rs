@@ -27,13 +27,6 @@ async fn clear_compaction_state(
         .await;
 }
 
-pub async fn clear_compact_in_flight(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-) {
-    clear_compaction_state(active_sessions, session_id, false).await;
-}
-
 pub async fn handle_compact_error_state(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,

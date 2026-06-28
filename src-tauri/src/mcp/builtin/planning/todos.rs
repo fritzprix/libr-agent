@@ -89,15 +89,41 @@ pub async fn add_todo(
         description.to_string()
     };
 
-    // 4. Insert todo (no parent, no duplicate check, no subtasks)
+    // 4. Reject duplicate todos (case-insensitive title match on content column)
     let repo = get_planning_repository();
+    match repo.check_todo_duplicate(session_id, &title).await {
+        Ok(true) => {
+            return Ok(guided_error(
+                ErrorCategory::DuplicateResource,
+                format!("Todo '{}' already exists", title),
+                ToolGroup::Planning,
+            )
+            .with_guidance(vec![
+                "Use updateTodo(todoId=..., description='...') to modify the existing todo"
+                    .to_string(),
+                "Use getCurrentState to see existing todos and their IDs".to_string(),
+                "Use a different description if this is a separate task".to_string(),
+            ])
+            .to_mcp_result());
+        }
+        Ok(false) => {}
+        Err(e) => {
+            return Ok(planning_read_error(
+                "check for duplicate todos",
+                &e,
+                vec!["Try again".to_string()],
+            ));
+        }
+    }
+
+    // 5. Insert todo
     match repo
         .add_todo(session_id, &title, Some(description.to_string()), priority)
         .await
     {
         Ok(id) => {
             let mut next_hints = vec![format!(
-                "Use updateTodo(todoId={}, action='done') to mark as done",
+                "Use updateTodo(id={}, action='done') to mark as done",
                 id
             )];
             let summary_text = match repo.get_planning_summary(session_id).await {
@@ -140,10 +166,10 @@ pub async fn check_todo(
     args: Value,
     checked: bool,
 ) -> Result<MCPResult, String> {
-    // 1. Extract required parameters (todoId only)
-    let todo_id = match args.get("todoId").and_then(|v| v.as_i64()) {
+    // 1. Extract required parameter (single id only)
+    let todo_id = match args.get("id").and_then(|v| v.as_i64()) {
         Some(i) => i,
-        None => return Ok(missing_param_error("todoId", ToolGroup::Planning)),
+        None => return Ok(missing_param_error("id", ToolGroup::Planning)),
     };
 
     let summary = args
@@ -152,10 +178,7 @@ pub async fn check_todo(
         .map(|s| s.to_string());
 
     if todo_id <= 0 {
-        return Ok(invalid_input_error(
-            "todoId must be > 0",
-            ToolGroup::Planning,
-        ));
+        return Ok(invalid_input_error("id must be > 0", ToolGroup::Planning));
     }
 
     // 2. Fetch todo by ID and verify it belongs to the active session
@@ -165,12 +188,12 @@ pub async fn check_todo(
         Ok(Some(_)) | Ok(None) => {
             return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
-                format!("No todo found with todoId {}", todo_id),
+                format!("No todo found with ID {}", todo_id),
                 ToolGroup::Planning,
             )
             .with_guidance(vec![
-                "Use getCurrentState to see current todos and their todo IDs".to_string(),
-                "Copy the todoId exactly from the Planning service context or getCurrentState output"
+                "Use getCurrentState to see current todos and their IDs".to_string(),
+                "Copy the ID exactly from the Planning service context or getCurrentState output"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -241,7 +264,7 @@ pub async fn check_todo(
         }
     } else {
         vec![format!(
-            "Use updateTodo(todoId={}, action='done') to mark as done when completed",
+            "Use updateTodo(id={}, action='done') to mark as done when completed",
             todo_id
         )]
     };
@@ -273,17 +296,14 @@ pub async fn cancel_todo(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    // 1. Extract required parameter (single todoId only)
-    let todo_id = match args.get("todoId").and_then(|v| v.as_i64()) {
+    // 1. Extract required parameter (single id only)
+    let todo_id = match args.get("id").and_then(|v| v.as_i64()) {
         Some(i) => i,
-        None => return Ok(missing_param_error("todoId", ToolGroup::Planning)),
+        None => return Ok(missing_param_error("id", ToolGroup::Planning)),
     };
 
     if todo_id <= 0 {
-        return Ok(invalid_input_error(
-            "todoId must be > 0",
-            ToolGroup::Planning,
-        ));
+        return Ok(invalid_input_error("id must be > 0", ToolGroup::Planning));
     }
 
     // 2. Fetch todo by ID and verify it belongs to the active session
@@ -293,12 +313,12 @@ pub async fn cancel_todo(
         Ok(Some(_)) | Ok(None) => {
             return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
-                format!("No todo found with todoId {}", todo_id),
+                format!("No todo found with ID {}", todo_id),
                 ToolGroup::Planning,
             )
             .with_guidance(vec![
-                "Use getCurrentState to see current todos and their todo IDs".to_string(),
-                "Copy the todoId exactly from the Planning service context or getCurrentState output"
+                "Use getCurrentState to see current todos and their IDs".to_string(),
+                "Copy the ID exactly from the Planning service context or getCurrentState output"
                     .to_string(),
             ])
             .to_mcp_result());

@@ -54,11 +54,11 @@ pub fn spawn_session_channel_dispatch_task(
                     let approved = match parse_channel_permission_behavior(&verdict.behavior) {
                         Ok(approved) => approved,
                         Err(error) => {
-                            error!(
-                                "Invalid channel permission verdict from '{}': {}",
+                            warn!(
+                                "Invalid channel permission verdict from '{}' (defaulting to deny): {}",
                                 server_name, error
                             );
-                            continue;
+                            false
                         }
                     };
 

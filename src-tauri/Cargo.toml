@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.8.20"
+version = "0.8.22"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -25,7 +25,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 agent-response-guards = { path = "agent-response-guards" }
-tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+tauri = { version = "2", features = ["tray-icon", "protocol-asset", "test"] }
 tauri-plugin-opener = "2"
 
 serde = { version = "1", features = ["derive"] }
