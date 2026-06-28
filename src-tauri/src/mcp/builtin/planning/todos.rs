@@ -123,7 +123,7 @@ pub async fn add_todo(
     {
         Ok(id) => {
             let mut next_hints = vec![format!(
-                "Use updateTodo(todoId={}, action='done') to mark as done",
+                "Use updateTodo(id={}, action='done') to mark as done",
                 id
             )];
             let summary_text = match repo.get_planning_summary(session_id).await {
@@ -166,10 +166,14 @@ pub async fn check_todo(
     args: Value,
     checked: bool,
 ) -> Result<MCPResult, String> {
-    // 1. Extract required parameters (todoId only)
-    let todo_id = match args.get("todoId").and_then(|v| v.as_i64()) {
+    // 1. Extract required parameters (id or todoId)
+    let todo_id = match args
+        .get("id")
+        .or_else(|| args.get("todoId"))
+        .and_then(|v| v.as_i64())
+    {
         Some(i) => i,
-        None => return Ok(missing_param_error("todoId", ToolGroup::Planning)),
+        None => return Ok(missing_param_error("id", ToolGroup::Planning)),
     };
 
     let summary = args
@@ -178,10 +182,7 @@ pub async fn check_todo(
         .map(|s| s.to_string());
 
     if todo_id <= 0 {
-        return Ok(invalid_input_error(
-            "todoId must be > 0",
-            ToolGroup::Planning,
-        ));
+        return Ok(invalid_input_error("id must be > 0", ToolGroup::Planning));
     }
 
     // 2. Fetch todo by ID and verify it belongs to the active session
@@ -191,12 +192,12 @@ pub async fn check_todo(
         Ok(Some(_)) | Ok(None) => {
             return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
-                format!("No todo found with todoId {}", todo_id),
+                format!("No todo found with ID {}", todo_id),
                 ToolGroup::Planning,
             )
             .with_guidance(vec![
-                "Use getCurrentState to see current todos and their todo IDs".to_string(),
-                "Copy the todoId exactly from the Planning service context or getCurrentState output"
+                "Use getCurrentState to see current todos and their IDs".to_string(),
+                "Copy the ID exactly from the Planning service context or getCurrentState output"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -267,7 +268,7 @@ pub async fn check_todo(
         }
     } else {
         vec![format!(
-            "Use updateTodo(todoId={}, action='done') to mark as done when completed",
+            "Use updateTodo(id={}, action='done') to mark as done when completed",
             todo_id
         )]
     };
@@ -299,17 +300,18 @@ pub async fn cancel_todo(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    // 1. Extract required parameter (single todoId only)
-    let todo_id = match args.get("todoId").and_then(|v| v.as_i64()) {
+    // 1. Extract required parameter (single id or todoId)
+    let todo_id = match args
+        .get("id")
+        .or_else(|| args.get("todoId"))
+        .and_then(|v| v.as_i64())
+    {
         Some(i) => i,
-        None => return Ok(missing_param_error("todoId", ToolGroup::Planning)),
+        None => return Ok(missing_param_error("id", ToolGroup::Planning)),
     };
 
     if todo_id <= 0 {
-        return Ok(invalid_input_error(
-            "todoId must be > 0",
-            ToolGroup::Planning,
-        ));
+        return Ok(invalid_input_error("id must be > 0", ToolGroup::Planning));
     }
 
     // 2. Fetch todo by ID and verify it belongs to the active session
@@ -319,12 +321,12 @@ pub async fn cancel_todo(
         Ok(Some(_)) | Ok(None) => {
             return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
-                format!("No todo found with todoId {}", todo_id),
+                format!("No todo found with ID {}", todo_id),
                 ToolGroup::Planning,
             )
             .with_guidance(vec![
-                "Use getCurrentState to see current todos and their todo IDs".to_string(),
-                "Copy the todoId exactly from the Planning service context or getCurrentState output"
+                "Use getCurrentState to see current todos and their IDs".to_string(),
+                "Copy the ID exactly from the Planning service context or getCurrentState output"
                     .to_string(),
             ])
             .to_mcp_result());

@@ -157,7 +157,7 @@ fn update_todo_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 (
-                    "todoId".to_string(),
+                    "id".to_string(),
                     integer_prop(
                         None,
                         None,
@@ -181,7 +181,7 @@ fn update_todo_tool() -> MCPTool {
                     ),
                 ),
             ],
-            vec!["todoId".to_string()],
+            vec!["id".to_string()],
             None,
         ),
         output_schema: None,

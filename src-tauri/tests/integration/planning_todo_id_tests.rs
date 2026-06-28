@@ -38,9 +38,7 @@ fn update_todo_schema_leaves_todo_id_unbounded() {
         other => panic!("expected object schema, got {other:?}"),
     };
 
-    let todo_id_schema = properties
-        .get("todoId")
-        .expect("updateTodo should expose todoId");
+    let todo_id_schema = properties.get("id").expect("updateTodo should expose id");
 
     match &todo_id_schema.schema_type {
         JSONSchemaType::Integer {
@@ -91,20 +89,37 @@ async fn planning_context_and_update_todo_use_todo_ids() {
     assert!(!service_context.context_prompt.contains("| Todo ID |"));
     assert!(!service_context.context_prompt.contains("Use 'todoId'"));
 
+    // Test with new 'id' parameter
     let update_result = server
         .call_tool(
             "updateTodo",
             json!({
-                "todoId": todo_id,
+                "id": todo_id,
                 "action": "done"
             }),
             None,
         )
         .await
-        .expect("updateTodo should succeed with todoId");
+        .expect("updateTodo should succeed with id");
 
     let update_text = extract_text(&update_result);
     assert!(update_text.contains(&format!("Todo #{} marked completed", todo_id)));
+
+    // Test fallback to 'todoId' parameter (by reopening the todo)
+    let update_fallback_result = server
+        .call_tool(
+            "updateTodo",
+            json!({
+                "todoId": todo_id,
+                "action": "pending"
+            }),
+            None,
+        )
+        .await
+        .expect("updateTodo should succeed with fallback todoId");
+
+    let update_fallback_text = extract_text(&update_fallback_result);
+    assert!(update_fallback_text.contains(&format!("Todo #{} marked reopened", todo_id)));
 
     let legacy_result = server
         .call_tool(
@@ -119,5 +134,5 @@ async fn planning_context_and_update_todo_use_todo_ids() {
         .expect("legacy updateTodo call should return a guided error");
 
     let legacy_text = extract_text(&legacy_result);
-    assert!(legacy_text.contains("Missing required parameter: 'todoId'"));
+    assert!(legacy_text.contains("Missing required parameter: 'id'"));
 }

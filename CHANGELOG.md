@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 
 - **Migration Command Modularization**: Split `migration_commands` into focused submodules (`crypto`, `export`, `import`, `inspect`, `models`, `reverify`) for better maintainability.
 - **readFile MCP Enhancement**: Add `offset` and `size` parameters to the readFile MCP tool for efficient partial file reading.
+
 ## [0.8.21] - 2026-07-12
 
 ### 🚀 Features
