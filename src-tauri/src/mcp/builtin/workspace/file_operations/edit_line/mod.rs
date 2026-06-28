@@ -1,3 +1,4 @@
+use super::super::tools::file_tools::EDIT_FILE_MAX_EDITS;
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
@@ -262,10 +263,10 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Replace: {\"path\": \"src/a.ts\", \"edits\": [{\"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
-                "Insert top: {\"path\": \"src/a.ts\", \"edits\": [{\"startLine\": 0, \"content\": \"header\"}]}".to_string(),
-                "Insert below a line: {\"path\": \"src/a.ts\", \"edits\": [{\"op\": \"insert_after\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
-                "Delete range: {\"path\": \"src/b.ts\", \"edits\": [{\"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]}".to_string(),
+                "Replace: {\"path\": \"src/a.ts\", \"edits\": [{\"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
+                "Prepend: {\"path\": \"src/a.ts\", \"edits\": [{\"content\": \"header\"}]}".to_string(),
+                "Insert below a line: {\"path\": \"src/a.ts\", \"edits\": [{\"op\": \"insert_after\", \"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
+                "Delete range: {\"path\": \"src/b.ts\", \"edits\": [{\"startLine\": 10, \"endLine\": 15, \"anchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]}".to_string(),
                 "Existing lines are 1-based; use startLine=0 only to prepend at the top".to_string(),
                 "Use readFile(showLineAnchors=true) first to get anchor values".to_string(),
             ])
@@ -308,6 +309,22 @@ impl WorkspaceServer {
             }
         };
 
+        if edits_array.len() > EDIT_FILE_MAX_EDITS as usize {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Parameter 'edits' exceeds the maximum of {EDIT_FILE_MAX_EDITS} operations per call (got {})",
+                    edits_array.len()
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                format!("Split the work into multiple editFile calls with at most {EDIT_FILE_MAX_EDITS} edits each"),
+                "Combine adjacent line replacements into a single range edit when possible".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         if let Err(result) = validate_edit_target_path(self, &path, session_id.clone()) {
             return Ok(result);
         }
@@ -323,8 +340,8 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Single-line: {\"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
-                        "Range: {\"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}".to_string(),
+                        "Single-line: {\"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
+                        "Range: {\"startLine\": 10, \"endLine\": 15, \"anchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}".to_string(),
                     ])
                     .to_mcp_result());
                 }

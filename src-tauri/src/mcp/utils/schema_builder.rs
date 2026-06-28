@@ -140,13 +140,22 @@ pub fn object_schema(properties: HashMap<String, JSONSchema>, required: Vec<Stri
     }
 }
 
-/// Creates an array schema with item type
+/// Creates an array schema with item type and optional max length.
 pub fn array_schema(items: JSONSchema, description: Option<&str>) -> JSONSchema {
+    array_schema_with_max_items(items, None, description)
+}
+
+/// Creates an array schema with item type and an optional `maxItems` constraint.
+pub fn array_schema_with_max_items(
+    items: JSONSchema,
+    max_items: Option<u32>,
+    description: Option<&str>,
+) -> JSONSchema {
     JSONSchema {
         schema_type: JSONSchemaType::Array {
             items: Some(Box::new(items)),
             min_items: None,
-            max_items: None,
+            max_items,
             unique_items: None,
         },
         title: None,
