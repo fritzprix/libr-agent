@@ -166,12 +166,8 @@ pub async fn check_todo(
     args: Value,
     checked: bool,
 ) -> Result<MCPResult, String> {
-    // 1. Extract required parameters (id or todoId)
-    let todo_id = match args
-        .get("id")
-        .or_else(|| args.get("todoId"))
-        .and_then(|v| v.as_i64())
-    {
+    // 1. Extract required parameter (single id only)
+    let todo_id = match args.get("id").and_then(|v| v.as_i64()) {
         Some(i) => i,
         None => return Ok(missing_param_error("id", ToolGroup::Planning)),
     };
@@ -300,12 +296,8 @@ pub async fn cancel_todo(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    // 1. Extract required parameter (single id or todoId)
-    let todo_id = match args
-        .get("id")
-        .or_else(|| args.get("todoId"))
-        .and_then(|v| v.as_i64())
-    {
+    // 1. Extract required parameter (single id only)
+    let todo_id = match args.get("id").and_then(|v| v.as_i64()) {
         Some(i) => i,
         None => return Ok(missing_param_error("id", ToolGroup::Planning)),
     };

@@ -105,7 +105,7 @@ async fn planning_context_and_update_todo_use_todo_ids() {
     let update_text = extract_text(&update_result);
     assert!(update_text.contains(&format!("Todo #{} marked completed", todo_id)));
 
-    // Test fallback to 'todoId' parameter (by reopening the todo)
+    // Test that using 'todoId' instead of 'id' now fails (since fallback was removed for strictness)
     let update_fallback_result = server
         .call_tool(
             "updateTodo",
@@ -116,10 +116,10 @@ async fn planning_context_and_update_todo_use_todo_ids() {
             None,
         )
         .await
-        .expect("updateTodo should succeed with fallback todoId");
+        .expect("updateTodo call should complete");
 
     let update_fallback_text = extract_text(&update_fallback_result);
-    assert!(update_fallback_text.contains(&format!("Todo #{} marked reopened", todo_id)));
+    assert!(update_fallback_text.contains("Missing required parameter: 'id'"));
 
     let legacy_result = server
         .call_tool(
