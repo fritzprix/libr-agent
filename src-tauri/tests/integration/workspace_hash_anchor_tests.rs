@@ -1098,10 +1098,13 @@ async fn edit_file_rejects_oversized_target_file() {
     std::fs::write(workspace_dir.join("large.txt"), "01234567890123456789").expect("write file");
 
     let result = server
-        .handle_edit_file(json!({
-            "path": "large.txt",
-            "edits": [{ "content": "x" }]
-        }))
+        .handle_edit_file(
+            json!({
+                "path": "large.txt",
+                "edits": [{ "content": "x" }]
+            }),
+            Some(session_id.to_string()),
+        )
         .await
         .expect("editFile should return");
 
@@ -1110,7 +1113,7 @@ async fn edit_file_rejects_oversized_target_file() {
         "oversized file should fail, got: {:?}",
         result
     );
-    let text = result_text(&result);
+    let text = extract_text_content(&result);
     assert!(
         text.contains("exceeds the maximum allowed size") || text.contains("File size error"),
         "expected size-limit error, got: {text}"
@@ -1129,10 +1132,13 @@ async fn edit_file_rejects_more_than_max_edits() {
     let edits: Vec<serde_json::Value> = (0..51).map(|_| json!({ "content": "x" })).collect();
 
     let result = server
-        .handle_edit_file(json!({
-            "path": "sample.txt",
-            "edits": edits
-        }))
+        .handle_edit_file(
+            json!({
+                "path": "sample.txt",
+                "edits": edits
+            }),
+            Some(session_id.to_string()),
+        )
         .await
         .expect("editFile should return");
 
@@ -1141,7 +1147,7 @@ async fn edit_file_rejects_more_than_max_edits() {
         "more than 50 edits should fail, got: {:?}",
         result
     );
-    let text = result_text(&result);
+    let text = extract_text_content(&result);
     assert!(
         text.contains("exceeds the maximum of 50"),
         "expected max-edits error, got: {text}"
@@ -1158,10 +1164,13 @@ async fn edit_file_content_only_prepends_without_start_line() {
     std::fs::write(workspace_dir.join("sample.txt"), "body\n").expect("write sample file");
 
     let result = server
-        .handle_edit_file(json!({
-            "path": "sample.txt",
-            "edits": [{ "content": "header\n" }]
-        }))
+        .handle_edit_file(
+            json!({
+                "path": "sample.txt",
+                "edits": [{ "content": "header\n" }]
+            }),
+            Some(session_id.to_string()),
+        )
         .await
         .expect("editFile should return");
 
