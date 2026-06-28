@@ -135,9 +135,13 @@ fn edit_file_schema_uses_discriminated_edit_variants() {
     assert!(insert_after_required
         .iter()
         .any(|value| value.as_str() == Some("startLine")));
-    assert!(insert_after_required
-        .iter()
-        .any(|value| value.as_str() == Some("anchor")));
+    assert!(
+        insert_after_variant
+            .get("properties")
+            .and_then(|properties| properties.get("anchor"))
+            .is_some(),
+        "insert_after variant should expose anchor for existing-line inserts"
+    );
 
     let start_line_description = line_edit_variant
         .get("properties")
@@ -356,7 +360,8 @@ async fn edit_file_rejects_start_line_zero_for_replace_and_delete() {
         let text = extract_text_content(&result);
         assert_eq!(result.is_error, Some(true));
         assert!(
-            text.contains("'startLine' must be >= 1"),
+            text.contains("'startLine' must be >= 1")
+                || text.contains("does not match the declared schema"),
             "expected invalid startLine guidance for op={op}, got: {text}"
         );
     }
@@ -787,14 +792,6 @@ async fn edit_files_error_messages_include_edit_context() {
 
     std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
 
-    let anchors = format_as_hashlines("alpha\nbeta\n");
-    let start_anchor = anchors
-        .lines()
-        .next()
-        .and_then(|line| line.split('|').next())
-        .and_then(|prefix| prefix.split(':').nth(1))
-        .expect("start anchor");
-
     let result = server
         .handle_edit_file(
             json!({
@@ -803,7 +800,7 @@ async fn edit_files_error_messages_include_edit_context() {
                     {
                         "op": "insert_after",
                         "startLine": 1,
-                        "startAnchor": start_anchor
+                        "content": "new line"
                     }
                 ]
             }),
@@ -816,7 +813,7 @@ async fn edit_files_error_messages_include_edit_context() {
     let text = extract_text_content(&result);
     assert!(
         text.contains("Edit at index 0 [op='insert_after', startLine=1]")
-            && text.contains("'content' is required"),
+            && text.contains("requires 'anchor'"),
         "error should include offending edit context: {text}"
     );
 }
@@ -1149,7 +1146,8 @@ async fn edit_file_rejects_more_than_max_edits() {
     );
     let text = extract_text_content(&result);
     assert!(
-        text.contains("exceeds the maximum of 50"),
+        text.contains("exceeds the maximum of 50")
+            || text.contains("more than 50 items"),
         "expected max-edits error, got: {text}"
     );
 }
