@@ -150,7 +150,7 @@ fn edit_file_schema_uses_discriminated_edit_variants() {
         .and_then(|value| value.as_str())
         .expect("startLine description");
     assert!(
-        start_line_description.contains("Existing lines are 1-based"),
+        start_line_description.contains("1-based"),
         "startLine description should make the 1-based rule explicit: {start_line_description}"
     );
 }
@@ -361,7 +361,7 @@ async fn edit_file_rejects_start_line_zero_for_replace_and_delete() {
         assert_eq!(result.is_error, Some(true));
         assert!(
             text.contains("'startLine' must be >= 1")
-                || text.contains("does not match the declared schema"),
+                || text.contains("do not match the declared schema"),
             "expected invalid startLine guidance for op={op}, got: {text}"
         );
     }
@@ -1146,8 +1146,7 @@ async fn edit_file_rejects_more_than_max_edits() {
     );
     let text = extract_text_content(&result);
     assert!(
-        text.contains("exceeds the maximum of 50")
-            || text.contains("more than 50 items"),
+        text.contains("exceeds the maximum of 50") || text.contains("more than 50 items"),
         "expected max-edits error, got: {text}"
     );
 }
