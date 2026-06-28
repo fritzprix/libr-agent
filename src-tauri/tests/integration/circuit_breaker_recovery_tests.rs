@@ -61,7 +61,7 @@ fn evaluate(
 }
 
 #[test]
-fn natural_recovery_prefers_repeated_identical_error_before_hard_break() {
+fn hard_break_on_identical_error_threshold() {
     let repeated_args = r#"{"path":"src/main.ts"}"#;
     let repeated_error = "Error: file not found";
     let current_call = test_tool_call("tc-3", "workspace__readFile", repeated_args);
@@ -114,7 +114,7 @@ fn natural_recovery_prefers_repeated_identical_error_before_hard_break() {
 
     assert_eq!(
         evaluate(&messages, &current_call, 3),
-        Some(CircuitBreakerAction::NaturalRecoveryError {
+        Some(CircuitBreakerAction::HardBreak {
             count: 3,
             tool_name: "workspace__readFile".to_string(),
             args: repeated_args.to_string(),
@@ -260,7 +260,7 @@ fn different_args_failures_do_not_skip_straight_to_hard_break() {
 }
 
 #[test]
-fn natural_recovery_prefers_repeated_identical_success_before_hard_break() {
+fn hard_break_on_identical_success_threshold() {
     let repeated_args = r#"{"path":"src/main.ts"}"#;
     let repeated_success = "src/main.ts contents";
     let current_call = test_tool_call("tc-3", "workspace__readFile", repeated_args);
@@ -313,7 +313,7 @@ fn natural_recovery_prefers_repeated_identical_success_before_hard_break() {
 
     assert_eq!(
         evaluate(&messages, &current_call, 3),
-        Some(CircuitBreakerAction::NaturalRecoverySuccess {
+        Some(CircuitBreakerAction::HardBreak {
             count: 3,
             tool_name: "workspace__readFile".to_string(),
             args: repeated_args.to_string(),

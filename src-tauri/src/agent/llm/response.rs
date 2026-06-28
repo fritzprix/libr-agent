@@ -299,6 +299,34 @@ pub async fn handle_llm_response(
         .await?;
     }
 
+    // [Message Loop Check] Drop and resubmit immediately if repetitive loop is detected
+    if let Some(loop_action) = check_and_handle_message_loop(
+        session_repo,
+        active_sessions,
+        app_handle,
+        &session_id,
+        &assistant_message,
+    )
+    .await?
+    {
+        match loop_action {
+            AssistantMessageLoopAction::Resubmitted => {
+                crate::agent::llm::completion::request_llm_completion_with_recovery(
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                    session_id.to_string(),
+                )
+                .await?;
+                return Ok(());
+            }
+            AssistantMessageLoopAction::Aborted => {
+                return Ok(());
+            }
+        }
+    }
+
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
     response_circuit_breaker::preprocess_assistant_tool_calls(
         active_sessions,
@@ -608,4 +636,287 @@ pub async fn finalize_workflow_error_with_dispatcher(
         error: error.clone(),
     };
     dispatcher.emit_agent_event(event)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssistantMessageLoopAction {
+    Resubmitted,
+    Aborted,
+}
+
+async fn check_and_handle_message_loop(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    assistant_message: &Message,
+) -> Result<Option<AssistantMessageLoopAction>, String> {
+    let current_sig = crate::services::message_service::message_signature(assistant_message);
+    let Some(current_sig) = current_sig else {
+        return Ok(None);
+    };
+
+    let is_duplicate = {
+        let sessions = active_sessions.read().await;
+        let Some(session) = sessions.get(session_id) else {
+            return Ok(None);
+        };
+
+        let messages = session.messages.read().await;
+        let mut duplicate = false;
+
+        // Compare with the last 5 messages from the assistant in the sliding window
+        for msg in messages
+            .iter()
+            .rev()
+            .filter(|m| m.role == "assistant")
+            .take(5)
+        {
+            if let Some(sig) = crate::services::message_service::message_signature(msg) {
+                if sig == current_sig {
+                    duplicate = true;
+                    break;
+                }
+            }
+        }
+        duplicate
+    };
+
+    if is_duplicate {
+        let (retry_count, max_retries) = {
+            let sessions = active_sessions.read().await;
+            let Some(session) = sessions.get(session_id) else {
+                return Ok(None);
+            };
+            let count = *session.repeated_text_loop_retry_count.read().await;
+            let threshold =
+                crate::agent::llm::circuit_breaker::load_loop_prevention_threshold().await;
+            (count as usize, threshold)
+        };
+
+        if retry_count >= max_retries {
+            log::error!(
+                "Repetitive loop detected and exceeded max retries ({}/{}) for session {}. Aborting workflow.",
+                retry_count, max_retries, session_id
+            );
+
+            {
+                let sessions = active_sessions.read().await;
+                if let Some(session) = sessions.get(session_id) {
+                    *session.repeated_text_loop_retry_count.write().await = 0;
+                }
+            }
+
+            let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+            finalize_workflow_error_with_dispatcher(
+                session_repo,
+                active_sessions,
+                &dispatcher,
+                session_id.to_string(),
+                AgentRuntimeError::new(
+                    AgentRuntimeErrorType::AiServiceError,
+                    "The agent got stuck in a repetitive response loop and was stopped to prevent infinite execution. Please refine your instruction.",
+                )
+                .with_code("REPETITIVE_LOOP_DETECTED"),
+            )
+            .await?;
+
+            return Ok(Some(AssistantMessageLoopAction::Aborted));
+        } else {
+            {
+                let sessions = active_sessions.read().await;
+                if let Some(session) = sessions.get(session_id) {
+                    *session.repeated_text_loop_retry_count.write().await =
+                        (retry_count + 1) as u32;
+                }
+            }
+
+            log::warn!(
+                "Detected duplicate assistant message in session {}. Dropping response and triggering resubmit ({}/{})...",
+                session_id, retry_count + 1, max_retries
+            );
+
+            return Ok(Some(AssistantMessageLoopAction::Resubmitted));
+        }
+    }
+
+    {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            *session.repeated_text_loop_retry_count.write().await = 0;
+        }
+    }
+
+    Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::state::AgentSession;
+    use crate::mcp::types::MCPContent;
+    use crate::repositories::session_repository::MockSessionRepository;
+    use crate::repositories::SessionMetadata;
+    use std::sync::atomic::AtomicBool;
+    use tauri::test::MockRuntime;
+    use tauri_mcp_agent_lib_derive::AgentEventDispatcher;
+    use tokio_util::sync::CancellationToken;
+
+    fn build_test_session_metadata(session_id: &str) -> SessionMetadata {
+        SessionMetadata {
+            id: session_id.to_string(),
+            name: Some("test-session".to_string()),
+            status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
+            assistant_id: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
+            created_at: 0,
+            updated_at: 0,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
+            is_bookmarked: false,
+            execution_mode: crate::agent::ExecutionMode::Normal,
+            workspace_override: None,
+        }
+    }
+
+    fn build_test_agent_session(session_id: &str, messages: Vec<Message>) -> AgentSession {
+        AgentSession {
+            metadata: build_test_session_metadata(session_id),
+            is_running: false,
+            active_permit: None,
+            status_transition: Arc::new(RwLock::new(None)),
+            transition_lock: Arc::new(tokio::sync::Mutex::new(())),
+            cancellation_token: CancellationToken::new(),
+            yolo_mode: Arc::new(AtomicBool::new(false)),
+            unsafe_mode: Arc::new(AtomicBool::new(false)),
+            cancel_pending: Arc::new(AtomicBool::new(false)),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(messages)),
+            cache_initialized: Arc::new(AtomicBool::new(true)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+            repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
+            repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+            pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
+            pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+            context_registry: Arc::new(crate::agent::context::registry::ContextRegistry::new()),
+            compact_context: Arc::new(RwLock::new(None)),
+            compaction: crate::agent::state::CompactionRuntimeState::new(),
+            expected_response_id: Arc::new(RwLock::new(None)),
+            cached_stable_prompt: Arc::new(RwLock::new(None)),
+            last_completion_request: Arc::new(RwLock::new(None)),
+            last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    fn build_assistant_message(id: &str, text: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            session_id: "test-session".to_string(),
+            role: "assistant".to_string(),
+            content: vec![MCPContent::Text {
+                text: text.to_string(),
+                is_error: None,
+            }],
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming: Some(false),
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: None,
+            attachments: None,
+            tool_use: None,
+            usage: None,
+            prompt_tokens: None,
+            created_at: 0,
+            updated_at: 0,
+            source: None,
+            error: None,
+            metadata: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_check_and_handle_message_loop_no_duplicate() {
+        let session_id = "test-session-1";
+        let session_repo = Arc::new(MockSessionRepository::new()) as Arc<dyn SessionRepository>;
+        let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+
+        let history = vec![build_assistant_message("msg-1", "Hello world")];
+        active_sessions.write().await.insert(
+            session_id.to_string(),
+            build_test_agent_session(session_id, history),
+        );
+
+        let mock_app = tauri::test::mock_app();
+        let mock_handle = mock_app.handle();
+        let app_handle: &tauri::AppHandle = unsafe {
+            &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+        };
+
+        let current_msg = build_assistant_message("msg-2", "Different message");
+        let result = check_and_handle_message_loop(
+            &session_repo,
+            &active_sessions,
+            app_handle,
+            session_id,
+            &current_msg,
+        )
+        .await
+        .unwrap();
+
+        assert!(result.is_none());
+
+        // Counter must be 0
+        let active = active_sessions.read().await;
+        let session = active.get(session_id).unwrap();
+        assert_eq!(*session.repeated_text_loop_retry_count.read().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_check_and_handle_message_loop_duplicate_triggers_resubmit() {
+        let session_id = "test-session-2";
+        let session_repo = Arc::new(MockSessionRepository::new()) as Arc<dyn SessionRepository>;
+        let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+
+        let history = vec![build_assistant_message("msg-1", "Repeat me")];
+        active_sessions.write().await.insert(
+            session_id.to_string(),
+            build_test_agent_session(session_id, history),
+        );
+
+        let mock_app = tauri::test::mock_app();
+        let mock_handle = mock_app.handle();
+        let app_handle: &tauri::AppHandle = unsafe {
+            &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+        };
+
+        let current_msg = build_assistant_message("msg-2", "Repeat me");
+        let result = check_and_handle_message_loop(
+            &session_repo,
+            &active_sessions,
+            app_handle,
+            session_id,
+            &current_msg,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, Some(AssistantMessageLoopAction::Resubmitted));
+
+        // Counter must increment to 1
+        let active = active_sessions.read().await;
+        let session = active.get(session_id).unwrap();
+        assert_eq!(*session.repeated_text_loop_retry_count.read().await, 1);
+    }
 }

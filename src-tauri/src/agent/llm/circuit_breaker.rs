@@ -4,16 +4,6 @@ use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
 #[derive(Debug, PartialEq)]
 pub enum CircuitBreakerAction {
-    NaturalRecoveryError {
-        count: usize,
-        tool_name: String,
-        args: String,
-    },
-    NaturalRecoverySuccess {
-        count: usize,
-        tool_name: String,
-        args: String,
-    },
     HardBreak {
         count: usize,
         tool_name: String,
@@ -193,39 +183,23 @@ pub fn evaluate_circuit_breaker_action(
     let tool_name = &tool_call.function.name;
     let args = &tool_call.function.arguments;
 
-    if tool_name == "ui__circuitBreak"
-        || tool_name == "scratchpad__think"
-        || tool_name == "planning__reflect"
-    {
+    if tool_name == "ui__circuitBreak" {
         return None;
     }
 
     let current_signature = format!("{}:{}", tool_name, args);
-    if let Some((consecutive_identical_signature, outcome)) =
+    if let Some((consecutive_identical_signature, _outcome)) =
         count_consecutive_identical_call_outcomes(messages, |tool_call_id| {
             call_signature_by_id.get(tool_call_id) == Some(&current_signature)
         })
     {
         let total_count = consecutive_identical_signature + 1;
 
-        if total_count > threshold {
+        if total_count >= threshold {
             return Some(CircuitBreakerAction::HardBreak {
                 count: total_count,
                 tool_name: tool_name.clone(),
                 args: args.clone(),
-            });
-        } else if total_count == threshold {
-            return Some(match outcome {
-                RepeatedOutcome::Error { .. } => CircuitBreakerAction::NaturalRecoveryError {
-                    count: total_count,
-                    tool_name: tool_name.clone(),
-                    args: args.clone(),
-                },
-                RepeatedOutcome::Success { .. } => CircuitBreakerAction::NaturalRecoverySuccess {
-                    count: total_count,
-                    tool_name: tool_name.clone(),
-                    args: args.clone(),
-                },
             });
         }
     }
