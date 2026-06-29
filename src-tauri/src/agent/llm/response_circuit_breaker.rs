@@ -141,31 +141,40 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                             .subsec_nanos() as usize;
 
                         let error_templates = [
-                            "Wait, my action '{TOOL_NAME}' keeps failing and I am stuck in a loop. I must reflect on my previous state and consider a completely different alternative approach instead of repeating the identical action.",
-                            "The tool '{TOOL_NAME}' has resulted in an error repeatedly. Let me stop using it and think about another way to achieve the goal.",
-                            "Attempting '{TOOL_NAME}' with the same arguments is clearly not working. I should review the error messages carefully and change my strategy.",
-                            "I'm caught in an error loop with '{TOOL_NAME}'. Let's halt this action. What am I missing in the configuration or arguments?",
-                            "Calling '{TOOL_NAME}' again won't fix the issue. I need to formulate a new plan and avoid the path that leads to this failure.",
-                            "I keep hitting the same wall with '{TOOL_NAME}'. Let me step back, analyze the root cause of this error, and try a different tool.",
-                            "This repeated failure on '{TOOL_NAME}' indicates my approach is flawed. I must deviate from this pattern immediately and re-evaluate.",
-                            "I must break this cycle. '{TOOL_NAME}' is consistently failing. I will stop executing it and instead focus on debugging the core problem.",
-                            "There's no point in trying '{TOOL_NAME}' one more time here. I need to take a fundamentally different approach to this task.",
-                            "I am stuck. The same error keeps popping up for '{TOOL_NAME}'. Let me pause, clear my assumptions, and look for an alternative method."
+                            (
+                                "I am repeatedly calling '{TOOL_NAME}' with identical parameters. I need to determine if I am waiting for an external change, if I need to pivot, or if I am completely blocked.",
+                                "I must choose one of three paths to break this loop: (1) If I am waiting for a background process, compilation, or file change, I should execute a sleep/delay command (e.g., sleep 5 or timeout 5). (2) If I am repeating this tool unnecessarily, I must review my progress and pivot to a different tool other than '{TOOL_NAME}'. (3) If I cannot proceed further, I should stop and report my current progress and the specific blocker to the user."
+                            ),
+                            (
+                                "Executing '{TOOL_NAME}' multiple times with the same arguments has not moved the task forward. I must evaluate my situation and choose the correct recovery strategy.",
+                                "I need to select the most appropriate action from these three scenarios: (1) If I am polling for an asynchronous state change, I should run a delay/sleep command. (2) If I am stuck in a logical loop, I must analyze what I have done, re-read the user request, and switch to a different tool. (3) If I have exhausted all options and cannot proceed, I must immediately report the progress and the problems to the user."
+                            ),
+                            (
+                                "I have called '{TOOL_NAME}' consecutively without changing the state. I must stop this pattern and decide how to resolve this bottleneck.",
+                                "I will choose one of the following three steps: (1) If I am waiting on a slow resource, server, or process, I will use a sleep command to pause. (2) If this repeated call is redundant, I will refocus on the goal and pivot to a different tool. (3) If I am completely blocked and cannot make further progress, I will report the current status and the obstacles directly to the user."
+                            ),
+                            (
+                                "My repeated invocation of '{TOOL_NAME}' indicates a loop. I need to diagnose the cause of this repetition and select the correct path forward.",
+                                "I must act based on one of these three scenarios: (1) If I need to wait for a state transition, I will call a sleep/timeout command to introduce a delay. (2) If I am stuck, I will review the conversation history and use a tool other than '{TOOL_NAME}' to make progress. (3) If no further progress is possible, I will stop and write a report to the user explaining my progress and the blockers."
+                            )
                         ];
 
-                        let template = error_templates[nanos % error_templates.len()];
+                        let (thought_tmpl, next_action_tmpl) =
+                            error_templates[nanos % error_templates.len()];
                         let recovery_thought = format!(
                             "{} [Entropy ID: {}]",
-                            template.replace("{TOOL_NAME}", &tool_name),
+                            thought_tmpl.replace("{TOOL_NAME}", &tool_name),
                             entropy
                         );
+                        let next_action = next_action_tmpl.replace("{TOOL_NAME}", &tool_name);
 
                         let think_call = ToolCall {
                             id: uuid::Uuid::new_v4().to_string(),
                             function: ToolCallFunction {
                                 name: "scratchpad__think".to_string(),
                                 arguments: serde_json::json!({
-                                    "thought": recovery_thought
+                                    "thought": recovery_thought,
+                                    "nextAction": next_action
                                 })
                                 .to_string(),
                             },
@@ -190,31 +199,40 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                             .subsec_nanos() as usize;
 
                         let success_templates = [
-                            "I have repeatedly called '{TOOL_NAME}' successfully with identical parameters but I am not making progress. What was I originally scheduled to do? I need to focus on the next step immediately.",
-                            "The repeated success of '{TOOL_NAME}' means the state has changed as intended, but I'm inexplicably repeating it. I must move forward to the next logical task.",
-                            "Executing '{TOOL_NAME}' over and over with the same inputs is redundant. I have already achieved the result of this step. Time to proceed.",
-                            "I'm looping on '{TOOL_NAME}' even though it's succeeding. I must break out of this repetition and execute the next action in my plan.",
-                            "Why am I doing this? '{TOOL_NAME}' was already successful. Let me read my original plan and advance to the next unmet objective.",
-                            "I need to advance. The repeated execution of '{TOOL_NAME}' is a loop. Let me stop this and focus on what remains to be done.",
-                            "This is a redundant success loop. '{TOOL_NAME}' worked, so I should stop calling it and move on to the next phase of the workflow.",
-                            "I've verified that '{TOOL_NAME}' succeeds. There's no need to rerun it. I will check my task list and transition to the subsequent step.",
-                            "I am stuck in a pattern of repeating '{TOOL_NAME}'. I need to break this habit immediately and progress with the remainder of my objective.",
-                            "Success on '{TOOL_NAME}' is verified. Repeating it adds no value. Let me pivot to the next action required to complete my goal."
+                            (
+                                "I am repeatedly calling '{TOOL_NAME}' with identical parameters. I need to determine if I am waiting for an external change, if I need to pivot, or if I am completely blocked.",
+                                "I must choose one of three paths to break this loop: (1) If I am waiting for a background process, compilation, or file change, I should execute a sleep/delay command (e.g., sleep 5 or timeout 5). (2) If I am repeating this tool unnecessarily, I must review my progress and pivot to a different tool other than '{TOOL_NAME}'. (3) If I cannot proceed further, I should stop and report my current progress and the specific blocker to the user."
+                            ),
+                            (
+                                "Executing '{TOOL_NAME}' multiple times with the same arguments has not moved the task forward. I must evaluate my situation and choose the correct recovery strategy.",
+                                "I need to select the most appropriate action from these three scenarios: (1) If I am polling for an asynchronous state change, I should run a delay/sleep command. (2) If I am stuck in a logical loop, I must analyze what I have done, re-read the user request, and switch to a different tool. (3) If I have exhausted all options and cannot proceed, I must immediately report the progress and the problems to the user."
+                            ),
+                            (
+                                "I have called '{TOOL_NAME}' consecutively without changing the state. I must stop this pattern and decide how to resolve this bottleneck.",
+                                "I will choose one of the following three steps: (1) If I am waiting on a slow resource, server, or process, I will use a sleep command to pause. (2) If this repeated call is redundant, I will refocus on the goal and pivot to a different tool. (3) If I am completely blocked and cannot make further progress, I will report the current status and the obstacles directly to the user."
+                            ),
+                            (
+                                "My repeated invocation of '{TOOL_NAME}' indicates a loop. I need to diagnose the cause of this repetition and select the correct path forward.",
+                                "I must act based on one of these three scenarios: (1) If I need to wait for a state transition, I will call a sleep/timeout command to introduce a delay. (2) If I am stuck, I will review the conversation history and use a tool other than '{TOOL_NAME}' to make progress. (3) If no further progress is possible, I will stop and write a report to the user explaining my progress and the blockers."
+                            )
                         ];
 
-                        let template = success_templates[nanos % success_templates.len()];
+                        let (thought_tmpl, next_action_tmpl) =
+                            success_templates[nanos % success_templates.len()];
                         let recovery_thought = format!(
                             "{} [Entropy ID: {}]",
-                            template.replace("{TOOL_NAME}", &tool_name),
+                            thought_tmpl.replace("{TOOL_NAME}", &tool_name),
                             entropy
                         );
+                        let next_action = next_action_tmpl.replace("{TOOL_NAME}", &tool_name);
 
                         let think_call = ToolCall {
                             id: uuid::Uuid::new_v4().to_string(),
                             function: ToolCallFunction {
                                 name: "scratchpad__think".to_string(),
                                 arguments: serde_json::json!({
-                                    "thought": recovery_thought
+                                    "thought": recovery_thought,
+                                    "nextAction": next_action
                                 })
                                 .to_string(),
                             },
