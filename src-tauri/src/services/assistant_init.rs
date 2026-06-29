@@ -307,7 +307,7 @@ ATTENTION ECONOMY:
             "deletionProtected": true,
             "localServices": [],
             "allowedBuiltInServiceAliases": [
-                "bootstrap",
+                "setup-wizard",
                 "tool",
                 "agent",
                 "workspace",
