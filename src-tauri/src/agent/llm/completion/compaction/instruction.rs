@@ -8,12 +8,12 @@ const COMPACTION_SECTION_SCHEMA: &str = "Write plain Markdown summary text for a
 Keep these section titles unchanged when you use them so later compaction can recognize them:\n\
 - Active Request\n\
 - Required References\n\
+- Next Actions\n\
 Optional supporting section titles:\n\
 - Stable Context\n\
 - Key Decisions & Constraints\n\
 - Current State\n\
-- Recent Tool Results\n\
-- Next Actions";
+- Recent Tool Results";
 
 const COMPACTION_RULES: &[&str] = &[
     "Pause first. You are not continuing the workflow; you are only compressing it into a handoff.",
@@ -25,6 +25,7 @@ const COMPACTION_RULES: &[&str] = &[
     "Put fast-changing details in Current State, Recent Tool Results, or Next Actions.",
     "Do not call tools. Even if tool definitions are visible, ignore them for this request.",
     "Do not emit XML, JSON, pseudo tool-call markup, command blocks, or meta commentary.",
+    "After generating the summary, explicitly state the next action the agent should take to continue the workflow.",
 ];
 
 const COMPACTION_SECTION_LIMITS: &[&str] = &[

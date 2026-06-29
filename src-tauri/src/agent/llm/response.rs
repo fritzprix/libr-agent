@@ -250,6 +250,33 @@ pub async fn handle_llm_response(
     session_id: String,
     mut assistant_message: Message,
 ) -> Result<(), String> {
+    // Early return if this assistant message is a duplicate of the last message in the session cache
+    let is_duplicate = {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            let session_messages = session.messages.read().await;
+            if let Some(last_msg) = session_messages.last() {
+                let last_sig = crate::services::message_service::message_signature(last_msg);
+                let current_sig =
+                    crate::services::message_service::message_signature(&assistant_message);
+                last_sig.is_some() && last_sig == current_sig
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    };
+
+    if is_duplicate {
+        log::info!(
+            "Skipping duplicate LLM response message in session {}: msg_id={}",
+            session_id,
+            assistant_message.id
+        );
+        return Ok(());
+    }
+
     // Check cancellation and determine whether Idle tool-call entry is allowed
     let allow_idle_tool_entry = assistant_message
         .tool_calls
