@@ -80,7 +80,7 @@ windows-sys = { version = "0.59", features = ["Win32_Globalization"] }
 docx-rs = "0.4"           # DOCX parsing
 calamine = { version = "0.35", features = ["dates"] }  # XLSX parsing
 lopdf = "0.31"            # PDF parsing
-pdf-extract = "0.7"       # Better PDF text extraction
+pdf-extract = "0.12"       # Better PDF text extraction
 # tantivy = "0.21"       # BM25 text search - temporarily disabled due to zstd conflicts
 bm25 = { version = "2.3.2", features = ["parallelism"] }  # BM25 search with parallel indexing
 base64 = "0.22.1"
