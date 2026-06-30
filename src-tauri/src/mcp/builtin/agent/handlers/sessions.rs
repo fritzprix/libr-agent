@@ -1,12 +1,12 @@
 use serde_json::{json, Value};
 use std::time::Duration;
 
+use super::super::utils::{
+    build_agent_tool_data, check_session_next_actions, read_required_string,
+};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_agent_config_error, missing_agent_session_error, ErrorCategory,
     SuccessHint, ToolGroup,
-};
-use crate::mcp::builtin::session_api::utils::{
-    build_agent_tool_data, check_session_next_actions, read_required_string,
 };
 use crate::mcp::types::MCPResult;
 use crate::models::chat::MessageSource;

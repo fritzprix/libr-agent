@@ -15,6 +15,7 @@ use std::sync::Arc;
 mod formatting;
 pub mod handlers;
 pub mod tools;
+pub mod utils;
 
 /// Agent MCP Server
 #[derive(Debug)]
@@ -43,12 +44,6 @@ impl AgentServer {
 
     pub fn get_manager(&self) -> Option<&AgentSessionManager> {
         self.manager.as_ref()
-    }
-
-    async fn legacy_assistant_server(
-        &self,
-    ) -> Result<crate::mcp::builtin::assistant::AssistantServer, String> {
-        crate::mcp::builtin::assistant::AssistantServer::new(Arc::new(self.get_db().clone())).await
     }
 
     pub fn tools_static() -> Vec<MCPTool> {
@@ -114,58 +109,6 @@ impl BuiltinMCPServer for AgentServer {
             }
             "stopSession" => handlers::stop_session(self, args, &session_id).await,
             "deleteSession" => handlers::delete_session(self, args, &session_id).await,
-            "createAssistant" => {
-                let assistant_server = self.legacy_assistant_server().await?;
-                crate::mcp::builtin::assistant::operations::create_assistant(
-                    &assistant_server,
-                    args,
-                )
-                .await
-            }
-            "updateAssistant" => {
-                let assistant_server = self.legacy_assistant_server().await?;
-                crate::mcp::builtin::assistant::operations::update_assistant(
-                    &assistant_server,
-                    args,
-                    Some(session_id.clone()),
-                )
-                .await
-            }
-            "listAssistants" | "searchAssistant" | "getAssistant" => match tool_name {
-                "listAssistants" => {
-                    crate::mcp::builtin::assistant::queries::list_assistants(self.get_db(), args)
-                        .await
-                }
-                "searchAssistant" => {
-                    crate::mcp::builtin::assistant::queries::search_assistant(self.get_db(), args)
-                        .await
-                }
-                "getAssistant" => {
-                    crate::mcp::builtin::assistant::queries::get_assistant(self.get_db(), args)
-                        .await
-                }
-                _ => unreachable!("legacy assistant dispatch exhaustively matched"),
-            },
-            "deleteAssistant" => {
-                let assistant_server = self.legacy_assistant_server().await?;
-                crate::mcp::builtin::assistant::operations::delete_assistant(
-                    &assistant_server,
-                    args,
-                    Some(session_id.clone()),
-                )
-                .await
-            }
-            "healthCheck" | "spawnAgent" | "getAgentStatus" | "awaitAgent" | "getAgentLog"
-            | "getChildAgents" | "messageAgent" | "terminateAgent" | "listAgentTypes"
-            | "getAgentConfig" => {
-                crate::mcp::builtin::session_api::handlers::handle_tool_call(
-                    tool_name,
-                    args,
-                    Some(session_id.clone()),
-                    self.get_manager(),
-                )
-                .await
-            }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         };
 

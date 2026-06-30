@@ -7,7 +7,6 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::repositories::{AssistantRepository, SessionRepository, UpdateScheduledTaskParams};
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
-use crate::scheduled::task_input::reject_legacy_scheduled_task_fields;
 use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::{
@@ -75,10 +74,6 @@ pub async fn handle_create_scheduled_task(
     args: Value,
     session_id: Option<String>,
 ) -> Result<crate::mcp::types::MCPResult, String> {
-    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
-        return Ok(result);
-    }
-
     let execution_mode = match parse_execution_mode_for_create(&args) {
         Ok(mode) => mode,
         Err(result) => return Ok(result),
@@ -300,10 +295,6 @@ pub async fn handle_update_scheduled_task(
     server: &ScheduledTaskServer,
     args: Value,
 ) -> Result<crate::mcp::types::MCPResult, String> {
-    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
-        return Ok(result);
-    }
-
     let execution_mode_update = match parse_execution_mode_for_update(&args) {
         Ok(value) => value,
         Err(result) => return Ok(result),
@@ -526,10 +517,6 @@ pub async fn handle_schedule_callback(
     args: Value,
     session_id: Option<String>,
 ) -> Result<crate::mcp::types::MCPResult, String> {
-    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
-        return Ok(result);
-    }
-
     let execution_mode = match parse_execution_mode_for_create(&args) {
         Ok(mode) => mode,
         Err(result) => return Ok(result),

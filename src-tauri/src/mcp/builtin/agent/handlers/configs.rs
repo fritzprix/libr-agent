@@ -1,26 +1,226 @@
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
 
-use crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value;
-use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
-use crate::mcp::builtin::session_api::utils::build_agent_tool_data;
+use super::super::utils::build_agent_tool_data;
+use crate::mcp::builtin::error_guidance::{
+    duplicate_error, guided_error, invalid_input_error, not_found_error, ErrorCategory,
+    SuccessHint, ToolGroup,
+};
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::types::MCPResult;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::AssistantRepository;
 use sea_orm::DatabaseConnection;
 
 use super::super::formatting::{
-    build_server_name_lookup, extract_string_list, format_capability_list,
-    format_external_server_refs, resolve_external_server_labels,
+    build_server_name_lookup, format_capability_list, format_external_server_refs,
+    resolve_external_server_labels,
 };
 use super::super::AgentServer;
 use super::normalize_agent_config_result;
 
-/// Unified create_agent handler (from createAssistant)
+/// Request structure for creating an agent config
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateAgentRequest {
+    name: String,
+    #[serde(rename = "systemPrompt")]
+    system_prompt: Option<String>,
+    description: Option<String>,
+    temperature: Option<f32>,
+    #[serde(rename = "allowedBuiltInServiceAliases")]
+    allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
+    #[serde(rename = "mcpServerIds")]
+    mcp_server_ids: Option<Vec<String>>,
+}
+
+/// Request structure for updating an agent config
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateAgentRequest {
+    id: String,
+    name: Option<String>,
+    #[serde(rename = "systemPrompt")]
+    system_prompt: Option<String>,
+    description: Option<String>,
+    temperature: Option<f32>,
+    #[serde(rename = "allowedBuiltInServiceAliases")]
+    allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
+    #[serde(rename = "mcpServerIds")]
+    mcp_server_ids: Option<Vec<String>>,
+}
+
+struct ConfigMergeParams<'a> {
+    base_config: Option<Value>,
+    system_prompt: Option<&'a str>,
+    description: Option<&'a str>,
+    temperature: Option<f32>,
+    allowed_builtin_service_aliases: Option<&'a Vec<BuiltinServiceId>>,
+    mcp_server_ids: Option<&'a Vec<String>>,
+}
+
+fn extract_string_array(config: &Value, key: &str) -> Vec<String> {
+    config
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn format_summary_list(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_string()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn build_agent_config_response_data(id: &str, name: &str, config: &Value) -> Value {
+    let configured_builtin_capabilities =
+        extract_string_array(config, "allowedBuiltInServiceAliases");
+    let effective_builtin_capabilities =
+        crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value(config);
+    let external_mcp_servers = extract_string_array(config, "mcpServerIds");
+
+    json!({
+        "success": true,
+        "id": id,
+        "name": name,
+        "description": config.get("description").and_then(Value::as_str),
+        "systemPrompt": config.get("systemPrompt").and_then(Value::as_str),
+        "temperature": config.get("temperature").and_then(Value::as_f64),
+        "builtinCapabilities": effective_builtin_capabilities.clone(),
+        "configuredBuiltinCapabilities": configured_builtin_capabilities.clone(),
+        "effectiveBuiltinCapabilities": effective_builtin_capabilities,
+        "externalMcpServers": external_mcp_servers.clone(),
+        "mcpServerIds": external_mcp_servers,
+    })
+}
+
+fn build_agent_config_echo_message(action: &str, name: &str, id: &str, config: &Value) -> String {
+    let configured_builtin_capabilities =
+        extract_string_array(config, "allowedBuiltInServiceAliases");
+    let effective_builtin_capabilities =
+        crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value(config);
+    let external_mcp_servers = extract_string_array(config, "mcpServerIds");
+    let description = config
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("none");
+    let temperature = config
+        .get("temperature")
+        .and_then(Value::as_f64)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "provider default".to_string());
+
+    format!(
+        "Agent configuration '{}' {} (ID: {})\n\nDescription: {}\nTemperature: {}\nConfigured builtin capabilities: {}\nEffective builtin capabilities: {}\nExternal MCP servers: {}",
+        name,
+        action,
+        id,
+        description,
+        temperature,
+        format_summary_list(&configured_builtin_capabilities),
+        format_summary_list(&effective_builtin_capabilities),
+        format_summary_list(&external_mcp_servers),
+    )
+}
+
+fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
+    let mut config = params.base_config.unwrap_or_else(|| json!({}));
+
+    if let Some(v) = params.system_prompt {
+        config["systemPrompt"] = json!(v);
+    }
+    if let Some(v) = params.description {
+        config["description"] = json!(v);
+    }
+    if let Some(v) = params.temperature {
+        config["temperature"] = json!(v);
+    }
+
+    if let Some(v) = params.allowed_builtin_service_aliases {
+        config["allowedBuiltInServiceAliases"] = json!(v);
+    }
+
+    if let Some(v) = params.mcp_server_ids {
+        config["mcpServerIds"] = json!(v);
+    }
+
+    config
+}
+
+async fn validate_mcp_server_ids(
+    db: &sea_orm::DatabaseConnection,
+    server_ids: &[String],
+) -> Result<(), String> {
+    if server_ids.is_empty() {
+        return Ok(());
+    }
+
+    let repo = crate::repositories::SqliteMCPServerRepository::new(db.clone());
+    let all_servers = repo
+        .list()
+        .await
+        .map_err(|e| format!("Failed to validate MCP server IDs: {}", e))?;
+
+    let existing_ids: std::collections::HashSet<_> =
+        all_servers.iter().map(|s| s.id.as_str()).collect();
+
+    let invalid_ids: Vec<_> = server_ids
+        .iter()
+        .filter(|id| !existing_ids.contains(id.as_str()))
+        .collect();
+
+    if !invalid_ids.is_empty() {
+        return Err(format!(
+            "Invalid MCP server IDs: {}. Use tool__listServers to see available servers with their IDs.",
+            invalid_ids
+                .iter()
+                .map(|id| format!("'{}'", id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    Ok(())
+}
+
+fn trim_optional_text(value: Option<&str>) -> Option<String> {
+    value.and_then(|text| {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+async fn get_caller_assistant_id(session_id: &str) -> Result<String, String> {
+    let session = crate::get_session_repository()
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    if let Some(assistant_id) = crate::agent::extract_assistant_id_from_session(&session) {
+        return Ok(assistant_id);
+    }
+
+    Err("No assistant_id in session config".to_string())
+}
+
+/// Unified create_agent handler
 pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult, String> {
     let mut mapped_args = args.clone();
 
-    // Map Agent Domain friendly names to underlying config fields
     if let Some(builtins) = args.get("builtinCapabilities") {
         mapped_args["allowedBuiltInServiceAliases"] = builtins.clone();
     }
@@ -28,28 +228,114 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
         mapped_args["mcpServerIds"] = externals.clone();
     }
 
-    let assistant_server =
-        crate::mcp::builtin::assistant::AssistantServer::new(Arc::new(server.get_db().clone()))
-            .await?;
-    let result = crate::mcp::builtin::assistant::operations::create_assistant(
-        &assistant_server,
-        mapped_args,
-    )
-    .await?;
-    Ok(normalize_agent_config_result(
-        result,
-        "createAgent",
-        vec![json!({
-            "toolName": "listAgents",
-            "reason": "Review the available agent configurations after creating this one.",
-            "args": {
-                "type": "configs"
+    let request: CreateAgentRequest = serde_json::from_value(mapped_args).map_err(|e| {
+        log::error!("Failed to parse CreateAgentRequest: {}", e);
+        format!("Invalid request format: {}", e)
+    })?;
+    let normalized_name =
+        match crate::services::assistant_service::normalize_assistant_name(&request.name) {
+            Ok(name) => name,
+            Err(err) => return Ok(invalid_input_error(&err, ToolGroup::Agent)),
+        };
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
+
+    let exists = repo
+        .check_assistant_exists(&normalized_name)
+        .await
+        .map_err(|e| format!("Failed to check for duplicate name: {}", e))?;
+
+    if exists {
+        return Ok(duplicate_error(
+            "Assistant",
+            &normalized_name,
+            ToolGroup::Agent,
+        ));
+    }
+
+    let config = merge_config_from_request(ConfigMergeParams {
+        base_config: None,
+        system_prompt: trim_optional_text(request.system_prompt.as_deref()).as_deref(),
+        description: trim_optional_text(request.description.as_deref()).as_deref(),
+        temperature: request.temperature,
+        allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
+        mcp_server_ids: request.mcp_server_ids.as_ref(),
+    });
+
+    if let Some(server_ids_value) = config.get("mcpServerIds") {
+        if let Some(server_ids_array) = server_ids_value.as_array() {
+            let server_ids: Vec<String> = server_ids_array
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+
+            if let Err(err_msg) = validate_mcp_server_ids(server.get_db(), &server_ids).await {
+                return Ok(invalid_input_error(&err_msg, ToolGroup::Agent));
             }
-        })],
-    ))
+        }
+    }
+
+    let config_str = match serde_json::to_string(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Failed to serialize agent config: {}", e),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec!["Ensure config fields are valid JSON".to_string()])
+            .to_mcp_result());
+        }
+    };
+
+    match repo
+        .create_assistant(id.clone(), normalized_name.clone(), config_str)
+        .await
+    {
+        Ok(_) => {
+            let hint = SuccessHint::new(
+                build_agent_config_echo_message("created successfully", &normalized_name, &id, &config),
+                vec![
+                    "List agent configurations to review the new configuration".to_string(),
+                    "Update the configuration if you want to refine its prompt, temperature, or capabilities"
+                        .to_string(),
+                ],
+            );
+
+            crate::agent::tauri_events::emit_resource_updated(
+                "assistant",
+                "create",
+                Some(id.clone()),
+            );
+
+            Ok(normalize_agent_config_result(
+                hint.to_mcp_result_with_data(Some(build_agent_config_response_data(
+                    &id,
+                    &normalized_name,
+                    &config,
+                ))),
+                "createAgent",
+                vec![json!({
+                    "toolName": "listAgents",
+                    "reason": "Review the available agent configurations after creating this one.",
+                    "args": {
+                        "type": "configs"
+                    }
+                })],
+            ))
+        }
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to create agent configuration: {}", e),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec!["Try again".to_string()])
+        .to_mcp_result()),
+    }
 }
 
-/// Unified update_agent handler (from updateAssistant)
+/// Unified update_agent handler
 pub async fn update_agent(
     server: &AgentServer,
     args: Value,
@@ -57,7 +343,6 @@ pub async fn update_agent(
 ) -> Result<MCPResult, String> {
     let mut mapped_args = args.clone();
 
-    // Map Agent Domain friendly names to underlying config fields
     if let Some(builtins) = args.get("builtinCapabilities") {
         mapped_args["allowedBuiltInServiceAliases"] = builtins.clone();
     }
@@ -65,26 +350,155 @@ pub async fn update_agent(
         mapped_args["mcpServerIds"] = externals.clone();
     }
 
-    let assistant_server =
-        crate::mcp::builtin::assistant::AssistantServer::new(Arc::new(server.get_db().clone()))
-            .await?;
-    let result = crate::mcp::builtin::assistant::operations::update_assistant(
-        &assistant_server,
-        mapped_args,
-        caller_session_id,
-    )
-    .await?;
-    Ok(normalize_agent_config_result(
-        result,
-        "updateAgent",
-        vec![json!({
-            "toolName": "listAgents",
-            "reason": "Review the updated agent configurations after this change.",
-            "args": {
-                "type": "configs"
+    let request: UpdateAgentRequest = serde_json::from_value(mapped_args).map_err(|e| {
+        log::error!("Failed to parse UpdateAgentRequest: {}", e);
+        format!("Invalid request format: {}", e)
+    })?;
+    let requested_name = match crate::services::assistant_service::normalize_optional_assistant_name(
+        request.name.clone(),
+    ) {
+        Ok(name) => name,
+        Err(err) => return Ok(invalid_input_error(&err, ToolGroup::Agent)),
+    };
+
+    let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
+
+    let existing_model = repo
+        .get_assistant(&request.id)
+        .await
+        .map_err(|e| format!("Failed to fetch assistant: {}", e))?;
+
+    let (mut name, base_config) = if let Some(model) = existing_model {
+        let parsed_config = serde_json::from_str::<Value>(&model.config).unwrap_or_else(|e| {
+            log::warn!("Failed to parse config for assistant {}: {}", model.id, e);
+            json!({})
+        });
+        (model.name, parsed_config)
+    } else {
+        return Ok(not_found_error(
+            "Agent configuration",
+            &request.id,
+            ToolGroup::Agent,
+        ));
+    };
+
+    if let Some(ref sid) = caller_session_id {
+        if let Ok(caller_assistant_id) = get_caller_assistant_id(sid).await {
+            if caller_assistant_id == request.id {
+                return Ok(guided_error(
+                    ErrorCategory::PermissionDenied,
+                    "Self-modification is not allowed: an agent cannot update the assistant configuration it is currently running as.",
+                    ToolGroup::Agent,
+                )
+                .with_guidance(vec![
+                    "This restriction prevents privilege escalation and identity drift during a session.".to_string(),
+                    "If this task requires a different configuration, delegate it using another agent configuration with the required permissions."
+                        .to_string(),
+                    "List available agent configurations, then start a new delegated session with one that can perform the change."
+                        .to_string(),
+                ])
+                .to_mcp_result());
             }
-        })],
-    ))
+        }
+    }
+
+    if let Some(ref n) = requested_name {
+        name = n.clone();
+    }
+
+    let config = merge_config_from_request(ConfigMergeParams {
+        base_config: Some(base_config),
+        system_prompt: trim_optional_text(request.system_prompt.as_deref()).as_deref(),
+        description: trim_optional_text(request.description.as_deref()).as_deref(),
+        temperature: request.temperature,
+        allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
+        mcp_server_ids: request.mcp_server_ids.as_ref(),
+    });
+
+    if let Some(server_ids_value) = config.get("mcpServerIds") {
+        if let Some(server_ids_array) = server_ids_value.as_array() {
+            let server_ids: Vec<String> = server_ids_array
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+
+            if let Err(err_msg) = validate_mcp_server_ids(server.get_db(), &server_ids).await {
+                return Ok(
+                    guided_error(ErrorCategory::InvalidInput, err_msg, ToolGroup::Agent)
+                        .with_guidance(vec![
+                            "Use tool__listServers to see available servers".to_string()
+                        ])
+                        .to_mcp_result(),
+                );
+            }
+        }
+    }
+
+    let config_str = match serde_json::to_string(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Failed to serialize agent config: {}", e),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec!["Ensure config fields are valid JSON".to_string()])
+            .to_mcp_result());
+        }
+    };
+
+    let result = repo
+        .update_assistant(&request.id, Some(name.clone()), Some(config_str))
+        .await;
+
+    match result {
+        Ok(_) => {
+            let hint = SuccessHint::new(
+                build_agent_config_echo_message(
+                    "updated successfully",
+                    &name,
+                    &request.id,
+                    &config,
+                ),
+                vec![
+                    "Inspect the configuration details to verify the changes".to_string(),
+                    "Start a new delegated session to apply the updated configuration".to_string(),
+                ],
+            );
+
+            crate::agent::tauri_events::emit_resource_updated(
+                "assistant",
+                "update",
+                Some(request.id.clone()),
+            );
+
+            Ok(normalize_agent_config_result(
+                hint.to_mcp_result_with_data(Some(build_agent_config_response_data(
+                    &request.id,
+                    &name,
+                    &config,
+                ))),
+                "updateAgent",
+                vec![json!({
+                    "toolName": "listAgents",
+                    "reason": "Review the updated agent configurations after this change.",
+                    "args": {
+                        "type": "configs"
+                    }
+                })],
+            ))
+        }
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to update agent configuration {}: {}", request.id, e),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "List agent configurations to verify the configuration still exists".to_string(),
+        ])
+        .to_mcp_result()),
+    }
 }
 
 /// Unified list handler: lists configs or sub-sessions
@@ -166,8 +580,6 @@ async fn list_agent_configs_from_db(
     db: &DatabaseConnection,
     args: &Value,
 ) -> Result<MCPResult, String> {
-    use crate::repositories::AssistantRepository;
-
     let repo = crate::repositories::SqliteAssistantRepository::new(db.clone());
     let mut agents = repo.list_assistants().await.map_err(|e| e.to_string())?;
 
@@ -203,45 +615,45 @@ async fn list_agent_configs_from_db(
     }
 
     for agent in paged_agents {
-        let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
-        let desc = config
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("No description");
-        let builtins = extract_string_list(config.get("allowedBuiltInServiceAliases"));
-        let effective_builtins = runtime_allowed_builtin_service_aliases_from_value(&config);
-        let external_ids = extract_string_list(config.get("mcpServerIds"));
-        let external_labels = resolve_external_server_labels(&external_ids, &server_name_lookup);
+        let parsed_config = serde_json::from_str::<Value>(&agent.config).unwrap_or(Value::Null);
+        let effective_builtin_capabilities =
+            crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value(&parsed_config);
+        let external_mcp_servers = extract_string_array(&parsed_config, "mcpServerIds");
 
-        let desc_clean = desc.replace('|', "\\|").replace('\n', " ");
-        let desc_trunc = if !verbose && desc_clean.chars().count() > 100 {
+        let mut desc = parsed_config
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+
+        if !verbose && desc.chars().count() > 80 {
+            desc = desc.chars().take(77).collect::<String>() + "...";
             any_truncated = true;
-            format!("{}...", desc_clean.chars().take(97).collect::<String>())
-        } else {
-            desc_clean
-        };
-        let name_clean = agent.name.replace('|', "\\|").replace('\n', " ");
-        let capabilities = format_capability_list(&effective_builtins)
-            .replace('|', "\\|")
-            .replace('\n', " ");
-        let servers = format_external_server_refs(&external_ids, &server_name_lookup)
-            .replace('|', "\\|")
-            .replace('\n', " ");
+        }
+
+        let name_clean = agent.name.replace('|', "\\|");
+        let id_clean = agent.id.replace('|', "\\|");
+        let cap_clean = format_capability_list(&effective_builtin_capabilities).replace('|', "\\|");
+        let server_clean = format_external_server_refs(&external_mcp_servers, &server_name_lookup)
+            .replace('|', "\\|");
+        let desc_clean = desc.replace('|', "\\|").replace('\n', " ");
 
         text_summary.push_str(&format!(
             "| {} | `{}` | {} | {} | {} |\n",
-            name_clean, agent.id, capabilities, servers, desc_trunc
+            name_clean, id_clean, cap_clean, server_clean, desc_clean
         ));
+
+        let res_capabilities =
+            resolve_external_server_labels(&external_mcp_servers, &server_name_lookup);
 
         results.push(json!({
             "id": agent.id,
             "name": agent.name,
-            "description": desc,
-            "configuredBuiltinCapabilities": builtins,
-            "builtinCapabilities": effective_builtins.clone(),
-            "effectiveBuiltinCapabilities": effective_builtins,
-            "externalMcpServers": external_ids,
-            "externalMcpServerLabels": external_labels
+            "description": parsed_config.get("description").and_then(Value::as_str),
+            "systemPrompt": parsed_config.get("systemPrompt").and_then(Value::as_str),
+            "temperature": parsed_config.get("temperature").and_then(Value::as_f64),
+            "builtinCapabilities": effective_builtin_capabilities,
+            "externalMcpServers": res_capabilities,
         }));
     }
 
@@ -251,13 +663,20 @@ async fn list_agent_configs_from_db(
         text_summary.push_str(&pagination_note);
     }
 
-    let mut hint_lines = vec!["Use startSession(agentId=\"...\") to delegate work".to_string()];
     if any_truncated {
-        hint_lines.push(
-            "Use listAgents(type=\"configs\", verbose=true) to show full descriptions.".to_string(),
+        text_summary.push_str(
+            "\n*(Some descriptions were truncated. Use verbose=true to see full descriptions)*\n",
         );
     }
-    let hint = SuccessHint::new(text_summary, hint_lines);
+
+    let hint = SuccessHint::new(
+        text_summary,
+        vec![
+            "Use agent__startSession to run a delegated task using one of these configurations"
+                .to_string(),
+        ],
+    );
+
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
         "listAgents",
@@ -267,12 +686,13 @@ async fn list_agent_configs_from_db(
         "success",
         vec![json!({
             "toolName": "startSession",
-            "reason": "Start a delegated session with one of the listed agent configurations.",
+            "reason": "Spawn a new delegated agent session using one of the configurations.",
         })],
     );
     response_data.insert("type".to_string(), Value::String("configs".to_string()));
-    response_data.insert("agents".to_string(), Value::Array(results));
+    response_data.insert("configs".to_string(), Value::Array(results));
     response_data.insert("total".to_string(), json!(total));
+
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 

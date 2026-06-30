@@ -1,12 +1,11 @@
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
-use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
-use crate::mcp::builtin::session_api::formatting::latest_session_output;
-use crate::mcp::builtin::session_api::utils::{
+use super::utils::{
     build_agent_session_tool_data, build_agent_tool_data, fetch_session_messages_for_result,
-    CHECK_SESSION_RESULT_MESSAGE_LIMIT,
+    latest_session_output, CHECK_SESSION_RESULT_MESSAGE_LIMIT,
 };
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::{MCPContent, MCPResult};
 use crate::repositories::SessionMetadata;
 
