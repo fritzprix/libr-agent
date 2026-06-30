@@ -96,12 +96,6 @@ pub struct CreateAssistantRequest {
     pub allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
     #[serde(rename = "mcpServerIds")]
     pub mcp_server_ids: Option<Vec<String>>,
-    // Legacy v2 fields
-    pub tools: Option<Vec<String>>,
-    #[serde(rename = "mcpServers")]
-    pub mcp_servers: Option<Vec<String>>,
-    // Nested config object (deprecated pattern)
-    pub config: Option<Value>,
 }
 
 /// Request structure for updating an assistant
@@ -118,12 +112,6 @@ pub struct UpdateAssistantRequest {
     pub allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
     #[serde(rename = "mcpServerIds")]
     pub mcp_server_ids: Option<Vec<String>>,
-    // Legacy v2 fields
-    pub tools: Option<Vec<String>>,
-    #[serde(rename = "mcpServers")]
-    pub mcp_servers: Option<Vec<String>>,
-    // Nested config object (deprecated pattern)
-    pub config: Option<Value>,
 }
 
 /// Request structure for deleting an assistant
@@ -141,17 +129,10 @@ struct ConfigMergeParams<'a> {
     temperature: Option<f32>,
     allowed_builtin_service_aliases: Option<&'a Vec<BuiltinServiceId>>,
     mcp_server_ids: Option<&'a Vec<String>>,
-    tools: Option<&'a Vec<String>>,
-    mcp_servers: Option<&'a Vec<String>>,
 }
 
 /// Merge config from request fields into JSON object.
-/// Handles both flat fields and nested config, with legacy v2 field mapping.
-///
-/// Note: `allowedBuiltInServiceAliases` IS merged here. The self-modification
-/// guard in `update_assistant` / `delete_assistant` is the actual privilege
-/// boundary — an agent can set this field on OTHER assistants (creation /
-/// therapy), just not on itself.
+/// Handles flat fields and merges them, with new fields taking precedence.
 fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
     let mut config = params.base_config.unwrap_or_else(|| json!({}));
 
@@ -165,20 +146,10 @@ fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
         config["temperature"] = json!(v);
     }
 
-    // Handle tools (v2 legacy) -> allowedBuiltInServiceAliases
-    if let Some(v) = params.tools {
-        config["allowedBuiltInServiceAliases"] = json!(v);
-    }
-    // allowedBuiltInServiceAliases (v1) takes precedence
     if let Some(v) = params.allowed_builtin_service_aliases {
         config["allowedBuiltInServiceAliases"] = json!(v);
     }
 
-    // Handle mcpServers (v2 legacy) and mcpServerIds (v1)
-    if let Some(v) = params.mcp_servers {
-        config["mcpServerIds"] = json!(v);
-    }
-    // mcpServerIds (v1) takes precedence
     if let Some(v) = params.mcp_server_ids {
         config["mcpServerIds"] = json!(v);
     }
@@ -272,14 +243,12 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
 
     // Merge config from all possible sources using helper function
     let config = merge_config_from_request(ConfigMergeParams {
-        base_config: request.config,
+        base_config: None,
         system_prompt: trim_optional_text(request.system_prompt.as_deref()).as_deref(),
         description: trim_optional_text(request.description.as_deref()).as_deref(),
         temperature: request.temperature,
         allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
         mcp_server_ids: request.mcp_server_ids.as_ref(),
-        tools: request.tools.as_ref(),
-        mcp_servers: request.mcp_servers.as_ref(),
     });
 
     // Validate mcpServerIds if provided
@@ -422,23 +391,14 @@ pub async fn update_assistant(
     }
 
     // Merge config from all sources, starting with base config
-    let mut config = merge_config_from_request(ConfigMergeParams {
+    let config = merge_config_from_request(ConfigMergeParams {
         base_config: Some(base_config),
         system_prompt: trim_optional_text(request.system_prompt.as_deref()).as_deref(),
         description: trim_optional_text(request.description.as_deref()).as_deref(),
         temperature: request.temperature,
         allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
         mcp_server_ids: request.mcp_server_ids.as_ref(),
-        tools: request.tools.as_ref(),
-        mcp_servers: request.mcp_servers.as_ref(),
     });
-
-    // Merge nested config object if provided (deprecated pattern)
-    if let Some(c) = request.config.as_ref().and_then(|v| v.as_object()) {
-        for (k, v) in c {
-            config[k] = v.clone();
-        }
-    }
 
     // Validate mcpServerIds if provided
     if let Some(server_ids_value) = config.get("mcpServerIds") {

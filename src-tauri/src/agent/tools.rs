@@ -408,20 +408,19 @@ fn build_tool_result_spillover_notice(
     preview_line_count: usize,
 ) -> String {
     let mut notice = format!(
-        "\n\n... [output truncated: total size {} bytes] ...\n\nFull output saved to workspace file: `{}`\nRead it in chunks with `readFile({{\"path\": \"{}\", \"startLine\": 1, \"endLine\": 200}})`.\nDo not call `readFile({{\"path\": \"{}\"}})` on the saved file without `startLine` and `endLine`; that will just truncate again.",
+        "\n\n... [output truncated: total size {} bytes] ...\n\nFull output saved to workspace file: `{}`\nRead it in chunks with `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})`.\nDo not call `readFile({{\"path\": \"{}\"}})` on the saved file without `offset` and `size`; that will just truncate again.",
         original_size_bytes, relative_path, relative_path, relative_path
     );
 
     if preview_line_count > 0 {
         let next_start_line = preview_line_count + 1;
-        let next_end_line = next_start_line + 199;
         notice.push_str(&format!(
-            "\nTo continue after the inline preview, call `readFile({{\"path\": \"{}\", \"startLine\": {}, \"endLine\": {}}})`.",
-            relative_path, next_start_line, next_end_line
+            "\nTo continue after the inline preview, call `readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 200}})`.",
+            relative_path, next_start_line
         ));
     } else {
         notice.push_str(&format!(
-            "\nStart with a narrow range such as `readFile({{\"path\": \"{}\", \"startLine\": 1, \"endLine\": 50}})` and keep narrowing if needed.",
+            "\nStart with a narrow range such as `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 50}})` and keep narrowing if needed.",
             relative_path
         ));
     }

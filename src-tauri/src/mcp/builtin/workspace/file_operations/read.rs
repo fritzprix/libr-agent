@@ -79,14 +79,6 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let start_line = match parse_line_parameter(&args, "startLine") {
-            Ok(line) => line,
-            Err(result) => return Ok(result),
-        };
-        let end_line = match parse_line_parameter(&args, "endLine") {
-            Ok(line) => line,
-            Err(result) => return Ok(result),
-        };
         let offset_opt = match parse_offset_parameter(&args) {
             Ok(off) => off,
             Err(result) => return Ok(result),
@@ -99,38 +91,6 @@ impl WorkspaceServer {
             .get("showLineAnchors")
             .and_then(|v| v.as_bool())
             .unwrap_or(false); // Default OFF: reduce noise unless precise editing is needed
-
-        // 3. Line range validation (moved before file access for efficiency)
-        if matches!(start_line, Some(0)) || matches!(end_line, Some(0)) {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                "Line numbers must be >= 1 (1-indexed)",
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Line numbering starts at 1, not 0".to_string(),
-                "Use startLine: 1 for the first line".to_string(),
-            ])
-            .to_mcp_result());
-        }
-
-        if let (Some(start), Some(end)) = (start_line, end_line) {
-            if start > end {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    format!("startLine ({}) must be ≤ endLine ({})", start, end),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    format!(
-                        "Correct usage: {{\"startLine\": {}, \"endLine\": {}}}",
-                        end, start
-                    ),
-                    "Or omit both parameters to read the entire file".to_string(),
-                ])
-                .to_mcp_result());
-            }
-        }
 
         if let Some(sz) = size_opt {
             if sz == 0 {
@@ -219,8 +179,6 @@ impl WorkspaceServer {
             &safe_path,
             offset_opt,
             size_opt,
-            start_line,
-            end_line,
             show_line_anchors,
             visible_content_limit_bytes,
         )
@@ -256,20 +214,18 @@ impl WorkspaceServer {
                 };
                 let mut summary_notes = Vec::new();
                 if chunk.truncated {
-                    if let (Some(next_start_line), Some(suggested_end_line)) =
-                        (chunk.next_start_line, chunk.suggested_end_line)
-                    {
+                    if let Some(next_start_line) = chunk.next_start_line {
                         summary_notes.push(format!(
-                            "Next chunk: readFile({{\"path\": \"{}\", \"startLine\": {}, \"endLine\": {}}})",
-                            path_str, next_start_line, suggested_end_line
+                            "Next chunk: readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": {}}})",
+                            path_str, next_start_line, chunk.displayed_line_count
                         ));
                     }
                 }
                 if chunk.next_line_too_large {
                     let target_line = chunk.next_start_line.unwrap_or(chunk.displayed_start_line);
                     let mut message = format!(
-                        "The next unread line is too large to show safely as a complete line. Inspect that line directly with readFile({{\"path\": \"{}\", \"startLine\": {}, \"endLine\": {}}}).",
-                        path_str, target_line, target_line
+                        "The next unread line is too large to show safely as a complete line. Inspect that line directly with readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 1}}).",
+                        path_str, target_line
                     );
                     if show_line_anchors {
                         message.push_str(
@@ -311,14 +267,12 @@ impl WorkspaceServer {
                     "Use editFile with op='insert_after', startLine, and startAnchor in edits[] to insert below an existing line".to_string(),
                     "writeFile for full file replacement".to_string(),
                 ];
-                if let (Some(next_start_line), Some(suggested_end_line)) =
-                    (chunk.next_start_line, chunk.suggested_end_line)
-                {
+                if let Some(next_start_line) = chunk.next_start_line {
                     next_actions.insert(
                         0,
                         format!(
-                            "Read the next chunk with readFile({{\"path\": \"{}\", \"startLine\": {}, \"endLine\": {}}})",
-                            path_str, next_start_line, suggested_end_line
+                            "Read the next chunk with readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": {}}})",
+                            path_str, next_start_line, chunk.displayed_line_count
                         ),
                     );
                 }
@@ -347,29 +301,20 @@ impl WorkspaceServer {
                         guided_error(ErrorCategory::InvalidInput, &e, ToolGroup::Workspace)
                             .guidance(vec![
                                 "Empty files have no readable line range".to_string(),
-                                "Omit startLine/endLine to read the empty-file summary".to_string(),
-                                "If you need an explicit bound, use startLine: 1".to_string(),
+                                "Omit offset/size to read the empty-file summary".to_string(),
                             ])
                             .to_mcp_result(),
                     )
-                } else if let Some((requested_line, total_lines)) =
-                    parse_start_line_exceeds_error(&e)
+                } else if let Some((_requested_line, total_lines)) = parse_offset_exceeds_error(&e)
                 {
                     Ok(
                         guided_error(ErrorCategory::InvalidInput, &e, ToolGroup::Workspace)
                             .guidance(vec![
                                 format!(
-                                    "Choose startLine between 1 and {} for this file",
+                                    "Choose offset between 1 and {} for this file",
                                     total_lines
                                 ),
-                                format!(
-                                "Use startLine {} (or omit line bounds) to read from the file end",
-                                total_lines
-                            ),
-                                format!(
-                                    "Requested startLine {} is out of range for this file",
-                                    requested_line
-                                ),
+                                "Omit offset/size to read the entire file".to_string(),
                             ])
                             .to_mcp_result(),
                     )
@@ -390,39 +335,6 @@ impl WorkspaceServer {
 }
 
 // Helper functions
-
-fn parse_line_parameter(args: &Value, field_name: &str) -> Result<Option<usize>, MCPResult> {
-    let Some(value) = args.get(field_name) else {
-        return Ok(None);
-    };
-
-    match value {
-        Value::Null => Ok(None),
-        Value::Number(number) => match number.as_u64() {
-            Some(line) => Ok(Some(line as usize)),
-            None => Err(guided_error(
-                ErrorCategory::InvalidInput,
-                format!("{field_name} must be a positive integer"),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                format!("Use an integer like {{\"{field_name}\": 1}}"),
-                "Line numbers do not accept decimals or negative values".to_string(),
-            ])
-            .to_mcp_result()),
-        },
-        _ => Err(guided_error(
-            ErrorCategory::InvalidInput,
-            format!("{field_name} must be a positive integer"),
-            ToolGroup::Workspace,
-        )
-        .guidance(vec![
-            format!("Use an integer like {{\"{field_name}\": 1}}"),
-            "Provide the line bound as a JSON number, not a string or object".to_string(),
-        ])
-        .to_mcp_result()),
-    }
-}
 
 fn parse_offset_parameter(args: &Value) -> Result<Option<isize>, MCPResult> {
     let Some(value) = args.get("offset") else {
@@ -490,8 +402,8 @@ fn is_empty_file_out_of_range_error(message: &str) -> bool {
     message.starts_with(EMPTY_FILE_OUT_OF_RANGE_PREFIX)
 }
 
-fn parse_start_line_exceeds_error(message: &str) -> Option<(usize, usize)> {
-    let prefix = "Requested start line ";
+fn parse_offset_exceeds_error(message: &str) -> Option<(usize, usize)> {
+    let prefix = "Requested offset ";
     let middle = " exceeds file length of ";
     let suffix = " lines";
 
@@ -499,15 +411,15 @@ fn parse_start_line_exceeds_error(message: &str) -> Option<(usize, usize)> {
     let (requested_line, after_requested) = after_prefix.split_once(middle)?;
     let total_lines = after_requested.strip_suffix(suffix)?;
 
-    Some((requested_line.parse().ok()?, total_lines.parse().ok()?))
+    let req = requested_line.parse::<usize>().ok()?;
+    let tot = total_lines.parse::<usize>().ok()?;
+    Some((req, tot))
 }
 
 fn resolve_range(
     total_lines: usize,
     offset_opt: Option<isize>,
     size_opt: Option<isize>,
-    start_line_opt: Option<usize>,
-    end_line_opt: Option<usize>,
 ) -> (usize, usize) {
     match size_opt {
         Some(sz) => {
@@ -548,7 +460,7 @@ fn resolve_range(
                         }
                     }
                     None => {
-                        let start = start_line_opt.unwrap_or(1);
+                        let start = 1;
                         let end = start + count - 1;
                         (start, end)
                     }
@@ -564,15 +476,11 @@ fn resolve_range(
                     (start, end)
                 } else {
                     let start = if off == 0 { 1 } else { off as usize };
-                    let end = end_line_opt.unwrap_or(usize::MAX);
+                    let end = usize::MAX;
                     (start, end)
                 }
             }
-            None => {
-                let start = start_line_opt.unwrap_or(1);
-                let end = end_line_opt.unwrap_or(usize::MAX);
-                (start, end)
-            }
+            None => (1, usize::MAX),
         },
     }
 }
@@ -581,8 +489,6 @@ async fn read_file_lines_range(
     path: &std::path::Path,
     offset_opt: Option<isize>,
     size_opt: Option<isize>,
-    start_line_opt: Option<usize>,
-    end_line_opt: Option<usize>,
     show_line_anchors: bool,
     visible_content_limit_bytes: usize,
 ) -> Result<ReadFileChunk, String> {
@@ -602,13 +508,7 @@ async fn read_file_lines_range(
             let reader = std::io::BufReader::new(file);
             let total_lines = reader.lines().count();
 
-            let (start, end) = resolve_range(
-                total_lines,
-                offset_opt,
-                size_opt,
-                start_line_opt,
-                end_line_opt,
-            );
+            let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
 
             let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
             let reader = std::io::BufReader::new(file);
@@ -649,13 +549,7 @@ async fn read_file_lines_range(
     }
 
     let total_lines = collected_lines.len();
-    let (start, end) = resolve_range(
-        total_lines,
-        offset_opt,
-        size_opt,
-        start_line_opt,
-        end_line_opt,
-    );
+    let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
 
     read_chunk_from_lines(
         collected_lines
@@ -731,7 +625,7 @@ where
     if total_lines == 0 {
         if start > 1 {
             return Err(format!(
-                "{EMPTY_FILE_OUT_OF_RANGE_PREFIX} omit startLine/endLine or use startLine: 1 (received startLine: {start})"
+                "{EMPTY_FILE_OUT_OF_RANGE_PREFIX} omit offset/size or use offset: 1 (received offset: {start})"
             ));
         }
 
@@ -749,7 +643,7 @@ where
 
     if result_lines.is_empty() && start > total_lines {
         return Err(format!(
-            "Requested start line {} exceeds file length of {} lines",
+            "Requested offset {} exceeds file length of {} lines",
             start, total_lines
         ));
     }
@@ -919,25 +813,15 @@ mod tests {
     #[test]
     fn test_resolve_range_simple() {
         // Range mode forward
-        assert_eq!(resolve_range(100, None, None, Some(10), Some(20)), (10, 20));
-        assert_eq!(resolve_range(100, Some(10), Some(5), None, None), (10, 14));
-        assert_eq!(resolve_range(100, Some(0), Some(5), None, None), (1, 5));
+        assert_eq!(resolve_range(100, Some(10), Some(5)), (10, 14));
+        assert_eq!(resolve_range(100, Some(0), Some(5)), (1, 5));
 
         // Tail mode (size is negative)
-        assert_eq!(resolve_range(100, None, Some(-10), None, None), (91, 100));
-        assert_eq!(
-            resolve_range(100, Some(-5), Some(-10), None, None),
-            (86, 95)
-        );
-        assert_eq!(
-            resolve_range(100, Some(50), Some(-10), None, None),
-            (41, 50)
-        );
+        assert_eq!(resolve_range(100, None, Some(-10)), (91, 100));
+        assert_eq!(resolve_range(100, Some(-5), Some(-10)), (86, 95));
+        assert_eq!(resolve_range(100, Some(50), Some(-10)), (41, 50));
 
         // Size positive, offset negative
-        assert_eq!(
-            resolve_range(100, Some(-5), Some(10), None, None),
-            (96, 105)
-        );
+        assert_eq!(resolve_range(100, Some(-5), Some(10)), (96, 105));
     }
 }

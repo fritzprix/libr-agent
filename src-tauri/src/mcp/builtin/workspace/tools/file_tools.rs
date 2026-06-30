@@ -15,22 +15,7 @@ pub fn create_read_file_tool() -> MCPTool {
             Some("Path to the file to read. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
-    props.insert(
-        "startLine".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("Starting line number (1-based, optional). Legacy parameter; prefer offset/size."),
-        ),
-    );
-    props.insert(
-        "endLine".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("Ending line number (1-based, optional). Legacy parameter; prefer offset/size."),
-        ),
-    );
+
     props.insert(
         "offset".to_string(),
         integer_prop(

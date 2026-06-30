@@ -48,9 +48,9 @@ async fn read_file_returns_empty_content_for_empty_file() {
 }
 
 #[tokio::test]
-async fn read_file_allows_explicit_start_line_one_for_empty_file() {
+async fn read_file_allows_explicit_offset_one_for_empty_file() {
     let temp_dir = tempdir().expect("temp dir");
-    let session_id = "read-file-empty-file-start-line-one";
+    let session_id = "read-file-empty-file-offset-one";
     let server = build_workspace_server(temp_dir.path(), session_id);
     let workspace_dir = server.get_workspace_dir(session_id);
 
@@ -60,7 +60,7 @@ async fn read_file_allows_explicit_start_line_one_for_empty_file() {
         .handle_read_file(
             json!({
                 "path": "empty.txt",
-                "startLine": 1
+                "offset": 1
             }),
             Some(session_id.to_string()),
         )
@@ -71,14 +71,14 @@ async fn read_file_allows_explicit_start_line_one_for_empty_file() {
     let text = extract_text_content(&result);
     assert!(
         text.contains("no lines shown"),
-        "startLine=1 should still succeed for empty files: {text}"
+        "offset=1 should still succeed for empty files: {text}"
     );
 }
 
 #[tokio::test]
-async fn read_file_rejects_zero_start_line_without_end_line() {
+async fn read_file_rejects_zero_size() {
     let temp_dir = tempdir().expect("temp dir");
-    let session_id = "read-file-zero-start-line";
+    let session_id = "read-file-zero-size";
     let server = build_workspace_server(temp_dir.path(), session_id);
     let workspace_dir = server.get_workspace_dir(session_id);
 
@@ -88,7 +88,7 @@ async fn read_file_rejects_zero_start_line_without_end_line() {
         .handle_read_file(
             json!({
                 "path": "sample.txt",
-                "startLine": 0
+                "size": 0
             }),
             Some(session_id.to_string()),
         )
@@ -98,15 +98,15 @@ async fn read_file_rejects_zero_start_line_without_end_line() {
     assert_eq!(result.is_error, Some(true));
     let text = extract_text_content(&result);
     assert!(
-        text.contains("Line numbers must be >= 1"),
-        "startLine=0 should be rejected consistently: {text}"
+        text.contains("size must be non-zero"),
+        "size=0 should be rejected consistently: {text}"
     );
 }
 
 #[tokio::test]
-async fn read_file_rejects_non_integer_numeric_start_line() {
+async fn read_file_rejects_non_integer_numeric_offset() {
     let temp_dir = tempdir().expect("temp dir");
-    let session_id = "read-file-decimal-start-line";
+    let session_id = "read-file-decimal-offset";
     let server = build_workspace_server(temp_dir.path(), session_id);
     let workspace_dir = server.get_workspace_dir(session_id);
 
@@ -116,7 +116,7 @@ async fn read_file_rejects_non_integer_numeric_start_line() {
         .handle_read_file(
             json!({
                 "path": "sample.txt",
-                "startLine": 1.5
+                "offset": 1.5
             }),
             Some(session_id.to_string()),
         )
@@ -126,8 +126,8 @@ async fn read_file_rejects_non_integer_numeric_start_line() {
     assert_eq!(result.is_error, Some(true));
     let text = extract_text_content(&result);
     assert!(
-        text.contains("startLine must be a positive integer"),
-        "non-integer line bounds should be rejected instead of treated as missing: {text}"
+        text.contains("offset must be an integer"),
+        "non-integer offset should be rejected: {text}"
     );
 }
 
@@ -144,7 +144,7 @@ async fn read_file_empty_file_out_of_range_has_empty_file_guidance() {
         .handle_read_file(
             json!({
                 "path": "empty.txt",
-                "startLine": 5
+                "offset": 5
             }),
             Some(session_id.to_string()),
         )
@@ -158,11 +158,7 @@ async fn read_file_empty_file_out_of_range_has_empty_file_guidance() {
         "empty-file out-of-range should say the file is empty: {text}"
     );
     assert!(
-        !text.contains("Choose startLine between 1 and 0"),
-        "empty-file guidance should not suggest an impossible range: {text}"
-    );
-    assert!(
-        text.contains("use startLine: 1"),
-        "empty-file guidance should point callers at the only valid explicit line bound: {text}"
+        text.contains("omit offset/size or use offset: 1"),
+        "empty-file guidance should point callers at the only valid explicit offset: {text}"
     );
 }

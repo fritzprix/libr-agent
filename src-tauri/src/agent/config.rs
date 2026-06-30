@@ -24,10 +24,6 @@ pub struct AgentConfig {
     #[serde(default)]
     pub mcp_server_ids: Vec<String>,
 
-    /// Local services (legacy, may be deprecated)
-    #[serde(default)]
-    pub local_services: Vec<String>,
-
     /// Allowed built-in service aliases
     /// - None = all built-in services allowed (default)
     /// - Some([]) = no built-in services enabled
@@ -80,7 +76,6 @@ impl Default for AgentConfig {
             description: None,
             system_prompt: "You are a helpful AI assistant.".to_string(),
             mcp_server_ids: Vec::new(),
-            local_services: Vec::new(),
             allowed_built_in_service_aliases: None, // Allow all by default
             temperature: None,
             max_tokens: None,
@@ -147,7 +142,6 @@ mod tests {
             description: Some("A test assistant".to_string()),
             system_prompt: "You are a helpful assistant".to_string(),
             mcp_server_ids: vec!["server1".to_string()],
-            local_services: vec![],
             allowed_built_in_service_aliases: Some(vec![BuiltinServiceId::Browser]),
             temperature: None,
             max_tokens: Some(8192),
