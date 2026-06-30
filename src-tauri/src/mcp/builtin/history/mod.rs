@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use serde_json::Value;
-use tracing::warn;
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
@@ -66,15 +65,7 @@ impl BuiltinMCPServer for HistoryServer {
             "readSession" => handlers::read_session(self, args).await,
             "readMessage" => handlers::read_message(self, args).await,
             "searchHistory" => handlers::search_history(self, args, &caller_session_id).await,
-            "exportDataset" | "export_dataset" => {
-                if tool_name == "export_dataset" {
-                    warn!(
-                        tool = tool_name,
-                        "deprecated history tool name; use exportDataset"
-                    );
-                }
-                handlers::export_dataset(args).await
-            }
+            "exportDataset" => handlers::export_dataset(args).await,
             _ => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,

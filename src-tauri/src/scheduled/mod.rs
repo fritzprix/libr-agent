@@ -4,7 +4,6 @@
 //! that handles session creation / reuse and message injection.
 
 pub mod runner;
-pub mod task_input;
 pub mod worker;
 
 pub use worker::SchedulerWorker;

@@ -16,7 +16,6 @@ use tauri_mcp_agent_lib::agent::tools::{
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
 use tauri_mcp_agent_lib::mcp::builtin::agent::tools as agent_tools;
-use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::builtin::service_id::{
     BuiltinServiceId, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
@@ -572,30 +571,6 @@ fn extract_object_properties(
             .unwrap_or_else(|| panic!("{context}: input_schema has no properties")),
         other => panic!("{context}: expected Object schema, got {other:?}"),
     }
-}
-
-#[test]
-fn create_assistant_tool_schema_includes_description_field() {
-    let tool = assistant_tools::create_assistant_tool();
-    let props = extract_object_properties(&tool.input_schema, "createAssistant");
-    assert!(
-        props.contains_key("description"),
-        "createAssistant input_schema must include a 'description' property; \
-         found keys: {:?}",
-        props.keys().collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn update_assistant_tool_schema_includes_description_field() {
-    let tool = assistant_tools::update_assistant_tool();
-    let props = extract_object_properties(&tool.input_schema, "updateAssistant");
-    assert!(
-        props.contains_key("description"),
-        "updateAssistant input_schema must include a 'description' property; \
-         found keys: {:?}",
-        props.keys().collect::<Vec<_>>()
-    );
 }
 
 #[test]

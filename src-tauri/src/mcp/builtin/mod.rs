@@ -7,7 +7,6 @@ use serde_json::Value;
 use tracing::info;
 
 pub mod agent;
-pub mod assistant;
 pub mod attachments;
 pub mod browser;
 pub mod browser_content_store;
@@ -20,7 +19,6 @@ pub mod playbook;
 pub mod scheduled_task;
 pub mod scratchpad;
 pub mod service_id;
-pub mod session_api;
 pub mod setup_wizard;
 pub mod skills;
 pub mod tool;

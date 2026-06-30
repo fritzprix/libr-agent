@@ -16,8 +16,6 @@ pub mod search;
 mod server;
 pub mod storage;
 mod types;
-pub mod utils;
-
 // Re-export public API
 pub use server::AttachmentsServer;
 

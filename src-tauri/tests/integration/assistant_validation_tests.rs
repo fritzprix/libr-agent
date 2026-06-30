@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;
 use tauri_mcp_agent_lib::entity::assistant::Model as AssistantModel;
-use tauri_mcp_agent_lib::mcp::builtin::assistant::{operations, AssistantServer};
 use tauri_mcp_agent_lib::mcp::builtin::planning::PlanningServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResult};
@@ -106,27 +105,6 @@ async fn assistant_service_rejects_blank_names() {
 
     let error = result.expect_err("blank assistant names should be rejected");
     assert!(error.contains("cannot be blank"));
-}
-
-#[tokio::test]
-async fn assistant_builtin_rejects_blank_names() {
-    let db = common::setup_test_db_with_migrations().await;
-    let server = AssistantServer::new(Arc::new(db))
-        .await
-        .expect("assistant server should initialize");
-
-    let result = operations::create_assistant(
-        &server,
-        json!({
-            "name": "   ",
-            "description": "ignored"
-        }),
-    )
-    .await
-    .expect("assistant creation should return an MCP result");
-
-    assert_eq!(result.is_error, Some(true));
-    assert!(extract_text(&result).contains("Assistant name cannot be blank"));
 }
 
 #[tokio::test]
