@@ -1,0 +1,12 @@
+{
+  "description": "Command orchestrator that plans strategy, delegates to specialists, and enforces quality gates.",
+  "mcpServerIds": [],
+  "deletionProtected": true,
+  "localServices": [],
+  "allowedBuiltInServiceAliases": [
+    "planning",
+    "attachments",
+    "playbook",
+    "agent"
+  ]
+}

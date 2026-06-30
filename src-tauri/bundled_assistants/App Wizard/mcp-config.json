@@ -1,0 +1,14 @@
+{
+  "description": "Environment and configuration specialist for MCP setup, agent management, and system readiness.",
+  "mcpServerIds": [],
+  "deletionProtected": true,
+  "localServices": [],
+  "allowedBuiltInServiceAliases": [
+    "setup-wizard",
+    "tool",
+    "agent",
+    "workspace",
+    "planning",
+    "attachments"
+  ]
+}

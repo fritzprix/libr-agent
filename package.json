@@ -56,6 +56,7 @@
     "rust:test": "node scripts/run-rust-command.cjs test --tests --profile ci-test",
     "rust:clean": "cd src-tauri && cargo clean",
     "rust:validate": "pnpm rust:fmt && pnpm rust:clippy:all",
+    "assistants:validate": "node scripts/validate-assistant-skills.cjs",
     "skills:audit": "node scripts/audit-bundled-skills.cjs",
     "skill:validate": "python .agents/skills/skill-creator/scripts/validate_skill.py",
     "skill:package": "python .agents/skills/skill-creator/scripts/package_skill.py",

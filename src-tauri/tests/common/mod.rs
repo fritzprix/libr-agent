@@ -48,6 +48,13 @@ pub async fn setup_test_db_with_migrations() -> DatabaseConnection {
     Migrator::up(&db, None)
         .await
         .expect("Migrations should run");
+
+    // Seed default assistants for integration tests
+    register_assistant_repository(&db);
+    tauri_mcp_agent_lib::services::assistant_init::ensure_default_assistants(None)
+        .await
+        .expect("Failed to seed default assistants for integration tests");
+
     db
 }
 
