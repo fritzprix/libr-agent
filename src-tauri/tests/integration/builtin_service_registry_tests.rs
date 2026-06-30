@@ -37,7 +37,6 @@ fn mock_agent_config(aliases: Option<Vec<&str>>) -> AgentConfig {
         description: None,
         system_prompt: "You are helpful".to_string(),
         mcp_server_ids: Vec::new(),
-        local_services: Vec::new(),
         allowed_built_in_service_aliases: aliases.map(|values| {
             values
                 .into_iter()
