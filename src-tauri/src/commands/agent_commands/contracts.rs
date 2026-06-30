@@ -40,14 +40,12 @@ pub struct SendUserMessageRequest {
 }
 
 /// Request to inject messages. Workflow continuation is decided by backend
-/// session state. `trigger_workflow` is kept only for backward compatibility.
+/// session state.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InjectMessagesRequest {
     pub session_id: String,
     pub messages: Vec<Message>,
-    #[serde(default)]
-    pub trigger_workflow: bool,
 }
 
 fn default_ui_action_params() -> serde_json::Value {

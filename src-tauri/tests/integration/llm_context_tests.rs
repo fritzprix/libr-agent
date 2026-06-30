@@ -2793,7 +2793,8 @@ fn test_build_compact_summary_text_includes_recent_tool_snapshot() {
 
     let summary = build_compact_summary_text("User asked for an update.", &[assistant, tool]);
 
-    assert!(summary.contains("### Previous Conversation Summary"));
+    assert!(summary.contains("## Compacted Context"));
+    assert!(summary.contains("## Continue From Below"));
     assert!(summary.contains("### Recent Tool Call Snapshot (latest 5)"));
     assert!(summary.contains("workspace__writeFile(content=updated, path=src/app.tsx) -> success: Successfully wrote src/app.tsx"));
 }
@@ -3054,7 +3055,8 @@ fn test_build_compact_summary_message_for_messages_reuses_normal_request_wrapper
     let MCPContent::Text { text, .. } = &summary_message.content[0] else {
         panic!("expected compact summary text");
     };
-    assert!(text.contains("### Previous Conversation Summary"));
+    assert!(text.contains("## Compacted Context"));
+    assert!(text.contains("## Continue From Below"));
     assert!(text.contains("### Recent Tool Call Snapshot (latest 5)"));
     assert!(
         text.contains("workspace__runCommand(command=git status) -> success: On branch dev/0.7.x")

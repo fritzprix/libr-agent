@@ -32,11 +32,15 @@ pub fn build_compact_summary_message_for_messages(
 }
 
 pub fn build_compact_summary_text(summary: &str, compacted_messages: &[Message]) -> String {
-    let mut text = format!("### Previous Conversation Summary\n\n{}", summary.trim());
+    let mut text = format!("## Compacted Context\n\n{}", summary.trim());
+
+    text.push_str("\n\n## Continue From Below\n\n");
+    text.push_str("The messages below contain the most recent state. Continue from there.\n\n");
+
     let recent_tool_snapshot = summarize_recent_tool_calls(compacted_messages);
 
     if !recent_tool_snapshot.is_empty() {
-        text.push_str("\n\n### Recent Tool Call Snapshot (latest 5)\n");
+        text.push_str("### Recent Tool Call Snapshot (latest 5)\n");
         text.push_str(
             &recent_tool_snapshot
                 .into_iter()

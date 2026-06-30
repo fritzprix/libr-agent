@@ -147,8 +147,7 @@ fn extract_builtin_tool_ids_default_includes_attachments() {
         r#"{
             "name": "Test Agent",
             "systemPrompt": "You are a test agent.",
-            "mcp_server_ids": [],
-            "local_services": []
+            "mcp_server_ids": []
         }"#,
     );
 

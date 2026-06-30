@@ -671,10 +671,15 @@ async fn check_token_limit(
         None => None,
     };
 
+    let compaction_limit = effective_input_budget
+        .saturating_sub(system_prompt_tokens)
+        .saturating_sub(tools_tokens)
+        .saturating_sub(1500); // 1500 tokens for summary safety margin
+
     if !crate::agent::llm::completion::compaction::has_prompt_checkpoint_compaction_target(
         normalized_messages,
         compact_context_record.as_ref(),
-        effective_input_budget,
+        compaction_limit,
     ) {
         return Err(
             AgentRuntimeError::new(

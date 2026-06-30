@@ -121,10 +121,32 @@ pub(crate) async fn try_trigger_preflight_compaction(
         current_context_limit,
         measured_output_tokens_reserve,
     );
+
+    let mut system_prompt_tokens = 0;
+    let mut tools_tokens = 0;
+    if let Some(ref parent) = parent_request {
+        if let Some(ref prompt) = parent.system_prompt {
+            system_prompt_tokens = crate::agent::llm::token_utils::estimate_text_tokens(prompt);
+        }
+        if let Some(ref tools) = parent.available_tools {
+            if let Ok(json) = serde_json::to_string(tools) {
+                tools_tokens = crate::agent::llm::token_utils::estimate_text_tokens(&json);
+            }
+        }
+    } else {
+        system_prompt_tokens = 2000;
+        tools_tokens = 1500;
+    }
+
+    let compaction_limit = effective_input_budget
+        .saturating_sub(system_prompt_tokens)
+        .saturating_sub(tools_tokens)
+        .saturating_sub(1500); // 1500 tokens for summary safety margin
+
     let compactable_end_exclusive = find_preflight_compactable_end_exclusive(
         messages,
         compact_context_record.as_ref(),
-        Some(effective_input_budget),
+        Some(compaction_limit),
     );
     if compactable_end_exclusive == 0 {
         log_preflight_split_boundary(

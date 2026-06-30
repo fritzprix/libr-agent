@@ -67,6 +67,8 @@ pub fn is_compaction_artifact_line(line: &str) -> bool {
             | "Summary"
             | "요약"
             | "### Previous Conversation Summary"
+            | "## Compacted Context"
+            | "## Continue From Below"
             | "### Recent Tool Call Snapshot (latest 5)"
     ) {
         return true;

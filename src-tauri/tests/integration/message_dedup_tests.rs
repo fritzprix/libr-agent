@@ -717,3 +717,93 @@ async fn test_batch_message_deduplication() {
         assert_eq!(cached_msgs[1].id, "tool-3");
     }
 }
+
+#[tokio::test]
+async fn test_handle_llm_response_duplicate_prevention() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let session_repo_arc = Arc::new(session_repo.clone()) as Arc<dyn SessionRepository>;
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = "test-session-llm-dedup";
+    session_repo
+        .upsert_session(&build_session_metadata(session_id))
+        .await
+        .expect("session created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let session = build_agent_session(session_id);
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.to_string(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    // 1. Manually push the first assistant message into the session cache
+    let msg1 = build_assistant_message_with_thinking(
+        session_id,
+        "ast-1",
+        "Thinking process...",
+        "Hello, this is a response.",
+    );
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).unwrap();
+        session.messages.write().await.push(msg1.clone());
+    }
+
+    // 2. Prepare a duplicate assistant message (same thinking and text)
+    let msg2 = build_assistant_message_with_thinking(
+        session_id,
+        "ast-2",
+        "Thinking process...",
+        "Hello, this is a response.",
+    );
+
+    // Create a dummy proxy manager (it won't be used because of the early return)
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_workspace_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("session-root"),
+        )
+        .expect("session manager"),
+    );
+    let proxy_manager = Arc::new(
+        tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager::new(
+            Arc::new(db.clone()),
+            session_workspace_manager,
+        ),
+    );
+
+    // 3. Call handle_llm_response with the duplicate message
+    let result = tauri_mcp_agent_lib::agent::llm::response::handle_llm_response(
+        &session_repo_arc,
+        &active_sessions,
+        &proxy_manager,
+        app_handle,
+        session_id.to_string(),
+        msg2,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "handle_llm_response should succeed (early return)"
+    );
+
+    // 4. Verify that the cache still only contains 1 message (the duplicate was skipped)
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).unwrap();
+        let cached_msgs = session.messages.read().await;
+        assert_eq!(cached_msgs.len(), 1);
+        assert_eq!(cached_msgs[0].id, "ast-1");
+    }
+}

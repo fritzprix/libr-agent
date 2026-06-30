@@ -69,7 +69,7 @@ async fn read_file_truncates_large_output_and_guides_next_chunk() {
         "chunk summary should explain why the preview stopped: {text}"
     );
     assert!(
-        text.contains("Next chunk: readFile({\"path\": \"big.txt\", \"startLine\":"),
+        text.contains("Next chunk: readFile({\"path\": \"big.txt\", \"offset\":"),
         "response should tell the agent how to continue reading: {text}"
     );
     assert!(
@@ -133,8 +133,8 @@ async fn read_file_followup_chunk_uses_guided_line_range() {
         .handle_read_file(
             json!({
                 "path": path,
-                "startLine": next_start_line,
-                "endLine": suggested_end_line
+                "offset": next_start_line,
+                "size": (suggested_end_line - next_start_line + 1)
             }),
             Some(session_id.to_string()),
         )
@@ -275,7 +275,7 @@ async fn read_file_guides_single_line_retry_when_next_line_is_too_large() {
     let text = extract_text_content(&result);
     assert!(
         text.contains(
-            "Inspect that line directly with readFile({\"path\": \"huge-line.txt\", \"startLine\": 1, \"endLine\": 1})"
+            "Inspect that line directly with readFile({\"path\": \"huge-line.txt\", \"offset\": 1, \"size\": 1})"
         ),
         "response should include an exact single-line retry command: {text}"
     );

@@ -122,8 +122,14 @@ fn extract_compact_summary_body(message: &Message) -> Option<String> {
     }
 
     let text = extract_message_text_fragments(message).join("\n");
-    let body = text.strip_prefix("### Previous Conversation Summary\n\n")?;
+    let body = text
+        .strip_prefix("## Compacted Context\n\n")
+        .or_else(|| text.strip_prefix("### Previous Conversation Summary\n\n"))?;
+
     let summary_only = body
+        .split("\n\n## Continue From Below\n")
+        .next()
+        .unwrap_or(body)
         .split("\n\n### Recent Tool Call Snapshot (latest 5)\n")
         .next()
         .unwrap_or(body)
