@@ -768,16 +768,17 @@ async fn test_handle_llm_response_duplicate_prevention() {
     );
 
     // Create a dummy proxy manager (it won't be used because of the early return)
-    let session_manager = Arc::new(
-        tauri_mcp_agent_lib::agent::session_manager::AgentSessionManager::new(
-            session_repo_arc.clone(),
-            active_sessions.clone(),
-        ),
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_workspace_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("session-root"),
+        )
+        .expect("session manager"),
     );
     let proxy_manager = Arc::new(
         tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager::new(
-            db.clone(),
-            session_manager,
+            Arc::new(db.clone()),
+            session_workspace_manager,
         ),
     );
 
