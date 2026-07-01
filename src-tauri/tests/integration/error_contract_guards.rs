@@ -1,12 +1,12 @@
 use serde_json::json;
 use tauri_mcp_agent_lib::agent::tools::create_tool_result_message_with_content;
+use tauri_mcp_agent_lib::mcp::builtin::agent::utils::{
+    build_agent_tool_data, handle_wait_timeout_result,
+};
 use tauri_mcp_agent_lib::mcp::builtin::error_guidance::{
     duplicate_error, guided_error, missing_agent_config_error, missing_agent_session_error,
     missing_param_error, not_found_error, operation_failed_error, permission_denied_error,
     ErrorCategory, ToolGroup,
-};
-use tauri_mcp_agent_lib::mcp::builtin::agent::utils::{
-    build_agent_tool_data, handle_wait_timeout_result,
 };
 use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
