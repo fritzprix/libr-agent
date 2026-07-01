@@ -445,35 +445,41 @@ pub async fn handle_wait_timeout_result(
                     )
                 } else {
                     format!(
-                        "Waiting for session {} timed out after {}s.\n\nThe agent is likely still working. Use checkSession(sessionId=\"{}\", wait=true) later to fetch the final result.",
+                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use list(type=\"sessions\") to confirm it is still active.",
                         session_id, timeout_seconds, session_id
                     )
                 };
 
-                if let Some(mgr) = manager {
-                    if let Ok(Some(child_data)) = mgr.get_session(session_id).await {
-                        let status = format!("{:?}", child_data.status).to_lowercase();
-                        let turn_count = count_session_turns(session_id).await;
-                        let next_actions = check_session_next_actions(session_id);
-
-                        let data = build_agent_session_tool_data(
-                            tool_name,
-                            session_id,
-                            &text,
-                            &status,
-                            "timeout",
-                            turn_count,
-                            next_actions,
-                        );
-                        return Err(Ok(MCPResult {
-                            content: Some(vec![MCPContent::Text {
-                                text,
-                                is_error: Some(false),
-                            }]),
-                            structured_content: Some(Value::Object(data)),
-                            is_error: Some(false),
-                        }));
+                let (session_status, turn_count) = match manager {
+                    Some(manager) => {
+                        let session_status = match fetch_session_value(manager, session_id).await {
+                            Ok(Some(session)) => extract_session_status(&session),
+                            Ok(None) | Err(_) => "unknown".to_string(),
+                        };
+                        (session_status, count_session_turns(session_id).await)
                     }
+                    None => ("unknown".to_string(), 0),
+                };
+
+                let mut data = build_agent_session_tool_data(
+                    tool_name,
+                    session_id,
+                    &text,
+                    &session_status,
+                    "timeout",
+                    turn_count,
+                    check_session_next_actions(session_id),
+                );
+                data.insert("timeout".to_string(), json!(true));
+                data.insert("timeoutSeconds".to_string(), json!(timeout_seconds));
+                data.insert(
+                    "errorCategory".to_string(),
+                    Value::String("timeout".to_string()),
+                );
+                data.insert("error".to_string(), Value::String(e));
+
+                if is_spawn {
+                    data.insert("id".to_string(), Value::String(session_id.to_string()));
                 }
 
                 Err(Ok(MCPResult {
@@ -481,7 +487,7 @@ pub async fn handle_wait_timeout_result(
                         text,
                         is_error: Some(false),
                     }]),
-                    structured_content: None,
+                    structured_content: Some(Value::Object(data)),
                     is_error: Some(false),
                 }))
             } else {
