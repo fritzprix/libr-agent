@@ -90,6 +90,16 @@ pub struct BundledAssistant {
     pub(crate) config: BundledAssistantConfig,
 }
 
+impl BundledAssistant {
+    pub fn prompt(&self) -> &str {
+        &self.prompt
+    }
+
+    pub fn allowed_builtin_service_aliases(&self) -> &[String] {
+        &self.config.allowed_builtin_service_aliases
+    }
+}
+
 fn try_load_bundled_assistant(assistant_dir: &Path, name: &str) -> Option<BundledAssistant> {
     if name.contains("..") || name.contains('/') || name.contains('\\') {
         log::warn!(

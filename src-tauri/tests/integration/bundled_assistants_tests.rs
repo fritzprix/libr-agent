@@ -41,10 +41,10 @@ async fn test_load_bundled_assistants_from_manifest() {
         manifest_resource_dir().join("bundled_assistants/Master Mind/prompt.md"),
     )
     .expect("failed to read expected prompt");
-    assert_eq!(master_mind.prompt, expected_prompt);
+    assert_eq!(master_mind.prompt(), expected_prompt);
 
     assert_eq!(
-        master_mind.config.allowed_builtin_service_aliases,
+        master_mind.allowed_builtin_service_aliases(),
         vec![
             "planning".to_string(),
             "attachments".to_string(),
@@ -63,10 +63,10 @@ async fn test_load_bundled_assistants_from_manifest() {
         manifest_resource_dir().join("bundled_assistants/Libr Assistant/prompt.md"),
     )
     .expect("failed to read expected prompt");
-    assert_eq!(libr_assistant.prompt, expected_libr_prompt);
+    assert_eq!(libr_assistant.prompt(), expected_libr_prompt);
 
     assert_eq!(
-        libr_assistant.config.allowed_builtin_service_aliases,
+        libr_assistant.allowed_builtin_service_aliases(),
         vec![
             "attachments".to_string(),
             "workspace".to_string(),

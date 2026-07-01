@@ -5,7 +5,7 @@ use tauri_mcp_agent_lib::mcp::builtin::error_guidance::{
     missing_param_error, not_found_error, operation_failed_error, permission_denied_error,
     ErrorCategory, ToolGroup,
 };
-use tauri_mcp_agent_lib::mcp::builtin::session_api::utils::{
+use tauri_mcp_agent_lib::mcp::builtin::agent::utils::{
     build_agent_tool_data, handle_wait_timeout_result,
 };
 use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
