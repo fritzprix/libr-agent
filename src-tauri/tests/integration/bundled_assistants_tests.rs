@@ -426,3 +426,55 @@ async fn test_sync_assistant_bundled_skills_removes_snapshot_when_bundle_directo
         "assistant bundled skill snapshots should be removed when the source directory disappears"
     );
 }
+
+#[tokio::test]
+async fn test_sync_assistant_bundled_skills_clears_snapshots_when_bundle_root_is_missing() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = common::setup_test_db_with_migrations().await;
+    common::register_assistant_repository(&db);
+
+    let target_temp = tempfile::tempdir().expect("failed to create target temp dir");
+    let target_dir = target_temp.path().to_path_buf();
+
+    tauri_mcp_agent_lib::lifecycle::app_setup::sync_assistant_bundled_skills(
+        &manifest_resource_dir(),
+        &target_dir,
+    )
+    .await
+    .expect("initial skill sync should succeed");
+
+    let repo = SqliteAssistantRepository::new(db);
+    let assistants = repo
+        .list_assistants()
+        .await
+        .expect("failed to list assistants");
+    let libr = assistants
+        .iter()
+        .find(|a| a.name == "Libr Assistant")
+        .expect("Libr Assistant should exist");
+
+    let assistant_skills_dir = target_dir.join("assistants").join(&libr.id).join("skills");
+    let bundled_skill_dir = assistant_skills_dir.join("sample_helper");
+    let user_skill_dir = assistant_skills_dir.join("user_custom");
+
+    std::fs::create_dir_all(&user_skill_dir).expect("user skill directory should be created");
+    std::fs::write(user_skill_dir.join("SKILL.md"), "# User Skill\n").expect("user skill file");
+
+    let empty_resource_temp = tempfile::tempdir().expect("failed to create empty resource dir");
+
+    tauri_mcp_agent_lib::lifecycle::app_setup::sync_assistant_bundled_skills(
+        empty_resource_temp.path(),
+        &target_dir,
+    )
+    .await
+    .expect("fallback skill sync should succeed");
+
+    assert!(
+        !bundled_skill_dir.exists(),
+        "fallback sync should remove bundled assistant snapshots when bundled_assistants is missing"
+    );
+    assert!(
+        user_skill_dir.exists(),
+        "fallback sync must preserve user-managed assistant skills"
+    );
+}

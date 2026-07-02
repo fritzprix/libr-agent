@@ -160,6 +160,17 @@ pub async fn sync_assistant_bundled_skills(
 ) -> Result<(), String> {
     let assistants = crate::services::assistant_init::load_bundled_assistants(resource_dir)?;
     let bundled_assistants_dir = resource_dir.join("bundled_assistants");
+    let assistant_names: Vec<String> = if assistants.is_empty() {
+        crate::services::assistant_init::default_assistant_names()
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect()
+    } else {
+        assistants
+            .into_iter()
+            .map(|assistant| assistant.name)
+            .collect()
+    };
 
     let repo = crate::get_assistant_repository();
     let assistants_db = repo.list_assistants().await.map_err(|e| e.to_string())?;
@@ -167,15 +178,15 @@ pub async fn sync_assistant_bundled_skills(
     let assistant_map: HashMap<String, String> =
         assistants_db.into_iter().map(|a| (a.name, a.id)).collect();
 
-    for assistant in assistants {
+    for assistant_name in assistant_names {
         let assistant_skills_dir = bundled_assistants_dir
-            .join(&assistant.name)
+            .join(&assistant_name)
             .join("bundled_skills");
 
-        let Some(assistant_id) = assistant_map.get(&assistant.name) else {
+        let Some(assistant_id) = assistant_map.get(&assistant_name) else {
             log::warn!(
                 "⚠️ Skipping skill sync for '{}': assistant not found in database.",
-                assistant.name
+                assistant_name
             );
             continue;
         };
@@ -187,7 +198,7 @@ pub async fn sync_assistant_bundled_skills(
         sync_assistant_bundled_skills_snapshot(
             assistant_skills_dir.as_path(),
             &target_skills_dir,
-            &assistant.name,
+            &assistant_name,
         )?;
     }
 
