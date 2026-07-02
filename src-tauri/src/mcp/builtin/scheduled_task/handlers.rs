@@ -687,30 +687,6 @@ fn parse_execution_mode_for_update(
     }
 }
 
-fn reject_legacy_scheduled_task_fields(args: &Value) -> Result<(), crate::mcp::types::MCPResult> {
-    for legacy_field in ["yoloMode", "unsafeMode"] {
-        if args.get(legacy_field).is_some() {
-            return Err(invalid_input_error(
-                &format!(
-                    "Parameter '{legacy_field}' was removed. Use executionMode (normal|yolo|unsafe) instead."
-                ),
-                ToolGroup::ScheduledTask,
-            ));
-        }
-    }
-
-    for removed_field in ["groupId", "groupName", "clearGroup"] {
-        if args.get(removed_field).is_some() {
-            return Err(invalid_input_error(
-                &format!("Parameter '{removed_field}' was removed."),
-                ToolGroup::ScheduledTask,
-            ));
-        }
-    }
-
-    Ok(())
-}
-
 fn parse_execution_mode_value(
     value: &Value,
 ) -> Result<ExecutionMode, crate::mcp::types::MCPResult> {
