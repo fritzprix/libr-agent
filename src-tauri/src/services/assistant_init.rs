@@ -21,6 +21,12 @@ const CODING_EXPERT_CONFIG: &str =
 
 const APP_WIZARD_PROMPT: &str = include_str!("../../bundled_assistants/App Wizard/prompt.md");
 const APP_WIZARD_CONFIG: &str = include_str!("../../bundled_assistants/App Wizard/mcp-config.json");
+const DEFAULT_ASSISTANT_NAMES: [&str; 4] = [
+    "Master Mind",
+    "Libr Assistant",
+    "Coding Expert",
+    "App Wizard",
+];
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +44,10 @@ pub(crate) struct BundledAssistantConfig {
 
 fn default_false() -> bool {
     false
+}
+
+pub fn default_assistant_names() -> &'static [&'static str] {
+    &DEFAULT_ASSISTANT_NAMES
 }
 
 fn json_string_array(value: &Value, key: &str) -> Vec<String> {
