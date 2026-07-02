@@ -2496,8 +2496,9 @@ fn test_resolve_preserved_calibration_ratio_prefers_post_compaction_layout() {
     }));
     let prompt_messages = vec![summary.clone(), tail_user.clone(), tail_anchor];
 
-    let resolved = resolve_preserved_calibration_ratio(&raw_messages, &prompt_messages, 10, 5)
-        .expect("expected calibration ratio");
+    let resolved =
+        resolve_preserved_calibration_ratio(&raw_messages, &prompt_messages, 10, 5, "openai")
+            .expect("expected calibration ratio");
 
     let expected_post_ratio = (prompt_denominator as f64 * 0.9).ceil() / prompt_denominator as f64;
     let stale_raw_ratio = (raw_denominator as f64 * 0.95).ceil() / raw_denominator as f64;

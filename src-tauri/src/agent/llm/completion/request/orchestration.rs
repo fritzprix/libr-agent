@@ -685,7 +685,13 @@ async fn perform_lossy_fallback_drop(
     // (This is run after memory mutations to prevent DB deleted vs memory present inconsistency)
     let repo = crate::state::get_message_repository();
     for msg in messages_to_drop {
-        let _ = repo.delete_by_id(&msg.id).await;
+        if let Err(error) = repo.delete_by_id(&msg.id).await {
+            log::error!(
+                "Failed to delete trimmed message {} from SQLite: {}",
+                msg.id,
+                error
+            );
+        }
     }
     if let Err(e) = repo.insert(&trim_notice).await {
         log::error!("Failed to insert trim notice to SQLite: {}", e);
