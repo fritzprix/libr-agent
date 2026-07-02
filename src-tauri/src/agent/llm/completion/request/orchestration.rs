@@ -611,6 +611,17 @@ fn find_lossy_fallback_split_index(messages: &[Message], compaction_limit: usize
     None
 }
 
+fn build_lossy_fallback_drop_slice(messages: &[Message], split_idx: usize) -> &[Message] {
+    let start_idx = usize::from(
+        messages
+            .first()
+            .map(|message| message.is_compact_summary())
+            .unwrap_or(false),
+    );
+    let clamped_end = split_idx.clamp(start_idx, messages.len());
+    &messages[start_idx..clamped_end]
+}
+
 async fn perform_lossy_fallback_drop(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -830,7 +841,7 @@ async fn check_token_limit(
         if let Some(split_idx) =
             find_lossy_fallback_split_index(normalized_messages, compaction_limit)
         {
-            let messages_to_drop = &normalized_messages[..split_idx];
+            let messages_to_drop = build_lossy_fallback_drop_slice(normalized_messages, split_idx);
             if !messages_to_drop.is_empty() {
                 if let Err(err) = perform_lossy_fallback_drop(
                     active_sessions,
@@ -902,7 +913,7 @@ async fn check_token_limit(
 
     if let Some(split_idx) = find_lossy_fallback_split_index(normalized_messages, compaction_limit)
     {
-        let messages_to_drop = &normalized_messages[..split_idx];
+        let messages_to_drop = build_lossy_fallback_drop_slice(normalized_messages, split_idx);
         if !messages_to_drop.is_empty() {
             if let Err(err) = perform_lossy_fallback_drop(
                 active_sessions,

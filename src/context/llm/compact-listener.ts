@@ -20,6 +20,9 @@ import { toAgentRuntimeError } from './listener-utils';
 import type { CompactRequest, CompactedRange } from './types';
 
 const logger = getLogger('compact-listener');
+const compactionRetrySessions = new Set<string>();
+const COMPACTION_RETRY_NO_TOOL_NOTE =
+  'RETRY INSTRUCTION: The previous compaction response contained tool-call markup or execution syntax. Output plain markdown summary text only. Do not call tools, emit tool-call markup, or include pseudo-tool XML/JSON.';
 
 interface CompactRequestListenerOptions {
   settingsRef: MutableRefObject<Settings>;
@@ -47,6 +50,19 @@ interface CompactStateListenerOptions {
   onRegistered: () => void;
 }
 
+function buildCompactionRetrySystemPrompt(
+  systemPrompt: string | undefined,
+  retryWithoutTools: boolean,
+): string | undefined {
+  if (!retryWithoutTools) {
+    return systemPrompt;
+  }
+
+  return systemPrompt
+    ? `${systemPrompt}\n\n${COMPACTION_RETRY_NO_TOOL_NOTE}`
+    : COMPACTION_RETRY_NO_TOOL_NOTE;
+}
+
 export async function setupCompactRequestListener({
   settingsRef,
   setCompactedRangeForSession,
@@ -64,6 +80,7 @@ export async function setupCompactRequestListener({
         parentRequest,
       } = event.payload;
       const messages = rawMessages.map(normalizeRustMessage);
+      const retryWithoutTools = compactionRetrySessions.has(sessionId);
       logger.info(
         `📦 Compact request received: session=${sessionId}, toId=${toId}, compactedDeltaCount=${compactedDeltaCount}`,
       );
@@ -84,13 +101,20 @@ export async function setupCompactRequestListener({
         settings.preferredModel.provider) as AIServiceProvider;
       const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
       const model = parentRequest?.model ?? settings.preferredModel.model;
+      const systemPrompt = buildCompactionRetrySystemPrompt(
+        parentRequest?.systemPrompt,
+        retryWithoutTools,
+      );
+      const availableTools = retryWithoutTools
+        ? undefined
+        : parentRequest?.availableTools;
       const providerConfig: AIServiceConfig =
         settings.serviceConfigs?.[provider] ?? {};
       const runtimeConfig = buildServiceRuntimeConfig(settings, providerConfig);
       const requestComposition = summarizeCompactionRequestSizes({
         messages,
-        systemPrompt: parentRequest?.systemPrompt,
-        availableTools: parentRequest?.availableTools,
+        systemPrompt,
+        availableTools,
       });
 
       try {
@@ -103,14 +127,15 @@ export async function setupCompactRequestListener({
           `🧪 Compact provider handoff ingredients: session=${sessionId}, provider=${provider}, model=${model}`,
           {
             ...requestComposition,
+            retryWithoutTools,
             reasoningEnabled: runtimeConfig.enableReasoning ?? false,
             maxTokens: runtimeConfig.maxTokens,
           },
         );
         const summary = await service.compact(messages, {
           modelName: model,
-          systemPrompt: parentRequest?.systemPrompt,
-          availableTools: parentRequest?.availableTools,
+          systemPrompt,
+          availableTools,
           config: runtimeConfig,
         });
         const response = await handleCompactResponse(
@@ -120,11 +145,13 @@ export async function setupCompactRequestListener({
           summary,
         );
         if (response.data?.retried) {
+          compactionRetrySessions.add(sessionId);
           logger.info(
             `🔁 Compact summary rejected by backend; retry requested: session=${sessionId}`,
           );
           return;
         }
+        compactionRetrySessions.delete(sessionId);
         try {
           const freshContext = await getAgentCompactContext(sessionId);
           if (freshContext) {
@@ -149,6 +176,7 @@ export async function setupCompactRequestListener({
         }
         logger.info(`✅ Compact summary stored: session=${sessionId}`);
       } catch (error) {
+        compactionRetrySessions.delete(sessionId);
         const compactRuntimeError = toAgentRuntimeError(error);
         logger.error(
           `Compact LLM call failed: session=${sessionId}`,

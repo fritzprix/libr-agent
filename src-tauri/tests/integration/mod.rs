@@ -28,6 +28,7 @@ pub mod circuit_breaker_recovery_tests;
 pub mod compact_context_repository_tests;
 pub mod compact_error_recovery_tests;
 pub mod compaction_phase_state_tests;
+pub mod compaction_summary_validation_tests;
 pub mod concurrency_gate_guards_tests;
 pub mod database_quarantine_recovery_tests;
 pub mod env_leakage_test;

@@ -74,6 +74,10 @@ pub async fn handle_create_scheduled_task(
     args: Value,
     session_id: Option<String>,
 ) -> Result<crate::mcp::types::MCPResult, String> {
+    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
+        return Ok(result);
+    }
+
     let execution_mode = match parse_execution_mode_for_create(&args) {
         Ok(mode) => mode,
         Err(result) => return Ok(result),
@@ -295,6 +299,10 @@ pub async fn handle_update_scheduled_task(
     server: &ScheduledTaskServer,
     args: Value,
 ) -> Result<crate::mcp::types::MCPResult, String> {
+    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
+        return Ok(result);
+    }
+
     let execution_mode_update = match parse_execution_mode_for_update(&args) {
         Ok(value) => value,
         Err(result) => return Ok(result),
@@ -517,6 +525,10 @@ pub async fn handle_schedule_callback(
     args: Value,
     session_id: Option<String>,
 ) -> Result<crate::mcp::types::MCPResult, String> {
+    if let Err(result) = reject_legacy_scheduled_task_fields(&args) {
+        return Ok(result);
+    }
+
     let execution_mode = match parse_execution_mode_for_create(&args) {
         Ok(mode) => mode,
         Err(result) => return Ok(result),
@@ -672,6 +684,30 @@ fn parse_execution_mode_for_update(
         None => Ok(None),
         Some(value) => parse_execution_mode_value(value).map(Some),
     }
+}
+
+fn reject_legacy_scheduled_task_fields(args: &Value) -> Result<(), crate::mcp::types::MCPResult> {
+    for legacy_field in ["yoloMode", "unsafeMode"] {
+        if args.get(legacy_field).is_some() {
+            return Err(invalid_input_error(
+                &format!(
+                    "Parameter '{legacy_field}' was removed. Use executionMode (normal|yolo|unsafe) instead."
+                ),
+                ToolGroup::ScheduledTask,
+            ));
+        }
+    }
+
+    for removed_field in ["groupId", "groupName", "clearGroup"] {
+        if args.get(removed_field).is_some() {
+            return Err(invalid_input_error(
+                &format!("Parameter '{removed_field}' was removed."),
+                ToolGroup::ScheduledTask,
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_execution_mode_value(
