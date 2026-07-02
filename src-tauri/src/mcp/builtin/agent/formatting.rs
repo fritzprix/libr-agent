@@ -1,18 +1,5 @@
 use crate::entity::mcp_server;
-use serde_json::Value;
 use std::collections::HashMap;
-
-pub(super) fn extract_string_list(value: Option<&Value>) -> Vec<String> {
-    value
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
-}
 
 pub(super) fn format_capability_list(values: &[String]) -> String {
     if values.is_empty() {

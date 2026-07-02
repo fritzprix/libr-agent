@@ -39,6 +39,8 @@ function buildConfigCacheKey(config?: AIServiceConfig): string {
   // endpoint/client instance this service should talk to.
   return JSON.stringify({
     baseUrl: config.baseUrl ?? '',
+    use3rdParty: Boolean(config.use3rdParty),
+    customModelId: config.customModelId ?? '',
   });
 }
 
@@ -50,6 +52,28 @@ function buildConfigCacheKey(config?: AIServiceConfig): string {
 export class AIServiceFactory {
   private static instances: Map<string, ServiceInstance> = new Map();
   private static readonly INSTANCE_TTL = 1000 * 60 * 60; // 1 hour
+
+  private static computeEffectiveApiKey(
+    provider: AIServiceProvider,
+    apiKey: string,
+  ): string {
+    const providers = configManager.getProviders();
+    const providerInfo = providers[provider];
+    const requiresApiKey = providerInfo?.requiresApiKey ?? true;
+
+    return !requiresApiKey && (!apiKey || apiKey.trim().length === 0)
+      ? `${provider}-local`
+      : apiKey;
+  }
+
+  private static buildInstanceKey(
+    provider: AIServiceProvider,
+    apiKey: string,
+    config?: AIServiceConfig,
+  ): string {
+    const effectiveApiKey = this.computeEffectiveApiKey(provider, apiKey);
+    return `${provider}:${effectiveApiKey}:${buildConfigCacheKey(config)}`;
+  }
 
   static getCapabilityDelegate(
     provider: AIServiceProvider,
@@ -120,20 +144,8 @@ export class AIServiceFactory {
     apiKey: string,
     config?: AIServiceConfig,
   ): IAIService {
-    // Check if this provider requires an API key
-    const providers = configManager.getProviders();
-    const providerInfo = providers[provider];
-    const requiresApiKey = providerInfo?.requiresApiKey ?? true; // Default to true for safety
-
-    // If provider doesn't require API key and none provided, use a dummy key
-    const effectiveApiKey =
-      !requiresApiKey && (!apiKey || apiKey.trim().length === 0)
-        ? `${provider}-local`
-        : apiKey;
-
-    const instanceKey = `${provider}:${effectiveApiKey}:${buildConfigCacheKey(
-      config,
-    )}`;
+    const effectiveApiKey = this.computeEffectiveApiKey(provider, apiKey);
+    const instanceKey = this.buildInstanceKey(provider, apiKey, config);
     const now = Date.now();
 
     // Clean up expired instances
@@ -208,6 +220,24 @@ export class AIServiceFactory {
       instance.service.dispose();
     }
     this.instances.clear();
+  }
+
+  static invalidateService(
+    provider: AIServiceProvider,
+    apiKey: string,
+    config?: AIServiceConfig,
+  ): void {
+    const instanceKey = this.buildInstanceKey(provider, apiKey, config);
+    const existing = this.instances.get(instanceKey);
+    if (!existing) {
+      return;
+    }
+
+    try {
+      existing.service.dispose();
+    } finally {
+      this.instances.delete(instanceKey);
+    }
   }
 
   /**

@@ -134,7 +134,14 @@ impl AgentService {
             }
         }
 
-        if let Err(error) = crate::services::assistant_init::ensure_default_assistants().await {
+        use tauri::Manager;
+        let resource_dir = crate::state::get_app_handle()
+            .and_then(|app_handle| app_handle.path().resource_dir().ok());
+
+        if let Err(error) =
+            crate::services::assistant_init::ensure_default_assistants(resource_dir.as_deref())
+                .await
+        {
             return Err(format!(
                 "Factory reset failed to restore default assistants: {}",
                 error

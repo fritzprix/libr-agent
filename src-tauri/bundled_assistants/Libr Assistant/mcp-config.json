@@ -1,0 +1,13 @@
+{
+  "description": "Field operations specialist for verified research, execution, and cross-domain task delivery.",
+  "mcpServerIds": [],
+  "deletionProtected": true,
+  "localServices": [],
+  "allowedBuiltInServiceAliases": [
+    "attachments",
+    "workspace",
+    "browser",
+    "planning",
+    "playbook"
+  ]
+}

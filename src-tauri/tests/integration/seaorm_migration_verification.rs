@@ -5,6 +5,7 @@ use crate::common;
 /// This test verifies that all Phase 2 SeaORM migrations run correctly
 /// and that the refactored modules can interact with the database.
 use sea_orm::*;
+use sea_orm_migration::MigratorTrait;
 use tauri_mcp_agent_lib::entity::*;
 
 #[tokio::test]
@@ -306,7 +307,10 @@ async fn test_mcp_server_crud_operations() {
 
 #[tokio::test]
 async fn test_assistant_crud_operations() {
-    let db = common::setup_test_db_with_migrations().await;
+    let db = common::setup_test_db().await;
+    tauri_mcp_agent_lib::migration::Migrator::up(&db, None)
+        .await
+        .expect("Migrations should run");
 
     // Insert assistant with config field (JSON) - ID must be provided as String
     let assistant = assistant::ActiveModel {

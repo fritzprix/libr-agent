@@ -174,6 +174,13 @@ pub enum AgentEvent {
         /// Optional resource identifier
         resource_id: Option<String>,
     },
+
+    /// Messages trimmed due to context overflow/lossy fallback
+    #[serde(rename_all = "camelCase")]
+    ContextMessagesTrimmed {
+        session_id: String,
+        dropped_count: usize,
+    },
 }
 
 pub trait AgentEventDispatcher: Send + Sync {
@@ -291,6 +298,12 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
         } => format!(
             "ResourceUpdated(type={resource_type}, action={action}, resource_id={})",
             resource_id.as_deref().unwrap_or("-")
+        ),
+        AgentEvent::ContextMessagesTrimmed {
+            session_id,
+            dropped_count,
+        } => format!(
+            "ContextMessagesTrimmed(session={session_id}, dropped_count={dropped_count})"
         ),
     }
 }

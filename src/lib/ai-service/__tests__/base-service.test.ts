@@ -220,7 +220,7 @@ describe('BaseAIService.compact', () => {
     );
   });
 
-  it('throws when compaction stream contains only non-content chunks and whitespace', async () => {
+  it('returns a contaminated summary marker when compaction stream emits tool-call payloads without text', async () => {
     const service = new TestBaseAIService('test-key');
     service.setCompactChunks([
       JSON.stringify({ thinking: 'hidden reasoning' }),
@@ -228,8 +228,34 @@ describe('BaseAIService.compact', () => {
       ' \n\t ',
     ]);
 
-    await expect(service.compact(createMessages())).rejects.toMatchObject({
-      message: 'compact() received an empty response from streamChat',
-    });
+    await expect(service.compact(createMessages())).resolves.toBe(
+      '<tool_call>\n"tool_calls"',
+    );
+  });
+
+  it('returns a contaminated summary marker and stops once pseudo tool-call markup appears', async () => {
+    const service = new TestBaseAIService('test-key');
+    service.setCompactChunks([
+      JSON.stringify({ content: '## Active Request\n- Continue the analysis.\n' }),
+      JSON.stringify({ content: '<tool_call>\n<function=yahoo-finance__get_quotes>' }),
+      JSON.stringify({ content: '\nshould never be appended' }),
+    ]);
+
+    await expect(service.compact(createMessages())).resolves.toBe(
+      '## Active Request\n- Continue the analysis.\n<tool_call>\n<function=yahoo-finance__get_quotes>',
+    );
+  });
+
+  it('returns a contaminated summary marker when the stream emits structured tool-call payloads', async () => {
+    const service = new TestBaseAIService('test-key');
+    service.setCompactChunks([
+      JSON.stringify({ content: '## Active Request\n- Continue the analysis.\n' }),
+      JSON.stringify({ tool_calls: [{ id: 'call-1', function: { name: 'readFile' } }] }),
+      JSON.stringify({ content: 'should never be appended' }),
+    ]);
+
+    await expect(service.compact(createMessages())).resolves.toBe(
+      '## Active Request\n- Continue the analysis.\n<tool_call>\n"tool_calls"',
+    );
   });
 });

@@ -51,3 +51,34 @@ pub fn mirror_bundled_skills(source_dir: &Path, deployed_dir: &Path) -> io::Resu
 
     Ok(())
 }
+
+pub fn mirror_bundled_assistants(source_dir: &Path, target_dir: &Path) -> io::Result<()> {
+    if !source_dir.exists() {
+        if target_dir.exists() {
+            fs::remove_dir_all(target_dir)?;
+        }
+        return Ok(());
+    }
+
+    if target_dir.exists() {
+        fs::remove_dir_all(target_dir)?;
+    }
+    fs::create_dir_all(target_dir)?;
+
+    for entry in fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        if !src_path.is_dir() {
+            continue;
+        }
+
+        // Each assistant directory must have prompt.md and mcp-config.json
+        if !src_path.join("prompt.md").is_file() || !src_path.join("mcp-config.json").is_file() {
+            continue;
+        }
+
+        copy_dir_recursive(&src_path, &target_dir.join(entry.file_name()))?;
+    }
+
+    Ok(())
+}

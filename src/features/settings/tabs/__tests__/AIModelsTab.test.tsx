@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type { ChangeEvent, ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AIServiceProvider } from '@/lib/ai-service';
 import type { ServiceConfig } from '@/context/SettingsContext';
@@ -13,8 +13,13 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+const mockAgentModelPicker = vi.fn((props: unknown) => {
+  void props;
+  return <div data-testid="model-picker" />;
+});
+
 vi.mock('@/features/agent/components/AgentModelPicker', () => ({
-  AgentModelPicker: () => <div data-testid="model-picker" />,
+  AgentModelPicker: (props: unknown) => mockAgentModelPicker(props),
 }));
 
 vi.mock('@/components/ui', () => ({
@@ -80,6 +85,56 @@ vi.mock('@/components/ui', () => ({
 }));
 
 describe('AIModelsTab', () => {
+  beforeEach(() => {
+    mockAgentModelPicker.mockClear();
+  });
+
+  it('passes the pending provider config to the model picker refresh controls', () => {
+    const serviceConfigs: Record<AIServiceProvider, ServiceConfig> = {
+      [AIServiceProvider.Groq]: {},
+      [AIServiceProvider.OpenAI]: {
+        apiKey: 'draft-key',
+        baseUrl: 'https://draft.example.com/v1',
+        use3rdParty: true,
+        customModelId: 'draft-model',
+      },
+      [AIServiceProvider.Anthropic]: {},
+      [AIServiceProvider.Gemini]: {},
+      [AIServiceProvider.Fireworks]: {},
+      [AIServiceProvider.Cerebras]: {},
+      [AIServiceProvider.Ollama]: {},
+      [AIServiceProvider.OpenRouter]: {},
+      [AIServiceProvider.Empty]: {},
+    };
+
+    render(
+      <AIModelsTab
+        serviceConfigs={serviceConfigs}
+        providerEntries={[AIServiceProvider.OpenAI]}
+        localPreferredModel={{
+          provider: AIServiceProvider.OpenAI,
+          model: 'gpt-4o',
+        }}
+        localFallbackModel={undefined}
+        localMaxRetries={1}
+        localRetryDelay={5000}
+        localDefaultMaxOutputTokens={8192}
+        onPendingChange={vi.fn()}
+        onPreferredModelChange={vi.fn()}
+        onFallbackModelChange={vi.fn()}
+        onMaxRetriesChange={vi.fn()}
+        onRetryDelayChange={vi.fn()}
+        onDefaultMaxOutputTokensChange={vi.fn()}
+      />,
+    );
+
+    expect(mockAgentModelPicker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceConfigOverride: serviceConfigs[AIServiceProvider.OpenAI],
+      }),
+    );
+  });
+
   it('rerenders provider cards when serviceConfigs change', () => {
     const onPendingChange = vi.fn();
     const serviceConfigs: Record<AIServiceProvider, ServiceConfig> = {

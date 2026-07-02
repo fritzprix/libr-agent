@@ -53,7 +53,8 @@
     "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": [
-      "bundled_skills/**/*"
+      "bundled_skills/**/*",
+      "bundled_assistants/**/*"
     ],
     "icon": [
       "icons/32x32.png",

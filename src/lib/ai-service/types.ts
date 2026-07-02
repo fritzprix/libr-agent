@@ -69,6 +69,10 @@ export interface AIServiceConfig {
   tools?: MCPTool[];
   /** The base URL for the service API endpoint. */
   baseUrl?: string;
+  /** Whether the OpenAI provider should target a 3rd party compatible endpoint. */
+  use3rdParty?: boolean;
+  /** Optional custom model identifier for OpenAI-compatible 3rd party endpoints. */
+  customModelId?: string;
   /**
    * Explicitly enables the non-standard `cache_prompt` extension used by some
    * OpenAI-compatible backends such as llama.cpp.

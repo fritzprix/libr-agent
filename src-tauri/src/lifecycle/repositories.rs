@@ -7,7 +7,6 @@ use crate::repositories::{
     SqlitePlaybookRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
     SqliteSettingsRepository,
 };
-use crate::services;
 use crate::state::{
     set_assistant_repository, set_attachments_repository, set_compact_context_repository,
     set_database_connection, set_knowledge_repository, set_knowledge_v2_repository,
@@ -15,7 +14,7 @@ use crate::state::{
     set_planning_repository, set_playbook_repository, set_scheduled_task_repository,
     set_session_repository, set_settings_repository,
 };
-use log::{error, info};
+use log::info;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
@@ -66,13 +65,6 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
     set_compact_context_repository(SqliteCompactContextRepository::new(db.clone()));
 
     info!("✅ Repository instances initialized");
-
-    // Ensure default assistants exist (after repositories are initialized)
-    if let Err(e) = services::assistant_init::ensure_default_assistants().await {
-        error!("❌ Failed to ensure default assistants: {}", e);
-    } else {
-        info!("✅ Default assistants verified");
-    }
 
     // Run alias migrations to clean up legacy data
     crate::lifecycle::alias_migration::run_alias_migrations(db).await;

@@ -3,6 +3,7 @@ use crate::lifecycle::settings::SystemSettings;
 use crate::logger;
 use crate::repositories;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::repositories::AssistantRepository;
 use crate::services::skill_service::{
     LEGACY_SYSTEM_SKILLS_DIR_NAME, MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME,
     SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_DIR_NAME,
@@ -14,7 +15,7 @@ use log::info;
 use log::warn;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
@@ -150,6 +151,91 @@ fn spawn_managed_skills_startup_work(bundled_skills_dir: PathBuf, system_skills_
 
         crate::state::complete_managed_skills_sync();
     });
+}
+
+fn spawn_assistant_skills_startup_work(resource_dir: PathBuf, base_data_dir: PathBuf) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = sync_assistant_bundled_skills(&resource_dir, &base_data_dir).await {
+            log::warn!("⚠️  Failed to sync assistant bundled skills: {}", e);
+        } else {
+            info!("✅ Assistant bundled skills synchronized");
+        }
+    });
+}
+
+pub async fn sync_assistant_bundled_skills(
+    resource_dir: &Path,
+    base_data_dir: &Path,
+) -> Result<(), String> {
+    let assistants = crate::services::assistant_init::load_bundled_assistants(resource_dir)?;
+    let bundled_assistants_dir = resource_dir.join("bundled_assistants");
+
+    let repo = crate::get_assistant_repository();
+    let assistants_db = repo.list_assistants().await.map_err(|e| e.to_string())?;
+
+    let assistant_map: HashMap<String, String> =
+        assistants_db.into_iter().map(|a| (a.name, a.id)).collect();
+
+    for assistant in assistants {
+        let assistant_skills_dir = bundled_assistants_dir
+            .join(&assistant.name)
+            .join("bundled_skills");
+
+        let Some(assistant_id) = assistant_map.get(&assistant.name) else {
+            log::warn!(
+                "⚠️ Skipping skill sync for '{}': assistant not found in database.",
+                assistant.name
+            );
+            continue;
+        };
+
+        let target_skills_dir = base_data_dir
+            .join("assistants")
+            .join(assistant_id)
+            .join("skills");
+
+        if !assistant_skills_dir.exists() {
+            continue;
+        }
+
+        std::fs::create_dir_all(&target_skills_dir).map_err(|e| e.to_string())?;
+
+        for skill_entry in std::fs::read_dir(&assistant_skills_dir).map_err(|e| e.to_string())? {
+            let skill_entry = skill_entry.map_err(|e| e.to_string())?;
+            let skill_dir = skill_entry.path();
+
+            if !skill_dir.is_dir() {
+                continue;
+            }
+
+            let skill_name = skill_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or("Invalid skill directory name")?
+                .to_string();
+
+            let target_skill_dir = target_skills_dir.join(&skill_name);
+            let source_hash = hash_skill_directory(&skill_dir)?;
+
+            let needs_update = if target_skill_dir.exists() {
+                let target_hash = hash_skill_directory(&target_skill_dir)?;
+                source_hash != target_hash
+            } else {
+                true
+            };
+
+            if needs_update {
+                replace_skill_directory_atomically(&skill_dir, &target_skill_dir)?;
+                log::info!(
+                    "Synced skill '{}' for assistant '{}'",
+                    skill_name,
+                    assistant.name
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn spawn_startup_maintenance_tasks(
@@ -652,11 +738,23 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(std::io::Error::other)?
         .clone();
     let resource_dir = app.path().resource_dir()?;
+
+    // Ensure default assistants are loaded from the resource directory (Fixes Correctness #2)
+    if let Err(e) = tauri::async_runtime::block_on(
+        crate::services::assistant_init::ensure_default_assistants(Some(&resource_dir)),
+    ) {
+        log::error!("❌ Failed to ensure default assistants from bundle: {}", e);
+    }
+
     let bundled_skills_dir = resource_dir.join("bundled_skills");
     let system_skills_dir = session_manager
         .get_base_data_dir()
         .join(SYSTEM_SKILLS_DIR_NAME);
     spawn_managed_skills_startup_work(bundled_skills_dir, system_skills_dir);
+
+    // Sync assistant-specific bundled skills (Fixes Operability #1)
+    let base_data_dir = session_manager.get_base_data_dir().clone();
+    spawn_assistant_skills_startup_work(resource_dir.clone(), base_data_dir);
 
     let startup_settings = tauri::async_runtime::block_on(load_startup_settings());
 

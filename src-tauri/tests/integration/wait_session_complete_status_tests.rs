@@ -1,4 +1,4 @@
-use tauri_mcp_agent_lib::mcp::builtin::session_api::formatting::{
+use tauri_mcp_agent_lib::mcp::builtin::agent::utils::{
     is_terminal_status, is_wait_complete_status,
 };
 

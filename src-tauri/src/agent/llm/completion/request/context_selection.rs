@@ -63,8 +63,9 @@ pub fn resolve_preserved_calibration_ratio(
     prompt_messages: &[Message],
     system_prompt_tokens: usize,
     tools_tokens: usize,
+    provider: &str,
 ) -> Option<f64> {
-    crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+    let ratio = crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
         prompt_messages,
         system_prompt_tokens,
         tools_tokens,
@@ -75,5 +76,18 @@ pub fn resolve_preserved_calibration_ratio(
             system_prompt_tokens,
             tools_tokens,
         )
-    })
+    })?;
+
+    // Invalidate if the ratio doesn't match the current provider's tokenizer family.
+    // - "gemini" uses SentencePiece/Gemma-based tokenization which generally yields
+    //   lower token counts compared to cl100k BPE, typically in the 0.55 to 0.75 range.
+    // - Other providers (OpenAI, Anthropic, DeepSeek, etc.) use cl100k-based BPE
+    //   tokenizers where BPE estimation matches the API's count closely (around 0.85 to 1.20).
+    let is_valid = if provider == "gemini" {
+        (0.55..=0.75).contains(&ratio)
+    } else {
+        (0.85..=1.20).contains(&ratio)
+    };
+
+    is_valid.then_some(ratio)
 }
