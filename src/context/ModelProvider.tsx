@@ -92,6 +92,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       provider,
       config.apiKey || '', // API key for cache invalidation
       config.baseUrl || '', // Include baseUrl
+      config.use3rdParty ? 'use-3rd-party' : 'first-party',
+      config.customModelId || '',
     ];
   }, [provider, serviceConfigs]);
 
@@ -164,8 +166,12 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   // 수동 모델 새로고침 함수 (새로고침 버튼용)
   const refreshModels = useCallback(async () => {
-    await mutateModels();
-  }, [mutateModels]);
+    const config = serviceConfigs[provider] || {};
+    AIServiceFactory.invalidateService(provider, config.apiKey || '', config);
+    await mutateModels(undefined, {
+      revalidate: true,
+    });
+  }, [mutateModels, provider, serviceConfigs]);
 
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();
