@@ -1,0 +1,12 @@
+{
+  "description": "Engineering execution specialist for implementation, refactoring, debugging, and verification.",
+  "mcpServerIds": [],
+  "deletionProtected": true,
+  "localServices": [],
+  "allowedBuiltInServiceAliases": [
+    "workspace",
+    "planning",
+    "attachments",
+    "playbook"
+  ]
+}

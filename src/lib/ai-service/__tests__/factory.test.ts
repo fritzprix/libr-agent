@@ -159,6 +159,22 @@ describe('AIServiceFactory', () => {
       });
     });
 
+    it('should create a new instance if the OpenAI endpoint mode changes', () => {
+      const service1 = AIServiceFactory.getService(
+        AIServiceProvider.OpenAI,
+        'test-key',
+        { baseUrl: 'https://proxy.example.com/v1', use3rdParty: false },
+      );
+      const service2 = AIServiceFactory.getService(
+        AIServiceProvider.OpenAI,
+        'test-key',
+        { baseUrl: 'https://proxy.example.com/v1', use3rdParty: true },
+      );
+
+      expect(service1).not.toBe(service2);
+      expect(OpenAIService).toHaveBeenCalledTimes(2);
+    });
+
     it('should expire cached instance after INSTANCE_TTL', () => {
       const service1 = AIServiceFactory.getService(AIServiceProvider.OpenAI, 'test-key');
 
@@ -206,6 +222,29 @@ describe('AIServiceFactory', () => {
 
       expect(disposeSpy1).toHaveBeenCalledTimes(1);
       expect(disposeSpy2).toHaveBeenCalledTimes(1);
+
+      // @ts-expect-error accessing private property for testing
+      expect(AIServiceFactory.instances.size).toBe(0);
+    });
+
+    it('should dispose a cached instance when explicitly invalidated', () => {
+      const disposeSpy = vi.fn();
+      vi.mocked(OpenAIService).mockImplementationOnce(() => {
+        return { dispose: disposeSpy } as unknown as OpenAIService;
+      });
+
+      AIServiceFactory.getService(
+        AIServiceProvider.OpenAI,
+        'test-key',
+        { baseUrl: 'https://proxy.example.com/v1', use3rdParty: true },
+      );
+
+      AIServiceFactory.invalidateService(AIServiceProvider.OpenAI, 'test-key', {
+        baseUrl: 'https://proxy.example.com/v1',
+        use3rdParty: true,
+      });
+
+      expect(disposeSpy).toHaveBeenCalledTimes(1);
 
       // @ts-expect-error accessing private property for testing
       expect(AIServiceFactory.instances.size).toBe(0);

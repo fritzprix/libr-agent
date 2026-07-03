@@ -86,7 +86,7 @@ async fn read_file_out_of_range_guidance_points_to_line_bounds() {
         .handle_read_file(
             json!({
                 "path": "sample.txt",
-                "startLine": 100
+                "offset": 100
             }),
             Some(session_id.to_string()),
         )
@@ -95,7 +95,7 @@ async fn read_file_out_of_range_guidance_points_to_line_bounds() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("Choose startLine between 1 and 5 for this file"),
+        text.contains("Choose offset between 1 and 5 for this file"),
         "out-of-range guidance should point at valid line bounds: {text}"
     );
     assert!(

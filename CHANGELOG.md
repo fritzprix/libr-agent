@@ -1,3 +1,25 @@
+## [0.8.23] - 2026-07-13
+
+### 🐛 Fixes
+
+- **Stale Skill Snapshots**: Clear stale bundled skill snapshots during assistant creation to prevent phantom skill availability.
+- **Model Refresh Cache**: Fix cache invalidation for model refresh so updated provider model lists are reflected immediately.
+- **Compaction Retry Hardening**: Improve compaction retry handling to prevent infinite retry loops on transient failures.
+- **SQLite Delete Logging**: Log SQLite delete failures for better observability and resolve compilation errors in the process.
+- **editFile Schema Hardening**: Harden editFile tool schema validation for bounds checking, anchor errors, and integration test alignment.
+- **Integration Test Fixes**: Restore timeout metadata, update tests after `session_api` removal, and resolve CI compilation failures across assistant CRUD and other integration tests.
+
+### 🚀 Features
+
+- **O(n) Context Lossy Fallback**: Implement O(n) context fallback with provider calibration and persistent UI notifications when context windows are exceeded.
+- **3-Path Circuit Breaker Recovery**: Add status-agnostic recovery templates for tool loop circuit breaker, enabling agents to recover from stuck loops across all session states.
+- **Duplicate LLM Response Prevention**: Prevent duplicate LLM responses and refine compaction triggers to avoid redundant processing.
+
+### 🔧 Internal
+
+- **Assistant Domain Consolidation**: Remove legacy `assistant` and `session_api` domains and consolidate into unified `agent` domain. Includes dynamic zombie cleanup, skill sync, and bootstrap alias support.
+
+## [0.8.22] - 2026-07-13
 # Changelog
 
 All notable changes to this project will be documented in this file.

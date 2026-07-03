@@ -2496,8 +2496,9 @@ fn test_resolve_preserved_calibration_ratio_prefers_post_compaction_layout() {
     }));
     let prompt_messages = vec![summary.clone(), tail_user.clone(), tail_anchor];
 
-    let resolved = resolve_preserved_calibration_ratio(&raw_messages, &prompt_messages, 10, 5)
-        .expect("expected calibration ratio");
+    let resolved =
+        resolve_preserved_calibration_ratio(&raw_messages, &prompt_messages, 10, 5, "openai")
+            .expect("expected calibration ratio");
 
     let expected_post_ratio = (prompt_denominator as f64 * 0.9).ceil() / prompt_denominator as f64;
     let stale_raw_ratio = (raw_denominator as f64 * 0.95).ceil() / raw_denominator as f64;
@@ -2793,7 +2794,8 @@ fn test_build_compact_summary_text_includes_recent_tool_snapshot() {
 
     let summary = build_compact_summary_text("User asked for an update.", &[assistant, tool]);
 
-    assert!(summary.contains("### Previous Conversation Summary"));
+    assert!(summary.contains("## Compacted Context"));
+    assert!(summary.contains("## Continue From Below"));
     assert!(summary.contains("### Recent Tool Call Snapshot (latest 5)"));
     assert!(summary.contains("workspace__writeFile(content=updated, path=src/app.tsx) -> success: Successfully wrote src/app.tsx"));
 }
@@ -3054,7 +3056,8 @@ fn test_build_compact_summary_message_for_messages_reuses_normal_request_wrapper
     let MCPContent::Text { text, .. } = &summary_message.content[0] else {
         panic!("expected compact summary text");
     };
-    assert!(text.contains("### Previous Conversation Summary"));
+    assert!(text.contains("## Compacted Context"));
+    assert!(text.contains("## Continue From Below"));
     assert!(text.contains("### Recent Tool Call Snapshot (latest 5)"));
     assert!(
         text.contains("workspace__runCommand(command=git status) -> success: On branch dev/0.7.x")

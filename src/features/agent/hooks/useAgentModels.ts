@@ -9,12 +9,16 @@ import type { AIModelLookupService } from '@/lib/ai-service/types';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
+import type { ServiceConfig } from '@/context/SettingsContext';
 
 const logger = getLogger('useAgentModels');
 type DynamicModelMap = Record<string, ModelInfo>;
-type ModelSWRKey = readonly [string, string, string, string];
+type ModelSWRKey = readonly [string, string, string, string, string, string];
 
-export const useAgentModels = (provider?: string) => {
+export const useAgentModels = (
+  provider?: string,
+  serviceConfigOverride?: Partial<ServiceConfig>,
+) => {
   const {
     value: { serviceConfigs },
   } = useSettings();
@@ -26,8 +30,9 @@ export const useAgentModels = (provider?: string) => {
 
     return {
       ...(serviceConfigs[provider as AIServiceProvider] || {}),
+      ...serviceConfigOverride,
     };
-  }, [provider, serviceConfigs]);
+  }, [provider, serviceConfigOverride, serviceConfigs]);
 
   // Get API key and baseUrl for the selected provider
   const apiKey = useMemo(() => {
@@ -54,8 +59,22 @@ export const useAgentModels = (provider?: string) => {
       return null;
     }
 
-    return ['local-models', provider, apiKey, baseUrl] as const;
-  }, [apiKey, baseUrl, dynamicModelPolicy.canFetch, provider]);
+    return [
+      'local-models',
+      provider,
+      apiKey,
+      baseUrl,
+      providerConfig.use3rdParty ? 'use-3rd-party' : 'first-party',
+      providerConfig.customModelId || '',
+    ] as const;
+  }, [
+    apiKey,
+    baseUrl,
+    dynamicModelPolicy.canFetch,
+    provider,
+    providerConfig.customModelId,
+    providerConfig.use3rdParty,
+  ]);
 
   // Fetcher for models — delegates entirely to service.listModels().
   // Each provider's implementation decides static vs dynamic;
@@ -106,8 +125,23 @@ export const useAgentModels = (provider?: string) => {
       return dynamicModels;
     }
 
-    return await mutateModels();
-  }, [dynamicModelPolicy.canFetch, dynamicModels, mutateModels]);
+    AIServiceFactory.invalidateService(
+      provider as AIServiceProvider,
+      apiKey,
+      providerConfig,
+    );
+
+    return await mutateModels(undefined, {
+      revalidate: true,
+    });
+  }, [
+    apiKey,
+    dynamicModelPolicy.canFetch,
+    dynamicModels,
+    mutateModels,
+    provider,
+    providerConfig,
+  ]);
 
   // Combine static and dynamic models
   const availableModels = useMemo(() => {

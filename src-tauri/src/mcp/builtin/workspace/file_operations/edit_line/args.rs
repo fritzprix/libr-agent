@@ -121,6 +121,24 @@ fn canonicalize_edit_object(edit: &Value) -> Value {
         }
     }
 
+    if !canonical.contains_key("startLine") {
+        let is_insert_after = canonical
+            .get("op")
+            .and_then(|value| value.as_str())
+            .is_some_and(|op| op == "insert_after");
+        let touches_existing_line = canonical.contains_key("startAnchor")
+            || canonical.contains_key("endAnchor")
+            || canonical.contains_key("endLine");
+        let has_non_empty_content = canonical
+            .get("content")
+            .and_then(|value| value.as_str())
+            .is_some_and(|content| !content.is_empty());
+
+        if has_non_empty_content && !is_insert_after && !touches_existing_line {
+            canonical.insert("startLine".to_string(), Value::Number(0.into()));
+        }
+    }
+
     Value::Object(canonical)
 }
 
@@ -403,7 +421,7 @@ pub(super) fn parse_line_edit(
     if requires_anchor && start_anchor.is_none() {
         return Err(guided_error(
             ErrorCategory::InvalidInput,
-            format!("{edit_label} targets existing content and requires 'startAnchor'"),
+            format!("{edit_label} targets existing content and requires 'anchor' (or 'startAnchor')"),
             ToolGroup::Workspace,
         )
         .guidance(vec![

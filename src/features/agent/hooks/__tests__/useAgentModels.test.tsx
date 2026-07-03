@@ -12,6 +12,10 @@ const mockState = vi.hoisted(() => ({
   serviceConfigs: {} as Record<string, Record<string, unknown>>,
 }));
 
+const mockedFactory = vi.hoisted(() => ({
+  invalidateService: vi.fn(),
+}));
+
 vi.mock('swr', () => ({
   default: vi.fn((key: unknown) => {
     mockState.swrKey = key;
@@ -22,6 +26,20 @@ vi.mock('swr', () => ({
     };
   }),
 }));
+
+vi.mock('@/lib/ai-service', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/ai-service')>(
+    '@/lib/ai-service',
+  );
+
+  return {
+    ...actual,
+    AIServiceFactory: {
+      ...actual.AIServiceFactory,
+      invalidateService: mockedFactory.invalidateService,
+    },
+  };
+});
 
 vi.mock('@/hooks/use-settings', () => ({
   useSettings: () => ({
@@ -53,6 +71,7 @@ describe('useAgentModels', () => {
     mockState.isValidating = false;
     mockState.swrKey = undefined;
     mockState.serviceConfigs = {};
+    mockedFactory.invalidateService.mockReset();
   });
 
   it('does not call mutate when dynamic refresh is unavailable', async () => {
@@ -78,12 +97,56 @@ describe('useAgentModels', () => {
 
     expect(result.current.canRefresh).toBe(true);
     expect(result.current.refreshBlockedReason).toBe('allowed');
-    expect(mockState.swrKey).toEqual(['local-models', 'ollama', '', '']);
+    expect(mockState.swrKey).toEqual([
+      'local-models',
+      'ollama',
+      '',
+      '',
+      'first-party',
+      '',
+    ]);
 
     await act(async () => {
       await result.current.refreshModels();
     });
 
     expect(mockState.mutate).toHaveBeenCalledTimes(1);
+    expect(mockedFactory.invalidateService).toHaveBeenCalledWith(
+      AIServiceProvider.Ollama,
+      '',
+      {},
+    );
+  });
+
+  it('uses the settings draft override for refresh keys and invalidation', async () => {
+    const serviceConfigOverride = {
+      apiKey: 'draft-key',
+      baseUrl: 'https://draft.example.com/v1',
+      use3rdParty: true,
+      customModelId: '',
+    };
+
+    const { result } = renderHook(() =>
+      useAgentModels(AIServiceProvider.OpenAI, serviceConfigOverride),
+    );
+
+    expect(mockState.swrKey).toEqual([
+      'local-models',
+      'openai',
+      'draft-key',
+      'https://draft.example.com/v1',
+      'use-3rd-party',
+      '',
+    ]);
+
+    await act(async () => {
+      await result.current.refreshModels();
+    });
+
+    expect(mockedFactory.invalidateService).toHaveBeenCalledWith(
+      AIServiceProvider.OpenAI,
+      'draft-key',
+      serviceConfigOverride,
+    );
   });
 });

@@ -1,364 +1,493 @@
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::repositories::AssistantRepository;
+use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::path::Path;
 
-fn mastermind_system_prompt() -> &'static str {
-    r#"You are Master Mind: the command orchestrator for complex, high-impact missions.
-You coordinate strategy, delegate execution to specialist agents, and keep shared knowledge coherent under pressure.
+// Embedded prompts and configs (SSOT - Single Source of Truth)
+const MASTER_MIND_PROMPT: &str = include_str!("../../bundled_assistants/Master Mind/prompt.md");
+const MASTER_MIND_CONFIG: &str =
+    include_str!("../../bundled_assistants/Master Mind/mcp-config.json");
 
-PRIME DIRECTIVE:
-Deliver reliable outcomes by combining planning discipline, evidence-based execution, and continuous situational awareness.
+const LIBR_ASSISTANT_PROMPT: &str =
+    include_str!("../../bundled_assistants/Libr Assistant/prompt.md");
+const LIBR_ASSISTANT_CONFIG: &str =
+    include_str!("../../bundled_assistants/Libr Assistant/mcp-config.json");
 
-AUTONOMY CHARTER:
-1. AI AGENCY: Respect specialist autonomy and decision quality. Do not micromanage execution details that can be handled by capable agents.
-2. DELEGATION DEFAULT: Prefer delegation for efficiency and throughput.
-3. DIRECT ACTION ALLOWED: Direct execution is always allowed when speed, clarity, or risk control justifies it.
-4. RISK-AWARE CHOICE: Choose delegation vs direct action by expected reliability, latency, and token cost.
-5. RECOVERY DUTY: If a path fails, provide immediate fallback and continue mission flow.
-6. NO ZOMBIE MODE: Avoid rigid hard bans except explicit security/safety constraints.
+const CODING_EXPERT_PROMPT: &str = include_str!("../../bundled_assistants/Coding Expert/prompt.md");
+const CODING_EXPERT_CONFIG: &str =
+    include_str!("../../bundled_assistants/Coding Expert/mcp-config.json");
 
-COMMAND PROTOCOL:
-1. MISSION CONTROL: Define objective, constraints, and success criteria before action.
-2. ORCHESTRATION: Break work into tracked steps, assign priorities, and route work to the right specialist.
-3. EVIDENCE FIRST: Never claim completion without verification (files, commands, tool outputs, current state).
-4. KNOWLEDGE OPERATIONS: Capture critical findings (IDs, paths, decisions, risks) and reuse them deliberately.
-5. REAL-TIME INTELLIGENCE: Pull fresh information via available tools when uncertainty exists; avoid stale assumptions.
+const APP_WIZARD_PROMPT: &str = include_str!("../../bundled_assistants/App Wizard/prompt.md");
+const APP_WIZARD_CONFIG: &str = include_str!("../../bundled_assistants/App Wizard/mcp-config.json");
+const DEFAULT_ASSISTANT_NAMES: [&str; 4] = [
+    "Master Mind",
+    "Libr Assistant",
+    "Coding Expert",
+    "App Wizard",
+];
 
-ATTENTION ECONOMY:
-- Keep active tool families minimal for each phase.
-- Prefer delegation over direct multi-tool thrashing.
-- Require explicit reason before switching tool domains.
-
-KNOWLEDGE LOOP:
-- Persist critical discoveries to shared memory.
-- Retrieve and reconcile prior knowledge before major decisions.
-- Prefer reusable knowledge over repeating expensive investigation.
-
-SPECIALIST COORDINATION MODEL:
-- Libr Agent: general field operations and cross-domain execution.
-- Coding Expert: implementation/refactor/debug execution.
-- App Wizard: environment, MCP, agent configuration execution.
-- Master Mind: strategy, delegation, quality gates, conflict resolution.
-
-OPERATING STYLE:
-- Strategic, decisive, and explicit
-- No vague status reports
-- No hidden assumptions
-- Clear next action at every step
-
-FAILSAFE RULES:
-- If required data is missing, ask precise questions.
-- If a command or tool fails, report exact failure and recovery path.
-- If risk escalates, recommend controlled rollback or containment."#
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BundledAssistantConfig {
+    pub(crate) description: String,
+    #[serde(default)]
+    pub(crate) mcp_server_ids: Vec<String>,
+    #[serde(default = "default_false")]
+    pub(crate) deletion_protected: bool,
+    #[serde(default)]
+    pub(crate) local_services: Vec<String>,
+    #[serde(rename = "allowedBuiltInServiceAliases")]
+    pub(crate) allowed_builtin_service_aliases: Vec<String>,
 }
 
-async fn ensure_assistant_description(
-    repo: &crate::repositories::SqliteAssistantRepository,
-    assistant_name: &str,
-    description: &str,
-) -> Result<(), String> {
-    let assistants = repo
-        .list_assistants()
-        .await
-        .map_err(|e| format!("Failed to list assistants for description backfill: {}", e))?;
+fn default_false() -> bool {
+    false
+}
 
-    let Some(target) = assistants
-        .into_iter()
-        .find(|assistant| assistant.name == assistant_name)
-    else {
-        return Ok(());
-    };
+pub fn default_assistant_names() -> &'static [&'static str] {
+    &DEFAULT_ASSISTANT_NAMES
+}
 
-    let mut config_value =
-        serde_json::from_str::<Value>(&target.config).unwrap_or_else(|_| json!({}));
-    let has_description = config_value
-        .get("description")
-        .and_then(|value| value.as_str())
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false);
+fn missing_default_assistant_names(assistants: &[BundledAssistant]) -> Vec<&'static str> {
+    DEFAULT_ASSISTANT_NAMES
+        .iter()
+        .copied()
+        .filter(|expected_name| {
+            !assistants
+                .iter()
+                .any(|assistant| assistant.name == *expected_name)
+        })
+        .collect()
+}
 
-    if has_description {
-        return Ok(());
+fn json_string_array(value: &Value, key: &str) -> Vec<String> {
+    value
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn sorted_string_slices_equal(a: &[String], b: &[String]) -> bool {
+    let mut a_sorted = a.to_vec();
+    let mut b_sorted = b.to_vec();
+    a_sorted.sort();
+    b_sorted.sort();
+    a_sorted == b_sorted
+}
+
+fn bundled_config_needs_update(config_val: &Value, assistant: &BundledAssistant) -> bool {
+    config_val.get("description").and_then(|v| v.as_str())
+        != Some(assistant.config.description.as_str())
+        || config_val.get("systemPrompt").and_then(|v| v.as_str())
+            != Some(assistant.prompt.as_str())
+        || config_val
+            .get("deletionProtected")
+            .and_then(|v| v.as_bool())
+            != Some(assistant.config.deletion_protected)
+        || !sorted_string_slices_equal(
+            &json_string_array(config_val, "mcpServerIds"),
+            &assistant.config.mcp_server_ids,
+        )
+        || !sorted_string_slices_equal(
+            &json_string_array(config_val, "localServices"),
+            &assistant.config.local_services,
+        )
+        || !sorted_string_slices_equal(
+            &json_string_array(config_val, "allowedBuiltInServiceAliases"),
+            &assistant.config.allowed_builtin_service_aliases,
+        )
+}
+
+#[derive(Debug, Clone)]
+pub struct BundledAssistant {
+    pub name: String,
+    pub(crate) prompt: String,
+    pub(crate) config: BundledAssistantConfig,
+}
+
+impl BundledAssistant {
+    pub fn prompt(&self) -> &str {
+        &self.prompt
     }
 
-    config_value["description"] = Value::String(description.to_string());
-
-    repo.update_assistant(&target.id, None, Some(config_value.to_string()))
-        .await
-        .map_err(|e| {
-            format!(
-                "Failed to backfill description for {}: {}",
-                assistant_name, e
-            )
-        })?;
-
-    Ok(())
+    pub fn allowed_builtin_service_aliases(&self) -> &[String] {
+        &self.config.allowed_builtin_service_aliases
+    }
 }
 
-async fn ensure_assistant_system_prompt(
-    repo: &crate::repositories::SqliteAssistantRepository,
-    assistant_name: &str,
-    system_prompt: &str,
-) -> Result<(), String> {
-    let assistants = repo
-        .list_assistants()
-        .await
-        .map_err(|e| format!("Failed to list assistants for prompt update: {}", e))?;
-
-    let Some(target) = assistants
-        .into_iter()
-        .find(|assistant| assistant.name == assistant_name)
-    else {
-        return Ok(());
-    };
-
-    let mut config_value =
-        serde_json::from_str::<Value>(&target.config).unwrap_or_else(|_| json!({}));
-    let current_prompt = config_value
-        .get("systemPrompt")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .trim();
-
-    if current_prompt == system_prompt.trim() {
-        return Ok(());
+fn try_load_bundled_assistant(assistant_dir: &Path, name: &str) -> Option<BundledAssistant> {
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        log::warn!(
+            "Skipping assistant directory '{}' due to invalid characters",
+            name
+        );
+        return None;
     }
 
-    config_value["systemPrompt"] = Value::String(system_prompt.to_string());
+    let prompt_path = assistant_dir.join("prompt.md");
+    let prompt_metadata = match std::fs::metadata(&prompt_path) {
+        Ok(metadata) => metadata,
+        Err(_) => {
+            log::warn!(
+                "Skipping assistant '{}': failed to read prompt.md metadata",
+                name
+            );
+            return None;
+        }
+    };
+    if prompt_metadata.len() > 1024 * 1024 {
+        log::warn!("Skipping assistant '{}': prompt.md exceeds 1MB limit", name);
+        return None;
+    }
 
-    repo.update_assistant(&target.id, None, Some(config_value.to_string()))
-        .await
-        .map_err(|e| {
-            format!(
-                "Failed to update systemPrompt for {}: {}",
-                assistant_name, e
-            )
-        })?;
+    let prompt = match std::fs::read_to_string(&prompt_path) {
+        Ok(content) => content,
+        Err(_) => {
+            log::warn!("Skipping assistant '{}': failed to read prompt.md", name);
+            return None;
+        }
+    };
 
-    Ok(())
+    let config_path = assistant_dir.join("mcp-config.json");
+    let config_bytes = match std::fs::read(&config_path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            log::warn!(
+                "Skipping assistant '{}': failed to read mcp-config.json",
+                name
+            );
+            return None;
+        }
+    };
+    if config_bytes.len() > 64 * 1024 {
+        log::warn!(
+            "Skipping assistant '{}': mcp-config.json exceeds 64KB limit",
+            name
+        );
+        return None;
+    }
+
+    let config: BundledAssistantConfig = match serde_json::from_slice(&config_bytes) {
+        Ok(config) => config,
+        Err(_) => {
+            log::warn!(
+                "Skipping assistant '{}': invalid JSON in mcp-config.json",
+                name
+            );
+            return None;
+        }
+    };
+
+    if config.allowed_builtin_service_aliases.len() > 20 {
+        log::warn!(
+            "Skipping assistant '{}': more than 20 allowed builtin service aliases",
+            name
+        );
+        return None;
+    }
+
+    for alias in &config.allowed_builtin_service_aliases {
+        if BuiltinServiceId::from_alias(alias).is_none() {
+            log::warn!(
+                "Skipping assistant '{}': unauthorized or unknown builtin service alias '{}'",
+                name,
+                alias
+            );
+            return None;
+        }
+    }
+
+    Some(BundledAssistant {
+        name: name.to_string(),
+        prompt,
+        config,
+    })
 }
 
-pub async fn ensure_default_assistants() -> Result<(), String> {
-    // 1. Libr Assistant
+pub fn load_bundled_assistants(resource_dir: &Path) -> Result<Vec<BundledAssistant>, String> {
+    let base = resource_dir.join("bundled_assistants");
+
+    if !base.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut assistants = Vec::new();
+    for entry in std::fs::read_dir(&base)
+        .map_err(|_| "Failed to read bundled_assistants directory".to_string())?
+    {
+        let entry = entry.map_err(|_| "Failed to read directory entry".to_string())?;
+        let assistant_dir = entry.path();
+
+        if !assistant_dir.is_dir() {
+            continue;
+        }
+
+        let name = match assistant_dir.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => {
+                log::warn!("Skipping assistant directory with invalid name encoding");
+                continue;
+            }
+        };
+
+        if let Some(assistant) = try_load_bundled_assistant(&assistant_dir, name) {
+            assistants.push(assistant);
+        }
+    }
+
+    assistants.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(assistants)
+}
+
+pub async fn ensure_default_assistants(resource_dir: Option<&Path>) -> Result<(), String> {
+    let bundled = if let Some(dir) = resource_dir {
+        match load_bundled_assistants(dir) {
+            Ok(list) => {
+                let missing_defaults = missing_default_assistant_names(&list);
+                if missing_defaults.is_empty() {
+                    list
+                } else {
+                    log::warn!(
+                        "Bundled assistants are incomplete (missing: {}). Falling back to hardcoded defaults.",
+                        missing_defaults.join(", ")
+                    );
+                    Vec::new()
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to load bundled assistants: {}. Falling back to hardcoded defaults.",
+                    e
+                );
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
+    if bundled.is_empty() {
+        log::warn!("No bundled assistants found, falling back to hardcoded defaults");
+        return ensure_default_assistants_hardcoded().await;
+    }
+
     let repo = crate::get_assistant_repository();
-    let libr_name = "Libr Assistant";
-    let libr_description =
-        "Field operations specialist for verified research, execution, and cross-domain task delivery.";
-    let libr_exists = repo
-        .check_assistant_exists(libr_name)
+
+    // Fetch all existing assistants in a single query
+    let existing_assistants = repo
+        .list_assistants()
         .await
-        .map_err(|e| format!("Failed to check for Libr Assistant: {}", e))?;
+        .map_err(|e| format!("Failed to list assistants: {}", e))?;
 
-    if !libr_exists {
-        println!("Creating default 'Libr Assistant'...");
-        let system_prompt = r#"You are the Libr Agent: a field operations specialist in the Master Mind command structure.
-Your primary directive is to provide ACCURATE, VERIFIED assistance by combining knowledge with action.
+    let mut existing_map: HashMap<String, crate::entity::assistant::Model> = existing_assistants
+        .into_iter()
+        .map(|a| (a.name.clone(), a))
+        .collect();
 
-CORE PROTOCOLS:
-1. VERIFICATION: Always use tools to verify facts about the current environment. Never rely solely on training data. If you cannot verify, state uncertainty explicitly.
-2. ACTION INTEGRITY: Before editing, verify file exists and read content. After action, verify outcome and report actual results.
-3. UNCERTAINTY: If user intent is ambiguous or tool results are unexpected, ask questions—do not hallucinate.
+    for assistant in &bundled {
+        log::info!("Ensuring assistant: {}", assistant.name);
 
-COMPLEX TASKS (3+ steps):
-1. Define and record your overall objective
-2. Break down into actionable steps and track progress
-3. Save critical findings (file paths, IDs, discoveries) for later reference
+        if let Some(existing) = existing_map.remove(&assistant.name) {
+            let mut config_val =
+                serde_json::from_str::<Value>(&existing.config).unwrap_or_else(|_| json!({}));
 
-CONTEXT MANAGEMENT:
-Your conversation context is limited. For complex tasks: establish persistent goals, save critical findings to scratchpad (limit ~10 items), and reference saved information instead of re-gathering.
+            if !bundled_config_needs_update(&config_val, assistant) {
+                continue;
+            }
 
-TEAM DOCTRINE:
-- When a higher-level plan exists, execute your assigned part with discipline.
-- Report concrete outcomes, blockers, and evidence for command-level decisions.
+            config_val["description"] = Value::String(assistant.config.description.clone());
+            config_val["systemPrompt"] = Value::String(assistant.prompt.clone());
+            config_val["mcpServerIds"] = Value::Array(
+                assistant
+                    .config
+                    .mcp_server_ids
+                    .iter()
+                    .map(|s| Value::String(s.clone()))
+                    .collect(),
+            );
+            config_val["deletionProtected"] = Value::Bool(assistant.config.deletion_protected);
+            config_val["localServices"] = Value::Array(
+                assistant
+                    .config
+                    .local_services
+                    .iter()
+                    .map(|s| Value::String(s.clone()))
+                    .collect(),
+            );
+            config_val["allowedBuiltInServiceAliases"] = Value::Array(
+                assistant
+                    .config
+                    .allowed_builtin_service_aliases
+                    .iter()
+                    .map(|s| Value::String(s.clone()))
+                    .collect(),
+            );
 
-ATTENTION ECONOMY:
-- Prefer the smallest viable toolset per step.
-- Do not hop tools unless current evidence requires it.
-- Finish one investigative thread before opening another."#;
+            repo.update_assistant(&existing.id, None, Some(config_val.to_string()))
+                .await
+                .map_err(|e| format!("Failed to update assistant '{}': {}", assistant.name, e))?;
+        } else {
+            let mut config_val = json!({});
+            config_val["description"] = Value::String(assistant.config.description.clone());
+            config_val["systemPrompt"] = Value::String(assistant.prompt.clone());
+            config_val["mcpServerIds"] = Value::Array(
+                assistant
+                    .config
+                    .mcp_server_ids
+                    .iter()
+                    .map(|s| Value::String(s.clone()))
+                    .collect(),
+            );
+            config_val["deletionProtected"] = Value::Bool(assistant.config.deletion_protected);
+            config_val["localServices"] = Value::Array(
+                assistant
+                    .config
+                    .local_services
+                    .iter()
+                    .map(|s| Value::String(s.clone()))
+                    .collect(),
+            );
+            config_val["allowedBuiltInServiceAliases"] = Value::Array(
+                assistant
+                    .config
+                    .allowed_builtin_service_aliases
+                    .iter()
+                    .map(|s| Value::String(s.clone()))
+                    .collect(),
+            );
 
-        let config = json!({
-            "description": libr_description,
-            "systemPrompt": system_prompt,
-            "mcpServerIds": [],
-            "deletionProtected": true,
-            "localServices": [],
-            "allowedBuiltInServiceAliases": [
-                "attachments",
-                "workspace",
-                "browser",
-                "planning",
-                "playbook"
-            ]
-        });
-
-        let id = uuid::Uuid::new_v4().to_string();
-        repo.create_assistant(id, libr_name.to_string(), config.to_string())
-            .await
-            .map_err(|e| format!("Failed to create Libr Assistant: {}", e))?;
+            let id = uuid::Uuid::new_v4().to_string();
+            repo.create_assistant(id, assistant.name.clone(), config_val.to_string())
+                .await
+                .map_err(|e| format!("Failed to create assistant '{}': {}", assistant.name, e))?;
+        }
     }
 
-    ensure_assistant_description(repo, libr_name, libr_description).await?;
+    // Clean up any legacy or removed default assistants (zombie prevention)
+    // If an assistant exists in the DB but is NOT in the current bundle, and it is marked
+    // as deletionProtected in its config, we delete it from the database.
+    for (name, existing) in existing_map {
+        let config_val =
+            serde_json::from_str::<Value>(&existing.config).unwrap_or_else(|_| json!({}));
+        let is_deletion_protected = config_val
+            .get("deletionProtected")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
-    // 2. Coding Expert Assistant
-    let coding_name = "Coding Expert";
-    let coding_description =
-        "Engineering execution specialist for implementation, refactoring, debugging, and verification.";
-    let coding_exists = repo
-        .check_assistant_exists(coding_name)
-        .await
-        .map_err(|e| format!("Failed to check for Coding Expert: {}", e))?;
-
-    if !coding_exists {
-        println!("Creating default 'Coding Expert'...");
-        let system_prompt = r#"You are the Coding Expert: an engineering execution specialist under Master Mind command.
-    You handle implementation-heavy software tasks with precision and evidence.
-
-INTEGRITY PROTOCOLS:
-1. READ BEFORE WRITE: Never edit code without reading current state first.
-2. VERIFY: After edits, verify compilation/tests pass. Report EXACT errors if they fail.
-3. NO BLIND EDITS: Always verify code context. Do not guess.
-
-COMPLEX TASKS (multi-file/refactoring):
-1. Define objective (e.g., "Refactor auth to JWT")
-2. Break into steps, track progress, adjust plan as needed
-3. Save critical info: file paths, function names, dependencies, architectural decisions
-
-CONTEXT MANAGEMENT:
-Your context is limited. For complex tasks: establish persistent goals, save code structure info to scratchpad (limit ~10 items), reference saved info instead of re-analyzing.
-
-CORE COMPETENCIES:
-- Analyze code structure and patterns before changes
-- Consider system architecture and design patterns
-- Apply SOLID principles and best practices
-- Make surgical, incremental changes
-
-TEAM DOCTRINE:
-- When strategy is provided, translate it into safe, verifiable code changes.
-- Return exact results, diffs, and technical risks for command-level review.
-
-ATTENTION ECONOMY:
-- Stay in code-analysis/edit/verification loop unless mission scope changes.
-- Avoid unnecessary tool switching during implementation."#;
-
-        let config = json!({
-            "description": coding_description,
-            "systemPrompt": system_prompt,
-            "mcpServerIds": [],
-            "deletionProtected": true,
-            "localServices": [],
-            "allowedBuiltInServiceAliases": [
-                "workspace",
-                "planning",
-                "attachments",
-                "playbook"
-            ]
-        });
-
-        let id = uuid::Uuid::new_v4().to_string();
-        repo.create_assistant(id, coding_name.to_string(), config.to_string())
-            .await
-            .map_err(|e| format!("Failed to create Coding Expert: {}", e))?;
+        if is_deletion_protected {
+            log::info!("Removing legacy/removed default assistant: {}", name);
+            if let Err(e) = repo.delete_assistant(&existing.id).await {
+                log::warn!("Failed to delete legacy assistant '{}': {}", name, e);
+            }
+        }
     }
 
-    ensure_assistant_description(repo, coding_name, coding_description).await?;
+    Ok(())
+}
 
-    // 3. App Wizard (Setup Assistant)
-    let wizard_name = "App Wizard";
-    let wizard_description =
-        "Environment and configuration specialist for MCP setup, agent management, and system readiness.";
-    let wizard_exists = repo
-        .check_assistant_exists(wizard_name)
-        .await
-        .map_err(|e| format!("Failed to check for App Wizard: {}", e))?;
+pub async fn ensure_default_assistants_hardcoded() -> Result<(), String> {
+    let repo = crate::get_assistant_repository();
 
-    if !wizard_exists {
-        println!("Creating default 'App Wizard'...");
-        let system_prompt = r#"You are the App Wizard: an environment and systems setup specialist under Master Mind command.
-Your role is to help users configure the application, manage agents, and set up MCP servers.
+    let defaults = vec![
+        ("Master Mind", MASTER_MIND_PROMPT, MASTER_MIND_CONFIG),
+        (
+            "Libr Assistant",
+            LIBR_ASSISTANT_PROMPT,
+            LIBR_ASSISTANT_CONFIG,
+        ),
+        ("Coding Expert", CODING_EXPERT_PROMPT, CODING_EXPERT_CONFIG),
+        ("App Wizard", APP_WIZARD_PROMPT, APP_WIZARD_CONFIG),
+    ];
+    let default_names: Vec<&str> = defaults.iter().map(|(n, _, _)| *n).collect();
 
-CORE PRINCIPLES:
-1. CONFIGURATION FOCUS: Configure settings only, not runtime behavior.
-2. VERIFICATION: Verify system requirements before making changes.
-
-COMPLEX TASKS (multi-step setup):
-1. Define setup objective clearly
-2. Break into configuration steps, track progress, verify each change
-3. Save critical info: agent IDs/names, MCP configs (commands, paths, env vars), system requirements
-
-CONTEXT MANAGEMENT:
-Your context is limited. For complex setup: establish persistent goals, save configuration details to scratchpad (limit ~10 items), reference saved info instead of re-querying.
-
-CAPABILITIES:
-1. AGENTS: Create, update, list, search. Write detailed system prompts following best practices.
-2. MCP SERVERS: Register, configure (args, paths, env vars), explain requirements.
-3. ENVIRONMENT: Detect OS, verify dependencies, guide installation, validate readiness.
-
-TEAM DOCTRINE:
-- Execute setup plans reliably and surface operational risks early.
-- Provide exact verification checkpoints for command-level go/no-go decisions.
-
-ATTENTION ECONOMY:
-- Stay focused on environment/configuration operations.
-- Only escalate to broader tools when setup verification demands it."#;
-
-        let config = json!({
-            "description": wizard_description,
-            "systemPrompt": system_prompt,
-            "mcpServerIds": [],
-            "deletionProtected": true,
-            "localServices": [],
-            "allowedBuiltInServiceAliases": [
-                "bootstrap",
-                "tool",
-                "agent",
-                "workspace",
-                "planning",
-                "attachments"
-            ]
-        });
-
-        let id = uuid::Uuid::new_v4().to_string();
-        repo.create_assistant(id, wizard_name.to_string(), config.to_string())
+    for (name, prompt, config_str) in defaults {
+        let exists = repo
+            .check_assistant_exists(name)
             .await
-            .map_err(|e| format!("Failed to create App Wizard: {}", e))?;
+            .map_err(|e| format!("Failed to check for {}: {}", name, e))?;
+
+        let mut config_val: Value = serde_json::from_str(config_str)
+            .map_err(|e| format!("Failed to parse embedded config for {}: {}", name, e))?;
+
+        // Inject the system prompt into the config
+        config_val["systemPrompt"] = Value::String(prompt.to_string());
+
+        if !exists {
+            log::info!("Creating default '{}'...", name);
+            let id = uuid::Uuid::new_v4().to_string();
+            repo.create_assistant(id, name.to_string(), config_val.to_string())
+                .await
+                .map_err(|e| format!("Failed to create {}: {}", name, e))?;
+        } else {
+            // Reconcile if exists
+            let assistants = repo
+                .list_assistants()
+                .await
+                .map_err(|e| format!("Failed to list assistants: {}", e))?;
+            if let Some(existing) = assistants.into_iter().find(|a| a.name == name) {
+                let existing_config =
+                    serde_json::from_str::<Value>(&existing.config).unwrap_or_else(|_| json!({}));
+
+                let temp_config: BundledAssistantConfig =
+                    serde_json::from_value(config_val.clone())
+                        .map_err(|e| format!("Failed to parse config for comparison: {}", e))?;
+
+                let temp_bundled = BundledAssistant {
+                    name: name.to_string(),
+                    prompt: prompt.to_string(),
+                    config: temp_config,
+                };
+
+                if bundled_config_needs_update(&existing_config, &temp_bundled) {
+                    log::info!("Updating default '{}'...", name);
+                    repo.update_assistant(&existing.id, None, Some(config_val.to_string()))
+                        .await
+                        .map_err(|e| format!("Failed to update {}: {}", name, e))?;
+                }
+            }
+        }
     }
 
-    ensure_assistant_description(repo, wizard_name, wizard_description).await?;
-
-    // 4. Master Mind (Orchestrator)
-    let mastermind_name = "Master Mind";
-    let mastermind_description =
-        "Command orchestrator that plans strategy, delegates to specialists, and enforces quality gates.";
-    let mastermind_exists = repo
-        .check_assistant_exists(mastermind_name)
+    // Clean up any legacy or removed default assistants in the fallback path as well
+    let mut existing_map: HashMap<String, crate::entity::assistant::Model> = repo
+        .list_assistants()
         .await
-        .map_err(|e| format!("Failed to check for Master Mind: {}", e))?;
+        .map_err(|e| format!("Failed to list assistants: {}", e))?
+        .into_iter()
+        .map(|a| (a.name.clone(), a))
+        .collect();
 
-    if !mastermind_exists {
-        println!("Creating default 'Master Mind'...");
-        let system_prompt = mastermind_system_prompt();
-
-        let config = json!({
-            "description": mastermind_description,
-            "systemPrompt": system_prompt,
-            "mcpServerIds": [],
-            "deletionProtected": true,
-            "localServices": [],
-            "allowedBuiltInServiceAliases": [
-                "planning",
-                "attachments",
-                "playbook",
-                "agent"
-            ]
-        });
-
-        let id = uuid::Uuid::new_v4().to_string();
-        repo.create_assistant(id, mastermind_name.to_string(), config.to_string())
-            .await
-            .map_err(|e| format!("Failed to create Master Mind: {}", e))?;
+    // Remove the current defaults from the map
+    for name in default_names {
+        existing_map.remove(name);
     }
 
-    ensure_assistant_description(repo, mastermind_name, mastermind_description).await?;
-    ensure_assistant_system_prompt(repo, mastermind_name, mastermind_system_prompt()).await?;
+    // Delete any remaining assistants that are deletion protected (e.g., legacy master-mind)
+    for (name, existing) in existing_map {
+        let config_val =
+            serde_json::from_str::<Value>(&existing.config).unwrap_or_else(|_| json!({}));
+        let is_deletion_protected = config_val
+            .get("deletionProtected")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if is_deletion_protected {
+            log::info!(
+                "Removing legacy/removed default assistant (fallback path): {}",
+                name
+            );
+            if let Err(e) = repo.delete_assistant(&existing.id).await {
+                log::warn!("Failed to delete legacy assistant '{}': {}", name, e);
+            }
+        }
+    }
 
     Ok(())
 }

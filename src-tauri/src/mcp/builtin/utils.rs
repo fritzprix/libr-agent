@@ -125,7 +125,7 @@ impl SecurityValidator {
 
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
 
-        if enforce_base_containment && !absolute_path.starts_with(&self.base_dir) {
+        if enforce_base_containment && !path_starts_with(&absolute_path, &self.base_dir) {
             return Err(SecurityError::PathTraversal(format!(
                 "Access denied: Path '{user_path}' is outside the allowed base directory"
             )));
@@ -177,7 +177,7 @@ impl SecurityValidator {
                 }
 
                 if let Some(canon) = existing_canonical {
-                    if enforce_base_containment && !canon.starts_with(&self.base_dir) {
+                    if enforce_base_containment && !path_starts_with(&canon, &self.base_dir) {
                         return Err(SecurityError::PathTraversal(format!(
                             "Access denied: Path '{user_path}' resolves outside the allowed base directory"
                         )));
@@ -193,7 +193,7 @@ impl SecurityValidator {
             }
         };
 
-        if enforce_base_containment && !canonical_path.starts_with(&self.base_dir) {
+        if enforce_base_containment && !path_starts_with(&canonical_path, &self.base_dir) {
             return Err(SecurityError::PathTraversal(format!(
                 "Access denied: Path '{user_path}' resolves outside the allowed base directory"
             )));
@@ -287,6 +287,69 @@ impl SecurityValidator {
     pub fn extract_filename(path: &str) -> Option<String> {
         let normalized = Self::normalize_path_separators(path);
         normalized.split('/').next_back().map(|s| s.to_string())
+    }
+}
+
+/// Helper to check if a path starts with a base path, safely handling Windows UNC prefixes and case-insensitivity.
+pub fn path_starts_with(path: &Path, base: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, paths may have different prefixes (e.g., `\\?\C:\` vs `C:\`)
+        // and are case-insensitive. We compare path components individually.
+        let mut path_comps = path.components();
+        let mut base_comps = base.components();
+
+        loop {
+            match (path_comps.next(), base_comps.next()) {
+                (Some(p), Some(b)) => {
+                    if !components_equal_ignore_case(&p, &b) {
+                        return false;
+                    }
+                }
+                // If base is fully matched, then path indeed starts with base.
+                (_, None) => return true,
+                // If path is shorter than base, it cannot start with it.
+                (None, Some(_)) => return false,
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        path.starts_with(base)
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(clippy::manual_ignore_case_cmp)]
+fn components_equal_ignore_case(c1: &Component, c2: &Component) -> bool {
+    use std::path::Prefix;
+
+    match (c1, c2) {
+        (Component::Prefix(p1), Component::Prefix(p2)) => match (p1.kind(), p2.kind()) {
+            (Prefix::VerbatimDisk(d1), Prefix::VerbatimDisk(d2)) => {
+                d1.to_ascii_uppercase() == d2.to_ascii_uppercase()
+            }
+            (Prefix::Disk(d1), Prefix::Disk(d2)) => {
+                d1.to_ascii_uppercase() == d2.to_ascii_uppercase()
+            }
+            (Prefix::VerbatimDisk(d1), Prefix::Disk(d2)) => {
+                d1.to_ascii_uppercase() == d2.to_ascii_uppercase()
+            }
+            (Prefix::Disk(d1), Prefix::VerbatimDisk(d2)) => {
+                d1.to_ascii_uppercase() == d2.to_ascii_uppercase()
+            }
+            (kind1, kind2) => kind1 == kind2,
+        },
+        (Component::RootDir, Component::RootDir) => true,
+        (Component::CurDir, Component::CurDir) => true,
+        (Component::ParentDir, Component::ParentDir) => true,
+        (Component::Normal(s1), Component::Normal(s2)) => {
+            let s1_str = s1.to_string_lossy();
+            let s2_str = s2.to_string_lossy();
+            s1_str.eq_ignore_ascii_case(&s2_str)
+        }
+        _ => false,
     }
 }
 

@@ -263,7 +263,7 @@ impl WorkspaceServer {
 
         allowed_roots.iter().any(|root| {
             let normalized_root = root.canonicalize().unwrap_or_else(|_| root.clone());
-            normalized_candidate.starts_with(&normalized_root)
+            crate::mcp::builtin::utils::path_starts_with(&normalized_candidate, &normalized_root)
         })
     }
 

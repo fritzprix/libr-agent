@@ -1,11 +1,11 @@
 use serde_json::Value;
 
-use crate::mcp::builtin::error_guidance::SuccessHint;
-use crate::mcp::builtin::session_api::formatting::{extract_session_status, is_terminal_status};
-use crate::mcp::builtin::session_api::utils::{
+use super::super::utils::{
     build_agent_session_tool_data, check_session_next_actions, count_session_turns,
-    handle_wait_timeout_result, read_required_string, wait_until_session_terminal,
+    extract_session_status, handle_wait_timeout_result, is_terminal_status, read_required_string,
+    wait_until_session_terminal,
 };
+use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::types::MCPResult;
 
 use super::super::AgentServer;

@@ -90,6 +90,11 @@ const VALIDATE_STAGES = [
     command: pnpmCommand,
     args: ['skills:audit'],
   },
+  {
+    name: 'assistants:validate',
+    command: pnpmCommand,
+    args: ['assistants:validate'],
+  },
 ];
 
 export function sanitizeStageName(stageName) {

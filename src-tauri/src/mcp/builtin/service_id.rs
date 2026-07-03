@@ -18,7 +18,7 @@ pub enum BuiltinServiceId {
     Ui,
     Browser,
     ScheduledTask,
-    #[serde(rename = "setup-wizard", alias = "setup_wizard")]
+    #[serde(rename = "setup-wizard", alias = "setup_wizard", alias = "bootstrap")]
     SetupWizard,
     Tool, // Unified Tool Domain
     Media,

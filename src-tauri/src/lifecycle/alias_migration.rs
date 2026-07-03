@@ -45,22 +45,43 @@ fn migrate_json_config(config_str: &str) -> Option<String> {
 
     let mut changed = false;
 
-    // Helper closure to process an array field
-    let mut process_array_field = |field_name: &str| {
-        if let Some(Value::Array(arr)) = config.get_mut(field_name) {
-            for item in arr.iter_mut() {
-                if let Value::String(s) = item {
-                    if let Some(new_alias) = canonicalize_alias(s) {
-                        *item = Value::String(new_alias.to_string());
-                        changed = true;
-                    }
+    // Process and canonicalize allowedBuiltInServiceAliases if present
+    if let Some(Value::Array(arr)) = config.get_mut("allowedBuiltInServiceAliases") {
+        for item in arr.iter_mut() {
+            if let Value::String(s) = item {
+                if let Some(new_alias) = canonicalize_alias(s) {
+                    *item = Value::String(new_alias.to_string());
+                    changed = true;
                 }
             }
         }
-    };
+    }
 
-    process_array_field("allowedBuiltInServiceAliases");
-    process_array_field("localServices");
+    // If legacy localServices exists, migrate its contents to allowedBuiltInServiceAliases
+    if let Some(Value::Array(local_arr)) = config.get("localServices").cloned() {
+        if config.get("allowedBuiltInServiceAliases").is_none() {
+            let mut new_aliases = Vec::new();
+            for item in local_arr {
+                if let Value::String(s) = item {
+                    let canonical = canonicalize_alias(&s)
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| s.clone());
+                    new_aliases.push(Value::String(canonical));
+                }
+            }
+            config["allowedBuiltInServiceAliases"] = Value::Array(new_aliases);
+        }
+
+        if let Some(obj) = config.as_object_mut() {
+            obj.remove("localServices");
+        }
+        changed = true;
+    } else if let Some(obj) = config.as_object_mut() {
+        // If it was empty or not an array, just remove it to clean up the JSON
+        if obj.remove("localServices").is_some() {
+            changed = true;
+        }
+    }
 
     if changed {
         serde_json::to_string(&config).ok()

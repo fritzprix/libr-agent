@@ -3,6 +3,7 @@ use crate::lifecycle::settings::SystemSettings;
 use crate::logger;
 use crate::repositories;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::repositories::AssistantRepository;
 use crate::services::skill_service::{
     LEGACY_SYSTEM_SKILLS_DIR_NAME, MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME,
     SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_DIR_NAME,
@@ -14,7 +15,7 @@ use log::info;
 use log::warn;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
@@ -23,6 +24,7 @@ use tauri::{App, Emitter, Listener, Manager};
 /// Used to distinguish bundled skills from user-created ones so that skills
 /// removed from the bundle can be cleaned up automatically on the next launch.
 const BUNDLED_SKILL_MARKER: &str = ".bundled_skill";
+const ASSISTANT_BUNDLED_SKILLS_MANIFEST_FILE_NAME: &str = ".bundled_skills_manifest.json";
 const MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +154,57 @@ fn spawn_managed_skills_startup_work(bundled_skills_dir: PathBuf, system_skills_
     });
 }
 
+pub async fn sync_assistant_bundled_skills(
+    resource_dir: &Path,
+    base_data_dir: &Path,
+) -> Result<(), String> {
+    let assistants = crate::services::assistant_init::load_bundled_assistants(resource_dir)?;
+    let bundled_assistants_dir = resource_dir.join("bundled_assistants");
+    let assistant_names: Vec<String> = if assistants.is_empty() {
+        crate::services::assistant_init::default_assistant_names()
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect()
+    } else {
+        assistants
+            .into_iter()
+            .map(|assistant| assistant.name)
+            .collect()
+    };
+
+    let repo = crate::get_assistant_repository();
+    let assistants_db = repo.list_assistants().await.map_err(|e| e.to_string())?;
+
+    let assistant_map: HashMap<String, String> =
+        assistants_db.into_iter().map(|a| (a.name, a.id)).collect();
+
+    for assistant_name in assistant_names {
+        let assistant_skills_dir = bundled_assistants_dir
+            .join(&assistant_name)
+            .join("bundled_skills");
+
+        let Some(assistant_id) = assistant_map.get(&assistant_name) else {
+            log::warn!(
+                "⚠️ Skipping skill sync for '{}': assistant not found in database.",
+                assistant_name
+            );
+            continue;
+        };
+
+        let target_skills_dir = base_data_dir
+            .join("assistants")
+            .join(assistant_id)
+            .join("skills");
+        sync_assistant_bundled_skills_snapshot(
+            assistant_skills_dir.as_path(),
+            &target_skills_dir,
+            &assistant_name,
+        )?;
+    }
+
+    Ok(())
+}
+
 fn spawn_startup_maintenance_tasks(
     session_manager: crate::session::SessionManager,
     search_index_frequency_minutes: u64,
@@ -233,7 +286,10 @@ fn hash_skill_directory(skill_dir: &Path) -> Result<String, String> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("Failed to scan {}: {}", skill_dir.display(), error))?
         .into_iter()
-        .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| {
+            entry.file_type().is_file()
+                && entry.file_name().to_string_lossy().as_ref() != BUNDLED_SKILL_MARKER
+        })
         .map(|entry| {
             let path = entry.into_path();
             let normalized = normalized_relative_path(skill_dir, &path)?;
@@ -280,6 +336,45 @@ fn build_bundled_skills_manifest(skills_dir: &Path) -> Result<BundledSkillsManif
         }
 
         if !skill_path.join(SKILL_FILE_NAME).is_file() {
+            continue;
+        }
+
+        let skill_dir_name = entry.file_name().to_string_lossy().to_string();
+        manifest
+            .skills
+            .insert(skill_dir_name, hash_skill_directory(&skill_path)?);
+    }
+
+    Ok(manifest)
+}
+
+fn build_marked_bundled_skills_manifest(
+    skills_dir: &Path,
+) -> Result<BundledSkillsManifest, String> {
+    let mut manifest = BundledSkillsManifest {
+        schema_version: MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION,
+        skills: BTreeMap::new(),
+    };
+
+    if !skills_dir.exists() {
+        return Ok(manifest);
+    }
+
+    let mut entries = std::fs::read_dir(skills_dir)
+        .map_err(|error| format!("Failed to read {}: {}", skills_dir.display(), error))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read directory entry: {}", error))?;
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
+
+    for entry in entries {
+        let skill_path = entry.path();
+        if !skill_path.is_dir() {
+            continue;
+        }
+
+        if !skill_path.join(BUNDLED_SKILL_MARKER).is_file()
+            || !skill_path.join(SKILL_FILE_NAME).is_file()
+        {
             continue;
         }
 
@@ -424,6 +519,15 @@ fn replace_skill_directory_atomically(source_dir: &Path, target_dir: &Path) -> R
 
     match std::fs::rename(&temp_dir, target_dir) {
         Ok(()) => {
+            std::fs::write(target_dir.join(BUNDLED_SKILL_MARKER), b"bundled\n").map_err(
+                |error| {
+                    format!(
+                        "Failed to write bundled marker {}: {}",
+                        target_dir.join(BUNDLED_SKILL_MARKER).display(),
+                        error
+                    )
+                },
+            )?;
             if moved_existing_to_backup {
                 std::fs::remove_dir_all(&backup_dir).map_err(|error| {
                     format!(
@@ -626,6 +730,84 @@ fn copy_dir_recursive_path(src: &std::path::Path, dst: &std::path::Path) -> std:
     Ok(())
 }
 
+fn sync_assistant_bundled_skills_snapshot(
+    source_skills_dir: &Path,
+    target_skills_dir: &Path,
+    assistant_name: &str,
+) -> Result<(), String> {
+    std::fs::create_dir_all(target_skills_dir).map_err(|error| {
+        format!(
+            "Failed to create assistant skills directory {}: {}",
+            target_skills_dir.display(),
+            error
+        )
+    })?;
+
+    let manifest_path = target_skills_dir.join(ASSISTANT_BUNDLED_SKILLS_MANIFEST_FILE_NAME);
+    let source_manifest = build_bundled_skills_manifest(source_skills_dir)?;
+    let source_skill_names = source_manifest
+        .skills
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let installed_skill_names = build_marked_bundled_skills_manifest(target_skills_dir)?
+        .skills
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let persisted_manifest = load_persisted_bundled_skills_manifest(&manifest_path)?;
+    let installed_manifest = match persisted_manifest.as_ref() {
+        Some(manifest) => manifest.clone(),
+        None => build_marked_bundled_skills_manifest(target_skills_dir)?,
+    };
+
+    if installed_manifest == source_manifest && installed_skill_names == source_skill_names {
+        if persisted_manifest.is_none() {
+            write_manifest_atomically(&manifest_path, &source_manifest)?;
+        }
+        return Ok(());
+    }
+
+    for obsolete_skill in installed_skill_names.difference(&source_skill_names) {
+        let obsolete_dir = target_skills_dir.join(obsolete_skill);
+        if obsolete_dir.exists() {
+            std::fs::remove_dir_all(&obsolete_dir).map_err(|error| {
+                format!(
+                    "Failed to delete obsolete bundled assistant skill {} for '{}': {}",
+                    obsolete_skill, assistant_name, error
+                )
+            })?;
+        }
+    }
+
+    for (skill_name, source_hash) in &source_manifest.skills {
+        let target_skill_dir = target_skills_dir.join(skill_name);
+        let needs_update = if target_skill_dir.exists() {
+            let target_hash = hash_skill_directory(&target_skill_dir)?;
+            installed_manifest.skills.get(skill_name) != Some(source_hash)
+                || source_hash != &target_hash
+                || !target_skill_dir.join(BUNDLED_SKILL_MARKER).is_file()
+        } else {
+            true
+        };
+
+        if needs_update {
+            replace_skill_directory_atomically(
+                &source_skills_dir.join(skill_name),
+                &target_skill_dir,
+            )?;
+            log::info!(
+                "Synced skill '{}' for assistant '{}'",
+                skill_name,
+                assistant_name
+            );
+        }
+    }
+
+    write_manifest_atomically(&manifest_path, &source_manifest)?;
+    Ok(())
+}
+
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Setup custom file logger FIRST (before any log calls)
     let log_dir = app.path().app_log_dir()?;
@@ -652,10 +834,26 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(std::io::Error::other)?
         .clone();
     let resource_dir = app.path().resource_dir()?;
+
+    // Ensure default assistants are loaded from the resource directory (Fixes Correctness #2)
+    if let Err(e) = tauri::async_runtime::block_on(
+        crate::services::assistant_init::ensure_default_assistants(Some(&resource_dir)),
+    ) {
+        log::error!("❌ Failed to ensure default assistants from bundle: {}", e);
+    }
+
+    let base_data_dir = session_manager.get_base_data_dir().clone();
+    if let Err(error) =
+        tauri::async_runtime::block_on(sync_assistant_bundled_skills(&resource_dir, &base_data_dir))
+    {
+        log::warn!("⚠️  Failed to sync assistant bundled skills: {}", error);
+    } else {
+        crate::services::skill_service::invalidate_skill_scan_cache();
+        info!("✅ Assistant bundled skills synchronized");
+    }
+
     let bundled_skills_dir = resource_dir.join("bundled_skills");
-    let system_skills_dir = session_manager
-        .get_base_data_dir()
-        .join(SYSTEM_SKILLS_DIR_NAME);
+    let system_skills_dir = base_data_dir.join(SYSTEM_SKILLS_DIR_NAME);
     spawn_managed_skills_startup_work(bundled_skills_dir, system_skills_dir);
 
     let startup_settings = tauri::async_runtime::block_on(load_startup_settings());

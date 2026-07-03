@@ -2,8 +2,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::path::Path;
 
+use super::super::utils::{build_agent_tool_data, read_required_string};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
-use crate::mcp::builtin::session_api::utils::{build_agent_tool_data, read_required_string};
 use crate::mcp::types::MCPResult;
 use crate::repositories::{session_repository::SessionRepository, SessionMetadata};
 

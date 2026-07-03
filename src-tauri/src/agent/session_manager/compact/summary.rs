@@ -6,6 +6,15 @@ use crate::models::chat::Message;
 const COMPACT_PREVIEW_MAX_CHARS: usize = 96;
 const COMPACTION_SUMMARY_HARD_LIMIT_RATIO: usize = 10;
 pub(super) const COMPACTION_SUMMARY_TRUNCATION_SUFFIX: &str = "…";
+const COMPACTION_TOOL_MARKUP_PATTERNS: &[(&str, &str)] = &[
+    ("<tool_call", "tool-call XML tag"),
+    ("</tool_call>", "tool-call XML closing tag"),
+    ("<function=", "pseudo function tag"),
+    ("<parameter=", "pseudo parameter tag"),
+    ("\"tool_calls\":", "JSON tool_calls payload"),
+    ("\"function_call\":", "JSON function_call payload"),
+    ("\"tool_call_starts\":", "JSON tool_call_starts payload"),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactSummaryClampResult {
@@ -103,6 +112,13 @@ fn minimum_compact_summary_chars(compacted_delta_count: usize) -> usize {
     }
 }
 
+fn detect_compaction_output_contamination(summary: &str) -> Option<&'static str> {
+    let normalized = summary.to_ascii_lowercase();
+    COMPACTION_TOOL_MARKUP_PATTERNS
+        .iter()
+        .find_map(|(needle, label)| normalized.contains(needle).then_some(*label))
+}
+
 pub(super) fn validate_compact_summary(
     summary: &str,
     compacted_delta_count: usize,
@@ -110,6 +126,12 @@ pub(super) fn validate_compact_summary(
     let normalized = summary.trim();
     if normalized.is_empty() {
         return Err("Compaction summary was empty.".to_string());
+    }
+
+    if let Some(contamination_label) = detect_compaction_output_contamination(normalized) {
+        return Err(format!(
+            "Compaction summary contained tool-call markup or execution payload ({contamination_label}).",
+        ));
     }
 
     let min_chars = minimum_compact_summary_chars(compacted_delta_count);
