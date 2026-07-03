@@ -750,24 +750,25 @@ fn sync_assistant_bundled_skills_snapshot(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
+    let installed_skill_names = build_marked_bundled_skills_manifest(target_skills_dir)?
+        .skills
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
     let persisted_manifest = load_persisted_bundled_skills_manifest(&manifest_path)?;
     let installed_manifest = match persisted_manifest.as_ref() {
         Some(manifest) => manifest.clone(),
         None => build_marked_bundled_skills_manifest(target_skills_dir)?,
     };
 
-    if installed_manifest == source_manifest {
+    if installed_manifest == source_manifest && installed_skill_names == source_skill_names {
         if persisted_manifest.is_none() {
             write_manifest_atomically(&manifest_path, &source_manifest)?;
         }
         return Ok(());
     }
 
-    for obsolete_skill in installed_manifest.skills.keys() {
-        if source_skill_names.contains(obsolete_skill) {
-            continue;
-        }
-
+    for obsolete_skill in installed_skill_names.difference(&source_skill_names) {
         let obsolete_dir = target_skills_dir.join(obsolete_skill);
         if obsolete_dir.exists() {
             std::fs::remove_dir_all(&obsolete_dir).map_err(|error| {

@@ -130,6 +130,45 @@ async fn test_ensure_default_assistants_from_bundle() {
 }
 
 #[tokio::test]
+async fn test_ensure_default_assistants_falls_back_when_bundle_is_incomplete() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = common::setup_test_db_with_migrations().await;
+    common::register_assistant_repository(&db);
+
+    let resource_temp = tempfile::tempdir().expect("failed to create resource temp dir");
+    let resource_root = resource_temp.path().join("resources");
+    copy_dir_all(
+        &manifest_resource_dir().join("bundled_assistants"),
+        &resource_root.join("bundled_assistants"),
+    );
+
+    std::fs::remove_file(resource_root.join("bundled_assistants/Master Mind/prompt.md"))
+        .expect("Master Mind prompt should be removable");
+
+    ensure_default_assistants(Some(&resource_root))
+        .await
+        .expect("incomplete bundle should fall back safely");
+
+    let repo = SqliteAssistantRepository::new(db);
+    let assistants = repo
+        .list_assistants()
+        .await
+        .expect("failed to list assistants");
+    let names: Vec<String> = assistants.into_iter().map(|a| a.name).collect();
+
+    assert!(
+        names.contains(&"Master Mind".to_string()),
+        "fallback should preserve the missing default assistant"
+    );
+    assert!(
+        names.contains(&"Libr Assistant".to_string())
+            && names.contains(&"Coding Expert".to_string())
+            && names.contains(&"App Wizard".to_string()),
+        "fallback should keep the full default assistant set"
+    );
+}
+
+#[tokio::test]
 async fn test_zombie_assistant_cleanup_bundle_path() {
     let _guard = TEST_GUARD.lock().await;
     let db = common::setup_test_db_with_migrations().await;
@@ -424,6 +463,61 @@ async fn test_sync_assistant_bundled_skills_removes_snapshot_when_bundle_directo
     assert!(
         !bundled_skill_dir.exists(),
         "assistant bundled skill snapshots should be removed when the source directory disappears"
+    );
+}
+
+#[tokio::test]
+async fn test_sync_assistant_bundled_skills_restores_missing_snapshot_directory() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = common::setup_test_db_with_migrations().await;
+    common::register_assistant_repository(&db);
+
+    let resource_temp = tempfile::tempdir().expect("failed to create resource temp dir");
+    let resource_root = resource_temp.path().join("resources");
+    copy_dir_all(
+        &manifest_resource_dir().join("bundled_assistants"),
+        &resource_root.join("bundled_assistants"),
+    );
+
+    let target_temp = tempfile::tempdir().expect("failed to create target temp dir");
+    let target_dir = target_temp.path().to_path_buf();
+
+    tauri_mcp_agent_lib::lifecycle::app_setup::sync_assistant_bundled_skills(
+        &resource_root,
+        &target_dir,
+    )
+    .await
+    .expect("initial skill sync should succeed");
+
+    let repo = SqliteAssistantRepository::new(db);
+    let assistants = repo
+        .list_assistants()
+        .await
+        .expect("failed to list assistants");
+    let libr = assistants
+        .iter()
+        .find(|a| a.name == "Libr Assistant")
+        .expect("Libr Assistant should exist");
+
+    let bundled_skill_dir = target_dir
+        .join("assistants")
+        .join(&libr.id)
+        .join("skills")
+        .join("sample_helper");
+
+    std::fs::remove_dir_all(&bundled_skill_dir)
+        .expect("existing bundled assistant snapshot should be removable");
+
+    tauri_mcp_agent_lib::lifecycle::app_setup::sync_assistant_bundled_skills(
+        &resource_root,
+        &target_dir,
+    )
+    .await
+    .expect("second skill sync should restore missing snapshots");
+
+    assert!(
+        bundled_skill_dir.exists(),
+        "assistant bundled skill snapshot should be restored when the directory is missing"
     );
 }
 

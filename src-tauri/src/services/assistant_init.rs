@@ -50,6 +50,18 @@ pub fn default_assistant_names() -> &'static [&'static str] {
     &DEFAULT_ASSISTANT_NAMES
 }
 
+fn missing_default_assistant_names(assistants: &[BundledAssistant]) -> Vec<&'static str> {
+    DEFAULT_ASSISTANT_NAMES
+        .iter()
+        .copied()
+        .filter(|expected_name| {
+            !assistants
+                .iter()
+                .any(|assistant| assistant.name == *expected_name)
+        })
+        .collect()
+}
+
 fn json_string_array(value: &Value, key: &str) -> Vec<String> {
     value
         .get(key)
@@ -237,7 +249,18 @@ pub fn load_bundled_assistants(resource_dir: &Path) -> Result<Vec<BundledAssista
 pub async fn ensure_default_assistants(resource_dir: Option<&Path>) -> Result<(), String> {
     let bundled = if let Some(dir) = resource_dir {
         match load_bundled_assistants(dir) {
-            Ok(list) => list,
+            Ok(list) => {
+                let missing_defaults = missing_default_assistant_names(&list);
+                if missing_defaults.is_empty() {
+                    list
+                } else {
+                    log::warn!(
+                        "Bundled assistants are incomplete (missing: {}). Falling back to hardcoded defaults.",
+                        missing_defaults.join(", ")
+                    );
+                    Vec::new()
+                }
+            }
             Err(e) => {
                 log::warn!(
                     "Failed to load bundled assistants: {}. Falling back to hardcoded defaults.",

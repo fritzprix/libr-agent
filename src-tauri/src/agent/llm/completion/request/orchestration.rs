@@ -681,7 +681,7 @@ async fn perform_lossy_fallback_drop(
         prompt_tokens: None,
         created_at: now,
         updated_at: now,
-        source: Some(crate::models::chat::MessageSource::Ui),
+        source: None,
         error: None,
         metadata: None,
     };
