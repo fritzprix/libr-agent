@@ -121,6 +121,9 @@ impl PersistentShell {
                     "Bash shell type is not supported on Windows"
                 ));
             }
+            ShellType::Sh => {
+                return Err(anyhow::anyhow!("sh shell type is not supported on Windows"));
+            }
         };
 
         // Apply environment isolation to prevent leaking host secrets
@@ -206,6 +209,9 @@ impl PersistentShell {
                     debug!("Configuring PowerShell encoding to UTF-8");
                 }
                 ShellType::Bash => {
+                    // Should not reach here on Windows
+                }
+                ShellType::Sh => {
                     // Should not reach here on Windows
                 }
             }
@@ -343,6 +349,9 @@ impl PersistentShell {
                 ShellType::Bash => {
                     // Should not reach here on Windows
                 }
+                ShellType::Sh => {
+                    // Should not reach here on Windows
+                }
             }
         }
 
@@ -392,6 +401,7 @@ impl PersistentShell {
                         .await?;
                 }
                 ShellType::Bash => {}
+                ShellType::Sh => {}
             }
         }
 

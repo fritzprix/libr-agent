@@ -44,6 +44,12 @@ export type WorkspaceIsolationMode = 'host' | 'docker';
 export interface DockerWorkspaceConfig {
   image: string;
   env?: Record<string, string>;
+  portBindings?: DockerPortBinding[];
+}
+
+export interface DockerPortBinding {
+  containerPort: number;
+  hostPort?: number;
 }
 
 /**

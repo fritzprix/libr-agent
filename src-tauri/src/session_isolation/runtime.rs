@@ -6,6 +6,7 @@ use super::types::ShellType;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellDialect {
     Bash,
+    Sh,
     PowerShell,
 }
 

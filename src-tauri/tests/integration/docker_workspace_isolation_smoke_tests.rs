@@ -7,7 +7,7 @@ use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::persistent_shell::PersistentShellManager;
 use tauri_mcp_agent_lib::migration::Migrator;
 use tauri_mcp_agent_lib::models::workspace_isolation::{
-    DockerWorkspaceConfig, WorkspaceIsolationMode,
+    DockerPortBinding, DockerWorkspaceConfig, WorkspaceIsolationMode,
 };
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
@@ -68,6 +68,7 @@ async fn docker_workspace_run_shell_smoke_test() {
         docker_config: Some(DockerWorkspaceConfig {
             image: "ubuntu:24.04".to_string(),
             env: docker_env,
+            port_bindings: Vec::new(),
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
@@ -177,6 +178,7 @@ async fn docker_workspace_persistent_shell_smoke_test() {
         docker_config: Some(DockerWorkspaceConfig {
             image: "ubuntu:24.04".to_string(),
             env: HashMap::new(),
+            port_bindings: Vec::new(),
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
@@ -243,6 +245,181 @@ async fn docker_workspace_persistent_shell_smoke_test() {
         .terminate_shell(&session_id)
         .await
         .expect("persistent shell should terminate");
+    cleanup_container(&container_name);
+}
+
+#[tokio::test]
+#[ignore = "requires local Docker daemon and pulls/runs images"]
+async fn docker_workspace_loopback_dynamic_port_smoke_test() {
+    if !docker_available() {
+        eprintln!("Docker daemon is not available; skipping Docker port binding smoke test");
+        return;
+    }
+
+    let db = common::setup_test_db().await;
+    Migrator::up(&db, None)
+        .await
+        .expect("migrations should run for Docker port binding smoke test");
+    let repo = SqliteSessionRepository::new(db);
+    tauri_mcp_agent_lib::set_session_repository(repo.clone());
+
+    let temp_dir = tempfile::tempdir().expect("temporary workspace should be created");
+    let workspace_path = temp_dir.path().to_path_buf();
+    let session_id = format!("docker-port-{}", cuid2::create_id());
+    let container_name = format!("libragent-session-{session_id}");
+
+    let session = SessionMetadata {
+        id: session_id.clone(),
+        name: Some("Docker port binding smoke test".to_string()),
+        status: SessionStatus::Idle,
+        model: "test-model".to_string(),
+        provider: "test-provider".to_string(),
+        assistant_id: None,
+        parent_session_id: None,
+        lineage_id: Some(session_id.clone()),
+        depth: Some(0),
+        max_depth: None,
+        max_fanout: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
+        created_at: 1,
+        updated_at: 1,
+        last_viewed_at: None,
+        last_message_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
+        is_bookmarked: false,
+        execution_mode: ExecutionMode::Normal,
+        workspace_override: None,
+        workspace_isolation: WorkspaceIsolationMode::Docker,
+        docker_config: Some(DockerWorkspaceConfig {
+            image: "ubuntu:24.04".to_string(),
+            env: HashMap::new(),
+            port_bindings: vec![DockerPortBinding {
+                container_port: 8080,
+                host_port: None,
+            }],
+        }),
+        docker_container_name: Some(container_name.clone()),
+        docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+    };
+
+    repo.upsert_session(&session)
+        .await
+        .expect("Docker port smoke session should persist");
+
+    WorkspaceRuntimeManager::ensure_runtime(&session)
+        .await
+        .expect("Docker runtime with port binding should start");
+
+    let output = Command::new("docker")
+        .args(["port", &container_name, "8080/tcp"])
+        .output()
+        .expect("docker port should execute");
+    assert!(
+        output.status.success(),
+        "docker port failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.trim().starts_with("127.0.0.1:"),
+        "published port should bind to loopback only: {stdout}"
+    );
+
+    cleanup_container(&container_name);
+}
+
+#[tokio::test]
+#[ignore = "requires local Docker daemon and pulls/runs images"]
+async fn docker_workspace_sh_fallback_smoke_test() {
+    if !docker_available() {
+        eprintln!("Docker daemon is not available; skipping Docker sh fallback smoke test");
+        return;
+    }
+
+    let db = common::setup_test_db().await;
+    Migrator::up(&db, None)
+        .await
+        .expect("migrations should run for Docker sh fallback smoke test");
+    let repo = SqliteSessionRepository::new(db);
+    tauri_mcp_agent_lib::set_session_repository(repo.clone());
+
+    let temp_dir = tempfile::tempdir().expect("temporary workspace should be created");
+    let workspace_path = temp_dir.path().to_path_buf();
+    let session_id = format!("docker-sh-{}", cuid2::create_id());
+    let container_name = format!("libragent-session-{session_id}");
+
+    let session = SessionMetadata {
+        id: session_id.clone(),
+        name: Some("Docker sh fallback smoke test".to_string()),
+        status: SessionStatus::Idle,
+        model: "test-model".to_string(),
+        provider: "test-provider".to_string(),
+        assistant_id: None,
+        parent_session_id: None,
+        lineage_id: Some(session_id.clone()),
+        depth: Some(0),
+        max_depth: None,
+        max_fanout: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
+        created_at: 1,
+        updated_at: 1,
+        last_viewed_at: None,
+        last_message_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
+        is_bookmarked: false,
+        execution_mode: ExecutionMode::Normal,
+        workspace_override: None,
+        workspace_isolation: WorkspaceIsolationMode::Docker,
+        docker_config: Some(DockerWorkspaceConfig {
+            image: "alpine:3.20".to_string(),
+            env: HashMap::new(),
+            port_bindings: Vec::new(),
+        }),
+        docker_container_name: Some(container_name.clone()),
+        docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+    };
+
+    repo.upsert_session(&session)
+        .await
+        .expect("Docker sh fallback session should persist");
+
+    let isolation_manager = SessionIsolationManager::new();
+    let mut cmd = isolation_manager
+        .create_isolated_command(IsolatedProcessConfig {
+            session_id: session_id.clone(),
+            workspace_path: workspace_path.clone(),
+            command: "pwd && echo sh-ok > sh-fallback.txt && cat sh-fallback.txt".to_string(),
+            args: Vec::new(),
+            env_vars: HashMap::new(),
+            isolation_level: IsolationLevel::Medium,
+            shell_type: None,
+        })
+        .await
+        .expect("Docker isolated sh fallback command should be created");
+
+    let output = cmd
+        .output()
+        .await
+        .expect("Docker sh fallback command should run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "Docker sh fallback command failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stdout.contains("/workspace"));
+    assert!(stdout.contains("sh-ok"));
+    assert!(workspace_path.join("sh-fallback.txt").is_file());
+
     cleanup_container(&container_name);
 }
 

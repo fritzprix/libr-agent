@@ -6,6 +6,7 @@ use crate::session_isolation::{PathMappingLayer, ShellDialect, ShellType, Spawne
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -40,6 +41,12 @@ pub enum WorkspaceRuntimeError {
     InvalidWorkspacePath(String),
     #[error("Docker image for session {session_id} must include bash for shell execution. Details: {details}")]
     BashUnavailable { session_id: String, details: String },
+    #[error(
+        "Docker image for session {session_id} must include bash or POSIX sh for shell execution"
+    )]
+    ShellUnavailable { session_id: String },
+    #[error("Docker host port {0} is already in use on 127.0.0.1")]
+    HostPortUnavailable(u16),
     #[error("{0}")]
     Io(String),
 }
@@ -102,9 +109,10 @@ impl WorkspaceRuntimeManager {
             cmd.arg("-e").arg(format!("{key}={value}"));
         }
 
+        let shell = docker_shell_for_session(session).await?;
         cmd.arg(container_name);
-        // runShell intentionally executes shell syntax; this mirrors the host bash path.
-        cmd.args(["bash", "-lc", command]);
+        // runShell intentionally executes shell syntax; this mirrors the host shell path.
+        cmd.args([shell.command(), "-lc", command]);
         Ok(cmd)
     }
 
@@ -127,8 +135,13 @@ impl WorkspaceRuntimeManager {
             }
         }
 
+        let shell = docker_shell_for_session(session).await?;
         cmd.arg(container_name);
-        cmd.args(["bash", "--norc", "--noprofile"]);
+        match shell {
+            ShellType::Bash => cmd.args(["bash", "--norc", "--noprofile"]),
+            ShellType::Sh => cmd.arg("sh"),
+            ShellType::PowerShell => unreachable!("Docker Unix shell cannot be PowerShell"),
+        };
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -141,8 +154,12 @@ impl WorkspaceRuntimeManager {
             child,
             initial_cwd: "/workspace".to_string(),
             path_mapper: PathMappingLayer::new(host_workspace),
-            shell_type: ShellType::Bash,
-            shell_dialect: ShellDialect::Bash,
+            shell_type: shell,
+            shell_dialect: match shell {
+                ShellType::Bash => ShellDialect::Bash,
+                ShellType::Sh => ShellDialect::Sh,
+                ShellType::PowerShell => unreachable!("Docker Unix shell cannot be PowerShell"),
+            },
         })
     }
 
@@ -249,6 +266,10 @@ async fn ensure_bash_image_contract(
             "/workspace",
         ]);
 
+        if let Some(config) = &session.docker_config {
+            append_port_binding_args(&mut cmd, config).await?;
+        }
+
         if let Some(user) = current_uid_gid().await {
             cmd.args(["--user", &user]);
         }
@@ -258,12 +279,62 @@ async fn ensure_bash_image_contract(
     }
 
     verify_container_label(container_name, session_id).await?;
-    run_docker_status(["exec", container_name, "bash", "-lc", "true"])
+    ensure_supported_shell(session_id, container_name)
         .await
-        .map_err(|error| WorkspaceRuntimeError::BashUnavailable {
-            session_id: session_id.to_string(),
-            details: error.to_string(),
-        })
+        .map(|_| ())
+}
+
+async fn append_port_binding_args(
+    cmd: &mut AsyncCommand,
+    config: &crate::models::workspace_isolation::DockerWorkspaceConfig,
+) -> RuntimeResult<()> {
+    for binding in &config.port_bindings {
+        if let Some(host_port) = binding.host_port {
+            ensure_host_port_available(host_port)?;
+        }
+
+        let published = match binding.host_port {
+            Some(host_port) => format!("127.0.0.1:{host_port}:{}", binding.container_port),
+            None => format!("127.0.0.1::{}", binding.container_port),
+        };
+        cmd.arg("-p").arg(published);
+    }
+
+    Ok(())
+}
+
+fn ensure_host_port_available(port: u16) -> RuntimeResult<()> {
+    TcpListener::bind(("127.0.0.1", port))
+        .map(drop)
+        .map_err(|_| WorkspaceRuntimeError::HostPortUnavailable(port))
+}
+
+async fn docker_shell_for_session(session: &SessionMetadata) -> RuntimeResult<ShellType> {
+    let container_name = docker_container_name(session)?;
+    ensure_supported_shell(&session.id, &container_name).await
+}
+
+async fn ensure_supported_shell(
+    session_id: &str,
+    container_name: &str,
+) -> RuntimeResult<ShellType> {
+    if run_docker_status(["exec", container_name, "bash", "-lc", "true"])
+        .await
+        .is_ok()
+    {
+        return Ok(ShellType::Bash);
+    }
+
+    if run_docker_status(["exec", container_name, "sh", "-lc", "true"])
+        .await
+        .is_ok()
+    {
+        return Ok(ShellType::Sh);
+    }
+
+    Err(WorkspaceRuntimeError::ShellUnavailable {
+        session_id: session_id.to_string(),
+    })
 }
 
 async fn docker_container_exists(container_name: &str) -> RuntimeResult<bool> {

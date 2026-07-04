@@ -49,6 +49,15 @@ pub struct DockerWorkspaceConfig {
     pub image: String,
     #[serde(default)]
     pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub port_bindings: Vec<DockerPortBinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub struct DockerPortBinding {
+    pub container_port: u16,
+    pub host_port: Option<u16>,
 }
 
 impl DockerWorkspaceConfig {
@@ -62,8 +71,41 @@ impl DockerWorkspaceConfig {
             validate_env_value(key, value)?;
         }
 
+        validate_port_bindings(&self.port_bindings)?;
+
         Ok(())
     }
+}
+
+pub fn validate_port_bindings(bindings: &[DockerPortBinding]) -> Result<(), String> {
+    let mut container_ports = std::collections::HashSet::new();
+    let mut host_ports = std::collections::HashSet::new();
+
+    for binding in bindings {
+        validate_port("containerPort", binding.container_port)?;
+        if !container_ports.insert(binding.container_port) {
+            return Err(format!(
+                "Duplicate Docker container port binding: {}",
+                binding.container_port
+            ));
+        }
+
+        if let Some(host_port) = binding.host_port {
+            validate_port("hostPort", host_port)?;
+            if !host_ports.insert(host_port) {
+                return Err(format!("Duplicate Docker host port binding: {host_port}"));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_port(name: &str, port: u16) -> Result<(), String> {
+    if port == 0 {
+        return Err(format!("{name} must be between 1 and 65535"));
+    }
+    Ok(())
 }
 
 pub fn validate_env_value(key: &str, value: &str) -> Result<(), String> {

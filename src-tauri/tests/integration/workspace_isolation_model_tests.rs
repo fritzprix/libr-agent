@@ -1,7 +1,8 @@
 use std::str::FromStr;
 
 use tauri_mcp_agent_lib::models::workspace_isolation::{
-    validate_env_key, validate_env_value, DockerWorkspaceConfig, WorkspaceIsolationMode,
+    validate_env_key, validate_env_value, DockerPortBinding, DockerWorkspaceConfig,
+    WorkspaceIsolationMode,
 };
 use tauri_mcp_agent_lib::session_isolation::PathMappingLayer;
 
@@ -35,9 +36,72 @@ fn docker_workspace_config_rejects_empty_image() {
     let config = DockerWorkspaceConfig {
         image: "   ".to_string(),
         env: Default::default(),
+        port_bindings: Vec::new(),
     };
 
     assert!(config.validate().is_err());
+}
+
+#[test]
+fn docker_workspace_config_accepts_loopback_port_bindings() {
+    let config: DockerWorkspaceConfig = serde_json::from_value(serde_json::json!({
+        "image": "ubuntu:24.04",
+        "portBindings": [
+            { "containerPort": 8080, "hostPort": 18080 },
+            { "containerPort": 3000 }
+        ]
+    }))
+    .expect("config should deserialize");
+
+    assert_eq!(
+        config.port_bindings,
+        vec![
+            DockerPortBinding {
+                container_port: 8080,
+                host_port: Some(18080),
+            },
+            DockerPortBinding {
+                container_port: 3000,
+                host_port: None,
+            }
+        ]
+    );
+    config.validate().expect("port bindings should validate");
+}
+
+#[test]
+fn docker_workspace_config_rejects_duplicate_port_bindings() {
+    let duplicate_container_port = DockerWorkspaceConfig {
+        image: "ubuntu:24.04".to_string(),
+        env: Default::default(),
+        port_bindings: vec![
+            DockerPortBinding {
+                container_port: 8080,
+                host_port: Some(18080),
+            },
+            DockerPortBinding {
+                container_port: 8080,
+                host_port: Some(18081),
+            },
+        ],
+    };
+    assert!(duplicate_container_port.validate().is_err());
+
+    let duplicate_host_port = DockerWorkspaceConfig {
+        image: "ubuntu:24.04".to_string(),
+        env: Default::default(),
+        port_bindings: vec![
+            DockerPortBinding {
+                container_port: 8080,
+                host_port: Some(18080),
+            },
+            DockerPortBinding {
+                container_port: 8081,
+                host_port: Some(18080),
+            },
+        ],
+    };
+    assert!(duplicate_host_port.validate().is_err());
 }
 
 #[test]
