@@ -59,6 +59,10 @@ describe('AgentDraftWorkspacePreviewPanel', () => {
     render(
       <AgentDraftWorkspacePreviewPanel
         workspacePath={workspacePath}
+        workspaceIsolation="host"
+        setWorkspaceIsolation={vi.fn()}
+        dockerImage="python:3.11-slim"
+        setDockerImage={vi.fn()}
         onClear={vi.fn()}
       />,
     );
@@ -91,6 +95,10 @@ describe('AgentDraftWorkspacePreviewPanel', () => {
     render(
       <AgentDraftWorkspacePreviewPanel
         workspacePath={workspacePath}
+        workspaceIsolation="host"
+        setWorkspaceIsolation={vi.fn()}
+        dockerImage="python:3.11-slim"
+        setDockerImage={vi.fn()}
         onClear={onClear}
       />,
     );

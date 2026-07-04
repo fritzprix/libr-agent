@@ -1,22 +1,31 @@
-import { Button } from '@/components/ui';
+import { Button, Input, Label } from '@/components/ui';
+import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, RefreshCw, X } from 'lucide-react';
+import { FolderOpen, RefreshCw, X, Shield, HelpCircle } from 'lucide-react';
 
 import { FileTreeNode } from './workspace-panel/FileTreeNode';
 import { useDraftWorkspacePreviewTree } from './workspace-panel/useDraftWorkspacePreviewTree';
 
 interface AgentDraftWorkspacePreviewPanelProps {
   workspacePath: string;
+  workspaceIsolation: 'host' | 'docker';
+  setWorkspaceIsolation: (val: 'host' | 'docker') => void;
+  dockerImage: string;
+  setDockerImage: (val: string) => void;
   onClear: () => void;
 }
 
 export function AgentDraftWorkspacePreviewPanel({
   workspacePath,
+  workspaceIsolation,
+  setWorkspaceIsolation,
+  dockerImage,
+  setDockerImage,
   onClear,
 }: AgentDraftWorkspacePreviewPanelProps) {
   const { t } = useTranslation();
@@ -78,6 +87,87 @@ export function AgentDraftWorkspacePreviewPanel({
             <div className="rounded-md border border-border/50 bg-muted/50 p-2 font-mono text-[10px] break-all">
               {workspacePath}
             </div>
+          </div>
+
+          {/* Environment Isolation Settings */}
+          <div className="rounded-lg border border-border/40 bg-muted/[0.08] p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-foreground/80">
+                <Shield className="h-3.5 w-3.5 text-primary/80" />
+                <span>
+                  {t('agent.workspace.isolationSettings', 'Isolation Settings')}
+                </span>
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="cursor-help text-muted-foreground/50 hover:text-muted-foreground">
+                    <HelpCircle className="h-3.5 w-3.5" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[220px] text-xs">
+                  {t(
+                    'agent.workspace.isolationTip',
+                    'Docker workspace runs your workspace commands safely inside a container rather than directly on your host machine.',
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <Label
+                htmlFor="docker-isolation"
+                className="text-xs font-medium cursor-pointer text-muted-foreground"
+              >
+                {t(
+                  'agent.workspace.useDockerContainer',
+                  'Use Docker Container',
+                )}
+              </Label>
+              <Switch
+                id="docker-isolation"
+                checked={workspaceIsolation === 'docker'}
+                onCheckedChange={(checked) =>
+                  setWorkspaceIsolation(checked ? 'docker' : 'host')
+                }
+              />
+            </div>
+
+            {workspaceIsolation === 'docker' && (
+              <div className="space-y-2 pt-2 border-t border-border/20 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">
+                    {t('agent.workspace.dockerImage', 'Docker Image')}
+                  </Label>
+                  <Input
+                    value={dockerImage}
+                    onChange={(e) => setDockerImage(e.target.value)}
+                    placeholder="e.g. python:3.11-slim"
+                    className="h-8 text-xs font-mono bg-background"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {[
+                    { label: 'Python 3', val: 'python:3.11-slim' },
+                    { label: 'Node 20', val: 'node:20-alpine' },
+                    { label: 'Ubuntu', val: 'ubuntu:latest' },
+                    { label: 'Go 1.22', val: 'golang:1.22-alpine' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.val}
+                      onClick={() => setDockerImage(preset.val)}
+                      type="button"
+                      className={`text-[9px] px-2 py-0.5 rounded-full border transition-all ${
+                        dockerImage === preset.val
+                          ? 'border-primary bg-primary/10 text-primary font-medium'
+                          : 'border-border bg-muted/40 hover:bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rounded-lg border border-border/40 bg-muted/[0.18] p-3 text-xs text-muted-foreground">
