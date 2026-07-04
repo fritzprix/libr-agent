@@ -721,3 +721,39 @@ impl SessionRepository for SqliteSessionRepository {
         Ok(())
     }
 }
+
+#[cfg(test)]
+impl SessionMetadata {
+    pub fn test_fixture(id: impl Into<String>) -> Self {
+        let id = id.into();
+        Self {
+            id: id.clone(),
+            name: Some(format!("Test {id}")),
+            status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
+            assistant_id: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
+            created_at: 1234567890,
+            updated_at: 1234567890,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
+            is_bookmarked: false,
+            execution_mode: ExecutionMode::Normal,
+            workspace_override: None,
+            workspace_isolation: WorkspaceIsolationMode::default(),
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
+        }
+    }
+}
