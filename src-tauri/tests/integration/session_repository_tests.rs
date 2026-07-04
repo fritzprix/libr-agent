@@ -38,6 +38,11 @@ fn build_session(id: &str, updated_at: i64) -> SessionMetadata {
         is_bookmarked: false,
         execution_mode: ExecutionMode::Normal,
         workspace_override: None,
+        workspace_isolation:
+            tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+        docker_config: None,
+        docker_container_name: None,
+        docker_host_workspace_path: None,
     }
 }
 
@@ -279,6 +284,10 @@ async fn get_session_reads_execution_mode_column() {
         is_bookmarked: Set(false),
         execution_mode: Set("unsafe".to_string()),
         workspace_override: Set(None),
+        workspace_isolation: Set("host".to_string()),
+        docker_config_json: Set(None),
+        docker_container_name: Set(None),
+        docker_host_workspace_path: Set(None),
     }
     .insert(&db)
     .await

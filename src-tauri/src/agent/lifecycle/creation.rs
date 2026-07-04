@@ -1,6 +1,7 @@
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
+use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::repositories::{SessionMetadata, SessionStatus};
@@ -23,6 +24,8 @@ pub struct CreateSessionParams {
     pub model: Option<String>,
     pub provider: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
+    pub workspace_isolation: WorkspaceIsolationMode,
+    pub docker_config: Option<DockerWorkspaceConfig>,
 }
 
 /// Create or update a session in the database
@@ -38,6 +41,8 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         model,
         provider,
         mut agent_config,
+        workspace_isolation,
+        docker_config,
     } = params;
 
     let now = chrono::Utc::now().timestamp_millis();
@@ -133,6 +138,26 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
             .unwrap_or(None)
     };
 
+    let docker_host_workspace_path = if workspace_isolation == WorkspaceIsolationMode::Docker {
+        let host_workspace = if let Some(override_path) = workspace_override.as_ref() {
+            std::path::PathBuf::from(override_path)
+        } else {
+            crate::session::get_session_manager()
+                .map_err(|e| format!("Failed to get session manager for Docker workspace: {e}"))?
+                .get_session_workspace_dir_by_id(&session_id)
+        };
+
+        Some(host_workspace.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    let docker_container_name = if workspace_isolation == WorkspaceIsolationMode::Docker {
+        Some(format!("libragent-session-{session_id}"))
+    } else {
+        None
+    };
+
     let session = SessionMetadata {
         id: session_id.clone(),
         name,
@@ -157,6 +182,10 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         last_attention_reason: None,
         execution_mode: crate::execution_mode::ExecutionMode::Normal,
         workspace_override,
+        workspace_isolation,
+        docker_config,
+        docker_container_name,
+        docker_host_workspace_path,
     };
 
     // Persist to database using injected repository
@@ -164,6 +193,16 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         .upsert_session(&session)
         .await
         .map_err(|e| format!("Failed to create session: {}", e))?;
+
+    if session.workspace_isolation == WorkspaceIsolationMode::Docker {
+        if let Err(error) = crate::services::WorkspaceRuntimeManager::ensure_runtime(&session).await
+        {
+            if existing_session.is_none() {
+                let _ = session_repo.delete_session(&session_id).await;
+            }
+            return Err(error.to_string());
+        }
+    }
 
     // Extract builtin tool IDs from agent config
     // Note: tools.rs already exists in src-tauri/src/agent/tools.rs

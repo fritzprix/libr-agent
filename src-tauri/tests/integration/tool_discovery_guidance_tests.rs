@@ -148,6 +148,11 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
             is_bookmarked: false,
             execution_mode: ExecutionMode::Normal,
             workspace_override: None,
+            workspace_isolation:
+                tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         })
         .await
         .expect("session should insert");
@@ -235,6 +240,11 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
             is_bookmarked: false,
             execution_mode: ExecutionMode::Normal,
             workspace_override: None,
+            workspace_isolation:
+                tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         })
         .await
         .expect("session should insert");
@@ -298,6 +308,11 @@ async fn tool_list_uses_builtin_service_alias_for_session_status() {
             is_bookmarked: false,
             execution_mode: ExecutionMode::Normal,
             workspace_override: None,
+            workspace_isolation:
+                tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         })
         .await
         .expect("session should insert");

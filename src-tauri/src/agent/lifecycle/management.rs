@@ -60,6 +60,14 @@ pub async fn resume_session(
         }
     }
 
+    if session.workspace_isolation
+        == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
+    {
+        crate::services::WorkspaceRuntimeManager::ensure_runtime(&session)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+
     // Deserialize agent config (live assistant settings + session lineage)
     let agent_config = crate::agent::resolve_agent_config(&session).await?;
 

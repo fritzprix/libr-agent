@@ -371,6 +371,10 @@ mod tests {
             is_bookmarked: false,
             execution_mode: ExecutionMode::Unsafe,
             workspace_override: None,
+            workspace_isolation: crate::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         }
     }
 

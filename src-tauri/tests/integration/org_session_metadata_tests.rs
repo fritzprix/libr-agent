@@ -34,6 +34,11 @@ async fn session_repository_persists_explicit_org_identity() {
         is_bookmarked: false,
         execution_mode: ExecutionMode::Normal,
         workspace_override: None,
+        workspace_isolation:
+            tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+        docker_config: None,
+        docker_container_name: None,
+        docker_host_workspace_path: None,
     })
     .await
     .expect("session should persist");

@@ -15,6 +15,7 @@ pub mod secure_file_manager;
 pub mod session_cleanup_service;
 pub mod session_directory_service;
 pub mod skill_service;
+pub mod workspace_runtime_manager;
 pub mod workspace_service;
 
 pub use agent_service::AgentService;
@@ -33,4 +34,5 @@ pub use scheduled_task_service::{
 pub use secure_file_manager::SecureFileManager;
 pub use session_cleanup_service::SessionCleanupService;
 pub use session_directory_service::SessionDirectoryService;
+pub use workspace_runtime_manager::WorkspaceRuntimeManager;
 pub use workspace_service::{WorkspaceFileItem, WorkspaceService};

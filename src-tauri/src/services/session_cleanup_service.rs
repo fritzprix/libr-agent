@@ -16,6 +16,7 @@ impl SessionCleanupService {
 
         // Best-effort cleanup: log inside `cleanup_auxiliary_resources` and continue
         let _ = Self::cleanup_auxiliary_resources(session_id, message_repo).await;
+        Self::cleanup_docker_runtime(session_id).await;
 
         let session_manager = crate::session::get_session_manager()
             .map_err(|e| format!("Failed to get session manager: {e}"))?;
@@ -82,6 +83,8 @@ impl SessionCleanupService {
 
     /// Delete workspace directory for a session
     pub async fn delete_session_workspace(session_id: &str) -> Result<(), String> {
+        Self::cleanup_docker_runtime(session_id).await;
+
         match crate::session::get_session_manager() {
             Ok(manager) => {
                 // Ensure workspace is loaded into pool if not already
@@ -100,6 +103,32 @@ impl SessionCleanupService {
             }
         }
         Ok(())
+    }
+
+    async fn cleanup_docker_runtime(session_id: &str) {
+        let session_repo = crate::state::get_session_repository();
+        let session = match session_repo.get_session(session_id).await {
+            Ok(Some(session)) => session,
+            Ok(None) => return,
+            Err(error) => {
+                log::warn!(
+                    "Failed to load session {} for Docker runtime cleanup: {}",
+                    session_id,
+                    error
+                );
+                return;
+            }
+        };
+
+        if let Err(error) =
+            crate::services::WorkspaceRuntimeManager::remove_runtime_for_session(&session).await
+        {
+            log::warn!(
+                "Failed to remove Docker runtime for session {}: {}",
+                session_id,
+                error
+            );
+        }
     }
 
     /// Delete an agent session data cascade
