@@ -46,6 +46,10 @@ function DraftChatInner() {
     pendingFiles,
     workspaceOverride,
     setWorkspaceOverride,
+    workspaceIsolation,
+    setWorkspaceIsolation,
+    dockerImage,
+    setDockerImage,
     dragState,
     profileDragState,
     isAttachmentLoading,
@@ -118,6 +122,10 @@ function DraftChatInner() {
       {workspaceOverride && (
         <AgentDraftWorkspacePreviewPanel
           workspacePath={workspaceOverride}
+          workspaceIsolation={workspaceIsolation}
+          setWorkspaceIsolation={setWorkspaceIsolation}
+          dockerImage={dockerImage}
+          setDockerImage={setDockerImage}
           onClear={() => setWorkspaceOverride(null)}
         />
       )}

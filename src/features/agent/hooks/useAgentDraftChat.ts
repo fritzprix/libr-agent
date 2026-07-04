@@ -75,6 +75,10 @@ export function useAgentDraftChat() {
   const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
     null,
   );
+  const [workspaceIsolation, setWorkspaceIsolation] = useState<
+    'host' | 'docker'
+  >('host');
+  const [dockerImage, setDockerImage] = useState<string>('python:3.11-slim');
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
   );
@@ -369,6 +373,13 @@ export function useAgentDraftChat() {
             agentConfig,
             isEphemeral: false,
             workspacePath: workspaceOverride || undefined,
+            workspaceIsolation: workspaceOverride ? workspaceIsolation : 'host',
+            dockerConfig:
+              workspaceOverride && workspaceIsolation === 'docker'
+                ? {
+                    image: dockerImage,
+                  }
+                : undefined,
           },
         });
 
@@ -513,6 +524,10 @@ export function useAgentDraftChat() {
     pendingFiles,
     workspaceOverride,
     setWorkspaceOverride,
+    workspaceIsolation,
+    setWorkspaceIsolation,
+    dockerImage,
+    setDockerImage,
     dragState,
     profileDragState,
     isAttachmentLoading,
