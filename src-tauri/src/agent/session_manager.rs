@@ -192,6 +192,7 @@ impl AgentSessionManager {
         model: Option<String>,
         provider: Option<String>,
         assistant_id: Option<String>,
+        recursive: Option<bool>,
     ) -> Result<(), String> {
         crate::agent::lifecycle::update_session_config(
             &self.session_repo,
@@ -201,6 +202,7 @@ impl AgentSessionManager {
             model,
             provider,
             assistant_id,
+            recursive,
         )
         .await
     }

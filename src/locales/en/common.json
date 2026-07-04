@@ -952,7 +952,14 @@
       "chatMode": "Chat Mode",
       "toolsLabel": "Tools:",
       "viewToolsTitle": "Click to view available tools",
-      "statusQueued": "Queued (Waiting for available agent slot...)"
+      "statusQueued": "Queued (Waiting for available agent slot...)",
+      "batchModelUpdate": {
+        "title": "Batch Update Sub-sessions",
+        "description": "The selected session \"{{parentSessionName}}\" has {{subSessionCount}} sub-sessions. Do you want to update their models to {{newProvider}} / {{newModel}} as well?",
+        "cancel": "Cancel",
+        "onlyThis": "Only this session",
+        "all": "Update sub-sessions too"
+      }
     },
     "attachment": {
       "sessionError": "Cannot attach file: session not available.",

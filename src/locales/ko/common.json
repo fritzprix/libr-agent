@@ -952,7 +952,14 @@
       "chatMode": "채팅 모드",
       "toolsLabel": "도구:",
       "viewToolsTitle": "클릭하여 사용 가능한 도구 보기",
-      "statusQueued": "대기 중 (사용 가능한 에이전트 슬롯 대기 중...)"
+      "statusQueued": "대기 중 (사용 가능한 에이전트 슬롯 대기 중...)",
+      "batchModelUpdate": {
+        "title": "하위 세션 일괄 변경 확인",
+        "description": "선택하신 세션 \"{{parentSessionName}}\"은(는) {{subSessionCount}}개의 하위 세션(Sub-session)을 가지고 있습니다. 모델을 {{newProvider}} / {{newModel}}(으)로 변경할 때, 하위 세션들도 함께 변경하시겠습니까?",
+        "cancel": "취소",
+        "onlyThis": "이 세션만 변경",
+        "all": "하위 세션도 함께 변경"
+      }
     },
     "attachment": {
       "sessionError": "파일을 첨부할 수 없습니다: 세션을 사용할 수 없습니다.",
