@@ -28,6 +28,8 @@ pub struct WorkspaceServer {
 }
 
 const TEAMWORK_ALIAS_PREFIX: &str = "@teamwork";
+// Guard against pathological or cyclic parent-session chains while still
+// allowing deep enough org hierarchies for normal teamwork lineages.
 const TEAMWORK_PARENT_CHAIN_LIMIT: usize = 64;
 
 impl WorkspaceServer {

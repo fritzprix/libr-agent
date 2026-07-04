@@ -38,6 +38,8 @@ pub fn get_legacy_global_skills_directory() -> Result<PathBuf, String> {
         .join(LEGACY_SYSTEM_SKILLS_DIR_NAME))
 }
 
+/// Convert a concrete SKILL.md path under a managed/session-known root into the
+/// agent-facing alias namespace for that root.
 pub fn build_skill_alias_path(
     root: &Path,
     skill_path: &Path,
@@ -53,6 +55,11 @@ pub fn build_skill_alias_path(
     }
 }
 
+/// Parse an alias path like `@system-skills/foo/SKILL.md` into the owning
+/// alias namespace plus the relative path to validate within that root.
+///
+/// These aliases are exact namespaces, not overlapping prefixes, so iteration
+/// order is intentionally not semantically significant.
 pub fn extract_skill_alias_relative_path(path_str: &str) -> Option<(&'static str, &str)> {
     for prefix in [
         SYSTEM_SKILLS_ALIAS_PREFIX,
@@ -82,6 +89,8 @@ pub fn extract_skill_alias_relative_path(path_str: &str) -> Option<(&'static str
     None
 }
 
+/// Collect the alias roots visible to the current session so workspace file
+/// validation can resolve read-only skill aliases back to concrete directories.
 pub fn collect_skill_alias_roots(
     system_dir: PathBuf,
     user_dir: PathBuf,
@@ -116,6 +125,8 @@ pub fn collect_skill_alias_roots(
     roots
 }
 
+/// Decorate freshly scanned skill metadata with alias paths for a specific
+/// managed/session-known root before the layer is merged into the final view.
 fn apply_skill_alias_paths(skills: &mut [SkillMetadata], root: &Path, alias_prefix: &str) {
     for skill in skills {
         skill.alias_path = build_skill_alias_path(root, Path::new(&skill.path), alias_prefix);
