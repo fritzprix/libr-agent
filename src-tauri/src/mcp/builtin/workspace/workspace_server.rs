@@ -5,8 +5,10 @@ use super::types::{PendingExecutions, PendingShellInputResolution};
 use super::utils;
 use crate::mcp::builtin::utils::path_starts_with;
 use crate::mcp::MCPTool;
+use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::SessionRepository;
 use crate::session::SessionManager;
+use crate::session_isolation::PathMappingLayer;
 use crate::SecureFileManager;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -403,15 +405,19 @@ impl WorkspaceServer {
                 .map_err(|e| format!("Security error: {e}"));
         }
 
+        let mapped_path = self
+            .map_docker_container_file_tool_path(path_str, &target_session_id)
+            .await?;
+        let effective_path = mapped_path.as_deref().unwrap_or(path_str);
         let file_manager = self.get_file_manager(Some(target_session_id.clone()));
 
         match file_manager
             .get_security_validator()
-            .validate_path_for_read(path_str)
+            .validate_path_for_read(effective_path)
         {
             Ok(path) => Ok(path),
             Err(original_error) => {
-                let candidate_path = PathBuf::from(path_str);
+                let candidate_path = PathBuf::from(effective_path);
                 if !candidate_path.is_absolute() {
                     return Err(format!("Security error: {original_error}"));
                 }
@@ -432,7 +438,7 @@ impl WorkspaceServer {
                 );
                 permissive_manager
                     .get_security_validator()
-                    .validate_path_for_read(path_str)
+                    .validate_path_for_read(effective_path)
                     .map_err(|e| format!("Security error: {e}"))
             }
         }
@@ -454,7 +460,49 @@ impl WorkspaceServer {
                 .map_err(|e| format!("Security error: {e}"));
         }
 
-        self.validate_path_with_error_for_write(path_str, Some(target_session_id))
+        let mapped_path = self
+            .map_docker_container_file_tool_path(path_str, &target_session_id)
+            .await?;
+        let effective_path = mapped_path.as_deref().unwrap_or(path_str);
+
+        self.validate_path_with_error_for_write(effective_path, Some(target_session_id))
+    }
+
+    async fn map_docker_container_file_tool_path(
+        &self,
+        path_str: &str,
+        target_session_id: &str,
+    ) -> Result<Option<String>, String> {
+        if !path_str.starts_with('/') {
+            return Ok(None);
+        }
+
+        let Some(session_repo) = crate::state::try_get_session_repository() else {
+            return Ok(None);
+        };
+        let Some(session) = session_repo
+            .get_session(target_session_id)
+            .await
+            .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
+        else {
+            return Ok(None);
+        };
+
+        if session.workspace_isolation != WorkspaceIsolationMode::Docker {
+            return Ok(None);
+        }
+
+        let host_workspace = session.docker_host_workspace_path.as_ref().ok_or_else(|| {
+            format!("Missing Docker host workspace path for session {target_session_id}")
+        })?;
+        let mapper = PathMappingLayer::new(PathBuf::from(host_workspace));
+        let Some(host_path) = mapper.container_to_host(path_str) else {
+            return Err(format!(
+                "Docker container path '{path_str}' is outside /workspace. Shell commands may access it, but workspace file tools only map /workspace paths to the host workspace."
+            ));
+        };
+
+        Ok(Some(host_path.to_string_lossy().to_string()))
     }
 
     /// Validate path with security checks (helper for file operations)

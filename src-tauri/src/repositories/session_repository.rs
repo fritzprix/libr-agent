@@ -10,8 +10,9 @@ use std::str::FromStr;
 
 use crate::entity::{prelude::*, session};
 use crate::execution_mode::ExecutionMode;
+use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 
-const SESSION_UPSERT_COLUMNS: [session::Column; 20] = [
+const SESSION_UPSERT_COLUMNS: [session::Column; 24] = [
     session::Column::Name,
     session::Column::Status,
     session::Column::Model,
@@ -32,6 +33,10 @@ const SESSION_UPSERT_COLUMNS: [session::Column; 20] = [
     session::Column::LastAttentionReason,
     session::Column::ExecutionMode,
     session::Column::WorkspaceOverride,
+    session::Column::WorkspaceIsolation,
+    session::Column::DockerConfigJson,
+    session::Column::DockerContainerName,
+    session::Column::DockerHostWorkspacePath,
 ];
 
 /// Session status enum representing the agent workflow state
@@ -134,6 +139,11 @@ pub struct SessionMetadata {
     pub is_bookmarked: bool,
     pub execution_mode: ExecutionMode,
     pub workspace_override: Option<String>,
+    #[serde(default)]
+    pub workspace_isolation: WorkspaceIsolationMode,
+    pub docker_config: Option<DockerWorkspaceConfig>,
+    pub docker_container_name: Option<String>,
+    pub docker_host_workspace_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +165,24 @@ impl TryFrom<session::Model> for SessionMetadata {
 
     fn try_from(model: session::Model) -> Result<Self, Self::Error> {
         let execution_mode = ExecutionMode::from_db(&model.execution_mode);
+        let workspace_isolation = WorkspaceIsolationMode::from_str(&model.workspace_isolation)
+            .map_err(|e| {
+                DbError::InvalidInput(format!(
+                    "Invalid workspace isolation for session {}: {}",
+                    model.id, e
+                ))
+            })?;
+        let docker_config = model
+            .docker_config_json
+            .as_deref()
+            .map(serde_json::from_str::<DockerWorkspaceConfig>)
+            .transpose()
+            .map_err(|e| {
+                DbError::InvalidInput(format!(
+                    "Invalid Docker config JSON for session {}: {}",
+                    model.id, e
+                ))
+            })?;
         Ok(SessionMetadata {
             id: model.id,
             name: model.name,
@@ -183,6 +211,10 @@ impl TryFrom<session::Model> for SessionMetadata {
             is_bookmarked: model.is_bookmarked,
             execution_mode,
             workspace_override: model.workspace_override,
+            workspace_isolation,
+            docker_config,
+            docker_container_name: model.docker_container_name,
+            docker_host_workspace_path: model.docker_host_workspace_path,
         })
     }
 }
@@ -299,8 +331,20 @@ impl SqliteSessionRepository {
         Self { db }
     }
 
-    fn build_active_model(session: &SessionMetadata) -> session::ActiveModel {
-        session::ActiveModel {
+    fn build_active_model(session: &SessionMetadata) -> Result<session::ActiveModel, DbError> {
+        let docker_config_json = session
+            .docker_config
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                DbError::InvalidInput(format!(
+                    "Failed to serialize Docker config for session {}: {}",
+                    session.id, e
+                ))
+            })?;
+
+        Ok(session::ActiveModel {
             id: Set(session.id.clone()),
             name: Set(session.name.clone()),
             status: Set(session.status.as_str().to_string()),
@@ -332,7 +376,11 @@ impl SqliteSessionRepository {
             is_bookmarked: Set(session.is_bookmarked),
             execution_mode: Set(session.execution_mode.as_str().to_string()),
             workspace_override: Set(session.workspace_override.clone()),
-        }
+            workspace_isolation: Set(session.workspace_isolation.as_str().to_string()),
+            docker_config_json: Set(docker_config_json),
+            docker_container_name: Set(session.docker_container_name.clone()),
+            docker_host_workspace_path: Set(session.docker_host_workspace_path.clone()),
+        })
     }
 
     async fn apply_partial_update(
@@ -349,7 +397,7 @@ impl SessionRepository for SqliteSessionRepository {
     async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError> {
         use sea_orm::sea_query::OnConflict;
 
-        Session::insert(Self::build_active_model(session))
+        Session::insert(Self::build_active_model(session)?)
             .on_conflict(
                 OnConflict::column(session::Column::Id)
                     .update_columns(SESSION_UPSERT_COLUMNS)

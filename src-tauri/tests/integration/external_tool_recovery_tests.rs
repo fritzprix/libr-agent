@@ -141,6 +141,11 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
             is_bookmarked: false,
             execution_mode: ExecutionMode::Normal,
             workspace_override: None,
+            workspace_isolation:
+                tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         })
         .await
         .expect("session should insert");
@@ -261,6 +266,11 @@ async fn external_call_reconfigures_existing_builtin_only_proxy() {
             is_bookmarked: false,
             execution_mode: ExecutionMode::Normal,
             workspace_override: None,
+            workspace_isolation:
+                tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         })
         .await
         .expect("session should insert");

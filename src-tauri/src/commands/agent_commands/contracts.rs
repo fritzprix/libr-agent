@@ -1,5 +1,6 @@
 use crate::commands::messages_commands::MessageSlice;
 use crate::models::chat::Message;
+use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 use crate::repositories::{SessionListCursor, SessionListPage, SessionMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,6 +17,9 @@ pub struct CreateAgentSessionRequest {
     #[serde(default)]
     pub is_ephemeral: bool,
     pub workspace_path: Option<String>,
+    #[serde(default)]
+    pub workspace_isolation: Option<WorkspaceIsolationMode>,
+    pub docker_config: Option<DockerWorkspaceConfig>,
 }
 
 /// Request to create a new session and send the first message in one go
@@ -29,6 +33,9 @@ pub struct CreateAgentSessionWithMessageRequest {
     pub agent_config: crate::agent::AgentConfig,
     pub message: Message,
     pub workspace_path: Option<String>,
+    #[serde(default)]
+    pub workspace_isolation: Option<WorkspaceIsolationMode>,
+    pub docker_config: Option<DockerWorkspaceConfig>,
 }
 
 /// Request to send a user message to trigger workflow

@@ -127,6 +127,7 @@ export function createOpenSessionResponse(
       createdAt: timestamp,
       updatedAt: timestamp,
       executionMode: 'normal',
+      workspaceIsolation: 'host',
       ...overrides.session,
     },
     messages: {

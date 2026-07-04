@@ -1,5 +1,7 @@
 use super::persistent_shell;
 use super::terminal_manager;
+use crate::models::workspace_isolation::WorkspaceIsolationMode;
+use crate::repositories::SessionRepository;
 use crate::session::SessionManager;
 
 /// Build the service context prompt text used in BuiltinMCPServer::get_service_context.
@@ -17,6 +19,8 @@ pub async fn build_context_prompt(
         path_str
     };
 
+    let docker_shell_cwd = docker_shell_cwd_enabled(session_id).await;
+
     // Get current shell CWD
     let shell_cwd = if let Some(cwd) = shell_manager.get_shell_cwd(session_id).await {
         let cwd = {
@@ -25,8 +29,16 @@ pub async fn build_context_prompt(
             cwd
         };
 
+        if docker_shell_cwd {
+            if cwd == "/workspace" {
+                ".".to_string()
+            } else if let Some(relative) = cwd.strip_prefix("/workspace/") {
+                format!("./{relative}")
+            } else {
+                cwd
+            }
         // Convert to relative path if within workspace for better readability
-        if cwd.starts_with(&workspace_dir) {
+        } else if cwd.starts_with(&workspace_dir) {
             cwd.replacen(&workspace_dir, ".", 1)
         } else {
             cwd
@@ -93,6 +105,17 @@ pub async fn build_context_prompt(
     );
 
     context_prompt
+}
+
+async fn docker_shell_cwd_enabled(session_id: &str) -> bool {
+    let Some(session_repo) = crate::state::try_get_session_repository() else {
+        return false;
+    };
+    let Ok(Some(session)) = session_repo.get_session(session_id).await else {
+        return false;
+    };
+
+    session.workspace_isolation == WorkspaceIsolationMode::Docker
 }
 
 /// Detect default shell for the platform

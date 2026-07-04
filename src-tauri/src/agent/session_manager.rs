@@ -149,11 +149,14 @@ impl AgentSessionManager {
             model,
             provider,
             agent_config,
+            crate::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            None,
         )
         .await
     }
 
     /// Create or update a session with a specific repository
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_session_with_repo(
         &self,
         session_repo: Arc<dyn crate::repositories::SessionRepository>,
@@ -162,6 +165,8 @@ impl AgentSessionManager {
         model: Option<String>,
         provider: Option<String>,
         agent_config: crate::agent::AgentConfig,
+        workspace_isolation: crate::models::workspace_isolation::WorkspaceIsolationMode,
+        docker_config: Option<crate::models::workspace_isolation::DockerWorkspaceConfig>,
     ) -> Result<SessionMetadata, String> {
         crate::agent::lifecycle::create_session(crate::agent::lifecycle::CreateSessionParams {
             session_repo,
@@ -174,6 +179,8 @@ impl AgentSessionManager {
             model,
             provider,
             agent_config,
+            workspace_isolation,
+            docker_config,
         })
         .await
     }

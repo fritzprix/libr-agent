@@ -5,6 +5,7 @@ mod spawn;
 mod workspace;
 
 use crate::agent::AgentSessionManager;
+use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 use crate::session::get_session_manager;
 
 pub use lineage::{
@@ -21,6 +22,40 @@ pub struct SendSessionMessageResponse {
 }
 
 impl AgentService {
+    fn validate_workspace_isolation_request(
+        workspace_isolation: Option<WorkspaceIsolationMode>,
+        docker_config: Option<DockerWorkspaceConfig>,
+        is_ephemeral: bool,
+    ) -> Result<(WorkspaceIsolationMode, Option<DockerWorkspaceConfig>), String> {
+        let mode = workspace_isolation.unwrap_or_default();
+
+        match mode {
+            WorkspaceIsolationMode::Host => {
+                if docker_config.is_some() {
+                    return Err(
+                        "dockerConfig is only valid when workspaceIsolation is 'docker'"
+                            .to_string(),
+                    );
+                }
+                Ok((WorkspaceIsolationMode::Host, None))
+            }
+            WorkspaceIsolationMode::Docker => {
+                if is_ephemeral {
+                    return Err(
+                        "Docker workspace isolation is not supported for ephemeral sessions"
+                            .to_string(),
+                    );
+                }
+
+                let config = docker_config.ok_or_else(|| {
+                    "dockerConfig is required for Docker workspace isolation".to_string()
+                })?;
+                config.validate()?;
+                Ok((WorkspaceIsolationMode::Docker, Some(config)))
+            }
+        }
+    }
+
     /// Create a new agent session
     pub async fn create_session(
         manager: &AgentSessionManager,
@@ -29,6 +64,18 @@ impl AgentService {
         use crate::repositories::in_memory_session_repository::InMemorySessionRepository;
         use crate::repositories::SessionRepository;
         use std::sync::Arc;
+
+        let (workspace_isolation, docker_config) = Self::validate_workspace_isolation_request(
+            request.workspace_isolation,
+            request.docker_config,
+            request.is_ephemeral,
+        )?;
+
+        if matches!(workspace_isolation, WorkspaceIsolationMode::Docker) {
+            crate::services::WorkspaceRuntimeManager::healthcheck()
+                .await
+                .map_err(|error| error.to_string())?;
+        }
 
         if let Some(path_str) = &request.workspace_path {
             Self::validate_and_register_workspace_override(path_str, &request.session_id).await?;
@@ -55,6 +102,8 @@ impl AgentService {
                 request.model,
                 request.provider,
                 request.agent_config,
+                workspace_isolation,
+                docker_config,
             )
             .await
     }
@@ -65,6 +114,18 @@ impl AgentService {
         manager: &AgentSessionManager,
         request: crate::commands::agent_commands::CreateAgentSessionWithMessageRequest,
     ) -> Result<crate::commands::agent_commands::AgentResponse, String> {
+        let (workspace_isolation, docker_config) = Self::validate_workspace_isolation_request(
+            request.workspace_isolation,
+            request.docker_config,
+            false,
+        )?;
+
+        if matches!(workspace_isolation, WorkspaceIsolationMode::Docker) {
+            crate::services::WorkspaceRuntimeManager::healthcheck()
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+
         if let Some(path_str) = &request.workspace_path {
             Self::validate_and_register_workspace_override(path_str, &request.session_id).await?;
         }
@@ -79,6 +140,8 @@ impl AgentService {
                 request.model,
                 request.provider,
                 request.agent_config,
+                workspace_isolation,
+                docker_config,
             )
             .await?;
 

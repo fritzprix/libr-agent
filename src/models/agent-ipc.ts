@@ -39,6 +39,19 @@ export interface AgentConfig {
   depth?: number;
 }
 
+export type WorkspaceIsolationMode = 'host' | 'docker';
+
+export interface DockerWorkspaceConfig {
+  image: string;
+  env?: Record<string, string>;
+  portBindings?: DockerPortBinding[];
+}
+
+export interface DockerPortBinding {
+  containerPort: number;
+  hostPort?: number;
+}
+
 /**
  * Request payload for creating a new agent session.
  * `agentConfig` is a create-time payload only: backend persists `assistantId` and lineage
@@ -53,6 +66,8 @@ export interface CreateAgentSessionRequest {
   agentConfig: AgentConfig;
   isEphemeral?: boolean;
   workspacePath?: string;
+  workspaceIsolation?: WorkspaceIsolationMode;
+  dockerConfig?: DockerWorkspaceConfig;
 }
 
 /**
@@ -67,6 +82,8 @@ export interface CreateAgentSessionWithMessageRequest {
   agentConfig: AgentConfig;
   message: RustMessage;
   workspacePath?: string;
+  workspaceIsolation?: WorkspaceIsolationMode;
+  dockerConfig?: DockerWorkspaceConfig;
 }
 
 /**
@@ -256,6 +273,11 @@ export interface AgentSessionMetadata {
   lastAttentionReason?: SessionAttentionReason;
   isBookmarked?: boolean;
   executionMode: ExecutionMode;
+  workspaceOverride?: string;
+  workspaceIsolation: WorkspaceIsolationMode;
+  dockerConfig?: DockerWorkspaceConfig;
+  dockerContainerName?: string;
+  dockerHostWorkspacePath?: string;
 }
 
 export interface AgentSessionListCursor {
