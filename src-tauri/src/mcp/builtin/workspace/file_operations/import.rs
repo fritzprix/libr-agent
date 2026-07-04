@@ -63,7 +63,11 @@ impl WorkspaceServer {
 
             // Resolve and validate destination path
             let dest_abs_path = match self
-                .validate_path_with_error_for_write(dest_rel_path, Some(target_session_id.clone()))
+                .validate_write_path_with_teamwork_access(
+                    dest_rel_path,
+                    Some(target_session_id.clone()),
+                )
+                .await
             {
                 Ok(path) => path,
                 Err(e) => {

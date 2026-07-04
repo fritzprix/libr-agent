@@ -8,7 +8,7 @@ mod skill;
 
 pub use file::{list_relative_paths_in_root, list_workspace_relative_paths, FileReferenceResolver};
 pub use playbook::PlaybookReferenceResolver;
-pub use skill::SkillReferenceResolver;
+pub use skill::{format_skill_reference_block, SkillReferenceResolver};
 
 fn reference_dedupe_key(type_name: &str, arg: &str) -> String {
     if type_name.eq_ignore_ascii_case("skill") {

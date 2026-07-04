@@ -3,6 +3,7 @@ use super::terminal_manager;
 use super::tools;
 use super::types::{PendingExecutions, PendingShellInputResolution};
 use super::utils;
+use crate::mcp::builtin::utils::path_starts_with;
 use crate::mcp::MCPTool;
 use crate::repositories::SessionRepository;
 use crate::session::SessionManager;
@@ -25,6 +26,9 @@ pub struct WorkspaceServer {
     cleanup_shutdown: Arc<std::sync::atomic::AtomicBool>,
     cleanup_tasks: Vec<JoinHandle<()>>,
 }
+
+const TEAMWORK_ALIAS_PREFIX: &str = "@teamwork";
+const TEAMWORK_PARENT_CHAIN_LIMIT: usize = 64;
 
 impl WorkspaceServer {
     pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
@@ -256,6 +260,105 @@ impl WorkspaceServer {
         ))
     }
 
+    async fn get_skill_alias_roots(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crate::services::skill_service::SkillAliasRoot>, String> {
+        let assistant_id = if let Some(repo) = crate::state::try_get_session_repository() {
+            repo.get_session(session_id)
+                .await
+                .map_err(|e| format!("Failed to load session metadata: {e}"))?
+                .and_then(|session| crate::agent::extract_assistant_id_from_session(&session))
+        } else {
+            None
+        };
+
+        let workspace_dir = self.get_workspace_dir(session_id);
+        let (system_dir, user_dir, assistant_dir, workspace_skill_dir) =
+            crate::services::skill_service::resolve_skill_directories(
+                assistant_id.as_deref(),
+                Some(session_id),
+                Some(&workspace_dir),
+            )
+            .await?;
+
+        Ok(crate::services::skill_service::collect_skill_alias_roots(
+            system_dir,
+            user_dir,
+            assistant_dir,
+            workspace_skill_dir,
+        ))
+    }
+
+    fn extract_teamwork_alias_relative_path(path_str: &str) -> Option<&str> {
+        if path_str == TEAMWORK_ALIAS_PREFIX {
+            return Some(".");
+        }
+
+        path_str
+            .strip_prefix("@teamwork/")
+            .or_else(|| path_str.strip_prefix("@teamwork\\"))
+            .map(|suffix| {
+                if suffix.trim().is_empty() {
+                    "."
+                } else {
+                    suffix
+                }
+            })
+    }
+
+    async fn resolve_teamwork_root_session_id(&self, session_id: &str) -> Result<String, String> {
+        let Some(repo) = crate::state::try_get_session_repository() else {
+            return Ok(session_id.to_string());
+        };
+
+        let mut current = match repo
+            .get_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to load session metadata: {e}"))?
+        {
+            Some(session) => session,
+            None => return Ok(session_id.to_string()),
+        };
+
+        if let Some(org_root_session_id) = current.org_root_session_id.clone() {
+            return Ok(org_root_session_id);
+        }
+
+        for _ in 0..TEAMWORK_PARENT_CHAIN_LIMIT {
+            let Some(parent_session_id) = current.parent_session_id.clone() else {
+                return Ok(current.id);
+            };
+
+            current = match repo
+                .get_session(&parent_session_id)
+                .await
+                .map_err(|e| format!("Failed to load parent session metadata: {e}"))?
+            {
+                Some(session) => session,
+                None => return Ok(parent_session_id),
+            };
+
+            if let Some(org_root_session_id) = current.org_root_session_id.clone() {
+                return Ok(org_root_session_id);
+            }
+        }
+
+        Err(format!(
+            "Failed to resolve teamwork root for session {}: parent chain exceeded {} hops or contains a cycle",
+            session_id, TEAMWORK_PARENT_CHAIN_LIMIT
+        ))
+    }
+
+    async fn get_teamwork_artifact_root(&self, session_id: &str) -> Result<PathBuf, String> {
+        let root_session_id = self.resolve_teamwork_root_session_id(session_id).await?;
+        let session_manager = crate::session::get_session_manager()?;
+        Ok(crate::session::teamwork_artifact_dir_for_session(
+            session_manager,
+            &root_session_id,
+        ))
+    }
+
     fn path_is_within_any_root(candidate_path: &Path, allowed_roots: &[PathBuf]) -> bool {
         let normalized_candidate = candidate_path
             .canonicalize()
@@ -263,7 +366,7 @@ impl WorkspaceServer {
 
         allowed_roots.iter().any(|root| {
             let normalized_root = root.canonicalize().unwrap_or_else(|_| root.clone());
-            crate::mcp::builtin::utils::path_starts_with(&normalized_candidate, &normalized_root)
+            path_starts_with(&normalized_candidate, &normalized_root)
         })
     }
 
@@ -273,6 +376,31 @@ impl WorkspaceServer {
         session_id: Option<String>,
     ) -> Result<std::path::PathBuf, String> {
         let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
+
+        if let Some(teamwork_relative_path) = Self::extract_teamwork_alias_relative_path(path_str) {
+            let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
+            let teamwork_manager = SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+            return teamwork_manager
+                .get_security_validator()
+                .validate_path_for_read(teamwork_relative_path)
+                .map_err(|e| format!("Security error: {e}"));
+        }
+
+        if let Some((alias_prefix, relative_path)) =
+            crate::services::skill_service::extract_skill_alias_relative_path(path_str)
+        {
+            let alias_roots = self.get_skill_alias_roots(&target_session_id).await?;
+            let alias_root = alias_roots
+                .into_iter()
+                .find(|root| root.prefix == alias_prefix)
+                .ok_or_else(|| format!("Skill alias root is not available: {alias_prefix}"))?;
+            let alias_manager = SecureFileManager::new_scoped_with_base_dir(alias_root.root);
+            return alias_manager
+                .get_security_validator()
+                .validate_path_for_read(relative_path)
+                .map_err(|e| format!("Security error: {e}"));
+        }
+
         let file_manager = self.get_file_manager(Some(target_session_id.clone()));
 
         match file_manager
@@ -289,6 +417,10 @@ impl WorkspaceServer {
                 let allowed_roots = self
                     .get_allowed_absolute_skill_roots(&target_session_id)
                     .await?;
+                let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
+                let mut allowed_roots = allowed_roots;
+                allowed_roots.push(teamwork_root);
+
                 if !Self::path_is_within_any_root(&candidate_path, &allowed_roots) {
                     return Err(format!("Security error: {original_error}"));
                 }
@@ -302,6 +434,25 @@ impl WorkspaceServer {
                     .map_err(|e| format!("Security error: {e}"))
             }
         }
+    }
+
+    pub async fn validate_write_path_with_teamwork_access(
+        &self,
+        path_str: &str,
+        session_id: Option<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
+
+        if let Some(teamwork_relative_path) = Self::extract_teamwork_alias_relative_path(path_str) {
+            let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
+            let teamwork_manager = SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+            return teamwork_manager
+                .get_security_validator()
+                .validate_path_for_write(teamwork_relative_path)
+                .map_err(|e| format!("Security error: {e}"));
+        }
+
+        self.validate_path_with_error_for_write(path_str, Some(target_session_id))
     }
 
     /// Validate path with security checks (helper for file operations)

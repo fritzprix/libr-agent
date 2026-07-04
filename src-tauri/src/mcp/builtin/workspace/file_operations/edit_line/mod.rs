@@ -2,6 +2,7 @@ use super::super::tools::file_tools::EDIT_FILE_MAX_EDITS;
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
+use crate::services::SecureFileManager;
 use serde_json::{json, Value};
 
 mod apply;
@@ -46,12 +47,15 @@ fn normalize_insert_after_edit(edit: &Value) -> Value {
     item
 }
 
-fn validate_edit_target_path(
+async fn validate_edit_target_path(
     server: &WorkspaceServer,
     path_str: &str,
     session_id: Option<String>,
 ) -> Result<(), MCPResult> {
-    let safe_path = match server.validate_path_with_error_for_write(path_str, session_id) {
+    let safe_path = match server
+        .validate_write_path_with_teamwork_access(path_str, session_id)
+        .await
+    {
         Ok(path) => path,
         Err(error) => {
             return Err(guided_error(
@@ -109,22 +113,28 @@ async fn write_prepared_batches(
     prepared_batches: &[PreparedFileEdit],
     session_id: Option<String>,
 ) -> Result<(), MCPResult> {
-    let file_manager = server.get_file_manager(session_id);
+    let target_session_id = session_id.unwrap_or_else(|| server.session_id.clone());
+    let file_manager =
+        SecureFileManager::new_with_base_dir(server.get_workspace_dir(&target_session_id));
     let mut written_paths: Vec<String> = Vec::new();
 
     for batch in prepared_batches {
+        let resolved_path = batch.resolved_path.clone();
         if let Err(error) = file_manager
-            .write_file_string(&batch.path, &batch.new_content)
+            .write_file_string(&resolved_path, &batch.new_content)
             .await
         {
             let mut rollback_failures = Vec::new();
             for written_path in written_paths.iter().rev() {
                 if let Some(previous_batch) = prepared_batches
                     .iter()
-                    .find(|candidate| &candidate.path == written_path)
+                    .find(|candidate| &candidate.resolved_path == written_path)
                 {
                     if let Err(rollback_error) = file_manager
-                        .write_file_string(&previous_batch.path, &previous_batch.original_content)
+                        .write_file_string(
+                            &previous_batch.resolved_path,
+                            &previous_batch.original_content,
+                        )
                         .await
                     {
                         rollback_failures
@@ -153,7 +163,7 @@ async fn write_prepared_batches(
             .to_mcp_result());
         }
 
-        written_paths.push(batch.path.clone());
+        written_paths.push(resolved_path);
     }
 
     Ok(())
@@ -325,7 +335,7 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        if let Err(result) = validate_edit_target_path(self, &path, session_id.clone()) {
+        if let Err(result) = validate_edit_target_path(self, &path, session_id.clone()).await {
             return Ok(result);
         }
 

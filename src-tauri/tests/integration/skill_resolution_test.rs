@@ -9,7 +9,10 @@
 /// - Results are sorted by name
 use std::fs;
 use std::path::Path;
-use tauri_mcp_agent_lib::services::skill_service::resolve_skills;
+use tauri_mcp_agent_lib::services::skill_service::{
+    resolve_skills, ASSISTANT_SKILLS_ALIAS_PREFIX, SYSTEM_SKILLS_ALIAS_PREFIX,
+    USER_SKILLS_ALIAS_PREFIX, WORKSPACE_SKILLS_ALIAS_PREFIX,
+};
 use tempfile::TempDir;
 
 /// Helper: create a SKILL.md with valid frontmatter at `dir/subdir/SKILL.md`
@@ -37,6 +40,10 @@ async fn test_resolve_skills_global_only() {
     assert_eq!(result[0].name, "Skill A");
     assert_eq!(result[0].source.as_deref(), Some("global"));
     assert_eq!(result[0].origin.as_deref(), Some("system"));
+    assert_eq!(
+        result[0].alias_path.as_deref(),
+        Some("@system-skills/skill-a/SKILL.md")
+    );
 }
 
 #[tokio::test]
@@ -65,9 +72,17 @@ async fn test_resolve_skills_assistant_adds_to_global() {
     assert_eq!(result.len(), 2);
     assert_eq!(result[0].name, "Assistant Skill");
     assert_eq!(result[0].source.as_deref(), Some("assistant"));
+    assert_eq!(
+        result[0].alias_path.as_deref(),
+        Some("@assistant-skills/assistant-skill/SKILL.md")
+    );
     assert_eq!(result[1].name, "Global Skill");
     assert_eq!(result[1].source.as_deref(), Some("global"));
     assert_eq!(result[1].origin.as_deref(), Some("system"));
+    assert_eq!(
+        result[1].alias_path.as_deref(),
+        Some("@system-skills/global-skill/SKILL.md")
+    );
 }
 
 #[tokio::test]
@@ -335,6 +350,67 @@ async fn test_resolve_skills_agent_auto_discover() {
     assert_eq!(s.description, "Description Agent");
     assert_eq!(s.source.as_deref(), Some("agent_import"));
     assert_eq!(s.origin.as_deref(), Some("agent"));
+    assert_eq!(s.alias_path, None);
+}
+
+#[tokio::test]
+async fn test_resolve_skills_managed_layers_assign_alias_paths() {
+    let system = TempDir::new().unwrap();
+    let user = TempDir::new().unwrap();
+    let assistant = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let workspace_dir = workspace.path().join(".libragent").join("skills");
+    fs::create_dir_all(&workspace_dir).unwrap();
+
+    create_skill(system.path(), "system-skill", "System Skill", "From system");
+    create_skill(user.path(), "user-skill", "User Skill", "From user");
+    create_skill(
+        assistant.path(),
+        "assistant-skill",
+        "Assistant Skill",
+        "From assistant",
+    );
+    create_skill(
+        &workspace_dir,
+        "workspace-skill",
+        "Workspace Skill",
+        "From workspace",
+    );
+
+    let result = resolve_skills(
+        system.path().to_owned(),
+        user.path().to_owned(),
+        Some(assistant.path().to_owned()),
+        Some(workspace_dir),
+    )
+    .await
+    .unwrap();
+
+    let expected = [
+        ("Assistant Skill", ASSISTANT_SKILLS_ALIAS_PREFIX),
+        ("System Skill", SYSTEM_SKILLS_ALIAS_PREFIX),
+        ("User Skill", USER_SKILLS_ALIAS_PREFIX),
+        ("Workspace Skill", WORKSPACE_SKILLS_ALIAS_PREFIX),
+    ];
+
+    for (skill_name, prefix) in expected {
+        let skill = result
+            .iter()
+            .find(|skill| skill.name == skill_name)
+            .expect("skill should exist");
+        let alias = skill
+            .alias_path
+            .as_deref()
+            .expect("managed skills should expose alias paths");
+        assert!(
+            alias.starts_with(prefix),
+            "{skill_name} alias should start with {prefix}: {alias}"
+        );
+        assert!(
+            alias.ends_with("/SKILL.md"),
+            "{skill_name} alias should point at SKILL.md: {alias}"
+        );
+    }
 }
 
 #[tokio::test]

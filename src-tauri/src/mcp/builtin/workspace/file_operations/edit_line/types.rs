@@ -30,6 +30,7 @@ impl LineEdit {
 #[derive(Debug, Clone)]
 pub(super) struct PreparedFileEdit {
     pub(super) path: String,
+    pub(super) resolved_path: String,
     pub(super) edits: Vec<LineEdit>,
     pub(super) original_content: String,
     pub(super) new_content: String,

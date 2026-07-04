@@ -13,6 +13,10 @@ use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };
 use tauri_mcp_agent_lib::services::skill_service::invalidate_skill_scan_cache;
+use tauri_mcp_agent_lib::services::skill_service::{
+    ASSISTANT_SKILLS_ALIAS_PREFIX, SYSTEM_SKILLS_ALIAS_PREFIX, USER_SKILLS_ALIAS_PREFIX,
+    WORKSPACE_SKILLS_ALIAS_PREFIX,
+};
 use tauri_mcp_agent_lib::session::{get_session_manager, SessionManager};
 use tauri_mcp_agent_lib::set_session_repository;
 use tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url;
@@ -230,6 +234,24 @@ fn skill_scope_root_paths(
     ]
 }
 
+fn alias_for_scope(scope: &SkillScopeFixture) -> String {
+    let root_name = scope
+        .directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("skill directory name");
+
+    let prefix = match scope.token.as_str() {
+        "SYSTEM_SCOPE_TOKEN" => SYSTEM_SKILLS_ALIAS_PREFIX,
+        "USER_SCOPE_TOKEN" => USER_SKILLS_ALIAS_PREFIX,
+        "ASSISTANT_SCOPE_TOKEN" => ASSISTANT_SKILLS_ALIAS_PREFIX,
+        "WORKSPACE_SCOPE_TOKEN" => WORKSPACE_SKILLS_ALIAS_PREFIX,
+        other => panic!("unexpected scope token: {other}"),
+    };
+
+    format!("{prefix}/{root_name}/SKILL.md")
+}
+
 fn assert_success(result: &MCPResult, label: &str) {
     let text = extract_text_content(result);
     assert_ne!(
@@ -431,6 +453,38 @@ async fn read_file_allows_shadowed_lower_precedence_skill_by_absolute_path() {
         assert!(
             text.contains(&scope.token),
             "{} should remain readable even when shadowed: {text}",
+            scope.label
+        );
+    }
+}
+
+#[tokio::test]
+async fn read_file_allows_skill_aliases_across_all_managed_scopes() {
+    let _guard = test_guard().await;
+    let repo = session_repo().await;
+    let base_data_dir = global_base_data_dir();
+    let session_id = "workspace-read-skill-aliases";
+    let assistant_id = "assistant-skill-owner-alias";
+    repo.upsert_session(&make_session(session_id, assistant_id))
+        .await
+        .expect("upsert session");
+
+    let server = build_workspace_server(&base_data_dir, session_id);
+    let scopes = seed_skill_scopes(&base_data_dir, &server, session_id, assistant_id);
+    invalidate_skill_scan_cache();
+
+    for scope in scopes {
+        let alias_path = alias_for_scope(&scope);
+        let result = server
+            .handle_read_file(json!({ "path": alias_path }), Some(session_id.to_string()))
+            .await
+            .expect("readFile should return MCP result");
+        assert_success(&result, &scope.label);
+
+        let text = extract_text_content(&result);
+        assert!(
+            text.contains(&scope.token),
+            "{} token should be readable through alias path: {text}",
             scope.label
         );
     }

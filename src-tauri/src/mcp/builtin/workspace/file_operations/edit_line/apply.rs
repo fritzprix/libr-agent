@@ -6,6 +6,8 @@ use super::super::utils::{
 use super::types::{EditAction, LineEdit, PreparedFileEdit};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
+use tokio::fs;
+use tokio::io::AsyncReadExt;
 
 fn validate_edits_do_not_overlap(edits: &[LineEdit]) -> Result<(), MCPResult> {
     let mut sorted_ranges: Vec<(usize, usize, usize)> = edits
@@ -320,21 +322,26 @@ pub(super) async fn prepare_file_edit_batch(
 ) -> Result<PreparedFileEdit, MCPResult> {
     validate_edits_do_not_overlap(&edits)?;
 
-    if let Err(error) = server.validate_path_with_error_for_write(path_str, session_id.clone()) {
-        return Err(guided_error(
-            ErrorCategory::PermissionDenied,
-            format!("Path validation failed for '{}': {}", path_str, error),
-            ToolGroup::Workspace,
-        )
-        .guidance(vec![
-            "Use a normal file path without '..' traversal segments".to_string(),
-            "Use listDirectory to inspect valid target paths".to_string(),
-        ])
-        .to_mcp_result());
-    }
+    let resolved_path = match server
+        .validate_write_path_with_teamwork_access(path_str, session_id.clone())
+        .await
+    {
+        Ok(path) => path,
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::PermissionDenied,
+                format!("Path validation failed for '{}': {}", path_str, error),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use a normal file path without '..' traversal segments".to_string(),
+                "Use listDirectory to inspect valid target paths".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
-    let file_manager = server.get_file_manager(session_id);
-    let original_content = match file_manager.read_file_as_string(path_str).await {
+    let original_content = match read_validated_text_file(&resolved_path).await {
         Ok(content) => content,
         Err(error) => {
             return Err(
@@ -376,10 +383,49 @@ pub(super) async fn prepare_file_edit_batch(
 
     Ok(PreparedFileEdit {
         path: path_str.to_string(),
+        resolved_path: resolved_path.to_string_lossy().to_string(),
         edits: edits.clone(),
         original_content,
         new_content: new_content.clone(),
         original_line_count: line_count,
         new_hash_sections: build_new_hash_sections(&edits, &new_content),
+    })
+}
+
+async fn read_validated_text_file(path: &std::path::Path) -> Result<String, String> {
+    let max_size = crate::config::max_file_size();
+    let metadata = fs::metadata(path)
+        .await
+        .map_err(|error| format!("Failed to read file metadata: {error}"))?;
+
+    if metadata.len() > max_size as u64 {
+        return Err(format!(
+            "File size error: File exceeds the maximum allowed size of {} bytes",
+            max_size
+        ));
+    }
+
+    let file = fs::File::open(path)
+        .await
+        .map_err(|error| format!("Failed to open file: {error}"))?;
+
+    let mut buffer = Vec::new();
+    let read_limit = (max_size as u64).saturating_add(1);
+    let bytes_read = file
+        .take(read_limit)
+        .read_to_end(&mut buffer)
+        .await
+        .map_err(|error| format!("Failed to read file: {error}"))?;
+
+    if bytes_read > max_size {
+        return Err(format!(
+            "File size error: File exceeds the maximum allowed size of {} bytes",
+            max_size
+        ));
+    }
+
+    String::from_utf8(buffer).map_err(|_| {
+        "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters"
+            .to_string()
     })
 }
