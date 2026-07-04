@@ -66,12 +66,10 @@ impl PersistentShellManager {
         let shell_type = ShellType::PowerShell; // Default to PowerShell on Windows
 
         let shell = if let Some(session_repo) = crate::state::try_get_session_repository() {
-            match session_repo
-                .get_session(&session_id)
-                .await
-                .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
-            {
-                Some(session) if session.workspace_isolation == WorkspaceIsolationMode::Docker => {
+            match session_repo.get_session(&session_id).await {
+                Ok(Some(session))
+                    if session.workspace_isolation == WorkspaceIsolationMode::Docker =>
+                {
                     let spawned_shell =
                         crate::services::WorkspaceRuntimeManager::spawn_docker_persistent_shell(
                             &session,
@@ -82,9 +80,15 @@ impl PersistentShellManager {
                         .await
                         .map_err(|e| format!("Failed to create Docker shell: {e}"))?
                 }
-                _ => PersistentShell::new(session_id.clone(), workspace_path, shell_type)
+                Ok(_) => PersistentShell::new(session_id.clone(), workspace_path, shell_type)
                     .await
                     .map_err(|e| format!("Failed to create shell: {e}"))?,
+                Err(e) => {
+                    log::warn!("Could not load session isolation metadata for '{session_id}': {e}");
+                    PersistentShell::new(session_id.clone(), workspace_path, shell_type)
+                        .await
+                        .map_err(|e| format!("Failed to create shell: {e}"))?
+                }
             }
         } else {
             PersistentShell::new(session_id.clone(), workspace_path, shell_type)

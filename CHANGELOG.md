@@ -20,6 +20,7 @@
 - **Assistant Domain Consolidation**: Remove legacy `assistant` and `session_api` domains and consolidate into unified `agent` domain. Includes dynamic zombie cleanup, skill sync, and bootstrap alias support.
 
 ## [0.8.22] - 2026-07-13
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
