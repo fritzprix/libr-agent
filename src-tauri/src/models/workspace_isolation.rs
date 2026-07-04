@@ -3,17 +3,12 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum WorkspaceIsolationMode {
+    #[default]
     Host,
     Docker,
-}
-
-impl Default for WorkspaceIsolationMode {
-    fn default() -> Self {
-        Self::Host
-    }
 }
 
 impl WorkspaceIsolationMode {

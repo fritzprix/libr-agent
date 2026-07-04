@@ -156,6 +156,7 @@ impl AgentSessionManager {
     }
 
     /// Create or update a session with a specific repository
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_session_with_repo(
         &self,
         session_repo: Arc<dyn crate::repositories::SessionRepository>,
