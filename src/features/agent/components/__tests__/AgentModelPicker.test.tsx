@@ -84,10 +84,7 @@ describe('AgentModelPicker', () => {
     });
 
     expect(refreshButton).toBeDisabled();
-    expect(refreshButton).toHaveAttribute(
-      'title',
-      'Add an API key to enable model refresh',
-    );
+    // Native title was removed in favor of Tooltip which isn't directly tested here
   });
 
   it('hides refresh when custom openai model discovery is intentionally disabled', () => {

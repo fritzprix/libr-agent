@@ -3,6 +3,7 @@ import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -155,18 +156,22 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       </Select>
 
       {showRefreshButton && (
-        <button
-          type="button"
-          onClick={() => refreshModels()}
-          disabled={disabled || isRefreshing || !canRefresh}
-          className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          title={refreshButtonLabel}
-          aria-label={refreshButtonLabel}
-        >
-          <RefreshCw
-            className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
-          />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => refreshModels()}
+              disabled={disabled || isRefreshing || !canRefresh}
+              className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              aria-label={refreshButtonLabel}
+            >
+              <RefreshCw
+                className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{refreshButtonLabel}</TooltipContent>
+        </Tooltip>
       )}
     </div>
   );
