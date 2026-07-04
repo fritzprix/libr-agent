@@ -1,5 +1,6 @@
 use crate::common;
 
+use once_cell::sync::Lazy;
 use serde_json::json;
 use std::sync::Arc;
 use tauri_mcp_agent_lib::agent::concurrency::{
@@ -17,7 +18,6 @@ use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResult};
 use tauri_mcp_agent_lib::session::SessionManager;
 use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus};
 use tempfile::tempdir;
-use once_cell::sync::Lazy;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 
