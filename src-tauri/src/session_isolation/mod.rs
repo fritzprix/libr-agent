@@ -39,10 +39,13 @@ impl SessionIsolationManager {
         );
 
         if let Some(session_repo) = crate::state::try_get_session_repository() {
-            match session_repo.get_session(&config.session_id).await {
-                Ok(Some(session))
-                    if session.workspace_isolation
-                        == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker =>
+            if let Some(session) = session_repo
+                .get_session(&config.session_id)
+                .await
+                .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
+            {
+                if session.workspace_isolation
+                    == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
                 {
                     return crate::services::WorkspaceRuntimeManager::create_docker_exec_command(
                         &session,
@@ -52,13 +55,6 @@ impl SessionIsolationManager {
                     .await
                     .map_err(|error| error.to_string());
                 }
-                Err(e) => {
-                    log::warn!(
-                        "Could not load session isolation metadata for '{}': {e}",
-                        config.session_id
-                    );
-                }
-                _ => {}
             }
         }
 
