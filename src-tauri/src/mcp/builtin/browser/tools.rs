@@ -204,12 +204,18 @@ pub fn click_element_tool() -> MCPTool {
     MCPTool {
         name: "clickElement".to_string(),
         title: Some("Click Element".to_string()),
-        description: "Click an element on the page using a CSS selector.
-
-⚠️ PREREQUISITE:
-- Call listInteractable OR `getPageContent` FIRST to find valid selectors on the page.
-- Do NOT guess selectors."
-            .to_string(),
+        description: tool_description(
+            "Click an element in the active browser session using a CSS selector.",
+            &["Active browser session from browser__createSession."],
+            &[
+                "Call browser__listInteractable or browser__getPageContent before this tool to extract a real selector from the current page.",
+                "Pass the selector exactly as extracted. Do not guess selectors.",
+            ],
+            &[
+                "Use browser__getPageContent to verify the page state after the click.",
+                "Use browser__listInteractable again if the page revealed new elements.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "selector".to_string(),
@@ -228,12 +234,18 @@ pub fn input_text_tool() -> MCPTool {
     MCPTool {
         name: "inputText".to_string(),
         title: Some("Input Text".to_string()),
-        description: "Input text into an element on the page.
-
-⚠️ PREREQUISITE:
-- Call listInteractable OR `getPageContent` FIRST to find valid selectors.
-- Verify the element is an input or textarea."
-            .to_string(),
+        description: tool_description(
+            "Enter text into an input element in the active browser session.",
+            &["Active browser session from browser__createSession."],
+            &[
+                "Call browser__listInteractable or browser__getPageContent before this tool to extract a valid selector.",
+                "Use a selector that targets an input or textarea element.",
+            ],
+            &[
+                "Use browser__getPageContent to confirm the form state if the page reflects the input.",
+                "Use browser__clickElement if the next step is submitting or revealing related controls.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -255,11 +267,18 @@ pub fn scroll_page_tool() -> MCPTool {
     MCPTool {
         name: "scrollPage".to_string(),
         title: Some("Scroll Page".to_string()),
-        description: "Scroll the page to a specific position.
-
-Use this for interaction or lazy-loaded pages. It does not advance cached `getPageContent` pages.
-If `getPageContent({})` returned `[Page 1/N]`, use `getPageContent({ \"page\": 2 })` instead of scrolling."
-            .to_string(),
+        description: tool_description(
+            "Scroll the active browser page to a specific position.",
+            &["Active browser session from browser__createSession."],
+            &[
+                "Use this to reveal off-screen or lazy-loaded elements in the live page.",
+                "Do not use scrolling to advance cached browser__getPageContent pages. When content extraction returns [Page 1/N], read the next cached page with browser__getPageContent instead.",
+            ],
+            &[
+                "Use browser__listInteractable after scrolling to inspect newly visible elements.",
+                "Use browser__getPageContent after scrolling if the page loaded more text content.",
+            ],
+        ),
         input_schema: object_prop(
             vec![
                 (
@@ -353,20 +372,20 @@ pub fn fetch_tool() -> MCPTool {
     MCPTool {
         name: "fetchUrl".to_string(),
         title: Some("Fetch URL".to_string()),
-        description: "Stateless one-off fetch: extract markdown content from a URL or download a file without creating or reusing the visible stateful browser workflow.
-
-Use this instead of chaining multiple `navigateToUrl` calls when you only need the content of a single, independent URL.
-does not create or reuse the visible stateful browser workflow — does not affect the active session.
-
-WORKFLOW:
-1. Provide the URL to fetch.
-2. If it's a web page, the content will be extracted and returned as markdown.
-3. If it's a file (PDF, image, etc.) and savePath is provided, it will be downloaded.
-
-NEXT STEPS:
-- Process the returned markdown content.
-- If a file was saved, use workspace tools to interact with it."
-            .to_string(),
+        description: tool_description(
+            "Stateless one-off fetch: fetch a single URL without affecting the active browser session.",
+            &[],
+            &[
+                "Use this instead of chaining multiple `navigateToUrl` calls when you only need the content of a single, independent URL.",
+                "This does not create or reuse the visible stateful browser workflow.",
+                "HTML or text responses are returned as markdown in the tool result.",
+                "Non-HTML responses require savePath so the file can be downloaded into the workspace.",
+            ],
+            &[
+                "Process the returned markdown directly when you only need page content.",
+                "Use workspace tools on the saved file when savePath downloaded a non-HTML resource.",
+            ],
+        ),
         input_schema: object_schema(props, vec!["url".to_string()]),
         output_schema: None,
         annotations: None,
@@ -403,16 +422,18 @@ pub fn evaluate_js_tool() -> MCPTool {
     MCPTool {
         name: "evaluateJS".to_string(),
         title: Some("Evaluate JavaScript".to_string()),
-        description: "Execute JavaScript code in the active browser session.\n\n\
-            Use this to:\n\
-            - Read page state (e.g., 'document.querySelector(...)')\n\
-            - Debug errors (e.g., 'window.onerror.toString()')\n\
-            - Check network state (e.g., 'performance.getEntries()')\n\
-            - Manipulate DOM for debugging\n\
-            \n\
-            ⚠️ Returns the serialized result as a string.\n\
-            For complex objects, use 'JSON.stringify(result)' in your script."
-            .to_string(),
+        description: tool_description(
+            "Execute JavaScript in the active browser session and return the serialized result.",
+            &["Active browser session from browser__createSession."],
+            &[
+                "Use this for page inspection, debugging, or controlled DOM manipulation in the current page.",
+                "Return plain values when possible. For complex objects, serialize them in the script with JSON.stringify(...).",
+            ],
+            &[
+                "Use browser__getConsoleLogs to inspect page-side errors after script execution.",
+                "Use browser__getPageContent to verify page state after DOM changes.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "script".to_string(),
@@ -431,11 +452,18 @@ pub fn get_console_logs_tool() -> MCPTool {
     MCPTool {
         name: "getConsoleLogs".to_string(),
         title: Some("Get Console Logs".to_string()),
-        description: "Get browser console logs (console.log, console.error, etc.) from the active session.\n\n\
-            Returns recent console entries with level (log/error/warn/info), message text, and timestamp.\n\
-            \n\
-            Use this to debug JavaScript errors, check API responses logged by the page, or trace execution."
-            .to_string(),
+        description: tool_description(
+            "Read recent browser console output from the active browser session.",
+            &["Active browser session from browser__createSession."],
+            &[
+                "Use this after navigation, form submission, or browser__evaluateJS when you need runtime logs from the page.",
+                "Adjust maxEntries when you need a broader or narrower log window.",
+            ],
+            &[
+                "Use browser__evaluateJS to inspect page state related to the logged messages.",
+                "Use browser__getPageContent when you need the rendered page context alongside the logs.",
+            ],
+        ),
         input_schema: object_prop(
             vec![(
                 "maxEntries".to_string(),
