@@ -44,11 +44,15 @@ impl AgentService {
             parent_session.as_ref(),
         )?;
         let (mut agent_config, assistant_id) = build_agent_config(&assistant)?;
+        let (workspace_isolation, docker_config) = Self::prepare_workspace_setup(
+            body.workspace_isolation,
+            body.docker_config.clone(),
+            false,
+            body.workspace_path.as_deref(),
+            &session_id,
+        )
+        .await?;
         let has_workspace_override = body.workspace_path.is_some();
-
-        if let Some(path_str) = body.workspace_path.as_deref() {
-            Self::validate_and_register_workspace_override(path_str, &session_id).await?;
-        }
 
         let parent_spawn_guard =
             acquire_parent_spawn_guard(body.parent_session_id.as_deref()).await;
@@ -66,12 +70,15 @@ impl AgentService {
         apply_lineage_to_config(&mut agent_config, &lineage_meta);
 
         let session = match manager
-            .create_session(
+            .create_session_with_repo(
+                std::sync::Arc::new(crate::state::get_session_repository().clone()),
                 session_id.clone(),
                 session_name,
                 resolved_model,
                 resolved_provider,
                 agent_config,
+                workspace_isolation,
+                docker_config,
             )
             .await
         {
