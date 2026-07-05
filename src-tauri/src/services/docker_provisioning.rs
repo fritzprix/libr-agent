@@ -268,14 +268,19 @@ async fn emit_docker_runtime_step(
 
     let _ = proxy_manager
         .update_runtime_state(session_id, app_handle, move |state| {
+            let is_ready = step == "Docker workspace ready";
             state.phase = if failed {
                 SessionRuntimePhase::Failed
+            } else if is_ready {
+                SessionRuntimePhase::Ready
             } else {
                 SessionRuntimePhase::Initializing
             };
             state.initialization.current_step = Some(step.clone());
             state.initialization.result = if failed {
                 SessionRuntimeInitResult::Failed
+            } else if is_ready {
+                SessionRuntimeInitResult::Success
             } else {
                 SessionRuntimeInitResult::Pending
             };
@@ -286,6 +291,9 @@ async fn emit_docker_runtime_step(
                 progress: None,
                 error,
             });
+            if is_ready {
+                state.recompute_summary();
+            }
         })
         .await;
 }
