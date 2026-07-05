@@ -128,6 +128,7 @@ pub async fn agent_update_session_config(
             request.model,
             request.provider,
             request.assistant_id,
+            request.recursive,
         )
         .await?;
 
@@ -422,4 +423,25 @@ pub async fn agent_execute_command(
             })
         }
     }
+}
+
+/// Get direct child session IDs for a parent session
+#[command]
+pub async fn agent_get_child_session_ids(
+    _manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<Vec<String>, String> {
+    let repo = crate::state::get_session_repository();
+    repo.get_child_session_ids(&session_id)
+        .await
+        .map_err(|e| format!("Failed to get child sessions: {}", e))
+}
+
+/// Get all descendant session IDs (recursive) for a parent session
+#[command]
+pub async fn agent_get_descendant_session_ids(
+    _manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<Vec<String>, String> {
+    crate::services::SessionCleanupService::collect_descendant_ids(&session_id).await
 }
