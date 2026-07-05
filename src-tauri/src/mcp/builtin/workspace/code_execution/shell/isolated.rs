@@ -336,6 +336,10 @@ impl WorkspaceServer {
                     }
                 };
 
+                let cwd =
+                    super::super::super::utils::effective_command_cwd(&session_id, &workspace_path)
+                        .await;
+
                 let response = serde_json::json!({
                     "command": command,
                     "exit_code": actual_exit_code,
@@ -343,7 +347,8 @@ impl WorkspaceServer {
                     "stderr": stderr,
                     "status": terminal_manager::process_status_label(&entry.status),
                     "duration_ms": duration_ms,
-                    "execution_type": "isolated"
+                    "execution_type": "isolated",
+                    "cwd": cwd
                 });
 
                 info!(

@@ -8,6 +8,7 @@ pub const INTERNAL_WORKSPACE_STATE_DIR: &str = ".libragent";
 pub const INTERNAL_WORKSPACE_TMP_DIR: &str = "tmp";
 pub const INTERNAL_WORKSPACE_EXPORTS_DIR: &str = "exports";
 pub const MAX_SYNC_EXECUTION_TIMEOUT_SECONDS: u64 = 300;
+pub const DOCKER_WORKSPACE_ROOT: &str = "/workspace";
 
 /// Get configured shell isolation level from settings
 /// Returns the configured isolation level or Medium as default
@@ -168,6 +169,66 @@ pub fn is_internal_workspace_artifact_path(workspace_root: &Path, path: &Path) -
     )
 }
 
+/// Normalize workspace paths for agent-facing output (forward slashes on Windows).
+pub fn normalize_workspace_path(path: &str) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        path.replace('\\', "/")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        path.to_string()
+    }
+}
+
+/// Resolve the workspace root shown to the agent and returned in shell tool responses.
+pub fn effective_workspace_root(is_docker: bool, host_workspace: &Path) -> String {
+    if is_docker {
+        DOCKER_WORKSPACE_ROOT.to_string()
+    } else {
+        normalize_workspace_path(&host_workspace.to_string_lossy())
+    }
+}
+
+/// Format persistent-shell CWD for agent context (relative to workspace root when possible).
+pub fn display_shell_cwd(raw_cwd: &str, workspace_dir: &str, is_docker: bool) -> String {
+    let cwd = normalize_workspace_path(raw_cwd);
+
+    if is_docker {
+        if cwd == DOCKER_WORKSPACE_ROOT {
+            ".".to_string()
+        } else if let Some(relative) = cwd.strip_prefix("/workspace/") {
+            format!("./{relative}")
+        } else {
+            cwd
+        }
+    } else if cwd.starts_with(workspace_dir) {
+        cwd.replacen(workspace_dir, ".", 1)
+    } else {
+        cwd
+    }
+}
+
+/// Helper to check if a session is Docker isolated.
+pub async fn is_session_docker_isolated(session_id: &str) -> bool {
+    use crate::models::workspace_isolation::WorkspaceIsolationMode;
+    use crate::repositories::session_repository::SessionRepository;
+
+    if let Some(session_repo) = crate::state::try_get_session_repository() {
+        match session_repo.get_session(session_id).await {
+            Ok(Some(session)) => session.workspace_isolation == WorkspaceIsolationMode::Docker,
+            Ok(None) | Err(_) => false,
+        }
+    } else {
+        false
+    }
+}
+
+/// CWD reported by isolated/async shell tools for a session.
+pub async fn effective_command_cwd(session_id: &str, host_workspace: &Path) -> String {
+    effective_workspace_root(is_session_docker_isolated(session_id).await, host_workspace)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +323,25 @@ mod tests {
             &symlinked_workspace_root,
             &stdout_path,
         ));
+    }
+
+    #[test]
+    fn test_effective_workspace_root_for_docker_and_host() {
+        let host = PathBuf::from("/home/user/project");
+        assert_eq!(effective_workspace_root(true, &host), DOCKER_WORKSPACE_ROOT);
+        assert_eq!(effective_workspace_root(false, &host), "/home/user/project");
+    }
+
+    #[test]
+    fn test_display_shell_cwd_for_docker_and_host() {
+        assert_eq!(
+            display_shell_cwd("/workspace/src", "/workspace", true),
+            "./src"
+        );
+        assert_eq!(display_shell_cwd("/workspace", "/workspace", true), ".");
+        assert_eq!(
+            display_shell_cwd("/home/user/project/src", "/home/user/project", false),
+            "./src"
+        );
     }
 }

@@ -90,6 +90,10 @@ export function useAgentDraftChat() {
   const formRef = useRef<HTMLFormElement>(null);
   const profileAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const provisioningToastRef = useRef<{
+    id: string | number;
+    sessionId: string;
+  } | null>(null);
 
   const rustBackend = useRustBackend();
   const { subscribe } = useDnDContext();
@@ -294,6 +298,37 @@ export function useAgentDraftChat() {
     loadAssistant();
   }, [searchParams, navigate, t]);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    void listen<AgentEventPayload>('agent:event', (event) => {
+      const payload = event.payload;
+      if (payload.type !== 'sessionRuntimeStateUpdated') {
+        return;
+      }
+
+      const activeToast = provisioningToastRef.current;
+      if (!activeToast || payload.sessionId !== activeToast.sessionId) {
+        return;
+      }
+
+      const step =
+        payload.runtimeState.initialization.docker?.step ??
+        payload.runtimeState.initialization.currentStep;
+      if (!step) {
+        return;
+      }
+
+      toast.loading(step, { id: activeToast.id });
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
@@ -307,34 +342,29 @@ export function useAgentDraftChat() {
       setIsSubmitting(true);
       const newSessionId = createId();
       const now = new Date();
-      let unlisten: (() => void) | undefined;
       let toastId: string | number | undefined;
 
       const resolvedInput = input.trim();
       const shortName =
-        input.trim().length > 50
-          ? input.trim().substring(0, 47) + '...'
-          : input.trim();
+        resolvedInput.length > 50
+          ? resolvedInput.substring(0, 47) + '...'
+          : resolvedInput;
+      const filesToAttach = pendingFiles;
+
+      setInput('');
+      setPendingFiles([]);
 
       try {
-        unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-          if (
-            event.payload.type === 'sessionRuntimeStateUpdated' &&
-            event.payload.sessionId === newSessionId
-          ) {
-            const step = event.payload.runtimeState.initialization.currentStep;
-            if (!step) {
-              return;
-            }
-            if (toastId) {
-              toast.loading(step, { id: toastId });
-            } else {
-              toastId = toast.loading(step);
-            }
-          }
-        });
-
-        if (!toastId) toastId = toast.loading(t('agent.draft.creatingSession'));
+        toastId = toast.loading(
+          workspaceIsolation === 'docker'
+            ? t('agent.draft.dockerCreating', {
+                image: dockerImage,
+                defaultValue:
+                  'Creating session — preparing Docker image {{image}}…',
+              })
+            : t('agent.draft.creatingSession'),
+        );
+        provisioningToastRef.current = { id: toastId, sessionId: newSessionId };
 
         const baseSystemPrompt =
           assistant.systemPrompt || 'You are a helpful assistant.';
@@ -373,9 +403,9 @@ export function useAgentDraftChat() {
             agentConfig,
             isEphemeral: false,
             workspacePath: workspaceOverride || undefined,
-            workspaceIsolation: workspaceOverride ? workspaceIsolation : 'host',
+            workspaceIsolation: workspaceIsolation,
             dockerConfig:
-              workspaceOverride && workspaceIsolation === 'docker'
+              workspaceIsolation === 'docker'
                 ? {
                     image: dockerImage,
                   }
@@ -384,7 +414,7 @@ export function useAgentDraftChat() {
         });
 
         const attachments: AttachmentReference[] = [];
-        for (const file of pendingFiles) {
+        for (const file of filesToAttach) {
           try {
             const result = await addAgentAttachment({
               sessionId: newSessionId,
@@ -475,23 +505,34 @@ export function useAgentDraftChat() {
           ...rustMessage,
           ...(nonInlineRefs.length > 0 ? { attachments: nonInlineRefs } : {}),
         };
-        await safeInvoke<AgentResponse>('agent_send_message', {
-          request: {
-            sessionId: newSessionId,
-            message: finalRustMessage,
-          },
-        });
 
-        if (toastId) toast.dismiss(toastId);
+        if (toastId) {
+          toast.dismiss(toastId);
+        }
+        provisioningToastRef.current = null;
 
         navigate(`/agent/${newSessionId}`);
+        setIsSubmitting(false);
+
+        void (async () => {
+          try {
+            await safeInvoke<AgentResponse>('agent_send_message', {
+              request: {
+                sessionId: newSessionId,
+                message: finalRustMessage,
+              },
+            });
+          } catch (sendError) {
+            logger.error('Failed to send initial draft message', sendError);
+            toast.error(t('agent.draft.failedToStartSession'));
+          }
+        })();
       } catch (err) {
         if (toastId) toast.dismiss(toastId);
+        provisioningToastRef.current = null;
         logger.error('Failed to create draft session', err);
         toast.error(t('agent.draft.failedToStartSession'));
         setIsSubmitting(false);
-      } finally {
-        if (unlisten) unlisten();
       }
     },
     [
@@ -505,6 +546,8 @@ export function useAgentDraftChat() {
       pendingFiles,
       getMimeType,
       workspaceOverride,
+      workspaceIsolation,
+      dockerImage,
       t,
     ],
   );

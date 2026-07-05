@@ -57,7 +57,13 @@ interface AgentChatStateContextValue {
   pendingMessages: Message[]; // NEW: Export pending queue for set-based detection
   error: MessageError | null;
   llmError: MessageError | null;
-  workflowStatus: 'idle' | 'busy' | 'paused' | 'error' | 'queued';
+  workflowStatus:
+    | 'idle'
+    | 'busy'
+    | 'paused'
+    | 'error'
+    | 'queued'
+    | 'provisioning';
   serviceContexts: Record<string, ServiceContext>;
 }
 

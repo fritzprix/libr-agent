@@ -1,3 +1,10 @@
+use std::collections::HashSet;
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Arc;
+use std::time::Instant;
+
 use crate::models::workspace_isolation::{
     validate_env_key, validate_env_value, WorkspaceIsolationMode,
 };
@@ -5,16 +12,36 @@ use crate::repositories::SessionMetadata;
 use crate::session_isolation::{PathMappingLayer, ShellDialect, ShellType, SpawnedShell};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use std::collections::HashSet;
-use std::net::TcpListener;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use std::sync::Arc;
 use thiserror::Error;
 use tokio::process::Command as AsyncCommand;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
+// ── Statics ──────────────────────────────────────────────────────────────────
+
+/// Per-session mutex to serialize container creation and health-check attempts.
 static DOCKER_SESSION_LOCKS: Lazy<DashMap<String, Arc<Mutex<()>>>> = Lazy::new(DashMap::new);
+
+/// Health-check cache: session_id → (last_check_time, is_healthy).
+/// Avoids running `docker --version` + `docker info` on every shell command.
+static DOCKER_HEALTH_CACHE: Lazy<DashMap<String, (Instant, bool)>> = Lazy::new(DashMap::new);
+
+/// Container readiness cache: session_id → last verified time.
+static DOCKER_CONTAINER_READY_CACHE: Lazy<DashMap<String, Instant>> = Lazy::new(DashMap::new);
+
+/// Resolved shell type cache: session_id → bash/sh.
+static DOCKER_SHELL_CACHE: Lazy<DashMap<String, ShellType>> = Lazy::new(DashMap::new);
+
+/// Waiters notified when background Docker provisioning completes for a session.
+static DOCKER_PROVISIONING_WAITERS: Lazy<DashMap<String, Arc<Notify>>> = Lazy::new(DashMap::new);
+
+/// Tracks sessions with an in-flight provisioning task to avoid duplicate spawns.
+static DOCKER_PROVISIONING_IN_FLIGHT: Lazy<DashMap<String, ()>> = Lazy::new(DashMap::new);
+
+const DOCKER_RUNTIME_CACHE_TTL_SECS: u64 = 30;
+
+pub type DockerStepReporter = Arc<dyn Fn(&str) + Send + Sync>;
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 type RuntimeResult<T> = Result<T, WorkspaceRuntimeError>;
 
@@ -51,6 +78,8 @@ pub enum WorkspaceRuntimeError {
     Io(String),
 }
 
+// ── Manager ──────────────────────────────────────────────────────────────────
+
 pub struct WorkspaceRuntimeManager;
 
 impl WorkspaceRuntimeManager {
@@ -62,22 +91,52 @@ impl WorkspaceRuntimeManager {
         Ok(())
     }
 
+    /// Ensures the Docker runtime is healthy and the session container exists.
+    /// Acquires a per-session lock to serialize container creation.
     pub async fn ensure_runtime(session: &SessionMetadata) -> RuntimeResult<()> {
-        if session.workspace_isolation != WorkspaceIsolationMode::Docker {
-            return Ok(());
+        wait_for_docker_provisioning(&session.id).await;
+        prepare_docker_runtime(session, false, false, None)
+            .await
+            .map(|_| ())
+    }
+
+    /// Cache-aware variant used by high-frequency shell execution paths.
+    pub async fn ensure_runtime_cached(session: &SessionMetadata) -> RuntimeResult<()> {
+        wait_for_docker_provisioning(&session.id).await;
+        prepare_docker_runtime(session, true, true, None)
+            .await
+            .map(|_| ())
+    }
+
+    pub fn try_mark_provisioning_in_flight(session_id: &str) -> bool {
+        if DOCKER_PROVISIONING_IN_FLIGHT.contains_key(session_id) {
+            return false;
         }
+        DOCKER_PROVISIONING_IN_FLIGHT.insert(session_id.to_string(), ());
+        DOCKER_PROVISIONING_WAITERS
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(Notify::new()));
+        true
+    }
 
-        let lock = DOCKER_SESSION_LOCKS
-            .entry(session.id.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone();
-        let _guard = lock.lock().await;
+    pub fn clear_provisioning_in_flight(session_id: &str) {
+        DOCKER_PROVISIONING_IN_FLIGHT.remove(session_id);
+        if let Some((_, notify)) = DOCKER_PROVISIONING_WAITERS.remove(session_id) {
+            notify.notify_waiters();
+        }
+    }
 
-        Self::healthcheck().await?;
+    pub fn is_provisioning_in_flight(session_id: &str) -> bool {
+        DOCKER_PROVISIONING_IN_FLIGHT.contains_key(session_id)
+    }
 
-        let container_name = docker_container_name(session)?;
-        let host_workspace = docker_host_workspace_path(session)?;
-        ensure_bash_image_contract(&session.id, &container_name, session, &host_workspace).await
+    pub async fn provision_runtime_with_steps(
+        session: &SessionMetadata,
+        reporter: Option<DockerStepReporter>,
+    ) -> RuntimeResult<()> {
+        prepare_docker_runtime(session, false, false, reporter)
+            .await
+            .map(|_| ())
     }
 
     pub async fn create_docker_exec_command(
@@ -85,7 +144,7 @@ impl WorkspaceRuntimeManager {
         command: &str,
         env_vars: &std::collections::HashMap<String, String>,
     ) -> RuntimeResult<AsyncCommand> {
-        Self::ensure_runtime(session).await?;
+        let shell = prepare_docker_runtime(session, true, true, None).await?;
 
         let container_name = docker_container_name(session)?;
         let mut cmd = AsyncCommand::new("docker");
@@ -109,7 +168,6 @@ impl WorkspaceRuntimeManager {
             cmd.arg("-e").arg(format!("{key}={value}"));
         }
 
-        let shell = docker_shell_for_session(session).await?;
         cmd.arg(container_name);
         // runShell intentionally executes shell syntax; this mirrors the host shell path.
         cmd.args([shell.command(), "-lc", command]);
@@ -119,7 +177,7 @@ impl WorkspaceRuntimeManager {
     pub async fn spawn_docker_persistent_shell(
         session: &SessionMetadata,
     ) -> RuntimeResult<SpawnedShell> {
-        Self::ensure_runtime(session).await?;
+        let shell = prepare_docker_runtime(session, false, false, None).await?;
 
         let container_name = docker_container_name(session)?;
         let host_workspace = docker_host_workspace_path(session)?;
@@ -135,7 +193,6 @@ impl WorkspaceRuntimeManager {
             }
         }
 
-        let shell = docker_shell_for_session(session).await?;
         cmd.arg(container_name);
         match shell {
             ShellType::Bash => cmd.args(["bash", "--norc", "--noprofile"]),
@@ -167,6 +224,8 @@ impl WorkspaceRuntimeManager {
         if session.workspace_isolation != WorkspaceIsolationMode::Docker {
             return Ok(());
         }
+
+        clear_session_docker_caches(&session.id);
 
         Self::healthcheck().await?;
         let container_name = docker_container_name(session)?;
@@ -220,15 +279,116 @@ impl WorkspaceRuntimeManager {
     }
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+fn clear_session_docker_caches(session_id: &str) {
+    DOCKER_HEALTH_CACHE.remove(session_id);
+    DOCKER_CONTAINER_READY_CACHE.remove(session_id);
+    DOCKER_SHELL_CACHE.remove(session_id);
+    DOCKER_SESSION_LOCKS.remove(session_id);
+    DOCKER_PROVISIONING_IN_FLIGHT.remove(session_id);
+    DOCKER_PROVISIONING_WAITERS.remove(session_id);
+}
+
+async fn wait_for_docker_provisioning(session_id: &str) {
+    let notify = DOCKER_PROVISIONING_WAITERS
+        .get(session_id)
+        .map(|entry| Arc::clone(entry.value()));
+    if let Some(notify) = notify {
+        if DOCKER_PROVISIONING_IN_FLIGHT.contains_key(session_id) {
+            notify.notified().await;
+        }
+    }
+}
+
+async fn prepare_docker_runtime(
+    session: &SessionMetadata,
+    cache_health: bool,
+    cache_container: bool,
+    reporter: Option<DockerStepReporter>,
+) -> RuntimeResult<ShellType> {
+    if session.workspace_isolation != WorkspaceIsolationMode::Docker {
+        return Err(WorkspaceRuntimeError::InvalidConfig(
+            "prepare_docker_runtime called for non-Docker session".to_string(),
+        ));
+    }
+
+    let lock = DOCKER_SESSION_LOCKS
+        .entry(session.id.clone())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    let _guard = lock.lock().await;
+
+    let now = Instant::now();
+    let ttl = std::time::Duration::from_secs(DOCKER_RUNTIME_CACHE_TTL_SECS);
+
+    if cache_health {
+        let needs_healthcheck = match DOCKER_HEALTH_CACHE.get(&session.id) {
+            Some(entry) => now.duration_since(entry.0) >= ttl || !entry.1,
+            None => true,
+        };
+        if needs_healthcheck {
+            if let Some(reporter) = reporter.as_ref() {
+                reporter("Checking Docker daemon");
+            }
+            WorkspaceRuntimeManager::healthcheck().await?;
+            DOCKER_HEALTH_CACHE.insert(session.id.clone(), (now, true));
+        }
+    } else {
+        if let Some(reporter) = reporter.as_ref() {
+            reporter("Checking Docker daemon");
+        }
+        WorkspaceRuntimeManager::healthcheck().await?;
+        DOCKER_HEALTH_CACHE.insert(session.id.clone(), (now, true));
+    }
+
+    if cache_container {
+        if let (Some(ready_at), Some(shell)) = (
+            DOCKER_CONTAINER_READY_CACHE.get(&session.id),
+            DOCKER_SHELL_CACHE.get(&session.id),
+        ) {
+            if now.duration_since(*ready_at) < ttl {
+                return Ok(*shell);
+            }
+        }
+    }
+
+    let container_name = docker_container_name(session)?;
+    let host_workspace = docker_host_workspace_path(session)?;
+    let image = session
+        .docker_config
+        .as_ref()
+        .map(|config| config.image.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    let shell = ensure_bash_image_contract(
+        &session.id,
+        &container_name,
+        session,
+        &host_workspace,
+        &image,
+        reporter.as_ref(),
+    )
+    .await?;
+
+    DOCKER_SHELL_CACHE.insert(session.id.clone(), shell);
+    DOCKER_CONTAINER_READY_CACHE.insert(session.id.clone(), now);
+    Ok(shell)
+}
+
 async fn ensure_bash_image_contract(
     session_id: &str,
     container_name: &str,
     session: &SessionMetadata,
     host_workspace: &Path,
-) -> RuntimeResult<()> {
+    image: &str,
+    reporter: Option<&DockerStepReporter>,
+) -> RuntimeResult<ShellType> {
     if docker_container_exists(container_name).await? {
         verify_container_label(container_name, session_id).await?;
         if !docker_container_running(container_name).await? {
+            if let Some(reporter) = reporter {
+                reporter("Starting container");
+            }
             run_docker_status(["start", container_name]).await?;
         }
     } else {
@@ -248,6 +408,10 @@ async fn ensure_bash_image_contract(
                     host_workspace.display()
                 ))
             })?;
+
+        if let Some(reporter) = reporter {
+            reporter(&format!("Pulling image {image}"));
+        }
 
         let mount = format!("{}:/workspace", docker_mount_path(host_workspace)?);
         let label = format!("com.libragent.session_id={session_id}");
@@ -274,14 +438,19 @@ async fn ensure_bash_image_contract(
             cmd.args(["--user", &user]);
         }
 
+        if let Some(reporter) = reporter {
+            reporter("Starting container");
+        }
+
         cmd.args([&config.image, "tail", "-f", "/dev/null"]);
         run_status_command(cmd).await?;
     }
 
     verify_container_label(container_name, session_id).await?;
-    ensure_supported_shell(session_id, container_name)
-        .await
-        .map(|_| ())
+    if let Some(reporter) = reporter {
+        reporter("Verifying shell");
+    }
+    ensure_supported_shell(session_id, container_name).await
 }
 
 async fn append_port_binding_args(
@@ -307,11 +476,6 @@ fn ensure_host_port_available(port: u16) -> RuntimeResult<()> {
     TcpListener::bind(("127.0.0.1", port))
         .map(drop)
         .map_err(|_| WorkspaceRuntimeError::HostPortUnavailable(port))
-}
-
-async fn docker_shell_for_session(session: &SessionMetadata) -> RuntimeResult<ShellType> {
-    let container_name = docker_container_name(session)?;
-    ensure_supported_shell(&session.id, &container_name).await
 }
 
 async fn ensure_supported_shell(

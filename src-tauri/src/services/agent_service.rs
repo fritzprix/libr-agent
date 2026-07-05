@@ -1,7 +1,7 @@
 mod lineage;
 mod messages;
 mod reset;
-mod spawn;
+pub mod spawn;
 mod workspace;
 
 use crate::agent::AgentSessionManager;
@@ -56,6 +56,32 @@ impl AgentService {
         }
     }
 
+    pub(crate) async fn prepare_workspace_setup(
+        workspace_isolation: Option<WorkspaceIsolationMode>,
+        docker_config: Option<DockerWorkspaceConfig>,
+        is_ephemeral: bool,
+        workspace_path: Option<&str>,
+        session_id: &str,
+    ) -> Result<(WorkspaceIsolationMode, Option<DockerWorkspaceConfig>), String> {
+        let (mode, docker) = Self::validate_workspace_isolation_request(
+            workspace_isolation,
+            docker_config,
+            is_ephemeral,
+        )?;
+
+        if matches!(mode, WorkspaceIsolationMode::Docker) {
+            crate::services::WorkspaceRuntimeManager::healthcheck()
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+
+        if let Some(path_str) = workspace_path {
+            Self::validate_and_register_workspace_override(path_str, session_id).await?;
+        }
+
+        Ok((mode, docker))
+    }
+
     /// Create a new agent session
     pub async fn create_session(
         manager: &AgentSessionManager,
@@ -65,21 +91,15 @@ impl AgentService {
         use crate::repositories::SessionRepository;
         use std::sync::Arc;
 
-        let (workspace_isolation, docker_config) = Self::validate_workspace_isolation_request(
+        let (workspace_isolation, docker_config) = Self::prepare_workspace_setup(
             request.workspace_isolation,
             request.docker_config,
             request.is_ephemeral,
-        )?;
+            request.workspace_path.as_deref(),
+            &request.session_id,
+        )
+        .await?;
 
-        if matches!(workspace_isolation, WorkspaceIsolationMode::Docker) {
-            crate::services::WorkspaceRuntimeManager::healthcheck()
-                .await
-                .map_err(|error| error.to_string())?;
-        }
-
-        if let Some(path_str) = &request.workspace_path {
-            Self::validate_and_register_workspace_override(path_str, &request.session_id).await?;
-        }
         let session_repo: Arc<dyn SessionRepository> = if request.is_ephemeral {
             log::info!(
                 "Creating ephemeral session (in-memory only): {}",
@@ -114,21 +134,14 @@ impl AgentService {
         manager: &AgentSessionManager,
         request: crate::commands::agent_commands::CreateAgentSessionWithMessageRequest,
     ) -> Result<crate::commands::agent_commands::AgentResponse, String> {
-        let (workspace_isolation, docker_config) = Self::validate_workspace_isolation_request(
+        let (workspace_isolation, docker_config) = Self::prepare_workspace_setup(
             request.workspace_isolation,
             request.docker_config,
             false,
-        )?;
-
-        if matches!(workspace_isolation, WorkspaceIsolationMode::Docker) {
-            crate::services::WorkspaceRuntimeManager::healthcheck()
-                .await
-                .map_err(|error| error.to_string())?;
-        }
-
-        if let Some(path_str) = &request.workspace_path {
-            Self::validate_and_register_workspace_override(path_str, &request.session_id).await?;
-        }
+            request.workspace_path.as_deref(),
+            &request.session_id,
+        )
+        .await?;
 
         let session_repo = std::sync::Arc::new(crate::state::get_session_repository().clone());
 

@@ -39,21 +39,39 @@ impl SessionIsolationManager {
         );
 
         if let Some(session_repo) = crate::state::try_get_session_repository() {
-            if let Some(session) = session_repo
-                .get_session(&config.session_id)
-                .await
-                .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
-            {
-                if session.workspace_isolation
-                    == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
-                {
-                    return crate::services::WorkspaceRuntimeManager::create_docker_exec_command(
-                        &session,
-                        &config.command,
-                        &config.env_vars,
-                    )
-                    .await
-                    .map_err(|error| error.to_string());
+            match session_repo.get_session(&config.session_id).await {
+                Ok(Some(session)) => {
+                    if session.workspace_isolation
+                        == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
+                    {
+                        return crate::services::WorkspaceRuntimeManager::create_docker_exec_command(
+                            &session,
+                            &config.command,
+                            &config.env_vars,
+                        )
+                        .await
+                        .map_err(|error| error.to_string());
+                    }
+                }
+                Ok(None) => {
+                    log::info!(
+                        "Session '{}' not found in database. Falling back to host execution.",
+                        config.session_id
+                    );
+                }
+                Err(error) => {
+                    let err_str = error.to_string();
+                    if err_str.contains("no such table: sessions") {
+                        tracing::warn!(
+                            "Sessions table does not exist (test environment fallback) for {}: {}. Falling back to host execution.",
+                            config.session_id,
+                            err_str
+                        );
+                    } else {
+                        return Err(format!(
+                            "Failed to confirm workspace isolation level due to database error: {err_str}. Aborting command for security."
+                        ));
+                    }
                 }
             }
         }

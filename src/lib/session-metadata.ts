@@ -43,6 +43,8 @@ export function mapSessionMetadataToAgentSession(
     isBookmarked: metadata.isBookmarked ?? false,
     executionMode,
     pendingApprovalCount,
+    workspaceIsolation: metadata.workspaceIsolation,
+    dockerConfig: metadata.dockerConfig,
   };
 }
 

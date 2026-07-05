@@ -1,3 +1,4 @@
+use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -21,6 +22,8 @@ pub struct CreateSessionRequest {
     pub model: Option<String>,
     pub provider: Option<String>,
     pub workspace_path: Option<String>,
+    pub workspace_isolation: Option<WorkspaceIsolationMode>,
+    pub docker_config: Option<DockerWorkspaceConfig>,
     pub request: String,
     pub parent_session_id: Option<String>,
     pub max_depth: Option<u32>,

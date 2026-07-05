@@ -412,11 +412,18 @@ export function AgentWorkspacePanel({
               >
                 {rootPath}
               </CardTitle>
-              <p className="text-[11px] text-muted-foreground">
-                {isOverrideActive
-                  ? t('agent.workspace.usingCustom')
-                  : t('agent.workspace.title')}
-              </p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-[11px] text-muted-foreground">
+                  {isOverrideActive
+                    ? t('agent.workspace.usingCustom')
+                    : t('agent.workspace.title')}
+                </p>
+                {session?.workspaceIsolation === 'docker' && (
+                  <span className="text-[9px] font-mono font-bold text-primary bg-primary/10 rounded px-1.5 py-0.5 border border-primary/20 scale-90 origin-left">
+                    🐳 DOCKER
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2 rounded-lg border border-border/40 bg-muted/[0.18] p-2.5">
@@ -446,10 +453,25 @@ export function AgentWorkspacePanel({
 
               <div className="flex items-center justify-between gap-2">
                 {isOverrideActive ? (
-                  <p className="flex items-center gap-1 text-[11px] text-warning">
-                    <AlertTriangle className="h-3 w-3" />
-                    {t('agent.workspace.usingCustom')}
-                  </p>
+                  <div className="flex flex-col gap-1 text-left">
+                    <p className="flex items-center gap-1 text-[11px] text-warning">
+                      <AlertTriangle className="h-3 w-3" />
+                      {t('agent.workspace.usingCustom')}
+                    </p>
+                    {session?.workspaceIsolation === 'docker' && (
+                      <div
+                        className="inline-flex items-center gap-1 text-[9px] font-mono text-primary bg-primary/10 rounded px-1.5 py-0.5 border border-primary/20 max-w-[180px] truncate"
+                        title={session.dockerConfig?.image}
+                      >
+                        <span>🐳 Docker</span>
+                        {session.dockerConfig?.image && (
+                          <span className="opacity-70">
+                            ({session.dockerConfig.image})
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <p className="text-[11px] text-muted-foreground">
                     {t('agent.workspace.overridePlaceholder')}

@@ -198,10 +198,18 @@ export interface SessionRuntimeProxyState {
   ready: boolean;
 }
 
+export interface SessionRuntimeDockerState {
+  image: string;
+  step?: string;
+  progress?: number;
+  error?: string;
+}
+
 export interface SessionRuntimeInitializationState {
   currentStep?: string;
   result: SessionRuntimeInitResult;
   error?: string;
+  docker?: SessionRuntimeDockerState;
 }
 
 export interface SessionRuntimeServerState {
@@ -253,7 +261,7 @@ export interface ToolExecutionResult {
 export interface AgentSessionMetadata {
   id: string;
   name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued';
+  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning';
   model: string;
   provider: string;
   /** FK to assistants table; authoritative assistant binding for the session */

@@ -161,7 +161,11 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     let session = SessionMetadata {
         id: session_id.clone(),
         name,
-        status: SessionStatus::Idle,
+        status: if workspace_isolation == WorkspaceIsolationMode::Docker {
+            SessionStatus::Provisioning
+        } else {
+            SessionStatus::Idle
+        },
         model: resolved_model,
         provider: resolved_provider,
         assistant_id: agent_config.id.clone(),
@@ -195,13 +199,17 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         .map_err(|e| format!("Failed to create session: {}", e))?;
 
     if session.workspace_isolation == WorkspaceIsolationMode::Docker {
-        if let Err(error) = crate::services::WorkspaceRuntimeManager::ensure_runtime(&session).await
-        {
-            if existing_session.is_none() {
-                let _ = session_repo.delete_session(&session_id).await;
-            }
-            return Err(error.to_string());
-        }
+        let is_new_session = existing_session.is_none();
+        crate::services::docker_provisioning::spawn_docker_provisioning(
+            crate::services::docker_provisioning::DockerProvisioningDeps {
+                session_repo: Arc::clone(&session_repo),
+                active_sessions: Arc::clone(&active_sessions),
+                proxy_manager: Arc::clone(&proxy_manager),
+                app_handle: app_handle.clone(),
+            },
+            session.clone(),
+            is_new_session,
+        );
     }
 
     // Extract builtin tool IDs from agent config

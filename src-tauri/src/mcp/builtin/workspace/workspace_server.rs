@@ -645,31 +645,15 @@ impl WorkspaceServer {
             *guard = Some((context_prompt.clone(), std::time::Instant::now()));
         }
 
-        // Gather structured stats
-        let workspace_dir = {
-            let path_str = self
-                .get_workspace_dir(&session_id)
-                .to_string_lossy()
-                .to_string();
-            #[cfg(target_os = "windows")]
-            let path_str = path_str.replace('\\', "/");
-            path_str
-        };
+        let live_state = context::build_workspace_live_state(
+            &session_id,
+            &self.session_manager,
+            &self.shell_manager,
+        )
+        .await;
 
-        let shell_cwd = if let Some(cwd) = self.shell_manager.get_shell_cwd(&session_id).await {
-            let cwd = {
-                #[cfg(target_os = "windows")]
-                let cwd = cwd.replace('\\', "/");
-                cwd
-            };
-            if cwd.starts_with(&workspace_dir) {
-                cwd.replacen(&workspace_dir, ".", 1)
-            } else {
-                cwd
-            }
-        } else {
-            ".".to_string()
-        };
+        let workspace_dir = live_state.workspace_dir;
+        let shell_cwd = live_state.shell_cwd;
 
         let (running_count, total_count) = match self.process_registry.try_read() {
             Ok(reg) => {
@@ -693,6 +677,7 @@ impl WorkspaceServer {
             .with_structured_state(serde_json::json!({
                 "workspace_dir": workspace_dir,
                 "shell_cwd": shell_cwd,
+                "is_docker": live_state.is_docker,
                 "platform": {
                     "os": std::env::consts::OS,
                     "arch": std::env::consts::ARCH,

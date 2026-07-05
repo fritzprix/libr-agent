@@ -1,8 +1,35 @@
 use super::persistent_shell;
 use super::terminal_manager;
-use crate::models::workspace_isolation::WorkspaceIsolationMode;
-use crate::repositories::SessionRepository;
 use crate::session::SessionManager;
+
+/// Agent-facing workspace state shared by the context prompt and structured service context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceLiveState {
+    pub workspace_dir: String,
+    pub shell_cwd: String,
+    pub is_docker: bool,
+}
+
+/// Build workspace display state for a session.
+pub async fn build_workspace_live_state(
+    session_id: &str,
+    session_manager: &SessionManager,
+    shell_manager: &persistent_shell::PersistentShellManager,
+) -> WorkspaceLiveState {
+    let is_docker = super::utils::is_session_docker_isolated(session_id).await;
+    let host_workspace = session_manager.get_session_workspace_dir_by_id(session_id);
+    let workspace_dir = super::utils::effective_workspace_root(is_docker, &host_workspace);
+    let shell_cwd = match shell_manager.get_shell_cwd(session_id).await {
+        Some(cwd) => super::utils::display_shell_cwd(&cwd, &workspace_dir, is_docker),
+        None => ".".to_string(),
+    };
+
+    WorkspaceLiveState {
+        workspace_dir,
+        shell_cwd,
+        is_docker,
+    }
+}
 
 /// Build the service context prompt text used in BuiltinMCPServer::get_service_context.
 pub async fn build_context_prompt(
@@ -11,41 +38,7 @@ pub async fn build_context_prompt(
     process_registry: &terminal_manager::ProcessRegistry,
     shell_manager: &persistent_shell::PersistentShellManager,
 ) -> String {
-    let workspace_dir_path = session_manager.get_session_workspace_dir_by_id(session_id);
-    let workspace_dir = {
-        let path_str = workspace_dir_path.to_string_lossy().to_string();
-        #[cfg(target_os = "windows")]
-        let path_str = path_str.replace('\\', "/");
-        path_str
-    };
-
-    let docker_shell_cwd = docker_shell_cwd_enabled(session_id).await;
-
-    // Get current shell CWD
-    let shell_cwd = if let Some(cwd) = shell_manager.get_shell_cwd(session_id).await {
-        let cwd = {
-            #[cfg(target_os = "windows")]
-            let cwd = cwd.replace('\\', "/");
-            cwd
-        };
-
-        if docker_shell_cwd {
-            if cwd == "/workspace" {
-                ".".to_string()
-            } else if let Some(relative) = cwd.strip_prefix("/workspace/") {
-                format!("./{relative}")
-            } else {
-                cwd
-            }
-        // Convert to relative path if within workspace for better readability
-        } else if cwd.starts_with(&workspace_dir) {
-            cwd.replacen(&workspace_dir, ".", 1)
-        } else {
-            cwd
-        }
-    } else {
-        ".".to_string()
-    };
+    let state = build_workspace_live_state(session_id, session_manager, shell_manager).await;
 
     // ✅ ENHANCED: Get running processes with IDs and commands for AI visibility
     let (total_count, running_processes_text) = {
@@ -93,29 +86,25 @@ pub async fn build_context_prompt(
         }
     };
 
-    let context_prompt = format!(
+    let isolation_lines = if state.is_docker {
+        "- Isolation: Docker (shell commands run in a Linux container; workspace root is /workspace)\n\
+         - File tools (readFile, writeFile, listDirectory, editFile) access the same /workspace files via the host bind mount; changes outside /workspace are visible to shell only, not to file tools\n"
+    } else {
+        ""
+    };
+
+    format!(
         "## Workspace
 
 ### Live State
-- Workspace Root: {workspace_dir}
+{isolation_lines}- Workspace Root: {workspace_dir}
 - Persistent Shell CWD: {shell_cwd}
 - Running Processes: {running_processes_text}
 - Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.
-- Total Processes: {total_count}"
-    );
-
-    context_prompt
-}
-
-async fn docker_shell_cwd_enabled(session_id: &str) -> bool {
-    let Some(session_repo) = crate::state::try_get_session_repository() else {
-        return false;
-    };
-    let Ok(Some(session)) = session_repo.get_session(session_id).await else {
-        return false;
-    };
-
-    session.workspace_isolation == WorkspaceIsolationMode::Docker
+- Total Processes: {total_count}",
+        workspace_dir = state.workspace_dir,
+        shell_cwd = state.shell_cwd,
+    )
 }
 
 /// Detect default shell for the platform
@@ -137,5 +126,21 @@ pub fn detect_shell(os: &str) -> String {
                 .unwrap_or_else(|| "bash".to_string())
         }
         _ => "unknown".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_live_state_equality() {
+        let state = WorkspaceLiveState {
+            workspace_dir: "/workspace".to_string(),
+            shell_cwd: ".".to_string(),
+            is_docker: true,
+        };
+        assert_eq!(state.workspace_dir, "/workspace");
+        assert!(state.is_docker);
     }
 }

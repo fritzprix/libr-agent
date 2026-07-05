@@ -55,10 +55,23 @@ pub struct SessionRuntimeProxyState {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct SessionRuntimeDockerState {
+    pub image: String,
+    pub step: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionRuntimeInitializationState {
     pub current_step: Option<String>,
     pub result: SessionRuntimeInitResult,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker: Option<SessionRuntimeDockerState>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,6 +110,7 @@ impl Default for SessionRuntimeState {
                 current_step: None,
                 result: SessionRuntimeInitResult::Pending,
                 error: None,
+                docker: None,
             },
             servers: Vec::new(),
         }
@@ -113,6 +127,7 @@ impl SessionRuntimeState {
                     current_step: None,
                     result: SessionRuntimeInitResult::Pending,
                     error: None,
+                    docker: None,
                 }
             },
             ..Self::default()
@@ -132,6 +147,7 @@ impl SessionRuntimeState {
                 current_step: Some("Session initialization complete".to_string()),
                 result: SessionRuntimeInitResult::Success,
                 error: None,
+                docker: None,
             },
             servers: Vec::new(),
         }
@@ -150,6 +166,7 @@ impl SessionRuntimeState {
                 current_step: Some("Initializing session services".to_string()),
                 result: SessionRuntimeInitResult::Pending,
                 error: None,
+                docker: None,
             },
             servers,
         }
