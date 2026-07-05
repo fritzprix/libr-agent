@@ -28,6 +28,8 @@ import type {
   AgentSessionListCursor,
   AgentSessionListResponse,
   AgentResponse,
+  SessionRuntimeState,
+  WorkflowCompletionReason,
 } from '@/models/agent-ipc';
 import {
   applySessionUpdateToCollections,
@@ -685,15 +687,34 @@ export function AgentSessionListProvider({
     let unlisten: (() => void) | undefined;
 
     const setup = async () => {
-      unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-        handleAgentEvent(event.payload, {
-          activeSessionId,
-          applySessionUpdate,
-          clearPendingApproval,
-          logger,
-          markSessionViewed,
-          pendingApprovalKeysRef,
-        });
+      unlisten = await listen<{
+        type: string;
+        sessionId?: string;
+        status?: AgentSession['status'];
+        runtimeState?: SessionRuntimeState;
+        message?: AgentEventPayload['message'];
+        toolCallId?: string;
+        approvalKind?: 'standard' | 'hard';
+        approved?: boolean;
+        reason?: WorkflowCompletionReason;
+      }>('agent:event', (event) => {
+        handleAgentEvent(
+          {
+            ...event.payload,
+            runtimeState:
+              event.payload.type === 'sessionRuntimeStateUpdated'
+                ? event.payload.runtimeState
+                : undefined,
+          },
+          {
+            activeSessionId,
+            applySessionUpdate,
+            clearPendingApproval,
+            logger,
+            markSessionViewed,
+            pendingApprovalKeysRef,
+          },
+        );
       });
     };
 

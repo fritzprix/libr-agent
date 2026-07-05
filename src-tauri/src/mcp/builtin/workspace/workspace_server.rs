@@ -3,9 +3,12 @@ use super::terminal_manager;
 use super::tools;
 use super::types::{PendingExecutions, PendingShellInputResolution};
 use super::utils;
+use crate::mcp::builtin::utils::path_starts_with;
 use crate::mcp::MCPTool;
+use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::SessionRepository;
 use crate::session::SessionManager;
+use crate::session_isolation::PathMappingLayer;
 use crate::SecureFileManager;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -25,6 +28,11 @@ pub struct WorkspaceServer {
     cleanup_shutdown: Arc<std::sync::atomic::AtomicBool>,
     cleanup_tasks: Vec<JoinHandle<()>>,
 }
+
+const TEAMWORK_ALIAS_PREFIX: &str = "@teamwork";
+// Guard against pathological or cyclic parent-session chains while still
+// allowing deep enough org hierarchies for normal teamwork lineages.
+const TEAMWORK_PARENT_CHAIN_LIMIT: usize = 64;
 
 impl WorkspaceServer {
     pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
@@ -256,6 +264,105 @@ impl WorkspaceServer {
         ))
     }
 
+    async fn get_skill_alias_roots(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crate::services::skill_service::SkillAliasRoot>, String> {
+        let assistant_id = if let Some(repo) = crate::state::try_get_session_repository() {
+            repo.get_session(session_id)
+                .await
+                .map_err(|e| format!("Failed to load session metadata: {e}"))?
+                .and_then(|session| crate::agent::extract_assistant_id_from_session(&session))
+        } else {
+            None
+        };
+
+        let workspace_dir = self.get_workspace_dir(session_id);
+        let (system_dir, user_dir, assistant_dir, workspace_skill_dir) =
+            crate::services::skill_service::resolve_skill_directories(
+                assistant_id.as_deref(),
+                Some(session_id),
+                Some(&workspace_dir),
+            )
+            .await?;
+
+        Ok(crate::services::skill_service::collect_skill_alias_roots(
+            system_dir,
+            user_dir,
+            assistant_dir,
+            workspace_skill_dir,
+        ))
+    }
+
+    fn extract_teamwork_alias_relative_path(path_str: &str) -> Option<&str> {
+        if path_str == TEAMWORK_ALIAS_PREFIX {
+            return Some(".");
+        }
+
+        path_str
+            .strip_prefix("@teamwork/")
+            .or_else(|| path_str.strip_prefix("@teamwork\\"))
+            .map(|suffix| {
+                if suffix.trim().is_empty() {
+                    "."
+                } else {
+                    suffix
+                }
+            })
+    }
+
+    async fn resolve_teamwork_root_session_id(&self, session_id: &str) -> Result<String, String> {
+        let Some(repo) = crate::state::try_get_session_repository() else {
+            return Ok(session_id.to_string());
+        };
+
+        let mut current = match repo
+            .get_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to load session metadata: {e}"))?
+        {
+            Some(session) => session,
+            None => return Ok(session_id.to_string()),
+        };
+
+        if let Some(org_root_session_id) = current.org_root_session_id.clone() {
+            return Ok(org_root_session_id);
+        }
+
+        for _ in 0..TEAMWORK_PARENT_CHAIN_LIMIT {
+            let Some(parent_session_id) = current.parent_session_id.clone() else {
+                return Ok(current.id);
+            };
+
+            current = match repo
+                .get_session(&parent_session_id)
+                .await
+                .map_err(|e| format!("Failed to load parent session metadata: {e}"))?
+            {
+                Some(session) => session,
+                None => return Ok(parent_session_id),
+            };
+
+            if let Some(org_root_session_id) = current.org_root_session_id.clone() {
+                return Ok(org_root_session_id);
+            }
+        }
+
+        Err(format!(
+            "Failed to resolve teamwork root for session {}: parent chain exceeded {} hops or contains a cycle",
+            session_id, TEAMWORK_PARENT_CHAIN_LIMIT
+        ))
+    }
+
+    async fn get_teamwork_artifact_root(&self, session_id: &str) -> Result<PathBuf, String> {
+        let root_session_id = self.resolve_teamwork_root_session_id(session_id).await?;
+        let session_manager = crate::session::get_session_manager()?;
+        Ok(crate::session::teamwork_artifact_dir_for_session(
+            session_manager,
+            &root_session_id,
+        ))
+    }
+
     fn path_is_within_any_root(candidate_path: &Path, allowed_roots: &[PathBuf]) -> bool {
         let normalized_candidate = candidate_path
             .canonicalize()
@@ -263,7 +370,7 @@ impl WorkspaceServer {
 
         allowed_roots.iter().any(|root| {
             let normalized_root = root.canonicalize().unwrap_or_else(|_| root.clone());
-            crate::mcp::builtin::utils::path_starts_with(&normalized_candidate, &normalized_root)
+            path_starts_with(&normalized_candidate, &normalized_root)
         })
     }
 
@@ -273,15 +380,44 @@ impl WorkspaceServer {
         session_id: Option<String>,
     ) -> Result<std::path::PathBuf, String> {
         let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
+
+        if let Some(teamwork_relative_path) = Self::extract_teamwork_alias_relative_path(path_str) {
+            let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
+            let teamwork_manager = SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+            return teamwork_manager
+                .get_security_validator()
+                .validate_path_for_read(teamwork_relative_path)
+                .map_err(|e| format!("Security error: {e}"));
+        }
+
+        if let Some((alias_prefix, relative_path)) =
+            crate::services::skill_service::extract_skill_alias_relative_path(path_str)
+        {
+            let alias_roots = self.get_skill_alias_roots(&target_session_id).await?;
+            let alias_root = alias_roots
+                .into_iter()
+                .find(|root| root.prefix == alias_prefix)
+                .ok_or_else(|| format!("Skill alias root is not available: {alias_prefix}"))?;
+            let alias_manager = SecureFileManager::new_scoped_with_base_dir(alias_root.root);
+            return alias_manager
+                .get_security_validator()
+                .validate_path_for_read(relative_path)
+                .map_err(|e| format!("Security error: {e}"));
+        }
+
+        let mapped_path = self
+            .map_docker_container_file_tool_path(path_str, &target_session_id)
+            .await?;
+        let effective_path = mapped_path.as_deref().unwrap_or(path_str);
         let file_manager = self.get_file_manager(Some(target_session_id.clone()));
 
         match file_manager
             .get_security_validator()
-            .validate_path_for_read(path_str)
+            .validate_path_for_read(effective_path)
         {
             Ok(path) => Ok(path),
             Err(original_error) => {
-                let candidate_path = PathBuf::from(path_str);
+                let candidate_path = PathBuf::from(effective_path);
                 if !candidate_path.is_absolute() {
                     return Err(format!("Security error: {original_error}"));
                 }
@@ -289,6 +425,10 @@ impl WorkspaceServer {
                 let allowed_roots = self
                     .get_allowed_absolute_skill_roots(&target_session_id)
                     .await?;
+                let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
+                let mut allowed_roots = allowed_roots;
+                allowed_roots.push(teamwork_root);
+
                 if !Self::path_is_within_any_root(&candidate_path, &allowed_roots) {
                     return Err(format!("Security error: {original_error}"));
                 }
@@ -298,10 +438,71 @@ impl WorkspaceServer {
                 );
                 permissive_manager
                     .get_security_validator()
-                    .validate_path_for_read(path_str)
+                    .validate_path_for_read(effective_path)
                     .map_err(|e| format!("Security error: {e}"))
             }
         }
+    }
+
+    pub async fn validate_write_path_with_teamwork_access(
+        &self,
+        path_str: &str,
+        session_id: Option<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
+
+        if let Some(teamwork_relative_path) = Self::extract_teamwork_alias_relative_path(path_str) {
+            let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
+            let teamwork_manager = SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+            return teamwork_manager
+                .get_security_validator()
+                .validate_path_for_write(teamwork_relative_path)
+                .map_err(|e| format!("Security error: {e}"));
+        }
+
+        let mapped_path = self
+            .map_docker_container_file_tool_path(path_str, &target_session_id)
+            .await?;
+        let effective_path = mapped_path.as_deref().unwrap_or(path_str);
+
+        self.validate_path_with_error_for_write(effective_path, Some(target_session_id))
+    }
+
+    async fn map_docker_container_file_tool_path(
+        &self,
+        path_str: &str,
+        target_session_id: &str,
+    ) -> Result<Option<String>, String> {
+        if !path_str.starts_with('/') {
+            return Ok(None);
+        }
+
+        let Some(session_repo) = crate::state::try_get_session_repository() else {
+            return Ok(None);
+        };
+        let Some(session) = session_repo
+            .get_session(target_session_id)
+            .await
+            .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
+        else {
+            return Ok(None);
+        };
+
+        if session.workspace_isolation != WorkspaceIsolationMode::Docker {
+            return Ok(None);
+        }
+
+        let host_workspace = session.docker_host_workspace_path.as_ref().ok_or_else(|| {
+            format!("Missing Docker host workspace path for session {target_session_id}")
+        })?;
+        let mapper = PathMappingLayer::new(PathBuf::from(host_workspace));
+        let Some(host_path) = mapper.container_to_host(path_str) else {
+            return Err(format!(
+                "Docker container path '{path_str}' is outside /workspace. Shell commands may access it, but workspace file tools only map /workspace paths to the host workspace."
+            ));
+        };
+
+        Ok(Some(host_path.to_string_lossy().to_string()))
     }
 
     /// Validate path with security checks (helper for file operations)
@@ -444,31 +645,15 @@ impl WorkspaceServer {
             *guard = Some((context_prompt.clone(), std::time::Instant::now()));
         }
 
-        // Gather structured stats
-        let workspace_dir = {
-            let path_str = self
-                .get_workspace_dir(&session_id)
-                .to_string_lossy()
-                .to_string();
-            #[cfg(target_os = "windows")]
-            let path_str = path_str.replace('\\', "/");
-            path_str
-        };
+        let live_state = context::build_workspace_live_state(
+            &session_id,
+            &self.session_manager,
+            &self.shell_manager,
+        )
+        .await;
 
-        let shell_cwd = if let Some(cwd) = self.shell_manager.get_shell_cwd(&session_id).await {
-            let cwd = {
-                #[cfg(target_os = "windows")]
-                let cwd = cwd.replace('\\', "/");
-                cwd
-            };
-            if cwd.starts_with(&workspace_dir) {
-                cwd.replacen(&workspace_dir, ".", 1)
-            } else {
-                cwd
-            }
-        } else {
-            ".".to_string()
-        };
+        let workspace_dir = live_state.workspace_dir;
+        let shell_cwd = live_state.shell_cwd;
 
         let (running_count, total_count) = match self.process_registry.try_read() {
             Ok(reg) => {
@@ -492,6 +677,7 @@ impl WorkspaceServer {
             .with_structured_state(serde_json::json!({
                 "workspace_dir": workspace_dir,
                 "shell_cwd": shell_cwd,
+                "is_docker": live_state.is_docker,
                 "platform": {
                     "os": std::env::consts::OS,
                     "arch": std::env::consts::ARCH,

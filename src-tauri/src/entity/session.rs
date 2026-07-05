@@ -27,6 +27,10 @@ pub struct Model {
     pub is_bookmarked: bool,
     pub execution_mode: String,
     pub workspace_override: Option<String>,
+    pub workspace_isolation: String,
+    pub docker_config_json: Option<String>,
+    pub docker_container_name: Option<String>,
+    pub docker_host_workspace_path: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

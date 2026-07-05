@@ -1,6 +1,9 @@
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
-import type { WorkflowCompletionReason } from '@/models/agent-ipc';
+import type {
+  WorkflowCompletionReason,
+  SessionRuntimeState,
+} from '@/models/agent-ipc';
 
 export interface AgentEventPayload {
   type: string;
@@ -14,6 +17,7 @@ export interface AgentEventPayload {
   approvalKind?: 'standard' | 'hard';
   approved?: boolean;
   reason?: WorkflowCompletionReason;
+  runtimeState?: SessionRuntimeState;
 }
 
 interface EventLogger {
@@ -82,6 +86,8 @@ const handleStatusChanged: AgentEventHandler = (payload, deps) => {
   deps.applySessionUpdate(payload.sessionId, (session) => ({
     ...session,
     status: nextStatus,
+    provisioningStep:
+      nextStatus === 'provisioning' ? session.provisioningStep : undefined,
   }));
 };
 
@@ -167,12 +173,50 @@ const handleToolExecutionApprovalResolved: AgentEventHandler = (
   deps.clearPendingApproval(payload.sessionId, payload.toolCallId);
 };
 
+const handleSessionRuntimeStateUpdated: AgentEventHandler = (payload, deps) => {
+  if (!payload.sessionId || !payload.runtimeState) {
+    return;
+  }
+
+  const dockerStep =
+    payload.runtimeState.initialization.docker?.step ??
+    payload.runtimeState.initialization.currentStep;
+  const isProvisioning =
+    payload.runtimeState.phase === 'initializing' &&
+    payload.runtimeState.initialization.docker !== undefined;
+  const isFailed = payload.runtimeState.phase === 'failed';
+
+  deps.applySessionUpdate(payload.sessionId, (session) => {
+    if (isProvisioning) {
+      return {
+        ...session,
+        status: 'provisioning',
+        provisioningStep: dockerStep,
+      };
+    }
+
+    if (isFailed) {
+      return {
+        ...session,
+        status: 'error',
+        provisioningStep: undefined,
+      };
+    }
+
+    return {
+      ...session,
+      provisioningStep: undefined,
+    };
+  });
+};
+
 const EVENT_HANDLERS: Record<string, AgentEventHandler> = {
   statusChanged: handleStatusChanged,
   messageAdded: handleMessageAdded,
   workflowCompleted: handleWorkflowCompleted,
   toolExecutionRequiresApproval: handleToolExecutionRequiresApproval,
   toolExecutionApprovalResolved: handleToolExecutionApprovalResolved,
+  sessionRuntimeStateUpdated: handleSessionRuntimeStateUpdated,
 };
 
 export function handleAgentEvent(

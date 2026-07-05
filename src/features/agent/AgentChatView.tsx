@@ -72,8 +72,16 @@ const logger = getLogger('AgentChatView');
 
 function getSessionLoadingLabel(
   isStartingSession: boolean,
-  t: (key: string) => string,
+  isDockerProvisioning: boolean,
+  dockerImage: string | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
+  if (isDockerProvisioning) {
+    return t('agent.chat.preparingDocker', {
+      image: dockerImage ?? 'Docker image',
+      defaultValue: 'Preparing Docker workspace ({{image}})',
+    });
+  }
   return isStartingSession
     ? t('agent.start.startingSession')
     : t('agent.chat.loadingSession');
@@ -543,8 +551,25 @@ export default function AgentChatView() {
   const attachmentSessionId = session?.id ?? routeSessionId ?? '';
   const isStartingSession =
     session?.status === 'idle' && session?.id === routeSessionId;
-  const sessionLoadingLabel = getSessionLoadingLabel(isStartingSession, t);
-  const initializationStep = optionalSessionState.initializationStep?.step;
+  const isDockerProvisioning =
+    session?.status === 'provisioning' ||
+    optionalSessionState.runtimeState.initialization.docker !== undefined;
+  const sessionLoadingLabel = getSessionLoadingLabel(
+    isStartingSession,
+    isDockerProvisioning,
+    session?.dockerConfig?.image ??
+      optionalSessionState.runtimeState.initialization.docker?.image,
+    t,
+  );
+  const initializationStep =
+    optionalSessionState.runtimeState.initialization.docker?.step ??
+    optionalSessionState.initializationStep?.step;
+  const initializationError =
+    optionalSessionState.runtimeState.phase === 'failed'
+      ? (optionalSessionState.runtimeState.initialization.docker?.error ??
+        optionalSessionState.runtimeState.initialization.error ??
+        null)
+      : null;
   const shouldShowBlockingLoader = isSessionLoading && !session;
   const shouldShowOptimisticLoadingOverlay = isSessionLoading && !!session;
 
@@ -554,6 +579,7 @@ export default function AgentChatView() {
         <SessionLoadingOverlay
           label={sessionLoadingLabel}
           initializationStep={initializationStep}
+          initializationError={initializationError}
           variant="blocking"
         />
       ) : !session ? (
@@ -576,6 +602,7 @@ export default function AgentChatView() {
             <SessionLoadingOverlay
               label={sessionLoadingLabel}
               initializationStep={initializationStep}
+              initializationError={initializationError}
               variant="overlay"
             />
           )}

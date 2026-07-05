@@ -24,6 +24,7 @@ describe('mapSessionMetadataToAgentSession', () => {
     createdAt: 1_000,
     updatedAt: 2_000,
     executionMode: 'normal',
+    workspaceIsolation: 'host',
   };
 
   const assistant: Assistant = {

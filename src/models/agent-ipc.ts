@@ -39,6 +39,19 @@ export interface AgentConfig {
   depth?: number;
 }
 
+export type WorkspaceIsolationMode = 'host' | 'docker';
+
+export interface DockerWorkspaceConfig {
+  image: string;
+  env?: Record<string, string>;
+  portBindings?: DockerPortBinding[];
+}
+
+export interface DockerPortBinding {
+  containerPort: number;
+  hostPort?: number;
+}
+
 /**
  * Request payload for creating a new agent session.
  * `agentConfig` is a create-time payload only: backend persists `assistantId` and lineage
@@ -53,6 +66,8 @@ export interface CreateAgentSessionRequest {
   agentConfig: AgentConfig;
   isEphemeral?: boolean;
   workspacePath?: string;
+  workspaceIsolation?: WorkspaceIsolationMode;
+  dockerConfig?: DockerWorkspaceConfig;
 }
 
 /**
@@ -67,6 +82,8 @@ export interface CreateAgentSessionWithMessageRequest {
   agentConfig: AgentConfig;
   message: RustMessage;
   workspacePath?: string;
+  workspaceIsolation?: WorkspaceIsolationMode;
+  dockerConfig?: DockerWorkspaceConfig;
 }
 
 /**
@@ -109,6 +126,7 @@ export interface UpdateAgentConfigRequest {
   model?: string;
   provider?: string;
   assistantId?: string;
+  recursive?: boolean;
 }
 
 /**
@@ -180,10 +198,18 @@ export interface SessionRuntimeProxyState {
   ready: boolean;
 }
 
+export interface SessionRuntimeDockerState {
+  image: string;
+  step?: string;
+  progress?: number;
+  error?: string;
+}
+
 export interface SessionRuntimeInitializationState {
   currentStep?: string;
   result: SessionRuntimeInitResult;
   error?: string;
+  docker?: SessionRuntimeDockerState;
 }
 
 export interface SessionRuntimeServerState {
@@ -235,7 +261,7 @@ export interface ToolExecutionResult {
 export interface AgentSessionMetadata {
   id: string;
   name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued';
+  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning';
   model: string;
   provider: string;
   /** FK to assistants table; authoritative assistant binding for the session */
@@ -256,6 +282,11 @@ export interface AgentSessionMetadata {
   lastAttentionReason?: SessionAttentionReason;
   isBookmarked?: boolean;
   executionMode: ExecutionMode;
+  workspaceOverride?: string;
+  workspaceIsolation: WorkspaceIsolationMode;
+  dockerConfig?: DockerWorkspaceConfig;
+  dockerContainerName?: string;
+  dockerHostWorkspacePath?: string;
 }
 
 export interface AgentSessionListCursor {

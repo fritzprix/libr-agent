@@ -47,14 +47,10 @@ impl WorkspaceServer {
 
             // ── Code execution tools ──────────────────────────────────────────
             // PRIMARY isolated shell execution tools (recommended)
-            #[cfg(unix)]
             "runShell" => self.handle_run_shell(args, &target_session_id).await,
-            #[cfg(windows)]
             "runPowerShell" => self.handle_run_shell(args, &target_session_id).await,
             // ADVANCED persistent shell execution tools (for state preservation)
-            #[cfg(unix)]
             "runInPersistentShell" => self.handle_execute_shell(args, &target_session_id).await,
-            #[cfg(windows)]
             "runInPersistentPowerShell" => {
                 self.handle_execute_shell(args, &target_session_id).await
             }

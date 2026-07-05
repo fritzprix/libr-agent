@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Badge,
+  Button,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -25,6 +26,10 @@ import type {
   BuiltinServerInfo,
   MCPServerDto,
 } from '../hooks/useAgentDraftChat';
+import { useState } from 'react';
+import { ChevronDown, ChevronUp, Shield } from 'lucide-react';
+
+import { WorkspaceIsolationSettings } from './WorkspaceIsolationSettings';
 
 interface DraftCapabilitiesSectionProps {
   assistant: Assistant;
@@ -33,6 +38,11 @@ interface DraftCapabilitiesSectionProps {
   currentModel: string;
   currentProvider: string;
   onConfigUpdate: (model: string, provider: string) => void;
+  workspaceIsolation: 'host' | 'docker';
+  setWorkspaceIsolation: (value: 'host' | 'docker') => void;
+  dockerImage: string;
+  setDockerImage: (value: string) => void;
+  workspaceOverride: string | null;
 }
 
 function getIconForService(iconId?: string) {
@@ -65,8 +75,14 @@ export function DraftCapabilitiesSection({
   currentModel,
   currentProvider,
   onConfigUpdate,
+  workspaceIsolation,
+  setWorkspaceIsolation,
+  dockerImage,
+  setDockerImage,
+  workspaceOverride,
 }: DraftCapabilitiesSectionProps) {
   const { t } = useTranslation();
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const effectiveBuiltinAliases = enforceRuntimeBuiltinAliases(
     assistant.allowedBuiltInServiceAliases,
@@ -178,6 +194,52 @@ export function DraftCapabilitiesSection({
           onConfigUpdate={onConfigUpdate}
           className="w-full max-w-xs shadow-sm"
         />
+
+        {/* Collapsible Advanced Configuration Section */}
+        {!workspaceOverride && (
+          <div className="w-full max-w-xs space-y-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="w-full flex items-center justify-between px-3 py-1.5 h-8 text-[11px] font-semibold text-muted-foreground/80 hover:text-foreground hover:bg-muted/50 rounded-md transition-all"
+            >
+              <span className="flex items-center gap-1.5">
+                <Shield
+                  size={12}
+                  className={
+                    workspaceIsolation === 'docker'
+                      ? 'text-primary animate-pulse'
+                      : 'text-muted-foreground/60'
+                  }
+                />
+                {t(
+                  'agent.workspace.advancedConfiguration',
+                  'Advanced Configuration',
+                )}
+              </span>
+              {showAdvanced ? (
+                <ChevronUp size={12} />
+              ) : (
+                <ChevronDown size={12} />
+              )}
+            </Button>
+
+            {showAdvanced && (
+              <div className="rounded-lg border border-border/40 bg-muted/[0.04] p-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                <WorkspaceIsolationSettings
+                  switchId="docker-isolation-draft"
+                  workspaceIsolation={workspaceIsolation}
+                  setWorkspaceIsolation={setWorkspaceIsolation}
+                  dockerImage={dockerImage}
+                  setDockerImage={setDockerImage}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/30 font-bold font-sans">
           <div className="h-px w-6 bg-border/40" />
           <Bot size={14} className="opacity-50" />

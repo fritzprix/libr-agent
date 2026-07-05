@@ -6,6 +6,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellType {
     Bash,
+    Sh,
     PowerShell,
 }
 
@@ -14,6 +15,7 @@ impl ShellType {
     pub fn command(&self) -> &str {
         match self {
             ShellType::Bash => "bash",
+            ShellType::Sh => "sh",
             ShellType::PowerShell => "powershell.exe",
         }
     }

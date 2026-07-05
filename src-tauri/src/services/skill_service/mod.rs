@@ -7,14 +7,17 @@ mod scanning;
 
 pub use cache::{invalidate_skill_scan_cache, prewarm_managed_skill_scans};
 pub use contracts::{
-    GitHubRepoSpec, ManagedSkillsOverview, SkillImportCandidate, SkillImportConflict,
-    SkillImportPreview, SkillImportResult, SkillMetadata, LEGACY_SYSTEM_SKILLS_DIR_NAME,
-    MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME, SYSTEM_SKILLS_DIR_NAME,
-    USER_SKILLS_DIR_NAME,
+    GitHubRepoSpec, ManagedSkillsOverview, SkillAliasRoot, SkillImportCandidate,
+    SkillImportConflict, SkillImportPreview, SkillImportResult, SkillMetadata,
+    ASSISTANT_SKILLS_ALIAS_PREFIX, LEGACY_SYSTEM_SKILLS_DIR_NAME,
+    MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME, SYSTEM_SKILLS_ALIAS_PREFIX,
+    SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_ALIAS_PREFIX, USER_SKILLS_DIR_NAME,
+    WORKSPACE_SKILLS_ALIAS_PREFIX,
 };
 pub use directories::{
-    collect_allowed_skill_roots, get_assistant_skills_directory, get_default_skills_directory,
-    get_legacy_global_skills_directory, get_managed_skills_overview,
+    build_skill_alias_path, collect_allowed_skill_roots, collect_skill_alias_roots,
+    extract_skill_alias_relative_path, get_assistant_skills_directory,
+    get_default_skills_directory, get_legacy_global_skills_directory, get_managed_skills_overview,
     get_managed_skills_overview_for_directories, get_system_skills_directory,
     get_user_skills_directory, get_workspace_skills_directory_for_session,
     get_workspace_skills_directory_from_path, resolve_skill_directories, resolve_skills,

@@ -889,6 +889,10 @@
       "renameEmptyError": "Session title cannot be empty"
     },
     "workspace": {
+      "isolationSettings": "Isolation Settings",
+      "isolationTip": "Docker workspace runs your workspace commands safely inside a container rather than directly on your host machine.",
+      "useDockerContainer": "Use Docker Container",
+      "dockerImage": "Docker Image",
       "loadError": "Failed to load directory",
       "importFileError": "Failed to import file",
       "setOverrideSuccess": "Workspace override set successfully",
@@ -952,7 +956,14 @@
       "chatMode": "Chat Mode",
       "toolsLabel": "Tools:",
       "viewToolsTitle": "Click to view available tools",
-      "statusQueued": "Queued (Waiting for available agent slot...)"
+      "statusQueued": "Queued (Waiting for available agent slot...)",
+      "batchModelUpdate": {
+        "title": "Batch Update Sub-sessions",
+        "description": "The selected session \"{{parentSessionName}}\" has {{subSessionCount}} sub-sessions. Do you want to update their models to {{newProvider}} / {{newModel}} as well?",
+        "cancel": "Cancel",
+        "onlyThis": "Only this session",
+        "all": "Update sub-sessions too"
+      }
     },
     "attachment": {
       "sessionError": "Cannot attach file: session not available.",

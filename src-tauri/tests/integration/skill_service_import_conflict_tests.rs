@@ -13,6 +13,7 @@ fn metadata(name: &str, origin: &str, path: &str) -> SkillMetadata {
         name: name.to_string(),
         description: format!("{} description", name),
         path: path.to_string(),
+        alias_path: None,
         source: Some("global".to_string()),
         origin: Some(origin.to_string()),
     }

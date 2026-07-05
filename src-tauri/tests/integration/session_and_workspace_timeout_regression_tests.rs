@@ -1,5 +1,6 @@
 use crate::common;
 
+use once_cell::sync::Lazy;
 use serde_json::json;
 use std::sync::Arc;
 use tauri_mcp_agent_lib::agent::concurrency::{
@@ -17,8 +18,10 @@ use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResult};
 use tauri_mcp_agent_lib::session::SessionManager;
 use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus};
 use tempfile::tempdir;
-use tokio::sync::OnceCell;
+use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
+
+static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 fn extract_text_content(result: &MCPResult) -> String {
     result
@@ -41,21 +44,15 @@ fn build_workspace_server(base_dir: &std::path::Path, session_id: &str) -> Works
 }
 
 async fn ensure_settings_repository() {
-    static REPOSITORIES: OnceCell<()> = OnceCell::const_new();
-
-    REPOSITORIES
-        .get_or_init(|| async {
-            let db = common::setup_test_db_with_migrations().await;
-            init_repositories(&db).await;
-            init_session_bus(SessionBus::new());
-            init_concurrency_gate(ConcurrencyGate::new(
-                DEFAULT_MAX_ACTIVE_AGENTS,
-                DEFAULT_MAX_SUSPENDED_AGENTS,
-                DEFAULT_MAX_ACTIVE_PROCESSES,
-                DEFAULT_MAX_SUSPENDED_PROCESSES,
-            ));
-        })
-        .await;
+    let db = common::setup_test_db_with_migrations().await;
+    init_repositories(&db).await;
+    init_session_bus(SessionBus::new());
+    init_concurrency_gate(ConcurrencyGate::new(
+        DEFAULT_MAX_ACTIVE_AGENTS,
+        DEFAULT_MAX_SUSPENDED_AGENTS,
+        DEFAULT_MAX_ACTIVE_PROCESSES,
+        DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
 }
 
 #[cfg(unix)]
@@ -146,6 +143,7 @@ fn resolve_sync_timeout_caps_default_and_rejects_excessive_values() {
 
 #[tokio::test]
 async fn run_shell_rejects_timeout_above_sync_limit() {
+    let _guard = TEST_MUTEX.lock().await;
     ensure_settings_repository().await;
 
     let temp_dir = tempdir().expect("temp dir");
@@ -177,6 +175,7 @@ async fn run_shell_rejects_timeout_above_sync_limit() {
 
 #[tokio::test]
 async fn persistent_shell_rejects_timeout_above_sync_limit() {
+    let _guard = TEST_MUTEX.lock().await;
     ensure_settings_repository().await;
 
     let temp_dir = tempdir().expect("temp dir");
@@ -208,6 +207,7 @@ async fn persistent_shell_rejects_timeout_above_sync_limit() {
 
 #[tokio::test]
 async fn run_shell_timeout_hands_off_to_background_process() {
+    let _guard = TEST_MUTEX.lock().await;
     ensure_settings_repository().await;
 
     let temp_dir = tempdir().expect("temp dir");
@@ -306,6 +306,7 @@ async fn run_shell_timeout_hands_off_to_background_process() {
 
 #[tokio::test]
 async fn run_shell_success_does_not_leave_process_registry_artifacts() {
+    let _guard = TEST_MUTEX.lock().await;
     ensure_settings_repository().await;
 
     let temp_dir = tempdir().expect("temp dir");
@@ -338,6 +339,7 @@ async fn run_shell_success_does_not_leave_process_registry_artifacts() {
 
 #[tokio::test]
 async fn wait_for_process_respects_timeout_budget() {
+    let _guard = TEST_MUTEX.lock().await;
     ensure_settings_repository().await;
 
     let temp_dir = tempdir().expect("temp dir");

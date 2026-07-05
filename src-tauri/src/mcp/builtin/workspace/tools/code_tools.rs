@@ -3,7 +3,7 @@ use serde_json::json;
 use std::collections::HashMap;
 
 // Unix platform tool (bash/sh) - PRIMARY TOOL (Isolated Shell)
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub fn create_run_shell_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
@@ -44,8 +44,8 @@ pub fn create_run_shell_tool() -> MCPTool {
 }
 
 // Unix platform tool (bash/sh) - ADVANCED TOOL (Persistent Shell)
-#[cfg(unix)]
-pub fn create_execute_shell_tool() -> MCPTool {
+#[cfg(any(unix, windows))]
+pub fn create_run_persistent_shell_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "command".to_string(),
@@ -208,7 +208,7 @@ Guidelines:
 
 // Windows platform tool (PowerShell) - ADVANCED TOOL (Persistent Shell)
 #[cfg(windows)]
-pub fn create_execute_shell_tool() -> MCPTool {
+pub fn create_run_persistent_powershell_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "command".to_string(),
@@ -327,20 +327,27 @@ mod tests {
 
     #[test]
     fn test_tool_name_platform_specific() {
-        let tool = create_execute_shell_tool();
-
         #[cfg(unix)]
-        assert_eq!(tool.name, "runInPersistentShell");
+        {
+            let tool = create_run_persistent_shell_tool();
+            assert_eq!(tool.name, "runInPersistentShell");
+        }
 
         #[cfg(windows)]
-        assert_eq!(tool.name, "runInPersistentPowerShell");
+        {
+            let tool = create_run_persistent_powershell_tool();
+            assert_eq!(tool.name, "runInPersistentPowerShell");
+        }
     }
 
     #[test]
     fn test_tool_schema_has_required_properties() {
         use crate::mcp::schema::JSONSchemaType;
 
-        let tool = create_execute_shell_tool();
+        #[cfg(unix)]
+        let tool = create_run_persistent_shell_tool();
+        #[cfg(windows)]
+        let tool = create_run_persistent_powershell_tool();
         let schema = &tool.input_schema;
 
         // Check that input_schema is an Object type with properties
@@ -361,7 +368,7 @@ mod tests {
     fn test_unix_tool_has_unix_examples() {
         use crate::mcp::schema::JSONSchemaType;
 
-        let tool = create_execute_shell_tool();
+        let tool = create_run_persistent_shell_tool();
         let schema = &tool.input_schema;
 
         // Get the command property and check its examples
@@ -384,7 +391,7 @@ mod tests {
     fn test_windows_tool_has_windows_examples() {
         use crate::mcp::schema::JSONSchemaType;
 
-        let tool = create_execute_shell_tool();
+        let tool = create_run_persistent_powershell_tool();
         let schema = &tool.input_schema;
 
         // Get the command property and check its examples

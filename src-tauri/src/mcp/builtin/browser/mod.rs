@@ -110,13 +110,6 @@ impl BrowserServer {
         }
     }
 
-    pub(crate) fn get_active_session_id(&self) -> Result<String, String> {
-        let guard = self.browser_session_id.read().map_err(|e| e.to_string())?;
-        guard.clone().ok_or_else(|| {
-            "No active browser session found. Please call 'createSession' first.".to_string()
-        })
-    }
-
     /// Get metadata statically
     pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
         crate::mcp::types::BuiltinServerMetadata {

@@ -40,7 +40,7 @@ export function useAgentSessionState() {
   const [error, setErrorState] = useState<MessageError | null>(null);
   const [llmError, setLlmError] = useState<MessageError | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<
-    'idle' | 'busy' | 'paused' | 'error' | 'queued'
+    'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning'
   >('idle');
   const [workflowPhase, setWorkflowPhase] = useState<WorkflowPhase>('idle');
   const [runtimeState, setRuntimeState] = useState<SessionRuntimeState>(
@@ -185,7 +185,8 @@ export function useAgentSessionState() {
       messages,
       isSessionLoading:
         runtimeState.phase === 'hydrating' ||
-        runtimeState.phase === 'initializing',
+        runtimeState.phase === 'initializing' ||
+        session?.status === 'provisioning',
       isLoadingOlderMessages,
       hasOlderMessages,
       oldestMessageCursor,

@@ -300,6 +300,9 @@ impl WorkspaceServer {
         // Invalidate service context cache to reflect new process
         self.invalidate_context_cache().await;
 
+        let cwd =
+            super::super::super::utils::effective_command_cwd(&session_id, &workspace_path).await;
+
         // Return immediate response with process_id
         let hint = SuccessHint::new(
             format!(
@@ -308,13 +311,15 @@ impl WorkspaceServer {
 • Process ID: {}
 {}\
 • Command: {}
+• Working Directory: {}
 • Mode: Asynchronous (non-blocking)",
                 process_id,
                 process_name
                     .as_ref()
                     .map(|name| format!("• Name: {}\n", name))
                     .unwrap_or_default(),
-                command
+                command,
+                cwd
             ),
             vec![
                 format!(
@@ -332,6 +337,7 @@ impl WorkspaceServer {
             "name": process_name,
             "command": command,
             "mode": "async",
+            "cwd": cwd,
             "note": "use waitForProcess or readProcessOutput to retrieve output"
         });
 

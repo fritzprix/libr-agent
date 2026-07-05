@@ -620,18 +620,33 @@ pub async fn fetch_url(
     let title = page_title.trim_matches('"');
 
     // Build Response
-    let result_text = format!(
+    let mut result_text = format!(
         "Content fetched from {}\n\nPage Title: {}\n\n{}",
         url, title, markdown_content
     );
 
+    if markdown_content.trim().is_empty() {
+        result_text.push_str(
+            "\n\n(Empty Content) The fetched page returned no readable markdown. The page may be blank, script-rendered, or blocked. Try createSession/navigateToUrl for interactive inspection, or retry with a different URL.",
+        );
+    }
+
     let structured_data = json!({
          "url": url,
          "title": title,
-         "content_length": markdown_content.len()
+         "content_length": markdown_content.len(),
+         "content_empty": markdown_content.trim().is_empty()
     });
 
-    Ok(MCPResult::success_with_data(&result_text, structured_data))
+    let hint = SuccessHint::new(
+        result_text,
+        vec![
+            "Use createSession and navigateToUrl if you need interactive inspection of this page"
+                .to_string(),
+            "Use workspace tools only if you downloaded a file instead of page content".to_string(),
+        ],
+    );
+    Ok(hint.to_mcp_result_with_data(Some(structured_data)))
 }
 
 pub(crate) async fn save_downloaded_file(

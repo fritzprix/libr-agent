@@ -9,6 +9,8 @@ use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 use super::session::PersistentShell;
+use crate::models::workspace_isolation::WorkspaceIsolationMode;
+use crate::repositories::SessionRepository;
 use crate::session_isolation::types::ShellType;
 
 /// Manager for persistent shell sessions
@@ -43,21 +45,17 @@ impl PersistentShellManager {
         session_id: String,
         workspace_path: std::path::PathBuf,
     ) -> Result<Arc<Mutex<PersistentShell>>, String> {
-        let mut shells = self.shells.lock().await;
-
-        // Check if shell exists and is still alive
-        if let Some(shell) = shells.get(&session_id) {
+        if let Some(shell) = self.shells.lock().await.get(&session_id).cloned() {
             let shell_guard = shell.lock().await;
             if shell_guard.pid().is_some() {
                 debug!("Reusing existing shell for session: {}", session_id);
-                drop(shell_guard); // Release lock before returning
-                return Ok(shell.clone());
-            } else {
-                // Dead shell, remove it
-                debug!("Removing dead shell for session: {}", session_id);
                 drop(shell_guard);
-                shells.remove(&session_id);
+                return Ok(shell.clone());
             }
+
+            debug!("Removing dead shell for session: {}", session_id);
+            drop(shell_guard);
+            self.shells.lock().await.remove(&session_id);
         }
 
         // Create new shell
@@ -67,11 +65,43 @@ impl PersistentShellManager {
         #[cfg(windows)]
         let shell_type = ShellType::PowerShell; // Default to PowerShell on Windows
 
-        let shell = PersistentShell::new(session_id.clone(), workspace_path, shell_type)
-            .await
-            .map_err(|e| format!("Failed to create shell: {e}"))?;
+        let shell = if let Some(session_repo) = crate::state::try_get_session_repository() {
+            match session_repo
+                .get_session(&session_id)
+                .await
+                .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
+            {
+                Some(session) if session.workspace_isolation == WorkspaceIsolationMode::Docker => {
+                    let spawned_shell =
+                        crate::services::WorkspaceRuntimeManager::spawn_docker_persistent_shell(
+                            &session,
+                        )
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    PersistentShell::from_spawned(session_id.clone(), spawned_shell)
+                        .await
+                        .map_err(|e| format!("Failed to create Docker shell: {e}"))?
+                }
+                _ => PersistentShell::new(session_id.clone(), workspace_path, shell_type)
+                    .await
+                    .map_err(|e| format!("Failed to create shell: {e}"))?,
+            }
+        } else {
+            PersistentShell::new(session_id.clone(), workspace_path, shell_type)
+                .await
+                .map_err(|e| format!("Failed to create shell: {e}"))?
+        };
 
         let shell_arc = Arc::new(Mutex::new(shell));
+        let mut shells = self.shells.lock().await;
+        if let Some(existing) = shells.get(&session_id).cloned() {
+            drop(shells);
+            debug!(
+                "Discarding concurrently created duplicate shell for session: {}",
+                session_id
+            );
+            return Ok(existing);
+        }
         shells.insert(session_id.clone(), shell_arc.clone());
 
         Ok(shell_arc)

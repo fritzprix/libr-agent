@@ -79,6 +79,7 @@ pub fn parse_skill_metadata(path: &Path) -> Result<SkillMetadata, String> {
                 name: frontmatter.name,
                 description: frontmatter.description,
                 path: path.to_string_lossy().to_string(),
+                alias_path: None,
                 source: None,
                 origin: None,
             });
