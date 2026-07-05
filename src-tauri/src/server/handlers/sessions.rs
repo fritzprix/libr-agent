@@ -6,6 +6,27 @@ use warp::{http::StatusCode, Rejection, Reply};
 use super::helpers::lineage_store;
 use super::types::{ChildSessionsResponse, CreateSessionRequest, ErrorResponse};
 
+fn classify_spawn_error(err: &str) -> (StatusCode, String) {
+    if err.contains("Assistant not found") {
+        (StatusCode::NOT_FOUND, err.to_string())
+    } else if err.contains("Failed to fetch assistant") {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "An internal database error occurred while fetching the assistant details.".to_string(),
+        )
+    } else if err.contains("limit exceeded")
+        || err.contains("must be absolute")
+        || err.contains("restricted system directory")
+        || err.contains("must be a directory")
+        || err.contains("not accessible")
+        || err.contains("Invalid assistant configuration")
+    {
+        (StatusCode::BAD_REQUEST, err.to_string())
+    } else {
+        (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+    }
+}
+
 pub async fn create_session(
     manager: Arc<AgentSessionManager>,
     body: CreateSessionRequest,
@@ -22,27 +43,13 @@ pub async fn create_session(
             StatusCode::CREATED,
         )),
         Err(e) => {
-            if e.contains("Assistant not found") {
-                Ok(warp::reply::with_status(
-                    warp::reply::json(&ErrorResponse { error: e }),
-                    StatusCode::NOT_FOUND,
-                ))
-            } else if e.contains("limit exceeded")
-                || e.contains("must be absolute")
-                || e.contains("restricted system directory")
-                || e.contains("must be a directory")
-                || e.contains("not accessible")
-            {
-                Ok(warp::reply::with_status(
-                    warp::reply::json(&ErrorResponse { error: e }),
-                    StatusCode::BAD_REQUEST,
-                ))
-            } else {
-                Ok(warp::reply::with_status(
-                    warp::reply::json(&ErrorResponse { error: e }),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ))
-            }
+            let (status, sanitized_err) = classify_spawn_error(&e);
+            Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: sanitized_err,
+                }),
+                status,
+            ))
         }
     }
 }

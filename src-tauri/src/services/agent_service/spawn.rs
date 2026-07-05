@@ -18,7 +18,11 @@ impl AgentService {
 
     /// Create a new session with assistant ID and initial request, tagging the initial
     /// message with the provided source for transport-specific observability.
-    pub async fn spawn_agent_with_source(
+    ///
+    /// NOTE: HTTP API sessions represent standalone/external agent workflows and do not
+    /// support ephemeral execution (i.e. in-memory only) to prevent loss of state
+    /// during external tool coordination. Thus, it always instantiates persistent database sessions.
+    pub(crate) async fn spawn_agent_with_source(
         manager: &AgentSessionManager,
         body: CreateSessionRequest,
         message_source: Option<MessageSource>,
@@ -53,18 +57,19 @@ impl AgentService {
         )
         .await?;
         let has_workspace_override = body.workspace_path.is_some();
-
         let parent_spawn_guard =
             acquire_parent_spawn_guard(body.parent_session_id.as_deref()).await;
         let lineage_meta =
             match resolve_spawn_lineage(&session_id, &body, explicit_org.as_ref()).await {
                 Ok(lineage_meta) => lineage_meta,
                 Err(error) => {
-                    drop(parent_spawn_guard);
-                    if has_workspace_override {
-                        cleanup_failed_spawn_workspace_registration(&session_id).await;
-                    }
-                    return Err(error);
+                    return handle_spawn_failure(
+                        parent_spawn_guard,
+                        has_workspace_override,
+                        &session_id,
+                        error,
+                    )
+                    .await;
                 }
             };
         apply_lineage_to_config(&mut agent_config, &lineage_meta);
@@ -84,11 +89,13 @@ impl AgentService {
         {
             Ok(session) => session,
             Err(error) => {
-                drop(parent_spawn_guard);
-                if has_workspace_override {
-                    cleanup_failed_spawn_workspace_registration(&session_id).await;
-                }
-                return Err(error);
+                return handle_spawn_failure(
+                    parent_spawn_guard,
+                    has_workspace_override,
+                    &session_id,
+                    error,
+                )
+                .await;
             }
         };
 
@@ -231,4 +238,17 @@ async fn cleanup_failed_spawn_workspace_registration(session_id: &str) {
             error
         );
     }
+}
+
+async fn handle_spawn_failure(
+    parent_spawn_guard: Option<tokio::sync::OwnedMutexGuard<()>>,
+    has_workspace_override: bool,
+    session_id: &str,
+    error: String,
+) -> Result<CreateSessionResponse, String> {
+    drop(parent_spawn_guard);
+    if has_workspace_override {
+        cleanup_failed_spawn_workspace_registration(session_id).await;
+    }
+    Err(error)
 }
