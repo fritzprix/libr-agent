@@ -397,7 +397,9 @@ impl SessionRepository for InMemorySessionRepository {
 #[cfg(test)]
 mod tests {
     use super::InMemorySessionRepository;
-    use crate::repositories::session_repository::{SessionMetadata, SessionRepository, SessionStatus};
+    use crate::repositories::session_repository::{
+        SessionMetadata, SessionRepository, SessionStatus,
+    };
 
     #[tokio::test]
     async fn test_new_repository_is_empty() {

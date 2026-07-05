@@ -261,12 +261,8 @@ async fn assert_tool_calls_unchanged(
     original_tool_call_count: usize,
     phase_label: &str,
 ) {
-    preprocess_assistant_tool_calls_for_testing(
-        active_sessions,
-        session_id,
-        assistant_message,
-    )
-    .await;
+    preprocess_assistant_tool_calls_for_testing(active_sessions, session_id, assistant_message)
+        .await;
 
     let kept_tool_calls = assistant_message
         .tool_calls
