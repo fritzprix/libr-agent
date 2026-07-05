@@ -1,3 +1,21 @@
+## [0.8.24] - 2026-07-06
+
+### 🚀 Features
+
+- **Docker Workspace Isolation**: Implemented Docker workspace isolation (Phases 1-4) with persistent shell, loopback port mapping, path mapping layers, minimal image automatic `sh` fallback, and automatic sweep of stale containers.
+- **Docker Isolation UI Settings**: Added simplified Docker isolation workspace settings UI to the draft workspace and chat panels.
+- **Recursive Batch Session Model Update**: Added batch update capability for session model/provider on sub-sessions, automatically propagating changes recursively while protecting assistant configurations.
+
+### 🐛 Fixes
+
+- **Assistant User Customization Preservation**: Skip default assistant configuration reconciliation on startup to preserve user-customized default assistant settings (e.g. MCP servers, tools, custom prompts).
+- **Spawn Database Error Masking**: Refactored session spawn handler to classify and sanitize database/sqlite errors, preventing internal error leakage and mapping configurations mismatches to `400 Bad Request`.
+
+### 🔧 Internal
+
+- **MCP Tool/Session Timeout & Description Enhancement**: Enriched builtin MCP agent tools (`checkSession`, `messageToSession`) with structured status metadata in timeout responses and improved `stopSession` tool description.
+- **Bolt Performance Optimizations**: Replaced `Array.from().filter()` loops with `for...of` loops in the Anthropic message converter to reduce intermediate array allocations and GC pressure.
+
 ## [0.8.23] - 2026-07-13
 
 ### 🐛 Fixes
