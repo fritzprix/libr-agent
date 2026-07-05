@@ -889,6 +889,10 @@
       "renameEmptyError": "Session title cannot be empty"
     },
     "workspace": {
+      "isolationSettings": "Isolation Settings",
+      "isolationTip": "Docker workspace runs your workspace commands safely inside a container rather than directly on your host machine.",
+      "useDockerContainer": "Use Docker Container",
+      "dockerImage": "Docker Image",
       "loadError": "Failed to load directory",
       "importFileError": "Failed to import file",
       "setOverrideSuccess": "Workspace override set successfully",

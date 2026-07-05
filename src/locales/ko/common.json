@@ -889,6 +889,10 @@
       "renameEmptyError": "세션 제목은 비워 둘 수 없습니다"
     },
     "workspace": {
+      "isolationSettings": "격리 환경 설정",
+      "isolationTip": "도커 워크스페이스는 명령어를 호스트 환경이 아닌 안전한 컨테이너 내부에서 격리 실행합니다.",
+      "useDockerContainer": "도커 컨테이너 사용",
+      "dockerImage": "도커 이미지",
       "loadError": "디렉토리 로드에 실패했습니다",
       "importFileError": "파일 가져오기 실패",
       "setOverrideSuccess": "워크스페이스가 성공적으로 재설정되었습니다",
