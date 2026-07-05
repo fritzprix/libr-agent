@@ -47,6 +47,7 @@ function getStatusCounts(sessions: AgentSession[]): {
   paused: number;
   error: number;
   queued: number;
+  provisioning: number;
 } {
   const counts = {
     all: sessions.length,
@@ -55,6 +56,7 @@ function getStatusCounts(sessions: AgentSession[]): {
     paused: 0,
     error: 0,
     queued: 0,
+    provisioning: 0,
   };
   sessions.forEach((session) => {
     if (Object.prototype.hasOwnProperty.call(counts, session.status)) {

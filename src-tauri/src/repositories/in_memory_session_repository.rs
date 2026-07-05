@@ -398,6 +398,7 @@ impl SessionRepository for InMemorySessionRepository {
 mod tests {
     use super::InMemorySessionRepository;
     use crate::execution_mode::ExecutionMode;
+    use crate::models::workspace_isolation::WorkspaceIsolationMode;
     use crate::repositories::session_repository::{
         SessionMetadata, SessionRepository, SessionStatus,
     };
@@ -435,6 +436,10 @@ mod tests {
             last_attention_reason: None,
             execution_mode: ExecutionMode::Normal,
             workspace_override: None,
+            workspace_isolation: WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         };
 
         // Upsert session
@@ -474,6 +479,10 @@ mod tests {
             last_attention_reason: None,
             execution_mode: ExecutionMode::Normal,
             workspace_override: None,
+            workspace_isolation: WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         };
 
         repo.upsert_session(&session).await.unwrap();
@@ -525,6 +534,10 @@ mod tests {
             last_attention_reason: None,
             execution_mode: ExecutionMode::Normal,
             workspace_override: None,
+            workspace_isolation: WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
         };
 
         repo.upsert_session(&session).await.unwrap();
@@ -569,6 +582,10 @@ mod tests {
                 last_attention_reason: None,
                 execution_mode: ExecutionMode::Normal,
                 workspace_override: None,
+                workspace_isolation: WorkspaceIsolationMode::Host,
+                docker_config: None,
+                docker_container_name: None,
+                docker_host_workspace_path: None,
             };
             repo.upsert_session(&session).await.unwrap();
         }
@@ -608,6 +625,10 @@ mod tests {
                 last_attention_reason: None,
                 execution_mode: ExecutionMode::Normal,
                 workspace_override: None,
+                workspace_isolation: WorkspaceIsolationMode::Host,
+                docker_config: None,
+                docker_container_name: None,
+                docker_host_workspace_path: None,
             };
             repo.upsert_session(&session).await.unwrap();
         }
@@ -655,6 +676,10 @@ mod tests {
                     org_root_session_id: None,
                     execution_mode: ExecutionMode::Normal,
                     workspace_override: None,
+                    workspace_isolation: WorkspaceIsolationMode::Host,
+                    docker_config: None,
+                    docker_container_name: None,
+                    docker_host_workspace_path: None,
                 };
                 repo_clone.upsert_session(&session).await.unwrap();
             });

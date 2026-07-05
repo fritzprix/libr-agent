@@ -68,6 +68,7 @@ pub async fn start_workflow(
 
             if session.metadata.status == SessionStatus::Busy
                 || session.metadata.status == SessionStatus::Queued
+                || session.metadata.status == SessionStatus::Provisioning
                 || is_transitioning_to_busy
             {
                 log::info!(

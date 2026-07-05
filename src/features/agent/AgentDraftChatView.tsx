@@ -208,6 +208,11 @@ function DraftChatInner() {
                 setOverrideModel(model);
                 setOverrideProvider(provider);
               }}
+              workspaceIsolation={workspaceIsolation}
+              setWorkspaceIsolation={setWorkspaceIsolation}
+              dockerImage={dockerImage}
+              setDockerImage={setDockerImage}
+              workspaceOverride={workspaceOverride}
             />
           </div>
         </div>

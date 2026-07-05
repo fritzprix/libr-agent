@@ -3,6 +3,7 @@ pub mod assistant_init;
 pub mod assistant_service;
 pub mod attachments_service;
 pub mod browser_error;
+pub mod docker_provisioning;
 pub mod dropped_file_service;
 pub mod file_export_service;
 pub mod interactive_browser_server;

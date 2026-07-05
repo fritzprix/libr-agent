@@ -63,9 +63,22 @@ pub async fn resume_session(
     if session.workspace_isolation
         == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
     {
-        crate::services::WorkspaceRuntimeManager::ensure_runtime(&session)
-            .await
-            .map_err(|error| error.to_string())?;
+        if session.status == SessionStatus::Provisioning {
+            crate::services::docker_provisioning::ensure_provisioning_task_for_session(
+                &crate::services::docker_provisioning::DockerProvisioningDeps {
+                    session_repo: Arc::clone(session_repo),
+                    active_sessions: Arc::clone(active_sessions),
+                    proxy_manager: Arc::clone(proxy_manager),
+                    app_handle: app_handle.clone(),
+                },
+                &session,
+            )
+            .await?;
+        } else {
+            crate::services::WorkspaceRuntimeManager::ensure_runtime_cached(&session)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
     }
 
     // Deserialize agent config (live assistant settings + session lineage)

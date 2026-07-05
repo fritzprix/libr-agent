@@ -48,6 +48,7 @@ pub enum SessionStatus {
     Paused,
     Error,
     Queued,
+    Provisioning,
 }
 
 impl SessionStatus {
@@ -58,6 +59,7 @@ impl SessionStatus {
             SessionStatus::Paused => "paused",
             SessionStatus::Error => "error",
             SessionStatus::Queued => "queued",
+            SessionStatus::Provisioning => "provisioning",
         }
     }
 }
@@ -72,6 +74,7 @@ impl FromStr for SessionStatus {
             "paused" => Ok(SessionStatus::Paused),
             "error" => Ok(SessionStatus::Error),
             "queued" => Ok(SessionStatus::Queued),
+            "provisioning" => Ok(SessionStatus::Provisioning),
             _ => Err(DbError::InvalidInput(format!(
                 "Invalid session status: {}",
                 s

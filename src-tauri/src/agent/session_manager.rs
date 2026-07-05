@@ -348,6 +348,16 @@ impl AgentSessionManager {
             &self.app_handle,
             self.context_registry.clone(),
         )
+        .await?;
+
+        crate::services::docker_provisioning::recover_provisioning_sessions(
+            &crate::services::docker_provisioning::DockerProvisioningDeps {
+                session_repo: Arc::clone(&self.session_repo),
+                active_sessions: Arc::clone(&self.active_sessions),
+                proxy_manager: Arc::clone(&self.proxy_manager),
+                app_handle: self.app_handle.clone(),
+            },
+        )
         .await
     }
 

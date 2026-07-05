@@ -20,18 +20,32 @@ pub fn file_tools() -> Vec<MCPTool> {
     ]
 }
 
+#[allow(clippy::vec_init_then_push)]
 pub fn code_tools() -> Vec<MCPTool> {
-    vec![
-        // PRIMARY shell execution tool (isolated, no state preservation)
-        #[cfg(unix)]
-        code_tools::create_run_shell_tool(), // Unix: runShell
-        #[cfg(windows)]
-        code_tools::create_run_powershell_tool(), // Windows: runPowerShell
-        // ADVANCED shell execution tool (persistent state)
-        code_tools::create_execute_shell_tool(), // Unix: runInPersistentShell, Windows: runInPersistentPowerShell
-        // Background process execution (platform-agnostic)
-        code_tools::create_spawn_process_tool(), // Async: background processes
-    ]
+    let mut list = Vec::new();
+
+    // 1. PRIMARY shell execution tool (isolated)
+    #[cfg(unix)]
+    list.push(code_tools::create_run_shell_tool());
+    #[cfg(windows)]
+    {
+        list.push(code_tools::create_run_powershell_tool());
+        list.push(code_tools::create_run_shell_tool());
+    }
+
+    // 2. ADVANCED shell execution tool (persistent)
+    #[cfg(unix)]
+    list.push(code_tools::create_run_persistent_shell_tool());
+    #[cfg(windows)]
+    {
+        list.push(code_tools::create_run_persistent_powershell_tool());
+        list.push(code_tools::create_run_persistent_shell_tool());
+    }
+
+    // 3. Background process execution (platform-agnostic)
+    list.push(code_tools::create_spawn_process_tool());
+
+    list
 }
 
 pub fn export_tools() -> Vec<MCPTool> {
@@ -59,24 +73,23 @@ mod tests {
     #[test]
     fn test_code_tools_returns_platform_tool() {
         let tools = code_tools();
-        // Model-facing tools only: isolated shell, persistent shell, and background processes.
-        // Interactive callback tools stay dispatchable but are intentionally hidden from discovery.
-        assert_eq!(tools.len(), 3);
 
-        let primary_tool = &tools[0];
         #[cfg(unix)]
-        assert_eq!(primary_tool.name, "runShell");
-        #[cfg(windows)]
-        assert_eq!(primary_tool.name, "runPowerShell");
+        {
+            assert_eq!(tools.len(), 3);
+            assert_eq!(tools[0].name, "runShell");
+            assert_eq!(tools[1].name, "runInPersistentShell");
+            assert_eq!(tools[2].name, "spawnProcess");
+        }
 
-        let persistent_tool = &tools[1];
-        #[cfg(unix)]
-        assert_eq!(persistent_tool.name, "runInPersistentShell");
         #[cfg(windows)]
-        assert_eq!(persistent_tool.name, "runInPersistentPowerShell");
-
-        // Verify async tool exists
-        let async_tool = &tools[2];
-        assert_eq!(async_tool.name, "spawnProcess");
+        {
+            assert_eq!(tools.len(), 5);
+            assert_eq!(tools[0].name, "runPowerShell");
+            assert_eq!(tools[1].name, "runShell");
+            assert_eq!(tools[2].name, "runInPersistentPowerShell");
+            assert_eq!(tools[3].name, "runInPersistentShell");
+            assert_eq!(tools[4].name, "spawnProcess");
+        }
     }
 }
