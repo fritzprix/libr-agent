@@ -62,48 +62,7 @@ fn missing_default_assistant_names(assistants: &[BundledAssistant]) -> Vec<&'sta
         .collect()
 }
 
-fn json_string_array(value: &Value, key: &str) -> Vec<String> {
-    value
-        .get(key)
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn sorted_string_slices_equal(a: &[String], b: &[String]) -> bool {
-    let mut a_sorted = a.to_vec();
-    let mut b_sorted = b.to_vec();
-    a_sorted.sort();
-    b_sorted.sort();
-    a_sorted == b_sorted
-}
-
-fn bundled_config_needs_update(config_val: &Value, assistant: &BundledAssistant) -> bool {
-    config_val.get("description").and_then(|v| v.as_str())
-        != Some(assistant.config.description.as_str())
-        || config_val.get("systemPrompt").and_then(|v| v.as_str())
-            != Some(assistant.prompt.as_str())
-        || config_val
-            .get("deletionProtected")
-            .and_then(|v| v.as_bool())
-            != Some(assistant.config.deletion_protected)
-        || !sorted_string_slices_equal(
-            &json_string_array(config_val, "mcpServerIds"),
-            &assistant.config.mcp_server_ids,
-        )
-        || !sorted_string_slices_equal(
-            &json_string_array(config_val, "localServices"),
-            &assistant.config.local_services,
-        )
-        || !sorted_string_slices_equal(
-            &json_string_array(config_val, "allowedBuiltInServiceAliases"),
-            &assistant.config.allowed_builtin_service_aliases,
-        )
-}
+// Helper functions for checking config updates are removed because we do not reconcile existing configurations.
 
 #[derive(Debug, Clone)]
 pub struct BundledAssistant {
@@ -294,45 +253,12 @@ pub async fn ensure_default_assistants(resource_dir: Option<&Path>) -> Result<()
     for assistant in &bundled {
         log::info!("Ensuring assistant: {}", assistant.name);
 
-        if let Some(existing) = existing_map.remove(&assistant.name) {
-            let mut config_val =
-                serde_json::from_str::<Value>(&existing.config).unwrap_or_else(|_| json!({}));
-
-            if !bundled_config_needs_update(&config_val, assistant) {
-                continue;
-            }
-
-            config_val["description"] = Value::String(assistant.config.description.clone());
-            config_val["systemPrompt"] = Value::String(assistant.prompt.clone());
-            config_val["mcpServerIds"] = Value::Array(
-                assistant
-                    .config
-                    .mcp_server_ids
-                    .iter()
-                    .map(|s| Value::String(s.clone()))
-                    .collect(),
+        if let Some(_existing) = existing_map.remove(&assistant.name) {
+            log::info!(
+                "Assistant '{}' already exists, skipping initialization to preserve user changes.",
+                assistant.name
             );
-            config_val["deletionProtected"] = Value::Bool(assistant.config.deletion_protected);
-            config_val["localServices"] = Value::Array(
-                assistant
-                    .config
-                    .local_services
-                    .iter()
-                    .map(|s| Value::String(s.clone()))
-                    .collect(),
-            );
-            config_val["allowedBuiltInServiceAliases"] = Value::Array(
-                assistant
-                    .config
-                    .allowed_builtin_service_aliases
-                    .iter()
-                    .map(|s| Value::String(s.clone()))
-                    .collect(),
-            );
-
-            repo.update_assistant(&existing.id, None, Some(config_val.to_string()))
-                .await
-                .map_err(|e| format!("Failed to update assistant '{}': {}", assistant.name, e))?;
+            continue;
         } else {
             let mut config_val = json!({});
             config_val["description"] = Value::String(assistant.config.description.clone());
@@ -426,32 +352,10 @@ pub async fn ensure_default_assistants_hardcoded() -> Result<(), String> {
                 .await
                 .map_err(|e| format!("Failed to create {}: {}", name, e))?;
         } else {
-            // Reconcile if exists
-            let assistants = repo
-                .list_assistants()
-                .await
-                .map_err(|e| format!("Failed to list assistants: {}", e))?;
-            if let Some(existing) = assistants.into_iter().find(|a| a.name == name) {
-                let existing_config =
-                    serde_json::from_str::<Value>(&existing.config).unwrap_or_else(|_| json!({}));
-
-                let temp_config: BundledAssistantConfig =
-                    serde_json::from_value(config_val.clone())
-                        .map_err(|e| format!("Failed to parse config for comparison: {}", e))?;
-
-                let temp_bundled = BundledAssistant {
-                    name: name.to_string(),
-                    prompt: prompt.to_string(),
-                    config: temp_config,
-                };
-
-                if bundled_config_needs_update(&existing_config, &temp_bundled) {
-                    log::info!("Updating default '{}'...", name);
-                    repo.update_assistant(&existing.id, None, Some(config_val.to_string()))
-                        .await
-                        .map_err(|e| format!("Failed to update {}: {}", name, e))?;
-                }
-            }
+            log::info!(
+                "Default assistant '{}' already exists, skipping initialization.",
+                name
+            );
         }
     }
 

@@ -107,6 +107,7 @@ pub struct UpdateAgentConfigRequest {
     pub model: Option<String>,
     pub provider: Option<String>,
     pub assistant_id: Option<String>,
+    pub recursive: Option<bool>,
 }
 
 /// Response for agent operations

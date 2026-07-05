@@ -104,6 +104,12 @@ vi.mock('@/context/LLMServiceContext', () => ({
   }),
 }));
 
+vi.mock('@/context/AgentSessionListContext', () => ({
+  useAgentSessionListState: () => ({
+    sessions: [],
+  }),
+}));
+
 vi.mock('@/context/SettingsContext', () => ({
   useSettings: () => ({
     value: {
@@ -250,9 +256,14 @@ describe('AgentChatStatusBar', () => {
     mockAgentChat.error = null;
     mockAgentChat.llmError = null;
     tokenMetricsState.metrics = null;
-    mocks.safeInvoke.mockResolvedValue({
-      success: true,
-      message: 'updated',
+    mocks.safeInvoke.mockImplementation((command) => {
+      if (command === 'agent_get_descendant_session_ids') {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve({
+        success: true,
+        message: 'updated',
+      });
     });
   });
 
@@ -324,6 +335,7 @@ describe('AgentChatStatusBar', () => {
           model: 'claude-3-7-sonnet',
           provider: 'anthropic',
           assistantId: mockSession.assistant?.id,
+          recursive: false,
         },
       });
     });

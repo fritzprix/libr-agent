@@ -397,8 +397,6 @@ impl SessionRepository for InMemorySessionRepository {
 #[cfg(test)]
 mod tests {
     use super::InMemorySessionRepository;
-    use crate::execution_mode::ExecutionMode;
-    use crate::models::workspace_isolation::WorkspaceIsolationMode;
     use crate::repositories::session_repository::{
         SessionMetadata, SessionRepository, SessionStatus,
     };
@@ -412,41 +410,11 @@ mod tests {
     #[tokio::test]
     async fn test_upsert_and_get_session() {
         let repo = InMemorySessionRepository::new();
-        let session = SessionMetadata {
-            id: "test-session".to_string(),
-            name: Some("Test Session".to_string()),
-            status: SessionStatus::Idle,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            assistant_id: None,
-            is_bookmarked: false,
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: 1234567890,
-            updated_at: 1234567890,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            execution_mode: ExecutionMode::Normal,
-            workspace_override: None,
-            workspace_isolation: WorkspaceIsolationMode::Host,
-            docker_config: None,
-            docker_container_name: None,
-            docker_host_workspace_path: None,
-        };
+        let session = SessionMetadata::test_fixture("test-session");
 
-        // Upsert session
         repo.upsert_session(&session).await.unwrap();
         assert_eq!(repo.count().await, 1);
 
-        // Get session
         let retrieved = repo.get_session("test-session").await.unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id, "test-session");
@@ -456,53 +424,24 @@ mod tests {
     async fn test_update_status() {
         let repo = InMemorySessionRepository::new();
         let session = SessionMetadata {
-            id: "test-session".to_string(),
-            name: Some("Test".to_string()),
-            status: SessionStatus::Idle,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            assistant_id: None,
-            is_bookmarked: false,
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
             created_at: 100,
             updated_at: 100,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            execution_mode: ExecutionMode::Normal,
-            workspace_override: None,
-            workspace_isolation: WorkspaceIsolationMode::Host,
-            docker_config: None,
-            docker_container_name: None,
-            docker_host_workspace_path: None,
+            ..SessionMetadata::test_fixture("test-session")
         };
 
         repo.upsert_session(&session).await.unwrap();
-
-        // Update status
         repo.update_status("test-session", SessionStatus::Busy)
             .await
             .unwrap();
 
-        // Verify status changed
         let updated = repo.get_session("test-session").await.unwrap().unwrap();
         assert_eq!(updated.status, SessionStatus::Busy);
-        assert!(updated.updated_at > 100); // Timestamp should be updated
+        assert!(updated.updated_at > 100);
     }
 
     #[tokio::test]
     async fn test_update_status_nonexistent_session_is_idempotent() {
         let repo = InMemorySessionRepository::new();
-
-        // Should not fail even if session doesn't exist
         let result = repo.update_status("nonexistent", SessionStatus::Busy).await;
         assert!(result.is_ok());
     }
@@ -511,43 +450,17 @@ mod tests {
     async fn test_delete_session() {
         let repo = InMemorySessionRepository::new();
         let session = SessionMetadata {
-            id: "test-session".to_string(),
             name: None,
-            status: SessionStatus::Idle,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            assistant_id: None,
-            is_bookmarked: false,
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
             created_at: 100,
             updated_at: 100,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            execution_mode: ExecutionMode::Normal,
-            workspace_override: None,
-            workspace_isolation: WorkspaceIsolationMode::Host,
-            docker_config: None,
-            docker_container_name: None,
-            docker_host_workspace_path: None,
+            ..SessionMetadata::test_fixture("test-session")
         };
 
         repo.upsert_session(&session).await.unwrap();
         assert_eq!(repo.count().await, 1);
-
-        // Delete session
         repo.delete_session("test-session").await.unwrap();
         assert_eq!(repo.count().await, 0);
 
-        // Verify session is gone
         let retrieved = repo.get_session("test-session").await.unwrap();
         assert!(retrieved.is_none());
     }
@@ -556,41 +469,17 @@ mod tests {
     async fn test_get_all_sessions() {
         let repo = InMemorySessionRepository::new();
 
-        // Add multiple sessions
         for i in 0..3 {
             let session = SessionMetadata {
-                id: format!("session-{}", i),
-                name: Some(format!("Session {}", i)),
-                status: SessionStatus::Idle,
-                model: "gpt-4".to_string(),
-                provider: "openai".to_string(),
-                is_bookmarked: false,
-                assistant_id: None,
-                parent_session_id: None,
-                lineage_id: None,
-                depth: None,
-                max_depth: None,
-                max_fanout: None,
-                org_id: None,
-                org_name: None,
-                org_root_session_id: None,
+                id: format!("session-{i}"),
+                name: Some(format!("Session {i}")),
                 created_at: 100,
                 updated_at: 100,
-                last_viewed_at: None,
-                last_message_at: None,
-                last_attention_at: None,
-                last_attention_reason: None,
-                execution_mode: ExecutionMode::Normal,
-                workspace_override: None,
-                workspace_isolation: WorkspaceIsolationMode::Host,
-                docker_config: None,
-                docker_container_name: None,
-                docker_host_workspace_path: None,
+                ..SessionMetadata::test_fixture(format!("session-{i}"))
             };
             repo.upsert_session(&session).await.unwrap();
         }
 
-        // Get all sessions
         let all = repo.get_all_sessions().await.unwrap();
         assert_eq!(all.len(), 3);
     }
@@ -599,43 +488,18 @@ mod tests {
     async fn test_clear() {
         let repo = InMemorySessionRepository::new();
 
-        // Add sessions
         for i in 0..5 {
             let session = SessionMetadata {
-                id: format!("session-{}", i),
+                id: format!("session-{i}"),
                 name: None,
-                status: SessionStatus::Idle,
-                model: "gpt-4".to_string(),
-                provider: "openai".to_string(),
-                is_bookmarked: false,
-                assistant_id: None,
-                parent_session_id: None,
-                lineage_id: None,
-                depth: None,
-                max_depth: None,
-                max_fanout: None,
-                org_id: None,
-                org_name: None,
-                org_root_session_id: None,
                 created_at: 100,
                 updated_at: 100,
-                last_viewed_at: None,
-                last_message_at: None,
-                last_attention_at: None,
-                last_attention_reason: None,
-                execution_mode: ExecutionMode::Normal,
-                workspace_override: None,
-                workspace_isolation: WorkspaceIsolationMode::Host,
-                docker_config: None,
-                docker_container_name: None,
-                docker_host_workspace_path: None,
+                ..SessionMetadata::test_fixture(format!("session-{i}"))
             };
             repo.upsert_session(&session).await.unwrap();
         }
 
         assert_eq!(repo.count().await, 5);
-
-        // Clear all
         repo.clear().await;
         assert_eq!(repo.count().await, 0);
     }
@@ -646,52 +510,27 @@ mod tests {
         use tokio::task;
 
         let repo = Arc::new(InMemorySessionRepository::new());
-
-        // Spawn multiple tasks to upsert sessions concurrently
         let mut handles = vec![];
+
         for i in 0..10 {
             let repo_clone = repo.clone();
             let handle = task::spawn(async move {
                 let session = SessionMetadata {
-                    id: format!("session-{}", i),
+                    id: format!("session-{i}"),
                     name: None,
-                    status: SessionStatus::Idle,
-                    model: "gpt-4".to_string(),
-                    provider: "openai".to_string(),
-                    is_bookmarked: false,
                     created_at: 100,
                     updated_at: 100,
-                    last_viewed_at: None,
-                    last_message_at: None,
-                    last_attention_at: None,
-                    last_attention_reason: None,
-                    assistant_id: None,
-                    parent_session_id: None,
-                    lineage_id: None,
-                    depth: None,
-                    max_depth: None,
-                    max_fanout: None,
-                    org_id: None,
-                    org_name: None,
-                    org_root_session_id: None,
-                    execution_mode: ExecutionMode::Normal,
-                    workspace_override: None,
-                    workspace_isolation: WorkspaceIsolationMode::Host,
-                    docker_config: None,
-                    docker_container_name: None,
-                    docker_host_workspace_path: None,
+                    ..SessionMetadata::test_fixture(format!("session-{i}"))
                 };
                 repo_clone.upsert_session(&session).await.unwrap();
             });
             handles.push(handle);
         }
 
-        // Wait for all tasks to complete
         for handle in handles {
             handle.await.unwrap();
         }
 
-        // Verify all sessions were added
         assert_eq!(repo.count().await, 10);
     }
 }

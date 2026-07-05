@@ -126,6 +126,7 @@ export interface UpdateAgentConfigRequest {
   model?: string;
   provider?: string;
   assistantId?: string;
+  recursive?: boolean;
 }
 
 /**

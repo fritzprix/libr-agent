@@ -422,6 +422,55 @@ pub async fn wait_until_session_terminal(
     }
 }
 
+fn format_message_summary(msg: &crate::models::chat::Message) -> String {
+    let mut text_parts = Vec::new();
+    for content in &msg.content {
+        match content {
+            MCPContent::Text { text, .. } => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    text_parts.push(trimmed.to_string());
+                }
+            }
+            MCPContent::Thinking { thinking, .. } => {
+                let trimmed = thinking.trim();
+                if !trimmed.is_empty() {
+                    text_parts.push(format!("[Thinking: {}]", trimmed));
+                }
+            }
+            MCPContent::Image { .. } => {
+                text_parts.push("[Image]".to_string());
+            }
+            MCPContent::Audio { .. } => {
+                text_parts.push("[Audio]".to_string());
+            }
+            MCPContent::Resource { .. } => {
+                text_parts.push("[Resource]".to_string());
+            }
+            _ => {}
+        }
+    }
+
+    if text_parts.is_empty() {
+        if let Some(tool_calls) = &msg.tool_calls {
+            let names: Vec<String> = tool_calls
+                .iter()
+                .map(|tc| tc.function.name.clone())
+                .collect();
+            text_parts.push(format!("[Tool Call: {}]", names.join(", ")));
+        }
+    }
+
+    let joined = text_parts.join(" ");
+    if joined.chars().count() > 150 {
+        let mut truncated: String = joined.chars().take(150).collect();
+        truncated.push_str("...");
+        truncated
+    } else {
+        joined
+    }
+}
+
 pub async fn handle_wait_timeout_result(
     wait_result: Result<(Value, u64), String>,
     manager: Option<&AgentSessionManager>,
@@ -438,27 +487,53 @@ pub async fn handle_wait_timeout_result(
                 category,
                 crate::mcp::error_normalization::ExternalMcpErrorCategory::Timeout
             ) {
-                let text = if is_spawn {
-                    format!(
-                        "Child session created (ID: {}) but waiting for completion timed out after {}s.\n\nThe agent is likely still working. Use checkSession(sessionId=\"{}\", wait=true) later to fetch the final result.",
-                        session_id, timeout_seconds, session_id
-                    )
-                } else {
-                    format!(
-                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use list(type=\"sessions\") to confirm it is still active.",
-                        session_id, timeout_seconds, session_id
-                    )
-                };
-
-                let (session_status, turn_count) = match manager {
+                let (session_status, turn_count, latest_msgs_str, latest_msgs_json) = match manager
+                {
                     Some(manager) => {
                         let session_status = match fetch_session_value(manager, session_id).await {
                             Ok(Some(session)) => extract_session_status(&session),
                             Ok(None) | Err(_) => "unknown".to_string(),
                         };
-                        (session_status, count_session_turns(session_id).await)
+                        let turn_count = count_session_turns(session_id).await;
+
+                        let repo = crate::state::get_message_repository();
+                        let mut messages = repo
+                            .get_messages_by_session(session_id, 5)
+                            .await
+                            .unwrap_or_default();
+                        messages.reverse();
+
+                        let mut msgs_str = String::new();
+                        let mut msgs_json = Vec::new();
+
+                        if !messages.is_empty() {
+                            msgs_str.push_str("\n\nLatest workflow messages:\n");
+                            for msg in &messages {
+                                let summary = format_message_summary(msg);
+                                msgs_str.push_str(&format!("  - [{}]: {}\n", msg.role, summary));
+                                msgs_json.push(json!({
+                                    "role": msg.role,
+                                    "summary": summary,
+                                    "createdAt": msg.created_at,
+                                }));
+                            }
+                        }
+
+                        (session_status, turn_count, msgs_str, msgs_json)
                     }
-                    None => ("unknown".to_string(), 0),
+                    None => ("unknown".to_string(), 0, String::new(), Vec::new()),
+                };
+
+                let text = if is_spawn {
+                    format!(
+                        "Child session created (ID: {}) but waiting for completion timed out after {}s.\n\nThe agent is likely still working. Use checkSession(sessionId=\"{}\", wait=true) later to fetch the final result.{}\n\nCurrent status: {}",
+                        session_id, timeout_seconds, session_id, latest_msgs_str, session_status
+                    )
+                } else {
+                    format!(
+                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use list(type=\"sessions\") to confirm it is still active.{}\n\nCurrent status: {}",
+                        session_id, timeout_seconds, session_id, latest_msgs_str, session_status
+                    )
                 };
 
                 let mut data = build_agent_session_tool_data(
@@ -477,6 +552,7 @@ pub async fn handle_wait_timeout_result(
                     Value::String("timeout".to_string()),
                 );
                 data.insert("error".to_string(), Value::String(e));
+                data.insert("latestMessages".to_string(), json!(latest_msgs_json));
 
                 if is_spawn {
                     data.insert("id".to_string(), Value::String(session_id.to_string()));
