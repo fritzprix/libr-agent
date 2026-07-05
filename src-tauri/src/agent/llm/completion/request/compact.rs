@@ -1,5 +1,6 @@
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
+use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
 
 const COMPACT_TOOL_SNAPSHOT_LIMIT: usize = 5;
@@ -29,6 +30,33 @@ pub fn build_compact_summary_message_for_messages(
         build_compact_summary_text(summary, compacted_messages),
         created_at,
     )
+}
+
+/// Builds the message list used for token projection, mirroring preflight compact injection.
+pub fn apply_compact_summary_projection(
+    session_id: &str,
+    messages: &[Message],
+    compact_record: Option<&CompactContextRecord>,
+) -> Vec<Message> {
+    let Some(record) = compact_record else {
+        return messages.to_vec();
+    };
+
+    let Some(to_idx) = messages
+        .iter()
+        .position(|message| message.id == record.to_id)
+    else {
+        return messages.to_vec();
+    };
+
+    let summary_msg = build_compact_summary_message_for_messages(
+        session_id,
+        &record.summary,
+        &messages[..=to_idx],
+        chrono::Utc::now().timestamp_millis(),
+    );
+    let tail = messages[(to_idx + 1)..].to_vec();
+    [vec![summary_msg], tail].concat()
 }
 
 pub fn build_compact_summary_text(summary: &str, compacted_messages: &[Message]) -> String {

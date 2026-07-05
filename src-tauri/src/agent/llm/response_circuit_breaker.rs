@@ -1,11 +1,12 @@
 use crate::agent::llm::circuit_breaker;
-use crate::agent::llm::completion::{load_context_management_settings, uses_compaction_strategy};
+use crate::agent::llm::completion::load_context_management_settings;
+use crate::agent::llm::completion::request::apply_compact_summary_projection;
 use crate::agent::llm::token_utils::{
-    calculate_conservative_preflight_prompt_tokens, calculate_effective_input_budget,
-    calculate_prompt_anchored_total_tokens, derive_measured_output_tokens_reserve,
-    estimate_text_tokens, try_derive_bpe_calibration_ratio,
+    calculate_conservative_preflight_prompt_tokens, calculate_context_safety_margin,
+    calculate_effective_input_budget, calculate_prompt_anchored_total_tokens,
+    derive_measured_output_tokens_reserve, estimate_text_tokens, try_derive_bpe_calibration_ratio,
 };
-use crate::agent::state::AgentSession;
+use crate::agent::state::{AgentSession, CompactionRecoveryPhase};
 use crate::agent::tools::{
     create_tool_result_message, tool_result_inline_limit_bytes,
     tool_result_preview_content_limit_bytes,
@@ -276,28 +277,31 @@ async fn apply_tool_loop_token_fence(
         return;
     }
 
-    let context_settings = load_context_management_settings().await;
-    if !uses_compaction_strategy(context_settings.context_strategy()) {
-        return;
-    }
-
-    // Clone Arc handles while holding the sessions read-lock (no async ops, fast).
-    // The guard is dropped at the end of this block so writers are not stalled
-    // during the subsequent inner async reads.
-    let (messages_lock, last_request_lock, session_metadata) = {
+    // Tool-loop token fence is a last-resort fallback after compaction hard failure
+    // (DegradedTools recovery phase). Normal compact-mode sessions rely on compaction
+    // and preflight context selection instead of redacting parallel tool batches here.
+    let (messages_lock, last_request_lock, compact_context_lock, session_metadata) = {
         let sessions = active_sessions.read().await;
         let Some(session) = sessions.get(session_id) else {
             return;
         };
+        if session.compaction.recovery_phase().await != CompactionRecoveryPhase::DegradedTools {
+            return;
+        }
         (
             Arc::clone(&session.messages),
             Arc::clone(&session.last_completion_request),
+            Arc::clone(&session.compact_context),
             session.metadata.clone(),
         )
     };
-    // sessions guard is dropped here — writers can now acquire active_sessions
+
+    let context_settings = load_context_management_settings().await;
 
     let history_messages = messages_lock.read().await.clone();
+    let compact_record = compact_context_lock.read().await.clone();
+    let projection_history =
+        apply_compact_summary_projection(session_id, &history_messages, compact_record.as_ref());
     let last_completion_request = last_request_lock.read().await.clone();
     let configured_max_output_tokens = crate::agent::resolve_agent_config(&session_metadata)
         .await
@@ -306,10 +310,10 @@ async fn apply_tool_loop_token_fence(
     let (system_prompt_tokens, tools_tokens) =
         estimate_parent_request_prefix_tokens(last_completion_request.as_ref());
     let fallback_calibration_ratio =
-        try_derive_bpe_calibration_ratio(&history_messages, system_prompt_tokens, tools_tokens);
+        try_derive_bpe_calibration_ratio(&projection_history, system_prompt_tokens, tools_tokens);
 
     let output_reserve_tokens =
-        derive_measured_output_tokens_reserve(&history_messages, configured_max_output_tokens);
+        derive_measured_output_tokens_reserve(&projection_history, configured_max_output_tokens);
     let safe_input_token_limit = context_settings
         .max_input_context()
         .min(context_settings.model_max_limit());
@@ -329,7 +333,7 @@ async fn apply_tool_loop_token_fence(
 
     for prefix_len in 1..=original_tool_calls.len() {
         let projected_messages = build_projected_messages_for_prefix(
-            &history_messages,
+            &projection_history,
             assistant_message,
             &original_tool_calls,
             prefix_len,
@@ -366,7 +370,7 @@ async fn apply_tool_loop_token_fence(
     assistant_message.tool_calls = Some(original_tool_calls.into_iter().take(kept_count).collect());
 
     let persisted_messages = build_projected_messages_for_prefix(
-        &history_messages,
+        &projection_history,
         assistant_message,
         assistant_message
             .tool_calls
@@ -382,7 +386,7 @@ async fn apply_tool_loop_token_fence(
     );
 
     log::warn!(
-        "Tool-loop token fence redacted assistant tool calls for session {}: kept={} dropped={} projected_prompt_tokens={} projected_total_budget_tokens={} persisted_prompt_tokens={} guarded_total_budget_limit={} output_reserve_tokens={}",
+        "Tool-loop token fence (compaction degraded-tools fallback) redacted assistant tool calls for session {}: kept={} dropped={} projected_prompt_tokens={} projected_total_budget_tokens={} persisted_prompt_tokens={} guarded_total_budget_limit={} output_reserve_tokens={} compact_summary_applied={}",
         session_id,
         kept_count,
         dropped_count,
@@ -390,7 +394,8 @@ async fn apply_tool_loop_token_fence(
         kept_projection_total,
         persisted_prompt_tokens,
         guarded_total_budget_limit,
-        output_reserve_tokens
+        output_reserve_tokens,
+        compact_record.is_some()
     );
 }
 
@@ -446,8 +451,4 @@ fn estimate_parent_request_prefix_tokens(
         .unwrap_or(0);
 
     (system_prompt_tokens, tools_tokens)
-}
-
-fn calculate_context_safety_margin(effective_input_budget: usize) -> usize {
-    ((effective_input_budget as f64) * 0.03).ceil() as usize
 }

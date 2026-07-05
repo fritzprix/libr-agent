@@ -11,7 +11,7 @@ use tauri_mcp_agent_lib::agent::llm::{
     CompactionParentRequest,
 };
 use tauri_mcp_agent_lib::agent::state::{
-    AgentSession, CompactionRuntimeState, PendingEventManager,
+    AgentSession, CompactionRecoveryPhase, CompactionRuntimeState, PendingEventManager,
 };
 use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
@@ -20,11 +20,8 @@ use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionStatus, SettingsRepository, SqliteSettingsRepository,
 };
-use tauri_mcp_agent_lib::{
-    init_active_sessions, set_settings_repository, try_get_active_sessions,
-    try_get_settings_repository,
-};
-use tokio::sync::{Mutex, RwLock};
+use tauri_mcp_agent_lib::{init_active_sessions, set_settings_repository, try_get_active_sessions};
+use tokio::sync::{Mutex, OnceCell, RwLock};
 use tokio_util::sync::CancellationToken;
 
 fn build_session_metadata(session_id: &str) -> SessionMetadata {
@@ -191,14 +188,17 @@ fn build_assistant_message(session_id: &str, tool_call_count: usize) -> Message 
 }
 
 async fn ensure_settings_repo() -> SqliteSettingsRepository {
-    if let Some(repo) = try_get_settings_repository() {
-        return repo.clone();
-    }
+    static SETTINGS_REPO: OnceCell<SqliteSettingsRepository> = OnceCell::const_new();
 
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSettingsRepository::new(db);
-    set_settings_repository(repo.clone());
-    repo
+    SETTINGS_REPO
+        .get_or_init(|| async {
+            let db = common::setup_test_db_with_migrations().await;
+            let repo = SqliteSettingsRepository::new(db);
+            set_settings_repository(repo.clone());
+            repo
+        })
+        .await
+        .clone()
 }
 
 async fn upsert_tool_loop_settings() {
@@ -220,6 +220,13 @@ async fn upsert_tool_loop_settings() {
 }
 
 async fn register_session(session_id: &str) -> Arc<RwLock<HashMap<String, AgentSession>>> {
+    register_session_with_compaction_phase(session_id, CompactionRecoveryPhase::DegradedTools).await
+}
+
+async fn register_session_with_compaction_phase(
+    session_id: &str,
+    recovery_phase: CompactionRecoveryPhase,
+) -> Arc<RwLock<HashMap<String, AgentSession>>> {
     let active_sessions = if let Some(existing) = try_get_active_sessions() {
         existing.clone()
     } else {
@@ -228,12 +235,44 @@ async fn register_session(session_id: &str) -> Arc<RwLock<HashMap<String, AgentS
         sessions
     };
 
-    active_sessions.write().await.insert(
-        session_id.to_string(),
-        build_active_session(session_id, build_history(session_id)),
-    );
+    let session = build_active_session(session_id, build_history(session_id));
+    match recovery_phase {
+        CompactionRecoveryPhase::DegradedTools => {
+            session.compaction.transition_to_degraded_tools().await;
+        }
+        CompactionRecoveryPhase::OverflowRecovery => {
+            session.compaction.transition_to_overflow_recovery().await;
+        }
+        CompactionRecoveryPhase::CacheAligned => {}
+    }
 
     active_sessions
+        .write()
+        .await
+        .insert(session_id.to_string(), session);
+
+    active_sessions
+}
+
+async fn assert_tool_calls_unchanged(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    assistant_message: &mut Message,
+    original_tool_call_count: usize,
+    phase_label: &str,
+) {
+    preprocess_assistant_tool_calls_for_testing(active_sessions, session_id, assistant_message)
+        .await;
+
+    let kept_tool_calls = assistant_message
+        .tool_calls
+        .as_ref()
+        .expect("tool calls should remain untouched");
+    assert_eq!(
+        kept_tool_calls.len(),
+        original_tool_call_count,
+        "tool-loop fence must not run outside compaction degraded-tools fallback ({phase_label})"
+    );
 }
 
 #[tokio::test]
@@ -307,4 +346,52 @@ async fn tool_loop_fence_redacts_before_pending_execution_initialization() {
         !session.cancel_pending.load(Ordering::Relaxed),
         "tool-loop fence should redact, not mark the session as cancelled"
     );
+}
+
+#[tokio::test]
+async fn tool_loop_fence_skips_when_compaction_not_in_degraded_tools_phase() {
+    let session_id = "tool-loop-fence-cache-aligned-session";
+    let active_sessions =
+        register_session_with_compaction_phase(session_id, CompactionRecoveryPhase::CacheAligned)
+            .await;
+    let mut assistant_message = build_assistant_message(session_id, 6);
+    let original_tool_call_count = assistant_message
+        .tool_calls
+        .as_ref()
+        .expect("tool calls present")
+        .len();
+
+    assert_tool_calls_unchanged(
+        &active_sessions,
+        session_id,
+        &mut assistant_message,
+        original_tool_call_count,
+        "CacheAligned",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn tool_loop_fence_skips_during_overflow_recovery_phase() {
+    let session_id = "tool-loop-fence-overflow-recovery-session";
+    let active_sessions = register_session_with_compaction_phase(
+        session_id,
+        CompactionRecoveryPhase::OverflowRecovery,
+    )
+    .await;
+    let mut assistant_message = build_assistant_message(session_id, 6);
+    let original_tool_call_count = assistant_message
+        .tool_calls
+        .as_ref()
+        .expect("tool calls present")
+        .len();
+
+    assert_tool_calls_unchanged(
+        &active_sessions,
+        session_id,
+        &mut assistant_message,
+        original_tool_call_count,
+        "OverflowRecovery",
+    )
+    .await;
 }
