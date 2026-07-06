@@ -168,7 +168,7 @@ For bulk operations (e.g. "스팸함 비워"), confirm count with user before pr
 | Auth failed (IMAP 535) | Wrong password or App Password needed | Run `setup_account.py --reset`, guide user to App Password docs |
 | Connection refused     | Wrong host/port                       | Check `references/server-profiles.md`, offer to re-run setup    |
 | Config not found       | First run or deleted                  | Run `setup_account.py`                                          |
-| SSL error              | Port mismatch                         | Suggest switching 993↔143 or 587↔465                          |
+| SSL error              | Port mismatch                         | Suggest switching 993↔143 or 587↔465                            |
 | Send failed (SMTP 550) | Recipient rejected                    | Confirm address with user                                       |
 
 Always provide the next concrete step, never just report the error.

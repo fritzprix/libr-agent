@@ -146,7 +146,7 @@ export function applyViewedAtToSession<T extends AgentSession>(
       : session.lastViewedAt;
   const shouldClearAttention = Boolean(
     session.lastAttentionAt &&
-      nextLastViewedAt.getTime() >= session.lastAttentionAt.getTime(),
+    nextLastViewedAt.getTime() >= session.lastAttentionAt.getTime(),
   );
 
   return {

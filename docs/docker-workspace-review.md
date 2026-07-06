@@ -28,7 +28,7 @@ Docker Workspace Isolation은 세션당 컨테이너를 생성하여 AI Agent의
 | `src-tauri/src/entity/session.rs`                                        | DB 엔티티: `DockerContainerName`, `DockerHostWorkspacePath`, `DockerConfigJson` |
 | `src-tauri/src/services/workspace_runtime_manager.rs`                    | Docker 런타임 관리 (컨테이너 생성/삭제/검증)                                    |
 | `src-tauri/src/session_isolation/mod.rs`                                 | `SessionIsolationManager` — Docker 모드 감지 및 라우팅                          |
-| `src-tauri/src/session_isolation/path_mapper.rs`                         | `PathMappingLayer` — 호스트↔컨테이너 경로 매핑                                 |
+| `src-tauri/src/session_isolation/path_mapper.rs`                         | `PathMappingLayer` — 호스트↔컨테이너 경로 매핑                                  |
 | `src-tauri/src/mcp/builtin/workspace/persistent_shell/manager.rs`        | Docker persistent shell 생성 (`spawn_docker_persistent_shell`)                  |
 | `src-tauri/src/mcp/builtin/workspace/code_execution/shell/handlers.rs`   | `runInPersistentShell` 핸들러                                                   |
 | `src-tauri/src/mcp/builtin/workspace/code_execution/shell/isolated.rs`   | `runShell` (isolated) 핸들러                                                    |

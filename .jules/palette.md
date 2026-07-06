@@ -8,3 +8,6 @@
 ## 2025-02-09 - Add tooltip to unbookmark button
 **Learning:** Sighted mouse users lack context for icon-only buttons like "Remove bookmark" without visual tooltips, even when `aria-label` is present for screen readers.
 **Action:** Always wrap icon-only action buttons in `Tooltip` components to ensure parity between visual context and semantic accessibility labels.
+## 2025-02-09 - Add tooltip to Skills Editor buttons
+**Learning:** Sighted mouse users lack context for icon-only buttons in the Skills Editor, even when `title` is present as native tooltips are inconsistent and not always accessible via keyboard.
+**Action:** Always wrap icon-only action buttons in `Tooltip` components instead of using the native `title` attribute.

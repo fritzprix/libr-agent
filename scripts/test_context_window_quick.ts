@@ -84,9 +84,8 @@ async function testContextWindow() {
   console.log('\n🧪 Test 3: Fallback Heuristics');
   console.log('─────────────────────────────────────────────────────');
 
-  const { estimateContextWindow } = await import(
-    '../src/lib/ai-service/model-capabilities'
-  );
+  const { estimateContextWindow } =
+    await import('../src/lib/ai-service/model-capabilities');
 
   const testCases = [
     { provider: AIServiceProvider.OpenAI, model: 'gpt-4o', expected: 128000 },

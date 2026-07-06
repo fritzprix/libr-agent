@@ -27,8 +27,7 @@ import type {
   SkillsVerificationStatus,
 } from '../skills-management-types';
 
-interface SkillsManagementPanelContentProps
-  extends SkillsManagementDirectories {
+interface SkillsManagementPanelContentProps extends SkillsManagementDirectories {
   dropZoneRef: RefObject<HTMLDivElement>;
   isDragging: boolean;
   openingDirectory: SkillsDirectoryScope | null;

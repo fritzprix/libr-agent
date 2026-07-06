@@ -3,8 +3,7 @@ import { Textarea } from './textarea';
 import { FieldWrapper } from './field-wrapper';
 import { cn } from '@/lib/utils';
 
-interface TextareaWithLabelProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+interface TextareaWithLabelProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
   error?: string;
   containerClassName?: string;

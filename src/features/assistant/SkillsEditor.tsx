@@ -8,6 +8,9 @@ import {
   CardTitle,
   Badge,
   Checkbox,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
 } from '@/components/ui';
 import {
   AlertDialog,
@@ -88,23 +91,27 @@ export default function SkillsEditor() {
                 variant="outline"
                 size="sm"
                 onClick={handleReset}
-                title={t('skills.resetTooltip')}
                 className="text-destructive border-destructive/50 hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 {t('skills.reset')}
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => fetchSkills()}
-              disabled={isLoading}
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`}
-              />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => fetchSkills()}
+                  disabled={isLoading}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('common.refresh', 'Refresh')}</TooltipContent>
+            </Tooltip>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -162,34 +169,44 @@ export default function SkillsEditor() {
                     </div>
                     <div className="flex items-center gap-2">
                       {skill.source === 'global' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleOverride(skill.name)}
-                          title={t('skills.override')}
-                          disabled={isDisabled || loadingSkills[skill.name]}
-                        >
-                          {loadingSkills[skill.name] ? (
-                            <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleOverride(skill.name)}
+                              disabled={isDisabled || loadingSkills[skill.name]}
+                            >
+                              {loadingSkills[skill.name] ? (
+                                <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t('skills.override')}
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                       {skill.source === 'assistant' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleRevert(skill.name)}
-                          title={t('skills.revert')}
-                          disabled={isDisabled || loadingSkills[skill.name]}
-                        >
-                          {loadingSkills[skill.name] ? (
-                            <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-                          ) : (
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          )}
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleRevert(skill.name)}
+                              disabled={isDisabled || loadingSkills[skill.name]}
+                            >
+                              {loadingSkills[skill.name] ? (
+                                <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                              ) : (
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('skills.revert')}</TooltipContent>
+                        </Tooltip>
                       )}
                     </div>
                   </div>

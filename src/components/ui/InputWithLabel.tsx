@@ -3,8 +3,7 @@ import { Input } from './input';
 import { FieldWrapper } from './field-wrapper';
 import { cn } from '@/lib/utils';
 
-interface InputWithLabelProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {
+interface InputWithLabelProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
   containerClassName?: string;
