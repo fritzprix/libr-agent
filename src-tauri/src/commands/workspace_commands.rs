@@ -1,4 +1,4 @@
-use crate::services::{WorkspaceFileItem, WorkspaceService};
+use crate::services::{WorkspaceFileItem, WorkspaceRuntimeManager, WorkspaceService};
 use crate::session::get_session_manager;
 /// Workspace-related Tauri commands
 ///
@@ -322,4 +322,71 @@ pub async fn resolve_workspace_scoped_file_path(
     }
 
     Ok(canonical_file)
+}
+
+#[tauri::command]
+pub async fn start_docker_desktop() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Try well-known install paths first, then user-local installs.
+        let program_files =
+            std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+        let program_files_x86 = std::env::var("ProgramFiles(x86)")
+            .unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+
+        let mut candidates = vec![
+            format!("{}\\Docker\\Docker\\Docker Desktop.exe", program_files),
+            format!(
+            format!("{}\\Docker\\Docker\\Docker Desktop.exe", program_files_x86),
+        ];
+        if !local_app_data.is_empty() {
+            candidates.push(format!(
+                "{}\\Docker\\Docker Desktop.exe",
+                local_app_data
+            ));
+        }
+
+        for path in &candidates {
+            if std::path::Path::new(path).exists() {
+                std::process::Command::new(path)
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch Docker Desktop: {}", e))?;
+                return Ok(());
+            }
+        }
+        Err("Docker Desktop not found. Please install it from https://www.docker.com/products/docker-desktop/".to_string())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-a")
+            .arg("Docker")
+            .spawn()
+            .map_err(|e| format!("Failed to launch Docker Desktop: {}", e))?;
+        Ok(())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Err(
+            "Start the Docker daemon manually (for example via your distribution's Docker Desktop app or: sudo systemctl start docker).".to_string(),
+        )
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Unsupported operating system".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn docker_desktop_launch_supported() -> bool {
+    cfg!(any(target_os = "windows", target_os = "macos"))
+}
+
+/// Verifies that the Docker CLI is available and the daemon is reachable.
+#[tauri::command]
+pub async fn check_docker_health() -> Result<(), String> {
+    WorkspaceRuntimeManager::healthcheck()
+        .await
+        .map_err(|e| e.to_agent_string())
 }

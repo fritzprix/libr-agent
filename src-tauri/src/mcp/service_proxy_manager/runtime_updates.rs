@@ -10,10 +10,10 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
-pub struct RuntimeStateUpdateResult {
-    pub runtime_state: SessionRuntimeState,
-    pub changed: bool,
-    pub emitted: bool,
+pub(crate) struct RuntimeStateUpdateResult {
+    pub(crate) runtime_state: SessionRuntimeState,
+    pub(crate) changed: bool,
+    pub(crate) emitted: bool,
 }
 
 pub(super) fn emit_runtime_state(

@@ -22,6 +22,15 @@ pub struct DockerProvisioningDeps {
     pub app_handle: AppHandle,
 }
 
+struct DockerRuntimeStepParams<'a> {
+    session_id: &'a str,
+    image: &'a str,
+    step: &'a str,
+    failed: bool,
+    is_final: bool,
+    error: Option<&'a str>,
+}
+
 pub fn spawn_docker_provisioning(
     deps: DockerProvisioningDeps,
     session: SessionMetadata,
@@ -134,11 +143,14 @@ async fn run_docker_provisioning(
     emit_docker_runtime_step(
         &deps.proxy_manager,
         Some(&deps.app_handle),
-        &session.id,
-        &image,
-        "Preparing Docker workspace",
-        false,
-        None,
+        DockerRuntimeStepParams {
+            session_id: &session.id,
+            image: &image,
+            step: "Preparing Docker workspace",
+            failed: false,
+            is_final: false,
+            error: None,
+        },
     )
     .await;
 
@@ -157,11 +169,14 @@ async fn run_docker_provisioning(
             emit_docker_runtime_step(
                 &proxy_manager,
                 Some(&app_handle),
-                &session_id,
-                &image,
-                &step,
-                false,
-                None,
+                DockerRuntimeStepParams {
+                    session_id: &session_id,
+                    image: &image,
+                    step: &step,
+                    failed: false,
+                    is_final: false,
+                    error: None,
+                },
             )
             .await;
         });
@@ -188,11 +203,14 @@ async fn complete_docker_provisioning(
         emit_docker_runtime_step(
             &deps.proxy_manager,
             Some(&deps.app_handle),
-            session_id,
-            image,
-            "Docker workspace ready",
-            false,
-            None,
+            DockerRuntimeStepParams {
+                session_id,
+                image,
+                step: "Docker workspace ready",
+                failed: false,
+                is_final: true,
+                error: None,
+            },
         )
         .await;
     }
@@ -224,11 +242,14 @@ async fn fail_docker_provisioning(
     emit_docker_runtime_step(
         &deps.proxy_manager,
         Some(&deps.app_handle),
-        &session.id,
-        &image,
-        "Docker workspace setup failed",
-        true,
-        Some(error),
+        DockerRuntimeStepParams {
+            session_id: &session.id,
+            image: &image,
+            step: "Docker workspace setup failed",
+            failed: true,
+            is_final: false,
+            error: Some(error),
+        },
     )
     .await;
 
@@ -256,22 +277,25 @@ async fn fail_docker_provisioning(
 async fn emit_docker_runtime_step(
     proxy_manager: &MCPServiceProxyManager,
     app_handle: Option<&AppHandle>,
-    session_id: &str,
-    image: &str,
-    step: &str,
-    failed: bool,
-    error: Option<&str>,
+    params: DockerRuntimeStepParams<'_>,
 ) {
+    let DockerRuntimeStepParams {
+        session_id,
+        image,
+        step,
+        failed,
+        is_final,
+        error,
+    } = params;
     let image = image.to_string();
     let step = step.to_string();
     let error = error.map(str::to_string);
 
     let _ = proxy_manager
         .update_runtime_state(session_id, app_handle, move |state| {
-            let is_ready = step == "Docker workspace ready";
             state.phase = if failed {
                 SessionRuntimePhase::Failed
-            } else if is_ready {
+            } else if is_final {
                 SessionRuntimePhase::Ready
             } else {
                 SessionRuntimePhase::Initializing
@@ -279,7 +303,7 @@ async fn emit_docker_runtime_step(
             state.initialization.current_step = Some(step.clone());
             state.initialization.result = if failed {
                 SessionRuntimeInitResult::Failed
-            } else if is_ready {
+            } else if is_final {
                 SessionRuntimeInitResult::Success
             } else {
                 SessionRuntimeInitResult::Pending
@@ -291,11 +315,36 @@ async fn emit_docker_runtime_step(
                 progress: None,
                 error,
             });
-            if is_ready {
+            if is_final {
                 state.recompute_summary();
             }
         })
         .await;
+}
+
+async fn emit_drain_workflow_failure(
+    deps: &DockerProvisioningDeps,
+    session_id: &str,
+    error_message: String,
+) {
+    let _ = crate::agent::lifecycle::update_session_status(
+        &deps.session_repo,
+        &deps.active_sessions,
+        &deps.app_handle,
+        session_id,
+        SessionStatus::Error,
+    )
+    .await;
+
+    let error_event = crate::agent::events::AgentEvent::WorkflowError {
+        session_id: session_id.to_string(),
+        error: crate::agent::llm::types::AgentRuntimeError::new(
+            crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+            error_message,
+        )
+        .with_code("DOCKER_DRAIN_WORKFLOW_FAILED"),
+    };
+    let _ = crate::agent::tauri_events::emit_agent_event(&deps.app_handle, error_event);
 }
 
 async fn drain_and_start_pending_workflows(
@@ -316,13 +365,22 @@ async fn drain_and_start_pending_workflows(
     }
 
     let repo = crate::state::get_message_repository();
-    let messages = repo.get_by_ids(pending_ids).await.map_err(|error| {
-        format!("Failed to load pending messages after Docker provisioning: {error}")
-    })?;
+    let messages = match repo.get_by_ids(pending_ids).await {
+        Ok(messages) => messages,
+        Err(error) => {
+            emit_drain_workflow_failure(
+                deps,
+                session_id,
+                format!("Failed to load pending messages after Docker provisioning: {error}"),
+            )
+            .await;
+            return Ok(());
+        }
+    };
 
     for (index, message) in messages.into_iter().enumerate() {
         if index == 0 {
-            crate::agent::workflow::start_workflow(
+            if let Err(error) = crate::agent::workflow::start_workflow(
                 &deps.session_repo,
                 &deps.active_sessions,
                 &deps.proxy_manager,
@@ -330,9 +388,16 @@ async fn drain_and_start_pending_workflows(
                 session_id.to_string(),
                 message,
             )
-            .await?;
-        } else {
-            MessageService::queue_user_message(&deps.active_sessions, session_id, &message).await?;
+            .await
+            {
+                emit_drain_workflow_failure(deps, session_id, error).await;
+                return Ok(());
+            }
+        } else if let Err(error) =
+            MessageService::queue_user_message(&deps.active_sessions, session_id, &message).await
+        {
+            emit_drain_workflow_failure(deps, session_id, error).await;
+            return Ok(());
         }
     }
 
