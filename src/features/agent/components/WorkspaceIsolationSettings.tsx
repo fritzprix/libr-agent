@@ -8,6 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { DOCKER_IMAGE_PRESETS } from '@/config/docker';
 
 interface WorkspaceIsolationSettingsProps {
   switchId: string;

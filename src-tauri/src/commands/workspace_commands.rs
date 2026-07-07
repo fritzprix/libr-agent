@@ -337,14 +337,10 @@ pub async fn start_docker_desktop() -> Result<(), String> {
 
         let mut candidates = vec![
             format!("{}\\Docker\\Docker\\Docker Desktop.exe", program_files),
-            format!(
             format!("{}\\Docker\\Docker\\Docker Desktop.exe", program_files_x86),
         ];
         if !local_app_data.is_empty() {
-            candidates.push(format!(
-                "{}\\Docker\\Docker Desktop.exe",
-                local_app_data
-            ));
+            candidates.push(format!("{}\\Docker\\Docker Desktop.exe", local_app_data));
         }
 
         for path in &candidates {

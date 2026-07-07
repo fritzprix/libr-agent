@@ -357,10 +357,7 @@ export function useAgentDraftChat() {
       resolvedInput.length > 50
         ? resolvedInput.substring(0, 47) + '...'
         : resolvedInput;
-    const filesToAttach = pendingFiles;
-
-    setInput('');
-    setPendingFiles([]);
+    const filesToAttach = [...pendingFiles];
 
     try {
       toastId = toast.loading(
@@ -511,6 +508,27 @@ export function useAgentDraftChat() {
         ...(nonInlineRefs.length > 0 ? { attachments: nonInlineRefs } : {}),
       };
 
+      try {
+        await safeInvoke<AgentResponse>('agent_send_message', {
+          request: {
+            sessionId: newSessionId,
+            message: finalRustMessage,
+          },
+        });
+      } catch (sendError) {
+        logger.error('Failed to send initial draft message', sendError);
+        if (toastId) toast.dismiss(toastId);
+        provisioningToastRef.current = null;
+        setInput(resolvedInput);
+        setPendingFiles(filesToAttach);
+        toast.error(t('agent.draft.failedToStartSession'));
+        setIsSubmitting(false);
+        return;
+      }
+
+      setInput('');
+      setPendingFiles([]);
+
       if (toastId) {
         toast.dismiss(toastId);
       }
@@ -518,20 +536,6 @@ export function useAgentDraftChat() {
 
       navigate(`/agent/${newSessionId}`);
       setIsSubmitting(false);
-
-      void (async () => {
-        try {
-          await safeInvoke<AgentResponse>('agent_send_message', {
-            request: {
-              sessionId: newSessionId,
-              message: finalRustMessage,
-            },
-          });
-        } catch (sendError) {
-          logger.error('Failed to send initial draft message', sendError);
-          toast.error(t('agent.draft.failedToStartSession'));
-        }
-      })();
     } catch (err) {
       if (toastId) toast.dismiss(toastId);
       provisioningToastRef.current = null;
