@@ -1,5 +1,11 @@
 import { Paperclip, X } from 'lucide-react';
-import { Button } from '@/components/ui';
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui';
 
 interface AgentAttachedFileItem {
   id: string;
@@ -31,17 +37,23 @@ export function AgentAttachedFilesBar({
             className="flex items-center rounded-md border border-border/45 bg-background/45 px-2 py-1"
           >
             <span className="max-w-36 truncate text-xs">{file.name}</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={file.onRemove}
-              className="ml-1 h-6 w-6"
-              title={`Remove ${file.name}`}
-              aria-label={`Remove ${file.name}`}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={file.onRemove}
+                    className="ml-1 h-6 w-6"
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Remove {file.name}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </li>
         ))}
       </ul>
