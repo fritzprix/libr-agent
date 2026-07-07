@@ -157,6 +157,47 @@ async fn run_shell_success_hint_no_longer_mentions_stop_process() {
         !text.contains("stopProcess"),
         "completed runShell responses should not mention stopProcess: {text}"
     );
+    assert!(
+        !text.contains("💡 Next:"),
+        "completed runShell responses should not append generic next-action hints: {text}"
+    );
+    assert!(
+        !text.contains("listDirectory"),
+        "completed runShell responses should not suggest listDirectory verification: {text}"
+    );
+    assert!(
+        !text.contains("readFile to verify"),
+        "completed runShell responses should not suggest readFile verification: {text}"
+    );
+}
+
+#[tokio::test]
+async fn persistent_shell_at_workspace_root_does_not_suggest_file_tools() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "persistent-shell-root-guidance";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .handle_execute_shell(
+            json!({
+                "command": simple_shell_command()
+            }),
+            session_id,
+        )
+        .await
+        .expect("runInPersistentShell should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        !text.contains("💡 Next:"),
+        "persistent shell at workspace root should not append file-tool next-action hints: {text}"
+    );
+    assert!(
+        !text.contains("listDirectory"),
+        "persistent shell at workspace root should not suggest listDirectory: {text}"
+    );
 }
 
 #[tokio::test]
