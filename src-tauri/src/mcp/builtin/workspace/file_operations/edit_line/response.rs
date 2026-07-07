@@ -1,4 +1,3 @@
-use super::super::utils::{compute_anchor, initial_prefix_hash_state};
 use super::types::{EditAction, PreparedFileEdit};
 use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::types::MCPResult;
@@ -6,14 +5,6 @@ use serde_json::json;
 
 const MAX_DIFF_PREVIEW_LINES: usize = 50;
 const DIFF_CONTEXT_LINES: usize = 1;
-
-#[derive(Clone)]
-#[allow(dead_code)]
-struct AnchoredLine {
-    line_number: usize,
-    content: String,
-    anchor: String,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DiffPreviewKind {
@@ -38,45 +29,35 @@ impl DiffPreviewLine {
     }
 }
 
-fn build_anchored_lines(content: &str) -> Vec<AnchoredLine> {
-    let mut prefix_state = initial_prefix_hash_state();
-
-    content
-        .lines()
-        .enumerate()
-        .map(|(idx, line)| AnchoredLine {
-            line_number: idx + 1,
-            content: line.to_string(),
-            anchor: compute_anchor(line, &mut prefix_state),
-        })
-        .collect()
+fn build_content_lines(content: &str) -> Vec<String> {
+    content.lines().map(|line| line.to_string()).collect()
 }
 
-fn push_context_line(lines: &mut Vec<DiffPreviewLine>, line: &AnchoredLine) {
+fn push_context_line(lines: &mut Vec<DiffPreviewLine>, content: &str) {
     lines.push(DiffPreviewLine {
         kind: DiffPreviewKind::Context,
-        content: line.content.clone(),
+        content: content.to_string(),
     });
 }
 
-fn push_added_line(lines: &mut Vec<DiffPreviewLine>, line: &AnchoredLine) {
+fn push_added_line(lines: &mut Vec<DiffPreviewLine>, content: &str) {
     lines.push(DiffPreviewLine {
         kind: DiffPreviewKind::Added,
-        content: line.content.clone(),
+        content: content.to_string(),
     });
 }
 
-fn push_removed_line(lines: &mut Vec<DiffPreviewLine>, line: &AnchoredLine) {
+fn push_removed_line(lines: &mut Vec<DiffPreviewLine>, content: &str) {
     lines.push(DiffPreviewLine {
         kind: DiffPreviewKind::Removed,
-        content: line.content.clone(),
+        content: content.to_string(),
     });
 }
 
 fn build_preview_lines(
     batch: &PreparedFileEdit,
-    original_lines: &[AnchoredLine],
-    new_lines: &[AnchoredLine],
+    original_lines: &[String],
+    new_lines: &[String],
 ) -> Vec<DiffPreviewLine> {
     let mut preview_lines = Vec::new();
     let mut sorted_edits = batch.edits.clone();
@@ -125,7 +106,7 @@ fn build_preview_lines(
             && original_slice
                 .iter()
                 .zip(new_slice.iter())
-                .all(|(original_line, new_line)| original_line.content == new_line.content);
+                .all(|(original_line, new_line)| original_line == new_line);
 
         if slices_match {
             for new_line in new_slice {
@@ -178,10 +159,10 @@ fn build_preview_ranges(preview_lines: &[DiffPreviewLine]) -> Vec<(usize, usize)
     ranges
 }
 
-/// Generate a git-style diff preview with anchor annotations for changed lines.
-fn build_diff_with_anchors(batch: &PreparedFileEdit) -> String {
-    let original_lines = build_anchored_lines(&batch.original_content);
-    let new_lines = build_anchored_lines(&batch.new_content);
+/// Generate a git-style diff preview (context/added/removed lines) for the edit batch.
+fn build_diff_preview(batch: &PreparedFileEdit) -> String {
+    let original_lines = build_content_lines(&batch.original_content);
+    let new_lines = build_content_lines(&batch.new_content);
     let preview_lines = build_preview_lines(batch, &original_lines, &new_lines);
     let preview_ranges = build_preview_ranges(&preview_lines);
 
@@ -300,7 +281,7 @@ pub(super) fn build_edit_file_success(prepared_batches: &[PreparedFileEdit]) -> 
                 batch.new_hash_sections.join("\n...\n")
             )
         };
-        let diff_section = build_diff_with_anchors(batch);
+        let diff_section = build_diff_preview(batch);
 
         file_sections.push(format!(
             "File: '{}'\nChanges:\n{}\nSummary: {}\n\nDiff:\n```diff\n{}\n```{}",
