@@ -386,10 +386,7 @@ impl SuccessHint {
             ],
 
             // Workspace tools
-            ("runShell" | "runPowerShell", ToolGroup::Workspace) => vec![
-                "Use listDirectory to verify created files".to_string(),
-                "Use readFile to verify file contents".to_string(),
-            ],
+            ("runShell" | "runPowerShell", ToolGroup::Workspace) => vec![],
             ("runInPersistentShell" | "runInPersistentPowerShell", ToolGroup::Workspace) => vec![
                 "Command state (CWD, env vars) is preserved for the next call".to_string(),
                 "With requireUserInput=true, the same synchronous call can pause for a human prompt and then resume to a final result".to_string(),
@@ -403,7 +400,6 @@ impl SuccessHint {
             ],
             ("waitForProcess" | "pollProcess", ToolGroup::Workspace) => vec![
                 "Use readProcessOutput to see the final results".to_string(),
-                "Use listDirectory to check for any generated artifacts".to_string(),
             ],
             ("readProcessOutput", ToolGroup::Workspace) => vec![
                 "Analyze the output to verify command success".to_string(),

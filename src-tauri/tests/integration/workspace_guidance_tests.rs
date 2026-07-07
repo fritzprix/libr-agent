@@ -157,6 +157,59 @@ async fn run_shell_success_hint_no_longer_mentions_stop_process() {
         !text.contains("stopProcess"),
         "completed runShell responses should not mention stopProcess: {text}"
     );
+    assert!(
+        !text.contains("💡 Next:"),
+        "completed runShell responses should not append generic next-action hints: {text}"
+    );
+    assert!(
+        !text.contains("listDirectory"),
+        "completed runShell responses should not suggest listDirectory verification: {text}"
+    );
+    assert!(
+        !text.contains("readFile to verify"),
+        "completed runShell responses should not suggest readFile verification: {text}"
+    );
+}
+
+#[tokio::test]
+async fn persistent_shell_at_workspace_root_does_not_suggest_file_tools() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    // Canonicalize the base dir so the workspace path matches the shell's
+    // resolved `pwd`. On macOS, tempdir() returns a `/var/folders/...` path that
+    // the shell reports as `/private/var/folders/...`; without canonicalization
+    // the reported CWD never equals the workspace root and `display_cwd` would
+    // not collapse to ".".
+    //
+    // Skip this on Windows: `std::fs::canonicalize` there yields a `\\?\`
+    // verbatim path that the shell does NOT report, which would break the match.
+    #[cfg(not(target_os = "windows"))]
+    let base_dir = std::fs::canonicalize(temp_dir.path()).expect("canonicalize temp dir");
+    #[cfg(target_os = "windows")]
+    let base_dir = temp_dir.path().to_path_buf();
+    let session_id = "persistent-shell-root-guidance";
+    let server = build_workspace_server(&base_dir, session_id);
+
+    let result = server
+        .handle_execute_shell(
+            json!({
+                "command": simple_shell_command()
+            }),
+            session_id,
+        )
+        .await
+        .expect("runInPersistentShell should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        !text.contains("💡 Next:"),
+        "persistent shell at workspace root should not append file-tool next-action hints: {text}"
+    );
+    assert!(
+        !text.contains("listDirectory"),
+        "persistent shell at workspace root should not suggest listDirectory: {text}"
+    );
 }
 
 #[tokio::test]

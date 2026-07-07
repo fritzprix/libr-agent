@@ -133,12 +133,7 @@ impl WorkspaceServer {
                     };
 
                     let next_actions = if display_cwd == "." {
-                        vec![
-                            "Command state (CWD, env vars) is preserved for the next call"
-                                .to_string(),
-                            "Use listDirectory to inspect workspace-root file changes".to_string(),
-                            "Use readFile to inspect workspace-root file contents".to_string(),
-                        ]
+                        vec![]
                     } else {
                         vec![
                             format!(

@@ -294,7 +294,7 @@ async fn edit_file_directory_target_reports_directory_error_before_anchor_guidan
 }
 
 #[tokio::test]
-async fn edit_file_rejects_anchors_for_top_insert() {
+async fn edit_file_ignores_anchors_for_top_insert() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-top-insert-anchor";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -320,12 +320,9 @@ async fn edit_file_rejects_anchors_for_top_insert() {
         .await
         .expect("edit should return MCPResult");
 
-    let text = extract_text_content(&result);
-    assert_eq!(result.is_error, Some(true));
-    assert!(
-        text.contains("must omit 'startAnchor' and 'endAnchor'"),
-        "prepend edits should reject ignored anchors: {text}"
-    );
+    assert_eq!(result.is_error, Some(false));
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "header\nalpha\nbeta\n");
 }
 
 #[tokio::test]
@@ -516,7 +513,7 @@ async fn edit_files_delete_only_response_does_not_claim_new_anchors_exist() {
 }
 
 #[tokio::test]
-async fn edit_files_success_response_includes_diff_block_with_anchor_annotations() {
+async fn edit_files_success_response_includes_diff_block() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-success-diff-anchors";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -526,9 +523,6 @@ async fn edit_files_success_response_includes_diff_block_with_anchor_annotations
 
     let original_hashlines = format_as_hashlines("alpha\nbeta\n");
     let first_anchor = extract_anchor(&original_hashlines, 0);
-    let new_hashlines = format_as_hashlines("ALPHA\nbeta\n");
-    let new_first_anchor = extract_anchor(&new_hashlines, 0);
-    let new_second_anchor = extract_anchor(&new_hashlines, 1);
 
     let result = server
         .handle_edit_file(
@@ -555,16 +549,16 @@ async fn edit_files_success_response_includes_diff_block_with_anchor_annotations
         "success response should include a diff block: {text}"
     );
     assert!(
-        text.contains(&format!("- 1:{first_anchor}|alpha")),
-        "diff should annotate removed lines with their original anchor: {text}"
+        text.contains("- alpha"),
+        "diff should show removed line content without hashline annotations: {text}"
     );
     assert!(
-        text.contains(&format!("+ 1:{new_first_anchor}|ALPHA")),
-        "diff should annotate added lines with their new anchor: {text}"
+        text.contains("+ ALPHA"),
+        "diff should show added line content without hashline annotations: {text}"
     );
     assert!(
-        text.contains(&format!("  2:{new_second_anchor}|beta")),
-        "diff should render context lines in readFile hashline format: {text}"
+        text.contains("  beta"),
+        "diff should render unchanged context lines as plain text: {text}"
     );
 }
 
@@ -580,9 +574,6 @@ async fn edit_files_delete_only_response_includes_diff_block() {
 
     let original_hashlines = format_as_hashlines("alpha\nbeta\ngamma\n");
     let second_anchor = extract_anchor(&original_hashlines, 1);
-    let new_hashlines = format_as_hashlines("alpha\ngamma\n");
-    let alpha_anchor = extract_anchor(&new_hashlines, 0);
-    let gamma_anchor = extract_anchor(&new_hashlines, 1);
 
     let result = server
         .handle_edit_file(
@@ -608,13 +599,12 @@ async fn edit_files_delete_only_response_includes_diff_block() {
         "delete-only success should still include a diff block: {text}"
     );
     assert!(
-        text.contains(&format!("- 2:{second_anchor}|beta")),
-        "delete-only diff should annotate the removed line with its original anchor: {text}"
+        text.contains("- beta"),
+        "delete-only diff should show removed line content without hashline annotations: {text}"
     );
     assert!(
-        text.contains(&format!("  1:{alpha_anchor}|alpha"))
-            && text.contains(&format!("  2:{gamma_anchor}|gamma")),
-        "delete-only diff should keep surrounding context lines: {text}"
+        text.contains("  alpha") && text.contains("  gamma"),
+        "delete-only diff should keep surrounding context lines as plain text: {text}"
     );
 }
 
