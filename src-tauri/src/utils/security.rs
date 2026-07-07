@@ -108,7 +108,9 @@ mod tests {
         // Test logic: absolute paths should be rejected.
         let result = resolve_secure_path(dir.path(), "/test.txt").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Absolute paths are not allowed"));
+        assert!(result
+            .unwrap_err()
+            .contains("Absolute paths are not allowed"));
 
         let abs_path = file_path.to_str().unwrap();
         let result_abs = resolve_secure_path(dir.path(), abs_path).await;
