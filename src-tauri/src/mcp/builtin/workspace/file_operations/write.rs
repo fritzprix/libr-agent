@@ -311,7 +311,7 @@ impl WorkspaceServer {
                     let diff_output = format_file_diff(&old_content, content, path_str);
                     message.push_str(&diff_output);
                     message.push_str(&format!(
-                        "\nCurrent anchors:\n```\n{}\n```\n",
+                        "\nCurrent anchors:\n*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n```\n{}\n```\n",
                         format_as_hashlines(content)
                     ));
                 } else {
@@ -360,6 +360,7 @@ impl WorkspaceServer {
                         }
                     };
 
+                    message.push_str("*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n");
                     message.push_str(&format!("```\n{}\n```\n", display_hashlines));
                 }
 

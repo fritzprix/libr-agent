@@ -8,6 +8,7 @@ const MAX_DIFF_PREVIEW_LINES: usize = 50;
 const DIFF_CONTEXT_LINES: usize = 1;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct AnchoredLine {
     line_number: usize,
     content: String,
@@ -25,23 +26,14 @@ enum DiffPreviewKind {
 struct DiffPreviewLine {
     kind: DiffPreviewKind,
     content: String,
-    line_number: usize,
-    anchor: Option<String>,
 }
 
 impl DiffPreviewLine {
-    fn render_hashline(&self) -> String {
-        match self.anchor.as_deref() {
-            Some(anchor) => format!("{}:{}|{}", self.line_number, anchor, self.content),
-            None => format!("{}|{}", self.line_number, self.content),
-        }
-    }
-
     fn render(&self) -> String {
         match self.kind {
-            DiffPreviewKind::Context => format!("  {}", self.render_hashline()),
-            DiffPreviewKind::Added => format!("+ {}", self.render_hashline()),
-            DiffPreviewKind::Removed => format!("- {}", self.render_hashline()),
+            DiffPreviewKind::Context => format!("  {}", self.content),
+            DiffPreviewKind::Added => format!("+ {}", self.content),
+            DiffPreviewKind::Removed => format!("- {}", self.content),
         }
     }
 }
@@ -64,8 +56,6 @@ fn push_context_line(lines: &mut Vec<DiffPreviewLine>, line: &AnchoredLine) {
     lines.push(DiffPreviewLine {
         kind: DiffPreviewKind::Context,
         content: line.content.clone(),
-        line_number: line.line_number,
-        anchor: Some(line.anchor.clone()),
     });
 }
 
@@ -73,8 +63,6 @@ fn push_added_line(lines: &mut Vec<DiffPreviewLine>, line: &AnchoredLine) {
     lines.push(DiffPreviewLine {
         kind: DiffPreviewKind::Added,
         content: line.content.clone(),
-        line_number: line.line_number,
-        anchor: Some(line.anchor.clone()),
     });
 }
 
@@ -82,8 +70,6 @@ fn push_removed_line(lines: &mut Vec<DiffPreviewLine>, line: &AnchoredLine) {
     lines.push(DiffPreviewLine {
         kind: DiffPreviewKind::Removed,
         content: line.content.clone(),
-        line_number: line.line_number,
-        anchor: Some(line.anchor.clone()),
     });
 }
 
@@ -310,7 +296,7 @@ pub(super) fn build_edit_file_success(prepared_batches: &[PreparedFileEdit]) -> 
             "\n\nAnchor refresh: no new anchors were generated because these edits only removed existing lines.".to_string()
         } else {
             format!(
-                "\n\nNew anchors:\n```\n{}\n```",
+                "\n\nNew anchors:\n*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n```\n{}\n```",
                 batch.new_hash_sections.join("\n...\n")
             )
         };
