@@ -12,6 +12,8 @@ import {
   readLocalFileAsBase64,
   listWorkspaceFilePaths,
   listWorkspaceFilePathsForPath,
+  startDockerDesktop,
+  isDockerDesktopLaunchSupported,
 } from './workspace';
 import { safeInvoke } from './core';
 import type { WorkspaceFileItem } from './types';
@@ -198,5 +200,22 @@ describe('workspace backend wrapper', () => {
       },
     );
     expect(result).toEqual(['file1.txt', 'dir1/file2.txt']);
+  });
+
+  it('startDockerDesktop calls safeInvoke with correct command', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
+
+    await startDockerDesktop();
+
+    expect(safeInvoke).toHaveBeenCalledWith('start_docker_desktop');
+  });
+
+  it('isDockerDesktopLaunchSupported calls safeInvoke and returns boolean', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce(true);
+
+    const result = await isDockerDesktopLaunchSupported();
+
+    expect(safeInvoke).toHaveBeenCalledWith('docker_desktop_launch_supported');
+    expect(result).toBe(true);
   });
 });

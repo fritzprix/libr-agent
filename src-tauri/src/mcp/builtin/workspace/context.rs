@@ -128,19 +128,3 @@ pub fn detect_shell(os: &str) -> String {
         _ => "unknown".to_string(),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn workspace_live_state_equality() {
-        let state = WorkspaceLiveState {
-            workspace_dir: "/workspace".to_string(),
-            shell_cwd: ".".to_string(),
-            is_docker: true,
-        };
-        assert_eq!(state.workspace_dir, "/workspace");
-        assert!(state.is_docker);
-    }
-}

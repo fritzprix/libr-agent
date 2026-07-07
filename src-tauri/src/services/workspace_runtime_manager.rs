@@ -78,6 +78,21 @@ pub enum WorkspaceRuntimeError {
     Io(String),
 }
 
+/// Prefix for structured errors surfaced to the frontend agent layer.
+pub const AGENT_ERROR_DOCKER_NOT_AVAILABLE: &str = "DOCKER_NOT_AVAILABLE:";
+
+impl WorkspaceRuntimeError {
+    /// Converts runtime errors into agent-facing strings with stable machine-readable codes.
+    pub fn to_agent_string(self) -> String {
+        match self {
+            Self::DockerNotAvailable(_) => {
+                format!("{} {}", AGENT_ERROR_DOCKER_NOT_AVAILABLE, self)
+            }
+            other => other.to_string(),
+        }
+    }
+}
+
 // ── Manager ──────────────────────────────────────────────────────────────────
 
 pub struct WorkspaceRuntimeManager;

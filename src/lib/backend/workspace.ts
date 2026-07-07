@@ -172,3 +172,17 @@ export async function listWorkspaceFilePathsForPath(
     maxDepth,
   });
 }
+
+/**
+ * Attempts to launch Docker Desktop on supported platforms (Windows, macOS).
+ */
+export async function startDockerDesktop(): Promise<void> {
+  await safeInvoke<void>('start_docker_desktop');
+}
+
+/**
+ * Whether the app can attempt to launch Docker Desktop programmatically.
+ */
+export async function isDockerDesktopLaunchSupported(): Promise<boolean> {
+  return safeInvoke<boolean>('docker_desktop_launch_supported');
+}

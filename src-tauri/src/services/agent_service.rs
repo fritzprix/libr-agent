@@ -72,7 +72,7 @@ impl AgentService {
         if matches!(mode, WorkspaceIsolationMode::Docker) {
             crate::services::WorkspaceRuntimeManager::healthcheck()
                 .await
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| error.to_agent_string())?;
         }
 
         if let Some(path_str) = workspace_path {
