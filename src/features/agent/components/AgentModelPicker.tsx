@@ -10,6 +10,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import { cn } from '@/lib/utils';
@@ -155,18 +160,32 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       </Select>
 
       {showRefreshButton && (
-        <button
-          type="button"
-          onClick={() => refreshModels()}
-          disabled={disabled || isRefreshing || !canRefresh}
-          className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          title={refreshButtonLabel}
-          aria-label={refreshButtonLabel}
-        >
-          <RefreshCw
-            className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
-          />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={disabled || isRefreshing || !canRefresh ? 0 : -1}
+              className={cn(
+                'inline-flex',
+                disabled || isRefreshing || !canRefresh
+                  ? 'cursor-not-allowed'
+                  : '',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => refreshModels()}
+                disabled={disabled || isRefreshing || !canRefresh}
+                className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none"
+                aria-label={refreshButtonLabel}
+              >
+                <RefreshCw
+                  className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
+                />
+              </button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{refreshButtonLabel}</TooltipContent>
+        </Tooltip>
       )}
     </div>
   );

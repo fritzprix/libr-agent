@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentModelPicker } from '../AgentModelPicker';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const mockUseAgentModelsState = vi.hoisted(() => ({
   availableModels: {
@@ -58,7 +59,9 @@ describe('AgentModelPicker', () => {
 
   it('revalidates models when refresh is available', () => {
     render(
-      <AgentModelPicker currentModel="model-1" currentProvider="ollama" />,
+      <TooltipProvider>
+        <AgentModelPicker currentModel="model-1" currentProvider="ollama" />
+      </TooltipProvider>
     );
 
     const refreshButton = screen.getByRole('button', {
@@ -76,7 +79,9 @@ describe('AgentModelPicker', () => {
     mockUseAgentModelsState.refreshBlockedReason = 'missing-api-key';
 
     render(
-      <AgentModelPicker currentModel="model-1" currentProvider="anthropic" />,
+      <TooltipProvider>
+        <AgentModelPicker currentModel="model-1" currentProvider="anthropic" />
+      </TooltipProvider>
     );
 
     const refreshButton = screen.getByRole('button', {
@@ -84,10 +89,6 @@ describe('AgentModelPicker', () => {
     });
 
     expect(refreshButton).toBeDisabled();
-    expect(refreshButton).toHaveAttribute(
-      'title',
-      'Add an API key to enable model refresh',
-    );
   });
 
   it('hides refresh when custom openai model discovery is intentionally disabled', () => {
@@ -95,7 +96,9 @@ describe('AgentModelPicker', () => {
     mockUseAgentModelsState.refreshBlockedReason = 'custom-openai-model';
 
     render(
-      <AgentModelPicker currentModel="model-1" currentProvider="openai" />,
+      <TooltipProvider>
+        <AgentModelPicker currentModel="model-1" currentProvider="openai" />
+      </TooltipProvider>
     );
 
     expect(
