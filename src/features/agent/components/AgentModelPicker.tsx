@@ -3,7 +3,11 @@ import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -158,17 +162,48 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       {showRefreshButton && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => refreshModels()}
-              disabled={disabled || isRefreshing || !canRefresh}
-              className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={refreshButtonLabel}
+            <span
+              tabIndex={disabled || isRefreshing || !canRefresh ? 0 : undefined}
+              className={cn(
+                'inline-block rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                (disabled || isRefreshing || !canRefresh) &&
+                  'cursor-not-allowed opacity-50',
+              )}
+              aria-label={
+                disabled || isRefreshing || !canRefresh
+                  ? refreshButtonLabel
+                  : undefined
+              }
+              aria-disabled={
+                disabled || isRefreshing || !canRefresh ? true : undefined
+              }
+              role={
+                disabled || isRefreshing || !canRefresh ? 'button' : undefined
+              }
             >
-              <RefreshCw
-                className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
-              />
-            </button>
+              <button
+                type="button"
+                onClick={() => refreshModels()}
+                disabled={disabled || isRefreshing || !canRefresh}
+                className={cn(
+                  'p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  (disabled || isRefreshing || !canRefresh) &&
+                    'pointer-events-none',
+                )}
+                aria-label={
+                  disabled || isRefreshing || !canRefresh
+                    ? undefined
+                    : refreshButtonLabel
+                }
+                aria-hidden={
+                  disabled || isRefreshing || !canRefresh ? true : undefined
+                }
+              >
+                <RefreshCw
+                  className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
+                />
+              </button>
+            </span>
           </TooltipTrigger>
           <TooltipContent>{refreshButtonLabel}</TooltipContent>
         </Tooltip>
