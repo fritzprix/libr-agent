@@ -27,7 +27,12 @@ pub async fn resolve_secure_path(base_dir: &Path, relative_path: &str) -> Result
 
     // 2. Prevent absolute paths in relative_path from bypassing the join.
     // We treat the input as strictly relative to the base.
-    // Remove leading separators and check for drive letters.
+    if Path::new(relative_path).is_absolute() {
+        return Err("Absolute paths are not allowed in workspace-scoped operations".to_string());
+    }
+
+    // Fallback: Remove leading separators in case the path is not strictly considered absolute
+    // but starts with a separator (e.g., on Windows).
     let safe_relative = relative_path.trim_start_matches(std::path::is_separator);
 
     // Reject Windows drive letters (e.g. "C:...") only on Windows, and only when the
@@ -100,24 +105,14 @@ mod tests {
         let file_path = dir.path().join("test.txt");
         File::create(&file_path).unwrap();
 
-        // Test logic: we trim start / so absolute path becomes relative.
-        // If I ask for "/test.txt", it becomes "test.txt", which is joined to base.
-        // If base is `dir`, then `dir/test.txt` exists.
-        // So passing "/test.txt" SHOULD work if it refers to file inside workspace.
-
+        // Test logic: absolute paths should be rejected.
         let result = resolve_secure_path(dir.path(), "/test.txt").await;
-        assert!(result.is_ok());
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Absolute paths are not allowed in workspace-scoped operations"));
 
-        // But if I pass real absolute path like "/tmp/..." (on linux), it becomes "tmp/..."
-        // which implies `dir/tmp/...`.
-        // Let's test actual system path.
         let abs_path = file_path.to_str().unwrap();
-
-        // On unix abs_path starts with /.
-        // If dir is /tmp/x. abs_path is /tmp/x/test.txt.
-        // trimmed: tmp/x/test.txt.
-        // joined: /tmp/x/tmp/x/test.txt. -> Does not exist.
-
         let result_abs = resolve_secure_path(dir.path(), abs_path).await;
         assert!(result_abs.is_err());
     }

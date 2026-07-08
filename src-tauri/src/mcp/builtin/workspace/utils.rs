@@ -343,5 +343,17 @@ mod tests {
             display_shell_cwd("/home/user/project/src", "/home/user/project", false),
             "./src"
         );
+        assert_eq!(
+            display_shell_cwd("/home/user/project", "/home/user/project", false),
+            "."
+        );
+        assert_eq!(
+            display_shell_cwd("/tmp/other", "/home/user/project", false),
+            "/tmp/other"
+        );
+        assert_eq!(
+            display_shell_cwd("/home/user", "/workspace", true),
+            "/home/user"
+        );
     }
 }
