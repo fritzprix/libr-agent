@@ -28,7 +28,7 @@ pub async fn resolve_secure_path(base_dir: &Path, relative_path: &str) -> Result
     // 2. Prevent absolute paths in relative_path from bypassing the join.
     // We treat the input as strictly relative to the base.
     if Path::new(relative_path).is_absolute() {
-        return Err("Absolute paths are not allowed".to_string());
+        return Err("Absolute paths are not allowed in workspace-scoped operations".to_string());
     }
 
     // Fallback: Remove leading separators in case the path is not strictly considered absolute
@@ -110,7 +110,7 @@ mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .contains("Absolute paths are not allowed"));
+            .contains("Absolute paths are not allowed in workspace-scoped operations"));
 
         let abs_path = file_path.to_str().unwrap();
         let result_abs = resolve_secure_path(dir.path(), abs_path).await;
