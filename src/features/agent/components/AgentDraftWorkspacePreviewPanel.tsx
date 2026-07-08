@@ -9,14 +9,23 @@ import { FolderOpen, RefreshCw, X } from 'lucide-react';
 
 import { FileTreeNode } from './workspace-panel/FileTreeNode';
 import { useDraftWorkspacePreviewTree } from './workspace-panel/useDraftWorkspacePreviewTree';
+import { WorkspaceIsolationSettings } from './WorkspaceIsolationSettings';
 
 interface AgentDraftWorkspacePreviewPanelProps {
   workspacePath: string;
+  workspaceIsolation: 'host' | 'docker';
+  setWorkspaceIsolation: (val: 'host' | 'docker') => void;
+  dockerImage: string;
+  setDockerImage: (val: string) => void;
   onClear: () => void;
 }
 
 export function AgentDraftWorkspacePreviewPanel({
   workspacePath,
+  workspaceIsolation,
+  setWorkspaceIsolation,
+  dockerImage,
+  setDockerImage,
   onClear,
 }: AgentDraftWorkspacePreviewPanelProps) {
   const { t } = useTranslation();
@@ -78,6 +87,17 @@ export function AgentDraftWorkspacePreviewPanel({
             <div className="rounded-md border border-border/50 bg-muted/50 p-2 font-mono text-[10px] break-all">
               {workspacePath}
             </div>
+          </div>
+
+          <div className="rounded-lg border border-border/40 bg-muted/[0.08] p-3">
+            <WorkspaceIsolationSettings
+              switchId="docker-isolation"
+              workspaceIsolation={workspaceIsolation}
+              setWorkspaceIsolation={setWorkspaceIsolation}
+              dockerImage={dockerImage}
+              setDockerImage={setDockerImage}
+              presetActiveClassName="border-primary bg-primary/10 text-primary font-medium"
+            />
           </div>
 
           <div className="rounded-lg border border-border/40 bg-muted/[0.18] p-3 text-xs text-muted-foreground">

@@ -1,6 +1,8 @@
 import type { AgentResponse } from '@/models/agent-ipc';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSession } from '@/context/AgentSessionContext';
+import { useAgentSessionListState } from '@/context/AgentSessionListContext';
+import { BatchModelUpdateDialog } from './BatchModelUpdateDialog';
 import { Button } from '@/components/ui/button';
 import {
   AlertCircle,
@@ -102,6 +104,13 @@ export function AgentChatStatusBar() {
     updateSessionConfig,
     preflightTokenMetrics,
   } = useAgentSession();
+  const { sessions } = useAgentSessionListState();
+  const [showBatchDialog, setShowBatchDialog] = useState(false);
+  const [pendingModelConfig, setPendingModelConfig] = useState<{
+    model: string;
+    provider: string;
+  } | null>(null);
+  const [descendantCount, setDescendantCount] = useState(0);
   const { messages, workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
   const { isCompacting, isAwaitingCompact } = useLLMService();
@@ -320,14 +329,9 @@ export function AgentChatStatusBar() {
     }
   };
 
-  const handleConfigUpdate = useCallback(
-    async (model: string, provider: string) => {
-      if (!session?.id || !session.assistant || !canUpdateSessionConfig) {
-        return;
-      }
-
-      logger.info(`Updating session config to ${provider}/${model}`);
-
+  const performConfigUpdate = useCallback(
+    async (model: string, provider: string, recursive: boolean) => {
+      if (!session?.id || !session.assistant) return;
       try {
         const { safeInvoke } = await import('@/lib/backend/core');
 
@@ -337,6 +341,7 @@ export function AgentChatStatusBar() {
             model,
             provider,
             assistantId: session.assistant.id,
+            recursive,
           },
         });
 
@@ -359,7 +364,49 @@ export function AgentChatStatusBar() {
         );
       }
     },
-    [canUpdateSessionConfig, session, t, updateSessionConfig, workflowStatus],
+    [session, t, updateSessionConfig, workflowStatus],
+  );
+
+  const handleConfigUpdate = useCallback(
+    async (model: string, provider: string) => {
+      if (!session?.id || !session.assistant || !canUpdateSessionConfig) {
+        return;
+      }
+
+      logger.info(`Updating session config to ${provider}/${model}`);
+
+      try {
+        const { safeInvoke } = await import('@/lib/backend/core');
+        const descendantIds = await safeInvoke<string[]>(
+          'agent_get_descendant_session_ids',
+          {
+            sessionId: session.id,
+          },
+        );
+
+        if (descendantIds && descendantIds.length > 0) {
+          setDescendantCount(descendantIds.length);
+          setPendingModelConfig({ model, provider });
+          setShowBatchDialog(true);
+        } else {
+          await performConfigUpdate(model, provider, false);
+        }
+      } catch (err) {
+        logger.error('Failed to query descendant session ids', err);
+        // Fallback to local sessions array in case of IPC error
+        const subSessions = sessions.filter(
+          (s) => s.parentSessionId === session.id,
+        );
+        if (subSessions.length > 0) {
+          setDescendantCount(subSessions.length);
+          setPendingModelConfig({ model, provider });
+          setShowBatchDialog(true);
+        } else {
+          await performConfigUpdate(model, provider, false);
+        }
+      }
+    },
+    [canUpdateSessionConfig, performConfigUpdate, session, sessions],
   );
 
   const getToolsDisplayText = () => {
@@ -633,6 +680,27 @@ export function AgentChatStatusBar() {
         isOpen={showToolsModal}
         onClose={() => setShowToolsModal(false)}
       />
+
+      {showBatchDialog && pendingModelConfig && (
+        <BatchModelUpdateDialog
+          isOpen={showBatchDialog}
+          onClose={() => {
+            setShowBatchDialog(false);
+            setPendingModelConfig(null);
+          }}
+          parentSessionName={session?.name || session?.id?.slice(0, 8) || ''}
+          subSessionCount={descendantCount}
+          newModel={pendingModelConfig.model}
+          newProvider={pendingModelConfig.provider}
+          onConfirm={(recursive) => {
+            void performConfigUpdate(
+              pendingModelConfig.model,
+              pendingModelConfig.provider,
+              recursive,
+            );
+          }}
+        />
+      )}
     </>
   );
 }

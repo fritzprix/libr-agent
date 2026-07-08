@@ -82,6 +82,10 @@ async fn test_playbook_ui_rendering_integration() {
         is_bookmarked: Set(false),
         execution_mode: Set("normal".to_string()),
         workspace_override: Set(None),
+        workspace_isolation: Set("host".to_string()),
+        docker_config_json: Set(None),
+        docker_container_name: Set(None),
+        docker_host_workspace_path: Set(None),
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())
@@ -239,6 +243,10 @@ async fn test_playbook_ui_interaction_flow() {
         is_bookmarked: Set(false),
         execution_mode: Set("normal".to_string()),
         workspace_override: Set(None),
+        workspace_isolation: Set("host".to_string()),
+        docker_config_json: Set(None),
+        docker_container_name: Set(None),
+        docker_host_workspace_path: Set(None),
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())
@@ -375,6 +383,10 @@ async fn test_playbook_listing_respects_sorting_and_bookmark_priority() {
         is_bookmarked: Set(false),
         execution_mode: Set("normal".to_string()),
         workspace_override: Set(None),
+        workspace_isolation: Set("host".to_string()),
+        docker_config_json: Set(None),
+        docker_container_name: Set(None),
+        docker_host_workspace_path: Set(None),
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())

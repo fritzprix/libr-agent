@@ -100,6 +100,17 @@ export function SessionCard({
               'border-warning/30 bg-warning/5 shadow-sm shadow-warning/10 hover:bg-warning/10',
             accentClassName: 'bg-warning/70',
           };
+        case 'provisioning':
+          return {
+            icon: 'queued',
+            badge: t('sessionHistory.status.provisioning', 'Setting up Docker'),
+            variant: 'outline' as const,
+            className:
+              'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20 animate-pulse',
+            cardClassName:
+              'border-sky-500/30 bg-sky-500/5 shadow-sm shadow-sky-500/10 hover:bg-sky-500/10',
+            accentClassName: 'bg-sky-500/70',
+          };
         case 'idle':
           return {
             icon: 'idle',
@@ -329,6 +340,11 @@ export function SessionCard({
               )}
               {statusConfig.badge}
             </Badge>
+            {session.status === 'provisioning' && session.provisioningStep ? (
+              <span className="text-[10px] text-muted-foreground truncate max-w-[180px]">
+                {session.provisioningStep}
+              </span>
+            ) : null}
           </div>
         </div>
 

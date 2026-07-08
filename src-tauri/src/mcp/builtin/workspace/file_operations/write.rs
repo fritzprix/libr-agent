@@ -7,6 +7,7 @@ use crate::mcp::builtin::error_guidance::{
     ToolGroup,
 };
 use crate::mcp::types::MCPResult;
+use crate::services::SecureFileManager;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::io::BufRead;
@@ -133,7 +134,12 @@ impl WorkspaceServer {
             .unwrap_or("create");
 
         // Validate path security — blocks Windows reserved filenames on creation
-        let safe_path = match self.validate_path_with_error_for_write(path_str, session_id.clone())
+        let target_session_id = session_id
+            .clone()
+            .unwrap_or_else(|| self.session_id.clone());
+        let safe_path = match self
+            .validate_write_path_with_teamwork_access(path_str, Some(target_session_id.clone()))
+            .await
         {
             Ok(path) => path,
             Err(e) => {
@@ -206,12 +212,18 @@ impl WorkspaceServer {
             }
         }
 
-        let file_manager = self.get_file_manager(session_id.clone());
+        let file_manager =
+            SecureFileManager::new_with_base_dir(self.get_workspace_dir(&target_session_id));
+        let safe_path_str = safe_path.to_string_lossy().to_string();
 
         let result = if mode == "append" {
-            file_manager.append_file_string(path_str, content).await
+            file_manager
+                .append_file_string(&safe_path_str, content)
+                .await
         } else {
-            file_manager.write_file_string(path_str, content).await
+            file_manager
+                .write_file_string(&safe_path_str, content)
+                .await
         };
 
         match result {
@@ -299,7 +311,7 @@ impl WorkspaceServer {
                     let diff_output = format_file_diff(&old_content, content, path_str);
                     message.push_str(&diff_output);
                     message.push_str(&format!(
-                        "\nCurrent anchors:\n```\n{}\n```\n",
+                        "\nCurrent anchors:\n*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n```\n{}\n```\n",
                         format_as_hashlines(content)
                     ));
                 } else {
@@ -348,6 +360,7 @@ impl WorkspaceServer {
                         }
                     };
 
+                    message.push_str("*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n");
                     message.push_str(&format!("```\n{}\n```\n", display_hashlines));
                 }
 

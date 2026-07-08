@@ -40,6 +40,15 @@ pub async fn build_explicit_org_layer_context(
     });
 
     let siblings: Vec<&SessionMetadata> = siblings.into_iter().take(5).collect();
+    let teamwork_artifact_root =
+        crate::session::get_session_manager()
+            .ok()
+            .map(|session_manager| {
+                crate::session::teamwork_artifact_dir_for_session(
+                    session_manager,
+                    &org_root_session_id,
+                )
+            });
 
     let mut parts = vec![
         "## Explicit Org Layer".to_string(),
@@ -47,6 +56,26 @@ pub async fn build_explicit_org_layer_context(
         format!("- Org: {}", org_name),
         format!("- Depth: {}", depth),
     ];
+
+    if let Some(teamwork_artifact_root) = teamwork_artifact_root {
+        parts.push(format!(
+            "- Teamwork Artifact Root: {}",
+            teamwork_artifact_root.display()
+        ));
+        parts.push("- Teamwork Access Alias: @teamwork/...".to_string());
+        parts.push(
+            "- Teamwork SSOT: the teamwork artifact root is canonical; workspaceOverride does not change it."
+                .to_string(),
+        );
+        parts.push(
+            "- Canonical Files: agents.md, MISSION.md, ROLES.md, coordination/{KANBAN,HANDOFF,DECISIONS,RISKS,DISCUSSION}.md, .libragent/teamwork.json"
+                .to_string(),
+        );
+        parts.push(
+            "- Refresh Note: teamwork scaffold updates apply on a later execution step, not retroactively in the current turn."
+                .to_string(),
+        );
+    }
 
     if let Some(parent_session) = parent {
         parts.push(format!(

@@ -5,6 +5,7 @@ use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::builtin::utils::load_session_tool_access;
 use crate::mcp::types::{MCPResult, MCPServerConfig, OAuthConfig, TransportConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::repositories::AssistantRepository;
 use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
@@ -253,16 +254,47 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         Option::None => return Ok(missing_param_error("name", ToolGroup::Tool)),
     };
 
-    // Check if server exists (Hallucination Firewall - Section 3.2)
-    if let Ok(Option::None) = get_server_config(&name).await {
-        return Ok(not_found_error("Server", &name, ToolGroup::Tool));
+    // Get server repository and fetch server details to get both name and id
+    let repo = get_mcp_server_repository();
+    let mut server = repo.get(&name).await.map_err(|e| e.to_string())?;
+    if server.is_none() {
+        server = repo.get_by_name(&name).await.map_err(|e| e.to_string())?;
+    }
+
+    let server = match server {
+        Some(s) => s,
+        None => return Ok(not_found_error("Server", &name, ToolGroup::Tool)),
+    };
+
+    // Get all agent configs to check for dependencies
+    let assistant_repo = crate::state::get_assistant_repository();
+    let assistants = assistant_repo
+        .list_assistants()
+        .await
+        .map_err(|e| format!("Failed to list agent configurations: {}", e))?;
+
+    let mut affected_agents = Vec::new();
+    for assistant in assistants {
+        let parsed_config: Value = serde_json::from_str(&assistant.config).unwrap_or(json!({}));
+        if let Some(mcp_server_ids) = parsed_config.get("mcpServerIds").and_then(|v| v.as_array()) {
+            let contains_server = mcp_server_ids.iter().any(|id_val| {
+                if let Some(id_str) = id_val.as_str() {
+                    id_str == server.id || id_str == server.name
+                } else {
+                    false
+                }
+            });
+            if contains_server {
+                affected_agents.push(format!("{} (ID: {})", assistant.name, assistant.id));
+            }
+        }
     }
 
     // Note: Session Isolation means we cannot stop via global manager
     // Servers are managed per-session, not globally
 
     // Delete config
-    if let Err(e) = delete_server_config_db(name.clone()).await {
+    if let Err(e) = delete_server_config_db(server.name.clone()).await {
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to exclude server configuration: {}", e),
@@ -270,7 +302,10 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         )
         .with_guidance(vec![
             "Verify database permissions".to_string(),
-            "Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to confirm the name exists".to_string(),
+            format!(
+                "Use tool__listServers({{\"availability\":\"inventory\",\"query\":\"{}\"}}) to confirm the name exists",
+                server.name
+            ),
         ])
         .to_mcp_result());
     }
@@ -279,17 +314,36 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     crate::agent::tauri_events::emit_resource_updated(
         "mcpServer",
         "delete",
-        Some(name.to_string()),
+        Some(server.name.to_string()),
     );
 
+    let mut message = format!(
+        "Excluded server '{}' (ID: {}) from configuration. WARNING: This operation is irreversible.",
+        server.name, server.id
+    );
+
+    if !affected_agents.is_empty() {
+        message.push_str("\n\n⚠️ WARNING: The following agent configurations referenced this server and will lose access to its tools:\n");
+        for agent in &affected_agents {
+            message.push_str(&format!("- {}\n", agent));
+        }
+        message.push_str("\nPlease update these agent configurations using agent__updateAgent to remove this server reference.");
+    }
+
     let hint = SuccessHint::new(
-        format!("Excluded server '{}' from configuration", name),
+        message,
         vec![
             "Use tool__listServers({\"availability\":\"inventory\"}) to verify remaining servers"
                 .to_string(),
+            "Use agent__updateAgent to clean up orphaned server references if needed".to_string(),
         ],
     );
-    Ok(hint.to_mcp_result())
+    Ok(hint.to_mcp_result_with_data(Some(json!({
+        "name": server.name,
+        "id": server.id,
+        "status": "deleted",
+        "affectedAgents": affected_agents
+    }))))
 }
 
 /// Update an existing MCP server configuration

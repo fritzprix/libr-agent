@@ -5,6 +5,10 @@ use tempfile::TempDir;
 pub const SKILL_FILE_NAME: &str = "SKILL.md";
 pub const USER_SKILLS_DIR_NAME: &str = "user_skills";
 pub const SYSTEM_SKILLS_DIR_NAME: &str = "system_skills";
+pub const SYSTEM_SKILLS_ALIAS_PREFIX: &str = "@system-skills";
+pub const USER_SKILLS_ALIAS_PREFIX: &str = "@user-skills";
+pub const ASSISTANT_SKILLS_ALIAS_PREFIX: &str = "@assistant-skills";
+pub const WORKSPACE_SKILLS_ALIAS_PREFIX: &str = "@workspace-skills";
 pub const LEGACY_SYSTEM_SKILLS_DIR_NAME: &str = "skills";
 pub const MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME: &str = ".bundled_manifest.json";
 pub(super) const GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS: u64 = 10;
@@ -16,10 +20,18 @@ pub struct SkillMetadata {
     pub name: String,
     pub description: String,
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "aliasPath")]
+    pub alias_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillAliasRoot {
+    pub prefix: &'static str,
+    pub root: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -141,10 +141,25 @@ impl BuiltinMCPServer for SkillsServer {
         let skills_xml = skills
             .iter()
             .map(|s| {
-                let source_attr = s.source.as_ref().map(|src| format!(" source=\"{}\"", src)).unwrap_or_default();
+                let source_attr = s
+                    .source
+                    .as_ref()
+                    .map(|src| format!(" source=\"{}\"", src))
+                    .unwrap_or_default();
+                let origin_attr = s
+                    .origin
+                    .as_ref()
+                    .map(|origin| format!(" origin=\"{}\"", origin))
+                    .unwrap_or_default();
+                let preferred_location = s.alias_path.as_deref().unwrap_or(&s.path);
+                let fallback_location = s
+                    .alias_path
+                    .as_ref()
+                    .map(|_| format!("\n    <fallback_location>{}</fallback_location>", s.path))
+                    .unwrap_or_default();
                 format!(
-                    "  <skill{}>\n    <name>{}</name>\n    <description>{}</description>\n    <location>{}</location>\n  </skill>",
-                    source_attr, s.name, s.description, s.path
+                    "  <skill{}{}>\n    <name>{}</name>\n    <description>{}</description>\n    <location>{}</location>{}\n  </skill>",
+                    source_attr, origin_attr, s.name, s.description, preferred_location, fallback_location
                 )
             })
             .collect::<Vec<_>>()
@@ -152,7 +167,9 @@ impl BuiltinMCPServer for SkillsServer {
 
         let prompt = format!(
             "## Available Skills\n\n\
-            You have access to the following skills. The <location> tag specifies the main documentation file for each skill.\n\
+            You have access to the following skills. The <location> tag specifies the preferred documentation path for each skill.\n\
+            Managed skill aliases such as @system-skills/... and @user-skills/... are read-only references. \
+            When a <fallback_location> tag is present, use it only if alias access is unavailable.\n\
             To use a skill, you MUST first read its <location> file using `workspace__readFile`. \
             Do not act from the description alone; read the file before any other tool call.\n\n\
             <available_skills>\n{}\n</available_skills>",

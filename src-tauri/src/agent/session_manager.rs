@@ -149,11 +149,14 @@ impl AgentSessionManager {
             model,
             provider,
             agent_config,
+            crate::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            None,
         )
         .await
     }
 
     /// Create or update a session with a specific repository
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_session_with_repo(
         &self,
         session_repo: Arc<dyn crate::repositories::SessionRepository>,
@@ -162,6 +165,8 @@ impl AgentSessionManager {
         model: Option<String>,
         provider: Option<String>,
         agent_config: crate::agent::AgentConfig,
+        workspace_isolation: crate::models::workspace_isolation::WorkspaceIsolationMode,
+        docker_config: Option<crate::models::workspace_isolation::DockerWorkspaceConfig>,
     ) -> Result<SessionMetadata, String> {
         crate::agent::lifecycle::create_session(crate::agent::lifecycle::CreateSessionParams {
             session_repo,
@@ -174,6 +179,8 @@ impl AgentSessionManager {
             model,
             provider,
             agent_config,
+            workspace_isolation,
+            docker_config,
         })
         .await
     }
@@ -185,6 +192,7 @@ impl AgentSessionManager {
         model: Option<String>,
         provider: Option<String>,
         assistant_id: Option<String>,
+        recursive: Option<bool>,
     ) -> Result<(), String> {
         crate::agent::lifecycle::update_session_config(
             &self.session_repo,
@@ -194,6 +202,7 @@ impl AgentSessionManager {
             model,
             provider,
             assistant_id,
+            recursive,
         )
         .await
     }
@@ -340,6 +349,16 @@ impl AgentSessionManager {
             &self.active_sessions,
             &self.app_handle,
             self.context_registry.clone(),
+        )
+        .await?;
+
+        crate::services::docker_provisioning::recover_provisioning_sessions(
+            &crate::services::docker_provisioning::DockerProvisioningDeps {
+                session_repo: Arc::clone(&self.session_repo),
+                active_sessions: Arc::clone(&self.active_sessions),
+                proxy_manager: Arc::clone(&self.proxy_manager),
+                app_handle: self.app_handle.clone(),
+            },
         )
         .await
     }

@@ -19,16 +19,44 @@ impl SkillReferenceResolver {
     }
 }
 
-pub(crate) fn format_skill_reference_block(skill: &SkillMetadata) -> String {
+fn display_base_directory(path: &str) -> String {
+    let path = PathBuf::from(path);
+    path.parent().unwrap_or(&path).display().to_string()
+}
+
+pub fn format_skill_reference_block(skill: &SkillMetadata) -> String {
     let path = PathBuf::from(&skill.path);
-    let base_dir = path.parent().unwrap_or(&path);
     let instructions_path = path.display().to_string();
+    let base_dir = display_base_directory(&instructions_path);
+    let preferred_path = skill.alias_path.as_deref().unwrap_or(&instructions_path);
+    let preferred_base_dir = skill
+        .alias_path
+        .as_deref()
+        .map(display_base_directory)
+        .unwrap_or_else(|| base_dir.clone());
+    let alias_metadata = skill.alias_path.as_ref().map(|alias_path| {
+        format!(
+            "**Instructions file alias:** `{}`\n\
+             **Instructions file:** `{}`\n\
+             **Base directory alias:** `{}`\n\
+             **Base directory:** `{}`\n\n\
+             The alias path is preferred. Use the absolute path only as a fallback if alias \
+             access is unavailable in the current context.\n\n",
+            alias_path, instructions_path, preferred_base_dir, base_dir
+        )
+    });
+    let location_metadata = alias_metadata.unwrap_or_else(|| {
+        format!(
+            "**Instructions file:** `{}`\n\
+             **Base directory:** `{}`\n\n",
+            instructions_path, base_dir
+        )
+    });
 
     format!(
         "**Name:** {}\n\
          **Description:** {}\n\
-         **Instructions file:** `{}`\n\
-         **Base directory:** `{}`\n\n\
+         {}\
          **Required — read before any other action:** The user message above is the primary \
          task. This block only identifies which skill applies. You MUST NOT call other tools, \
          delegate, or answer from the description alone.\n\n\
@@ -38,11 +66,7 @@ pub(crate) fn format_skill_reference_block(skill: &SkillMetadata) -> String {
          Do not infer the skill workflow from its name or description. Skipping the read step \
          is not allowed. Interpret any relative paths mentioned in the skill relative to the \
          base directory.",
-        skill.name,
-        skill.description,
-        instructions_path,
-        base_dir.display(),
-        instructions_path
+        skill.name, skill.description, location_metadata, preferred_path
     )
 }
 
@@ -93,6 +117,7 @@ mod tests {
             name: "delegate".to_string(),
             description: "Delegate work between sessions.".to_string(),
             path: "/tmp/skills/delegate/SKILL.md".to_string(),
+            alias_path: Some("@system-skills/delegate/SKILL.md".to_string()),
             source: None,
             origin: None,
         };
@@ -101,9 +126,11 @@ mod tests {
 
         assert!(output.contains("**Name:** delegate"));
         assert!(output.contains("**Description:** Delegate work between sessions."));
+        assert!(output.contains("**Instructions file alias:** `@system-skills/delegate/SKILL.md`"));
         assert!(output.contains("**Instructions file:** `/tmp/skills/delegate/SKILL.md`"));
+        assert!(output.contains("**Base directory alias:** `@system-skills/delegate`"));
         assert!(output.contains("**Base directory:** `/tmp/skills/delegate`"));
-        assert!(output.contains("workspace__readFile(path: \"/tmp/skills/delegate/SKILL.md\")"));
+        assert!(output.contains("workspace__readFile(path: \"@system-skills/delegate/SKILL.md\")"));
         assert!(output.contains("Required — read before any other action"));
         assert!(output.contains("Skipping the read step is not allowed"));
         assert!(!output.contains("--- Content Start ---"));

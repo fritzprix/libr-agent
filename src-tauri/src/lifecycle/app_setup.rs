@@ -3,7 +3,7 @@ use crate::lifecycle::settings::SystemSettings;
 use crate::logger;
 use crate::repositories;
 use crate::repositories::settings_repository::SettingsRepository;
-use crate::repositories::AssistantRepository;
+use crate::repositories::{AssistantRepository, SessionRepository};
 use crate::services::skill_service::{
     LEGACY_SYSTEM_SKILLS_DIR_NAME, MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME,
     SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_DIR_NAME,
@@ -15,7 +15,7 @@ use log::info;
 use log::warn;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
@@ -216,6 +216,41 @@ fn spawn_startup_maintenance_tasks(
                 count
             ),
             Err(error) => log::error!("❌ Session cleanup failed: {}", error),
+        }
+    });
+
+    tauri::async_runtime::spawn(async move {
+        let session_repo = crate::state::get_session_repository();
+        let active_session_ids = match session_repo.get_all_sessions().await {
+            Ok(sessions) => sessions
+                .into_iter()
+                .map(|session| session.id)
+                .collect::<HashSet<_>>(),
+            Err(error) => {
+                log::warn!(
+                    "Failed to load sessions for Docker stale container sweep: {}",
+                    error
+                );
+                return;
+            }
+        };
+
+        match crate::services::WorkspaceRuntimeManager::sweep_stale_containers(&active_session_ids)
+            .await
+        {
+            Ok(removed) if removed.is_empty() => {
+                info!("🧹 Docker stale container sweep completed: no stale containers");
+            }
+            Ok(removed) => {
+                info!(
+                    "🧹 Docker stale container sweep removed {} container(s): {}",
+                    removed.len(),
+                    removed.join(", ")
+                );
+            }
+            Err(error) => {
+                log::warn!("Docker stale container sweep skipped or failed: {}", error);
+            }
         }
     });
 

@@ -1,6 +1,7 @@
 use super::contracts::{
-    ManagedSkillsOverview, SkillMetadata, LEGACY_SYSTEM_SKILLS_DIR_NAME, SYSTEM_SKILLS_DIR_NAME,
-    USER_SKILLS_DIR_NAME,
+    ManagedSkillsOverview, SkillAliasRoot, SkillMetadata, ASSISTANT_SKILLS_ALIAS_PREFIX,
+    LEGACY_SYSTEM_SKILLS_DIR_NAME, SYSTEM_SKILLS_ALIAS_PREFIX, SYSTEM_SKILLS_DIR_NAME,
+    USER_SKILLS_ALIAS_PREFIX, USER_SKILLS_DIR_NAME, WORKSPACE_SKILLS_ALIAS_PREFIX,
 };
 use super::copy_dir_recursive;
 use super::scan_skills_internal_cached;
@@ -35,6 +36,101 @@ pub fn get_legacy_global_skills_directory() -> Result<PathBuf, String> {
     Ok(session_manager
         .get_base_data_dir()
         .join(LEGACY_SYSTEM_SKILLS_DIR_NAME))
+}
+
+/// Convert a concrete SKILL.md path under a managed/session-known root into the
+/// agent-facing alias namespace for that root.
+pub fn build_skill_alias_path(
+    root: &Path,
+    skill_path: &Path,
+    alias_prefix: &str,
+) -> Option<String> {
+    let relative = skill_path.strip_prefix(root).ok()?;
+    let relative = relative.to_string_lossy().replace('\\', "/");
+
+    if relative.is_empty() {
+        Some(alias_prefix.to_string())
+    } else {
+        Some(format!("{alias_prefix}/{relative}"))
+    }
+}
+
+/// Parse an alias path like `@system-skills/foo/SKILL.md` into the owning
+/// alias namespace plus the relative path to validate within that root.
+///
+/// These aliases are exact namespaces, not overlapping prefixes, so iteration
+/// order is intentionally not semantically significant.
+pub fn extract_skill_alias_relative_path(path_str: &str) -> Option<(&'static str, &str)> {
+    for prefix in [
+        SYSTEM_SKILLS_ALIAS_PREFIX,
+        USER_SKILLS_ALIAS_PREFIX,
+        ASSISTANT_SKILLS_ALIAS_PREFIX,
+        WORKSPACE_SKILLS_ALIAS_PREFIX,
+    ] {
+        if path_str == prefix {
+            return Some((prefix, "."));
+        }
+
+        if let Some(suffix) = path_str
+            .strip_prefix(&format!("{prefix}/"))
+            .or_else(|| path_str.strip_prefix(&format!("{prefix}\\")))
+        {
+            return Some((
+                prefix,
+                if suffix.trim().is_empty() {
+                    "."
+                } else {
+                    suffix
+                },
+            ));
+        }
+    }
+
+    None
+}
+
+/// Collect the alias roots visible to the current session so workspace file
+/// validation can resolve read-only skill aliases back to concrete directories.
+pub fn collect_skill_alias_roots(
+    system_dir: PathBuf,
+    user_dir: PathBuf,
+    assistant_dir: Option<PathBuf>,
+    workspace_dir: Option<PathBuf>,
+) -> Vec<SkillAliasRoot> {
+    let mut roots = vec![
+        SkillAliasRoot {
+            prefix: SYSTEM_SKILLS_ALIAS_PREFIX,
+            root: system_dir,
+        },
+        SkillAliasRoot {
+            prefix: USER_SKILLS_ALIAS_PREFIX,
+            root: user_dir,
+        },
+    ];
+
+    if let Some(root) = assistant_dir {
+        roots.push(SkillAliasRoot {
+            prefix: ASSISTANT_SKILLS_ALIAS_PREFIX,
+            root,
+        });
+    }
+
+    if let Some(root) = workspace_dir {
+        roots.push(SkillAliasRoot {
+            prefix: WORKSPACE_SKILLS_ALIAS_PREFIX,
+            root,
+        });
+    }
+
+    roots
+}
+
+/// Decorate freshly scanned skill metadata with alias paths for a specific
+/// managed/session-known root before the layer is merged into the final view.
+fn apply_skill_alias_paths(skills: &mut [SkillMetadata], root: &Path, alias_prefix: &str) {
+    for skill in skills {
+        skill.alias_path = build_skill_alias_path(root, Path::new(&skill.path), alias_prefix);
+    }
 }
 
 fn merge_skill_layers(skill_layers: Vec<Vec<SkillMetadata>>) -> Vec<SkillMetadata> {
@@ -107,12 +203,14 @@ pub async fn get_managed_skills_overview_for_directories(
         Some("system".to_string()),
     )
     .await?;
+    apply_skill_alias_paths(&mut system_skills, &system_dir, SYSTEM_SKILLS_ALIAS_PREFIX);
     let mut user_skills = scan_skills_internal_cached(
         &user_dir,
         Some("global".to_string()),
         Some("user".to_string()),
     )
     .await?;
+    apply_skill_alias_paths(&mut user_skills, &user_dir, USER_SKILLS_ALIAS_PREFIX);
     let effective_skills = merge_skill_layers(vec![user_skills.clone(), system_skills.clone()]);
 
     system_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
@@ -136,19 +234,28 @@ pub async fn resolve_skills(
     wait_for_managed_skills_sync().await;
 
     let mut skill_layers = Vec::new();
-    let mut sources: Vec<(Option<PathBuf>, &str, &str)> =
-        vec![(workspace_dir.clone(), "workspace", "workspace")];
+    let mut sources: Vec<(Option<PathBuf>, &str, &str, Option<&'static str>)> = vec![(
+        workspace_dir.clone(),
+        "workspace",
+        "workspace",
+        Some(WORKSPACE_SKILLS_ALIAS_PREFIX),
+    )];
 
     // Auto-discover agent hidden directories
     let workspace_root = workspace_dir.as_ref().and_then(|d| find_workspace_root(d));
     if let Some(ws) = workspace_root {
         for path in discover_agent_skill_dirs(&ws) {
             log::info!("Auto-discovered agent skills directory: {:?}", path);
-            sources.push((Some(path), "agent_import", "agent"));
+            sources.push((Some(path), "agent_import", "agent", None));
         }
     }
 
-    sources.push((assistant_dir, "assistant", "assistant"));
+    sources.push((
+        assistant_dir,
+        "assistant",
+        "assistant",
+        Some(ASSISTANT_SKILLS_ALIAS_PREFIX),
+    ));
 
     // Read additional skill paths from the settings repository and dynamically merge reference layers
     if let Some(settings_repo) = try_get_settings_repository() {
@@ -159,16 +266,26 @@ pub async fn resolve_skills(
                     .map(PathBuf::from)
                     .filter(|p| p.exists() && p.is_dir());
                 for path in valid_paths {
-                    sources.push((Some(path), "custom_reference", "custom"));
+                    sources.push((Some(path), "custom_reference", "custom", None));
                 }
             }
         }
     }
 
-    sources.push((Some(user_dir), "global", "user"));
-    sources.push((Some(system_dir), "global", "system"));
+    sources.push((
+        Some(user_dir),
+        "global",
+        "user",
+        Some(USER_SKILLS_ALIAS_PREFIX),
+    ));
+    sources.push((
+        Some(system_dir),
+        "global",
+        "system",
+        Some(SYSTEM_SKILLS_ALIAS_PREFIX),
+    ));
 
-    for (directory, source, origin) in sources {
+    for (directory, source, origin, alias_prefix) in sources {
         let Some(directory) = directory else {
             continue;
         };
@@ -179,6 +296,9 @@ pub async fn resolve_skills(
             Some(origin.to_string()),
         )
         .await?;
+        if let Some(alias_prefix) = alias_prefix {
+            apply_skill_alias_paths(&mut scanned, &directory, alias_prefix);
+        }
         scanned.sort_by_cached_key(|skill| skill.name.to_lowercase());
         skill_layers.push(scanned);
     }

@@ -3,7 +3,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, operation_failed_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
@@ -44,10 +44,13 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
         server.content_store.clear_session(&id);
 
         let hint = SuccessHint::new(
-            "Browser session closed",
+            format!("Browser session closed (ID: {})", id),
             vec!["Use createSession to start a new browser session".to_string()],
         );
-        Ok(hint.to_mcp_result())
+        Ok(hint.to_mcp_result_with_data(Some(json!({
+            "sessionId": id,
+            "status": "closed"
+        }))))
     } else {
         Ok(guided_error(
             ErrorCategory::InvalidState,
@@ -128,7 +131,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     let (message, suggestions) = if url_param.is_some() {
         if status_msg.contains("load wait timed out") {
             (
-                format!("Browser session created. {}", status_msg),
+                format!("Browser session created (ID: {}). {}", id, status_msg),
                 vec![
                     "Page load timed out, but the session is ready and page may be usable."
                         .to_string(),
@@ -139,7 +142,10 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("Initial Health Check Failed") {
             (
-                format!("Browser session created but unresponsive. {}", status_msg),
+                format!(
+                    "Browser session created (ID: {}) but unresponsive. {}",
+                    id, status_msg
+                ),
                 vec![
                     "The browser window failed to initialize the agent runtime.".to_string(),
                     "This session is likely unusable (Zombie process).".to_string(),
@@ -149,7 +155,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP 403)") || status_msg.contains("(HTTP 401)") {
             (
-                format!("Browser session created. {}", status_msg),
+                format!("Browser session created (ID: {}). {}", id, status_msg),
                 vec![
                     "The page is blocking access (Forbidden/Unauthorized). Abandon this page."
                         .to_string(),
@@ -159,7 +165,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP 404)") {
             (
-                format!("Browser session created. {}", status_msg),
+                format!("Browser session created (ID: {}). {}", id, status_msg),
                 vec![
                     "The page was not found (404). Check the URL.".to_string(),
                     "Search for the content on the site's homepage or use a search engine."
@@ -168,7 +174,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP 5") {
             (
-                format!("Browser session created. {}", status_msg),
+                format!("Browser session created (ID: {}). {}", id, status_msg),
                 vec![
                     "The website is experiencing server errors (5xx). Abandon this page."
                         .to_string(),
@@ -177,7 +183,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("Network Error") {
             (
-                format!("Browser session created. {}", status_msg),
+                format!("Browser session created (ID: {}). {}", id, status_msg),
                 vec![
                     "A network error occurred. Check the URL and internet connection.".to_string(),
                     "The site may be down or unreachable.".to_string(),
@@ -185,7 +191,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP ") {
             (
-                format!("Browser session created. {}", status_msg),
+                format!("Browser session created (ID: {}). {}", id, status_msg),
                 vec![
                     "The site returned an error. Consider finding an alternative source."
                         .to_string(),
@@ -194,8 +200,8 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         } else {
             (
                 format!(
-                    "Browser session created and set as active. Initial page loaded: {}",
-                    url
+                    "Browser session created and set as active (ID: {}). Initial page loaded: {}",
+                    id, url
                 ),
                 vec![
                     "Use `getPageContent({})` to read the current page content".to_string(),
@@ -205,7 +211,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         }
     } else {
         (
-            format!("Browser session created. {}", status_msg),
+            format!("Browser session created (ID: {}). {}", id, status_msg),
             vec![
                 "Use `navigateToUrl` to navigate this active session to a webpage".to_string(),
                 "Or call createSession with a `url` next time to open the first page immediately"
@@ -215,5 +221,9 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     };
 
     let hint = SuccessHint::new(message, suggestions);
-    Ok(hint.to_mcp_result())
+    Ok(hint.to_mcp_result_with_data(Some(json!({
+        "sessionId": id,
+        "url": url,
+        "status": "active"
+    }))))
 }

@@ -8,6 +8,7 @@ export interface SessionStatusCounts {
   paused: number;
   error: number;
   queued: number;
+  provisioning: number;
 }
 
 function createEmptyStatusCounts(): SessionStatusCounts {
@@ -17,6 +18,7 @@ function createEmptyStatusCounts(): SessionStatusCounts {
     paused: 0,
     error: 0,
     queued: 0,
+    provisioning: 0,
   };
 }
 

@@ -3,6 +3,7 @@ pub mod assistant_init;
 pub mod assistant_service;
 pub mod attachments_service;
 pub mod browser_error;
+pub mod docker_provisioning;
 pub mod dropped_file_service;
 pub mod file_export_service;
 pub mod interactive_browser_server;
@@ -15,6 +16,7 @@ pub mod secure_file_manager;
 pub mod session_cleanup_service;
 pub mod session_directory_service;
 pub mod skill_service;
+pub mod workspace_runtime_manager;
 pub mod workspace_service;
 
 pub use agent_service::AgentService;
@@ -33,4 +35,5 @@ pub use scheduled_task_service::{
 pub use secure_file_manager::SecureFileManager;
 pub use session_cleanup_service::SessionCleanupService;
 pub use session_directory_service::SessionDirectoryService;
+pub use workspace_runtime_manager::WorkspaceRuntimeManager;
 pub use workspace_service::{WorkspaceFileItem, WorkspaceService};

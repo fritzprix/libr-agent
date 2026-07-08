@@ -10,10 +10,10 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
-pub(super) struct RuntimeStateUpdateResult {
-    pub(super) runtime_state: SessionRuntimeState,
-    pub(super) changed: bool,
-    pub(super) emitted: bool,
+pub(crate) struct RuntimeStateUpdateResult {
+    pub(crate) runtime_state: SessionRuntimeState,
+    pub(crate) changed: bool,
+    pub(crate) emitted: bool,
 }
 
 pub(super) fn emit_runtime_state(
@@ -137,6 +137,7 @@ pub(super) fn build_bootstrap_runtime_state(
                 current_step: Some("Initializing session environment".to_string()),
                 result: SessionRuntimeInitResult::Pending,
                 error: None,
+                docker: None,
             },
             servers: Vec::new(),
         }

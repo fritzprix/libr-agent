@@ -20,7 +20,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::mcp::builtin::workspace::StdinDelivery;
-use crate::session_isolation::types::ShellType;
+use crate::session_isolation::{PathMappingLayer, ShellType, SpawnedShell};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tracing::{debug, warn};
@@ -73,6 +73,7 @@ pub struct PersistentShell {
     session_id: String,
     #[cfg(windows)]
     shell_type: ShellType,
+    path_mapper: Option<PathMappingLayer>,
     last_known_cwd: String,
 }
 
@@ -119,6 +120,9 @@ impl PersistentShell {
                 return Err(anyhow::anyhow!(
                     "Bash shell type is not supported on Windows"
                 ));
+            }
+            ShellType::Sh => {
+                return Err(anyhow::anyhow!("sh shell type is not supported on Windows"));
             }
         };
 
@@ -176,9 +180,22 @@ impl PersistentShell {
         let mut child = cmd.spawn()?;
 
         #[allow(unused_mut)]
-        let mut stdin = child.stdin.take().expect("Failed to get stdin");
-        let stdout = BufReader::new(child.stdout.take().expect("Failed to get stdout"));
-        let stderr = BufReader::new(child.stderr.take().expect("Failed to get stderr"));
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Persistent shell missing stdin pipe"))?;
+        let stdout = BufReader::new(
+            child
+                .stdout
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Persistent shell missing stdout pipe"))?,
+        );
+        let stderr = BufReader::new(
+            child
+                .stderr
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Persistent shell missing stderr pipe"))?,
+        );
 
         #[cfg(windows)]
         {
@@ -192,6 +209,9 @@ impl PersistentShell {
                     debug!("Configuring PowerShell encoding to UTF-8");
                 }
                 ShellType::Bash => {
+                    // Should not reach here on Windows
+                }
+                ShellType::Sh => {
                     // Should not reach here on Windows
                 }
             }
@@ -211,6 +231,7 @@ impl PersistentShell {
             session_id,
             #[cfg(windows)]
             shell_type,
+            path_mapper: None,
             last_known_cwd: initial_cwd,
         };
 
@@ -228,9 +249,58 @@ impl PersistentShell {
         Ok(shell)
     }
 
+    pub async fn from_spawned(session_id: String, spawned_shell: SpawnedShell) -> Result<Self> {
+        let mut child = spawned_shell.child;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Spawned shell missing stdin pipe"))?;
+        let stdout = BufReader::new(
+            child
+                .stdout
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Spawned shell missing stdout pipe"))?,
+        );
+        let stderr = BufReader::new(
+            child
+                .stderr
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Spawned shell missing stderr pipe"))?,
+        );
+
+        debug!(
+            "Persistent shell created successfully (PID: {:?}, cwd: {})",
+            child.id(),
+            spawned_shell.initial_cwd
+        );
+
+        #[allow(unused_mut)]
+        let mut shell = Self {
+            child,
+            stdin,
+            stdout,
+            stderr,
+            session_id,
+            #[cfg(windows)]
+            shell_type: spawned_shell.shell_type,
+            path_mapper: Some(spawned_shell.path_mapper),
+            last_known_cwd: spawned_shell.initial_cwd,
+        };
+
+        if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
+            shell.apply_runtime_bootstrap().await;
+        }
+
+        Ok(shell)
+    }
+
     /// Get current working directory of the shell
     pub fn get_cwd(&self) -> &str {
         &self.last_known_cwd
+    }
+
+    pub fn path_mapper(&self) -> Option<&PathMappingLayer> {
+        self.path_mapper.as_ref()
     }
 
     /// Execute a command in the persistent shell
@@ -277,6 +347,9 @@ impl PersistentShell {
                     self.stdin.write_all(wrapper.as_bytes()).await?;
                 }
                 ShellType::Bash => {
+                    // Should not reach here on Windows
+                }
+                ShellType::Sh => {
                     // Should not reach here on Windows
                 }
             }
@@ -328,6 +401,7 @@ impl PersistentShell {
                         .await?;
                 }
                 ShellType::Bash => {}
+                ShellType::Sh => {}
             }
         }
 

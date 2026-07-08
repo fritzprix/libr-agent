@@ -4,6 +4,9 @@ use tracing::{error, info, warn};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
+use crate::models::workspace_isolation::WorkspaceIsolationMode;
+use crate::repositories::SessionRepository;
+use crate::session_isolation::PathMappingLayer;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::normalization;
@@ -28,6 +31,7 @@ impl WorkspaceServer {
             .get_session_workspace_dir_by_id(&session_id);
         let previous_cwd = self.shell_manager.get_shell_cwd(&session_id).await;
         let current_dir = previous_cwd.as_deref().map(std::path::Path::new);
+        let docker_path_mapper = docker_path_mapper_for_session(&session_id).await?;
 
         if let Some(result) =
             self.apply_shell_policy_block(tool_name, command, &workspace_path, current_dir, None)
@@ -80,25 +84,8 @@ impl WorkspaceServer {
 
                 if success {
                     // Calculate relative path for display
-                    let path_cwd = std::path::Path::new(&cwd);
-                    let relative_cwd = path_cwd
-                        .strip_prefix(&workspace_path)
-                        .unwrap_or(path_cwd)
-                        .to_string_lossy();
-
-                    let display_cwd = if relative_cwd.is_empty() {
-                        ".".to_string()
-                    } else {
-                        // Ensure it starts with ./ or .\ for clarity if it's relative
-                        if relative_cwd.starts_with(".")
-                            || relative_cwd.starts_with(std::path::MAIN_SEPARATOR)
-                            || relative_cwd.contains(":")
-                        {
-                            relative_cwd.to_string()
-                        } else {
-                            format!(".{}{}", std::path::MAIN_SEPARATOR, relative_cwd)
-                        }
-                    };
+                    let display_cwd =
+                        display_shell_cwd(&cwd, &workspace_path, docker_path_mapper.as_ref());
 
                     // Invalidate service context cache to reflect CWD or status changes
                     self.invalidate_context_cache().await;
@@ -116,22 +103,7 @@ impl WorkspaceServer {
                     );
 
                     let previous_display_cwd = previous_cwd.as_deref().map(|previous| {
-                        let previous_path = std::path::Path::new(previous);
-                        let relative_previous = previous_path
-                            .strip_prefix(&workspace_path)
-                            .unwrap_or(previous_path)
-                            .to_string_lossy();
-
-                        if relative_previous.is_empty() {
-                            ".".to_string()
-                        } else if relative_previous.starts_with(".")
-                            || relative_previous.starts_with(std::path::MAIN_SEPARATOR)
-                            || relative_previous.contains(":")
-                        {
-                            relative_previous.to_string()
-                        } else {
-                            format!(".{}{}", std::path::MAIN_SEPARATOR, relative_previous)
-                        }
+                        display_shell_cwd(previous, &workspace_path, docker_path_mapper.as_ref())
                     });
 
                     let cwd_changed = previous_display_cwd
@@ -140,8 +112,13 @@ impl WorkspaceServer {
                         .unwrap_or(display_cwd != ".");
 
                     // Only warn when this call moved the shell away from workspace root or to another directory.
-                    let file_tools_warning = if display_cwd != "." && cwd_changed {
-                        "\n⚠️  readFile and listDirectory still use workspace root, not the shell CWD\n    Use absolute paths or shell commands like ls/find for the current shell directory"
+                    let file_tools_warning = if docker_path_mapper
+                        .as_ref()
+                        .is_some_and(|mapper| mapper.container_to_host(&cwd).is_none())
+                    {
+                        "\n⚠️  Shell CWD is outside /workspace; readFile/listDirectory/writeFile cannot map this container path"
+                    } else if display_cwd != "." && cwd_changed {
+                        "\n⚠️  readFile and listDirectory still use workspace root, not the shell CWD\n    Use /workspace absolute paths, relative workspace paths, or shell commands like ls/find for the current shell directory"
                     } else {
                         ""
                     };
@@ -156,12 +133,7 @@ impl WorkspaceServer {
                     };
 
                     let next_actions = if display_cwd == "." {
-                        vec![
-                            "Command state (CWD, env vars) is preserved for the next call"
-                                .to_string(),
-                            "Use listDirectory to inspect workspace-root file changes".to_string(),
-                            "Use readFile to inspect workspace-root file contents".to_string(),
-                        ]
+                        vec![]
                     } else {
                         vec![
                             format!(
@@ -201,6 +173,7 @@ impl WorkspaceServer {
                     .to_mcp_result())
                 }
             }
+
             Ok(Err(e)) => {
                 // Execution error - shell crashed or command failed
                 warn!(
@@ -249,5 +222,68 @@ impl WorkspaceServer {
                 .to_mcp_result())
             }
         }
+    }
+}
+
+async fn docker_path_mapper_for_session(
+    session_id: &str,
+) -> Result<Option<PathMappingLayer>, String> {
+    let Some(session_repo) = crate::state::try_get_session_repository() else {
+        return Ok(None);
+    };
+    let Some(session) = session_repo
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
+    else {
+        return Ok(None);
+    };
+
+    if session.workspace_isolation != WorkspaceIsolationMode::Docker {
+        return Ok(None);
+    }
+
+    let host_workspace = session
+        .docker_host_workspace_path
+        .as_ref()
+        .ok_or_else(|| format!("Missing Docker host workspace path for session {session_id}"))?;
+
+    Ok(Some(PathMappingLayer::new(std::path::PathBuf::from(
+        host_workspace,
+    ))))
+}
+
+fn display_shell_cwd(
+    cwd: &str,
+    workspace_path: &std::path::Path,
+    docker_path_mapper: Option<&PathMappingLayer>,
+) -> String {
+    if let Some(mapper) = docker_path_mapper {
+        let cwd_path = std::path::Path::new(cwd);
+        if cwd_path == mapper.container_workspace() {
+            return ".".to_string();
+        }
+        if let Ok(relative_cwd) = cwd_path.strip_prefix(mapper.container_workspace()) {
+            return display_relative_path(relative_cwd);
+        }
+        return cwd.to_string();
+    }
+
+    let path_cwd = std::path::Path::new(cwd);
+    let relative_cwd = path_cwd.strip_prefix(workspace_path).unwrap_or(path_cwd);
+    display_relative_path(relative_cwd)
+}
+
+fn display_relative_path(relative_cwd: &std::path::Path) -> String {
+    let relative_cwd = relative_cwd.to_string_lossy();
+    if relative_cwd.is_empty() {
+        ".".to_string()
+    } else if relative_cwd.starts_with(".")
+        || relative_cwd.starts_with(std::path::MAIN_SEPARATOR)
+        || relative_cwd.contains(":")
+    {
+        relative_cwd.to_string()
+    } else {
+        format!(".{}{}", std::path::MAIN_SEPARATOR, relative_cwd)
     }
 }

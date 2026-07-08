@@ -1,5 +1,9 @@
 import { Assistant } from './chat';
-import type { SessionAttentionReason } from './agent-ipc';
+import type {
+  SessionAttentionReason,
+  WorkspaceIsolationMode,
+  DockerWorkspaceConfig,
+} from './agent-ipc';
 import type { ExecutionMode } from '@/lib/generated/execution-mode';
 
 /**
@@ -9,7 +13,7 @@ import type { ExecutionMode } from '@/lib/generated/execution-mode';
 export interface AgentSession {
   id: string;
   name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued';
+  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning';
   model: string;
   provider: string;
   createdAt: Date;
@@ -28,6 +32,10 @@ export interface AgentSession {
   isBookmarked?: boolean;
   executionMode: ExecutionMode;
   pendingApprovalCount?: number;
+  workspaceIsolation?: WorkspaceIsolationMode;
+  dockerConfig?: DockerWorkspaceConfig;
+  /** Lightweight provisioning step for session list UI */
+  provisioningStep?: string;
 }
 /**
  * Agent configuration for creating a new session

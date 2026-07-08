@@ -18,7 +18,11 @@ impl AgentService {
 
     /// Create a new session with assistant ID and initial request, tagging the initial
     /// message with the provided source for transport-specific observability.
-    pub async fn spawn_agent_with_source(
+    ///
+    /// NOTE: HTTP API sessions represent standalone/external agent workflows and do not
+    /// support ephemeral execution (i.e. in-memory only) to prevent loss of state
+    /// during external tool coordination. Thus, it always instantiates persistent database sessions.
+    pub(crate) async fn spawn_agent_with_source(
         manager: &AgentSessionManager,
         body: CreateSessionRequest,
         message_source: Option<MessageSource>,
@@ -44,44 +48,54 @@ impl AgentService {
             parent_session.as_ref(),
         )?;
         let (mut agent_config, assistant_id) = build_agent_config(&assistant)?;
+        let (workspace_isolation, docker_config) = Self::prepare_workspace_setup(
+            body.workspace_isolation,
+            body.docker_config.clone(),
+            false,
+            body.workspace_path.as_deref(),
+            &session_id,
+        )
+        .await?;
         let has_workspace_override = body.workspace_path.is_some();
-
-        if let Some(path_str) = body.workspace_path.as_deref() {
-            Self::validate_and_register_workspace_override(path_str, &session_id).await?;
-        }
-
         let parent_spawn_guard =
             acquire_parent_spawn_guard(body.parent_session_id.as_deref()).await;
         let lineage_meta =
             match resolve_spawn_lineage(&session_id, &body, explicit_org.as_ref()).await {
                 Ok(lineage_meta) => lineage_meta,
                 Err(error) => {
-                    drop(parent_spawn_guard);
-                    if has_workspace_override {
-                        cleanup_failed_spawn_workspace_registration(&session_id).await;
-                    }
-                    return Err(error);
+                    return handle_spawn_failure(
+                        parent_spawn_guard,
+                        has_workspace_override,
+                        &session_id,
+                        error,
+                    )
+                    .await;
                 }
             };
         apply_lineage_to_config(&mut agent_config, &lineage_meta);
 
         let session = match manager
-            .create_session(
+            .create_session_with_repo(
+                std::sync::Arc::new(crate::state::get_session_repository().clone()),
                 session_id.clone(),
                 session_name,
                 resolved_model,
                 resolved_provider,
                 agent_config,
+                workspace_isolation,
+                docker_config,
             )
             .await
         {
             Ok(session) => session,
             Err(error) => {
-                drop(parent_spawn_guard);
-                if has_workspace_override {
-                    cleanup_failed_spawn_workspace_registration(&session_id).await;
-                }
-                return Err(error);
+                return handle_spawn_failure(
+                    parent_spawn_guard,
+                    has_workspace_override,
+                    &session_id,
+                    error,
+                )
+                .await;
             }
         };
 
@@ -224,4 +238,17 @@ async fn cleanup_failed_spawn_workspace_registration(session_id: &str) {
             error
         );
     }
+}
+
+async fn handle_spawn_failure(
+    parent_spawn_guard: Option<tokio::sync::OwnedMutexGuard<()>>,
+    has_workspace_override: bool,
+    session_id: &str,
+    error: String,
+) -> Result<CreateSessionResponse, String> {
+    drop(parent_spawn_guard);
+    if has_workspace_override {
+        cleanup_failed_spawn_workspace_registration(session_id).await;
+    }
+    Err(error)
 }

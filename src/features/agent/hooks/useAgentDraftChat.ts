@@ -28,6 +28,10 @@ import {
   addAgentAttachment,
   toWorkspaceOnlyAttachment,
 } from '../lib/resource-attachment-operations';
+import {
+  getDockerNotAvailableMessage,
+  isDockerNotAvailableError,
+} from '@/lib/backend/errors';
 
 const logger = getLogger('useAgentDraftChat');
 
@@ -75,6 +79,11 @@ export function useAgentDraftChat() {
   const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
     null,
   );
+  const [workspaceIsolation, setWorkspaceIsolation] = useState<
+    'host' | 'docker'
+  >('host');
+  const [dockerImage, setDockerImage] = useState<string>('python:3.11-slim');
+  const [dockerError, setDockerError] = useState<string | null>(null);
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
   );
@@ -86,6 +95,10 @@ export function useAgentDraftChat() {
   const formRef = useRef<HTMLFormElement>(null);
   const profileAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const provisioningToastRef = useRef<{
+    id: string | number;
+    sessionId: string;
+  } | null>(null);
 
   const rustBackend = useRustBackend();
   const { subscribe } = useDnDContext();
@@ -290,213 +303,283 @@ export function useAgentDraftChat() {
     loadAssistant();
   }, [searchParams, navigate, t]);
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (
-        (!input.trim() && pendingFiles.length === 0) ||
-        !assistant ||
-        isSubmitting
-      )
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    void listen<AgentEventPayload>('agent:event', (event) => {
+      const payload = event.payload;
+      if (payload.type !== 'sessionRuntimeStateUpdated') {
         return;
+      }
 
-      setIsSubmitting(true);
-      const newSessionId = createId();
-      const now = new Date();
-      let unlisten: (() => void) | undefined;
-      let toastId: string | number | undefined;
+      const activeToast = provisioningToastRef.current;
+      if (!activeToast || payload.sessionId !== activeToast.sessionId) {
+        return;
+      }
 
-      const resolvedInput = input.trim();
-      const shortName =
-        input.trim().length > 50
-          ? input.trim().substring(0, 47) + '...'
-          : input.trim();
+      const step =
+        payload.runtimeState.initialization.docker?.step ??
+        payload.runtimeState.initialization.currentStep;
+      if (!step) {
+        return;
+      }
 
-      try {
-        unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-          if (
-            event.payload.type === 'sessionRuntimeStateUpdated' &&
-            event.payload.sessionId === newSessionId
-          ) {
-            const step = event.payload.runtimeState.initialization.currentStep;
-            if (!step) {
-              return;
-            }
-            if (toastId) {
-              toast.loading(step, { id: toastId });
-            } else {
-              toastId = toast.loading(step);
-            }
-          }
-        });
+      toast.loading(step, { id: activeToast.id });
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
 
-        if (!toastId) toastId = toast.loading(t('agent.draft.creatingSession'));
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
-        const baseSystemPrompt =
-          assistant.systemPrompt || 'You are a helpful assistant.';
+  const submitDraft = useCallback(async () => {
+    if (
+      (!input.trim() && pendingFiles.length === 0) ||
+      !assistant ||
+      isSubmitting
+    )
+      return;
 
-        const agentConfig = {
-          id: assistant.id,
-          name: assistant.name,
-          description: assistant.description,
-          systemPrompt: baseSystemPrompt,
-          mcpServerIds: assistant.mcpServerIds || [],
-          localServices: assistant.localServices || [],
-          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
-            assistant.allowedBuiltInServiceAliases,
-          ),
-          maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
-          ...(settings?.advanced?.defaultSessionMaxDepth &&
-          settings.advanced.defaultSessionMaxDepth > 0
-            ? { maxDepth: settings.advanced.defaultSessionMaxDepth }
-            : {}),
-          ...(settings?.advanced?.defaultSessionMaxFanout &&
-          settings.advanced.defaultSessionMaxFanout > 0
-            ? { maxFanout: settings.advanced.defaultSessionMaxFanout }
-            : {}),
-        };
+    if (workspaceIsolation === 'docker' && !dockerImage.trim()) {
+      toast.error(t('agent.draft.dockerImageRequired'));
+      return;
+    }
 
-        // Create session FIRST so workspace/overrides are registered before writing files
-        await safeInvoke<AgentSessionMetadata>('agent_create_session', {
-          request: {
+    setIsSubmitting(true);
+    const newSessionId = createId();
+    const now = new Date();
+    let toastId: string | number | undefined;
+
+    const resolvedInput = input.trim();
+    const shortName =
+      resolvedInput.length > 50
+        ? resolvedInput.substring(0, 47) + '...'
+        : resolvedInput;
+    const filesToAttach = [...pendingFiles];
+
+    try {
+      toastId = toast.loading(
+        workspaceIsolation === 'docker'
+          ? t('agent.draft.dockerCreating', {
+              image: dockerImage,
+              defaultValue:
+                'Creating session — preparing Docker image {{image}}…',
+            })
+          : t('agent.draft.creatingSession'),
+      );
+      provisioningToastRef.current = { id: toastId, sessionId: newSessionId };
+
+      const baseSystemPrompt =
+        assistant.systemPrompt || 'You are a helpful assistant.';
+
+      const agentConfig = {
+        id: assistant.id,
+        name: assistant.name,
+        description: assistant.description,
+        systemPrompt: baseSystemPrompt,
+        mcpServerIds: assistant.mcpServerIds || [],
+        localServices: assistant.localServices || [],
+        allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+          assistant.allowedBuiltInServiceAliases,
+        ),
+        maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
+        ...(settings?.advanced?.defaultSessionMaxDepth &&
+        settings.advanced.defaultSessionMaxDepth > 0
+          ? { maxDepth: settings.advanced.defaultSessionMaxDepth }
+          : {}),
+        ...(settings?.advanced?.defaultSessionMaxFanout &&
+        settings.advanced.defaultSessionMaxFanout > 0
+          ? { maxFanout: settings.advanced.defaultSessionMaxFanout }
+          : {}),
+      };
+
+      // Create session FIRST so workspace/overrides are registered before writing files
+      await safeInvoke<AgentSessionMetadata>('agent_create_session', {
+        request: {
+          sessionId: newSessionId,
+          name: shortName,
+          model: overrideModel || settings?.preferredModel?.model || 'gpt-4',
+          provider:
+            overrideProvider || settings?.preferredModel?.provider || 'openai',
+          agentConfig,
+          isEphemeral: false,
+          workspacePath: workspaceOverride || undefined,
+          workspaceIsolation: workspaceIsolation,
+          dockerConfig:
+            workspaceIsolation === 'docker'
+              ? {
+                  image: dockerImage,
+                }
+              : undefined,
+        },
+      });
+
+      const attachments: AttachmentReference[] = [];
+      for (const file of filesToAttach) {
+        try {
+          const result = await addAgentAttachment({
             sessionId: newSessionId,
-            name: shortName,
-            model: overrideModel || settings?.preferredModel?.model || 'gpt-4',
-            provider:
-              overrideProvider ||
-              settings?.preferredModel?.provider ||
-              'openai',
-            agentConfig,
-            isEphemeral: false,
-            workspacePath: workspaceOverride || undefined,
-          },
-        });
-
-        const attachments: AttachmentReference[] = [];
-        for (const file of pendingFiles) {
-          try {
-            const result = await addAgentAttachment({
-              sessionId: newSessionId,
-              url: '',
-              mimeType: file.type || getMimeType(file.name),
+            url: '',
+            mimeType: file.type || getMimeType(file.name),
+            filename: file.name,
+            file,
+            inlineAudio:
+              settings?.experimental?.inlineAudioAttachment !== false,
+          });
+          attachments.push(result);
+        } catch (err) {
+          logger.error(
+            'Failed to attach draft file, falling back to workspace-only',
+            {
               filename: file.name,
-              file,
-              inlineAudio:
-                settings?.experimental?.inlineAudioAttachment !== false,
-            });
-            attachments.push(result);
-          } catch (err) {
-            logger.error(
-              'Failed to attach draft file, falling back to workspace-only',
-              {
-                filename: file.name,
-                err,
-              },
+              err,
+            },
+          );
+          toast.error(t('agent.draft.failedToAttach', { file: file.name }));
+          try {
+            const fallback = toWorkspaceOnlyAttachment(
+              newSessionId,
+              file.name,
+              file.type || getMimeType(file.name),
+              file.size,
             );
-            toast.error(t('agent.draft.failedToAttach', { file: file.name }));
-            try {
-              const fallback = toWorkspaceOnlyAttachment(
-                newSessionId,
-                file.name,
-                file.type || getMimeType(file.name),
-                file.size,
-              );
-              attachments.push(fallback);
-            } catch (fallbackErr) {
-              logger.error(
-                'Failed to create fallback workspace-only attachment',
-                fallbackErr,
-              );
-            }
+            attachments.push(fallback);
+          } catch (fallbackErr) {
+            logger.error(
+              'Failed to create fallback workspace-only attachment',
+              fallbackErr,
+            );
           }
         }
+      }
 
-        // Filter out valid inline attachments that successfully materialized base64 data to be sent inside message.content
-        const validInlineRefs = attachments.filter(
-          (r) =>
-            r.status === 'inline' && r.inlineContent && r.inlineContent.data,
-        );
-        // All other attachments (text, workspace-only, or inline attachments that failed inline data generation)
-        // should be placed in the message.attachments array.
-        const nonInlineRefs = attachments.filter(
-          (r) =>
-            r.status !== 'inline' || !r.inlineContent || !r.inlineContent.data,
-        );
+      // Filter out valid inline attachments that successfully materialized base64 data to be sent inside message.content
+      const validInlineRefs = attachments.filter(
+        (r) => r.status === 'inline' && r.inlineContent && r.inlineContent.data,
+      );
+      // All other attachments (text, workspace-only, or inline attachments that failed inline data generation)
+      // should be placed in the message.attachments array.
+      const nonInlineRefs = attachments.filter(
+        (r) =>
+          r.status !== 'inline' || !r.inlineContent || !r.inlineContent.data,
+      );
 
-        const inlineContent = validInlineRefs.map((r) => {
-          if (r.inlineContent!.type === 'image') {
-            return {
-              type: 'image' as const,
-              data: r.inlineContent!.data,
-              uri: r.inlineContent!.uri,
-              mimeType: r.inlineContent!.mimeType,
-            };
-          }
+      const inlineContent = validInlineRefs.map((r) => {
+        if (r.inlineContent!.type === 'image') {
           return {
-            type: 'audio' as const,
+            type: 'image' as const,
             data: r.inlineContent!.data,
             uri: r.inlineContent!.uri,
             mimeType: r.inlineContent!.mimeType,
           };
-        });
-
-        const initialMessage: Message = {
-          id: createId(),
-          sessionId: newSessionId,
-          threadId: newSessionId,
-          role: 'user',
-          content: [{ type: 'text', text: resolvedInput }, ...inlineContent],
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        if (nonInlineRefs.length > 0) {
-          initialMessage.attachments = nonInlineRefs;
         }
-
-        const rustMessage = {
-          ...initialMessage,
-          createdAt: now.getTime(),
-          updatedAt: now.getTime(),
+        return {
+          type: 'audio' as const,
+          data: r.inlineContent!.data,
+          uri: r.inlineContent!.uri,
+          mimeType: r.inlineContent!.mimeType,
         };
+      });
 
-        const finalRustMessage = {
-          ...rustMessage,
-          ...(nonInlineRefs.length > 0 ? { attachments: nonInlineRefs } : {}),
-        };
+      const initialMessage: Message = {
+        id: createId(),
+        sessionId: newSessionId,
+        threadId: newSessionId,
+        role: 'user',
+        content: [{ type: 'text', text: resolvedInput }, ...inlineContent],
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      if (nonInlineRefs.length > 0) {
+        initialMessage.attachments = nonInlineRefs;
+      }
+
+      const rustMessage = {
+        ...initialMessage,
+        createdAt: now.getTime(),
+        updatedAt: now.getTime(),
+      };
+
+      const finalRustMessage = {
+        ...rustMessage,
+        ...(nonInlineRefs.length > 0 ? { attachments: nonInlineRefs } : {}),
+      };
+
+      try {
         await safeInvoke<AgentResponse>('agent_send_message', {
           request: {
             sessionId: newSessionId,
             message: finalRustMessage,
           },
         });
-
+      } catch (sendError) {
+        logger.error('Failed to send initial draft message', sendError);
         if (toastId) toast.dismiss(toastId);
-
-        navigate(`/agent/${newSessionId}`);
-      } catch (err) {
-        if (toastId) toast.dismiss(toastId);
-        logger.error('Failed to create draft session', err);
+        provisioningToastRef.current = null;
+        setInput(resolvedInput);
+        setPendingFiles(filesToAttach);
         toast.error(t('agent.draft.failedToStartSession'));
         setIsSubmitting(false);
-      } finally {
-        if (unlisten) unlisten();
+        return;
       }
+
+      setInput('');
+      setPendingFiles([]);
+
+      if (toastId) {
+        toast.dismiss(toastId);
+      }
+      provisioningToastRef.current = null;
+
+      navigate(`/agent/${newSessionId}`);
+      setIsSubmitting(false);
+    } catch (err) {
+      if (toastId) toast.dismiss(toastId);
+      provisioningToastRef.current = null;
+      logger.error('Failed to create draft session', err);
+
+      // Restore input and files on failure so user doesn't lose their draft message/files
+      setInput(resolvedInput);
+      setPendingFiles(filesToAttach);
+
+      const errMsg = getDockerNotAvailableMessage(err);
+      if (isDockerNotAvailableError(err)) {
+        setDockerError(errMsg);
+      } else {
+        toast.error(t('agent.draft.failedToStartSession'));
+      }
+      setIsSubmitting(false);
+    }
+  }, [
+    input,
+    assistant,
+    isSubmitting,
+    navigate,
+    settings,
+    overrideModel,
+    overrideProvider,
+    pendingFiles,
+    getMimeType,
+    workspaceOverride,
+    workspaceIsolation,
+    dockerImage,
+    t,
+  ]);
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      await submitDraft();
     },
-    [
-      input,
-      assistant,
-      isSubmitting,
-      navigate,
-      settings,
-      overrideModel,
-      overrideProvider,
-      pendingFiles,
-      getMimeType,
-      workspaceOverride,
-      t,
-    ],
+    [submitDraft],
   );
+
+  const retryDraftSubmit = useCallback(async () => {
+    await submitDraft();
+  }, [submitDraft]);
 
   return {
     assistant,
@@ -513,6 +596,10 @@ export function useAgentDraftChat() {
     pendingFiles,
     workspaceOverride,
     setWorkspaceOverride,
+    workspaceIsolation,
+    setWorkspaceIsolation,
+    dockerImage,
+    setDockerImage,
     dragState,
     profileDragState,
     isAttachmentLoading,
@@ -523,6 +610,7 @@ export function useAgentDraftChat() {
     handleFileRemove,
     addFiles,
     handleSubmit,
+    retryDraftSubmit,
     stage,
     typeResults,
     skillResults,
@@ -530,5 +618,7 @@ export function useAgentDraftChat() {
     onTypeSelect,
     onArgSelect,
     onDismiss,
+    dockerError,
+    setDockerError,
   };
 }

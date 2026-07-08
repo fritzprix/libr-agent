@@ -392,15 +392,17 @@ fn stop_session_tool() -> MCPTool {
         name: "stopSession".to_string(),
         title: Some("Stop Agent Session".to_string()),
         description: tool_description(
-            "Forcefully terminate an active sub-agent session.",
+            "Forcefully terminate an active sub-agent session when a critical problem is confirmed.",
             &["Session ID from agent__checkSession or agent__listAgents(type='sessions')."],
             &[
-                "Use when delegation is no longer needed or the child appears stuck.",
+                "CRITICAL: Do NOT stop a session simply because checkSession or messageToSession timed out. Timeouts only mean the child is busy working.",
+                "Always check the child session's current status and latest messages via checkSession(wait=false) to confirm it is actually stuck before stopping.",
+                "Use ONLY when there is a confirmed critical error, infinite loop, or the delegation is explicitly no longer needed.",
                 "No-op if the session is already non-running.",
             ],
             &[
+                "Check session status and messages first with agent__checkSession.",
                 "Delete session data with agent__deleteSession if permanent removal is needed.",
-                "Start fresh delegation with agent__startSession.",
             ],
         ),
         input_schema: object_prop(

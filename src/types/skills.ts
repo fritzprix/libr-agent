@@ -7,6 +7,11 @@ export interface SkillMetadata {
   description: string;
   path: string;
   /**
+   * Preferred alias path for workspace MCP reads when the skill lives under a
+   * managed/session-known root. Falls back to `path` when no alias exists.
+   */
+  aliasPath?: string;
+  /**
    * Source of the skill.
    * - 'global': Located in the global skills directory.
    * - 'assistant': Located in the assistant's specific skills directory.

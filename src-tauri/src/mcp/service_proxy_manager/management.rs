@@ -57,7 +57,7 @@ impl MCPServiceProxyManager {
         result
     }
 
-    pub(super) async fn update_runtime_state<F>(
+    pub(crate) async fn update_runtime_state<F>(
         &self,
         session_id: &str,
         app_handle: Option<&AppHandle>,

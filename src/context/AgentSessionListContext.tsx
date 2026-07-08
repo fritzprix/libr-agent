@@ -686,14 +686,23 @@ export function AgentSessionListProvider({
 
     const setup = async () => {
       unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-        handleAgentEvent(event.payload, {
-          activeSessionId,
-          applySessionUpdate,
-          clearPendingApproval,
-          logger,
-          markSessionViewed,
-          pendingApprovalKeysRef,
-        });
+        handleAgentEvent(
+          {
+            ...event.payload,
+            runtimeState:
+              event.payload.type === 'sessionRuntimeStateUpdated'
+                ? event.payload.runtimeState
+                : undefined,
+          },
+          {
+            activeSessionId,
+            applySessionUpdate,
+            clearPendingApproval,
+            logger,
+            markSessionViewed,
+            pendingApprovalKeysRef,
+          },
+        );
       });
     };
 

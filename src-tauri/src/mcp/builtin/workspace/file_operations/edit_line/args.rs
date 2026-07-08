@@ -404,20 +404,11 @@ pub(super) fn parse_line_edit(
         .map(|anchor| anchor.to_string());
 
     let requires_anchor = !(action == EditAction::InsertAfter && start_line == 0);
-    if !requires_anchor && (start_anchor.is_some() || end_anchor.is_some()) {
-        return Err(guided_error(
-            ErrorCategory::InvalidInput,
-            format!(
-                "{edit_label}: prepend edits with startLine 0 must omit 'startAnchor' and 'endAnchor'"
-            ),
-            ToolGroup::Workspace,
-        )
-        .guidance(vec![
-            "When startLine is 0, the edit inserts before the first line and does not target existing content".to_string(),
-            "Remove startAnchor/endAnchor and keep only startLine: 0 plus content".to_string(),
-        ])
-        .to_mcp_result());
-    }
+    let (start_anchor, end_anchor) = if !requires_anchor {
+        (None, None)
+    } else {
+        (start_anchor, end_anchor)
+    };
     if requires_anchor && start_anchor.is_none() {
         return Err(guided_error(
             ErrorCategory::InvalidInput,

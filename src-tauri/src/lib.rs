@@ -35,8 +35,9 @@ use commands::agent_commands::{
     agent_create_session, agent_create_session_with_initial_message, agent_delete_attachment,
     agent_delete_session, agent_delete_session_only, agent_execute_command,
     agent_execute_ui_tauri_action, agent_factory_reset, agent_get_all_sessions,
-    agent_get_available_tools, agent_get_compact_context, agent_get_service_contexts,
-    agent_get_session, agent_get_tools, agent_handle_compact_error, agent_handle_compact_response,
+    agent_get_available_tools, agent_get_child_session_ids, agent_get_compact_context,
+    agent_get_descendant_session_ids, agent_get_service_contexts, agent_get_session,
+    agent_get_tools, agent_handle_compact_error, agent_handle_compact_response,
     agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
     agent_init_session_with_messages, agent_inject_channel_message,
     agent_inject_channel_message_auto, agent_inject_messages, agent_list_attention_sessions,
@@ -107,11 +108,13 @@ use commands::skill_management::{
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
-    cancel_interactive_shell_input, cancel_workspace_override, get_app_data_dir, get_app_logs_dir,
+    cancel_interactive_shell_input, cancel_workspace_override, check_docker_health,
+    docker_desktop_launch_supported, get_app_data_dir, get_app_logs_dir,
     get_update_install_capability, get_workspace_dir, get_workspace_override, greet,
     list_workspace_file_paths, list_workspace_file_paths_for_path, list_workspace_files,
     open_workspace_file_with_default_app, open_workspace_in_explorer, open_workspace_in_terminal,
-    read_local_file_as_base64, restart_app, set_workspace_override, submit_interactive_shell_input,
+    read_local_file_as_base64, restart_app, set_workspace_override, start_docker_desktop,
+    submit_interactive_shell_input,
 };
 
 // Re-export state management functions
@@ -225,6 +228,9 @@ pub fn run() {
                 cancel_interactive_shell_input,
                 get_workspace_dir,
                 read_local_file_as_base64,
+                start_docker_desktop,
+                docker_desktop_launch_supported,
+                check_docker_health,
                 // Interactive Browser commands
                 create_browser_session,
                 close_browser_session,
@@ -266,6 +272,8 @@ pub fn run() {
                 agent_delete_session_only,
                 agent_execute_command,
                 agent_get_available_tools,
+                agent_get_child_session_ids,
+                agent_get_descendant_session_ids,
                 agent_pause_workflow,
                 agent_resume_workflow,
                 agent_terminate_workflow,

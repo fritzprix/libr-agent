@@ -18,6 +18,8 @@ import { cn } from '@/lib/utils';
 import { InputTokenDropdown } from './components/InputTokenDropdown';
 import { useAgentDraftChat } from './hooks/useAgentDraftChat';
 import { useWorkspaceFiles } from './hooks/useWorkspaceFiles';
+import { DockerErrorModal } from './components/DockerErrorModal';
+
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from './lib/attachment-picker';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 import { useClipboardImage } from './hooks/useClipboardImage';
@@ -46,6 +48,10 @@ function DraftChatInner() {
     pendingFiles,
     workspaceOverride,
     setWorkspaceOverride,
+    workspaceIsolation,
+    setWorkspaceIsolation,
+    dockerImage,
+    setDockerImage,
     dragState,
     profileDragState,
     isAttachmentLoading,
@@ -56,6 +62,7 @@ function DraftChatInner() {
     handleFileRemove,
     addFiles,
     handleSubmit,
+    retryDraftSubmit,
     stage,
     typeResults,
     skillResults,
@@ -63,6 +70,8 @@ function DraftChatInner() {
     onTypeSelect,
     onArgSelect,
     onDismiss,
+    dockerError,
+    setDockerError,
   } = useAgentDraftChat();
 
   const fileQuery =
@@ -118,6 +127,10 @@ function DraftChatInner() {
       {workspaceOverride && (
         <AgentDraftWorkspacePreviewPanel
           workspacePath={workspaceOverride}
+          workspaceIsolation={workspaceIsolation}
+          setWorkspaceIsolation={setWorkspaceIsolation}
+          dockerImage={dockerImage}
+          setDockerImage={setDockerImage}
           onClear={() => setWorkspaceOverride(null)}
         />
       )}
@@ -200,6 +213,11 @@ function DraftChatInner() {
                 setOverrideModel(model);
                 setOverrideProvider(provider);
               }}
+              workspaceIsolation={workspaceIsolation}
+              setWorkspaceIsolation={setWorkspaceIsolation}
+              dockerImage={dockerImage}
+              setDockerImage={setDockerImage}
+              workspaceOverride={workspaceOverride}
             />
           </div>
         </div>
@@ -424,6 +442,14 @@ function DraftChatInner() {
           </div>
         </div>
       </div>
+      <DockerErrorModal
+        isOpen={!!dockerError}
+        onClose={() => setDockerError(null)}
+        onRetry={() => {
+          void retryDraftSubmit();
+        }}
+        errorDetails={dockerError}
+      />
     </div>
   );
 }

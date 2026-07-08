@@ -3,32 +3,48 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 interface SessionLoadingOverlayProps {
   label: string;
   initializationStep?: string | null;
+  initializationError?: string | null;
   variant: 'blocking' | 'overlay';
 }
 
 export function SessionLoadingOverlay({
   label,
   initializationStep,
+  initializationError,
   variant,
 }: SessionLoadingOverlayProps) {
+  const isFailed = Boolean(initializationError);
+
   const content = (
     <>
-      <LoadingSpinner size="lg" className="border-4" label={label} />
+      {!isFailed ? (
+        <LoadingSpinner size="lg" className="border-4" label={label} />
+      ) : null}
 
       <div className="flex flex-col items-center gap-1">
         <div
           className={
-            variant === 'blocking'
-              ? 'text-muted-foreground font-medium animate-pulse'
-              : 'text-muted-foreground font-medium'
+            isFailed
+              ? 'text-destructive font-medium'
+              : variant === 'blocking'
+                ? 'text-muted-foreground font-medium animate-pulse'
+                : 'text-muted-foreground font-medium'
           }
           aria-hidden="true"
         >
           {label}
         </div>
 
-        <div className="text-xs text-muted-foreground/70 h-4">
-          {initializationStep ? (
+        <div
+          className={
+            isFailed
+              ? 'text-xs text-destructive/80 max-w-sm text-center'
+              : 'text-xs text-muted-foreground/70 h-4'
+          }
+        >
+          {isFailed ? (
+            <span>{initializationError}</span>
+          ) : initializationStep ? (
             <span className="animate-in fade-in slide-in-from-bottom-1 duration-300">
               {initializationStep}
             </span>

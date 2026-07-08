@@ -336,6 +336,10 @@ impl WorkspaceServer {
                     }
                 };
 
+                let cwd =
+                    super::super::super::utils::effective_command_cwd(&session_id, &workspace_path)
+                        .await;
+
                 let response = serde_json::json!({
                     "command": command,
                     "exit_code": actual_exit_code,
@@ -343,7 +347,8 @@ impl WorkspaceServer {
                     "stderr": stderr,
                     "status": terminal_manager::process_status_label(&entry.status),
                     "duration_ms": duration_ms,
-                    "execution_type": "isolated"
+                    "execution_type": "isolated",
+                    "cwd": cwd
                 });
 
                 info!(
@@ -466,10 +471,9 @@ impl WorkspaceServer {
                     return Ok(hint.to_mcp_result_with_data(Some(response)));
                 }
 
-                let hint = SuccessHint::new(
-                    text_message,
-                    SuccessHint::for_tool(tool_name, ToolGroup::Workspace),
-                );
+                // Omit generic next-action hints (e.g. listDirectory/readFile) — they are
+                // irrelevant for most commands and waste tokens on successful runs.
+                let hint = SuccessHint::new(text_message, vec![]);
                 Ok(hint.to_mcp_result_with_data(Some(response)))
             }
             None => {

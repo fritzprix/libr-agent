@@ -6,7 +6,9 @@
 ///   - `FileReferenceResolver`: compact workspace-file references with targeted read guidance
 ///     and path traversal protection
 use std::fs;
+use tauri_mcp_agent_lib::agent::references::format_skill_reference_block;
 use tauri_mcp_agent_lib::agent::references::{ReferenceRegistry, ReferenceResolver};
+use tauri_mcp_agent_lib::services::skill_service::SkillMetadata;
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
@@ -169,6 +171,26 @@ async fn test_preprocess_resolved_content_prepended_before_original_text() {
     );
     // Section header format
     assert!(result.contains("## Reference: @stub:anything"));
+}
+
+#[test]
+fn test_format_skill_reference_block_prefers_alias_when_available() {
+    let skill = SkillMetadata {
+        name: "teamwork".to_string(),
+        description: "Coordinate multiple agents.".to_string(),
+        path: "/tmp/system/teamwork/SKILL.md".to_string(),
+        alias_path: Some("@system-skills/teamwork/SKILL.md".to_string()),
+        source: Some("global".to_string()),
+        origin: Some("system".to_string()),
+    };
+
+    let result = format_skill_reference_block(&skill);
+
+    assert!(result.contains("**Instructions file alias:** `@system-skills/teamwork/SKILL.md`"));
+    assert!(result.contains("**Instructions file:** `/tmp/system/teamwork/SKILL.md`"));
+    assert!(result.contains("**Base directory alias:** `@system-skills/teamwork`"));
+    assert!(result.contains("workspace__readFile(path: \"@system-skills/teamwork/SKILL.md\")"));
+    assert!(result.contains("absolute path only as a fallback"));
 }
 
 // ---------------------------------------------------------------------------
