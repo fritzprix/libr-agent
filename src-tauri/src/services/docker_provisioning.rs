@@ -22,6 +22,15 @@ pub struct DockerProvisioningDeps {
     pub app_handle: AppHandle,
 }
 
+struct DockerRuntimeStepParams<'a> {
+    session_id: &'a str,
+    image: &'a str,
+    step: &'a str,
+    failed: bool,
+    is_final: bool,
+    error: Option<&'a str>,
+}
+
 pub fn spawn_docker_provisioning(
     deps: DockerProvisioningDeps,
     session: SessionMetadata,
@@ -134,11 +143,14 @@ async fn run_docker_provisioning(
     emit_docker_runtime_step(
         &deps.proxy_manager,
         Some(&deps.app_handle),
-        &session.id,
-        &image,
-        "Preparing Docker workspace",
-        false,
-        None,
+        DockerRuntimeStepParams {
+            session_id: &session.id,
+            image: &image,
+            step: "Preparing Docker workspace",
+            failed: false,
+            is_final: false,
+            error: None,
+        },
     )
     .await;
 
@@ -157,11 +169,14 @@ async fn run_docker_provisioning(
             emit_docker_runtime_step(
                 &proxy_manager,
                 Some(&app_handle),
-                &session_id,
-                &image,
-                &step,
-                false,
-                None,
+                DockerRuntimeStepParams {
+                    session_id: &session_id,
+                    image: &image,
+                    step: &step,
+                    failed: false,
+                    is_final: false,
+                    error: None,
+                },
             )
             .await;
         });
@@ -188,11 +203,14 @@ async fn complete_docker_provisioning(
         emit_docker_runtime_step(
             &deps.proxy_manager,
             Some(&deps.app_handle),
-            session_id,
-            image,
-            "Docker workspace ready",
-            false,
-            None,
+            DockerRuntimeStepParams {
+                session_id,
+                image,
+                step: "Docker workspace ready",
+                failed: false,
+                is_final: true,
+                error: None,
+            },
         )
         .await;
     }
@@ -224,11 +242,14 @@ async fn fail_docker_provisioning(
     emit_docker_runtime_step(
         &deps.proxy_manager,
         Some(&deps.app_handle),
-        &session.id,
-        &image,
-        "Docker workspace setup failed",
-        true,
-        Some(error),
+        DockerRuntimeStepParams {
+            session_id: &session.id,
+            image: &image,
+            step: "Docker workspace setup failed",
+            failed: true,
+            is_final: false,
+            error: Some(error),
+        },
     )
     .await;
 
@@ -256,22 +277,25 @@ async fn fail_docker_provisioning(
 async fn emit_docker_runtime_step(
     proxy_manager: &MCPServiceProxyManager,
     app_handle: Option<&AppHandle>,
-    session_id: &str,
-    image: &str,
-    step: &str,
-    failed: bool,
-    error: Option<&str>,
+    params: DockerRuntimeStepParams<'_>,
 ) {
+    let DockerRuntimeStepParams {
+        session_id,
+        image,
+        step,
+        failed,
+        is_final,
+        error,
+    } = params;
     let image = image.to_string();
     let step = step.to_string();
     let error = error.map(str::to_string);
 
     let _ = proxy_manager
         .update_runtime_state(session_id, app_handle, move |state| {
-            let is_ready = step == "Docker workspace ready";
             state.phase = if failed {
                 SessionRuntimePhase::Failed
-            } else if is_ready {
+            } else if is_final {
                 SessionRuntimePhase::Ready
             } else {
                 SessionRuntimePhase::Initializing
@@ -279,7 +303,7 @@ async fn emit_docker_runtime_step(
             state.initialization.current_step = Some(step.clone());
             state.initialization.result = if failed {
                 SessionRuntimeInitResult::Failed
-            } else if is_ready {
+            } else if is_final {
                 SessionRuntimeInitResult::Success
             } else {
                 SessionRuntimeInitResult::Pending
@@ -291,7 +315,7 @@ async fn emit_docker_runtime_step(
                 progress: None,
                 error,
             });
-            if is_ready {
+            if is_final {
                 state.recompute_summary();
             }
         })

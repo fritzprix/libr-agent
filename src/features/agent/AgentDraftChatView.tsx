@@ -18,6 +18,8 @@ import { cn } from '@/lib/utils';
 import { InputTokenDropdown } from './components/InputTokenDropdown';
 import { useAgentDraftChat } from './hooks/useAgentDraftChat';
 import { useWorkspaceFiles } from './hooks/useWorkspaceFiles';
+import { DockerErrorModal } from './components/DockerErrorModal';
+
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from './lib/attachment-picker';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 import { useClipboardImage } from './hooks/useClipboardImage';
@@ -60,6 +62,7 @@ function DraftChatInner() {
     handleFileRemove,
     addFiles,
     handleSubmit,
+    retryDraftSubmit,
     stage,
     typeResults,
     skillResults,
@@ -67,6 +70,8 @@ function DraftChatInner() {
     onTypeSelect,
     onArgSelect,
     onDismiss,
+    dockerError,
+    setDockerError,
   } = useAgentDraftChat();
 
   const fileQuery =
@@ -437,6 +442,14 @@ function DraftChatInner() {
           </div>
         </div>
       </div>
+      <DockerErrorModal
+        isOpen={!!dockerError}
+        onClose={() => setDockerError(null)}
+        onRetry={() => {
+          void retryDraftSubmit();
+        }}
+        errorDetails={dockerError}
+      />
     </div>
   );
 }

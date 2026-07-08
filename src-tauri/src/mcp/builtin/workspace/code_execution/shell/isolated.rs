@@ -471,10 +471,9 @@ impl WorkspaceServer {
                     return Ok(hint.to_mcp_result_with_data(Some(response)));
                 }
 
-                let hint = SuccessHint::new(
-                    text_message,
-                    SuccessHint::for_tool(tool_name, ToolGroup::Workspace),
-                );
+                // Omit generic next-action hints (e.g. listDirectory/readFile) — they are
+                // irrelevant for most commands and waste tokens on successful runs.
+                let hint = SuccessHint::new(text_message, vec![]);
                 Ok(hint.to_mcp_result_with_data(Some(response)))
             }
             None => {

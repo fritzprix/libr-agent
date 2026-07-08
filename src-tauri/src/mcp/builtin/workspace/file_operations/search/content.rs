@@ -213,6 +213,10 @@ pub(super) async fn search_content_in_file(
             display_path, query
         ));
 
+        if show_hashes {
+            s.push_str("*(Note: The `lineNumber:anchor|` prefixes in the code block below are metadata added by the tool for edit reference, and are NOT part of the actual file content.)*\n");
+        }
+
         s.push_str("```");
         s.push_str(language);
         s.push('\n');
@@ -476,6 +480,10 @@ pub(super) async fn search_content_in_dir(
         display_path,
         options_str
     );
+
+    if show_hashes {
+        text.push_str("*(Note: Matches in the files below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of actual file contents.)*\n\n");
+    }
 
     let total_files = file_matches.len();
     let mut paginated_results: Vec<FileMatch> = Vec::new();
