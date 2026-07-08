@@ -849,6 +849,8 @@
       "dockerErrorDescription": "Docker läuft nicht oder ist nicht verfügbar. Der aktuelle Workspace-Isolationsmodus ist auf Docker eingestellt, wodurch Docker Desktop erforderlich ist.",
       "dockerTroubleshootingSteps": "Schritte zur Fehlerbehebung",
       "dockerSystemErrorDetails": "Systemfehlerdetails",
+      "dockerShowErrorDetails": "Details anzeigen",
+      "dockerHideErrorDetails": "Ausblenden",
       "dockerErrorStep1": "Starten Sie Docker Desktop auf Ihrem Computer.",
       "dockerErrorStep2": "Stellen Sie sicher, dass der Docker-Daemon vollständig gestartet ist (das Tray-Symbol wird grün).",
       "dockerErrorStep3": "Stellen Sie sicher, dass der aktuelle Benutzer Docker ausführen darf.",

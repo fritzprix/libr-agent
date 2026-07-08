@@ -860,6 +860,8 @@
       "dockerErrorDescription": "Docker 데몬이 활성화되어 있지 않거나 설치되지 않았습니다. 현재 워크스페이스 격리 모드가 Docker로 설정되어 있어 Docker Desktop 실행이 필요합니다.",
       "dockerTroubleshootingSteps": "문제 해결 단계",
       "dockerSystemErrorDetails": "시스템 오류 상세",
+      "dockerShowErrorDetails": "자세히 보기",
+      "dockerHideErrorDetails": "접기",
       "dockerErrorStep1": "컴퓨터에서 Docker Desktop 앱을 실행해 주세요.",
       "dockerErrorStep2": "Docker 데몬이 정상 기동되었는지 확인해 주세요 (트레이 아이콘이 초록색으로 변경됨).",
       "dockerErrorStep3": "WSL2 연동이나 현재 사용자의 Docker 실행 권한을 확인해 주세요.",

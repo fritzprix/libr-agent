@@ -849,6 +849,8 @@
       "dockerErrorDescription": "Docker n'est pas en cours d'exécution ou n'est pas disponible. Le mode d'isolation de l'espace de travail est défini sur Docker, ce qui nécessite Docker Desktop.",
       "dockerTroubleshootingSteps": "Étapes de dépannage",
       "dockerSystemErrorDetails": "Détails de l'erreur système",
+      "dockerShowErrorDetails": "Afficher les détails",
+      "dockerHideErrorDetails": "Masquer",
       "dockerErrorStep1": "Lancez Docker Desktop sur votre machine.",
       "dockerErrorStep2": "Vérifiez que le démon Docker est complètement démarré (l'icône de la barre d'état devient verte).",
       "dockerErrorStep3": "Assurez-vous que l'utilisateur actuel a l'autorisation d'exécuter Docker.",

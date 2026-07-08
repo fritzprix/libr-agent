@@ -849,6 +849,8 @@
       "dockerErrorDescription": "Docker 未运行或不可用。当前工作区隔离模式设置为 Docker，需要运行 Docker Desktop。",
       "dockerTroubleshootingSteps": "故障排除步骤",
       "dockerSystemErrorDetails": "系统错误详情",
+      "dockerShowErrorDetails": "查看详情",
+      "dockerHideErrorDetails": "收起",
       "dockerErrorStep1": "在您的计算机上启动 Docker Desktop。",
       "dockerErrorStep2": "确认 Docker 守护进程已完全启动（托盘图标变为绿色）。",
       "dockerErrorStep3": "确保当前用户具有运行 Docker 的权限。",

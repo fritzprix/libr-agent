@@ -814,6 +814,8 @@
       "dockerErrorDescription": "Dockerが実行されていないか、利用できません。現在のワークスペース分離モードはDockerに設定されているため、Docker Desktopの実行が必要です。",
       "dockerTroubleshootingSteps": "トラブルシューティング手順",
       "dockerSystemErrorDetails": "システムエラーの詳細",
+      "dockerShowErrorDetails": "詳細を表示",
+      "dockerHideErrorDetails": "閉じる",
       "dockerErrorStep1": "コンピューターでDocker Desktopを起動してください。",
       "dockerErrorStep2": "Dockerデーモンが完全に起動していることを確認してください（トレイアイコンが緑色になります）。",
       "dockerErrorStep3": "現在のユーザーにDockerを実行する権限があることを確認してください。",

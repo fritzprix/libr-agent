@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Loader2, Play } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Loader2, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -36,6 +36,7 @@ export function DockerErrorModal({
   const [isStarting, setIsStarting] = useState(false);
   const [isWaitingForEngine, setIsWaitingForEngine] = useState(false);
   const [launchSupported, setLaunchSupported] = useState<boolean | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const waitAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export function DockerErrorModal({
       waitAbortRef.current = null;
       setLaunchSupported(null);
       setIsWaitingForEngine(false);
+      setShowDetails(false);
       return;
     }
 
@@ -117,8 +119,8 @@ export function DockerErrorModal({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="max-w-md border-border bg-background shadow-2xl">
-        <DialogHeader className="flex flex-col items-center text-center space-y-3">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-md max-h-[85vh] overflow-x-hidden overflow-y-auto border-border bg-background shadow-2xl">
+        <DialogHeader className="items-center gap-3 text-center sm:text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-500 animate-pulse">
             <AlertTriangle className="h-6 w-6" />
           </div>
@@ -130,7 +132,7 @@ export function DockerErrorModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="my-4 space-y-3 rounded-xl border border-border/40 bg-muted/[0.08] p-4 text-left text-sm text-foreground/90">
+        <div className="min-w-0 space-y-3 rounded-xl border border-border/40 bg-muted/[0.08] p-4 text-left text-sm text-foreground/90">
           <p className="font-semibold text-muted-foreground text-xs uppercase tracking-wider mb-2">
             {t('agent.draft.dockerTroubleshootingSteps')}
           </p>
@@ -139,7 +141,7 @@ export function DockerErrorModal({
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                 1
               </span>
-              <span className="leading-normal">
+              <span className="min-w-0 break-words leading-normal">
                 {t('agent.draft.dockerErrorStep1')}
               </span>
             </div>
@@ -147,7 +149,7 @@ export function DockerErrorModal({
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                 2
               </span>
-              <span className="leading-normal">
+              <span className="min-w-0 break-words leading-normal">
                 {t('agent.draft.dockerErrorStep2')}
               </span>
             </div>
@@ -155,7 +157,7 @@ export function DockerErrorModal({
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                 3
               </span>
-              <span className="leading-normal">
+              <span className="min-w-0 break-words leading-normal">
                 {t('agent.draft.dockerErrorStep3')}
               </span>
             </div>
@@ -163,17 +165,33 @@ export function DockerErrorModal({
 
           {errorDetails ? (
             <div className="mt-4 pt-3 border-t border-border/40">
-              <span className="font-semibold text-muted-foreground text-xs uppercase tracking-wider block mb-1">
-                {t('agent.draft.dockerSystemErrorDetails')}
-              </span>
-              <pre className="max-h-24 overflow-y-auto rounded bg-muted/60 p-2 font-mono text-[10px] text-muted-foreground leading-relaxed break-all">
-                {errorDetails}
-              </pre>
+              <button
+                type="button"
+                onClick={() => setShowDetails((prev) => !prev)}
+                aria-expanded={showDetails}
+                className="flex w-full items-center justify-between gap-2 rounded text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <span className="min-w-0 truncate">
+                  {showDetails
+                    ? t('agent.draft.dockerHideErrorDetails')
+                    : t('agent.draft.dockerShowErrorDetails')}
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 transition-transform ${
+                    showDetails ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {showDetails ? (
+                <pre className="mt-2 max-h-40 w-full min-w-0 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/60 p-2 font-mono text-[10px] text-muted-foreground leading-relaxed">
+                  {errorDetails}
+                </pre>
+              ) : null}
             </div>
           ) : null}
         </div>
 
-        <DialogFooter className="flex flex-col sm:flex-row gap-2">
+        <DialogFooter className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
           <Button
             type="button"
             variant="outline"
