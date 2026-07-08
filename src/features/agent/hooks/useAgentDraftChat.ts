@@ -351,9 +351,6 @@ export function useAgentDraftChat() {
           : resolvedInput;
       const filesToAttach = pendingFiles;
 
-      setInput('');
-      setPendingFiles([]);
-
       try {
         toastId = toast.loading(
           workspaceIsolation === 'docker'
@@ -510,6 +507,9 @@ export function useAgentDraftChat() {
           toast.dismiss(toastId);
         }
         provisioningToastRef.current = null;
+
+        setInput('');
+        setPendingFiles([]);
 
         navigate(`/agent/${newSessionId}`);
         setIsSubmitting(false);

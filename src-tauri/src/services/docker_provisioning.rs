@@ -298,6 +298,31 @@ async fn emit_docker_runtime_step(
         .await;
 }
 
+async fn emit_drain_workflow_failure(
+    deps: &DockerProvisioningDeps,
+    session_id: &str,
+    error_message: String,
+) {
+    let _ = crate::agent::lifecycle::update_session_status(
+        &deps.session_repo,
+        &deps.active_sessions,
+        &deps.app_handle,
+        session_id,
+        SessionStatus::Error,
+    )
+    .await;
+
+    let error_event = crate::agent::events::AgentEvent::WorkflowError {
+        session_id: session_id.to_string(),
+        error: crate::agent::llm::types::AgentRuntimeError::new(
+            crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+            error_message,
+        )
+        .with_code("DOCKER_DRAIN_WORKFLOW_FAILED"),
+    };
+    let _ = crate::agent::tauri_events::emit_agent_event(&deps.app_handle, error_event);
+}
+
 async fn drain_and_start_pending_workflows(
     deps: &DockerProvisioningDeps,
     session_id: &str,
@@ -316,13 +341,22 @@ async fn drain_and_start_pending_workflows(
     }
 
     let repo = crate::state::get_message_repository();
-    let messages = repo.get_by_ids(pending_ids).await.map_err(|error| {
-        format!("Failed to load pending messages after Docker provisioning: {error}")
-    })?;
+    let messages = match repo.get_by_ids(pending_ids).await {
+        Ok(messages) => messages,
+        Err(error) => {
+            emit_drain_workflow_failure(
+                deps,
+                session_id,
+                format!("Failed to load pending messages after Docker provisioning: {error}"),
+            )
+            .await;
+            return Ok(());
+        }
+    };
 
     for (index, message) in messages.into_iter().enumerate() {
         if index == 0 {
-            crate::agent::workflow::start_workflow(
+            if let Err(error) = crate::agent::workflow::start_workflow(
                 &deps.session_repo,
                 &deps.active_sessions,
                 &deps.proxy_manager,
@@ -330,9 +364,16 @@ async fn drain_and_start_pending_workflows(
                 session_id.to_string(),
                 message,
             )
-            .await?;
-        } else {
-            MessageService::queue_user_message(&deps.active_sessions, session_id, &message).await?;
+            .await
+            {
+                emit_drain_workflow_failure(deps, session_id, error).await;
+                return Ok(());
+            }
+        } else if let Err(error) =
+            MessageService::queue_user_message(&deps.active_sessions, session_id, &message).await
+        {
+            emit_drain_workflow_failure(deps, session_id, error).await;
+            return Ok(());
         }
     }
 
