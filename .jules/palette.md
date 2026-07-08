@@ -8,3 +8,6 @@
 ## 2025-02-09 - Add tooltip to unbookmark button
 **Learning:** Sighted mouse users lack context for icon-only buttons like "Remove bookmark" without visual tooltips, even when `aria-label` is present for screen readers.
 **Action:** Always wrap icon-only action buttons in `Tooltip` components to ensure parity between visual context and semantic accessibility labels.
+## 2025-02-14 - Replace Native Title with Design System Tooltip
+**Learning:** While native `title` attributes provide some tooltip functionality, they are visually inconsistent, delay-based, and inaccessible via keyboard focus. Using a design system `Tooltip` component ensures immediate, consistent visual feedback for icon-only action buttons.
+**Action:** Replace reliance on native `title` attributes on icon-only buttons with explicit `<Tooltip>` components wrapping the button.
