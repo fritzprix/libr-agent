@@ -1,3 +1,13 @@
+## [0.8.27] - 2026-07-10
+
+### 🐛 Fixes
+
+- **Windows External MCP Startup**: Fix intermittent stdio MCP initialize failures (`connection closed: initialize response`) on Windows GUI launches by piping child stderr instead of inheriting a broken console handle under `CREATE_NO_WINDOW`. External `npx` servers (e.g. yahoo-finance, fred) now start reliably.
+
+### 🔧 Internal
+
+- **MCP Spawn Diagnostics & Regression Guard**: Log PATH/command resolution on stdio MCP spawn, forward child stderr into app logs, and add a Windows-safe CI regression test so stderr piping cannot be removed as “logging cleanup.”
+
 ## [0.8.26] - 2026-07-09
 
 ### 🐛 Fixes
