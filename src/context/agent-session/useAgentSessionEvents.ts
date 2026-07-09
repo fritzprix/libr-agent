@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { toast } from 'sonner';
 import { openAgentSession } from '@/lib/backend/agent-commands';
 import { getAssistant } from '@/lib/backend/assistants';
 import { getLogger } from '@/lib/logger';
@@ -98,13 +97,6 @@ export function useAgentSessionEvents(
 
             case 'preflightTokenMetricsUpdated': {
               setters.setPreflightTokenMetrics(payload.metrics);
-              break;
-            }
-
-            case 'contextMessagesTrimmed': {
-              toast.warning(
-                `Older messages were trimmed to fit context limit (${payload.droppedCount} messages removed).`,
-              );
               break;
             }
 

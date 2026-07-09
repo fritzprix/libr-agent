@@ -575,155 +575,6 @@ async fn check_empty_messages(
     )
 }
 
-fn find_lossy_fallback_split_index(messages: &[Message], compaction_limit: usize) -> Option<usize> {
-    if compaction_limit == 0 {
-        return None;
-    }
-    let message_tokens = messages
-        .iter()
-        .map(crate::agent::llm::token_utils::estimate_tokens_bpe)
-        .collect::<Vec<_>>();
-    let total_message_tokens: usize = message_tokens.iter().sum();
-    if total_message_tokens < compaction_limit {
-        return Some(0);
-    }
-
-    let start_search_idx = if messages
-        .first()
-        .map(|m| m.is_compact_summary())
-        .unwrap_or(false)
-    {
-        1
-    } else {
-        0
-    };
-
-    let mut current_suffix_sum: usize = message_tokens[start_search_idx..].iter().sum();
-
-    for split_idx in start_search_idx..messages.len() {
-        if current_suffix_sum < compaction_limit {
-            return Some(split_idx);
-        }
-        if split_idx < message_tokens.len() {
-            current_suffix_sum = current_suffix_sum.saturating_sub(message_tokens[split_idx]);
-        }
-    }
-    None
-}
-
-fn build_lossy_fallback_drop_slice(messages: &[Message], split_idx: usize) -> &[Message] {
-    let start_idx = usize::from(
-        messages
-            .first()
-            .map(|message| message.is_compact_summary())
-            .unwrap_or(false),
-    );
-    let clamped_end = split_idx.clamp(start_idx, messages.len());
-    &messages[start_idx..clamped_end]
-}
-
-async fn perform_lossy_fallback_drop(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-    messages_to_drop: &[Message],
-    final_messages: &mut Vec<Message>,
-    app_handle: &tauri::AppHandle,
-) -> Result<(), String> {
-    if messages_to_drop.is_empty() {
-        return Ok(());
-    }
-
-    let dropped_ids: std::collections::HashSet<String> =
-        messages_to_drop.iter().map(|m| m.id.clone()).collect();
-
-    // 1. Retrieve the messages handle under a short-lived read lock to avoid holding active_sessions lock across write
-    let messages_handle = {
-        let active = active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| session.messages.clone())
-    };
-
-    // 2. Perform in-memory mutations first
-    if let Some(messages_handle) = &messages_handle {
-        let mut session_messages = messages_handle.write().await;
-        session_messages.retain(|m| !dropped_ids.contains(&m.id));
-    }
-
-    final_messages.retain(|m| m.is_compact_summary() || !dropped_ids.contains(&m.id));
-
-    // Create and insert a persistent system trim notice message
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-
-    let trim_notice = Message {
-        id: uuid::Uuid::new_v4().to_string(),
-        session_id: session_id.to_string(),
-        role: "system".to_string(),
-        content: vec![crate::mcp::types::MCPContent::Text {
-            text: format!(
-                "⚠️ Trimmed {} older messages to fit the context limit.",
-                messages_to_drop.len()
-            ),
-            is_error: None,
-        }],
-        tool_calls: None,
-        tool_call_id: None,
-        is_streaming: None,
-        thinking: None,
-        thinking_signature: None,
-        assistant_id: None,
-        attachments: None,
-        tool_use: None,
-        usage: None,
-        prompt_tokens: None,
-        created_at: now,
-        updated_at: now,
-        source: None,
-        error: None,
-        metadata: None,
-    };
-
-    // Add to in-memory session cache
-    if let Some(messages_handle) = &messages_handle {
-        let mut session_messages = messages_handle.write().await;
-        session_messages.push(trim_notice.clone());
-    }
-
-    // 3. Delete old messages from SQLite database and insert the trim notice
-    // (This is run after memory mutations to prevent DB deleted vs memory present inconsistency)
-    let repo = crate::state::get_message_repository();
-    for msg in messages_to_drop {
-        if let Err(error) = repo.delete_by_id(&msg.id).await {
-            log::error!(
-                "Failed to delete trimmed message {} from SQLite: {}",
-                msg.id,
-                error
-            );
-        }
-    }
-    if let Err(e) = repo.insert(&trim_notice).await {
-        log::error!("Failed to insert trim notice to SQLite: {}", e);
-    }
-
-    // 4. Emit the notification events to UI
-    let event_trim = crate::agent::events::AgentEvent::ContextMessagesTrimmed {
-        session_id: session_id.to_string(),
-        dropped_count: messages_to_drop.len(),
-    };
-    let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event_trim);
-
-    let event_msg = crate::agent::events::AgentEvent::MessageAdded {
-        session_id: session_id.to_string(),
-        message: Box::new(trim_notice),
-    };
-    let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event_msg);
-
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn check_token_limit(
     final_messages: Vec<Message>,
@@ -826,47 +677,15 @@ async fn check_token_limit(
         .saturating_sub(tools_tokens)
         .saturating_sub(1500); // 1500 tokens for summary safety margin
 
-    let mut final_messages = final_messages;
-
     if !crate::agent::llm::completion::compaction::has_prompt_checkpoint_compaction_target(
         normalized_messages,
         compact_context_record.as_ref(),
         compaction_limit,
     ) {
-        log::warn!(
-            "⚠️ No prompt-token checkpoint found for compaction. Performing lossy fallback by dropping older messages: session={}",
-            session_id
-        );
-
-        if let Some(split_idx) =
-            find_lossy_fallback_split_index(normalized_messages, compaction_limit)
-        {
-            let messages_to_drop = build_lossy_fallback_drop_slice(normalized_messages, split_idx);
-            if !messages_to_drop.is_empty() {
-                if let Err(err) = perform_lossy_fallback_drop(
-                    active_sessions,
-                    session_id,
-                    messages_to_drop,
-                    &mut final_messages,
-                    app_handle,
-                )
-                .await
-                {
-                    log::error!(
-                        "Failed to drop messages during lossy fallback: session={}, error={}",
-                        session_id,
-                        err
-                    );
-                } else {
-                    return Ok(final_messages);
-                }
-            }
-        }
-
         return Err(
             AgentRuntimeError::new(
-                AgentRuntimeErrorType::ContextLimitError,
-                "Prepared payload exceeds the effective context limit, but there is no persisted prompt-token checkpoint to compact from, and lossy fallback failed to split.",
+                AgentRuntimeErrorType::ValidationError,
+                "Prepared payload exceeds the effective context limit, but there is no persisted prompt-token checkpoint to compact from. This session state is invalid and must not be committed.",
             )
             .with_code("INVALID_CONTEXT_STATE")
             .with_original_error(serde_json::json!({
@@ -882,7 +701,8 @@ async fn check_token_limit(
                 "toolsTokens": tools_tokens,
                 "preservedCalibrationRatio": preserved_calibration_ratio,
                 "selectedBreakdown": selected_message_breakdown,
-                "lossyFallbackAttempted": true,
+                "normalPathLossyFallbackAllowed": false,
+                "requiresPromptTokenCheckpoint": true,
             })),
         );
     }
@@ -905,41 +725,11 @@ async fn check_token_limit(
         .with_code("COMPACTION_TRIGGERED_OK"));
     }
 
-    // If compaction was skipped or failed to fit, perform lossy fallback
-    log::warn!(
-        "⚠️ Compaction skipped or could not reduce context. Performing lossy fallback by dropping older messages: session={}",
-        session_id
-    );
-
-    if let Some(split_idx) = find_lossy_fallback_split_index(normalized_messages, compaction_limit)
-    {
-        let messages_to_drop = build_lossy_fallback_drop_slice(normalized_messages, split_idx);
-        if !messages_to_drop.is_empty() {
-            if let Err(err) = perform_lossy_fallback_drop(
-                active_sessions,
-                session_id,
-                messages_to_drop,
-                &mut final_messages,
-                app_handle,
-            )
-            .await
-            {
-                log::error!(
-                    "Failed to drop messages during compaction skipped lossy fallback: session={}, error={}",
-                    session_id,
-                    err
-                );
-            } else {
-                return Ok(final_messages);
-            }
-        }
-    }
-
     Err(
         AgentRuntimeError::new(
             AgentRuntimeErrorType::ContextLimitError,
             format!(
-                "Prepared payload exceeds the effective context limit before send ({} total budget tokens >= {} input limit; conservative input={}, reserved output={}), and lossy fallback could not find a valid message split.",
+                "Prepared payload exceeds the effective context limit before send ({} total budget tokens >= {} input limit; conservative input={}, reserved output={}), and normal compact-mode requests must not be silently trimmed. Trigger preflight compaction or fail explicitly.",
                 total_budget_tokens,
                 safe_input_token_limit,
                 conservative_preflight_tokens,
@@ -960,7 +750,7 @@ async fn check_token_limit(
             "toolsTokens": tools_tokens,
             "preservedCalibrationRatio": preserved_calibration_ratio,
             "selectedBreakdown": selected_message_breakdown,
-            "lossyFallbackAttempted": true,
+            "normalPathLossyFallbackAllowed": false,
         })),
     )
 }
