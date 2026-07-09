@@ -1,3 +1,18 @@
+## [0.8.25] - 2026-07-09
+
+### 🐛 Fixes
+
+- **Context Overflow No Longer Deletes Chat History**: Removed the compact-mode lossy fallback that permanently deleted older session messages from SQLite and the UI when the context limit was exceeded. Overflow now triggers compaction or returns an explicit error, matching the message-compaction contract.
+- **Docker Draft Flow & Error UX**: Improve Docker provisioning / draft chat submit error handling, and prevent Docker error dialog overflow with collapsible details.
+- **Path Traversal Hardening**: Fix path traversal issues in secure path resolution and clarify absolute-path rejection error messages.
+- **Model Picker Refresh Tooltip**: Make the disabled model-picker refresh control focusable so its tooltip remains accessible.
+- **Workspace Edit Clarity**: Clarify edit anchors and line numbers in tool output, remove dead anchor computation from edit diff preview, and drop generic file-tool hints from shell success responses.
+
+### 🔧 Internal
+
+- **Workspace Test Alignment**: Canonicalize temp base dirs for persistent-shell CWD checks and align workspace hash-anchor tests with plain diff output.
+- **Bundle Size Budget**: Raise `largestCssBytes` limit to accommodate current CSS bundle size.
+
 ## [0.8.24] - 2026-07-06
 
 ### 🚀 Features
