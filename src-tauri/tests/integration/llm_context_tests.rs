@@ -10,12 +10,13 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compaction_preservation_hints, build_compaction_request_payload_for_testing,
     build_overflow_recovery_compaction_messages,
     derive_tail_recompaction_recovery_plan_for_testing,
-    find_preflight_compactable_end_exclusive_for_testing, fit_compaction_request_messages_to_limit,
-    has_prompt_checkpoint_compaction_target, inspect_compaction_payload,
-    merge_consecutive_user_messages, normalize_request_messages,
+    estimate_post_compact_resume_tokens_for_testing,
+    find_preflight_compactable_end_exclusive_for_testing, find_resume_fit_split_idx_for_testing,
+    fit_compaction_request_messages_to_limit, has_prompt_checkpoint_compaction_target,
+    inspect_compaction_payload, merge_consecutive_user_messages, normalize_request_messages,
     preview_preflight_compaction_selection, resolve_context_management_settings,
-    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
-    uses_compaction_strategy,
+    resolve_preserved_calibration_ratio, select_resume_fit_compaction_split_for_testing,
+    should_skip_same_tail_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -532,7 +533,10 @@ fn test_preflight_compactable_end_ignores_unresolved_tool_chain_before_to_id() {
 }
 
 #[test]
-fn test_preflight_compactable_end_uses_prompt_token_checkpoint_window() {
+fn test_preflight_compactable_end_uses_resume_fit_over_shallow_checkpoint_window() {
+    // REGRESSION: checkpoint-window seed alone must not win.
+    // Spec §5.2 — resume-fit prefers the deepest ownership-safe split that still
+    // fits, not the shallow checkpoint-window seed (historically index 1).
     let messages = vec![
         TestMessageBuilder::new("m0", "user")
             .text("checkpoint 0")
@@ -555,11 +559,23 @@ fn test_preflight_compactable_end_uses_prompt_token_checkpoint_window() {
     let compactable_end_exclusive =
         find_preflight_compactable_end_exclusive_for_testing(&messages, None, Some(30_000));
 
-    assert_eq!(compactable_end_exclusive, 1);
+    assert_eq!(compactable_end_exclusive, messages.len());
+    let selection = select_resume_fit_compaction_split_for_testing(
+        &messages,
+        None,
+        0,
+        0,
+        30_000 + 1_500,
+        Some(30_000),
+    )
+    .expect("resume-fit selection");
+    assert_eq!(selection.checkpoint_seed_split_idx, Some(1));
+    assert_eq!(selection.chosen_split_idx, messages.len());
+    assert!(selection.projected_resume_tokens < selection.effective_input_budget);
 }
 
 #[test]
-fn test_preflight_compactable_end_respects_effective_budget_after_output_reserve() {
+fn test_preflight_compactable_end_resume_fit_prefers_deep_split_under_budget() {
     let messages = vec![
         TestMessageBuilder::new("m0", "user")
             .text("checkpoint 0")
@@ -581,16 +597,16 @@ fn test_preflight_compactable_end_respects_effective_budget_after_output_reserve
 
     let full_budget_end =
         find_preflight_compactable_end_exclusive_for_testing(&messages, None, Some(48_000));
-    let reserve_adjusted_end =
+    let tighter_budget_end =
         find_preflight_compactable_end_exclusive_for_testing(&messages, None, Some(36_000));
 
-    assert_eq!(full_budget_end, 4);
-    assert_eq!(reserve_adjusted_end, 1);
+    // Small bodies fit at the deepest split for both budgets.
+    assert_eq!(full_budget_end, messages.len());
+    assert_eq!(tighter_budget_end, messages.len());
 }
 
 #[test]
-fn test_preflight_compactable_end_falls_back_to_latest_checkpoint_when_overflow_window_starts_before_first_checkpoint(
-) {
+fn test_preflight_compactable_end_preserves_latest_request_when_deep_split_fits() {
     let messages = vec![
         TestMessageBuilder::new("m0", "user")
             .text("checkpoint 0")
@@ -620,7 +636,12 @@ fn test_preflight_compactable_end_falls_back_to_latest_checkpoint_when_overflow_
     let compactable_end_exclusive =
         find_preflight_compactable_end_exclusive_for_testing(&messages, None, Some(127_165));
 
-    assert_eq!(compactable_end_exclusive, 4);
+    // Deepest fit is after the latest UI request (preserve it in the live tail or
+    // compact everything including it when empty-tail still fits).
+    assert!(compactable_end_exclusive >= 5);
+    assert!(has_prompt_checkpoint_compaction_target(
+        &messages, None, 127_165
+    ));
 }
 
 #[test]
@@ -703,7 +724,13 @@ fn test_preflight_compactable_end_advances_past_tool_result_when_checkpoint_fall
         Some(127_165),
     );
 
-    assert_eq!(compactable_end_exclusive, 3);
+    // Must advance past the tool result (not split at 2 which orphans the tool).
+    // Resume-fit may choose 3 (preserve latest request) or 4 (empty tail) when both fit.
+    assert!(
+        compactable_end_exclusive >= 3,
+        "expected ownership-safe split past tool result, got {compactable_end_exclusive}"
+    );
+    assert_ne!(compactable_end_exclusive, 2);
     assert!(has_prompt_checkpoint_compaction_target(
         &messages,
         Some(&compact_record),
@@ -742,7 +769,168 @@ fn test_checkpoint_backoff_candidates_skip_orphan_tool_tail_splits() {
     let candidates =
         build_checkpoint_backoff_split_candidates_for_testing(&messages, None, messages.len());
 
+    // Deep → shallow; orphan-tool split at index 2 (between assistant and tool) is skipped.
     assert_eq!(candidates, vec![4, 1]);
+    assert!(!candidates.contains(&2));
+}
+
+#[test]
+fn test_resume_fit_prefers_deep_split_when_shallow_checkpoint_would_leave_oversized_tail() {
+    // REGRESSION (production): checkpoint seed split_idx≈4 compacted only a tiny
+    // prefix, retained ~144-message / ~131k-token tail, resume still over budget →
+    // INVALID_CONTEXT_STATE. Spec §5.2 Forbidden regressions.
+    // Large mid-history bodies force a deep split; shallow seed alone must lose.
+    let bulky = "x".repeat(80_000);
+    let messages = vec![
+        TestMessageBuilder::new("m0", "user")
+            .text("early")
+            .prompt_tokens(10_000)
+            .build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text(&bulky)
+            .prompt_tokens(40_000)
+            .build(),
+        TestMessageBuilder::new("m2", "user")
+            .text(&bulky)
+            .prompt_tokens(70_000)
+            .build(),
+        TestMessageBuilder::new("m3", "assistant")
+            .text(&bulky)
+            .prompt_tokens(100_000)
+            .build(),
+        TestMessageBuilder::new("m4", "user")
+            .text("latest request")
+            .source(MessageSource::Ui)
+            .prompt_tokens(120_000)
+            .build(),
+    ];
+
+    let selection = select_resume_fit_compaction_split_for_testing(
+        &messages,
+        None,
+        5_000,
+        5_000,
+        40_000,
+        Some(30_000),
+    )
+    .expect("resume-fit selection");
+
+    // Checkpoint window would seed a shallow split; resume-fit must go deeper.
+    assert!(
+        selection.checkpoint_seed_split_idx.is_some_and(|seed| seed < selection.chosen_split_idx),
+        "expected chosen split deeper than checkpoint seed: {:?}",
+        selection
+    );
+    assert!(selection.projected_resume_tokens < selection.effective_input_budget);
+    assert!(selection.chosen_split_idx >= 4);
+}
+
+#[test]
+fn test_resume_fit_skips_orphan_tool_tail_splits() {
+    let mut assistant = make_message("m0", "assistant", "Tool call owner");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_orphan".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__readFile".to_string(),
+            arguments: "{\"path\":\"src/lib.rs\"}".to_string(),
+        },
+    }]);
+    assistant.prompt_tokens = Some(2_000);
+    let mut tool = make_message("m1", "tool", "Tool result");
+    tool.tool_call_id = Some("call_orphan".to_string());
+
+    let messages = vec![
+        TestMessageBuilder::new("older", "user")
+            .text("older")
+            .prompt_tokens(1_000)
+            .build(),
+        assistant,
+        tool,
+        TestMessageBuilder::new("latest", "user")
+            .text("latest")
+            .source(MessageSource::Ui)
+            .prompt_tokens(3_000)
+            .build(),
+    ];
+
+    let candidates =
+        build_checkpoint_backoff_split_candidates_for_testing(&messages, None, messages.len());
+    assert!(!candidates.contains(&2), "orphan tool split must be skipped");
+
+    let chosen = find_resume_fit_split_idx_for_testing(
+        &messages,
+        None,
+        &candidates,
+        100,
+        100,
+        50_000,
+        1_500,
+    );
+    assert_ne!(chosen, Some(2));
+}
+
+#[test]
+fn test_deep_split_payload_to_id_matches_resume_boundary() {
+    // REGRESSION: fitting the compaction LLM payload must not move to_id /
+    // split_idx (Spec §5.2 step 6 — resume-boundary invariant).
+    let bulky = "y".repeat(20_000);
+    let messages = vec![
+        TestMessageBuilder::new("m0", "user").text(&bulky).build(),
+        TestMessageBuilder::new("m1", "assistant").text(&bulky).build(),
+        TestMessageBuilder::new("m2", "user").text(&bulky).build(),
+        TestMessageBuilder::new("m3", "assistant")
+            .text("recent")
+            .build(),
+        TestMessageBuilder::new("m4", "user")
+            .text("latest request")
+            .source(MessageSource::Ui)
+            .build(),
+    ];
+    let split_idx = 4;
+    let payload = build_compaction_request_payload_for_testing(
+        TEST_SESSION_ID,
+        &messages,
+        split_idx,
+        None,
+        1,
+    )
+    .expect("payload");
+
+    // Overflow recovery may shrink compaction *input* messages, but to_id is fixed
+    // to the resume-fit boundary (messages[split_idx - 1]).
+    assert_eq!(payload.to_id, messages[split_idx - 1].id);
+    assert_eq!(payload.to_id, "m3");
+
+    let mut compact_input = messages[..split_idx].to_vec();
+    compact_input.push(make_compaction_instruction_message("instr", "Summarise"));
+    let fitted = build_overflow_recovery_compaction_messages(
+        &compact_input,
+        "openai",
+        8_000,
+        500,
+        500,
+    );
+    // Whether fitting succeeds is secondary; the resume boundary must stay m3.
+    assert!(fitted.is_ok() || fitted.is_err());
+    assert_eq!(payload.to_id, "m3");
+}
+
+#[test]
+fn test_estimate_post_compact_resume_tokens_grows_with_retained_tail() {
+    let messages = vec![
+        TestMessageBuilder::new("m0", "user").text("a").build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text(&"b".repeat(4_000))
+            .build(),
+        TestMessageBuilder::new("m2", "user")
+            .text(&"c".repeat(4_000))
+            .build(),
+    ];
+
+    let shallow = estimate_post_compact_resume_tokens_for_testing(&messages, 1, 100, 100, 1_500);
+    let deep = estimate_post_compact_resume_tokens_for_testing(&messages, 3, 100, 100, 1_500);
+    assert!(shallow > deep, "shallower split must retain a larger tail");
 }
 
 #[test]

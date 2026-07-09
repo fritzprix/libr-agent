@@ -1,3 +1,15 @@
+//! Message compaction for Agent V2 completion preflight.
+//!
+//! # Resume-fit contract (regression guard)
+//!
+//! Split selection is **resume-fit first**: the deepest ownership-safe
+//! `split_idx` such that the projected post-compact live prompt fits
+//! `effective_input_budget`. Prompt-token checkpoints may seed candidates but
+//! must not alone commit a shallow oversized-tail split.
+//!
+//! Normative text: `docs/specs/message-compaction.md` §5.2 / §6.
+//! Implementation: `compaction/selection.rs`, `trigger.rs`, `preparation.rs`.
+
 mod diagnostics;
 mod hints;
 mod instruction;
@@ -17,10 +29,12 @@ pub use payload::{
 pub use trigger::{
     advance_compaction_overflow_recovery_step_for_testing,
     build_checkpoint_backoff_split_candidates_for_testing,
-    find_preflight_compactable_end_exclusive_for_testing, has_prompt_checkpoint_compaction_target,
-    preview_preflight_compaction_selection, should_skip_same_tail_compaction,
+    estimate_post_compact_resume_tokens_for_testing,
+    find_preflight_compactable_end_exclusive_for_testing, find_resume_fit_split_idx_for_testing,
+    has_prompt_checkpoint_compaction_target, preview_preflight_compaction_selection,
+    select_resume_fit_compaction_split_for_testing, should_skip_same_tail_compaction,
     trigger_manual_compaction_for_session, trigger_preflight_compaction_for_session,
-    CompactionSelectionPreview,
+    CompactionSelectionPreview, ResumeFitSplitSelection,
 };
 pub(crate) use trigger::{try_trigger_preflight_compaction, PreflightCompactionTriggerInput};
 #[allow(dead_code)]

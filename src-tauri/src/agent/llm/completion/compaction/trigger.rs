@@ -1,3 +1,15 @@
+//! Preflight compaction trigger.
+//!
+//! Contract (see `docs/specs/message-compaction.md` §5.2):
+//!
+//! 1. Select a **resume-fit** split first (`select_resume_fit_compaction_split`).
+//! 2. Iterate candidates deep → shallow; **skip** any split whose projected
+//!    post-compact resume still exceeds `effective_input_budget`.
+//! 3. Accept prepare() only for a resume-fit candidate — never commit a shallow
+//!    checkpoint-seeded split merely because the compaction LLM input fitted.
+//! 4. Log `checkpoint_seed_split_idx` separately from `preferred_split_idx` /
+//!    `chosen_split_idx` so regressions are visible in production logs.
+
 use crate::agent::llm::completion::request::normalize_request_messages;
 use crate::agent::llm::load_context_management_settings;
 use crate::agent::state::{
@@ -16,8 +28,9 @@ use super::preparation::{
     PreparedCompactionAttempt, MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS,
 };
 use super::selection::{
-    build_checkpoint_backoff_split_candidates, derive_tail_recompaction_recovery_plan,
-    find_preflight_compactable_end_exclusive,
+    build_resume_fit_split_candidates, derive_tail_recompaction_recovery_plan,
+    estimate_post_compact_resume_tokens, select_resume_fit_compaction_split,
+    COMPACT_SUMMARY_PLACEHOLDER_TOKENS,
 };
 
 // Re-export public items to keep the external API and downstream imports stable.
@@ -25,9 +38,11 @@ pub use super::preparation::advance_compaction_overflow_recovery_step_for_testin
 pub use super::selection::{
     build_checkpoint_backoff_split_candidates_for_testing,
     derive_tail_recompaction_recovery_plan_for_testing,
-    find_preflight_compactable_end_exclusive_for_testing, has_prompt_checkpoint_compaction_target,
-    preview_preflight_compaction_selection, should_skip_same_tail_compaction,
-    CompactionSelectionPreview, TailRecompactionRecoveryPlan,
+    estimate_post_compact_resume_tokens_for_testing,
+    find_preflight_compactable_end_exclusive_for_testing, find_resume_fit_split_idx_for_testing,
+    has_prompt_checkpoint_compaction_target, preview_preflight_compaction_selection,
+    select_resume_fit_compaction_split_for_testing, should_skip_same_tail_compaction,
+    CompactionSelectionPreview, ResumeFitSplitSelection, TailRecompactionRecoveryPlan,
 };
 
 #[derive(Clone)]
@@ -84,6 +99,11 @@ async fn load_merged_compaction_messages(
     ))
 }
 
+/// Attempt preflight compaction using resume-fit split selection.
+///
+/// Returns `Ok(true)` when a compact request was emitted. Does not treat
+/// "compaction input fits" as success unless the candidate also passes the
+/// post-compact resume budget check above.
 pub(crate) async fn try_trigger_preflight_compaction(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
@@ -141,20 +161,32 @@ pub(crate) async fn try_trigger_preflight_compaction(
     let compaction_limit = effective_input_budget
         .saturating_sub(system_prompt_tokens)
         .saturating_sub(tools_tokens)
-        .saturating_sub(1500); // 1500 tokens for summary safety margin
+        .saturating_sub(COMPACT_SUMMARY_PLACEHOLDER_TOKENS);
 
-    let compactable_end_exclusive = find_preflight_compactable_end_exclusive(
+    let resume_fit_selection = select_resume_fit_compaction_split(
         messages,
         compact_context_record.as_ref(),
+        system_prompt_tokens,
+        tools_tokens,
+        effective_input_budget,
         Some(compaction_limit),
     );
-    if compactable_end_exclusive == 0 {
-        log_preflight_split_boundary(
-            session_id,
-            messages,
-            compactable_end_exclusive,
-            "split_idx_zero",
+    let Some(resume_fit_selection) = resume_fit_selection else {
+        log_preflight_split_boundary(session_id, messages, 0, "split_idx_zero");
+        log::warn!(
+            "⏭️ Preflight compaction skipped (no resume-fit split): session={}",
+            session_id
         );
+        return Ok(false);
+    };
+
+    let checkpoint_seed_split_idx = resume_fit_selection
+        .checkpoint_seed_split_idx
+        .unwrap_or(resume_fit_selection.chosen_split_idx);
+    let preferred_split_idx = resume_fit_selection.chosen_split_idx;
+
+    if preferred_split_idx == 0 {
+        log_preflight_split_boundary(session_id, messages, 0, "split_idx_zero");
         log::warn!(
             "⏭️ Preflight compaction skipped (split_idx=0): session={}",
             session_id
@@ -168,14 +200,14 @@ pub(crate) async fn try_trigger_preflight_compaction(
         && should_skip_same_tail_compaction(
             messages,
             compact_context_record.as_ref(),
-            compactable_end_exclusive,
+            preferred_split_idx,
         )
     {
         log::info!(
-            "⏭️ Preflight compaction skipped (same tail): session={}, tail={}, split_idx={}, message_count={}, last_compacted_tail={}",
+            "⏭️ Preflight compaction skipped (same tail): session={}, tail={}, chosen_split_idx={}, message_count={}, last_compacted_tail={}",
             session_id,
             current_tail_id.as_deref().unwrap_or("?"),
-            compactable_end_exclusive,
+            preferred_split_idx,
             messages.len(),
             last_compacted_tail.as_deref().unwrap_or("?")
         );
@@ -185,44 +217,65 @@ pub(crate) async fn try_trigger_preflight_compaction(
     let started_at_ms = chrono::Utc::now().timestamp_millis();
     let initial_retry_attempt = compaction.retry_attempt().await;
     let initial_recovery_phase = compaction.recovery_phase().await;
-    let split_candidates = build_checkpoint_backoff_split_candidates(
+    let mut split_candidates = build_resume_fit_split_candidates(
         messages,
         compact_context_record.as_ref(),
-        compactable_end_exclusive,
+        Some(checkpoint_seed_split_idx),
     );
+    // Ensure the resume-fit preferred split is tried first among deep→shallow order.
+    if let Some(pos) = split_candidates
+        .iter()
+        .position(|&idx| idx == preferred_split_idx)
+    {
+        let preferred = split_candidates.remove(pos);
+        split_candidates.insert(0, preferred);
+    } else {
+        split_candidates.insert(0, preferred_split_idx);
+    }
+
     if split_candidates.is_empty() {
         return Err(format!(
             "No ownership-safe compaction split candidates available for session {}.",
             session_id
         ));
     }
-    let candidate_offset = if matches!(
-        initial_recovery_phase,
-        crate::agent::state::CompactionRecoveryPhase::CacheAligned
-    ) {
-        usize::min(
-            initial_retry_attempt as usize,
-            split_candidates.len().saturating_sub(1),
-        )
-    } else {
-        0
-    };
+
     log::info!(
-        "🪜 Preflight compaction split candidates: session={}, initial_split_idx={}, candidate_offset={}, candidates={:?}",
+        "🪜 Preflight compaction split candidates: session={}, checkpoint_seed_split_idx={}, preferred_split_idx={}, projected_resume_tokens={}, effective_input_budget={}, candidates={:?}",
         session_id,
-        compactable_end_exclusive,
-        candidate_offset,
+        checkpoint_seed_split_idx,
+        preferred_split_idx,
+        resume_fit_selection.projected_resume_tokens,
+        effective_input_budget,
         split_candidates
     );
 
     let mut prepared_attempt = None;
+    let mut chosen_split_idx = preferred_split_idx;
     for split_idx in split_candidates
         .iter()
         .copied()
-        .skip(candidate_offset)
         .take(MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS)
     {
-        let attempt = prepare_compaction_request_with_recovery_ladder(
+        let projected_resume = estimate_post_compact_resume_tokens(
+            messages,
+            split_idx,
+            system_prompt_tokens,
+            tools_tokens,
+            COMPACT_SUMMARY_PLACEHOLDER_TOKENS,
+        );
+        if projected_resume >= effective_input_budget {
+            log::info!(
+                "⏭️ Skipping split that cannot fit post-compact resume: session={}, split_idx={}, projected_resume_tokens={}, effective_input_budget={}",
+                session_id,
+                split_idx,
+                projected_resume,
+                effective_input_budget
+            );
+            continue;
+        }
+
+        match prepare_compaction_request_with_recovery_ladder(
             active_sessions,
             PrepareCompactionRequestInput {
                 session_id,
@@ -240,10 +293,30 @@ pub(crate) async fn try_trigger_preflight_compaction(
             initial_recovery_phase,
             initial_retry_attempt,
         )
-        .await?;
-        if attempt.is_some() {
-            prepared_attempt = attempt;
-            break;
+        .await
+        {
+            Ok(Some(attempt)) => {
+                prepared_attempt = Some(attempt);
+                chosen_split_idx = split_idx;
+                break;
+            }
+            Ok(None) => {
+                log::info!(
+                    "⏭️ Preflight compaction prepare returned no-op for split: session={}, split_idx={}",
+                    session_id,
+                    split_idx
+                );
+            }
+            Err(error) => {
+                // Compaction-input fitting failed for this resume-fit split; try the next
+                // shallower ownership-safe candidate instead of aborting preflight.
+                log::warn!(
+                    "⚠️ Preflight compaction prepare failed for split, trying next candidate: session={}, split_idx={}, error={}",
+                    session_id,
+                    split_idx,
+                    error
+                );
+            }
         }
     }
 
@@ -251,37 +324,50 @@ pub(crate) async fn try_trigger_preflight_compaction(
         if let Some(recovery_plan) = derive_tail_recompaction_recovery_plan(
             messages,
             compact_context_record.as_ref(),
-            compactable_end_exclusive,
+            preferred_split_idx,
         ) {
-            log::warn!(
-                "🧯 Forcing tail re-compaction recovery after no-op incremental payload: session={}, original_split_idx={}, fallback_split_idx={}, compacted_to_idx={}, first_delta_message_idx={}, latest_request_start_idx={}, message_count={}",
-                session_id,
-                compactable_end_exclusive,
+            let fallback_projected = estimate_post_compact_resume_tokens(
+                messages,
                 recovery_plan.fallback_split_idx,
-                recovery_plan.compacted_to_idx,
-                recovery_plan.first_delta_message_idx,
-                recovery_plan.latest_request_start_idx,
-                messages.len()
+                system_prompt_tokens,
+                tools_tokens,
+                COMPACT_SUMMARY_PLACEHOLDER_TOKENS,
             );
-            prepared_attempt = prepare_compaction_request_with_recovery_ladder(
-                active_sessions,
-                PrepareCompactionRequestInput {
+            if fallback_projected < effective_input_budget {
+                log::warn!(
+                    "🧯 Forcing tail re-compaction recovery after no-op incremental payload: session={}, preferred_split_idx={}, fallback_split_idx={}, compacted_to_idx={}, first_delta_message_idx={}, latest_request_start_idx={}, message_count={}",
                     session_id,
-                    session_name,
-                    messages,
-                    split_idx: recovery_plan.fallback_split_idx,
-                    measured_output_tokens_reserve,
-                    parent_request: parent_request.clone(),
-                    compact_context_record: compact_context_record.clone(),
-                    started_at_ms,
-                    resume_completion_after_compact,
-                    recovery_phase: crate::agent::state::CompactionRecoveryPhase::OverflowRecovery,
-                    retry_attempt: 0,
-                },
-                crate::agent::state::CompactionRecoveryPhase::OverflowRecovery,
-                0,
-            )
-            .await?;
+                    preferred_split_idx,
+                    recovery_plan.fallback_split_idx,
+                    recovery_plan.compacted_to_idx,
+                    recovery_plan.first_delta_message_idx,
+                    recovery_plan.latest_request_start_idx,
+                    messages.len()
+                );
+                prepared_attempt = prepare_compaction_request_with_recovery_ladder(
+                    active_sessions,
+                    PrepareCompactionRequestInput {
+                        session_id,
+                        session_name,
+                        messages,
+                        split_idx: recovery_plan.fallback_split_idx,
+                        measured_output_tokens_reserve,
+                        parent_request: parent_request.clone(),
+                        compact_context_record: compact_context_record.clone(),
+                        started_at_ms,
+                        resume_completion_after_compact,
+                        recovery_phase:
+                            crate::agent::state::CompactionRecoveryPhase::OverflowRecovery,
+                        retry_attempt: 0,
+                    },
+                    crate::agent::state::CompactionRecoveryPhase::OverflowRecovery,
+                    0,
+                )
+                .await?;
+                if prepared_attempt.is_some() {
+                    chosen_split_idx = recovery_plan.fallback_split_idx;
+                }
+            }
         }
     }
 
@@ -292,10 +378,10 @@ pub(crate) async fn try_trigger_preflight_compaction(
     }) = prepared_attempt
     else {
         log::info!(
-            "⏭️ Preflight compaction skipped (no new delta beyond previous summary): session={}, tail={}, split_idx={}, message_count={}, last_compacted_tail={}",
+            "⏭️ Preflight compaction skipped (no new delta beyond previous summary): session={}, tail={}, preferred_split_idx={}, message_count={}, last_compacted_tail={}",
             session_id,
             current_tail_id.as_deref().unwrap_or("?"),
-            compactable_end_exclusive,
+            preferred_split_idx,
             messages.len(),
             last_compacted_tail.as_deref().unwrap_or("?")
         );
@@ -377,23 +463,41 @@ pub(crate) async fn try_trigger_preflight_compaction(
 
     if resume_completion_after_compact {
         log::info!(
-            "⏸️ Preflight compaction triggered: session={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            "⏸️ Preflight compaction triggered: session={}, to_id={}, checkpoint_seed_split_idx={}, chosen_split_idx={}, compacted_delta_count={}, reused_prior_summary={}, projected_resume_tokens={}, effective_input_budget={}, tail={}, started_at_ms={}",
             session_id,
             log_to_id,
-            compactable_end_exclusive,
+            checkpoint_seed_split_idx,
+            chosen_split_idx,
             prepared.compacted_delta_count,
             prepared.reused_prior_summary,
+            estimate_post_compact_resume_tokens(
+                messages,
+                chosen_split_idx,
+                system_prompt_tokens,
+                tools_tokens,
+                COMPACT_SUMMARY_PLACEHOLDER_TOKENS,
+            ),
+            effective_input_budget,
             current_tail_id.as_deref().unwrap_or("?"),
             prepared.started_at_ms
         );
     } else {
         log::info!(
-            "🧰 Manual compaction triggered: session={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            "🧰 Manual compaction triggered: session={}, to_id={}, checkpoint_seed_split_idx={}, chosen_split_idx={}, compacted_delta_count={}, reused_prior_summary={}, projected_resume_tokens={}, effective_input_budget={}, tail={}, started_at_ms={}",
             session_id,
             log_to_id,
-            compactable_end_exclusive,
+            checkpoint_seed_split_idx,
+            chosen_split_idx,
             prepared.compacted_delta_count,
             prepared.reused_prior_summary,
+            estimate_post_compact_resume_tokens(
+                messages,
+                chosen_split_idx,
+                system_prompt_tokens,
+                tools_tokens,
+                COMPACT_SUMMARY_PLACEHOLDER_TOKENS,
+            ),
+            effective_input_budget,
             current_tail_id.as_deref().unwrap_or("?"),
             prepared.started_at_ms
         );

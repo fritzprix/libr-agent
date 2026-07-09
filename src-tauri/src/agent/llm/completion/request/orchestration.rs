@@ -677,6 +677,10 @@ async fn check_token_limit(
         .saturating_sub(tools_tokens)
         .saturating_sub(1500); // 1500 tokens for summary safety margin
 
+    // INVALID_CONTEXT_STATE only when no ownership-safe *resume-fit* split exists.
+    // Do not hard-fail merely because a prompt-token checkpoint is missing —
+    // checkpoints seed candidates; resume fitness is the gate.
+    // Spec: docs/specs/message-compaction.md §6.
     if !crate::agent::llm::completion::compaction::has_prompt_checkpoint_compaction_target(
         normalized_messages,
         compact_context_record.as_ref(),
@@ -685,7 +689,7 @@ async fn check_token_limit(
         return Err(
             AgentRuntimeError::new(
                 AgentRuntimeErrorType::ValidationError,
-                "Prepared payload exceeds the effective context limit, but there is no persisted prompt-token checkpoint to compact from. This session state is invalid and must not be committed.",
+                "Prepared payload exceeds the effective context limit, but there is no ownership-safe compaction split that can reduce the live prompt. This session state is invalid and must not be committed.",
             )
             .with_code("INVALID_CONTEXT_STATE")
             .with_original_error(serde_json::json!({
@@ -702,7 +706,10 @@ async fn check_token_limit(
                 "preservedCalibrationRatio": preserved_calibration_ratio,
                 "selectedBreakdown": selected_message_breakdown,
                 "normalPathLossyFallbackAllowed": false,
-                "requiresPromptTokenCheckpoint": true,
+                // Historical field: kept false so clients do not reintroduce a
+                // checkpoint-only hard gate. Resume-fit is authoritative.
+                "requiresPromptTokenCheckpoint": false,
+                "requiresOwnershipSafeResumeFitSplit": true,
             })),
         );
     }
