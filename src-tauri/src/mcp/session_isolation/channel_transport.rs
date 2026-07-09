@@ -78,7 +78,7 @@ pub fn spawn_channel_aware_stdio(
     server_name: String,
     event_tx: ChannelEventSender,
 ) -> std::io::Result<ChannelAwareStdioTransport> {
-    command.stdin(Stdio::piped()).stdout(Stdio::piped());
+    configure_mcp_child_stdio(&mut command);
 
     let mut child = command.spawn()?;
     let child_stdin = child
@@ -90,6 +90,12 @@ pub fn spawn_channel_aware_stdio(
         .take()
         .ok_or_else(|| std::io::Error::other("stdout was already taken"))?;
 
+    // Observability only: draining piped stderr. Safe to change logging style,
+    // but do NOT remove stderr piping from configure_mcp_child_stdio().
+    if let Some(child_stderr) = child.stderr.take() {
+        spawn_stderr_logger(server_name.clone(), child_stderr);
+    }
+
     let transport =
         ChannelAwareAsyncRwTransport::new(child_stdout, child_stdin, server_name, event_tx);
 
@@ -97,6 +103,67 @@ pub fn spawn_channel_aware_stdio(
         child: ChildWithCleanup { inner: Some(child) },
         transport,
     })
+}
+
+/// Configure stdio pipes for session-isolated MCP child processes.
+///
+/// # REGRESSION GUARD (do not "simplify" this)
+///
+/// On Windows GUI hosts, session MCP spawn uses `CREATE_NO_WINDOW`. If stderr is
+/// left inherited while stdin/stdout are piped, Node/`npx`/`cmd.exe` children can
+/// exit immediately during MCP `initialize`, surfacing as:
+/// `Process initialization failed: connection closed: initialize response`.
+///
+/// Piping stderr (or using `Stdio::null()`) detaches the child from a broken /
+/// missing console error handle. This is a **functional correctness** requirement
+/// on Windows, not optional logging. Unix does not need the fix for the same
+/// reason, but keeping piped stderr everywhere is safe and enables diagnostics.
+///
+/// Allowed alternatives if refactoring:
+/// - keep `stderr(Stdio::piped())` (preferred; enables `spawn_stderr_logger`)
+/// - or `stderr(Stdio::null())` if logs are intentionally discarded
+///
+/// Forbidden:
+/// - omitting stderr configuration so it inherits the parent console
+/// - removing this helper "because logging is noisy"
+fn configure_mcp_child_stdio(command: &mut tokio::process::Command) {
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        // MCP_STDIO_STDERR_MUST_NOT_INHERIT — searched by regression tests.
+        .stderr(Stdio::piped());
+}
+
+/// Forward MCP child stderr to the app log so spawn/init failures are diagnosable.
+///
+/// This logger is optional observability on top of piped stderr. Stdio MCP servers
+/// often print the real crash reason only on stderr; without draining/logging it,
+/// LibrAgent may only see `connection closed: initialize response`.
+fn spawn_stderr_logger(server_name: String, child_stderr: tokio::process::ChildStderr) {
+    tokio::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let mut lines = BufReader::new(child_stderr).lines();
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        log::warn!("[MCP stderr:{}] {}", server_name, trimmed);
+                    }
+                }
+                Ok(None) => break,
+                Err(error) => {
+                    log::debug!(
+                        "[MCP stderr:{}] stopped reading stderr: {}",
+                        server_name,
+                        error
+                    );
+                    break;
+                }
+            }
+        }
+    });
 }
 
 impl ChannelAwareAsyncRwTransport {

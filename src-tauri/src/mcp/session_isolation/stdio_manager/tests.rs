@@ -351,6 +351,17 @@ fn test_env_clear_in_spawn_logic() {
         source.contains("cmd.current_dir(&self.workspace_dir)"),
         "stdio_manager must launch session MCP servers from the session workspace"
     );
+
+    assert!(
+        source.contains("log_spawn_path_diagnostics"),
+        "stdio_manager must log PATH/command resolution diagnostics on spawn"
+    );
+
+    assert!(
+        source.contains("MCP_STDIO_STDERR_MUST_NOT_INHERIT"),
+        "lifecycle must document that CREATE_NO_WINDOW requires non-inherited stderr \
+         (see channel_transport::configure_mcp_child_stdio)"
+    );
 }
 
 /// Test SessionMCPError variants

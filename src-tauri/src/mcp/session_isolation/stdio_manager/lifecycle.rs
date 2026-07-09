@@ -3,9 +3,10 @@ use crate::mcp::session_isolation::error::SessionMCPError;
 use crate::mcp::session_isolation::process::MCPProcess;
 use crate::mcp::types::{MCPServerConfig, TransportConfig};
 use dashmap::DashMap;
-use log::{debug, info};
+use log::{debug, error, info, warn};
 use rmcp::ServiceExt;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
@@ -91,17 +92,24 @@ impl SessionMCPManager {
             _ => return Err(SessionMCPError::InvalidTransport("Expected stdio".into())),
         };
 
-        info!(
-            "Spawning MCP server '{}' for session '{}'",
-            server_name, self.session_id
-        );
-
         // 6. Spawn process with cross-platform command preparation
         // On Windows, this wraps .cmd/.bat files with cmd.exe
         let (final_command, final_args) =
             crate::mcp::utils::command_helper::prepare_command(command, args);
 
-        debug!("Final spawn command: {} {:?}", final_command, final_args);
+        let config_env_keys: Vec<&str> = env.keys().map(|k| k.as_str()).collect();
+        info!(
+            "Spawning MCP server '{}' for session '{}': raw={} {:?} -> final={} {:?} cwd={:?} config_env_keys={:?}",
+            server_name,
+            self.session_id,
+            command,
+            args,
+            final_command,
+            final_args,
+            self.workspace_dir,
+            config_env_keys
+        );
+        log_spawn_path_diagnostics(server_name, command);
 
         let mut cmd = Command::new(&final_command);
         for arg in &final_args {
@@ -119,10 +127,6 @@ impl SessionMCPManager {
         }
 
         cmd.current_dir(&self.workspace_dir);
-        debug!(
-            "Spawning MCP server with workspace CWD {:?}",
-            self.workspace_dir
-        );
 
         // Apply environment isolation:
         // 1. Clear all inherited environment variables to prevent secret leakage
@@ -138,6 +142,10 @@ impl SessionMCPManager {
             cmd.env(key, value);
         }
 
+        // Hide the console window for GUI launches. Combined with inherited
+        // stderr this historically broke Node/`npx` MCP initialize on Windows;
+        // spawn_channel_aware_stdio() MUST keep stderr piped/null (see
+        // configure_mcp_child_stdio / MCP_STDIO_STDERR_MUST_NOT_INHERIT).
         #[cfg(windows)]
         {
             cmd.creation_flags(CREATE_NO_WINDOW);
@@ -149,7 +157,13 @@ impl SessionMCPManager {
                 server_name.to_string(),
                 self.channel_event_tx.clone(),
             )
-            .map_err(|e| SessionMCPError::SpawnFailed(format!("{}", e)))?;
+            .map_err(|e| {
+                error!(
+                    "Failed to spawn MCP server '{}' for session '{}': {} (final={} {:?})",
+                    server_name, self.session_id, e, final_command, final_args
+                );
+                SessionMCPError::SpawnFailed(format!("{}", e))
+            })?;
 
         debug!("Created transport for command: {} {:?}", command, args);
 
@@ -157,8 +171,25 @@ impl SessionMCPManager {
         let timeout = Duration::from_secs(self.config.process_startup_timeout_seconds);
         let client = tokio::time::timeout(timeout, ().serve(transport))
             .await
-            .map_err(|_| SessionMCPError::InitTimeout(server_name.to_string()))?
-            .map_err(|e| SessionMCPError::InitFailed(format!("{}", e)))?;
+            .map_err(|_| {
+                error!(
+                    "MCP server '{}' init timed out after {}s for session '{}' (final={} {:?}). Check preceding [MCP stderr:{}] lines.",
+                    server_name,
+                    self.config.process_startup_timeout_seconds,
+                    self.session_id,
+                    final_command,
+                    final_args,
+                    server_name
+                );
+                SessionMCPError::InitTimeout(server_name.to_string())
+            })?
+            .map_err(|e| {
+                error!(
+                    "MCP server '{}' init failed for session '{}': {} (final={} {:?}). Check preceding [MCP stderr:{}] lines.",
+                    server_name, self.session_id, e, final_command, final_args, server_name
+                );
+                SessionMCPError::InitFailed(format!("{}", e))
+            })?;
 
         self.update_channel_metadata(server_name, client.peer_info())
             .await;
@@ -176,4 +207,91 @@ impl SessionMCPManager {
 
         Ok(())
     }
+}
+
+/// Log PATH / binary-resolution diagnostics for MCP stdio spawn failures.
+///
+/// Keeps secrets out of logs: only PATH entry count, whether common Node/Python
+/// tool directories appear, and whether the configured command resolves.
+fn log_spawn_path_diagnostics(server_name: &str, command: &str) {
+    let effective_path = crate::utils::env::get_effective_path();
+    let path_dirs: Vec<PathBuf> = std::env::split_paths(&effective_path).collect();
+    let path_len = path_dirs.len();
+    let markers = [
+        "nodejs",
+        "pi-node",
+        "npm",
+        "pnpm",
+        "Python",
+        "Scripts",
+        ".local\\bin",
+        ".local/bin",
+    ];
+    let matched_markers: Vec<&str> = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            let needle = marker.to_ascii_lowercase();
+            path_dirs
+                .iter()
+                .any(|dir| dir.to_string_lossy().to_ascii_lowercase().contains(&needle))
+        })
+        .collect();
+
+    match resolve_command_on_path(command, &path_dirs) {
+        Some(path) => info!(
+            "MCP spawn diagnostics server='{}' command='{}' resolved='{}' path_entries={} markers={:?}",
+            server_name,
+            command,
+            path.display(),
+            path_len,
+            matched_markers
+        ),
+        None => warn!(
+            "MCP spawn diagnostics server='{}' command='{}' resolved=NOT_FOUND path_entries={} markers={:?}. Isolated PATH may be missing Node/Python shims.",
+            server_name, command, path_len, matched_markers
+        ),
+    }
+}
+
+fn resolve_command_on_path(command: &str, path_dirs: &[PathBuf]) -> Option<PathBuf> {
+    let command_path = Path::new(command);
+    if command_path.is_absolute() || command_path.components().count() > 1 {
+        return command_path.exists().then(|| command_path.to_path_buf());
+    }
+
+    #[cfg(windows)]
+    let candidates: Vec<String> = {
+        let pathext =
+            std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+        let mut names = vec![command.to_string()];
+        for ext in pathext.split(';').filter(|e| !e.is_empty()) {
+            let ext = if ext.starts_with('.') {
+                ext.to_string()
+            } else {
+                format!(".{}", ext)
+            };
+            if !command
+                .to_ascii_lowercase()
+                .ends_with(&ext.to_ascii_lowercase())
+            {
+                names.push(format!("{}{}", command, ext));
+            }
+        }
+        names
+    };
+
+    #[cfg(not(windows))]
+    let candidates: Vec<String> = vec![command.to_string()];
+
+    for dir in path_dirs {
+        for name in &candidates {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
 }
