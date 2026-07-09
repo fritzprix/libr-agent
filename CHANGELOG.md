@@ -1,3 +1,13 @@
+## [0.8.26] - 2026-07-09
+
+### 🐛 Fixes
+
+- **Compaction Resume-Fit Split Selection**: When context overflow triggers compaction, choose the deepest ownership-safe split that makes the *next* live prompt fit—not a shallow checkpoint-seeded split that leaves an oversized retained tail and then fails with `INVALID_CONTEXT_STATE`. Compaction-input fitting may shrink the summarizer payload but must not move the resume boundary (`to_id`).
+
+### 🔧 Internal
+
+- **Compaction Contract Docs & Regression Tests**: Document the resume-fit selection contract in the message-compaction spec/architecture notes and add integration coverage for shallow-checkpoint and payload-boundary regressions.
+
 ## [0.8.25] - 2026-07-09
 
 ### 🐛 Fixes
