@@ -1,3 +1,22 @@
+## [0.8.28] - 2026-07-15
+
+### 🚀 Features
+
+- **Terminal Settlement Centralization**: Centralized terminal workflow settlement with a durability-first gate, ensuring reliable session termination and cleanup across all terminal operations.
+
+### 🐛 Fixes
+
+- **MCP Tool Stability**: Fixed redundant borrow in service proxy, boxed large enum variants to satisfy clippy, and improved circuit breaker short-circuit test setup for better tool reliability.
+- **Workspace Conflict Handling**: Preserve `writeFile` content when encountering file creation conflicts, preventing data loss during edits.
+- **Test Alignment**: Updated integration tests to align with active-session and compaction APIs, and preserved schema key order in JSON outputs for CI stability.
+- **Session History UI**: Show expand control when filtered children are hidden, improving session tree navigation.
+
+### 🔧 Internal
+
+- **Lifecycle Module Refactoring**: Split `app_setup.rs` into focused submodules for better maintainability, with added teamwork symlink tests.
+- **Circuit Breaker Improvements**: Replaced loop-prevention think injection with synthetic tool errors for more robust session recovery.
+- **Code Formatting**: Applied `rustfmt` to LLM circuit breaker modules for consistent code style.
+
 ## [0.8.27] - 2026-07-10
 
 ### 🐛 Fixes
