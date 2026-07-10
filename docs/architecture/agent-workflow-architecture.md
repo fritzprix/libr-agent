@@ -737,11 +737,11 @@ Agents occasionally repeat the same tool call (`toolName` + identical arguments)
 
 **Three escalation paths (`response_circuit_breaker.rs` + `natural_recovery.rs`):**
 
-| Stage | Condition | Behavior |
-| ----- | --------- | -------- |
-| Normal | below threshold | Execute tool normally |
+| Stage            | Condition            | Behavior                                                                                                           |
+| ---------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Normal           | below threshold      | Execute tool normally                                                                                              |
 | Natural recovery | `count == threshold` | Keep original tool call; **skip MCP execution**; return synthetic **tool error** with guidance (`toolError: true`) |
-| Hard break | `count > threshold` | Replace call with `ui__circuitBreak` (or text-only forced stop if UI alias disabled) |
+| Hard break       | `count > threshold`  | Replace call with `ui__circuitBreak` (or text-only forced stop if UI alias disabled)                               |
 
 **Natural recovery details (v0.8.27+):**
 

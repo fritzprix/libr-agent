@@ -173,6 +173,16 @@ fn repeated_success_history(repeated_args: &str, repeated_success: &str) -> Vec<
     ]
 }
 
+fn ensure_active_sessions() -> Arc<RwLock<HashMap<String, AgentSession>>> {
+    if let Some(existing) = try_get_active_sessions() {
+        return existing.clone();
+    }
+
+    let sessions = Arc::new(RwLock::new(HashMap::new()));
+    init_active_sessions(sessions.clone());
+    sessions
+}
+
 fn repeated_error_history(repeated_args: &str, repeated_error: &str) -> Vec<Message> {
     vec![
         test_message(

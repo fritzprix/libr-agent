@@ -12,7 +12,7 @@
 
 ### 🐛 Fixes
 
-- **Compaction Resume-Fit Split Selection**: When context overflow triggers compaction, choose the deepest ownership-safe split that makes the *next* live prompt fit—not a shallow checkpoint-seeded split that leaves an oversized retained tail and then fails with `INVALID_CONTEXT_STATE`. Compaction-input fitting may shrink the summarizer payload but must not move the resume boundary (`to_id`).
+- **Compaction Resume-Fit Split Selection**: When context overflow triggers compaction, choose the deepest ownership-safe split that makes the _next_ live prompt fit—not a shallow checkpoint-seeded split that leaves an oversized retained tail and then fails with `INVALID_CONTEXT_STATE`. Compaction-input fitting may shrink the summarizer payload but must not move the resume boundary (`to_id`).
 
 ### 🔧 Internal
 

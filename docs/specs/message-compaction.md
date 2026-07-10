@@ -573,7 +573,10 @@ async function runCompletionLoop(state: {
         );
       }
 
-      const candidates = buildResumeFitSplitCandidates(state.messages, selection);
+      const candidates = buildResumeFitSplitCandidates(
+        state.messages,
+        selection,
+      );
       const compactResult = await runBoundedCompactionRecovery({
         previousSummary: state.compactSummary,
         liveMessages: state.messages,
@@ -780,7 +783,7 @@ When debugging compaction:
 4. check `checkpoint_seed_split_idx` vs `preferred_split_idx` / `chosen_split_idx`
    in logs — seed may be shallow; chosen must be resume-fit
 5. check `projected_resume_tokens` against `effective_input_budget` for the chosen
-   split (not merely whether the compaction *input* fitted)
+   split (not merely whether the compaction _input_ fitted)
 6. check whether prepare skipped oversized-resume candidates and retried deep→shallow
 7. check whether the retained tail preserved assistant/tool ownership
 8. check whether the instruction seed came from the full live message stack or
@@ -795,9 +798,9 @@ When debugging compaction:
     after payload fitting
 14. if the UI badge stayed visible during compaction, check whether it intentionally
     held the last stable preflight value rather than the blocked overflow estimate
-14. if compaction still could not stabilize, check whether hard fallback persisted
+15. if compaction still could not stabilize, check whether hard fallback persisted
     a deterministic summary with optional artifact guidance instead of deadlocking
-15. if the fallback summary lacks an artifact path, check whether the best-effort
+16. if the fallback summary lacks an artifact path, check whether the best-effort
     spill write failed while summary persistence still succeeded
 
 That is the current contract.
