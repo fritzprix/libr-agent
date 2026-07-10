@@ -366,7 +366,7 @@ pub enum MCPResponseResult {
     Initialize {
         #[serde(rename = "protocolVersion")]
         protocol_version: String,
-        capabilities: ServerCapabilities,
+        capabilities: Box<ServerCapabilities>,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[serde(rename = "serverInfo")]
         server_info: Option<ServerInfo>,
