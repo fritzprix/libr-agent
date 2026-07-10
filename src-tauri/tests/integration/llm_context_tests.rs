@@ -770,7 +770,7 @@ fn test_checkpoint_backoff_candidates_skip_orphan_tool_tail_splits() {
         build_checkpoint_backoff_split_candidates_for_testing(&messages, None, messages.len());
 
     // Deep → shallow; orphan-tool split at index 2 (between assistant and tool) is skipped.
-    // Index 3 preserves the latest external-request block start.
+    // Index 3 preserves the latest external-request seed block start.
     assert_eq!(candidates, vec![4, 3, 1]);
     assert!(!candidates.contains(&2));
 }

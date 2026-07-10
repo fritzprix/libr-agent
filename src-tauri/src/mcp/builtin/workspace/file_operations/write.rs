@@ -11,8 +11,90 @@ use crate::services::SecureFileManager;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::io::BufRead;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::error;
+
+/// Maximum numeric suffix attempts when `mode=create` hits an existing path.
+const MAX_CREATE_PATH_SUFFIX: u32 = 99;
+
+/// Append `-{n}` before the extension (or at the end for extensionless / bare dotfiles).
+///
+/// Examples: `report.md` → `report-1.md`, `.gitignore` → `.gitignore-1`, `README` → `README-1`.
+fn add_numeric_suffix_to_filename(file_name: &str, n: u32) -> String {
+    if file_name.is_empty() {
+        return format!("file-{n}");
+    }
+
+    // Bare dotfiles (".env", ".gitignore") have no real extension — append after the name.
+    if file_name.starts_with('.') && !file_name[1..].contains('.') {
+        return format!("{file_name}-{n}");
+    }
+
+    match file_name.rfind('.') {
+        Some(dot) if dot > 0 => {
+            format!("{}-{n}.{}", &file_name[..dot], &file_name[dot + 1..])
+        }
+        _ => format!("{file_name}-{n}"),
+    }
+}
+
+/// Replace only the final path segment of `path_str`, preserving the original separator style.
+fn sibling_display_path(path_str: &str, new_file_name: &str) -> String {
+    match path_str.rfind(['/', '\\']) {
+        Some(idx) => format!("{}{}", &path_str[..=idx], new_file_name),
+        None => new_file_name.to_string(),
+    }
+}
+
+struct UniqueCreatePath {
+    /// Absolute (validated) path to write.
+    safe_path: PathBuf,
+    /// Agent-facing path string (same style as the request).
+    display_path: String,
+    /// True when the requested path already existed and a suffix was allocated.
+    path_adjusted: bool,
+    /// Suffix number used when adjusted (e.g. 1 for `file-1.md`).
+    suffix: Option<u32>,
+}
+
+/// For `mode=create`, keep the existing file and allocate `stem-N.ext` when needed.
+fn allocate_unique_create_path(
+    requested_path_str: &str,
+    safe_path: &Path,
+) -> Result<UniqueCreatePath, String> {
+    if !safe_path.exists() {
+        return Ok(UniqueCreatePath {
+            safe_path: safe_path.to_path_buf(),
+            display_path: requested_path_str.to_string(),
+            path_adjusted: false,
+            suffix: None,
+        });
+    }
+
+    let parent = safe_path.parent().unwrap_or_else(|| Path::new("."));
+    let original_name = safe_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+
+    for n in 1..=MAX_CREATE_PATH_SUFFIX {
+        let candidate_name = add_numeric_suffix_to_filename(original_name, n);
+        let candidate_safe = parent.join(&candidate_name);
+        if !candidate_safe.exists() {
+            return Ok(UniqueCreatePath {
+                safe_path: candidate_safe,
+                display_path: sibling_display_path(requested_path_str, &candidate_name),
+                path_adjusted: true,
+                suffix: Some(n),
+            });
+        }
+    }
+
+    Err(format!(
+        "Could not allocate a unique path for '{}': tried suffixes -1 through -{MAX_CREATE_PATH_SUFFIX} and all candidates already exist",
+        requested_path_str
+    ))
+}
 
 struct AppendPreview {
     total_lines: usize,
@@ -156,65 +238,110 @@ impl WorkspaceServer {
             }
         };
 
-        // Check if file already exists
-        let file_exists = safe_path.exists();
+        // Resolve the actual write target.
+        // mode=create: if the path already exists, keep it and write to stem-N.ext instead
+        // (avoids discarding already-generated content / forcing a costly retry).
+        let requested_path_str = path_str.to_string();
+        let requested_path_existed = safe_path.exists();
+        let mut unique_create = if mode == "create" {
+            match allocate_unique_create_path(path_str, &safe_path) {
+                Ok(unique) => Some(unique),
+                Err(e) => {
+                    return Ok(guided_error(
+                        ErrorCategory::DuplicateResource,
+                        e,
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        format!(
+                            "Choose a different path, or set \"mode\": \"overwrite\" to replace \"{}\".",
+                            path_str
+                        ),
+                        format!(
+                            "Use listDirectory on the parent of \"{}\" to see existing names.",
+                            path_str
+                        ),
+                        format!(
+                            "Use editFile for targeted edits to \"{}\" instead of rewriting the whole file.",
+                            path_str
+                        ),
+                    ])
+                    .to_mcp_result());
+                }
+            }
+        } else {
+            None
+        };
+
+        let path_adjusted = unique_create.as_ref().is_some_and(|u| u.path_adjusted);
+        let create_suffix = unique_create.as_ref().and_then(|u| u.suffix);
+        let write_display_path = unique_create
+            .as_ref()
+            .map(|u| u.display_path.clone())
+            .unwrap_or_else(|| requested_path_str.clone());
+
+        // When path was adjusted, re-validate the sibling path for write security.
+        let write_safe_path = if path_adjusted {
+            match self
+                .validate_write_path_with_teamwork_access(
+                    &write_display_path,
+                    Some(target_session_id.clone()),
+                )
+                .await
+            {
+                Ok(path) => path,
+                Err(e) => {
+                    return Ok(guided_error(
+                        ErrorCategory::PermissionDenied,
+                        format!("Adjusted path validation failed: {}", e),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        format!(
+                            "Could not write to auto-allocated path \"{}\". Choose a different path explicitly.",
+                            write_display_path
+                        ),
+                        "Verify the target path is not a protected location".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            }
+        } else if let Some(unique) = unique_create.take() {
+            unique.safe_path
+        } else {
+            safe_path.clone()
+        };
+
+        let file_exists_at_write_path = write_safe_path.exists();
         let mut old_content = String::new();
 
-        if file_exists {
-            if mode == "create" {
-                // Return informational result if file exists and mode is create
-                // Using DuplicateResource category ensures isError: false
-                return Ok(guided_error(
-                    ErrorCategory::DuplicateResource,
-                    format!(
-                        "File '{}' already exists and mode is set to 'create'",
-                        path_str
-                    ),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Set \"mode\": \"overwrite\" to replace the existing file.".to_string(),
-                    "Set \"mode\": \"append\" to add content to the end of the existing file."
-                        .to_string(),
-                    format!(
-                        "Use readFile(\"{}\") first if you need the current contents before changing the file.",
-                        path_str
-                    ),
-                    format!(
-                        "Use editFile for targeted edits to \"{}\" instead of rewriting the whole file.",
-                        path_str
-                    ),
-                ])
-                .to_mcp_result());
-            } else if mode == "overwrite" {
-                // File exists and mode is overwrite - read old content for diff
-                match tokio::fs::read_to_string(&safe_path).await {
-                    Ok(c) => old_content = c,
-                    Err(e) => {
-                        let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
-                            "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
-                        } else {
-                            e.to_string()
-                        };
+        if file_exists_at_write_path && mode == "overwrite" {
+            match tokio::fs::read_to_string(&write_safe_path).await {
+                Ok(c) => old_content = c,
+                Err(e) => {
+                    let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
+                        "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
+                    } else {
+                        e.to_string()
+                    };
 
-                        return Ok(guided_error(
-                            ErrorCategory::OperationFailed,
-                            &error_msg,
-                            ToolGroup::Workspace,
-                        )
-                        .guidance(vec![
-                            "File exists but could not be read".to_string(),
-                            "Check file permissions".to_string(),
-                        ])
-                        .to_mcp_result());
-                    }
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        &error_msg,
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "File exists but could not be read".to_string(),
+                        "Check file permissions".to_string(),
+                    ])
+                    .to_mcp_result());
                 }
             }
         }
 
         let file_manager =
             SecureFileManager::new_with_base_dir(self.get_workspace_dir(&target_session_id));
-        let safe_path_str = safe_path.to_string_lossy().to_string();
+        let safe_path_str = write_safe_path.to_string_lossy().to_string();
 
         let result = if mode == "append" {
             file_manager
@@ -228,15 +355,18 @@ impl WorkspaceServer {
 
         match result {
             Ok(()) => {
-                // Invalidate service context cache
                 self.invalidate_context_cache().await;
 
                 let max_display_lines = 100;
                 let max_display_bytes = 51200; // 50KB
                 let append_preview = if mode == "append" {
-                    let safe_path = safe_path.clone();
+                    let preview_path = write_safe_path.clone();
                     match tokio::task::spawn_blocking(move || {
-                        read_back_append_preview(&safe_path, max_display_lines, max_display_bytes)
+                        read_back_append_preview(
+                            &preview_path,
+                            max_display_lines,
+                            max_display_bytes,
+                        )
                     })
                     .await
                     {
@@ -250,7 +380,7 @@ impl WorkspaceServer {
                             .guidance(vec![
                                 format!(
                                     "Use readFile(\"{}\") to inspect the current file state",
-                                    path_str
+                                    write_display_path
                                 ),
                                 "Check file permissions if the follow-up read unexpectedly failed"
                                     .to_string(),
@@ -287,16 +417,44 @@ impl WorkspaceServer {
                 let appended_lines = content.lines().count();
                 let appended_size_str = format_file_size(content.len() as u64);
 
-                let message_header = match (file_exists, mode) {
-                    (true, "append") => "**✅ Content Appended Successfully**",
-                    (true, "overwrite") => "**✅ File Overwritten Successfully**",
-                    _ => "**✅ New File Created Successfully**",
+                let message_header = if path_adjusted {
+                    "**⚠️ New File Created at Alternate Path (requested path already existed)**"
+                } else {
+                    match (file_exists_at_write_path, mode) {
+                        (true, "append") => "**✅ Content Appended Successfully**",
+                        (true, "overwrite") => "**✅ File Overwritten Successfully**",
+                        _ => "**✅ New File Created Successfully**",
+                    }
                 };
 
-                let mut message = format!(
-                    "{}\n\n**File:** `{}`\n**Total Size:** {}\n**Total Lines:** {}\n\n",
-                    message_header, path_str, total_size_str, total_lines
-                );
+                let mut message = format!("{message_header}\n\n");
+
+                if path_adjusted {
+                    message.push_str(&format!(
+                        "**What happened:** `mode` was `\"create\"` (default), but `{}` already existed.\n\
+                         To avoid discarding your generated content and overwriting the existing file, \
+                         the write was redirected to a new sibling path.\n\n\
+                         **Requested path (unchanged):** `{}`\n\
+                         **Actually written to:** `{}`\n\
+                         **Total Size:** {}\n\
+                         **Total Lines:** {}\n\n\
+                         **Correct usage reminder:**\n\
+                         - To **replace** an existing file: `writeFile` with `\"mode\": \"overwrite\"`\n\
+                         - To **add to the end** of an existing file: `\"mode\": \"append\"`\n\
+                         - To **edit parts** of an existing file: use `editFile` (not another `writeFile` create)\n\
+                         - To **create a new file** when unsure the path is free: pick a unique name, or accept this auto-suffix behavior\n\n",
+                        requested_path_str,
+                        requested_path_str,
+                        write_display_path,
+                        total_size_str,
+                        total_lines
+                    ));
+                } else {
+                    message.push_str(&format!(
+                        "**File:** `{}`\n**Total Size:** {}\n**Total Lines:** {}\n\n",
+                        write_display_path, total_size_str, total_lines
+                    ));
+                }
 
                 if mode == "append" {
                     message.push_str(&format!(
@@ -305,17 +463,15 @@ impl WorkspaceServer {
                     ));
                 }
 
-                if file_exists && mode == "overwrite" {
-                    // Show diff then anchored lines of new content for immediate editing
+                if file_exists_at_write_path && mode == "overwrite" {
                     use super::utils::format_file_diff;
-                    let diff_output = format_file_diff(&old_content, content, path_str);
+                    let diff_output = format_file_diff(&old_content, content, &write_display_path);
                     message.push_str(&diff_output);
                     message.push_str(&format!(
                         "\nCurrent anchors:\n*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n```\n{}\n```\n",
                         format_as_hashlines(content)
                     ));
                 } else {
-                    // New file / append — show anchors so agent can immediately use targeted editing tools
                     let display_hashlines = if let Some(preview) = append_preview.as_ref() {
                         if preview.preview_was_truncated {
                             format!(
@@ -364,8 +520,22 @@ impl WorkspaceServer {
                     message.push_str(&format!("```\n{}\n```\n", display_hashlines));
                 }
 
-                // Context-aware next steps
                 let mut next_steps = Vec::new();
+                if path_adjusted {
+                    next_steps.push(format!(
+                        "IMPORTANT: Continue with \"{}\" — do NOT assume content was written to \"{}\".",
+                        write_display_path, requested_path_str
+                    ));
+                    next_steps.push(format!(
+                        "If you meant to replace \"{}\", call writeFile again with \"mode\": \"overwrite\" (and delete \"{}\" if the alternate file was unintended).",
+                        requested_path_str, write_display_path
+                    ));
+                    next_steps.push(format!(
+                        "If you meant to modify \"{}\" in place, use editFile or writeFile mode=\"append\" / mode=\"overwrite\" — not another default create.",
+                        requested_path_str
+                    ));
+                }
+
                 let preview_was_truncated = append_preview
                     .as_ref()
                     .map(|preview| preview.preview_was_truncated)
@@ -377,39 +547,46 @@ impl WorkspaceServer {
                     });
 
                 if preview_was_truncated {
-                    next_steps.push(
-                        "Use readFile to inspect lines omitted from this preview".to_string(),
-                    );
+                    next_steps.push(format!(
+                        "Use readFile(\"{}\") to inspect lines omitted from this preview",
+                        write_display_path
+                    ));
                 }
 
-                // File type specific suggestions
-                if path_str.ends_with(".rs")
-                    || path_str.ends_with(".py")
-                    || path_str.ends_with(".js")
-                    || path_str.ends_with(".ts")
+                if write_display_path.ends_with(".rs")
+                    || write_display_path.ends_with(".py")
+                    || write_display_path.ends_with(".js")
+                    || write_display_path.ends_with(".ts")
                 {
                     next_steps.push(format!(
                         "Use editFile for targeted edits to \"{}\"",
-                        path_str
+                        write_display_path
                     ));
                 }
 
                 let hint = SuccessHint::new(message, next_steps);
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "path": path_str,
+                    "path": write_display_path,
+                    "requested_path": requested_path_str,
+                    "path_adjusted": path_adjusted,
+                    "suffix": create_suffix,
                     "mode": mode,
                     "bytes_written": content.len(),
                     "lines": total_lines,
-                    "file_exists_before": file_exists
+                    "file_exists_before": file_exists_at_write_path,
+                    "requested_path_existed": requested_path_existed
                 }))))
             }
             Err(e) => {
-                error!("Failed to write file {}: {}", path_str, e);
+                error!("Failed to write file {}: {}", write_display_path, e);
                 let is_permission = e.to_string().contains("Permission denied")
                     || e.to_string().contains("permission");
                 if is_permission {
-                    Ok(permission_denied_error(path_str, ToolGroup::Workspace))
+                    Ok(permission_denied_error(
+                        &write_display_path,
+                        ToolGroup::Workspace,
+                    ))
                 } else {
                     Ok(guided_error(
                         ErrorCategory::OperationFailed,

@@ -1,8 +1,7 @@
-use crate::mcp::{utils::schema_builder::*, MCPTool};
-use std::collections::HashMap;
+use crate::mcp::{schema::SchemaProperties, utils::schema_builder::*, MCPTool};
 
 pub fn create_export_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "paths".to_string(),
         array_schema(

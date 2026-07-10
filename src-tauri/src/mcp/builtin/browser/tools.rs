@@ -353,7 +353,7 @@ starting over with `createSession` after closing is the recommended recovery pat
 
 /// Fetch URL content directly (headless browser or file download)
 pub fn fetch_tool() -> MCPTool {
-    let mut props = std::collections::HashMap::new();
+    let mut props = crate::mcp::schema::SchemaProperties::new();
 
     props.insert(
         "url".to_string(),

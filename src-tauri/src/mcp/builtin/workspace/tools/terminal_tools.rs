@@ -1,9 +1,8 @@
-use crate::mcp::{utils::schema_builder::*, MCPTool};
-use std::collections::HashMap;
+use crate::mcp::{schema::SchemaProperties, utils::schema_builder::*, MCPTool};
 
 /// Create read_process_output tool
 pub fn create_read_process_output_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
 
     props.insert(
         "processId".to_string(),
@@ -46,7 +45,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
 
 /// Create wait_for_process tool
 pub fn create_wait_for_process_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
 
     props.insert(
         "processId".to_string(),
@@ -77,7 +76,7 @@ pub fn create_wait_for_process_tool() -> MCPTool {
 
 /// Create list_processes tool
 pub fn create_list_processes_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
 
     props.insert(
         "statusFilter".to_string(),
@@ -100,7 +99,7 @@ pub fn create_list_processes_tool() -> MCPTool {
 
 /// Create stop_process tool
 pub fn create_stop_process_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
 
     props.insert(
         "processId".to_string(),
