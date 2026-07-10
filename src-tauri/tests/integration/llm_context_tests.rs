@@ -770,7 +770,8 @@ fn test_checkpoint_backoff_candidates_skip_orphan_tool_tail_splits() {
         build_checkpoint_backoff_split_candidates_for_testing(&messages, None, messages.len());
 
     // Deep → shallow; orphan-tool split at index 2 (between assistant and tool) is skipped.
-    assert_eq!(candidates, vec![4, 1]);
+    // Index 3 preserves the latest external-request seed block start.
+    assert_eq!(candidates, vec![4, 3, 1]);
     assert!(!candidates.contains(&2));
 }
 
@@ -817,7 +818,9 @@ fn test_resume_fit_prefers_deep_split_when_shallow_checkpoint_would_leave_oversi
 
     // Checkpoint window would seed a shallow split; resume-fit must go deeper.
     assert!(
-        selection.checkpoint_seed_split_idx.is_some_and(|seed| seed < selection.chosen_split_idx),
+        selection
+            .checkpoint_seed_split_idx
+            .is_some_and(|seed| seed < selection.chosen_split_idx),
         "expected chosen split deeper than checkpoint seed: {:?}",
         selection
     );
@@ -856,7 +859,10 @@ fn test_resume_fit_skips_orphan_tool_tail_splits() {
 
     let candidates =
         build_checkpoint_backoff_split_candidates_for_testing(&messages, None, messages.len());
-    assert!(!candidates.contains(&2), "orphan tool split must be skipped");
+    assert!(
+        !candidates.contains(&2),
+        "orphan tool split must be skipped"
+    );
 
     let chosen = find_resume_fit_split_idx_for_testing(
         &messages,
@@ -877,7 +883,9 @@ fn test_deep_split_payload_to_id_matches_resume_boundary() {
     let bulky = "y".repeat(20_000);
     let messages = vec![
         TestMessageBuilder::new("m0", "user").text(&bulky).build(),
-        TestMessageBuilder::new("m1", "assistant").text(&bulky).build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text(&bulky)
+            .build(),
         TestMessageBuilder::new("m2", "user").text(&bulky).build(),
         TestMessageBuilder::new("m3", "assistant")
             .text("recent")
@@ -904,13 +912,8 @@ fn test_deep_split_payload_to_id_matches_resume_boundary() {
 
     let mut compact_input = messages[..split_idx].to_vec();
     compact_input.push(make_compaction_instruction_message("instr", "Summarise"));
-    let fitted = build_overflow_recovery_compaction_messages(
-        &compact_input,
-        "openai",
-        8_000,
-        500,
-        500,
-    );
+    let fitted =
+        build_overflow_recovery_compaction_messages(&compact_input, "openai", 8_000, 500, 500);
     // Whether fitting succeeds is secondary; the resume boundary must stay m3.
     assert!(fitted.is_ok() || fitted.is_err());
     assert_eq!(payload.to_id, "m3");
