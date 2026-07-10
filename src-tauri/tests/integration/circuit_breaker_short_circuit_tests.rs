@@ -232,16 +232,6 @@ fn repeated_error_history(repeated_args: &str, repeated_error: &str) -> Vec<Mess
     ]
 }
 
-fn ensure_active_sessions() -> Arc<RwLock<HashMap<String, AgentSession>>> {
-    if let Some(existing) = try_get_active_sessions() {
-        return existing.clone();
-    }
-
-    let sessions = Arc::new(RwLock::new(HashMap::new()));
-    init_active_sessions(sessions.clone());
-    sessions
-}
-
 #[tokio::test]
 async fn natural_recovery_success_keeps_original_tool_call_and_registers_short_circuit() {
     let session_id = "loop-prevention-success-session";
