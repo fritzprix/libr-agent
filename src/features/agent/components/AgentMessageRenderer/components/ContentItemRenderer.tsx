@@ -26,6 +26,7 @@ interface ContentItemRendererProps {
   message?: Message;
   expandResources: boolean;
   toolResultsMap?: Map<string, Message>;
+  followChatScroll?: boolean;
   resourceRefs: MutableRefObject<Record<string, HTMLDivElement | null>>;
   markdownComponents: ComponentProps<typeof ReactMarkdown>['components'];
   remoteDomProps: UIResourceRendererProps['remoteDomProps'];
@@ -90,6 +91,7 @@ export function ContentItemRenderer({
   message,
   expandResources,
   toolResultsMap,
+  followChatScroll = true,
   resourceRefs,
   markdownComponents,
   remoteDomProps,
@@ -124,6 +126,7 @@ export function ContentItemRenderer({
             thinking={thinkingItem.thinking}
             thinkingTime={thinkingItem.thinkingTime}
             isStreaming={message?.isStreaming}
+            followChatScroll={followChatScroll}
           />
         </div>
       );

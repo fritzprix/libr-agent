@@ -41,6 +41,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   className = '',
   expandResources = false,
   toolResultsMap,
+  followChatScroll = true,
 }) => {
   const { openExternalUrl } = useRustBackend();
   const isDark = useIsDarkMode();
@@ -209,6 +210,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               message={message}
               expandResources={expandResources}
               toolResultsMap={toolResultsMap}
+              followChatScroll={followChatScroll}
               resourceRefs={resourceRefs}
               markdownComponents={markdownComponents}
               remoteDomProps={remoteDomProps}

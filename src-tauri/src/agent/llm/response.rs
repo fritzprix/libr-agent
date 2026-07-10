@@ -327,12 +327,14 @@ pub async fn handle_llm_response(
     }
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
-    response_circuit_breaker::preprocess_assistant_tool_calls(
+    let circuit_breaker_preprocess = response_circuit_breaker::preprocess_assistant_tool_calls(
         active_sessions,
         &session_id,
         &mut assistant_message,
     )
     .await;
+    let loop_prevention_short_circuits =
+        circuit_breaker_preprocess.loop_prevention_short_circuits;
 
     // Check if content is also empty (abnormal empty response).
     // Note: A message with tool calls but no content is VALID and normal.
@@ -520,6 +522,7 @@ pub async fn handle_llm_response(
                 app_handle_clone,
                 session_id_clone,
                 tool_calls,
+                loop_prevention_short_circuits,
             )
             .await;
         });

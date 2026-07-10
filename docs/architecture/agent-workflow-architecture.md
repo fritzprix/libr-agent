@@ -727,43 +727,37 @@ Before merging any Rust ↔ TypeScript integration changes:
 
 ### 11.1 Circuit Breaker for Tool Loops
 
-Agents occasionally get stuck in a loop calling the same tool repeatedly against an unresolvable error. The circuit breaker in `agent/llm/response.rs` intercepts the batch of tool calls the LLM wants to make **before** they are dispatched, and replaces a looping call with `builtin_ui__circuitBreak`.
+Agents occasionally repeat the same tool call (`toolName` + identical arguments) with identical outcomes. The circuit breaker in `agent/llm/response_circuit_breaker.rs` runs **before** tool dispatch and classifies each proposed call using message history in `circuit_breaker.rs`.
 
-**Two trigger modes:**
+**Detection (`circuit_breaker.rs`):**
 
-| Mode           | Condition                                               | Example                                               |
-| -------------- | ------------------------------------------------------- | ----------------------------------------------------- |
-| Same-tool-name | ≥2 consecutive failed results for the same tool         | `clearScratchpad` fails with ID 191, 192, 193 …       |
-| Same-signature | ≥2 consecutive failed results for exact tool+args combo | `readFile("/nonexistent")` called verbatim every turn |
+- Signature key: `toolName:arguments`
+- Walks history backwards and counts consecutive identical outcomes (success or error) for the same signature
+- Configurable threshold: Advanced Settings → `loopPreventionThreshold` (default `3`, clamped `2..20`)
 
-**Implementation sketch:**
+**Three escalation paths (`response_circuit_breaker.rs` + `natural_recovery.rs`):**
 
-```rust
-// response.rs
-fn evaluate_circuit_breaker_count(
-    messages: &[Message],
-    tool_call: &ToolCall,
-    call_name_by_id: &HashMap<String, String>,
-    call_signature_by_id: &HashMap<String, String>,
-) -> Option<usize> {
-    if tool_name == "builtin_ui__circuitBreak" { return None; } // skip the breaker itself
+| Stage | Condition | Behavior |
+| ----- | --------- | -------- |
+| Normal | below threshold | Execute tool normally |
+| Natural recovery | `count == threshold` | Keep original tool call; **skip MCP execution**; return synthetic **tool error** with guidance (`toolError: true`) |
+| Hard break | `count > threshold` | Replace call with `ui__circuitBreak` (or text-only forced stop if UI alias disabled) |
 
-    let n = count_consecutive_failed_calls(messages, |id| {
-        call_name_by_id.get(id) == Some(tool_name)   // mode 1: same name
-    });
-    if n >= 2 { return Some(n + 1); }
+**Natural recovery details (v0.8.27+):**
 
-    let sig = format!("{}:{}", tool_name, args);
-    let m = count_consecutive_failed_calls(messages, |id| {
-        call_signature_by_id.get(id) == Some(&sig)   // mode 2: same signature
-    });
-    if m >= 2 { return Some(m + 1); }
+- Does **not** replace looping calls with `scratchpad__think` or other substitute tools
+- Registers `LoopPreventionShortCircuit` entries keyed by `tool_call_id`
+- `tool_execution.rs` short-circuits matching IDs and returns `loop_prevention_tool_result()`
+- **Both** repeated-error and repeated-success tracks return synthetic errors; guidance text differs (pivot vs polling/sleep hint)
 
-    None
-}
-```
+**Return type:**
 
-`count_consecutive_failed_calls` iterates the message history **backwards**, stopping at the first success or role boundary — so it counts only the current unbroken run of failures, not historical ones.
+`preprocess_assistant_tool_calls()` returns `CircuitBreakerPreprocessResult`:
+
+- `loop_prevention_short_circuits` — IDs to block with synthetic errors
+- `forced_stop` — `InteractiveCircuitBreak` or `TextOnly` when hard break applies (text content is written to `assistant_message`)
+
+**Tests:** `tests/integration/circuit_breaker_short_circuit_tests.rs`, `tests/integration/circuit_breaker_recovery_tests.rs`
 
 ---
 
@@ -811,4 +805,4 @@ Adding a new builtin server without updating the registry → test failure, not 
 
 **Maintainer**: @fritzprix  
 **Last Audit**: 2024-12-28  
-**Last Updated**: 2026-02-21 (Section 9 circuit breaker + registry strengths; Section 11 added)
+**Last Updated**: 2026-07-10 (Section 11.1 loop prevention short-circuit refresh)

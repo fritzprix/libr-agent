@@ -1,4 +1,5 @@
 use crate::agent::llm::circuit_breaker;
+use crate::agent::llm::natural_recovery::{LoopPreventionKind, LoopPreventionShortCircuit};
 use crate::agent::llm::completion::load_context_management_settings;
 use crate::agent::llm::completion::request::apply_compact_summary_projection;
 use crate::agent::llm::token_utils::{
@@ -20,248 +21,208 @@ use tokio::sync::RwLock;
 const TOOL_LOOP_FENCE_MIN_KEEP_COUNT: usize = 1;
 const TOOL_LOOP_FENCE_RESULT_FILLER: &str = "x";
 
+/// Outcome of `preprocess_assistant_tool_calls` after loop detection runs.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct CircuitBreakerPreprocessResult {
+    pub loop_prevention_short_circuits: HashMap<String, LoopPreventionShortCircuit>,
+    pub forced_stop: Option<ForcedCircuitBreakStop>,
+}
+
+/// Hard-stop path when repetition exceeds `loopPreventionThreshold`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ForcedCircuitBreakStop {
+    /// `ui__circuitBreak` was injected into `assistant_message.tool_calls`.
+    InteractiveCircuitBreak,
+    /// `assistant_message` was converted to text-only forced stop content.
+    TextOnly,
+}
+
 pub(crate) async fn preprocess_assistant_tool_calls(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
     assistant_message: &mut Message,
-) {
+) -> CircuitBreakerPreprocessResult {
     let mut forced_circuit_break_message = None;
+    let mut loop_prevention_short_circuits = HashMap::new();
 
-    if let Some(tool_calls) = &mut assistant_message.tool_calls {
+    if let Some(tool_calls) = &assistant_message.tool_calls {
         let loop_threshold = circuit_breaker::load_loop_prevention_threshold().await;
 
-        let (session_metadata, break_index, break_action) = {
+        let (session_metadata, hard_break) = {
             let sessions = active_sessions.read().await;
             match sessions.get(session_id) {
-                None => (None, None, None),
+                None => (None, None),
                 Some(session) => {
                     let metadata = session.metadata.clone();
                     let messages = session.messages.read().await;
                     let call_signature_by_id = circuit_breaker::build_tool_call_indices(&messages);
 
-                    let mut break_index = None;
-                    let mut break_action = None;
+                    let mut hard_break = None;
                     for (index, tool_call) in tool_calls.iter().enumerate() {
-                        if let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
+                        let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
                             &messages,
                             tool_call,
                             &call_signature_by_id,
                             loop_threshold,
-                        ) {
-                            break_index = Some(index);
-                            break_action = Some(action);
-                            break;
+                        ) else {
+                            continue;
+                        };
+
+                        match action {
+                            circuit_breaker::CircuitBreakerAction::HardBreak {
+                                count,
+                                tool_name,
+                                args,
+                            } => {
+                                hard_break = Some((index, count, tool_name, args));
+                                break;
+                            }
+                            circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
+                                count,
+                                tool_name,
+                                ..
+                            } => {
+                                loop_prevention_short_circuits.insert(
+                                    tool_call.id.clone(),
+                                    LoopPreventionShortCircuit {
+                                        kind: LoopPreventionKind::RepeatedErrorOutcome,
+                                        tool_name,
+                                        count,
+                                    },
+                                );
+                            }
+                            circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
+                                count,
+                                tool_name,
+                                ..
+                            } => {
+                                loop_prevention_short_circuits.insert(
+                                    tool_call.id.clone(),
+                                    LoopPreventionShortCircuit {
+                                        kind: LoopPreventionKind::RepeatedSuccessOutcome,
+                                        tool_name,
+                                        count,
+                                    },
+                                );
+                            }
                         }
                     }
 
-                    (Some(metadata), break_index, break_action)
+                    (Some(metadata), hard_break)
                 }
             }
         };
 
-        if let Some(index) = break_index {
-            if let Some(action) = break_action {
-                match action {
-                    circuit_breaker::CircuitBreakerAction::HardBreak {
-                        count,
-                        tool_name,
-                        args,
-                    } => {
-                        log::warn!(
-                            "Circuit breaker triggered for session {} tool {} (count {})",
-                            session_id,
-                            tool_name,
-                            count
-                        );
+        if let Some((index, count, tool_name, args)) = hard_break {
+            loop_prevention_short_circuits.clear();
+            if let Some(tool_calls) = assistant_message.tool_calls.as_mut() {
+                log::warn!(
+                    "Circuit breaker triggered for session {} tool {} (count {})",
+                    session_id,
+                    tool_name,
+                    count
+                );
 
-                        let ui_alias_enabled = match session_metadata.as_ref() {
-                            Some(metadata) => {
-                                match crate::agent::resolve_agent_config(metadata).await {
-                                    Ok(config) => {
-                                        circuit_breaker::is_builtin_alias_enabled(&config, "ui")
-                                    }
-                                    Err(error) => {
-                                        log::warn!(
-                                            "Failed to resolve agent config for circuit breaker in session {}: {}",
-                                            session_id,
-                                            error
-                                        );
-                                        true
-                                    }
-                                }
+                let ui_alias_enabled = match session_metadata.as_ref() {
+                    Some(metadata) => {
+                        match crate::agent::resolve_agent_config(metadata).await {
+                            Ok(config) => {
+                                circuit_breaker::is_builtin_alias_enabled(&config, "ui")
                             }
-                            None => true,
-                        };
-
-                        if ui_alias_enabled {
-                            let circuit_break_call = ToolCall {
-                                id: uuid::Uuid::new_v4().to_string(),
-                                function: ToolCallFunction {
-                                    name: "ui__circuitBreak".to_string(),
-                                    arguments: serde_json::json!({
-                                        "toolName": tool_name,
-                                        "repetitionCount": count,
-                                        "args": args
-                                    })
-                                    .to_string(),
-                                },
-                                r#type: "function".to_string(),
-                            };
-
-                            tool_calls[index] = circuit_break_call;
-                            tool_calls.truncate(index + 1);
-                        } else {
-                            log::warn!(
-                                "UI alias disabled for session {}. Using text-only circuit break fallback.",
-                                session_id
-                            );
-
-                            forced_circuit_break_message =
-                                Some(crate::mcp::types::MCPContent::Text {
-                                    text: format!(
-                                        "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).\n\nThe 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls.",
-                                        tool_name, count
-                                    ),
-                                    is_error: None,
-                                });
+                            Err(error) => {
+                                log::warn!(
+                                    "Failed to resolve agent config for circuit breaker in session {}: {}",
+                                    session_id,
+                                    error
+                                );
+                                true
+                            }
                         }
                     }
-                    circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
-                        count,
-                        tool_name,
-                        ..
-                    } => {
-                        log::warn!(
-                            "Natural recovery (Error track) triggered for session {} tool {} (count {})",
-                            session_id, tool_name, count
-                        );
-                        let entropy = uuid::Uuid::new_v4().to_string();
-                        let nanos = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .subsec_nanos() as usize;
+                    None => true,
+                };
 
-                        let error_templates = [
-                            (
-                                "I am repeatedly calling '{TOOL_NAME}' with identical parameters. I need to determine if I am waiting for an external change, if I need to pivot, or if I am completely blocked.",
-                                "I must choose one of three paths to break this loop: (1) If I am waiting for a background process, compilation, or file change, I should execute a sleep/delay command (e.g., sleep 5 or timeout 5). (2) If I am repeating this tool unnecessarily, I must review my progress and pivot to a different tool other than '{TOOL_NAME}'. (3) If I cannot proceed further, I should stop and report my current progress and the specific blocker to the user."
-                            ),
-                            (
-                                "Executing '{TOOL_NAME}' multiple times with the same arguments has not moved the task forward. I must evaluate my situation and choose the correct recovery strategy.",
-                                "I need to select the most appropriate action from these three scenarios: (1) If I am polling for an asynchronous state change, I should run a delay/sleep command. (2) If I am stuck in a logical loop, I must analyze what I have done, re-read the user request, and switch to a different tool. (3) If I have exhausted all options and cannot proceed, I must immediately report the progress and the problems to the user."
-                            ),
-                            (
-                                "I have called '{TOOL_NAME}' consecutively without changing the state. I must stop this pattern and decide how to resolve this bottleneck.",
-                                "I will choose one of the following three steps: (1) If I am waiting on a slow resource, server, or process, I will use a sleep command to pause. (2) If this repeated call is redundant, I will refocus on the goal and pivot to a different tool. (3) If I am completely blocked and cannot make further progress, I will report the current status and the obstacles directly to the user."
-                            ),
-                            (
-                                "My repeated invocation of '{TOOL_NAME}' indicates a loop. I need to diagnose the cause of this repetition and select the correct path forward.",
-                                "I must act based on one of these three scenarios: (1) If I need to wait for a state transition, I will call a sleep/timeout command to introduce a delay. (2) If I am stuck, I will review the conversation history and use a tool other than '{TOOL_NAME}' to make progress. (3) If no further progress is possible, I will stop and write a report to the user explaining my progress and the blockers."
-                            )
-                        ];
+                if ui_alias_enabled {
+                    let circuit_break_call = ToolCall {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        function: ToolCallFunction {
+                            name: "ui__circuitBreak".to_string(),
+                            arguments: serde_json::json!({
+                                "toolName": tool_name,
+                                "repetitionCount": count,
+                                "args": args
+                            })
+                            .to_string(),
+                        },
+                        r#type: "function".to_string(),
+                    };
 
-                        let (thought_tmpl, next_action_tmpl) =
-                            error_templates[nanos % error_templates.len()];
-                        let recovery_thought = format!(
-                            "{} [Entropy ID: {}]",
-                            thought_tmpl.replace("{TOOL_NAME}", &tool_name),
-                            entropy
-                        );
-                        let next_action = next_action_tmpl.replace("{TOOL_NAME}", &tool_name);
+                    tool_calls[index] = circuit_break_call;
+                    tool_calls.truncate(index + 1);
+                } else {
+                    log::warn!(
+                        "UI alias disabled for session {}. Using text-only circuit break fallback.",
+                        session_id
+                    );
 
-                        let think_call = ToolCall {
-                            id: uuid::Uuid::new_v4().to_string(),
-                            function: ToolCallFunction {
-                                name: "scratchpad__think".to_string(),
-                                arguments: serde_json::json!({
-                                    "thought": recovery_thought,
-                                    "nextAction": next_action
-                                })
-                                .to_string(),
-                            },
-                            r#type: "function".to_string(),
-                        };
-                        tool_calls[index] = think_call;
-                        tool_calls.truncate(index + 1);
-                    }
-                    circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
-                        count,
-                        tool_name,
-                        ..
-                    } => {
-                        log::warn!(
-                            "Natural recovery (Success track) triggered for session {} tool {} (count {})",
-                            session_id, tool_name, count
-                        );
-                        let entropy = uuid::Uuid::new_v4().to_string();
-                        let nanos = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .subsec_nanos() as usize;
-
-                        let success_templates = [
-                            (
-                                "I am repeatedly calling '{TOOL_NAME}' with identical parameters. I need to determine if I am waiting for an external change, if I need to pivot, or if I am completely blocked.",
-                                "I must choose one of three paths to break this loop: (1) If I am waiting for a background process, compilation, or file change, I should execute a sleep/delay command (e.g., sleep 5 or timeout 5). (2) If I am repeating this tool unnecessarily, I must review my progress and pivot to a different tool other than '{TOOL_NAME}'. (3) If I cannot proceed further, I should stop and report my current progress and the specific blocker to the user."
+                    forced_circuit_break_message =
+                        Some(crate::mcp::types::MCPContent::Text {
+                            text: format!(
+                                "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).\n\nThe 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls.",
+                                tool_name, count
                             ),
-                            (
-                                "Executing '{TOOL_NAME}' multiple times with the same arguments has not moved the task forward. I must evaluate my situation and choose the correct recovery strategy.",
-                                "I need to select the most appropriate action from these three scenarios: (1) If I am polling for an asynchronous state change, I should run a delay/sleep command. (2) If I am stuck in a logical loop, I must analyze what I have done, re-read the user request, and switch to a different tool. (3) If I have exhausted all options and cannot proceed, I must immediately report the progress and the problems to the user."
-                            ),
-                            (
-                                "I have called '{TOOL_NAME}' consecutively without changing the state. I must stop this pattern and decide how to resolve this bottleneck.",
-                                "I will choose one of the following three steps: (1) If I am waiting on a slow resource, server, or process, I will use a sleep command to pause. (2) If this repeated call is redundant, I will refocus on the goal and pivot to a different tool. (3) If I am completely blocked and cannot make further progress, I will report the current status and the obstacles directly to the user."
-                            ),
-                            (
-                                "My repeated invocation of '{TOOL_NAME}' indicates a loop. I need to diagnose the cause of this repetition and select the correct path forward.",
-                                "I must act based on one of these three scenarios: (1) If I need to wait for a state transition, I will call a sleep/timeout command to introduce a delay. (2) If I am stuck, I will review the conversation history and use a tool other than '{TOOL_NAME}' to make progress. (3) If no further progress is possible, I will stop and write a report to the user explaining my progress and the blockers."
-                            )
-                        ];
-
-                        let (thought_tmpl, next_action_tmpl) =
-                            success_templates[nanos % success_templates.len()];
-                        let recovery_thought = format!(
-                            "{} [Entropy ID: {}]",
-                            thought_tmpl.replace("{TOOL_NAME}", &tool_name),
-                            entropy
-                        );
-                        let next_action = next_action_tmpl.replace("{TOOL_NAME}", &tool_name);
-
-                        let think_call = ToolCall {
-                            id: uuid::Uuid::new_v4().to_string(),
-                            function: ToolCallFunction {
-                                name: "scratchpad__think".to_string(),
-                                arguments: serde_json::json!({
-                                    "thought": recovery_thought,
-                                    "nextAction": next_action
-                                })
-                                .to_string(),
-                            },
-                            r#type: "function".to_string(),
-                        };
-                        tool_calls[index] = think_call;
-                        tool_calls.truncate(index + 1);
-                    }
+                            is_error: None,
+                        });
                 }
+            }
+        } else if !loop_prevention_short_circuits.is_empty() {
+            for short_circuit in loop_prevention_short_circuits.values() {
+                log::warn!(
+                    "Loop prevention short-circuit for session {} tool {} (count {}, kind={:?})",
+                    session_id,
+                    short_circuit.tool_name,
+                    short_circuit.count,
+                    short_circuit.kind
+                );
             }
         }
     }
 
     if let Some(circuit_break_message) = forced_circuit_break_message {
         assistant_message.tool_calls = None;
-        assistant_message.content = vec![circuit_break_message];
-        return;
+        assistant_message.content = vec![circuit_break_message.clone()];
+        return CircuitBreakerPreprocessResult {
+            loop_prevention_short_circuits: HashMap::new(),
+            forced_stop: Some(ForcedCircuitBreakStop::TextOnly),
+        };
     }
 
     apply_tool_loop_token_fence(active_sessions, session_id, assistant_message).await;
+
+    let forced_stop = if hard_break_applied_ui_circuit_break(assistant_message) {
+        Some(ForcedCircuitBreakStop::InteractiveCircuitBreak)
+    } else {
+        None
+    };
+
+    CircuitBreakerPreprocessResult {
+        loop_prevention_short_circuits,
+        forced_stop,
+    }
+}
+
+fn hard_break_applied_ui_circuit_break(assistant_message: &Message) -> bool {
+    assistant_message.tool_calls.as_ref().is_some_and(|tool_calls| {
+        tool_calls.iter().any(|tool_call| tool_call.function.name == "ui__circuitBreak")
+    })
 }
 
 pub async fn preprocess_assistant_tool_calls_for_testing(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
     assistant_message: &mut Message,
-) {
-    preprocess_assistant_tool_calls(active_sessions, session_id, assistant_message).await;
+) -> CircuitBreakerPreprocessResult {
+    preprocess_assistant_tool_calls(active_sessions, session_id, assistant_message).await
 }
 
 async fn apply_tool_loop_token_fence(

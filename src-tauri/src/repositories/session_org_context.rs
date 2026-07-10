@@ -1,5 +1,13 @@
 use super::{format_session_label, DbError, SessionMetadata, SessionRepository};
 
+fn format_session_label_with_status(session: &SessionMetadata) -> String {
+    format!(
+        "{} [{}]",
+        format_session_label(session),
+        session.status.as_str()
+    )
+}
+
 pub async fn build_explicit_org_layer_context(
     repo: &dyn SessionRepository,
     session: &SessionMetadata,
@@ -51,9 +59,9 @@ pub async fn build_explicit_org_layer_context(
             });
 
     let mut parts = vec![
-        "## Explicit Org Layer".to_string(),
+        "### Explicit Org Layer".to_string(),
         String::new(),
-        format!("- Org: {}", org_name),
+        format!("- Org: {} (ID: {})", org_name, org_id),
         format!("- Depth: {}", depth),
     ];
 
@@ -62,13 +70,18 @@ pub async fn build_explicit_org_layer_context(
             "- Teamwork Artifact Root: {}",
             teamwork_artifact_root.display()
         ));
-        parts.push("- Teamwork Access Alias: @teamwork/...".to_string());
+        parts.push(
+            "- Teamwork Access Alias: @teamwork/... (e.g. @teamwork/coordination/KANBAN.md)"
+                .to_string(),
+        );
         parts.push(
             "- Teamwork SSOT: the teamwork artifact root is canonical; workspaceOverride does not change it."
                 .to_string(),
         );
+        parts.push("- Before delegating: read @teamwork/coordination/KANBAN.md".to_string());
+        parts.push("- Before handoff: update @teamwork/coordination/HANDOFF.md".to_string());
         parts.push(
-            "- Canonical Files: agents.md, MISSION.md, ROLES.md, coordination/{KANBAN,HANDOFF,DECISIONS,RISKS,DISCUSSION}.md, .libragent/teamwork.json"
+            "- Role context: @teamwork/agents.md, @teamwork/MISSION.md, @teamwork/ROLES.md"
                 .to_string(),
         );
         parts.push(
@@ -80,14 +93,14 @@ pub async fn build_explicit_org_layer_context(
     if let Some(parent_session) = parent {
         parts.push(format!(
             "- Parent: {}",
-            format_session_label(parent_session)
+            format_session_label_with_status(parent_session)
         ));
     }
 
     if !siblings.is_empty() {
         parts.push("- Siblings at same depth:".to_string());
         for sibling in siblings {
-            parts.push(format!("  - {}", format_session_label(sibling)));
+            parts.push(format!("  - {}", format_session_label_with_status(sibling)));
         }
     }
 

@@ -104,15 +104,15 @@ async fn org_service_context_includes_only_local_org_layer_for_org_sessions() {
         .expect("org session should receive org layer context");
 
     assert!(
-        context.contains("## Explicit Org Layer"),
+        context.contains("### Explicit Org Layer"),
         "org sessions should get an explicit org layer section"
     );
-    assert!(context.contains("- Org: Alpha Org"));
+    assert!(context.contains("- Org: Alpha Org (ID: org-alpha)"));
     assert!(context.contains("- Depth: 1"));
     assert!(context.contains("- Parent: root — Root Coordinator"));
     assert!(
-        context.contains("  - child-b — Writer"),
-        "same-depth sibling should appear in local org layer"
+        context.contains("  - child-b — Writer [idle]"),
+        "same-depth sibling should appear in local org layer with status"
     );
     assert!(
         !context.contains("other-depth"),
@@ -293,8 +293,9 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
     assert!(prompt.contains("### Sub-Agent Sessions (Reuse via messageToSession)"));
     assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
     assert!(prompt.contains("  - `child-org-session` (name: \"Child Analyst\")"));
-    assert!(prompt.contains("## Explicit Org Layer"));
-    assert!(prompt.contains("- Org: Beta Org"));
+    assert!(prompt.contains("### Explicit Org Layer"));
+    assert!(prompt.contains("- Org: Beta Org (ID: org-beta)"));
+    assert!(prompt.contains("## Agent Delegation"));
 }
 
 #[tokio::test]

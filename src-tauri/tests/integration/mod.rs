@@ -25,6 +25,7 @@ pub mod channel_permission_id_tests;
 pub mod channel_permission_resolution_tests;
 pub mod check_session_terminal_result_tests;
 pub mod circuit_breaker_recovery_tests;
+pub mod circuit_breaker_short_circuit_tests;
 pub mod compact_context_repository_tests;
 pub mod compact_error_recovery_tests;
 pub mod compaction_phase_state_tests;
