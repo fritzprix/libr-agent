@@ -1,11 +1,10 @@
-use crate::mcp::{utils::schema_builder::*, MCPTool};
+use crate::mcp::{schema::SchemaProperties, utils::schema_builder::*, MCPTool};
 use serde_json::json;
-use std::collections::HashMap;
 
 // Unix platform tool (bash/sh) - PRIMARY TOOL (Isolated Shell)
 #[cfg(any(unix, windows))]
 pub fn create_run_shell_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "command".to_string(),
         string_prop_with_examples(
@@ -46,7 +45,7 @@ pub fn create_run_shell_tool() -> MCPTool {
 // Unix platform tool (bash/sh) - ADVANCED TOOL (Persistent Shell)
 #[cfg(any(unix, windows))]
 pub fn create_run_persistent_shell_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "command".to_string(),
         string_prop_with_examples(
@@ -124,7 +123,7 @@ pub fn create_run_persistent_shell_tool() -> MCPTool {
 // Background process spawning tool (platform-agnostic)
 #[cfg(unix)]
 pub fn create_spawn_process_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "command".to_string(),
         string_prop_with_examples(
@@ -165,7 +164,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
 // Windows platform tool (PowerShell) - PRIMARY TOOL (Isolated PowerShell)
 #[cfg(windows)]
 pub fn create_run_powershell_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "command".to_string(),
         string_prop_with_examples(
@@ -209,7 +208,7 @@ Guidelines:
 // Windows platform tool (PowerShell) - ADVANCED TOOL (Persistent Shell)
 #[cfg(windows)]
 pub fn create_run_persistent_powershell_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "command".to_string(),
         string_prop_with_examples(
@@ -282,7 +281,7 @@ pub fn create_run_persistent_powershell_tool() -> MCPTool {
 // Background process spawning tool (platform-agnostic)
 #[cfg(windows)]
 pub fn create_spawn_process_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "command".to_string(),
         string_prop_with_examples(

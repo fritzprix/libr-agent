@@ -10,7 +10,7 @@ fn scratchpad_tool(name: &str) -> tauri_mcp_agent_lib::mcp::MCPTool {
 
 fn object_properties(
     tool: &tauri_mcp_agent_lib::mcp::MCPTool,
-) -> &std::collections::HashMap<String, tauri_mcp_agent_lib::mcp::schema::JSONSchema> {
+) -> &tauri_mcp_agent_lib::mcp::schema::SchemaProperties {
     match &tool.input_schema.schema_type {
         JSONSchemaType::Object {
             properties: Some(properties),

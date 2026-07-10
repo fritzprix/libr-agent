@@ -1,13 +1,12 @@
 // schemas.rs - Tool schema definitions
-use crate::mcp::schema::JSONSchema;
+use crate::mcp::schema::{JSONSchema, SchemaProperties};
 use crate::mcp::utils::schema_builder::{integer_prop, object_schema, string_prop};
-use std::collections::HashMap;
 
 pub(crate) fn tool_list_content_schema() -> JSONSchema {
-    let mut props: HashMap<String, JSONSchema> = HashMap::new();
+    let mut props: SchemaProperties = SchemaProperties::new();
 
     // Create pagination object schema with description
-    let mut pagination_props: HashMap<String, JSONSchema> = HashMap::new();
+    let mut pagination_props: SchemaProperties = SchemaProperties::new();
     pagination_props.insert(
         "offset".to_string(),
         integer_prop(
@@ -41,7 +40,7 @@ pub(crate) fn tool_list_content_schema() -> JSONSchema {
 }
 
 pub(crate) fn tool_read_content_schema() -> JSONSchema {
-    let mut props: HashMap<String, JSONSchema> = HashMap::new();
+    let mut props: SchemaProperties = SchemaProperties::new();
     props.insert(
         "contentId".to_string(),
         string_prop(None, None, Some("Content ID to read")),

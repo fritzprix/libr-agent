@@ -1,12 +1,14 @@
-use crate::mcp::{schema::JSONSchema, utils::schema_builder::*, MCPTool};
-
-use std::collections::HashMap;
+use crate::mcp::{
+    schema::{JSONSchema, SchemaProperties},
+    utils::schema_builder::*,
+    MCPTool,
+};
 
 // Note: maximum file size is enforced at runtime (LIBRAGENT_MAX_FILE_SIZE).
 // The input schema cannot call runtime functions; therefore `content` has no hard cap here.
 
 pub fn create_read_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "path".to_string(),
         string_prop(
@@ -51,13 +53,24 @@ pub fn create_read_file_tool() -> MCPTool {
 }
 
 pub fn create_write_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    // Field order is intentional: path → mode → content.
+    // Models often emit arguments in schema order; putting mode before the long
+    // content payload reduces accidental omission of mode after drafting content.
+    let mut props = SchemaProperties::new();
     props.insert(
         "path".to_string(),
         string_prop(
             Some(1),
             Some(1000),
             Some("Path to write. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... to write into the canonical teamwork scaffold root without changing workspaceOverride."),
+        ),
+    );
+    props.insert(
+        "mode".to_string(),
+        enum_prop(
+            vec!["create", "overwrite", "append"],
+            "create",
+            Some("Write mode. 'create' (default) writes a new file; if the path already exists it keeps that file and writes to a sibling path with a numeric suffix (e.g. report-1.md) instead of failing. 'overwrite' replaces the entire existing file. 'append' adds content verbatim to the end (no automatic newline). Use overwrite/append/editFile when you intend to change an existing file."),
         ),
     );
     props.insert(
@@ -68,19 +81,11 @@ pub fn create_write_file_tool() -> MCPTool {
             Some("File content to write. Empty string creates an empty file. In append mode, content is written verbatim—prefix with \\n when adding after an existing line."),
         ),
     );
-    props.insert(
-        "mode".to_string(),
-        enum_prop(
-            vec!["create", "overwrite", "append"],
-            "create",
-            Some("Write mode. 'create' fails if the file already exists, 'overwrite' replaces the entire file, and 'append' adds content verbatim to the end (no automatic newline)."),
-        ),
-    );
 
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Append writes content verbatim—include \\n in content when starting a new line. Responses include current line anchors so follow-up editFile calls can usually reuse them directly. mode='overwrite' returns a diff of the changes."
+        description: "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Default mode='create': if the target already exists, content is saved to a new sibling path (stem-N.ext) and the response clearly reports the alternate path—existing files are never overwritten unless mode='overwrite'. Append writes content verbatim—include \\n in content when starting a new line. Responses include current line anchors so follow-up editFile calls can usually reuse them directly. mode='overwrite' returns a diff of the changes."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
@@ -89,7 +94,7 @@ pub fn create_write_file_tool() -> MCPTool {
 }
 
 pub fn create_list_directory_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "path".to_string(),
         string_prop(
@@ -133,7 +138,7 @@ Returns names and types (file/directory). Use search with filePattern when you n
 }
 
 pub fn create_import_files_tool() -> MCPTool {
-    let mut file_item_props = HashMap::new();
+    let mut file_item_props = SchemaProperties::new();
     file_item_props.insert(
         "srcAbsPath".to_string(),
         string_prop(
@@ -151,7 +156,7 @@ pub fn create_import_files_tool() -> MCPTool {
         ),
     );
 
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "files".to_string(),
         array_schema(
@@ -176,7 +181,7 @@ pub fn create_import_files_tool() -> MCPTool {
 }
 
 pub fn create_search_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "path".to_string(),
         string_prop(
@@ -239,7 +244,7 @@ pub fn create_search_tool() -> MCPTool {
 }
 
 pub fn create_replace_lines_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "path".to_string(),
         string_prop(
@@ -294,7 +299,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
 
     // Batch mode: `edits` array where each item has the same fields as the
     // flat single-edit parameters above.
-    let mut replace_item_props = HashMap::new();
+    let mut replace_item_props = SchemaProperties::new();
     replace_item_props.insert(
         "line".to_string(),
         integer_prop(Some(1), None, Some("Start line number (1-based).")),
@@ -359,7 +364,7 @@ Use flat params (line/anchor/new_value) for a single edit, or the `edits` array 
 }
 
 pub fn create_insert_after_line_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "path".to_string(),
         string_prop(
@@ -398,7 +403,7 @@ pub fn create_insert_after_line_tool() -> MCPTool {
     );
 
     // Batch mode array items.
-    let mut insert_item_props = HashMap::new();
+    let mut insert_item_props = SchemaProperties::new();
     insert_item_props.insert(
         "afterLine".to_string(),
         integer_prop(
@@ -449,7 +454,7 @@ Use flat params (afterLine/anchor/new_value) for a single insertion, or the `edi
 }
 
 pub fn create_delete_lines_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "path".to_string(),
         string_prop(
@@ -492,7 +497,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
     );
 
     // Batch mode array items.
-    let mut delete_item_props = HashMap::new();
+    let mut delete_item_props = SchemaProperties::new();
     delete_item_props.insert(
         "line".to_string(),
         integer_prop(Some(1), None, Some("Start line number (1-based).")),
@@ -554,13 +559,13 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
 /// Maximum number of edit operations allowed in a single editFile call.
 pub const EDIT_FILE_MAX_EDITS: u32 = 50;
 
-fn edit_anchor_props() -> HashMap<String, JSONSchema> {
+fn edit_anchor_props() -> SchemaProperties {
     let start_anchor_desc =
         "6-character opaque anchor for the start line from readFile(showLineAnchors=true). Required for edits that touch an existing line. Do not include the line number or '|content'.";
     let end_anchor_desc =
         "6-character opaque anchor for the end line. Required when endLine is set for a multi-line replace/delete range.";
 
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "anchor".to_string(),
         string_prop(None, None, Some(start_anchor_desc)),
@@ -692,7 +697,7 @@ fn create_edit_item_schema() -> JSONSchema {
 }
 
 pub fn create_edit_file_input_schema() -> JSONSchema {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "path".to_string(),
         string_prop(

@@ -1,6 +1,6 @@
+use crate::mcp::schema::SchemaProperties;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
-use std::collections::HashMap;
 
 /// Detect current system platform and installed tools
 pub fn detect_platform_tool() -> MCPTool {
@@ -33,7 +33,7 @@ Returns:
 • Use getSetupGuide(tool) only for missing tools
 • Available guides: node, python, uv, docker, git"
                 .to_string(),
-        input_schema: object_schema(HashMap::new(), vec![]),
+        input_schema: object_schema(SchemaProperties::new(), vec![]),
         output_schema: None,
         annotations: None,
     }
@@ -41,7 +41,7 @@ Returns:
 
 /// Get installation guide for a development tool
 pub fn get_setup_guide_tool() -> MCPTool {
-    let mut props = HashMap::new();
+    let mut props = SchemaProperties::new();
     props.insert(
         "tool".to_string(),
         enum_prop_required(

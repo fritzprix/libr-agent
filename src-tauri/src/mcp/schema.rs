@@ -1,4 +1,11 @@
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+
+/// Ordered property map for JSON Schema objects.
+///
+/// Insertion order is preserved through serialization so LLM tool schemas can
+/// present fields in a deliberate sequence (e.g. path → mode → content).
+pub type SchemaProperties = IndexMap<String, JSONSchema>;
 
 /// Represents the value allowed for `additionalProperties` in an object schema.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -134,9 +141,9 @@ pub enum JSONSchemaType {
     /// An object type, with optional constraints on its properties.
     #[serde(rename = "object")]
     Object {
-        /// A map of property names to their schemas.
+        /// A map of property names to their schemas (insertion order preserved).
         #[serde(skip_serializing_if = "Option::is_none")]
-        properties: Option<std::collections::HashMap<String, JSONSchema>>,
+        properties: Option<SchemaProperties>,
         /// A list of required property names.
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<Vec<String>>,
@@ -232,7 +239,7 @@ impl Default for MCPToolInputSchema {
     fn default() -> Self {
         Self {
             schema_type: JSONSchemaType::Object {
-                properties: Some(std::collections::HashMap::new()),
+                properties: Some(SchemaProperties::new()),
                 required: None,
                 additional_properties: None,
                 property_names: None,

@@ -766,10 +766,41 @@ async fn search_rejects_single_files_that_exceed_content_limit() {
     assert_eq!(result.is_error, Some(true));
 }
 
+#[test]
+fn write_file_schema_property_order_is_path_mode_content() {
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_write_file_tool;
+    use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
+
+    let tool = create_write_file_tool();
+    let JSONSchemaType::Object {
+        properties: Some(properties),
+        ..
+    } = &tool.input_schema.schema_type
+    else {
+        panic!("writeFile schema should be an object");
+    };
+
+    let keys: Vec<&str> = properties.keys().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        vec!["path", "mode", "content"],
+        "writeFile properties must serialize as path → mode → content"
+    );
+
+    let serialized = serde_json::to_value(&tool.input_schema).expect("serialize schema");
+    let prop_keys: Vec<&str> = serialized["properties"]
+        .as_object()
+        .expect("properties object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(prop_keys, vec!["path", "mode", "content"]);
+}
+
 #[tokio::test]
-async fn write_file_duplicate_resource_guidance_keeps_numbered_steps_clean() {
+async fn write_file_create_redirects_to_suffixed_path_when_target_exists() {
     let temp_dir = tempdir().expect("temp dir");
-    let session_id = "write-file-duplicate-guidance";
+    let session_id = "write-file-create-suffix";
     let server = build_workspace_server(temp_dir.path(), session_id);
     let workspace_dir = server.get_workspace_dir(session_id);
 
@@ -786,40 +817,86 @@ async fn write_file_duplicate_resource_guidance_keeps_numbered_steps_clean() {
             Some(session_id.to_string()),
         )
         .await
-        .expect("write should return duplicate-resource guidance");
+        .expect("write should succeed with alternate path");
 
     let text = extract_text_content(&result);
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
 
-    assert_eq!(
+    assert_ne!(
         result.is_error,
         Some(true),
-        "duplicate resource currently uses error semantics"
+        "auto-suffix create should succeed, not error: {text}"
+    );
+    assert_eq!(structured["path"], json!("art-1.html"));
+    assert_eq!(structured["requested_path"], json!("art.html"));
+    assert_eq!(structured["path_adjusted"], json!(true));
+    assert_eq!(structured["suffix"], json!(1));
+
+    assert!(
+        text.contains("Alternate Path") || text.contains("already existed"),
+        "response must clearly state the path was redirected: {text}"
     );
     assert!(
-        text.contains("💡 Next Steps:"),
-        "missing next-steps header: {text}"
+        text.contains("art.html") && text.contains("art-1.html"),
+        "response must show both requested and actual paths: {text}"
     );
     assert!(
-        text.contains("1. Set \"mode\": \"overwrite\" to replace the existing file."),
-        "overwrite guidance should be a clean numbered step: {text}"
+        text.contains("mode\": \"overwrite\"") || text.contains("\"mode\": \"overwrite\""),
+        "response must teach overwrite for intentional replace: {text}"
     );
     assert!(
-        text.contains(
-            "2. Set \"mode\": \"append\" to add content to the end of the existing file."
-        ),
-        "append guidance should be a clean numbered step: {text}"
+        text.contains("editFile"),
+        "response must mention editFile for in-place edits: {text}"
     );
     assert!(
-        text.contains("3. Use readFile(\"art.html\") first if you need the current contents before changing the file."),
-        "read guidance should be a clean numbered step: {text}"
+        text.contains("IMPORTANT:") || text.contains("Continue with"),
+        "next steps must tell the agent to use the alternate path: {text}"
     );
-    assert!(
-        text.contains("4. Use editFile for targeted edits to \"art.html\" instead of rewriting the whole file."),
-        "edit guidance should be a clean numbered step: {text}"
+
+    let original = std::fs::read_to_string(workspace_dir.join("art.html")).expect("read original");
+    assert_eq!(
+        original, "<html>existing</html>\n",
+        "original file must remain unchanged"
     );
-    assert!(
-        !text.contains("5. "),
-        "there should not be a phantom blank numbered item: {text}"
+    let written =
+        std::fs::read_to_string(workspace_dir.join("art-1.html")).expect("read alternate");
+    assert_eq!(written, "<html>new</html>\n");
+}
+
+#[tokio::test]
+async fn write_file_create_increments_suffix_when_prior_alternates_exist() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-create-suffix-increment";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("report.md"), "v0\n").expect("seed report.md");
+    std::fs::write(workspace_dir.join("report-1.md"), "v1\n").expect("seed report-1.md");
+
+    let result = server
+        .handle_write_file(
+            json!({
+                "path": "report.md",
+                "content": "v2\n",
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("write should succeed");
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["path"], json!("report-2.md"));
+    assert_eq!(structured["suffix"], json!(2));
+    assert_eq!(
+        std::fs::read_to_string(workspace_dir.join("report-2.md")).expect("read"),
+        "v2\n"
     );
 }
 

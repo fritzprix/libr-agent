@@ -564,7 +564,7 @@ fn registry_and_server_list_are_in_sync() {
 fn extract_object_properties(
     schema: &tauri_mcp_agent_lib::mcp::schema::JSONSchema,
     context: &str,
-) -> std::collections::HashMap<String, tauri_mcp_agent_lib::mcp::schema::JSONSchema> {
+) -> tauri_mcp_agent_lib::mcp::schema::SchemaProperties {
     match &schema.schema_type {
         tauri_mcp_agent_lib::mcp::schema::JSONSchemaType::Object { properties, .. } => properties
             .clone()
