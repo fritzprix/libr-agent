@@ -1,7 +1,7 @@
 use crate::agent::llm::circuit_breaker;
-use crate::agent::llm::natural_recovery::{LoopPreventionKind, LoopPreventionShortCircuit};
 use crate::agent::llm::completion::load_context_management_settings;
 use crate::agent::llm::completion::request::apply_compact_summary_projection;
+use crate::agent::llm::natural_recovery::{LoopPreventionKind, LoopPreventionShortCircuit};
 use crate::agent::llm::token_utils::{
     calculate_conservative_preflight_prompt_tokens, calculate_context_safety_margin,
     calculate_effective_input_budget, calculate_prompt_anchored_total_tokens,
@@ -124,21 +124,17 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                 );
 
                 let ui_alias_enabled = match session_metadata.as_ref() {
-                    Some(metadata) => {
-                        match crate::agent::resolve_agent_config(metadata).await {
-                            Ok(config) => {
-                                circuit_breaker::is_builtin_alias_enabled(&config, "ui")
-                            }
-                            Err(error) => {
-                                log::warn!(
+                    Some(metadata) => match crate::agent::resolve_agent_config(metadata).await {
+                        Ok(config) => circuit_breaker::is_builtin_alias_enabled(&config, "ui"),
+                        Err(error) => {
+                            log::warn!(
                                     "Failed to resolve agent config for circuit breaker in session {}: {}",
                                     session_id,
                                     error
                                 );
-                                true
-                            }
+                            true
                         }
-                    }
+                    },
                     None => true,
                 };
 
@@ -212,9 +208,14 @@ pub(crate) async fn preprocess_assistant_tool_calls(
 }
 
 fn hard_break_applied_ui_circuit_break(assistant_message: &Message) -> bool {
-    assistant_message.tool_calls.as_ref().is_some_and(|tool_calls| {
-        tool_calls.iter().any(|tool_call| tool_call.function.name == "ui__circuitBreak")
-    })
+    assistant_message
+        .tool_calls
+        .as_ref()
+        .is_some_and(|tool_calls| {
+            tool_calls
+                .iter()
+                .any(|tool_call| tool_call.function.name == "ui__circuitBreak")
+        })
 }
 
 pub async fn preprocess_assistant_tool_calls_for_testing(

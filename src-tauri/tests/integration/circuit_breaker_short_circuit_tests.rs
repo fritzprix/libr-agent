@@ -1,10 +1,5 @@
-use crate::common;
-
 use std::collections::HashMap;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::{atomic::AtomicBool, Arc};
 use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::llm::natural_recovery::LoopPreventionKind;
 use tauri_mcp_agent_lib::agent::llm::preprocess_assistant_tool_calls_for_testing;
@@ -178,6 +173,16 @@ fn repeated_success_history(repeated_args: &str, repeated_success: &str) -> Vec<
     ]
 }
 
+fn ensure_active_sessions() -> Arc<RwLock<HashMap<String, AgentSession>>> {
+    if let Some(existing) = try_get_active_sessions() {
+        return existing.clone();
+    }
+
+    let sessions = Arc::new(RwLock::new(HashMap::new()));
+    init_active_sessions(sessions.clone());
+    sessions
+}
+
 fn repeated_error_history(repeated_args: &str, repeated_error: &str) -> Vec<Message> {
     vec![
         test_message(
@@ -229,15 +234,12 @@ fn repeated_error_history(repeated_args: &str, repeated_error: &str) -> Vec<Mess
 
 #[tokio::test]
 async fn natural_recovery_success_keeps_original_tool_call_and_registers_short_circuit() {
-    common::init_test_env();
-    init_active_sessions();
-
     let session_id = "loop-prevention-success-session";
     let repeated_args = r#"{"path":"src/main.ts"}"#;
     let repeated_success = "src/main.ts contents";
     let history = repeated_success_history(repeated_args, repeated_success);
 
-    let active_sessions = try_get_active_sessions().expect("active sessions");
+    let active_sessions = ensure_active_sessions();
     {
         let mut sessions = active_sessions.write().await;
         sessions.insert(
@@ -289,15 +291,12 @@ async fn natural_recovery_success_keeps_original_tool_call_and_registers_short_c
 
 #[tokio::test]
 async fn natural_recovery_error_keeps_original_tool_call_and_registers_short_circuit() {
-    common::init_test_env();
-    init_active_sessions();
-
     let session_id = "loop-prevention-error-session";
     let repeated_args = r#"{"path":"src/main.ts"}"#;
     let repeated_error = "Error: file not found";
     let history = repeated_error_history(repeated_args, repeated_error);
 
-    let active_sessions = try_get_active_sessions().expect("active sessions");
+    let active_sessions = ensure_active_sessions();
     {
         let mut sessions = active_sessions.write().await;
         sessions.insert(
@@ -343,14 +342,11 @@ async fn natural_recovery_error_keeps_original_tool_call_and_registers_short_cir
 
 #[tokio::test]
 async fn natural_recovery_does_not_replace_with_scratchpad_think() {
-    common::init_test_env();
-    init_active_sessions();
-
     let session_id = "loop-prevention-no-think-session";
     let repeated_args = r#"{"path":"src/main.ts"}"#;
     let history = repeated_success_history(repeated_args, "same content");
 
-    let active_sessions = try_get_active_sessions().expect("active sessions");
+    let active_sessions = ensure_active_sessions();
     {
         let mut sessions = active_sessions.write().await;
         sessions.insert(
@@ -373,8 +369,12 @@ async fn natural_recovery_does_not_replace_with_scratchpad_think() {
         None,
     );
 
-    preprocess_assistant_tool_calls_for_testing(&active_sessions, session_id, &mut assistant_message)
-        .await;
+    preprocess_assistant_tool_calls_for_testing(
+        &active_sessions,
+        session_id,
+        &mut assistant_message,
+    )
+    .await;
 
     let tool_calls = assistant_message.tool_calls.as_ref().expect("tool calls");
     assert_ne!(tool_calls[0].function.name, "scratchpad__think");

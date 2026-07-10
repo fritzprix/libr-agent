@@ -1,7 +1,7 @@
 pub mod circuit_breaker;
-pub mod natural_recovery;
 pub mod completion;
 pub mod context_selector;
+pub mod natural_recovery;
 pub mod prompt;
 pub mod request_layout;
 pub mod response;

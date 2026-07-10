@@ -825,7 +825,9 @@ export function useAgentChatScroll({
       return;
     }
 
-    if (isThinkingOnlyLatestMessageUpdate(previousLatestMessage, latestMessage)) {
+    if (
+      isThinkingOnlyLatestMessageUpdate(previousLatestMessage, latestMessage)
+    ) {
       logScrollState('reactive-state-change:thinking-only-skip', {
         messageId: latestMessage?.id,
       });
