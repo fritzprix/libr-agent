@@ -63,7 +63,7 @@ impl AgentServer {
 pub const NAME: &str = "agent";
 
 pub const AGENT_DELEGATION_HEADER: &str = concat!(
-    "# Agent Delegation\n\n",
+    "## Agent Delegation\n\n",
     "- `agent__prepareTeamworkWorkspace` returns an app-local teamwork artifact directory for orchestration files without changing the current session workspace.\n",
     "- `agent__startSession` starts delegated work.\n",
     "- `agent__messageToSession` resumes or retries an existing delegated session.\n",
