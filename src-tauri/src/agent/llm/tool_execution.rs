@@ -1,10 +1,10 @@
+use crate::agent::llm::natural_recovery::{
+    build_loop_prevention_guidance, loop_prevention_tool_result, LoopPreventionShortCircuit,
+};
 use crate::agent::state::AgentSession;
 use crate::agent::state::PendingApprovalKind;
 use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
 use crate::agent::types::{ToolCall, ToolCallFunction};
-use crate::agent::llm::natural_recovery::{
-    build_loop_prevention_guidance, loop_prevention_tool_result, LoopPreventionShortCircuit,
-};
 use crate::commands::agent_commands::ToolExecutionResult;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::SessionRepository;

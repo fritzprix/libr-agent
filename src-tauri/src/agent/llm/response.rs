@@ -333,8 +333,7 @@ pub async fn handle_llm_response(
         &mut assistant_message,
     )
     .await;
-    let loop_prevention_short_circuits =
-        circuit_breaker_preprocess.loop_prevention_short_circuits;
+    let loop_prevention_short_circuits = circuit_breaker_preprocess.loop_prevention_short_circuits;
 
     // Check if content is also empty (abnormal empty response).
     // Note: A message with tool calls but no content is VALID and normal.
