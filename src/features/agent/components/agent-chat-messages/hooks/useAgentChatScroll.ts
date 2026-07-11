@@ -21,6 +21,7 @@ import {
   scrollVirtuosoToBottom,
   getScrollContentElement,
   findGroupedMessageIndexByBoundary,
+  isThinkingOnlyLatestMessageUpdate,
 } from '../utils';
 
 const logger = getLogger('AgentChatMessages');
@@ -61,6 +62,7 @@ export function useAgentChatScroll({
   const previousScrollTopRef = useRef<number | null>(null);
   const upwardReleaseDistanceRef = useRef(0);
   const groupedMessageCountRef = useRef(groupedMessages.length);
+  const previousLatestMessageRef = useRef<Message | undefined>(latestMessage);
   const hasHydratedMessagesRef = useRef<{
     sessionId: string | undefined;
     hasMessages: boolean;
@@ -807,6 +809,9 @@ export function useAgentChatScroll({
   }, [handleResizeObserverLayoutChange, scrollerElement]);
 
   useEffect(() => {
+    const previousLatestMessage = previousLatestMessageRef.current;
+    previousLatestMessageRef.current = latestMessage;
+
     if (
       groupedMessages.length > 0 &&
       hasHydratedMessagesRef.current.hasMessages &&
@@ -820,6 +825,15 @@ export function useAgentChatScroll({
       return;
     }
 
+    if (
+      isThinkingOnlyLatestMessageUpdate(previousLatestMessage, latestMessage)
+    ) {
+      logScrollState('reactive-state-change:thinking-only-skip', {
+        messageId: latestMessage?.id,
+      });
+      return;
+    }
+
     scheduleScrollToBottom('reactive-state-change');
   }, [
     latestMessage,
@@ -828,6 +842,7 @@ export function useAgentChatScroll({
     agentError,
     agentLlmError,
     groupedMessages.length,
+    logScrollState,
     resumeBottomFollow,
     scheduleScrollToBottom,
   ]);

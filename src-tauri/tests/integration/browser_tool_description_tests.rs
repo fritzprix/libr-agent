@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use tauri_mcp_agent_lib::mcp::builtin::browser::BrowserServer;
-use tauri_mcp_agent_lib::mcp::schema::{JSONSchema, JSONSchemaType};
+use tauri_mcp_agent_lib::mcp::schema::{JSONSchema, JSONSchemaType, SchemaProperties};
 
 fn browser_tool_description(tool_name: &str) -> String {
     BrowserServer::tools_static()
@@ -17,7 +16,7 @@ fn browser_tool(tool_name: &str) -> tauri_mcp_agent_lib::mcp::MCPTool {
         .unwrap_or_else(|| panic!("browser tool not found: {tool_name}"))
 }
 
-fn object_properties<'a>(schema: &'a JSONSchema, context: &str) -> &'a HashMap<String, JSONSchema> {
+fn object_properties<'a>(schema: &'a JSONSchema, context: &str) -> &'a SchemaProperties {
     match &schema.schema_type {
         JSONSchemaType::Object {
             properties: Some(properties),

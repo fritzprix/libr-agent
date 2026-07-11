@@ -1,3 +1,21 @@
+//! Compaction request preparation and overflow recovery ladder.
+//!
+//! # Resume-boundary invariant (must not regress)
+//!
+//! `split_idx` / `to_id` are chosen by resume-fit selection in `selection` /
+//! `trigger`. This module may shrink the **compaction LLM input** (drop older
+//! prefix messages, degrade tools, etc.) so the summarizer request fits, but it
+//! must **never** move the resume boundary:
+//!
+//! ```text
+//! to_id == messages[split_idx - 1].id   // fixed for the attempt
+//! messages[split_idx..]                // live tail after compact
+//! ```
+//!
+//! Fitting the summarizer payload is independent of making the next normal
+//! completion fit — that is already decided by resume-fit before prepare runs.
+//! See `docs/specs/message-compaction.md` §5.2 step 6.
+
 use crate::agent::llm::load_context_management_settings;
 use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
 use crate::agent::state::{AgentSession, CompactionRecoveryPhase};
@@ -16,7 +34,11 @@ use super::payload::{
 };
 
 pub(super) const MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS: u32 = 3;
-pub(super) const MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS: usize = 3;
+/// Upper bound on unique split candidates tried per preflight. Resume-fit ordering
+/// already prefers deep splits; this only caps pathological candidate lists.
+/// Must stay high enough that deep resume-fit candidates are not truncated away
+/// before a shallow checkpoint seed is considered.
+pub(super) const MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS: usize = 64;
 
 pub(super) struct PreparedCompactionRequest {
     pub compact_event: CompactRequest,
@@ -241,6 +263,17 @@ async fn prepare_compaction_request(
         &compact_messages,
     );
 
+    // Payload fitting may drop older compaction-input messages, but the resume
+    // boundary (`to_id` / split_idx) must stay exactly as selected by resume-fit.
+    let boundary_to_id = to_id;
+    debug_assert_eq!(
+        messages
+            .get(split_idx.saturating_sub(1))
+            .map(|message| message.id.as_str()),
+        Some(boundary_to_id.as_str()),
+        "compaction to_id must match the chosen resume-fit split boundary"
+    );
+
     let mut final_compacted_delta_count = compacted_delta_count;
 
     if !compact_messages.is_empty() {
@@ -259,8 +292,10 @@ async fn prepare_compaction_request(
 
     if final_compacted_delta_count != compacted_delta_count {
         log::info!(
-            "📐 Compaction payload shrunken, adjusting delta metadata: session={}, compacted_delta_count: {} -> {}",
+            "📐 Compaction payload shrunken, adjusting delta metadata: session={}, to_id={}, split_idx={}, compacted_delta_count: {} -> {} (resume boundary unchanged)",
             session_id,
+            boundary_to_id,
+            split_idx,
             compacted_delta_count,
             final_compacted_delta_count
         );
@@ -291,7 +326,7 @@ async fn prepare_compaction_request(
             session_id: session_id.to_string(),
             session_name: session_name.to_string(),
             messages: compact_messages,
-            to_id,
+            to_id: boundary_to_id,
             compacted_delta_count: final_compacted_delta_count,
             parent_request: final_parent_request,
             resume_completion_after_compact,

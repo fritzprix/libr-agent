@@ -20,6 +20,9 @@ export interface SessionHistoryRow {
   lineageHint?: string;
   hasExpandableChildren: boolean;
   isExpanded: boolean;
+  totalChildrenCount?: number;
+  hiddenChildrenCount?: number;
+  unloadedChildrenCount?: number;
   descendantStatusCounts?: SessionStatusCounts;
 }
 
@@ -34,6 +37,7 @@ interface ComputeSessionTreeParams {
   manuallyExpandedSessionIds: Set<string>;
   collapsedAutoExpandedSessionIds: Set<string>;
   descendantStatusCounts: Map<string, SessionStatusCounts>;
+  knownDirectChildCountByParentId?: Map<string, number>;
   t: SessionHistoryTranslate;
 }
 
@@ -213,6 +217,7 @@ function buildDisplayRows({
   sessionById,
   effectiveExpandedSessionIds,
   descendantStatusCounts,
+  knownDirectChildCountByParentId,
   t,
 }: {
   roots: AgentSession[];
@@ -221,21 +226,34 @@ function buildDisplayRows({
   sessionById: Map<string, AgentSession>;
   effectiveExpandedSessionIds: Set<string>;
   descendantStatusCounts: Map<string, SessionStatusCounts>;
+  knownDirectChildCountByParentId?: Map<string, number>;
   t: SessionHistoryTranslate;
 }): SessionHistoryRow[] {
   const rows: SessionHistoryRow[] = [];
 
   const walk = (session: AgentSession, nestingLevel: number) => {
-    const visibleChildren = (childrenByParent.get(session.id) || []).filter(
-      (child) => visibleIds.has(child.id),
+    const loadedChildren = childrenByParent.get(session.id) || [];
+    const knownDirectChildCount =
+      knownDirectChildCountByParentId?.get(session.id) ?? 0;
+    const totalChildrenCount = Math.max(
+      loadedChildren.length,
+      knownDirectChildCount,
     );
+    const unloadedChildrenCount = Math.max(
+      0,
+      knownDirectChildCount - loadedChildren.length,
+    );
+    const visibleChildren = loadedChildren.filter((child) =>
+      visibleIds.has(child.id),
+    );
+    const hiddenChildrenCount = loadedChildren.length - visibleChildren.length;
     const parentName = session.parentSessionId
       ? sessionById.get(session.parentSessionId)?.name ||
         t('sessionHistory.card.fallbackName', 'Session {{id}}', {
           id: session.parentSessionId.slice(0, 8),
         })
       : undefined;
-    const hasExpandableChildren = visibleChildren.length > 0;
+    const hasExpandableChildren = totalChildrenCount > 0;
     const isExpanded = hasExpandableChildren
       ? effectiveExpandedSessionIds.has(session.id)
       : false;
@@ -250,6 +268,9 @@ function buildDisplayRows({
         : t('sessionHistory.lineageHint.topLevel', 'Top-level session'),
       hasExpandableChildren,
       isExpanded,
+      totalChildrenCount,
+      hiddenChildrenCount,
+      unloadedChildrenCount,
       descendantStatusCounts: descendantStatusCounts.get(session.id),
     });
 
@@ -280,6 +301,7 @@ export function computeSessionTree({
   manuallyExpandedSessionIds,
   collapsedAutoExpandedSessionIds,
   descendantStatusCounts,
+  knownDirectChildCountByParentId,
   t,
 }: ComputeSessionTreeParams) {
   // 1. Determine base lineage sessions
@@ -370,6 +392,7 @@ export function computeSessionTree({
     sessionById,
     effectiveExpandedSessionIds,
     descendantStatusCounts,
+    knownDirectChildCountByParentId,
     t,
   });
 

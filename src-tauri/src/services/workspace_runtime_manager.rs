@@ -8,7 +8,7 @@ use std::time::Instant;
 use crate::models::workspace_isolation::{
     validate_env_key, validate_env_value, WorkspaceIsolationMode,
 };
-use crate::repositories::SessionMetadata;
+use crate::repositories::{SessionMetadata, SessionRepository};
 use crate::session_isolation::{PathMappingLayer, ShellDialect, ShellType, SpawnedShell};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
@@ -76,6 +76,21 @@ pub enum WorkspaceRuntimeError {
     HostPortUnavailable(u16),
     #[error("{0}")]
     Io(String),
+}
+
+/// Prefix for structured errors surfaced to the frontend agent layer.
+pub const AGENT_ERROR_DOCKER_NOT_AVAILABLE: &str = "DOCKER_NOT_AVAILABLE:";
+
+impl WorkspaceRuntimeError {
+    /// Converts runtime errors into agent-facing strings with stable machine-readable codes.
+    pub fn to_agent_string(self) -> String {
+        match self {
+            Self::DockerNotAvailable(_) => {
+                format!("{} {}", AGENT_ERROR_DOCKER_NOT_AVAILABLE, self)
+            }
+            other => other.to_string(),
+        }
+    }
 }
 
 // ── Manager ──────────────────────────────────────────────────────────────────
@@ -413,22 +428,30 @@ async fn ensure_bash_image_contract(
             reporter(&format!("Pulling image {image}"));
         }
 
-        let mount = format!("{}:/workspace", docker_mount_path(host_workspace)?);
+        let root_session_id = resolve_teamwork_root_session_id(session).await;
+        let session_manager =
+            crate::session::get_session_manager().map_err(WorkspaceRuntimeError::Io)?;
+        let teamwork_dir = session_manager
+            .get_directory_service()
+            .get_teamwork_artifact_dir_unverified(&root_session_id);
+
+        if session.org_id.is_some() || session.parent_session_id.is_some() {
+            let _ = tokio::fs::create_dir_all(&teamwork_dir).await;
+        }
+
+        let tw_dir_arg = if teamwork_dir.exists() {
+            Some(teamwork_dir.as_path())
+        } else {
+            None
+        };
+
+        let volume_args = build_docker_volume_args(host_workspace, tw_dir_arg)?;
         let label = format!("com.libragent.session_id={session_id}");
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
-        cmd.args([
-            "run",
-            "-d",
-            "--name",
-            container_name,
-            "--label",
-            &label,
-            "-v",
-            &mount,
-            "-w",
-            "/workspace",
-        ]);
+        cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
+        cmd.args(volume_args);
+        cmd.args(["-w", "/workspace"]);
 
         if let Some(config) = &session.docker_config {
             append_port_binding_args(&mut cmd, config).await?;
@@ -641,4 +664,82 @@ fn format_docker_failure(output: &std::process::Output) -> WorkspaceRuntimeError
 
 fn apply_docker_cli_env(cmd: &mut AsyncCommand) {
     crate::utils::env::apply_isolated_env_async(cmd);
+}
+
+pub fn build_docker_volume_args(
+    host_workspace: &Path,
+    teamwork_dir: Option<&Path>,
+) -> RuntimeResult<Vec<String>> {
+    let mut args = Vec::new();
+    let main_mount = format!("{}:/workspace", docker_mount_path(host_workspace)?);
+    args.push("-v".to_string());
+    args.push(main_mount);
+
+    if let Some(tw_dir) = teamwork_dir {
+        let tw_mount = format!(
+            "{}:/workspace/.libragent/teamwork",
+            docker_mount_path(tw_dir)?
+        );
+        args.push("-v".to_string());
+        args.push(tw_mount);
+    }
+
+    Ok(args)
+}
+
+async fn resolve_teamwork_root_session_id(session: &SessionMetadata) -> String {
+    if let Some(org_root_session_id) = &session.org_root_session_id {
+        return org_root_session_id.clone();
+    }
+
+    if let Some(session_repo) = crate::state::try_get_session_repository() {
+        let mut current = session.clone();
+        for _ in 0..64 {
+            let Some(parent_session_id) = current.parent_session_id.clone() else {
+                return current.id;
+            };
+
+            match session_repo.get_session(&parent_session_id).await {
+                Ok(Some(parent_session)) => {
+                    current = parent_session;
+                    if let Some(org_root_session_id) = &current.org_root_session_id {
+                        return org_root_session_id.clone();
+                    }
+                }
+                _ => return parent_session_id,
+            }
+        }
+        current.id
+    } else {
+        session.id.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_build_docker_volume_args() {
+        let host_workspace = Path::new("/home/user/workspace");
+
+        // Test case 1: No teamwork directory
+        let args = build_docker_volume_args(host_workspace, None).unwrap();
+        assert!(args.contains(&"-v".to_string()));
+        assert!(args
+            .iter()
+            .any(|arg| arg.contains("/home/user/workspace:/workspace")));
+
+        // Test case 2: With teamwork directory
+        let teamwork_dir = Path::new("/home/user/.libragent/teamwork-artifacts/123");
+        let args = build_docker_volume_args(host_workspace, Some(teamwork_dir)).unwrap();
+        assert_eq!(args.len(), 4);
+        assert_eq!(args[0], "-v");
+        assert!(args[1].contains("/home/user/workspace:/workspace"));
+        assert_eq!(args[2], "-v");
+        assert!(args[3].contains(
+            "/home/user/.libragent/teamwork-artifacts/123:/workspace/.libragent/teamwork"
+        ));
+    }
 }

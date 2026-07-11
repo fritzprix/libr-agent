@@ -1,3 +1,6 @@
+use crate::agent::llm::natural_recovery::{
+    build_loop_prevention_guidance, loop_prevention_tool_result, LoopPreventionShortCircuit,
+};
 use crate::agent::state::AgentSession;
 use crate::agent::state::PendingApprovalKind;
 use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
@@ -301,6 +304,7 @@ pub async fn execute_tool_calls(
     app_handle: AppHandle,
     session_id: String,
     tool_calls: Vec<ToolCall>,
+    loop_prevention_short_circuits: HashMap<String, LoopPreventionShortCircuit>,
 ) {
     let context = ToolExecutionContext {
         session_repo: &session_repo,
@@ -322,6 +326,18 @@ pub async fn execute_tool_calls(
         } = function;
 
         context.emit_tool_execution_started(&tool_name);
+
+        if let Some(short_circuit) = loop_prevention_short_circuits.get(&tool_call_id) {
+            let guidance = build_loop_prevention_guidance(short_circuit);
+            context
+                .continue_after_tool(
+                    &tool_call_id,
+                    loop_prevention_tool_result(&guidance),
+                    "loop prevention short-circuit",
+                )
+                .await;
+            continue;
+        }
 
         let args = match serde_json::from_str::<serde_json::Value>(&args_str) {
             Ok(args) => args,

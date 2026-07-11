@@ -3,10 +3,61 @@ import {
   type IndexLocationWithAlign,
   type VirtuosoHandle,
 } from 'react-virtuoso';
+import type { MCPTextContent } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import type { useAgentChat } from '@/context/AgentChatContext';
 import { VISUAL_BOTTOM_THRESHOLD, type BottomAlignmentPhase } from './types';
+
+/**
+ * Fingerprint of latest-message fields that can change chat list layout.
+ * Thinking text is intentionally excluded so thinking-only stream updates can
+ * rely on ResizeObserver instead of redundant Virtuoso scroll calls.
+ */
+export function getLatestMessageScrollFingerprint(
+  message: Message | undefined,
+): string {
+  if (!message) {
+    return '';
+  }
+
+  const contentSummary = (message.content ?? [])
+    .filter((item) => item.type !== 'thinking')
+    .map((item) => {
+      if (item.type === 'text') {
+        return `text:${(item as MCPTextContent).text?.length ?? 0}`;
+      }
+      return item.type;
+    })
+    .join(',');
+
+  return [
+    message.id,
+    message.isStreaming ? '1' : '0',
+    contentSummary,
+    message.tool_calls?.length ?? 0,
+    message.attachments?.length ?? 0,
+    message.error ?? '',
+  ].join('|');
+}
+
+export function isThinkingOnlyLatestMessageUpdate(
+  previous: Message | undefined,
+  next: Message | undefined,
+): boolean {
+  if (!previous || !next) {
+    return false;
+  }
+
+  const layoutUnchanged =
+    getLatestMessageScrollFingerprint(previous) ===
+    getLatestMessageScrollFingerprint(next);
+  const thinkingChanged =
+    previous.thinking !== next.thinking ||
+    previous.thinkingTime !== next.thinkingTime;
+
+  return layoutUnchanged && thinkingChanged;
+}
 
 export function getPrependedFirstItemIndex(
   current: number,

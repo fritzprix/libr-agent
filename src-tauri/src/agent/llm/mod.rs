@@ -1,6 +1,7 @@
 pub mod circuit_breaker;
 pub mod completion;
 pub mod context_selector;
+pub mod natural_recovery;
 pub mod prompt;
 pub mod request_layout;
 pub mod response;
@@ -17,7 +18,9 @@ pub use prompt::*;
 pub use request_layout::*;
 pub use response::initialize_pending_execution_for_testing;
 pub use response::*;
-pub use response_circuit_breaker::preprocess_assistant_tool_calls_for_testing;
+pub use response_circuit_breaker::{
+    preprocess_assistant_tool_calls_for_testing, CircuitBreakerPreprocessResult,
+};
 pub use stream_recovery::*;
 pub use token_utils::*;
 pub use types::*;

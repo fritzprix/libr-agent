@@ -11,13 +11,16 @@ The short version:
    request.
 3. Next-turn fit starts from the last grounded `usage.promptTokens` and only adds
    known post-checkpoint growth.
-4. If the request does not fit, Rust compacts before send using a checkpoint-anchored
-   causal-prefix strategy.
-5. Successful compaction must invalidate stale retained-tail checkpoints and set
+4. If the request does not fit, Rust compacts before send. Split selection is
+   **resume-fit first**: choose the deepest ownership-safe `split_idx` such that
+   the projected post-compact live prompt fits the effective input budget.
+5. Prompt-token checkpoints may **seed** split candidates, but must never alone
+   commit a shallow split that leaves an oversized resume tail.
+6. Successful compaction must invalidate stale retained-tail checkpoints and set
    runtime `lastReportedPromptTokens = null`.
-6. Empty compaction responses still enter the bounded soft-retry ladder; only after
+7. Empty compaction responses still enter the bounded soft-retry ladder; only after
    that ladder is exhausted may Rust persist a deterministic hard fallback summary.
-7. If the request does not fit and there is no usable checkpoint candidate, the
+8. If the request does not fit and no ownership-safe resume-fit split exists, the
    state is invalid and the backend must reject without mutating history.
 
 The old mental model around `safeCheckpointId` is obsolete. Context-fit truth must
@@ -220,17 +223,57 @@ If preflight says the next request does not fit:
 5. Rust rebuilds the request with the compact summary injected
 6. Rust retries the normal completion request
 
-### 5.2 Range selection principle
+### 5.2 Range selection principle (resume-fit contract)
 
-The compactable cutoff is anchored by persisted prompt-token checkpoints, not by the
-old `split_idx` mental model alone.
-
-The point of the checkpoint is:
+`split_idx` means:
 
 ```text
-start from the newest usable checkpoint candidate below the current request tail,
-compact the older live causal prefix into summary state, and back off toward older
-candidates if dynamic prompt growth makes the first split still fail
+messages[0 .. split_idx)  -> compact into summary (prefix)
+messages[split_idx ..]    -> retain as live tail for the next completion
+```
+
+It is **not** "how many messages to put into the compaction LLM request".
+
+#### Normative selection order
+
+When preflight blocks a normal completion:
+
+1. Build ownership-safe split candidates (no orphan tool results in the retained
+   tail; prefer preserving the latest external-request seed block when possible).
+2. Prompt-token checkpoints may seed candidates for diagnostics / backoff lists.
+3. Estimate post-compact resume size for each candidate:
+
+```text
+projected_resume ≈
+  summary_placeholder
+  + BPE(messages[split_idx..])
+  + system_prompt_tokens
+  + tools_tokens
+  (+ conservative safety multiplier)
+```
+
+4. Accept the **deepest** candidate whose `projected_resume < effective_input_budget`.
+5. Only then build the compaction LLM payload for that chosen boundary (`to_id`).
+6. If the compaction **input** itself overflows, fit/trim that payload via the
+   recovery ladder **without changing** the chosen resume `to_id` / `split_idx`.
+
+#### Forbidden regressions
+
+Do **not**:
+
+- accept the first prepare() success for a shallow checkpoint-seeded split when a
+  deeper ownership-safe split would make resume fit
+- treat "compaction input fits" as proof that "post-compact resume fits"
+- shrink `to_id` while fitting the compaction request payload
+- hard-fail solely because a prompt-token checkpoint is missing, if a resume-fit
+  ownership-safe split still exists
+
+Historical failure mode (must never return):
+
+```text
+checkpoint seed split_idx=4 -> compact only 4 messages ->
+inject summary + retain ~144-message tail ->
+resume still over budget -> INVALID_CONTEXT_STATE
 ```
 
 ### 5.3 What the new summary absorbs
@@ -259,28 +302,35 @@ After a compaction step succeeds:
 
 ### 5.5 Bounded retry policy
 
-Dynamic service-context growth can invalidate the most recent checkpoint-based split.
+Dynamic service-context growth and oversized compaction inputs can invalidate a
+chosen prepare attempt.
 
 Therefore compaction must:
 
-1. try the newest usable checkpoint candidate first
-2. back off one candidate at a time toward older prefix boundaries
-3. treat an empty compaction response as a recoverable compaction failure while the
+1. iterate resume-fit candidates **deep → shallow** (larger `split_idx` first)
+2. skip any candidate whose projected post-compact resume still exceeds budget
+3. if prepare fails for a candidate (compaction-input overflow / no-op), try the
+   next shallower ownership-safe resume-fit candidate instead of aborting
+4. treat an empty compaction response as a recoverable compaction failure while the
    recovery ladder still has room
-4. stop after the bounded soft-retry ladder is exhausted:
+5. stop after the bounded soft-retry ladder is exhausted:
    `CacheAligned -> OverflowRecovery -> DegradedTools`
-5. if the ladder is exhausted but a compaction boundary did exist, persist a
+6. if the ladder is exhausted but a compaction boundary did exist, persist a
    deterministic hard fallback summary with fixed handoff sections instead of
    deadlocking the workflow
-6. if the artifact spill write fails, keep the fallback summary path alive anyway;
+7. if the artifact spill write fails, keep the fallback summary path alive anyway;
    artifact persistence is best-effort, not a gate on resume
 
 ---
 
 ## 6. Invalid State Rule
 
-If Rust preflight determines the request does not fit, but there is no usable
-prompt-token checkpoint to anchor a safe compaction target, that state is invalid.
+If Rust preflight determines the request does not fit, and there is **no
+ownership-safe split whose projected post-compact resume fits**, that state is
+invalid.
+
+Missing prompt-token checkpoints alone are **not** sufficient to declare invalid
+state when a resume-fit split still exists.
 
 Required behavior:
 
@@ -288,6 +338,7 @@ Required behavior:
 2. do not commit a misleading summary
 3. do not mutate message history as if compaction succeeded
 4. surface an explicit invalid-context error
+   (`requiresOwnershipSafeResumeFitSplit=true`)
 
 This is a non-committing failure, not a silent fallback.
 
@@ -410,12 +461,21 @@ type CompactSummary = {
   condensedCount: number;
 } | null;
 
-const MAX_SPLIT_TRIES = 3;
+// Cap on unique split candidates per preflight (implementation: 64).
+// Must not truncate deep resume-fit candidates before shallow seeds.
+const MAX_SPLIT_TRIES = 64;
 const RECOVERY_PHASES = [
   'CacheAligned',
   'OverflowRecovery',
   'DegradedTools',
 ] as const;
+
+type ResumeFitSelection = {
+  splitIdx: number;
+  toId: string;
+  checkpointSeedSplitIdx: number | null;
+  projectedResumeTokens: number;
+};
 
 function selectLastSubmittedRealInputMessage(
   messages: Message[],
@@ -446,12 +506,35 @@ function projectedNextPromptLoad(args: {
   );
 }
 
-function buildCheckpointBackoffCandidates(
+/** Deepest ownership-safe split whose projected post-compact resume fits. */
+function selectResumeFitCompactionSplit(
   liveMessages: Message[],
-): { toId: string; condensedCount: number }[] {
-  return selectCheckpointAnchoredBoundariesNewestFirst(liveMessages).filter(
+): ResumeFitSelection | null {
+  const candidates = buildOwnershipSafeSplitCandidatesDeepFirst(liveMessages);
+  for (const candidate of candidates) {
+    const projected = estimatePostCompactResumeTokens(liveMessages, candidate);
+    if (projected < effectiveInputBudget()) {
+      return {
+        splitIdx: candidate.splitIdx,
+        toId: candidate.toId,
+        checkpointSeedSplitIdx: candidate.checkpointSeedSplitIdx,
+        projectedResumeTokens: projected,
+      };
+    }
+  }
+  return null;
+}
+
+/** Ordered deep → shallow; checkpoint seeds included but not preferred. */
+function buildResumeFitSplitCandidates(
+  liveMessages: Message[],
+  selection: ResumeFitSelection,
+): { toId: string; condensedCount: number; splitIdx: number }[] {
+  return orderDeepToShallowPreferring(selection.splitIdx, liveMessages).filter(
     (candidate) =>
-      retainedTailPreservesToolOwnership(liveMessages, candidate.toId),
+      retainedTailPreservesToolOwnership(liveMessages, candidate.toId) &&
+      estimatePostCompactResumeTokens(liveMessages, candidate) <
+        effectiveInputBudget(),
   );
 }
 
@@ -481,19 +564,26 @@ async function runCompletionLoop(state: {
       projectedPromptLoad >= state.maxInputContext;
 
     if (mustCompact) {
-      const candidates = buildCheckpointBackoffCandidates(state.messages);
-
-      if (candidates.length === 0) {
+      // Resume-fit first: deepest ownership-safe split whose projected
+      // post-compact live prompt fits. Checkpoint seeds are advisory only.
+      const selection = selectResumeFitCompactionSplit(state.messages);
+      if (selection == null) {
         throw new InvalidContextStateError(
-          'Prepared payload exceeds the prompt limit, but no prompt-token checkpoint can anchor compaction.',
+          'Prepared payload exceeds the effective context limit, but there is no ownership-safe compaction split that can reduce the live prompt.',
         );
       }
 
+      const candidates = buildResumeFitSplitCandidates(
+        state.messages,
+        selection,
+      );
       const compactResult = await runBoundedCompactionRecovery({
         previousSummary: state.compactSummary,
         liveMessages: state.messages,
         candidates: candidates.slice(0, MAX_SPLIT_TRIES),
         recoveryPhases: RECOVERY_PHASES,
+        // Compaction-input fitting must not move selection.toId / split_idx.
+        resumeBoundaryToId: selection.toId,
       });
 
       if (compactResult.kind === 'success') {
@@ -690,25 +780,27 @@ When debugging compaction:
 2. check what the last grounded `usage.promptTokens` value was
 3. check whether dynamic service-context growth or tool-result growth invalidated a
    naive checkpoint fit assumption
-4. check whether a usable prompt-token checkpoint existed in the current live range
-5. check which `to_id` candidate was selected and whether backoff to older
-   candidates was attempted
-6. check whether the retained tail preserved assistant/tool ownership
-7. check whether the instruction seed came from the full live message stack or
+4. check `checkpoint_seed_split_idx` vs `preferred_split_idx` / `chosen_split_idx`
+   in logs — seed may be shallow; chosen must be resume-fit
+5. check `projected_resume_tokens` against `effective_input_budget` for the chosen
+   split (not merely whether the compaction _input_ fitted)
+6. check whether prepare skipped oversized-resume candidates and retried deep→shallow
+7. check whether the retained tail preserved assistant/tool ownership
+8. check whether the instruction seed came from the full live message stack or
    was accidentally derived only from the compacted prefix
-8. check that the latest external request appears in the instruction seed even if
+9. check that the latest external request appears in the instruction seed even if
    it sits outside the compacted body window
-9. check that compact summary was stored
-10. check that retained-tail `promptTokens` were invalidated and
+10. check that compact summary was stored and `to_id` matches the resume boundary
+11. check that retained-tail `promptTokens` were invalidated and
     `lastReportedPromptTokens` was cleared
-11. check that the resumed request was rebuilt with the summary injected
-12. check that the summary bubble count matches the compacted delta actually kept
+12. check that the resumed request was rebuilt with the summary injected
+13. check that the summary bubble count matches the compacted delta actually kept
     after payload fitting
-13. if the UI badge stayed visible during compaction, check whether it intentionally
+14. if the UI badge stayed visible during compaction, check whether it intentionally
     held the last stable preflight value rather than the blocked overflow estimate
-14. if compaction still could not stabilize, check whether hard fallback persisted
+15. if compaction still could not stabilize, check whether hard fallback persisted
     a deterministic summary with optional artifact guidance instead of deadlocking
-15. if the fallback summary lacks an artifact path, check whether the best-effort
+16. if the fallback summary lacks an artifact path, check whether the best-effort
     spill write failed while summary persistence still succeeded
 
 That is the current contract.

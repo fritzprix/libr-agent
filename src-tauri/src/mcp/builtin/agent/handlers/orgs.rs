@@ -437,6 +437,13 @@ pub async fn get_org(
             format!("No sessions found for explicit org '{}'.", target_org_id),
             ToolGroup::Agent,
         )
+        .with_guidance(vec![
+            "Verify orgId matches an ID returned by createOrg or a previous getOrg call."
+                .to_string(),
+            "Use list(type=\"sessions\") to inspect sessions and their org membership.".to_string(),
+            "If the org was never created, call createOrg(name=\"...\") from the root session."
+                .to_string(),
+        ])
         .to_mcp_result());
     }
 
@@ -507,7 +514,27 @@ pub async fn get_org(
     );
     response_data.insert("memberCount".to_string(), json!(members.len()));
     response_data.insert("busyCount".to_string(), json!(busy_count));
+    response_data.insert(
+        "members".to_string(),
+        json!(members
+            .iter()
+            .map(|session| {
+                json!({
+                    "sessionId": session.id,
+                    "name": session.name,
+                    "status": session.status.as_str(),
+                    "depth": session.depth.unwrap_or(0),
+                })
+            })
+            .collect::<Vec<_>>()),
+    );
 
-    Ok(SuccessHint::new(message, vec![])
-        .to_mcp_result_with_data(Some(Value::Object(response_data))))
+    Ok(SuccessHint::new(
+        message,
+        vec![
+            "Use checkSession(sessionId) to inspect a member.".to_string(),
+            "Use messageToSession(sessionId, message) to coordinate members.".to_string(),
+        ],
+    )
+    .to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

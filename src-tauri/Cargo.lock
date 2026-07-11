@@ -4129,7 +4129,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libragent"
-version = "0.8.23"
+version = "0.8.27"
 dependencies = [
  "aes-gcm",
  "agent-response-guards",
@@ -4156,6 +4156,7 @@ dependencies = [
  "html-escape",
  "html2md",
  "ignore",
+ "indexmap 2.13.0",
  "jsonschema",
  "keyring",
  "libsqlite3-sys",
@@ -7663,6 +7664,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
+ "indexmap 2.13.0",
  "itoa",
  "memchr",
  "serde",

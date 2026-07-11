@@ -572,3 +572,40 @@ pub async fn handle_wait_timeout_result(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn assistant_json(id: &str, text: &str) -> Value {
+        json!({
+            "id": id,
+            "role": "assistant",
+            "content": [{"type": "text", "text": text}]
+        })
+    }
+
+    #[test]
+    fn select_preferred_prefers_cache_when_db_lags_behind_terminal_assistant() {
+        let db_messages = vec![assistant_json("asst-1", "older answer")];
+        let cached_messages = vec![
+            assistant_json("asst-2", "final answer"),
+            assistant_json("asst-1", "older answer"),
+        ];
+
+        let selected = select_preferred_session_messages(db_messages, Some(cached_messages));
+
+        assert_eq!(latest_session_output(&selected), "final answer");
+    }
+
+    #[test]
+    fn select_preferred_keeps_db_when_cache_is_stale() {
+        let db_messages = vec![assistant_json("asst-2", "authoritative answer")];
+        let cached_messages = vec![assistant_json("asst-1", "stale cache")];
+
+        let selected = select_preferred_session_messages(db_messages, Some(cached_messages));
+
+        assert_eq!(latest_session_output(&selected), "authoritative answer");
+    }
+}

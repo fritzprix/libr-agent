@@ -86,11 +86,6 @@ export type AgentEventPayload =
       resourceType: string;
       action: string;
       resourceId?: string;
-    }
-  | {
-      type: 'contextMessagesTrimmed';
-      sessionId: string;
-      droppedCount: number;
     };
 
 export interface PendingInteractiveShellPrompt {

@@ -46,6 +46,10 @@ interface SessionCardProps {
   hasExpandableChildren?: boolean;
   /** Whether nested children are currently visible. */
   isExpanded?: boolean;
+  /** Loaded children hidden by the active status/search filter. */
+  hiddenChildrenCount?: number;
+  /** Direct children that exist in the DB but are not in the loaded session page. */
+  unloadedChildrenCount?: number;
   /** Toggle child visibility. */
   onToggleExpand?: (sessionId: string) => void;
 }
@@ -69,6 +73,8 @@ export function SessionCard({
   onToggleBookmark,
   hasExpandableChildren = false,
   isExpanded = false,
+  hiddenChildrenCount = 0,
+  unloadedChildrenCount = 0,
   onToggleExpand,
 }: SessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
@@ -351,6 +357,8 @@ export function SessionCard({
         {(depthLabel ||
           shortParentId ||
           shortLineageId ||
+          hiddenChildrenCount > 0 ||
+          unloadedChildrenCount > 0 ||
           (descendantStatusCounts && descendantCount > 0)) && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
@@ -367,6 +375,40 @@ export function SessionCard({
                   count: descendantCount,
                 })}
               </Badge>
+            )}
+            {hiddenChildrenCount > 0 && (
+              <Badge
+                variant="outline"
+                className="h-5 px-1.5 text-[10px] text-muted-foreground"
+              >
+                {t(
+                  'sessionHistory.card.hiddenChildren',
+                  '{{count}} hidden by filter',
+                  { count: hiddenChildrenCount },
+                )}
+              </Badge>
+            )}
+            {unloadedChildrenCount > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="h-5 px-1.5 text-[10px] text-muted-foreground"
+                  >
+                    {t(
+                      'sessionHistory.card.unloadedChildren',
+                      '{{count}} not loaded',
+                      { count: unloadedChildrenCount },
+                    )}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t(
+                    'sessionHistory.card.unloadedChildrenHint',
+                    'Load more sessions to view child sessions that are not on this page.',
+                  )}
+                </TooltipContent>
+              </Tooltip>
             )}
             {shortParentId && (
               <Badge variant="outline" className="h-5 px-1.5 text-[10px]">

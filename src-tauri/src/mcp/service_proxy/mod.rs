@@ -370,7 +370,7 @@ impl MCPServiceProxy {
                         // Normalize tool name to include builtin prefix and server ID
                         // This ensures the orchestrator can correctly route the tool call back to this proxy
                         // format: builtin_{server_id}__{tool_name}
-                        tool.name = format!("{}__{}", server_id, &tool.name);
+                        tool.name = format!("{}__{}", server_id, tool.name);
                         tool
                     })
                     .collect()

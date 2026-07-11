@@ -199,7 +199,6 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         .map_err(|e| format!("Failed to create session: {}", e))?;
 
     if session.workspace_isolation == WorkspaceIsolationMode::Docker {
-        let is_new_session = existing_session.is_none();
         crate::services::docker_provisioning::spawn_docker_provisioning(
             crate::services::docker_provisioning::DockerProvisioningDeps {
                 session_repo: Arc::clone(&session_repo),
@@ -208,7 +207,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 app_handle: app_handle.clone(),
             },
             session.clone(),
-            is_new_session,
+            false,
         );
     }
 

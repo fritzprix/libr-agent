@@ -16,6 +16,7 @@ interface AgentMessageBubbleProps {
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
   isPending?: boolean;
+  followChatScroll?: boolean;
   /**
    * When true, this bubble represents a group of failed tool results.
    * Render it like normal tool output, but with subtle warning/error semantics
@@ -52,6 +53,7 @@ function AgentMessageBubbleImpl({
   groupedToolCalls,
   groupedMessages,
   isPending = false,
+  followChatScroll = true,
   toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
   const { t, i18n } = useTranslation();
@@ -193,6 +195,7 @@ function AgentMessageBubbleImpl({
                   content={displayContent || msg.content}
                   message={msg}
                   toolResultsMap={toolResultsMap}
+                  followChatScroll={followChatScroll}
                 />
               </>
             ) : (
@@ -227,6 +230,7 @@ const arePropsEqual = (
     prev.message !== next.message ||
     prev.assistantName !== next.assistantName ||
     prev.isPending !== next.isPending ||
+    prev.followChatScroll !== next.followChatScroll ||
     prev.toolErrorGroup !== next.toolErrorGroup ||
     prev.groupedMessages !== next.groupedMessages ||
     prev.groupedToolCalls !== next.groupedToolCalls

@@ -79,15 +79,15 @@ describe('AgentModelPicker', () => {
       <AgentModelPicker currentModel="model-1" currentProvider="anthropic" />,
     );
 
-    const refreshButton = screen.getByRole('button', {
+    const refreshButtonWrapper = screen.getByRole('button', {
       name: 'Add an API key to enable model refresh',
     });
 
-    expect(refreshButton).toBeDisabled();
-    expect(refreshButton).toHaveAttribute(
-      'title',
-      'Add an API key to enable model refresh',
-    );
+    expect(refreshButtonWrapper).toHaveAttribute('aria-disabled', 'true');
+
+    const innerButton = refreshButtonWrapper.querySelector('button');
+    expect(innerButton).toBeDisabled();
+    expect(innerButton).not.toHaveAttribute('title');
   });
 
   it('hides refresh when custom openai model discovery is intentionally disabled', () => {

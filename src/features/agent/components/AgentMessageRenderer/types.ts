@@ -9,6 +9,11 @@ export interface AgentMessageRendererProps {
   expandResources?: boolean;
   /** Map of tool call ID to result message (for unified rendering) */
   toolResultsMap?: Map<string, Message>;
+  /**
+   * When false, thinking auto-pin is disabled while the chat list is not
+   * following the latest message.
+   */
+  followChatScroll?: boolean;
 }
 
 export interface ToolGroupBlock {

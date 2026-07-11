@@ -118,21 +118,37 @@ Compaction is a **before-send** overflow response.
 If preflight says the next normal request exceeds `maxInputContext`:
 
 1. Rust blocks the oversized normal request before send.
-2. Rust checks whether a prompt-token checkpoint can anchor compaction.
-3. If yes, Rust emits a compaction request.
+2. Rust selects a **resume-fit** ownership-safe `split_idx` (deepest split whose
+   projected post-compact live prompt fits). Prompt-token checkpoints may seed
+   candidates but must not alone commit a shallow oversized-tail split.
+3. Rust emits a compaction request for that boundary (`to_id`).
 4. Frontend executes the summary request and returns the result.
 5. Rust stores the summary in `compact_contexts`.
-6. Rust rebuilds the next request with the compact summary injected.
+6. Rust rebuilds the next request with the compact summary injected and the live
+   tail after `to_id`.
 7. Rust retries the normal completion request.
 
-If no usable checkpoint anchor exists:
+If no ownership-safe resume-fit split exists:
 
 1. Rust does **not** send the oversized request.
 2. Rust does **not** fabricate a lossy fallback.
 3. Rust raises `INVALID_CONTEXT_STATE`.
 
-This is intentional. Overflow without a safe compaction anchor is an invalid
-non-committing state.
+This is intentional. Overflow without a safe resume-fit compaction boundary is an
+invalid non-committing state.
+
+### Resume-fit invariant (regression guard)
+
+```text
+chosen split must make:
+  summary + retained_tail + system + tools
+fit under effective_input_budget
+
+compaction-input fitting must not change to_id
+```
+
+See the normative contract in
+[`docs/specs/message-compaction.md`](../specs/message-compaction.md) §5.2.
 
 ---
 
@@ -188,8 +204,9 @@ Use these docs in this order:
 For Agent V2, the safe mental model is:
 
 - Rust owns context management.
-- `message.promptTokens` is the persistent checkpoint truth.
+- `message.promptTokens` is the persistent checkpoint truth (candidate seed).
 - compact summaries are persisted session state.
 - preflight compaction is a before-send gate.
-- missing checkpoint anchors in overflow cases are invalid state, not fallback
-  territory.
+- split selection is resume-fit first: make the next live prompt fit.
+- missing ownership-safe resume-fit splits in overflow cases are invalid state,
+  not silent fallback territory.

@@ -142,31 +142,27 @@ pub async fn continue_workflow_after_tool(
                     "UI interaction detected for session {}. Stopping loop.",
                     session_id
                 );
-                if crate::agent::workflow::continue_workflow_if_pending_events(
+                match crate::agent::workflow::settle_session_and_go_idle(
                     session_repo,
                     active_sessions,
                     proxy_manager,
                     app_handle,
                     &session_id,
-                )
-                .await?
-                {
-                    return Ok(());
-                }
-                if let Err(error) = crate::agent::lifecycle::update_session_status(
-                    session_repo,
-                    active_sessions,
-                    app_handle,
-                    &session_id,
-                    SessionStatus::Idle,
+                    None,
+                    crate::agent::events::WorkflowCompletionReason::RecurringStop,
                 )
                 .await
                 {
-                    log::error!(
-                        "Failed to persist idle status after UI interaction stop for session {}: {}",
-                        session_id,
-                        error
-                    );
+                    Ok(true) => return Ok(()),
+                    Ok(false) => {}
+                    Err(error) => {
+                        log::error!(
+                            "Failed to settle session {} after UI interaction stop: {}",
+                            session_id,
+                            error
+                        );
+                        return Err(error);
+                    }
                 }
                 let attention_at = chrono::Utc::now().timestamp_millis();
                 if let Err(error) = session_repo
@@ -179,18 +175,6 @@ pub async fn continue_workflow_after_tool(
                 {
                     log::error!(
                         "Failed to persist recurring-stop attention for session {}: {}",
-                        session_id,
-                        error
-                    );
-                }
-                let event = crate::agent::events::AgentEvent::WorkflowCompleted {
-                    session_id: session_id.clone(),
-                    reason: crate::agent::events::WorkflowCompletionReason::RecurringStop,
-                };
-                if let Err(error) = crate::agent::tauri_events::emit_agent_event(app_handle, event)
-                {
-                    log::error!(
-                        "Failed to emit recurring-stop completion event for session {}: {}",
                         session_id,
                         error
                     );

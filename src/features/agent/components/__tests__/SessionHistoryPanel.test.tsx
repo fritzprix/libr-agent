@@ -27,23 +27,41 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('../use-known-direct-child-counts', () => ({
+  useKnownDirectChildCounts: () => new Map(),
+}));
+
 vi.mock('../SessionCard', () => ({
   SessionCard: ({
     session,
     descendantCount,
     hasExpandableChildren,
     isExpanded,
+    hiddenChildrenCount,
+    unloadedChildrenCount,
     onToggleExpand,
   }: {
     session: AgentSession;
     descendantCount: number;
     hasExpandableChildren?: boolean;
     isExpanded?: boolean;
+    hiddenChildrenCount?: number;
+    unloadedChildrenCount?: number;
     onToggleExpand?: (sessionId: string) => void;
   }) => (
     <div data-testid={`session-card-${session.id}`}>
       <span>{session.name}</span>
       <span data-testid={`descendants-${session.id}`}>{descendantCount}</span>
+      {hiddenChildrenCount ? (
+        <span data-testid={`hidden-children-${session.id}`}>
+          {hiddenChildrenCount}
+        </span>
+      ) : null}
+      {unloadedChildrenCount ? (
+        <span data-testid={`unloaded-children-${session.id}`}>
+          {unloadedChildrenCount}
+        </span>
+      ) : null}
       {hasExpandableChildren && (
         <button type="button" onClick={() => onToggleExpand?.(session.id)}>
           {isExpanded ? 'Collapse' : 'Expand'}
@@ -441,6 +459,38 @@ describe('SessionHistoryPanel', () => {
     expect(
       screen.queryByTestId('session-card-grandchild'),
     ).not.toBeInTheDocument();
+  });
+
+  it('shows expand for busy parent when idle children are filtered out', () => {
+    const sessions: AgentSession[] = [
+      createSession('parent', 'Parent', { status: 'busy' }),
+      createSession('child-1', 'Child 1', {
+        parentSessionId: 'parent',
+        status: 'idle',
+      }),
+      createSession('child-2', 'Child 2', {
+        parentSessionId: 'parent',
+        status: 'idle',
+      }),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="busy"
+        searchQuery=""
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Expand' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('hidden-children-parent')).toHaveTextContent(
+      '2',
+    );
+    expect(screen.queryByTestId('session-card-child-1')).not.toBeInTheDocument();
   });
 
   it('keeps lineage roots visible when a descendant matches the status filter', () => {

@@ -1,6 +1,7 @@
-use crate::mcp::schema::{JSONSchema, JSONSchemaAdditionalProperties, JSONSchemaType};
+use crate::mcp::schema::{
+    JSONSchema, JSONSchemaAdditionalProperties, JSONSchemaType, SchemaProperties,
+};
 use serde_json::Value;
-use std::collections::HashMap;
 
 /// Creates a string property schema with common options
 pub fn string_prop(
@@ -112,10 +113,13 @@ pub fn boolean_prop(description: Option<&str>) -> JSONSchema {
     }
 }
 
-/// Creates an object schema with properties and required fields
+/// Creates an object schema with properties and required fields.
+///
+/// Property insertion order on `properties` is preserved in the serialized
+/// schema (via [`SchemaProperties`]/ [`IndexMap`](indexmap::IndexMap)).
 /// Note: If required is empty, it will be set to None instead of an empty array
-/// to avoid DeepSeek/Fireworks JSON Schema validation errors
-pub fn object_schema(properties: HashMap<String, JSONSchema>, required: Vec<String>) -> JSONSchema {
+/// to avoid DeepSeek/Fireworks JSON Schema validation errors.
+pub fn object_schema(properties: SchemaProperties, required: Vec<String>) -> JSONSchema {
     JSONSchema {
         schema_type: JSONSchemaType::Object {
             properties: Some(properties),
@@ -269,13 +273,14 @@ pub fn enum_prop_required(values: Vec<&str>, description: &str) -> JSONSchema {
     }
 }
 
-/// Creates an object property schema with nested properties
+/// Creates an object property schema with nested properties.
+/// Pair order in `properties` becomes the serialized field order.
 pub fn object_prop(
     properties: Vec<(String, JSONSchema)>,
     required: Vec<String>,
     description: Option<&str>,
 ) -> JSONSchema {
-    let props: HashMap<String, JSONSchema> = properties.into_iter().collect();
+    let props: SchemaProperties = properties.into_iter().collect();
 
     JSONSchema {
         schema_type: JSONSchemaType::Object {
@@ -304,7 +309,7 @@ pub fn object_prop(
 pub fn object_map_prop(description: Option<&str>) -> JSONSchema {
     JSONSchema {
         schema_type: JSONSchemaType::Object {
-            properties: Some(HashMap::new()),
+            properties: Some(SchemaProperties::new()),
             required: None,
             additional_properties: Some(JSONSchemaAdditionalProperties::Boolean(true)),
             property_names: None,

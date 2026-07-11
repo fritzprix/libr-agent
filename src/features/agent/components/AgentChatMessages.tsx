@@ -243,6 +243,8 @@ export function AgentChatMessages() {
 
   const renderMessageGroup = useCallback(
     (_index: number, groupedMessage: GroupedMessage) => {
+      const isLatestMessage = groupedMessage.message.id === latestMessage?.id;
+      const followChatScroll = !isLatestMessage || isPinned;
       const isCompactBoundary = groupedMessageContainsBoundary(
         groupedMessage,
         compactedRange?.toId,
@@ -267,6 +269,7 @@ export function AgentChatMessages() {
               groupedToolCalls={groupedMessage.toolGroup.calls}
               groupedMessages={groupedMessage.messages}
               isPending={pendingMessageIds.has(groupedMessage.message.id)}
+              followChatScroll={followChatScroll}
             />
             {compactDivider}
           </div>
@@ -281,6 +284,7 @@ export function AgentChatMessages() {
               assistantName={assistantName}
               groupedMessages={groupedMessage.messages}
               isPending={pendingMessageIds.has(groupedMessage.message.id)}
+              followChatScroll={followChatScroll}
               toolErrorGroup={true}
             />
             {compactDivider}
@@ -323,6 +327,7 @@ export function AgentChatMessages() {
             message={msg}
             assistantName={assistantName}
             isPending={pendingMessageIds.has(msg.id)}
+            followChatScroll={followChatScroll}
           />
           {compactDivider}
         </div>
@@ -332,6 +337,8 @@ export function AgentChatMessages() {
       assistantName,
       compactedEvent,
       compactedRange?.toId,
+      isPinned,
+      latestMessage?.id,
       pendingMessageIds,
       retryMessage,
       toolResultsMap,

@@ -1,3 +1,57 @@
+## [0.8.28] - 2026-07-15
+
+### 🚀 Features
+
+- **Terminal Settlement Centralization**: Centralized terminal workflow settlement with a durability-first gate, ensuring reliable session termination and cleanup across all terminal operations.
+
+### 🐛 Fixes
+
+- **MCP Tool Stability**: Fixed redundant borrow in service proxy, boxed large enum variants to satisfy clippy, and improved circuit breaker short-circuit test setup for better tool reliability.
+- **Workspace Conflict Handling**: Preserve `writeFile` content when encountering file creation conflicts, preventing data loss during edits.
+- **Test Alignment**: Updated integration tests to align with active-session and compaction APIs, and preserved schema key order in JSON outputs for CI stability.
+- **Session History UI**: Show expand control when filtered children are hidden, improving session tree navigation.
+
+### 🔧 Internal
+
+- **Lifecycle Module Refactoring**: Split `app_setup.rs` into focused submodules for better maintainability, with added teamwork symlink tests.
+- **Circuit Breaker Improvements**: Replaced loop-prevention think injection with synthetic tool errors for more robust session recovery.
+- **Code Formatting**: Applied `rustfmt` to LLM circuit breaker modules for consistent code style.
+
+## [0.8.27] - 2026-07-10
+
+### 🐛 Fixes
+
+- **Windows External MCP Startup**: Fix intermittent stdio MCP initialize failures (`connection closed: initialize response`) on Windows GUI launches by piping child stderr instead of inheriting a broken console handle under `CREATE_NO_WINDOW`. External `npx` servers (e.g. yahoo-finance, fred) now start reliably.
+
+### 🔧 Internal
+
+- **MCP Spawn Diagnostics & Regression Guard**: Log PATH/command resolution on stdio MCP spawn, forward child stderr into app logs, and add a Windows-safe CI regression test so stderr piping cannot be removed as “logging cleanup.”
+
+## [0.8.26] - 2026-07-09
+
+### 🐛 Fixes
+
+- **Compaction Resume-Fit Split Selection**: When context overflow triggers compaction, choose the deepest ownership-safe split that makes the _next_ live prompt fit—not a shallow checkpoint-seeded split that leaves an oversized retained tail and then fails with `INVALID_CONTEXT_STATE`. Compaction-input fitting may shrink the summarizer payload but must not move the resume boundary (`to_id`).
+
+### 🔧 Internal
+
+- **Compaction Contract Docs & Regression Tests**: Document the resume-fit selection contract in the message-compaction spec/architecture notes and add integration coverage for shallow-checkpoint and payload-boundary regressions.
+
+## [0.8.25] - 2026-07-09
+
+### 🐛 Fixes
+
+- **Context Overflow No Longer Deletes Chat History**: Removed the compact-mode lossy fallback that permanently deleted older session messages from SQLite and the UI when the context limit was exceeded. Overflow now triggers compaction or returns an explicit error, matching the message-compaction contract.
+- **Docker Draft Flow & Error UX**: Improve Docker provisioning / draft chat submit error handling, and prevent Docker error dialog overflow with collapsible details.
+- **Path Traversal Hardening**: Fix path traversal issues in secure path resolution and clarify absolute-path rejection error messages.
+- **Model Picker Refresh Tooltip**: Make the disabled model-picker refresh control focusable so its tooltip remains accessible.
+- **Workspace Edit Clarity**: Clarify edit anchors and line numbers in tool output, remove dead anchor computation from edit diff preview, and drop generic file-tool hints from shell success responses.
+
+### 🔧 Internal
+
+- **Workspace Test Alignment**: Canonicalize temp base dirs for persistent-shell CWD checks and align workspace hash-anchor tests with plain diff output.
+- **Bundle Size Budget**: Raise `largestCssBytes` limit to accommodate current CSS bundle size.
+
 ## [0.8.24] - 2026-07-06
 
 ### 🚀 Features

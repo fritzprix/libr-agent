@@ -52,6 +52,7 @@ import {
 } from './session-history-utils';
 import { computeSessionTree, type SessionHistoryRow } from './session-tree';
 import { useInfiniteScroll } from './use-session-scroll';
+import { useKnownDirectChildCounts } from './use-known-direct-child-counts';
 import { BookmarkedSessionRow } from './BookmarkedSessionRow';
 
 interface SessionHistoryPanelProps {
@@ -162,6 +163,10 @@ export function SessionHistoryPanel({
 
   const deferredSessions = useDeferredValue(sessions);
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const knownDirectChildCountByParentId = useKnownDirectChildCounts(
+    sessions,
+    hasMoreSessions,
+  );
   const isPending =
     searchQuery !== deferredSearchQuery || sessions !== deferredSessions;
 
@@ -239,6 +244,7 @@ export function SessionHistoryPanel({
         manuallyExpandedSessionIds,
         collapsedAutoExpandedSessionIds,
         descendantStatusCounts,
+        knownDirectChildCountByParentId,
         t,
       }),
     [
@@ -252,6 +258,7 @@ export function SessionHistoryPanel({
       manuallyExpandedSessionIds,
       collapsedAutoExpandedSessionIds,
       descendantStatusCounts,
+      knownDirectChildCountByParentId,
       t,
     ],
   );
@@ -345,6 +352,8 @@ export function SessionHistoryPanel({
       lineageHint,
       hasExpandableChildren,
       isExpanded,
+      hiddenChildrenCount,
+      unloadedChildrenCount,
       descendantStatusCounts: rowDescendantStatusCounts,
     }: SessionHistoryRow) => {
       const indentationPx =
@@ -381,6 +390,8 @@ export function SessionHistoryPanel({
               descendantStatusCounts={rowDescendantStatusCounts}
               hasExpandableChildren={hasExpandableChildren}
               isExpanded={isExpanded}
+              hiddenChildrenCount={hiddenChildrenCount}
+              unloadedChildrenCount={unloadedChildrenCount}
               onToggleExpand={handleToggleExpand}
               onLineageSelect={(lineageId) =>
                 setSelectedLineageId((prev) =>
