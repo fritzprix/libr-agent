@@ -5,7 +5,7 @@ use crate::agent::llm::types::{
     StreamingIssueReport,
 };
 use crate::agent::state::AgentSession;
-use crate::agent::tauri_events::{emit_completion_cancel, TauriEventDispatcher};
+use crate::agent::tauri_events::emit_completion_cancel;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use std::collections::HashMap;
@@ -268,11 +268,10 @@ async fn handle_non_productive_completion(
                 ),
             };
 
-            let dispatcher = TauriEventDispatcher::new(context.app_handle.clone());
             finalize_workflow_error_with_dispatcher(
                 context.session_repo,
                 context.active_sessions,
-                &dispatcher,
+                context.app_handle,
                 session_id,
                 AgentRuntimeError::new(AgentRuntimeErrorType::AiServiceError, message)
                     .with_code(code)

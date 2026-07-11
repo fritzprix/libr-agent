@@ -13,9 +13,7 @@ use tokio::sync::RwLock;
 use super::response_admission;
 use super::response_circuit_breaker;
 use super::tool_execution;
-use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
-use crate::agent::tauri_events::TauriEventDispatcher;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmErrorHandlingOutcome {
@@ -349,26 +347,20 @@ pub async fn handle_llm_response(
                 "⚠️  Empty LLM response detected for session {}: no content, tool calls, or thinking. This may indicate a model inference issue.",
                 session_id
             );
-            // Set status to error
-            crate::agent::lifecycle::update_session_status(
+            let runtime_error = AgentRuntimeError::new(
+                AgentRuntimeErrorType::AiServiceError,
+                "The AI model returned an empty response with no content, tool calls, or thinking. This may indicate a model inference issue, context overflow, or generation failure. Please try again.",
+            )
+            .with_code("EMPTY_LLM_RESPONSE");
+            crate::agent::workflow::settle_session_and_finalize_error(
                 session_repo,
                 active_sessions,
                 app_handle,
                 &session_id,
-                SessionStatus::Error,
+                None,
+                runtime_error,
             )
             .await?;
-            // Emit workflow error event with specific message
-            let error_event = crate::agent::events::AgentEvent::WorkflowError {
-                session_id: session_id.clone(),
-                error: AgentRuntimeError::new(
-                    AgentRuntimeErrorType::AiServiceError,
-                    "The AI model returned an empty response with no content, tool calls, or thinking. This may indicate a model inference issue, context overflow, or generation failure. Please try again.",
-                )
-                .with_code("EMPTY_LLM_RESPONSE"),
-            };
-            crate::agent::tauri_events::emit_agent_event(app_handle, error_event)
-                .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
             return Ok(());
         }
 
@@ -439,39 +431,20 @@ pub async fn handle_llm_response(
             return Ok(());
         }
 
-        // Ensure the final assistant row is visible before waking terminal waiters.
-        persist_assistant_message_to_db(&msg_for_db).await;
-
-        if crate::agent::workflow::continue_workflow_if_pending_events(
+        let restarted = crate::agent::workflow::settle_session_and_go_idle(
             session_repo,
             active_sessions,
             proxy_manager,
             app_handle,
             &session_id,
-        )
-        .await?
-        {
-            return Ok(());
-        }
-
-        // No pending messages remain, so finish the workflow now.
-        crate::agent::lifecycle::update_session_status(
-            session_repo,
-            active_sessions,
-            app_handle,
-            &session_id,
-            SessionStatus::Idle,
+            Some(&msg_for_db),
+            crate::agent::events::WorkflowCompletionReason::Natural,
         )
         .await?;
 
-        let event = crate::agent::events::AgentEvent::WorkflowCompleted {
-            session_id: session_id.clone(),
-            reason: crate::agent::events::WorkflowCompletionReason::Natural,
-        };
-        crate::agent::tauri_events::emit_agent_event(app_handle, event)
-            .map_err(|e| format!("Failed to emit event: {}", e))?;
-
-        log::info!("Completed workflow for session: {}", session_id);
+        if !restarted {
+            log::info!("Completed workflow for session: {}", session_id);
+        }
     } else {
         spawn_persist_assistant_message_to_db(msg_for_db);
 
@@ -591,12 +564,12 @@ pub async fn handle_llm_error_with_outcome(
         );
     }
 
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
-    finalize_workflow_error_with_dispatcher(
+    crate::agent::workflow::settle_session_and_finalize_error(
         session_repo,
         active_sessions,
-        &dispatcher,
-        session_id,
+        app_handle,
+        &session_id,
+        None,
         error,
     )
     .await?;
@@ -619,22 +592,17 @@ pub async fn handle_llm_error(
 pub async fn finalize_workflow_error_with_dispatcher(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    dispatcher: &dyn AgentEventDispatcher,
+    app_handle: &AppHandle,
     session_id: String,
     error: AgentRuntimeError,
 ) -> Result<(), String> {
-    crate::agent::lifecycle::update_session_status_with_dispatcher(
+    crate::agent::workflow::settle_session_and_finalize_error(
         session_repo,
         active_sessions,
-        dispatcher,
+        app_handle,
         &session_id,
-        SessionStatus::Error,
+        None,
+        error,
     )
-    .await?;
-
-    let event = AgentEvent::WorkflowError {
-        session_id,
-        error: error.clone(),
-    };
-    dispatcher.emit_agent_event(event)
+    .await
 }

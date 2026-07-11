@@ -801,6 +801,7 @@ Adding a new builtin server without updating the registry → test failure, not 
 
 - [idea.md](../../idea.md) - High-level architecture vision
 - [elaborated_idea.md](../../elaborated_idea.md) - Dual-track migration strategy
+- [workflow-settlement.md](./workflow-settlement.md) - Terminal message durability and finish-window race mitigation
 - [refactoring_20241228_2330.md](../history/refactoring_20241228_2330.md) - Implementation plan
 
 **Maintainer**: @fritzprix  
