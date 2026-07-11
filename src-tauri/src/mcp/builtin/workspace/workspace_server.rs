@@ -295,13 +295,18 @@ impl WorkspaceServer {
     }
 
     fn extract_teamwork_alias_relative_path(path_str: &str) -> Option<&str> {
-        if path_str == TEAMWORK_ALIAS_PREFIX {
+        if path_str == TEAMWORK_ALIAS_PREFIX
+            || path_str == ".libragent/teamwork"
+            || path_str == ".libragent\\teamwork"
+        {
             return Some(".");
         }
 
         path_str
             .strip_prefix("@teamwork/")
             .or_else(|| path_str.strip_prefix("@teamwork\\"))
+            .or_else(|| path_str.strip_prefix(".libragent/teamwork/"))
+            .or_else(|| path_str.strip_prefix(".libragent\\teamwork\\"))
             .map(|suffix| {
                 if suffix.trim().is_empty() {
                     "."
@@ -356,9 +361,8 @@ impl WorkspaceServer {
 
     async fn get_teamwork_artifact_root(&self, session_id: &str) -> Result<PathBuf, String> {
         let root_session_id = self.resolve_teamwork_root_session_id(session_id).await?;
-        let session_manager = crate::session::get_session_manager()?;
         Ok(crate::session::teamwork_artifact_dir_for_session(
-            session_manager,
+            &self.session_manager,
             &root_session_id,
         ))
     }
@@ -701,5 +705,59 @@ impl Drop for WorkspaceServer {
         for handle in self.cleanup_tasks.drain(..) {
             handle.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_teamwork_alias_relative_path() {
+        // Test @teamwork
+        assert_eq!(
+            WorkspaceServer::extract_teamwork_alias_relative_path("@teamwork"),
+            Some(".")
+        );
+        assert_eq!(
+            WorkspaceServer::extract_teamwork_alias_relative_path(
+                "@teamwork/coordination/KANBAN.md"
+            ),
+            Some("coordination/KANBAN.md")
+        );
+        assert_eq!(
+            WorkspaceServer::extract_teamwork_alias_relative_path(
+                "@teamwork\\coordination\\KANBAN.md"
+            ),
+            Some("coordination\\KANBAN.md")
+        );
+
+        // Test .libragent/teamwork
+        assert_eq!(
+            WorkspaceServer::extract_teamwork_alias_relative_path(".libragent/teamwork"),
+            Some(".")
+        );
+        assert_eq!(
+            WorkspaceServer::extract_teamwork_alias_relative_path(
+                ".libragent/teamwork/coordination/KANBAN.md"
+            ),
+            Some("coordination/KANBAN.md")
+        );
+        assert_eq!(
+            WorkspaceServer::extract_teamwork_alias_relative_path(
+                ".libragent\\teamwork\\coordination\\KANBAN.md"
+            ),
+            Some("coordination\\KANBAN.md")
+        );
+
+        // Test standard files (should return None)
+        assert_eq!(
+            WorkspaceServer::extract_teamwork_alias_relative_path("src/main.rs"),
+            None
+        );
+        assert_eq!(
+            WorkspaceServer::extract_teamwork_alias_relative_path("docs/README.md"),
+            None
+        );
     }
 }

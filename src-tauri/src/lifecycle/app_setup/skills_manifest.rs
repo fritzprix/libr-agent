@@ -14,9 +14,9 @@ const MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BundledSkillsManifest {
-    pub(crate) schema_version: u32,
-    pub(crate) skills: BTreeMap<String, String>,
+pub struct BundledSkillsManifest {
+    pub schema_version: u32,
+    pub skills: BTreeMap<String, String>,
 }
 
 pub(crate) fn collect_skill_directory_names(skills_dir: &Path) -> Result<BTreeSet<String>, String> {
@@ -25,8 +25,18 @@ pub(crate) fn collect_skill_directory_names(skills_dir: &Path) -> Result<BTreeSe
     }
 
     let mut names = BTreeSet::new();
-    for entry in std::fs::read_dir(skills_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(skills_dir).map_err(|e| {
+        log::warn!(
+            "Failed to read skills directory {}: {}",
+            skills_dir.display(),
+            e
+        );
+        "Failed to read skills directory".to_string()
+    })? {
+        let entry = entry.map_err(|e| {
+            log::warn!("Failed to read directory entry: {}", e);
+            "Failed to read directory entry".to_string()
+        })?;
         if !entry.path().is_dir() {
             continue;
         }
@@ -38,9 +48,10 @@ pub(crate) fn collect_skill_directory_names(skills_dir: &Path) -> Result<BTreeSe
 }
 
 fn normalized_relative_path(root: &Path, path: &Path) -> Result<String, String> {
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|error| format!("Failed to strip prefix for {}: {}", path.display(), error))?;
+    let relative = path.strip_prefix(root).map_err(|error| {
+        log::warn!("Failed to strip prefix for {}: {}", path.display(), error);
+        "Failed to resolve relative path".to_string()
+    })?;
     Ok(relative
         .components()
         .map(|component| component.as_os_str().to_string_lossy().replace('\\', "/"))
@@ -48,11 +59,18 @@ fn normalized_relative_path(root: &Path, path: &Path) -> Result<String, String> 
         .join("/"))
 }
 
-pub(crate) fn hash_skill_directory(skill_dir: &Path) -> Result<String, String> {
+pub fn hash_skill_directory(skill_dir: &Path) -> Result<String, String> {
     let mut files = walkdir::WalkDir::new(skill_dir)
         .into_iter()
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to scan {}: {}", skill_dir.display(), error))?
+        .map_err(|error| {
+            log::warn!(
+                "Failed to scan skill directory {}: {}",
+                skill_dir.display(),
+                error
+            );
+            "Failed to scan skill directory".to_string()
+        })?
         .into_iter()
         .filter(|entry| {
             entry.file_type().is_file()
@@ -71,10 +89,10 @@ pub(crate) fn hash_skill_directory(skill_dir: &Path) -> Result<String, String> {
     for (relative_path, full_path) in files {
         hasher.update(relative_path.as_bytes());
         hasher.update([0]);
-        hasher.update(
-            std::fs::read(&full_path)
-                .map_err(|error| format!("Failed to read {}: {}", full_path.display(), error))?,
-        );
+        hasher.update(std::fs::read(&full_path).map_err(|error| {
+            log::warn!("Failed to read file {}: {}", full_path.display(), error);
+            "Failed to read skill file content".to_string()
+        })?);
         hasher.update([0]);
     }
 
@@ -94,9 +112,19 @@ pub(crate) fn build_bundled_skills_manifest(
     }
 
     let mut entries = std::fs::read_dir(skills_dir)
-        .map_err(|error| format!("Failed to read {}: {}", skills_dir.display(), error))?
+        .map_err(|error| {
+            log::warn!(
+                "Failed to read skills directory {}: {}",
+                skills_dir.display(),
+                error
+            );
+            "Failed to read skills directory".to_string()
+        })?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read directory entry: {}", error))?;
+        .map_err(|error| {
+            log::warn!("Failed to read directory entry: {}", error);
+            "Failed to read directory entry".to_string()
+        })?;
     entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
 
     for entry in entries {
@@ -131,9 +159,19 @@ pub(crate) fn build_marked_bundled_skills_manifest(
     }
 
     let mut entries = std::fs::read_dir(skills_dir)
-        .map_err(|error| format!("Failed to read {}: {}", skills_dir.display(), error))?
+        .map_err(|error| {
+            log::warn!(
+                "Failed to read skills directory {}: {}",
+                skills_dir.display(),
+                error
+            );
+            "Failed to read skills directory".to_string()
+        })?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read directory entry: {}", error))?;
+        .map_err(|error| {
+            log::warn!("Failed to read directory entry: {}", error);
+            "Failed to read directory entry".to_string()
+        })?;
     entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
 
     for entry in entries {
@@ -164,8 +202,14 @@ pub(crate) fn load_persisted_bundled_skills_manifest(
         return Ok(None);
     }
 
-    let payload = std::fs::read(manifest_path)
-        .map_err(|error| format!("Failed to read {}: {}", manifest_path.display(), error))?;
+    let payload = std::fs::read(manifest_path).map_err(|error| {
+        log::warn!(
+            "Failed to read manifest {}: {}",
+            manifest_path.display(),
+            error
+        );
+        "Failed to read persisted skills manifest".to_string()
+    })?;
     let manifest = match serde_json::from_slice::<BundledSkillsManifest>(&payload) {
         Ok(manifest) => manifest,
         Err(_) => return Ok(None),
@@ -178,7 +222,7 @@ pub(crate) fn load_persisted_bundled_skills_manifest(
     Ok(Some(manifest))
 }
 
-pub(crate) fn write_manifest_atomically(
+pub fn write_manifest_atomically(
     manifest_path: &Path,
     manifest: &BundledSkillsManifest,
 ) -> Result<(), String> {
@@ -187,26 +231,35 @@ pub(crate) fn write_manifest_atomically(
     let temp_path = manifest_path.with_extension("json.tmp");
     let backup_path = manifest_path.with_extension("json.bak");
 
-    std::fs::write(&temp_path, payload)
-        .map_err(|error| format!("Failed to write {}: {}", temp_path.display(), error))?;
+    std::fs::write(&temp_path, payload).map_err(|error| {
+        log::warn!(
+            "Failed to write temp manifest {}: {}",
+            temp_path.display(),
+            error
+        );
+        "Failed to write temporary manifest file".to_string()
+    })?;
 
     if backup_path.exists() {
         std::fs::remove_file(&backup_path).map_err(|error| {
-            format!(
+            log::warn!(
                 "Failed to clear backup manifest {}: {}",
                 backup_path.display(),
                 error
-            )
+            );
+            "Failed to clear existing backup manifest".to_string()
         })?;
     }
 
     let moved_existing_to_backup = if manifest_path.exists() {
         std::fs::rename(manifest_path, &backup_path).map_err(|error| {
-            format!(
-                "Failed to move existing manifest {} aside: {}",
+            log::warn!(
+                "Failed to move existing manifest aside from {} to {}: {}",
                 manifest_path.display(),
+                backup_path.display(),
                 error
-            )
+            );
+            "Failed to move existing manifest aside".to_string()
         })?;
         true
     } else {
@@ -217,11 +270,12 @@ pub(crate) fn write_manifest_atomically(
         Ok(()) => {
             if moved_existing_to_backup {
                 std::fs::remove_file(&backup_path).map_err(|error| {
-                    format!(
+                    log::warn!(
                         "Failed to remove backup manifest {}: {}",
                         backup_path.display(),
                         error
-                    )
+                    );
+                    "Failed to remove backup manifest".to_string()
                 })?;
             }
             Ok(())
@@ -231,59 +285,68 @@ pub(crate) fn write_manifest_atomically(
             if moved_existing_to_backup && !manifest_path.exists() {
                 let _ = std::fs::rename(&backup_path, manifest_path);
             }
-            Err(format!(
-                "Failed to finalize manifest {}: {}",
+            log::warn!(
+                "Failed to finalize manifest from {} to {}: {}",
+                temp_path.display(),
                 manifest_path.display(),
                 error
-            ))
+            );
+            Err("Failed to finalize manifest file".to_string())
         }
     }
 }
 
-pub(crate) fn replace_skill_directory_atomically(
+pub fn replace_skill_directory_atomically(
     source_dir: &Path,
     target_dir: &Path,
 ) -> Result<(), String> {
     let parent = target_dir
         .parent()
-        .ok_or_else(|| format!("Invalid managed skill path: {}", target_dir.display()))?;
+        .ok_or_else(|| "Invalid managed skill path".to_string())?;
     let skill_name = target_dir
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            format!(
-                "Invalid managed skill directory name: {}",
-                target_dir.display()
-            )
-        })?;
+        .ok_or_else(|| "Invalid managed skill directory name".to_string())?;
 
     let temp_dir = parent.join(format!(".sync-tmp-{}", skill_name));
     let backup_dir = parent.join(format!(".sync-backup-{}", skill_name));
 
     if temp_dir.exists() {
         std::fs::remove_dir_all(&temp_dir).map_err(|error| {
-            format!("Failed to clear temp dir {}: {}", temp_dir.display(), error)
+            log::warn!("Failed to clear temp dir {}: {}", temp_dir.display(), error);
+            "Failed to clear temporary sync directory".to_string()
         })?;
     }
     if backup_dir.exists() {
         std::fs::remove_dir_all(&backup_dir).map_err(|error| {
-            format!(
+            log::warn!(
                 "Failed to clear backup dir {}: {}",
                 backup_dir.display(),
                 error
-            )
+            );
+            "Failed to clear existing backup directory".to_string()
         })?;
     }
 
-    copy_dir_recursive_path(source_dir, &temp_dir).map_err(|e| e.to_string())?;
+    copy_dir_recursive_path(source_dir, &temp_dir).map_err(|e| {
+        log::warn!(
+            "Failed to copy dir from {} to {}: {}",
+            source_dir.display(),
+            temp_dir.display(),
+            e
+        );
+        "Failed to copy skill directory".to_string()
+    })?;
 
     let moved_existing_to_backup = if target_dir.exists() {
         std::fs::rename(target_dir, &backup_dir).map_err(|error| {
-            format!(
-                "Failed to move existing managed skill {} aside: {}",
+            log::warn!(
+                "Failed to move existing managed skill aside from {} to {}: {}",
                 target_dir.display(),
+                backup_dir.display(),
                 error
-            )
+            );
+            "Failed to move existing managed skill aside".to_string()
         })?;
         true
     } else {
@@ -292,22 +355,23 @@ pub(crate) fn replace_skill_directory_atomically(
 
     match std::fs::rename(&temp_dir, target_dir) {
         Ok(()) => {
-            std::fs::write(target_dir.join(BUNDLED_SKILL_MARKER), b"bundled\n").map_err(
-                |error| {
-                    format!(
-                        "Failed to write bundled marker {}: {}",
-                        target_dir.join(BUNDLED_SKILL_MARKER).display(),
-                        error
-                    )
-                },
-            )?;
+            let marker_path = target_dir.join(BUNDLED_SKILL_MARKER);
+            std::fs::write(&marker_path, b"bundled\n").map_err(|error| {
+                log::warn!(
+                    "Failed to write bundled marker at {}: {}",
+                    marker_path.display(),
+                    error
+                );
+                "Failed to write bundled skill marker".to_string()
+            })?;
             if moved_existing_to_backup {
                 std::fs::remove_dir_all(&backup_dir).map_err(|error| {
-                    format!(
+                    log::warn!(
                         "Failed to remove backup dir {}: {}",
                         backup_dir.display(),
                         error
-                    )
+                    );
+                    "Failed to remove backup directory".to_string()
                 })?;
             }
             Ok(())
@@ -317,11 +381,13 @@ pub(crate) fn replace_skill_directory_atomically(
             if moved_existing_to_backup && !target_dir.exists() {
                 let _ = std::fs::rename(&backup_dir, target_dir);
             }
-            Err(format!(
-                "Failed to activate managed skill {}: {}",
+            log::warn!(
+                "Failed to activate managed skill from {} to {}: {}",
+                temp_dir.display(),
                 target_dir.display(),
                 error
-            ))
+            );
+            Err("Failed to activate managed skill".to_string())
         }
     }
 }

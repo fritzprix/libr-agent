@@ -103,6 +103,7 @@ pub mod sqlite_url_format_tests;
 pub mod subsession_llm_inheritance_tests;
 pub mod teamwork_scaffold_script_tests;
 pub mod teamwork_scaffold_status_tests;
+pub mod teamwork_symlink_tests;
 pub mod teamwork_workspace_provision_tests;
 pub mod tool_contract_tests;
 pub mod tool_discovery_guidance_tests;

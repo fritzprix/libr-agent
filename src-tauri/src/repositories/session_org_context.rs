@@ -75,6 +75,10 @@ pub async fn build_explicit_org_layer_context(
                 .to_string(),
         );
         parts.push(
+            "- Shell / CLI Access: standard shell utilities (like cat, grep, python, etc.) running in the terminal must use the relative path ./.libragent/teamwork/ (e.g. ./.libragent/teamwork/coordination/KANBAN.md)."
+                .to_string(),
+        );
+        parts.push(
             "- Teamwork SSOT: the teamwork artifact root is canonical; workspaceOverride does not change it."
                 .to_string(),
         );

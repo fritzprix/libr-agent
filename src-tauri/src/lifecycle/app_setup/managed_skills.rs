@@ -208,7 +208,7 @@ async fn migrate_legacy_skills_to_managed_storage(
 pub(crate) fn spawn_managed_skills_startup_work(
     bundled_skills_dir: PathBuf,
     system_skills_dir: PathBuf,
-) {
+) -> tauri::async_runtime::JoinHandle<()> {
     crate::state::begin_managed_skills_sync();
 
     tauri::async_runtime::spawn(async move {
@@ -254,5 +254,5 @@ pub(crate) fn spawn_managed_skills_startup_work(
         }
 
         crate::state::complete_managed_skills_sync();
-    });
+    })
 }

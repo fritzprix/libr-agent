@@ -7,6 +7,10 @@ pub use managed_skills::{
     classify_legacy_skill_for_managed_storage, remove_legacy_skills_dir_if_empty,
     sync_managed_system_skills_snapshot, LegacySkillMigrationAction,
 };
+pub use skills_manifest::{
+    hash_skill_directory, replace_skill_directory_atomically, write_manifest_atomically,
+    BundledSkillsManifest,
+};
 
 use crate::agent;
 use crate::lifecycle::settings::SystemSettings;
@@ -36,6 +40,8 @@ struct StartupSettingsSnapshot {
     active_processes: u32,
     suspended_processes: u32,
 }
+
+pub struct ManagedSkillsSyncHandle(pub tauri::async_runtime::JoinHandle<()>);
 
 async fn load_startup_settings() -> StartupSettingsSnapshot {
     use crate::agent::concurrency::{
@@ -180,7 +186,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     let bundled_skills_dir = resource_dir.join("bundled_skills");
     let system_skills_dir = base_data_dir.join(SYSTEM_SKILLS_DIR_NAME);
-    spawn_managed_skills_startup_work(bundled_skills_dir, system_skills_dir);
+    let sync_handle = spawn_managed_skills_startup_work(bundled_skills_dir, system_skills_dir);
+    app.manage(ManagedSkillsSyncHandle(sync_handle));
 
     let startup_settings = tauri::async_runtime::block_on(load_startup_settings());
 
