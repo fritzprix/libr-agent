@@ -196,16 +196,26 @@ async fn read_file_success_hint_points_to_str_replace_not_edit_file() {
 #[tokio::test]
 async fn read_file_and_search_schemas_omit_show_line_anchors() {
     use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::{
-        create_read_file_tool, create_search_tool,
+        create_glob_files_tool, create_grep_files_tool, create_read_file_tool, create_search_tool,
     };
 
     let read_schema = serde_json::to_value(create_read_file_tool().input_schema)
         .expect("serialize readFile schema");
+    let grep_schema = serde_json::to_value(create_grep_files_tool().input_schema)
+        .expect("serialize grepFiles schema");
+    let glob_schema = serde_json::to_value(create_glob_files_tool().input_schema)
+        .expect("serialize globFiles schema");
     let search_schema = serde_json::to_value(create_search_tool().input_schema)
         .expect("serialize searchFiles schema");
     let read_props = read_schema["properties"]
         .as_object()
         .expect("readFile properties");
+    let grep_props = grep_schema["properties"]
+        .as_object()
+        .expect("grepFiles properties");
+    let glob_props = glob_schema["properties"]
+        .as_object()
+        .expect("globFiles properties");
     let search_props = search_schema["properties"]
         .as_object()
         .expect("searchFiles properties");
@@ -215,9 +225,29 @@ async fn read_file_and_search_schemas_omit_show_line_anchors() {
         "readFile schema should not expose showLineAnchors on strReplace builds"
     );
     assert!(
+        !grep_props.contains_key("showLineAnchors"),
+        "grepFiles schema should not expose showLineAnchors on strReplace builds"
+    );
+    assert!(
+        !glob_props.contains_key("query"),
+        "globFiles schema should not expose query"
+    );
+    assert!(
         !search_props.contains_key("showLineAnchors"),
         "searchFiles schema should not expose showLineAnchors on strReplace builds"
     );
+
+    let glob_required = glob_schema["required"]
+        .as_array()
+        .expect("globFiles required");
+    assert!(glob_required.contains(&json!("path")));
+    assert!(glob_required.contains(&json!("filePattern")));
+
+    let grep_required = grep_schema["required"]
+        .as_array()
+        .expect("grepFiles required");
+    assert!(grep_required.contains(&json!("path")));
+    assert!(grep_required.contains(&json!("query")));
 }
 
 #[tokio::test]

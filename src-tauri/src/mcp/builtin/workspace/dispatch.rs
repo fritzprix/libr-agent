@@ -37,6 +37,8 @@ impl WorkspaceServer {
             "writeFile" => self.handle_write_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "importFiles" => self.handle_import_files(args, session_id).await,
+            "globFiles" => self.handle_glob_files(args, session_id).await,
+            "grepFiles" => self.handle_grep_files(args, session_id).await,
             "searchFiles" => self.handle_search(args, session_id).await,
             #[cfg(feature = "workspace-str-replace")]
             "strReplace" => self.handle_str_replace(args, session_id).await,
