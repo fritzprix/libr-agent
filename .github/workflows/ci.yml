@@ -85,6 +85,9 @@ jobs:
       - name: 🧪 Run Rust integration tests
         run: pnpm rust:test
 
+      - name: 🧪 Run Rust integration tests (edit-file build)
+        run: pnpm rust:test:edit-file
+
       # Code Quality Checks (PR only)
       - name: 🦀 Install Clippy
         run: rustup component add clippy

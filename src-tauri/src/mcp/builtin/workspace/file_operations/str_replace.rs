@@ -139,12 +139,10 @@ impl WorkspaceServer {
         let original_content = match read_validated_utf8_file(&safe_path).await {
             Ok(content) => content,
             Err(error) => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    error,
-                    ToolGroup::Workspace,
-                )
-                .to_mcp_result());
+                return Ok(
+                    guided_error(ErrorCategory::InvalidInput, error, ToolGroup::Workspace)
+                        .to_mcp_result(),
+                );
             }
         };
 
@@ -207,15 +205,10 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let replacements = if replace_all {
-            occurrences
-        } else {
-            1
-        };
+        let replacements = if replace_all { occurrences } else { 1 };
         let diff_output = format_file_diff(&original_content, &new_content, path_str);
-        let message = format!(
-            "Replaced {replacements} occurrence(s) in '{path_str}'.\n\n{diff_output}"
-        );
+        let message =
+            format!("Replaced {replacements} occurrence(s) in '{path_str}'.\n\n{diff_output}");
 
         Ok(SuccessHint::new(
             message,

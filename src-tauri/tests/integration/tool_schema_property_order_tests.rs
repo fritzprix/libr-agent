@@ -218,8 +218,5 @@ fn str_replace_schema_property_order_puts_text_fields_last() {
     use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_str_replace_tool;
 
     let tool = create_str_replace_tool();
-    assert_property_order(
-        &tool,
-        &["path", "replace_all", "old_string", "new_string"],
-    );
+    assert_property_order(&tool, &["path", "replace_all", "old_string", "new_string"]);
 }

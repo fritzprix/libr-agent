@@ -50,7 +50,10 @@ async fn str_replace_replaces_single_unique_match() {
         .await
         .expect("strReplace should return");
 
-    assert!(!result.is_error.unwrap_or(true), "expected success: {result:?}");
+    assert!(
+        !result.is_error.unwrap_or(true),
+        "expected success: {result:?}"
+    );
     let text = extract_text_content(&result);
     assert!(text.contains("Replaced 1 occurrence"), "{text}");
 
@@ -81,7 +84,10 @@ async fn str_replace_rejects_ambiguous_match_without_replace_all() {
         .await
         .expect("strReplace should return");
 
-    assert!(result.is_error.unwrap_or(false), "expected error: {result:?}");
+    assert!(
+        result.is_error.unwrap_or(false),
+        "expected error: {result:?}"
+    );
     let text = extract_text_content(&result);
     assert!(text.contains("matched 3 times"), "{text}");
     assert_eq!(std::fs::read_to_string(file_path).unwrap(), "foo foo foo\n");
@@ -111,7 +117,10 @@ async fn str_replace_replace_all_updates_every_match() {
         .await
         .expect("strReplace should return");
 
-    assert!(!result.is_error.unwrap_or(true), "expected success: {result:?}");
+    assert!(
+        !result.is_error.unwrap_or(true),
+        "expected success: {result:?}"
+    );
     assert_eq!(std::fs::read_to_string(file_path).unwrap(), "bar bar bar\n");
 }
 
@@ -138,7 +147,10 @@ async fn str_replace_rejects_missing_old_string() {
         .await
         .expect("strReplace should return");
 
-    assert!(result.is_error.unwrap_or(false), "expected error: {result:?}");
+    assert!(
+        result.is_error.unwrap_or(false),
+        "expected error: {result:?}"
+    );
     let text = extract_text_content(&result);
     assert!(text.contains("old_string was not found"), "{text}");
 }
@@ -147,10 +159,7 @@ async fn str_replace_rejects_missing_old_string() {
 async fn workspace_file_tools_expose_str_replace_not_edit_file() {
     use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools;
 
-    let names: Vec<String> = file_tools()
-        .into_iter()
-        .map(|tool| tool.name)
-        .collect();
+    let names: Vec<String> = file_tools().into_iter().map(|tool| tool.name).collect();
 
     assert!(names.contains(&"strReplace".to_string()), "{names:?}");
     assert!(!names.contains(&"editFile".to_string()), "{names:?}");
@@ -181,5 +190,83 @@ async fn read_file_success_hint_points_to_str_replace_not_edit_file() {
     assert!(
         !text.contains("editFile"),
         "readFile hint should not mention editFile on strReplace builds: {text}"
+    );
+}
+
+#[tokio::test]
+async fn read_file_and_search_schemas_omit_show_line_anchors() {
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::{
+        create_read_file_tool, create_search_tool,
+    };
+
+    let read_schema = serde_json::to_value(create_read_file_tool().input_schema)
+        .expect("serialize readFile schema");
+    let search_schema = serde_json::to_value(create_search_tool().input_schema)
+        .expect("serialize searchFiles schema");
+    let read_props = read_schema["properties"]
+        .as_object()
+        .expect("readFile properties");
+    let search_props = search_schema["properties"]
+        .as_object()
+        .expect("searchFiles properties");
+
+    assert!(
+        !read_props.contains_key("showLineAnchors"),
+        "readFile schema should not expose showLineAnchors on strReplace builds"
+    );
+    assert!(
+        !search_props.contains_key("showLineAnchors"),
+        "searchFiles schema should not expose showLineAnchors on strReplace builds"
+    );
+}
+
+#[tokio::test]
+async fn write_file_append_preview_uses_raw_content_without_anchors() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-append-raw-preview";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    server
+        .call_tool(
+            "writeFile",
+            json!({
+                "path": "notes.txt",
+                "content": "alpha\n",
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("create should succeed");
+
+    let result = server
+        .call_tool(
+            "writeFile",
+            json!({
+                "path": "notes.txt",
+                "content": "beta\n",
+                "mode": "append",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("append should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("alpha"),
+        "preview should show file content: {text}"
+    );
+    assert!(
+        text.contains("beta"),
+        "preview should show appended line: {text}"
+    );
+    assert!(
+        !text.contains("Current anchors"),
+        "strReplace builds must not mention anchors in writeFile preview: {text}"
+    );
+    assert!(
+        !text.contains('|'),
+        "preview should be raw lines without anchor pipe separators: {text}"
     );
 }

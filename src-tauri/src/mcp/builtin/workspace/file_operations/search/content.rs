@@ -1,9 +1,9 @@
+use super::super::super::edit_mode::{search_directory_next_step, search_inline_match_footer};
 use super::super::utils::{
     compute_anchor, detect_language, format_file_size, initial_prefix_hash_state,
     update_prefix_hash_state,
 };
 use super::helpers::*;
-use super::super::super::edit_mode::{search_directory_next_step, search_inline_match_footer};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};

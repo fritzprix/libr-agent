@@ -1,8 +1,8 @@
-use super::super::WorkspaceServer;
 use super::super::edit_mode::{
-    read_file_anchor_output_suffix, read_file_anchor_prefix_note,
-    read_file_primary_next_action, read_file_secondary_next_action,
+    read_file_anchor_output_suffix, read_file_anchor_prefix_note, read_file_primary_next_action,
+    read_file_secondary_next_action, LINE_ANCHORS_ENABLED,
 };
+use super::super::WorkspaceServer;
 use super::utils::{
     detect_language, format_file_size, format_hashline, initial_prefix_hash_state,
     update_prefix_hash_state, LARGE_FILE_THRESHOLD,
@@ -19,6 +19,16 @@ const READ_FILE_BASE_HEADROOM_BYTES: usize = 1024;
 const READ_FILE_ANCHOR_HEADROOM_BYTES: usize = 2 * 1024;
 const READ_FILE_MIN_VISIBLE_CONTENT_BYTES: usize = 1024;
 const EMPTY_FILE_OUT_OF_RANGE_PREFIX: &str = "File is empty (0 lines);";
+
+fn parse_show_line_anchors(args: &Value) -> bool {
+    if !LINE_ANCHORS_ENABLED {
+        return false;
+    }
+
+    args.get("showLineAnchors")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
 
 #[derive(Debug)]
 struct ReadFileChunk {
@@ -91,10 +101,7 @@ impl WorkspaceServer {
             Ok(size) => size,
             Err(result) => return Ok(result),
         };
-        let show_line_anchors = args
-            .get("showLineAnchors")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false); // Default OFF: reduce noise unless precise editing is needed
+        let show_line_anchors = parse_show_line_anchors(&args);
 
         if let Some(sz) = size_opt {
             if sz == 0 {

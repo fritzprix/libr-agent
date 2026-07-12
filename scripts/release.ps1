@@ -39,6 +39,11 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Error: Backend tests failed"
     exit 1
 }
+pnpm rust:test:edit-file
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Backend edit-file tests failed"
+    exit 1
+}
 
 # 3. Verify Frontend Build (Type check + Build)
 Write-Host "Verifying frontend build..."

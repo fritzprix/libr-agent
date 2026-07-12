@@ -940,10 +940,22 @@ async fn write_file_append_returns_updated_anchors_without_forcing_followup_read
         text.contains("Append is verbatim"),
         "append response should explain newline behavior: {text}"
     );
+    #[cfg(feature = "workspace-edit-file")]
     assert!(
         text.contains("1:") && text.contains("2:"),
         "append response should include current anchored lines for immediate follow-up edits: {text}"
     );
+    #[cfg(feature = "workspace-str-replace")]
+    {
+        assert!(
+            text.contains("alpha") && text.contains("beta"),
+            "append response should include raw file preview for strReplace builds: {text}"
+        );
+        assert!(
+            !text.contains("Current anchors"),
+            "strReplace builds should not label preview as anchors: {text}"
+        );
+    }
     assert!(
         !text.contains("Use `readFile` to see the full content including the appended part."),
         "append response should not force a follow-up read just to inspect the result: {text}"
@@ -985,9 +997,15 @@ async fn write_file_append_truncation_keeps_appended_tail_visible() {
         text.contains("fresh-tail-line"),
         "truncated append response should include the appended line in the preview: {text}"
     );
+    #[cfg(feature = "workspace-edit-file")]
     assert!(
         text.contains("\n42:") && !text.contains("\n1:"),
         "truncated append response should keep the tail window instead of restarting from line 1: {text}"
+    );
+    #[cfg(feature = "workspace-str-replace")]
+    assert!(
+        text.contains("line-42") && text.contains("```\nline-42"),
+        "truncated append preview should start at the tail window, not line 1: {text}"
     );
 }
 

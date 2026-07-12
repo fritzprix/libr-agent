@@ -1,13 +1,13 @@
 use super::super::WorkspaceServer;
 use super::utils::{
-    format_as_hashlines, format_file_size, format_hashline, initial_prefix_hash_state,
-};
-use crate::mcp::builtin::workspace::edit_mode::{
-    write_file_anchor_preview_note, write_file_post_write_anchor_heading,
+    format_file_content_preview, format_file_size, format_preview_line, initial_prefix_hash_state,
 };
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, permission_denied_error, ErrorCategory, SuccessHint,
     ToolGroup,
+};
+use crate::mcp::builtin::workspace::edit_mode::{
+    write_file_anchor_preview_note, write_file_post_write_anchor_heading,
 };
 use crate::mcp::types::MCPResult;
 use crate::services::SecureFileManager;
@@ -104,7 +104,7 @@ struct AppendPreview {
     total_size_bytes: u64,
     shown_lines: usize,
     preview_was_truncated: bool,
-    display_hashlines: String,
+    display_lines: String,
 }
 
 fn read_back_append_preview(
@@ -133,9 +133,9 @@ fn read_back_append_preview(
         })?;
 
         total_lines += 1;
-        let anchored_line = format_hashline(total_lines, &line, &mut prefix_state);
-        preview_bytes += anchored_line.len() + 1;
-        tail_lines.push_back(anchored_line);
+        let preview_line = format_preview_line(total_lines, &line, &mut prefix_state);
+        preview_bytes += preview_line.len() + 1;
+        tail_lines.push_back(preview_line);
 
         while tail_lines.len() > max_display_lines
             || (preview_bytes > max_display_bytes && tail_lines.len() > 1)
@@ -155,7 +155,7 @@ fn read_back_append_preview(
         total_size_bytes,
         shown_lines,
         preview_was_truncated,
-        display_hashlines: tail_lines.into_iter().collect::<Vec<_>>().join("\n"),
+        display_lines: tail_lines.into_iter().collect::<Vec<_>>().join("\n"),
     })
 }
 
@@ -476,19 +476,19 @@ impl WorkspaceServer {
                         "{}{}```\n{}\n```\n",
                         write_file_post_write_anchor_heading(),
                         write_file_anchor_preview_note(),
-                        format_as_hashlines(content)
+                        format_file_content_preview(content)
                     ));
                 } else {
-                    let display_hashlines = if let Some(preview) = append_preview.as_ref() {
+                    let display_lines = if let Some(preview) = append_preview.as_ref() {
                         if preview.preview_was_truncated {
                             format!(
                                 "{}\n\n... (truncated: showing last {} of {} lines, including the appended tail)",
-                                preview.display_hashlines,
+                                preview.display_lines,
                                 preview.shown_lines,
                                 preview.total_lines,
                             )
                         } else {
-                            preview.display_hashlines.clone()
+                            preview.display_lines.clone()
                         }
                     } else {
                         let current_content = current_content
@@ -514,17 +514,17 @@ impl WorkspaceServer {
                             let partial = truncated.join("\n");
                             format!(
                                 "{}\n\n... (truncated: showing first {} of {} lines)",
-                                format_as_hashlines(&partial),
+                                format_file_content_preview(&partial),
                                 truncated.len(),
                                 content_lines.len(),
                             )
                         } else {
-                            format_as_hashlines(current_content)
+                            format_file_content_preview(current_content)
                         }
                     };
 
                     message.push_str(write_file_anchor_preview_note());
-                    message.push_str(&format!("```\n{}\n```\n", display_hashlines));
+                    message.push_str(&format!("```\n{}\n```\n", display_lines));
                 }
 
                 let mut next_steps = Vec::new();

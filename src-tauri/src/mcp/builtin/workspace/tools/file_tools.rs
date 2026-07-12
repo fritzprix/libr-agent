@@ -1,15 +1,16 @@
-use crate::mcp::{
-    schema::SchemaProperties,
-    utils::schema_builder::*,
-    MCPTool,
-};
+use crate::mcp::{schema::SchemaProperties, utils::schema_builder::*, MCPTool};
 
 #[cfg(feature = "workspace-edit-file")]
 use crate::mcp::schema::JSONSchema;
 
+use super::super::edit_mode::{read_file_tool_hint, PRIMARY_EDIT_TOOL};
+
+#[cfg(all(
+    feature = "workspace-edit-file",
+    not(feature = "workspace-str-replace")
+))]
 use super::super::edit_mode::{
-    read_file_show_line_anchors_schema_hint, read_file_tool_hint,
-    search_show_line_anchors_schema_hint, PRIMARY_EDIT_TOOL,
+    read_file_show_line_anchors_schema_hint, search_show_line_anchors_schema_hint,
 };
 
 // Note: maximum file size is enforced at runtime (LIBRAGENT_MAX_FILE_SIZE).
@@ -42,6 +43,10 @@ pub fn create_read_file_tool() -> MCPTool {
             Some("Number of lines to read. If negative, reads that many lines from the end of the file (tail mode)."),
         ),
     );
+    #[cfg(all(
+        feature = "workspace-edit-file",
+        not(feature = "workspace-str-replace")
+    ))]
     props.insert(
         "showLineAnchors".to_string(),
         boolean_prop(Some(read_file_show_line_anchors_schema_hint())),
@@ -238,6 +243,10 @@ pub fn create_search_tool() -> MCPTool {
         "ignoreCase".to_string(),
         boolean_prop(Some("Case-insensitive search (default: false)")),
     );
+    #[cfg(all(
+        feature = "workspace-edit-file",
+        not(feature = "workspace-str-replace")
+    ))]
     props.insert(
         "showLineAnchors".to_string(),
         boolean_prop(Some(search_show_line_anchors_schema_hint())),

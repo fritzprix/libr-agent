@@ -206,6 +206,7 @@ async fn read_file_empty_file_preserves_standard_success_shape() {
     assert_eq!(structured["nextLineTooLarge"], json!(false));
 }
 
+#[cfg(feature = "workspace-edit-file")]
 #[tokio::test]
 async fn read_file_with_anchors_uses_more_conservative_line_budget() {
     let temp_dir = tempdir().expect("temp dir");
@@ -235,7 +236,8 @@ async fn read_file_with_anchors_uses_more_conservative_line_budget() {
     );
     assert!(
         text.contains(
-            tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::read_file_anchor_output_suffix()
+            tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::read_file_anchor_output_suffix(
+            )
         ),
         "anchored response should include mode-specific anchor guidance: {text}"
     );
@@ -288,6 +290,7 @@ async fn read_file_guides_single_line_retry_when_next_line_is_too_large() {
         text.contains("Do not rerun readFile on a broader range"),
         "response should warn against repeating a too-broad read: {text}"
     );
+    #[cfg(feature = "workspace-edit-file")]
     assert!(
         text.contains("rerun the same 1-line range without showLineAnchors"),
         "anchored retry guidance should mention dropping anchors if needed: {text}"

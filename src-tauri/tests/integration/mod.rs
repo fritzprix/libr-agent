@@ -127,7 +127,7 @@ pub mod workspace_list_directory_regression_tests;
 pub mod workspace_local_file_scope_tests;
 pub mod workspace_override_hydration_tests;
 pub mod workspace_override_validation_tests;
-pub mod workspace_str_replace_tests;
 pub mod workspace_search_tests;
 pub mod workspace_skill_access_regression_tests;
+pub mod workspace_str_replace_tests;
 pub mod zip_extraction_security_test;
