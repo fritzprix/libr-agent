@@ -22,14 +22,24 @@ pub fn record_knowledge_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 (
-                    "content".to_string(),
-                    string_prop_required("The full text content to store in the knowledge base."),
-                ),
-                (
                     "tags".to_string(),
                     array_schema(
                         string_prop(None, None, None),
                         Some("Optional tags for categorization (e.g. ['tech', 'project_alpha'])."),
+                    ),
+                ),
+                (
+                    "source".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional source label for this knowledge entry (for example: conversation, file path, or URL)."),
+                    ),
+                ),
+                (
+                    "auto_extract".to_string(),
+                    boolean_prop(
+                        Some("Whether to run heuristic fallback extraction when structured entities or relationships are missing."),
                     ),
                 ),
                 (
@@ -93,18 +103,8 @@ pub fn record_knowledge_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "auto_extract".to_string(),
-                    boolean_prop(
-                        Some("Whether to run heuristic fallback extraction when structured entities or relationships are missing."),
-                    ),
-                ),
-                (
-                    "source".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Optional source label for this knowledge entry (for example: conversation, file path, or URL)."),
-                    ),
+                    "content".to_string(),
+                    string_prop_required("The full text content to store in the knowledge base."),
                 ),
             ],
             vec!["content".to_string()],

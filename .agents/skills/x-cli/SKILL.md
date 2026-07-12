@@ -122,7 +122,18 @@ If credentials login returns `404` with `code 34`, stop retrying passwords and s
 
 ### Action: `post_tweet` — Post a new tweet
 
+**Shell quoting warning:** In bash/sh, double-quoted `--message` values expand `$` as variables (`$100M` becomes `00M`). In PowerShell, `$` is also expanded. For any message containing `$`, backticks, or other shell-special characters, **always** write the tweet to a UTF-8 file and use `--message-file`.
+
 ```bash
+# Recommended when the message contains $ or other shell-special characters
+python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet \
+  --message-file "/path/to/tweet.txt" \
+  [--file "/path/to/attachment"] \
+  [--reply-to "1234567890"]
+```
+
+```bash
+# Simple messages only (no $, backticks, or shell metacharacters)
 python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet \
   --message "트윗 내용" \
   [--file "/path/to/attachment"] \
@@ -132,12 +143,12 @@ python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet \
 Post the first tweet without `--reply-to`. For thread replies, pass the previous tweet's ID:
 
 ```bash
-# Tweet 1
-python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet --message "Part 1"
+# Tweet 1 (write message to file when it contains $)
+python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet --message-file "/path/to/part1.txt"
 
 # Tweet 2 (reply to tweet 1)
 python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet \
-  --message "Part 2" \
+  --message-file "/path/to/part2.txt" \
   --reply-to "<tweet_id_from_part_1>"
 ```
 

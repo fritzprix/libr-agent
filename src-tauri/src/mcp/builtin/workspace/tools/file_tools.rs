@@ -589,17 +589,17 @@ fn create_prepend_edit_variant() -> JSONSchema {
     let content_desc =
         "Content to insert at the beginning of the file. startLine defaults to 0 when omitted.";
 
-    let mut props = edit_anchor_props();
-    props.insert(
-        "content".to_string(),
-        string_prop(Some(0), None, Some(content_desc)),
-    );
+    let mut props = SchemaProperties::new();
     props.insert(
         "startLine".to_string(),
         integer_const_prop(
             0,
             Some("Must be 0 for prepend. Omit startLine to prepend with content only."),
         ),
+    );
+    props.insert(
+        "content".to_string(),
+        string_prop(Some(0), None, Some(content_desc)),
     );
 
     let mut schema = object_schema(props, vec!["content".to_string()]);
@@ -617,7 +617,7 @@ fn create_line_edit_variant() -> JSONSchema {
     let content_desc =
         "Replacement content. Omit to delete the targeted line or range. The server infers replace vs delete from content presence when op is omitted.";
 
-    let mut props = edit_anchor_props();
+    let mut props = SchemaProperties::new();
     props.insert(
         "startLine".to_string(),
         integer_prop(Some(1), None, Some(start_line_desc)),
@@ -627,15 +627,18 @@ fn create_line_edit_variant() -> JSONSchema {
         integer_prop(Some(1), None, Some(end_line_desc)),
     );
     props.insert(
-        "content".to_string(),
-        string_prop(None, None, Some(content_desc)),
-    );
-    props.insert(
         "op".to_string(),
         enum_prop_optional(
             vec!["replace", "delete"],
             Some("Optional hint for replace or delete. Omit to let the server infer from content."),
         ),
+    );
+    for (key, value) in edit_anchor_props() {
+        props.insert(key, value);
+    }
+    props.insert(
+        "content".to_string(),
+        string_prop(None, None, Some(content_desc)),
     );
 
     let mut schema = object_schema(props, vec!["startLine".to_string()]);
@@ -651,7 +654,7 @@ fn create_insert_after_edit_variant() -> JSONSchema {
         "Line number to insert after (1-based). Use 0 only to prepend at the file top.";
     let content_desc = "Content to insert after the anchored line.";
 
-    let mut props = edit_anchor_props();
+    let mut props = SchemaProperties::new();
     props.insert(
         "op".to_string(),
         string_const_prop(
@@ -663,6 +666,9 @@ fn create_insert_after_edit_variant() -> JSONSchema {
         "startLine".to_string(),
         integer_prop(Some(0), None, Some(start_line_desc)),
     );
+    for (key, value) in edit_anchor_props() {
+        props.insert(key, value);
+    }
     props.insert(
         "content".to_string(),
         string_prop(Some(0), None, Some(content_desc)),
@@ -683,7 +689,7 @@ fn create_insert_after_edit_variant() -> JSONSchema {
     schema
 }
 
-fn create_edit_item_schema() -> JSONSchema {
+pub fn create_edit_item_schema() -> JSONSchema {
     one_of_object_schema(
         vec![
             create_prepend_edit_variant(),

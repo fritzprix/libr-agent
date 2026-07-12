@@ -119,10 +119,7 @@ async fn complete_compaction_with_hard_fallback(
     );
 
     if let Ok((relative_path, _)) = &markdown_result {
-        summary.push_str(&format!(
-            "\n\n---\n*Full pre-compaction transcript: {}*",
-            relative_path
-        ));
+        summary.push_str(&md_export::format_transcript_recovery_suffix(relative_path));
     } else if let Err(e) = &markdown_result {
         log::warn!(
             "Failed to write pre_compaction markdown in fallback path: {}",
@@ -275,10 +272,7 @@ pub async fn handle_compact_response(
 
     let mut final_summary = clamped_summary.summary;
     if let Ok((relative_path, _)) = &markdown_result {
-        final_summary.push_str(&format!(
-            "\n\n---\n*Full pre-compaction transcript: {}*",
-            relative_path
-        ));
+        final_summary.push_str(&md_export::format_transcript_recovery_suffix(relative_path));
     } else if let Err(e) = &markdown_result {
         log::warn!("Failed to write pre_compaction markdown: {}", e);
     }

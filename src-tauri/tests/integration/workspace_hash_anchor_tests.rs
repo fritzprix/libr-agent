@@ -157,6 +157,7 @@ fn edit_file_schema_uses_discriminated_edit_variants() {
 
 #[tokio::test]
 async fn edit_file_rejects_hashless_replace_of_existing_line() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-requires-hashes";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -191,6 +192,7 @@ async fn edit_file_rejects_hashless_replace_of_existing_line() {
 
 #[tokio::test]
 async fn edit_file_allows_hashless_insert_at_top() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-allows-top-insert";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -222,6 +224,7 @@ async fn edit_file_allows_hashless_insert_at_top() {
 
 #[tokio::test]
 async fn edit_file_missing_target_reports_file_not_found_before_anchor_guidance() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-missing-target";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -257,6 +260,7 @@ async fn edit_file_missing_target_reports_file_not_found_before_anchor_guidance(
 
 #[tokio::test]
 async fn edit_file_directory_target_reports_directory_error_before_anchor_guidance() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-directory-target";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -295,6 +299,7 @@ async fn edit_file_directory_target_reports_directory_error_before_anchor_guidan
 
 #[tokio::test]
 async fn edit_file_ignores_anchors_for_top_insert() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-top-insert-anchor";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -327,6 +332,7 @@ async fn edit_file_ignores_anchors_for_top_insert() {
 
 #[tokio::test]
 async fn edit_file_rejects_start_line_zero_for_replace_and_delete() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-rejects-zero-start-line";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -366,6 +372,7 @@ async fn edit_file_rejects_start_line_zero_for_replace_and_delete() {
 
 #[tokio::test]
 async fn edit_files_preserve_replace_and_insert_order_with_single_file_batch() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-replace-insert-order";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -417,6 +424,7 @@ async fn edit_files_preserve_replace_and_insert_order_with_single_file_batch() {
 
 #[tokio::test]
 async fn edit_files_allows_replace_without_explicit_op() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-infers-replace";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -462,6 +470,7 @@ async fn edit_files_allows_replace_without_explicit_op() {
 
 #[tokio::test]
 async fn edit_files_delete_only_response_does_not_claim_new_anchors_exist() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-delete-only-guidance";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -514,6 +523,7 @@ async fn edit_files_delete_only_response_does_not_claim_new_anchors_exist() {
 
 #[tokio::test]
 async fn edit_files_success_response_includes_diff_block() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-success-diff-anchors";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -564,6 +574,7 @@ async fn edit_files_success_response_includes_diff_block() {
 
 #[tokio::test]
 async fn edit_files_delete_only_response_includes_diff_block() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-delete-only-diff";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -610,6 +621,7 @@ async fn edit_files_delete_only_response_includes_diff_block() {
 
 #[tokio::test]
 async fn edit_files_diff_preview_truncates_large_changes() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-diff-preview-truncation";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -662,6 +674,7 @@ async fn edit_files_diff_preview_truncates_large_changes() {
 
 #[tokio::test]
 async fn edit_files_diff_preview_omitted_count_ignores_gap_markers() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-diff-preview-gap-marker-count";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -718,6 +731,7 @@ async fn edit_files_diff_preview_omitted_count_ignores_gap_markers() {
 
 #[tokio::test]
 async fn edit_files_delete_range_at_eof_does_not_panic() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-delete-range-eof";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -775,6 +789,7 @@ async fn edit_files_delete_range_at_eof_does_not_panic() {
 
 #[tokio::test]
 async fn edit_files_error_messages_include_edit_context() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-error-context";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -810,6 +825,7 @@ async fn edit_files_error_messages_include_edit_context() {
 
 #[tokio::test]
 async fn edit_file_rejects_multiline_replace_without_end_hash() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-multiline-needs-end-hash";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -853,6 +869,7 @@ async fn edit_file_rejects_multiline_replace_without_end_hash() {
 
 #[tokio::test]
 async fn edit_file_allows_multiline_replace_with_end_anchor() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-multiline-with-end-hash";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -905,6 +922,7 @@ async fn edit_file_allows_multiline_replace_with_end_anchor() {
 
 #[tokio::test]
 async fn legacy_replace_lines_alias_still_routes_through_edit_file() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "legacy-replace-lines-alias";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -940,6 +958,7 @@ async fn legacy_replace_lines_alias_still_routes_through_edit_file() {
 
 #[tokio::test]
 async fn legacy_edit_file_insert_after_flag_still_works() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "legacy-edit-file-insert-after-flag";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -971,6 +990,7 @@ async fn legacy_edit_file_insert_after_flag_still_works() {
 
 #[tokio::test]
 async fn legacy_edit_file_empty_new_value_still_deletes() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "legacy-edit-file-empty-new-value-delete";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -1010,6 +1030,7 @@ async fn legacy_edit_file_empty_new_value_still_deletes() {
 
 #[tokio::test]
 async fn edit_file_rejects_stale_anchor_without_partial_write() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-stale-anchor";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -1051,28 +1072,7 @@ async fn edit_file_rejects_stale_anchor_without_partial_write() {
     );
 }
 
-struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<String>,
-}
-
-impl EnvVarGuard {
-    fn set_temp(key: &'static str, value: &str) -> Self {
-        let previous = std::env::var(key).ok();
-        // SAFETY: tests run serially within this module; guard restores on drop.
-        unsafe { std::env::set_var(key, value) };
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match &self.previous {
-            Some(value) => unsafe { std::env::set_var(self.key, value) },
-            None => unsafe { std::env::remove_var(self.key) },
-        }
-    }
-}
+use super::env_var_guard::EnvVarGuard;
 
 #[tokio::test]
 async fn edit_file_rejects_oversized_target_file() {
@@ -1109,6 +1109,7 @@ async fn edit_file_rejects_oversized_target_file() {
 
 #[tokio::test]
 async fn edit_file_rejects_more_than_max_edits() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-max-edits";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -1143,6 +1144,7 @@ async fn edit_file_rejects_more_than_max_edits() {
 
 #[tokio::test]
 async fn edit_file_content_only_prepends_without_start_line() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-content-prepend";
     let server = build_workspace_server(temp_dir.path(), session_id);

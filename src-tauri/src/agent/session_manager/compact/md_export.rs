@@ -134,3 +134,90 @@ pub async fn write_compaction_markdown(
 
     Ok((relative_path, next_epoch))
 }
+
+pub fn format_transcript_recovery_suffix(relative_path: &str) -> String {
+    format!(
+        "\n\n---\n### Context recovery\n\
+A full pre-compaction transcript was saved to `{path}`.\n\
+It contains the user/assistant messages and tool calls from before this compaction.\n\
+If you are unsure what to do next, need missing details, or this summary feels incomplete, \
+read `{path}` first (via `workspace__readFile` or `tail {path}` in the session workspace).",
+        path = relative_path
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_compaction_markdown, format_transcript_recovery_suffix, truncate_text};
+    use crate::agent::types::{ToolCall, ToolCallFunction};
+    use crate::models::chat::Message;
+
+    fn message_with_role(role: &str, text: &str) -> Message {
+        let mut message =
+            Message::new_user_message("session-test".to_string(), text.to_string(), None, None);
+        message.role = role.to_string();
+        message
+    }
+
+    #[test]
+    fn transcript_recovery_suffix_explains_file_purpose_and_how_to_read_it() {
+        let suffix = format_transcript_recovery_suffix(".libragent/pre_compaction_epoch_4.md");
+
+        assert!(suffix.contains(".libragent/pre_compaction_epoch_4.md"));
+        assert!(suffix.contains("pre-compaction transcript"));
+        assert!(suffix.contains("user/assistant messages and tool calls"));
+        assert!(suffix.contains("workspace__readFile"));
+        assert!(suffix.contains("tail .libragent/pre_compaction_epoch_4.md"));
+    }
+
+    #[test]
+    fn truncate_text_respects_utf8_char_boundaries() {
+        let text = "🎉".repeat(500);
+        let truncated = truncate_text(&text, 20);
+
+        assert!(truncated.contains("truncated"));
+        assert!(std::str::from_utf8(truncated.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn build_compaction_markdown_handles_empty_message_list() {
+        let markdown = build_compaction_markdown("session-empty", &[]);
+
+        assert!(markdown.starts_with("# Pre-compaction Transcript\nSession: session-empty"));
+        assert!(!markdown.contains("---\n["));
+    }
+
+    #[test]
+    fn build_compaction_markdown_preserves_shell_special_characters() {
+        let messages = vec![message_with_role(
+            "user",
+            "Gradium raised $100M. Prime: `code` & \"quotes\".",
+        )];
+        let markdown = build_compaction_markdown("session-special", &messages);
+
+        assert!(markdown.contains("$100M"));
+        assert!(markdown.contains("`code`"));
+        assert!(markdown.contains("\"quotes\""));
+    }
+
+    #[test]
+    fn build_compaction_markdown_includes_tool_calls_and_truncates_long_thinking() {
+        let mut message = message_with_role("assistant", "");
+        message.content.clear();
+        message.thinking = Some("x".repeat(2_000));
+        message.tool_calls = Some(vec![ToolCall {
+            id: "call-1".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__readFile".to_string(),
+                arguments: r#"{"path":"src/main.rs"}"#.to_string(),
+            },
+        }]);
+
+        let markdown = build_compaction_markdown("session-tools", &[message]);
+
+        assert!(markdown.contains("[TOOL CALL] workspace__readFile"));
+        assert!(markdown.contains("truncated"));
+        assert!(!markdown.contains(&"x".repeat(2_000)));
+    }
+}

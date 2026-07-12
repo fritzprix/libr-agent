@@ -41,12 +41,10 @@ Use this as the default UI presentation tool.
         - HTML mode supports a safe subset only: basic text, tables, and links
         - JavaScript, CSS, event handlers, images, and arbitrary embeds are stripped"
             .to_string(),
+        // Field order is intentional: format → title → interaction → content.
+        // Models often emit arguments in schema order; keep large HTML/Markdown last.
         input_schema: object_prop(
             vec![
-                (
-                    "content".to_string(),
-                    string_prop_required("The content string to render (HTML or Markdown)"),
-                ),
                 (
                     "format".to_string(),
                     enum_prop(
@@ -62,6 +60,10 @@ Use this as the default UI presentation tool.
                 (
                     "interaction".to_string(),
                     interaction_schema,
+                ),
+                (
+                    "content".to_string(),
+                    string_prop_required("The content string to render (HTML or Markdown)"),
                 ),
             ],
             vec!["content".to_string()],
