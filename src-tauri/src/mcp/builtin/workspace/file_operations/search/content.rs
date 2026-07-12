@@ -1,3 +1,4 @@
+use super::super::super::edit_mode::{search_directory_next_step, search_inline_match_footer};
 use super::super::utils::{
     compute_anchor, detect_language, format_file_size, initial_prefix_hash_state,
     update_prefix_hash_state,
@@ -250,11 +251,9 @@ pub(super) async fn search_content_in_file(
         }
 
         if show_hashes {
-            s.push_str("Use the returned anchors with editFile. For range replacement/deletion, also copy endAnchor from the exact end line.\n");
+            s.push_str(&search_inline_match_footer(true));
         } else {
-            s.push_str(
-                "If you plan to use editFile next, run again with `showLineAnchors: true` to get anchors.\n",
-            );
+            s.push_str(&search_inline_match_footer(false));
         }
         s
     };
@@ -618,17 +617,7 @@ pub(super) async fn search_content_in_dir(
 
     let mut next_steps =
         vec!["Use search with a specific file path to see all matches in that file".to_string()];
-    if show_hashes {
-        next_steps.push(
-            "Use the returned anchors with editFile; add endAnchor for range replacement/deletion"
-                .to_string(),
-        );
-    } else {
-        next_steps.push(
-            "Run with `showLineAnchors: true` to get anchors for targeted editing tools."
-                .to_string(),
-        );
-    }
+    next_steps.push(search_directory_next_step(show_hashes).to_string());
 
     Ok(SuccessHint::new(text, next_steps).to_mcp_result_with_data(Some(structured)))
 }

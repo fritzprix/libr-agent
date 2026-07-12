@@ -54,6 +54,7 @@
     "rust:check": "node scripts/run-rust-command.cjs check",
     "rust:check:all": "node scripts/run-rust-command.cjs check --all-features",
     "rust:test": "node scripts/run-rust-command.cjs test --tests --profile ci-test",
+    "rust:test:edit-file": "node scripts/run-rust-command.cjs test --tests --profile ci-test --no-default-features --features workspace-edit-file",
     "rust:clean": "cd src-tauri && cargo clean",
     "rust:validate": "pnpm rust:fmt && pnpm rust:clippy:all",
     "assistants:validate": "node scripts/validate-assistant-skills.cjs",

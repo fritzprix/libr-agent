@@ -7,17 +7,26 @@ pub mod terminal_tools;
 use crate::mcp::MCPTool;
 
 pub fn file_tools() -> Vec<MCPTool> {
-    vec![
+    let mut tools = vec![
         file_tools::create_read_file_tool(),
         file_tools::create_write_file_tool(),
         file_tools::create_list_directory_tool(),
         file_tools::create_import_files_tool(),
         file_tools::create_search_tool(),
-        // editFile is the single model-facing mutation tool.
+    ];
+
+    #[cfg(feature = "workspace-str-replace")]
+    tools.push(file_tools::create_str_replace_tool());
+
+    #[cfg(feature = "workspace-edit-file")]
+    {
+        // editFile is the single model-facing mutation tool when line+anchor edits are enabled.
         // Per-operation aliases remain dispatchable for older clients, but are hidden from
         // discovery so the agent only plans against one contract.
-        file_tools::create_edit_file_tool(),
-    ]
+        tools.push(file_tools::create_edit_file_tool());
+    }
+
+    tools
 }
 
 #[allow(clippy::vec_init_then_push)]

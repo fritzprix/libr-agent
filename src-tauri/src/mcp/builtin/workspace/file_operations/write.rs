@@ -1,10 +1,13 @@
 use super::super::WorkspaceServer;
 use super::utils::{
-    format_as_hashlines, format_file_size, format_hashline, initial_prefix_hash_state,
+    format_file_content_preview, format_file_size, format_preview_line, initial_prefix_hash_state,
 };
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, permission_denied_error, ErrorCategory, SuccessHint,
     ToolGroup,
+};
+use crate::mcp::builtin::workspace::edit_mode::{
+    write_file_anchor_preview_note, write_file_post_write_anchor_heading,
 };
 use crate::mcp::types::MCPResult;
 use crate::services::SecureFileManager;
@@ -101,7 +104,7 @@ struct AppendPreview {
     total_size_bytes: u64,
     shown_lines: usize,
     preview_was_truncated: bool,
-    display_hashlines: String,
+    display_lines: String,
 }
 
 fn read_back_append_preview(
@@ -130,9 +133,9 @@ fn read_back_append_preview(
         })?;
 
         total_lines += 1;
-        let anchored_line = format_hashline(total_lines, &line, &mut prefix_state);
-        preview_bytes += anchored_line.len() + 1;
-        tail_lines.push_back(anchored_line);
+        let preview_line = format_preview_line(total_lines, &line, &mut prefix_state);
+        preview_bytes += preview_line.len() + 1;
+        tail_lines.push_back(preview_line);
 
         while tail_lines.len() > max_display_lines
             || (preview_bytes > max_display_bytes && tail_lines.len() > 1)
@@ -152,7 +155,7 @@ fn read_back_append_preview(
         total_size_bytes,
         shown_lines,
         preview_was_truncated,
-        display_hashlines: tail_lines.into_iter().collect::<Vec<_>>().join("\n"),
+        display_lines: tail_lines.into_iter().collect::<Vec<_>>().join("\n"),
     })
 }
 
@@ -262,7 +265,8 @@ impl WorkspaceServer {
                             path_str
                         ),
                         format!(
-                            "Use editFile for targeted edits to \"{}\" instead of rewriting the whole file.",
+                            "Use {} for targeted edits to \"{}\" instead of rewriting the whole file.",
+                            crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
                             path_str
                         ),
                     ])
@@ -441,13 +445,14 @@ impl WorkspaceServer {
                          **Correct usage reminder:**\n\
                          - To **replace** an existing file: `writeFile` with `\"mode\": \"overwrite\"`\n\
                          - To **add to the end** of an existing file: `\"mode\": \"append\"`\n\
-                         - To **edit parts** of an existing file: use `editFile` (not another `writeFile` create)\n\
+                         - To **edit parts** of an existing file: use `{}` (not another `writeFile` create)\n\
                          - To **create a new file** when unsure the path is free: pick a unique name, or accept this auto-suffix behavior\n\n",
                         requested_path_str,
                         requested_path_str,
                         write_display_path,
                         total_size_str,
-                        total_lines
+                        total_lines,
+                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
                     ));
                 } else {
                     message.push_str(&format!(
@@ -468,20 +473,22 @@ impl WorkspaceServer {
                     let diff_output = format_file_diff(&old_content, content, &write_display_path);
                     message.push_str(&diff_output);
                     message.push_str(&format!(
-                        "\nCurrent anchors:\n*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n```\n{}\n```\n",
-                        format_as_hashlines(content)
+                        "{}{}```\n{}\n```\n",
+                        write_file_post_write_anchor_heading(),
+                        write_file_anchor_preview_note(),
+                        format_file_content_preview(content)
                     ));
                 } else {
-                    let display_hashlines = if let Some(preview) = append_preview.as_ref() {
+                    let display_lines = if let Some(preview) = append_preview.as_ref() {
                         if preview.preview_was_truncated {
                             format!(
                                 "{}\n\n... (truncated: showing last {} of {} lines, including the appended tail)",
-                                preview.display_hashlines,
+                                preview.display_lines,
                                 preview.shown_lines,
                                 preview.total_lines,
                             )
                         } else {
-                            preview.display_hashlines.clone()
+                            preview.display_lines.clone()
                         }
                     } else {
                         let current_content = current_content
@@ -507,17 +514,17 @@ impl WorkspaceServer {
                             let partial = truncated.join("\n");
                             format!(
                                 "{}\n\n... (truncated: showing first {} of {} lines)",
-                                format_as_hashlines(&partial),
+                                format_file_content_preview(&partial),
                                 truncated.len(),
                                 content_lines.len(),
                             )
                         } else {
-                            format_as_hashlines(current_content)
+                            format_file_content_preview(current_content)
                         }
                     };
 
-                    message.push_str("*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n");
-                    message.push_str(&format!("```\n{}\n```\n", display_hashlines));
+                    message.push_str(write_file_anchor_preview_note());
+                    message.push_str(&format!("```\n{}\n```\n", display_lines));
                 }
 
                 let mut next_steps = Vec::new();
@@ -531,8 +538,9 @@ impl WorkspaceServer {
                         requested_path_str, write_display_path
                     ));
                     next_steps.push(format!(
-                        "If you meant to modify \"{}\" in place, use editFile or writeFile mode=\"append\" / mode=\"overwrite\" — not another default create.",
-                        requested_path_str
+                        "If you meant to modify \"{}\" in place, use {} or writeFile mode=\"append\" / mode=\"overwrite\" — not another default create.",
+                        requested_path_str,
+                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
                     ));
                 }
 
@@ -559,7 +567,8 @@ impl WorkspaceServer {
                     || write_display_path.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "Use editFile for targeted edits to \"{}\"",
+                        "Use {} for targeted edits to \"{}\"",
+                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
                         write_display_path
                     ));
                 }

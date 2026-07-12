@@ -1,3 +1,5 @@
+#![cfg(feature = "workspace-edit-file")]
+
 use serde_json::json;
 use std::sync::Arc;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::file_operations::utils::format_as_hashlines;

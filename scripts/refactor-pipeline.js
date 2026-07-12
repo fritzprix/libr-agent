@@ -68,6 +68,11 @@ const VALIDATE_STAGES = [
   { name: 'rust:clippy:all', command: pnpmCommand, args: ['rust:clippy:all'] },
   { name: 'rust:test', command: pnpmCommand, args: ['rust:test'] },
   {
+    name: 'rust:test:edit-file',
+    command: pnpmCommand,
+    args: ['rust:test:edit-file'],
+  },
+  {
     name: 'build:nosync',
     command: pnpmCommand,
     args: ['build:nosync'],

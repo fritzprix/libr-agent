@@ -415,17 +415,26 @@ impl SuccessHint {
             ],
             ("readFile", ToolGroup::Workspace) => vec![
                 "Use writeFile to modify the content".to_string(),
-                "Use editFile to make targeted edits".to_string(),
+                format!(
+                    "Use {} to make targeted edits",
+                    crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL
+                ),
             ],
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
                 "Use searchFiles with filePattern to narrow down names".to_string(),
             ],
+            #[cfg(feature = "workspace-edit-file")]
             (
                 "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
                 ToolGroup::Workspace,
             ) => vec![
+                "Use readFile to verify your edits".to_string(),
+                "Use runShell to execute the updated code".to_string(),
+            ],
+            #[cfg(feature = "workspace-str-replace")]
+            ("strReplace", ToolGroup::Workspace) => vec![
                 "Use readFile to verify your edits".to_string(),
                 "Use runShell to execute the updated code".to_string(),
             ],

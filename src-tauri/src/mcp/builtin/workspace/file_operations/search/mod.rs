@@ -2,6 +2,7 @@ mod content;
 mod files;
 mod helpers;
 
+use super::super::edit_mode::LINE_ANCHORS_ENABLED;
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
@@ -51,10 +52,13 @@ impl WorkspaceServer {
             .get("ignoreCase")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let show_line_anchors = args
-            .get("showLineAnchors")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let show_line_anchors = if LINE_ANCHORS_ENABLED {
+            args.get("showLineAnchors")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        } else {
+            false
+        };
         let limit_raw = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50);
         if !(1..=1000).contains(&limit_raw) {
             return Ok(guided_error(

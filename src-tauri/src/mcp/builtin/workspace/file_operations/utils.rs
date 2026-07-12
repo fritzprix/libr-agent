@@ -85,6 +85,25 @@ pub fn format_as_hashlines(content: &str) -> String {
         .join("\n")
 }
 
+/// Format a single line for writeFile/readFile previews (anchored or raw).
+pub fn format_preview_line(line_number: usize, content: &str, prefix_state: &mut u32) -> String {
+    if crate::mcp::builtin::workspace::edit_mode::LINE_ANCHORS_ENABLED {
+        format_hashline(line_number, content, prefix_state)
+    } else {
+        let _ = (line_number, prefix_state);
+        content.to_string()
+    }
+}
+
+/// Format multi-line file content for post-write previews.
+pub fn format_file_content_preview(content: &str) -> String {
+    if crate::mcp::builtin::workspace::edit_mode::LINE_ANCHORS_ENABLED {
+        format_as_hashlines(content)
+    } else {
+        content.to_string()
+    }
+}
+
 /// Format file size in bytes to human-readable format (B, KB, MB, GB)
 pub fn format_file_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];

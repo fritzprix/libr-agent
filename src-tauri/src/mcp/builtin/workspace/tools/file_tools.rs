@@ -1,7 +1,16 @@
-use crate::mcp::{
-    schema::{JSONSchema, SchemaProperties},
-    utils::schema_builder::*,
-    MCPTool,
+use crate::mcp::{schema::SchemaProperties, utils::schema_builder::*, MCPTool};
+
+#[cfg(feature = "workspace-edit-file")]
+use crate::mcp::schema::JSONSchema;
+
+use super::super::edit_mode::{read_file_tool_hint, PRIMARY_EDIT_TOOL};
+
+#[cfg(all(
+    feature = "workspace-edit-file",
+    not(feature = "workspace-str-replace")
+))]
+use super::super::edit_mode::{
+    read_file_show_line_anchors_schema_hint, search_show_line_anchors_schema_hint,
 };
 
 // Note: maximum file size is enforced at runtime (LIBRAGENT_MAX_FILE_SIZE).
@@ -34,18 +43,22 @@ pub fn create_read_file_tool() -> MCPTool {
             Some("Number of lines to read. If negative, reads that many lines from the end of the file (tail mode)."),
         ),
     );
+    #[cfg(all(
+        feature = "workspace-edit-file",
+        not(feature = "workspace-str-replace")
+    ))]
     props.insert(
         "showLineAnchors".to_string(),
-        boolean_prop(Some(
-            "Optional: include opaque edit anchors for each line in the form '42:a31f2c|...'. Here '42' is the line number and 'a31f2c' is the anchor. For edit tools, pass only the 6-character anchor (for example 'a31f2c'), not '42:a31f2c' or the trailing '|...'.",
-        )),
+        boolean_prop(Some(read_file_show_line_anchors_schema_hint())),
     );
 
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file. Supports reading from a specific offset and line count (size), including negative size for tailing the end of the file. Large responses are chunked automatically to stay inline. Use showLineAnchors=true when you need anchors for editFile."
-            .to_string(),
+        description: format!(
+            "Read the contents of a file. Supports reading from a specific offset and line count (size), including negative size for tailing the end of the file. Large responses are chunked automatically to stay inline. {}",
+            read_file_tool_hint()
+        ),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -65,12 +78,15 @@ pub fn create_write_file_tool() -> MCPTool {
             Some("Path to write. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to write into the canonical teamwork scaffold root without changing workspaceOverride."),
         ),
     );
+    let mode_description = format!(
+        "Write mode. 'create' (default) writes a new file; if the path already exists it keeps that file and writes to a sibling path with a numeric suffix (e.g. report-1.md) instead of failing. 'overwrite' replaces the entire existing file. 'append' adds content verbatim to the end (no automatic newline). Use overwrite/append/{PRIMARY_EDIT_TOOL} when you intend to change an existing file."
+    );
     props.insert(
         "mode".to_string(),
         enum_prop(
             vec!["create", "overwrite", "append"],
             "create",
-            Some("Write mode. 'create' (default) writes a new file; if the path already exists it keeps that file and writes to a sibling path with a numeric suffix (e.g. report-1.md) instead of failing. 'overwrite' replaces the entire existing file. 'append' adds content verbatim to the end (no automatic newline). Use overwrite/append/editFile when you intend to change an existing file."),
+            Some(mode_description.as_str()),
         ),
     );
     props.insert(
@@ -85,8 +101,9 @@ pub fn create_write_file_tool() -> MCPTool {
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Default mode='create': if the target already exists, content is saved to a new sibling path (stem-N.ext) and the response clearly reports the alternate path—existing files are never overwritten unless mode='overwrite'. Append writes content verbatim—include \\n in content when starting a new line. Responses include current line anchors so follow-up editFile calls can usually reuse them directly. mode='overwrite' returns a diff of the changes."
-            .to_string(),
+        description: format!(
+            "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Default mode='create': if the target already exists, content is saved to a new sibling path (stem-N.ext) and the response clearly reports the alternate path—existing files are never overwritten unless mode='overwrite'. Append writes content verbatim—include \\n in content when starting a new line. Use {PRIMARY_EDIT_TOOL} for targeted in-place edits. mode='overwrite' returns a diff of the changes."
+        ),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
         annotations: None,
@@ -226,11 +243,13 @@ pub fn create_search_tool() -> MCPTool {
         "ignoreCase".to_string(),
         boolean_prop(Some("Case-insensitive search (default: false)")),
     );
+    #[cfg(all(
+        feature = "workspace-edit-file",
+        not(feature = "workspace-str-replace")
+    ))]
     props.insert(
         "showLineAnchors".to_string(),
-        boolean_prop(Some(
-            "Include edit anchors in results for use with editFile (default: false). Anchored lines look like '42:a31f2c|...'; for edit tools, pass only the 6-character anchor (for example 'a31f2c').",
-        )),
+        boolean_prop(Some(search_show_line_anchors_schema_hint())),
     );
 
     MCPTool {
@@ -556,9 +575,71 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
 // Note: maximum file size is enforced at runtime (LIBRAGENT_MAX_FILE_SIZE).
 // The input schema cannot call runtime functions; therefore `content` has no hard cap here.
 
+#[cfg(feature = "workspace-str-replace")]
+pub fn create_str_replace_tool() -> MCPTool {
+    let mut props = SchemaProperties::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
+        ),
+    );
+    props.insert(
+        "replace_all".to_string(),
+        boolean_prop(Some(
+            "Replace every occurrence of old_string. Default false replaces only the first unique match.",
+        )),
+    );
+    props.insert(
+        "old_string".to_string(),
+        string_prop(
+            Some(1),
+            None,
+            Some("Exact text to find in the file. Copy verbatim from readFile output, including whitespace and newlines."),
+        ),
+    );
+    props.insert(
+        "new_string".to_string(),
+        string_prop(
+            Some(0),
+            None,
+            Some("Replacement text. Use an empty string to delete the matched block."),
+        ),
+    );
+
+    MCPTool {
+        name: "strReplace".to_string(),
+        title: Some("Replace Text in File".to_string()),
+        description: "Perform exact string replacement in an existing file.
+
+PREREQUISITE: Use readFile first and copy the exact text block into old_string. Matching is literal — whitespace, indentation, and line endings must match.
+
+- Single replacement (default): old_string must match exactly once unless replace_all=true.
+- replace_all=true: every occurrence of old_string is replaced.
+- new_string may be empty to delete the matched text.
+
+Use writeFile mode='create' for new files and mode='overwrite' only when replacing the entire file."
+            .to_string(),
+        input_schema: object_schema(
+            props,
+            vec![
+                "path".to_string(),
+                "old_string".to_string(),
+                "new_string".to_string(),
+            ],
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+#[cfg(feature = "workspace-edit-file")]
 /// Maximum number of edit operations allowed in a single editFile call.
 pub const EDIT_FILE_MAX_EDITS: u32 = 50;
 
+#[cfg(feature = "workspace-edit-file")]
 fn edit_anchor_props() -> SchemaProperties {
     let start_anchor_desc =
         "6-character opaque anchor for the start line from readFile(showLineAnchors=true). Required for edits that touch an existing line. Do not include the line number or '|content'.";
@@ -585,6 +666,7 @@ fn edit_anchor_props() -> SchemaProperties {
     props
 }
 
+#[cfg(feature = "workspace-edit-file")]
 fn create_prepend_edit_variant() -> JSONSchema {
     let content_desc =
         "Content to insert at the beginning of the file. startLine defaults to 0 when omitted.";
@@ -610,6 +692,7 @@ fn create_prepend_edit_variant() -> JSONSchema {
     schema
 }
 
+#[cfg(feature = "workspace-edit-file")]
 fn create_line_edit_variant() -> JSONSchema {
     let start_line_desc = "Target start line number (1-based). Use endLine only for multi-line replace/delete ranges.";
     let end_line_desc =
@@ -649,6 +732,7 @@ fn create_line_edit_variant() -> JSONSchema {
     schema
 }
 
+#[cfg(feature = "workspace-edit-file")]
 fn create_insert_after_edit_variant() -> JSONSchema {
     let start_line_desc =
         "Line number to insert after (1-based). Use 0 only to prepend at the file top.";
@@ -689,6 +773,7 @@ fn create_insert_after_edit_variant() -> JSONSchema {
     schema
 }
 
+#[cfg(feature = "workspace-edit-file")]
 pub fn create_edit_item_schema() -> JSONSchema {
     one_of_object_schema(
         vec![
@@ -702,6 +787,7 @@ pub fn create_edit_item_schema() -> JSONSchema {
     )
 }
 
+#[cfg(feature = "workspace-edit-file")]
 pub fn create_edit_file_input_schema() -> JSONSchema {
     let mut props = SchemaProperties::new();
     props.insert(
@@ -724,6 +810,7 @@ pub fn create_edit_file_input_schema() -> JSONSchema {
     object_schema(props, vec!["path".to_string(), "edits".to_string()])
 }
 
+#[cfg(feature = "workspace-edit-file")]
 pub fn create_edit_file_tool() -> MCPTool {
     MCPTool {
         name: "editFile".to_string(),

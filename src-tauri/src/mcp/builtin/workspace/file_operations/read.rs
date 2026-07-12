@@ -1,3 +1,7 @@
+use super::super::edit_mode::{
+    read_file_anchor_output_suffix, read_file_anchor_prefix_note, read_file_primary_next_action,
+    read_file_secondary_next_action, LINE_ANCHORS_ENABLED,
+};
 use super::super::WorkspaceServer;
 use super::utils::{
     detect_language, format_file_size, format_hashline, initial_prefix_hash_state,
@@ -15,6 +19,16 @@ const READ_FILE_BASE_HEADROOM_BYTES: usize = 1024;
 const READ_FILE_ANCHOR_HEADROOM_BYTES: usize = 2 * 1024;
 const READ_FILE_MIN_VISIBLE_CONTENT_BYTES: usize = 1024;
 const EMPTY_FILE_OUT_OF_RANGE_PREFIX: &str = "File is empty (0 lines);";
+
+fn parse_show_line_anchors(args: &Value) -> bool {
+    if !LINE_ANCHORS_ENABLED {
+        return false;
+    }
+
+    args.get("showLineAnchors")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
 
 #[derive(Debug)]
 struct ReadFileChunk {
@@ -87,10 +101,7 @@ impl WorkspaceServer {
             Ok(size) => size,
             Err(result) => return Ok(result),
         };
-        let show_line_anchors = args
-            .get("showLineAnchors")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false); // Default OFF: reduce noise unless precise editing is needed
+        let show_line_anchors = parse_show_line_anchors(&args);
 
         if let Some(sz) = size_opt {
             if sz == 0 {
@@ -246,8 +257,8 @@ impl WorkspaceServer {
                 // Format response for clean markdown rendering
                 let text_message = if show_line_anchors {
                     format!(
-                        "📄 **`{}`** — {} — {}{}\n\n```\n{}\n```\n\nLine format: `{{lineNumber}}:{{anchor}}|{{content}}`\n- `{{lineNumber}}`: 1-based line number\n- `{{anchor}}`: 6-character hex code (example: `792c6f`)\n- `{{content}}`: line content\n\n*(Note: The `{{lineNumber}}:{{anchor}}|` prefixes in the code block above are metadata added by the tool for edit reference, and are NOT part of the actual file content.)*\n\nFor edit tools, pass only the 6-character anchor (example: `792c6f`). Do not pass `1:792c6f` or `|{{content}}`.",
-                        path_str, size_str, chunk_summary, summary_suffix, chunk.content
+                        "📄 **`{}`** — {} — {}{}\n\n```\n{}\n```\n\nLine format: `{{lineNumber}}:{{anchor}}|{{content}}`\n- `{{lineNumber}}`: 1-based line number\n- `{{anchor}}`: 6-character hex code (example: `792c6f`)\n- `{{content}}`: line content\n\n{}{}",
+                        path_str, size_str, chunk_summary, summary_suffix, chunk.content, read_file_anchor_prefix_note(), read_file_anchor_output_suffix()
                     )
                 } else {
                     let language = detect_language(&safe_path);
@@ -257,16 +268,10 @@ impl WorkspaceServer {
                     )
                 };
 
-                let first_hint = if show_line_anchors {
-                    "Use editFile with only the 6-character startAnchor in edits[]; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
-                } else {
-                    "If you plan to use editFile next, rerun with showLineAnchors=true to get anchors".to_string()
-                };
-                let mut next_actions = vec![
-                    first_hint,
-                    "Use editFile with op='insert_after', startLine, and startAnchor in edits[] to insert below an existing line".to_string(),
-                    "writeFile for full file replacement".to_string(),
-                ];
+                let first_hint = read_file_primary_next_action(show_line_anchors);
+                let mut next_actions = vec![first_hint];
+                next_actions.push(read_file_secondary_next_action().to_string());
+                next_actions.push("writeFile for full file replacement".to_string());
                 if let Some(next_start_line) = chunk.next_start_line {
                     next_actions.insert(
                         0,
