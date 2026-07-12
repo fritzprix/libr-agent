@@ -12,7 +12,8 @@ pub fn file_tools() -> Vec<MCPTool> {
         file_tools::create_write_file_tool(),
         file_tools::create_list_directory_tool(),
         file_tools::create_import_files_tool(),
-        file_tools::create_search_tool(),
+        file_tools::create_glob_files_tool(),
+        file_tools::create_grep_files_tool(),
     ];
 
     #[cfg(feature = "workspace-str-replace")]
