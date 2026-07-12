@@ -152,6 +152,7 @@ fn start_session_schema_property_order_puts_task_last() {
     );
 }
 
+#[cfg(feature = "workspace-edit-file")]
 #[test]
 fn edit_file_line_variant_property_order_puts_content_last() {
     use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_item_schema;
@@ -175,6 +176,7 @@ fn edit_file_line_variant_property_order_puts_content_last() {
     );
 }
 
+#[cfg(feature = "workspace-edit-file")]
 #[test]
 fn edit_file_prepend_variant_property_order_puts_content_last() {
     use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_item_schema;
@@ -187,6 +189,7 @@ fn edit_file_prepend_variant_property_order_puts_content_last() {
     assert_eq!(keys, vec!["startLine".to_string(), "content".to_string()]);
 }
 
+#[cfg(feature = "workspace-edit-file")]
 #[test]
 fn edit_file_insert_after_variant_property_order_puts_content_last() {
     use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_item_schema;
@@ -206,5 +209,17 @@ fn edit_file_insert_after_variant_property_order_puts_content_last() {
             "endAnchor".to_string(),
             "content".to_string(),
         ]
+    );
+}
+
+#[cfg(feature = "workspace-str-replace")]
+#[test]
+fn str_replace_schema_property_order_puts_text_fields_last() {
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_str_replace_tool;
+
+    let tool = create_str_replace_tool();
+    assert_property_order(
+        &tool,
+        &["path", "replace_all", "old_string", "new_string"],
     );
 }

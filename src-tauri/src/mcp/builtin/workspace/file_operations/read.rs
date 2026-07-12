@@ -257,16 +257,31 @@ impl WorkspaceServer {
                     )
                 };
 
-                let first_hint = if show_line_anchors {
-                    "Use editFile with only the 6-character startAnchor in edits[]; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
-                } else {
-                    "If you plan to use editFile next, rerun with showLineAnchors=true to get anchors".to_string()
+                let first_hint = {
+                    #[cfg(feature = "workspace-edit-file")]
+                    {
+                        if show_line_anchors {
+                            "Use editFile with only the 6-character startAnchor in edits[]; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
+                        } else {
+                            "If you plan to use editFile next, rerun with showLineAnchors=true to get anchors".to_string()
+                        }
+                    }
+                    #[cfg(feature = "workspace-str-replace")]
+                    {
+                        let _ = show_line_anchors;
+                        "Copy the exact text block you want to change into strReplace.old_string".to_string()
+                    }
                 };
-                let mut next_actions = vec![
-                    first_hint,
+                let mut next_actions = vec![first_hint];
+                #[cfg(feature = "workspace-edit-file")]
+                next_actions.push(
                     "Use editFile with op='insert_after', startLine, and startAnchor in edits[] to insert below an existing line".to_string(),
-                    "writeFile for full file replacement".to_string(),
-                ];
+                );
+                #[cfg(feature = "workspace-str-replace")]
+                next_actions.push(
+                    "Use strReplace when you already know the exact old_string to replace".to_string(),
+                );
+                next_actions.push("writeFile for full file replacement".to_string());
                 if let Some(next_start_line) = chunk.next_start_line {
                     next_actions.insert(
                         0,

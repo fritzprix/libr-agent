@@ -262,7 +262,8 @@ impl WorkspaceServer {
                             path_str
                         ),
                         format!(
-                            "Use editFile for targeted edits to \"{}\" instead of rewriting the whole file.",
+                            "Use {} for targeted edits to \"{}\" instead of rewriting the whole file.",
+                            crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
                             path_str
                         ),
                     ])
@@ -441,13 +442,14 @@ impl WorkspaceServer {
                          **Correct usage reminder:**\n\
                          - To **replace** an existing file: `writeFile` with `\"mode\": \"overwrite\"`\n\
                          - To **add to the end** of an existing file: `\"mode\": \"append\"`\n\
-                         - To **edit parts** of an existing file: use `editFile` (not another `writeFile` create)\n\
+                         - To **edit parts** of an existing file: use `{}` (not another `writeFile` create)\n\
                          - To **create a new file** when unsure the path is free: pick a unique name, or accept this auto-suffix behavior\n\n",
                         requested_path_str,
                         requested_path_str,
                         write_display_path,
                         total_size_str,
-                        total_lines
+                        total_lines,
+                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
                     ));
                 } else {
                     message.push_str(&format!(
@@ -531,8 +533,9 @@ impl WorkspaceServer {
                         requested_path_str, write_display_path
                     ));
                     next_steps.push(format!(
-                        "If you meant to modify \"{}\" in place, use editFile or writeFile mode=\"append\" / mode=\"overwrite\" — not another default create.",
-                        requested_path_str
+                        "If you meant to modify \"{}\" in place, use {} or writeFile mode=\"append\" / mode=\"overwrite\" — not another default create.",
+                        requested_path_str,
+                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
                     ));
                 }
 
@@ -559,7 +562,8 @@ impl WorkspaceServer {
                     || write_display_path.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "Use editFile for targeted edits to \"{}\"",
+                        "Use {} for targeted edits to \"{}\"",
+                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
                         write_display_path
                     ));
                 }

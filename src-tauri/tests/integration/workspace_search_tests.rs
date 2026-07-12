@@ -848,8 +848,9 @@ async fn write_file_create_redirects_to_suffixed_path_when_target_exists() {
         "response must teach overwrite for intentional replace: {text}"
     );
     assert!(
-        text.contains("editFile"),
-        "response must mention editFile for in-place edits: {text}"
+        text.contains(tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL),
+        "response must mention {} for in-place edits: {text}",
+        tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL
     );
     assert!(
         text.contains("IMPORTANT:") || text.contains("Continue with"),

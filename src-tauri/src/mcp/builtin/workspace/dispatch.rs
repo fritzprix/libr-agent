@@ -38,11 +38,17 @@ impl WorkspaceServer {
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "importFiles" => self.handle_import_files(args, session_id).await,
             "searchFiles" => self.handle_search(args, session_id).await,
+            #[cfg(feature = "workspace-str-replace")]
+            "strReplace" => self.handle_str_replace(args, session_id).await,
+            #[cfg(feature = "workspace-edit-file")]
             // editFile is the model-facing mutation tool. Per-operation aliases remain
             // dispatchable for backward compatibility and internally normalize into editFile.
             "editFile" => self.handle_edit_file(args, session_id).await,
+            #[cfg(feature = "workspace-edit-file")]
             "replaceLines" => self.handle_replace_lines(args, session_id).await,
+            #[cfg(feature = "workspace-edit-file")]
             "insertAfterLine" => self.handle_insert_after_line(args, session_id).await,
+            #[cfg(feature = "workspace-edit-file")]
             "deleteLines" => self.handle_delete_lines(args, session_id).await,
 
             // ── Code execution tools ──────────────────────────────────────────

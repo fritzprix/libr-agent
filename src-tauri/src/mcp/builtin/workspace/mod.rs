@@ -9,6 +9,7 @@ use crate::mcp::MCPTool;
 pub mod code_execution;
 pub mod context;
 pub mod dispatch;
+pub mod edit_mode;
 pub mod export_operations;
 pub mod file_operations;
 pub mod handlers;
