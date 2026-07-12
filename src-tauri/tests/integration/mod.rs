@@ -100,6 +100,7 @@ pub mod skill_scan_cache_tests;
 pub mod skill_service_content_access_tests;
 pub mod skill_service_helpers_tests;
 pub mod skill_service_import_conflict_tests;
+pub mod skills_manifest_tests;
 pub mod sqlite_url_format_tests;
 pub mod subsession_llm_inheritance_tests;
 pub mod teamwork_scaffold_script_tests;

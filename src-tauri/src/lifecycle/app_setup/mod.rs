@@ -8,8 +8,8 @@ pub use managed_skills::{
     sync_managed_system_skills_snapshot, LegacySkillMigrationAction,
 };
 pub use skills_manifest::{
-    hash_skill_directory, replace_skill_directory_atomically, write_manifest_atomically,
-    BundledSkillsManifest,
+    hash_skill_directory, load_persisted_bundled_skills_manifest,
+    replace_skill_directory_atomically, write_manifest_atomically, BundledSkillsManifest,
 };
 
 use crate::agent;
