@@ -1,4 +1,8 @@
 use super::super::WorkspaceServer;
+use super::super::edit_mode::{
+    read_file_anchor_output_suffix, read_file_anchor_prefix_note,
+    read_file_primary_next_action, read_file_secondary_next_action,
+};
 use super::utils::{
     detect_language, format_file_size, format_hashline, initial_prefix_hash_state,
     update_prefix_hash_state, LARGE_FILE_THRESHOLD,
@@ -246,8 +250,8 @@ impl WorkspaceServer {
                 // Format response for clean markdown rendering
                 let text_message = if show_line_anchors {
                     format!(
-                        "📄 **`{}`** — {} — {}{}\n\n```\n{}\n```\n\nLine format: `{{lineNumber}}:{{anchor}}|{{content}}`\n- `{{lineNumber}}`: 1-based line number\n- `{{anchor}}`: 6-character hex code (example: `792c6f`)\n- `{{content}}`: line content\n\n*(Note: The `{{lineNumber}}:{{anchor}}|` prefixes in the code block above are metadata added by the tool for edit reference, and are NOT part of the actual file content.)*\n\nFor edit tools, pass only the 6-character anchor (example: `792c6f`). Do not pass `1:792c6f` or `|{{content}}`.",
-                        path_str, size_str, chunk_summary, summary_suffix, chunk.content
+                        "📄 **`{}`** — {} — {}{}\n\n```\n{}\n```\n\nLine format: `{{lineNumber}}:{{anchor}}|{{content}}`\n- `{{lineNumber}}`: 1-based line number\n- `{{anchor}}`: 6-character hex code (example: `792c6f`)\n- `{{content}}`: line content\n\n{}{}",
+                        path_str, size_str, chunk_summary, summary_suffix, chunk.content, read_file_anchor_prefix_note(), read_file_anchor_output_suffix()
                     )
                 } else {
                     let language = detect_language(&safe_path);
@@ -257,30 +261,9 @@ impl WorkspaceServer {
                     )
                 };
 
-                let first_hint = {
-                    #[cfg(feature = "workspace-edit-file")]
-                    {
-                        if show_line_anchors {
-                            "Use editFile with only the 6-character startAnchor in edits[]; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
-                        } else {
-                            "If you plan to use editFile next, rerun with showLineAnchors=true to get anchors".to_string()
-                        }
-                    }
-                    #[cfg(feature = "workspace-str-replace")]
-                    {
-                        let _ = show_line_anchors;
-                        "Copy the exact text block you want to change into strReplace.old_string".to_string()
-                    }
-                };
+                let first_hint = read_file_primary_next_action(show_line_anchors);
                 let mut next_actions = vec![first_hint];
-                #[cfg(feature = "workspace-edit-file")]
-                next_actions.push(
-                    "Use editFile with op='insert_after', startLine, and startAnchor in edits[] to insert below an existing line".to_string(),
-                );
-                #[cfg(feature = "workspace-str-replace")]
-                next_actions.push(
-                    "Use strReplace when you already know the exact old_string to replace".to_string(),
-                );
+                next_actions.push(read_file_secondary_next_action().to_string());
                 next_actions.push("writeFile for full file replacement".to_string());
                 if let Some(next_start_line) = chunk.next_start_line {
                     next_actions.insert(

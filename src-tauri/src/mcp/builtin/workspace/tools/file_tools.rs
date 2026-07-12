@@ -7,17 +7,10 @@ use crate::mcp::{
 #[cfg(feature = "workspace-edit-file")]
 use crate::mcp::schema::JSONSchema;
 
-use super::super::edit_mode::PRIMARY_EDIT_TOOL;
-
-#[cfg(feature = "workspace-edit-file")]
-fn read_file_edit_hint() -> &'static str {
-    "Use showLineAnchors=true when you need anchors for editFile."
-}
-
-#[cfg(feature = "workspace-str-replace")]
-fn read_file_edit_hint() -> &'static str {
-    "Read files before strReplace so old_string matches the on-disk content exactly."
-}
+use super::super::edit_mode::{
+    read_file_show_line_anchors_schema_hint, read_file_tool_hint,
+    search_show_line_anchors_schema_hint, PRIMARY_EDIT_TOOL,
+};
 
 // Note: maximum file size is enforced at runtime (LIBRAGENT_MAX_FILE_SIZE).
 // The input schema cannot call runtime functions; therefore `content` has no hard cap here.
@@ -51,9 +44,7 @@ pub fn create_read_file_tool() -> MCPTool {
     );
     props.insert(
         "showLineAnchors".to_string(),
-        boolean_prop(Some(
-            "Optional: include opaque edit anchors for each line in the form '42:a31f2c|...'. Here '42' is the line number and 'a31f2c' is the anchor. For edit tools, pass only the 6-character anchor (for example 'a31f2c'), not '42:a31f2c' or the trailing '|...'.",
-        )),
+        boolean_prop(Some(read_file_show_line_anchors_schema_hint())),
     );
 
     MCPTool {
@@ -61,7 +52,7 @@ pub fn create_read_file_tool() -> MCPTool {
         title: Some("Read File".to_string()),
         description: format!(
             "Read the contents of a file. Supports reading from a specific offset and line count (size), including negative size for tailing the end of the file. Large responses are chunked automatically to stay inline. {}",
-            read_file_edit_hint()
+            read_file_tool_hint()
         ),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -249,9 +240,7 @@ pub fn create_search_tool() -> MCPTool {
     );
     props.insert(
         "showLineAnchors".to_string(),
-        boolean_prop(Some(
-            "Include edit anchors in results for use with editFile (default: false). Anchored lines look like '42:a31f2c|...'; for edit tools, pass only the 6-character anchor (for example 'a31f2c').",
-        )),
+        boolean_prop(Some(search_show_line_anchors_schema_hint())),
     );
 
     MCPTool {

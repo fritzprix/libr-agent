@@ -2,6 +2,9 @@ use super::super::WorkspaceServer;
 use super::utils::{
     format_as_hashlines, format_file_size, format_hashline, initial_prefix_hash_state,
 };
+use crate::mcp::builtin::workspace::edit_mode::{
+    write_file_anchor_preview_note, write_file_post_write_anchor_heading,
+};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, permission_denied_error, ErrorCategory, SuccessHint,
     ToolGroup,
@@ -470,7 +473,9 @@ impl WorkspaceServer {
                     let diff_output = format_file_diff(&old_content, content, &write_display_path);
                     message.push_str(&diff_output);
                     message.push_str(&format!(
-                        "\nCurrent anchors:\n*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n```\n{}\n```\n",
+                        "{}{}```\n{}\n```\n",
+                        write_file_post_write_anchor_heading(),
+                        write_file_anchor_preview_note(),
                         format_as_hashlines(content)
                     ));
                 } else {
@@ -518,7 +523,7 @@ impl WorkspaceServer {
                         }
                     };
 
-                    message.push_str("*(Note: The lines in the code block below are prefixed with `lineNumber:anchor|` for subsequent editing. These prefixes are metadata and are NOT part of the actual file content.)*\n");
+                    message.push_str(write_file_anchor_preview_note());
                     message.push_str(&format!("```\n{}\n```\n", display_hashlines));
                 }
 

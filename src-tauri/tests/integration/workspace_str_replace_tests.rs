@@ -155,3 +155,31 @@ async fn workspace_file_tools_expose_str_replace_not_edit_file() {
     assert!(names.contains(&"strReplace".to_string()), "{names:?}");
     assert!(!names.contains(&"editFile".to_string()), "{names:?}");
 }
+
+#[tokio::test]
+async fn read_file_success_hint_points_to_str_replace_not_edit_file() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-hint-str-replace";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    std::fs::write(workspace_dir.join("hint.txt"), "hello\n").expect("seed");
+
+    let result = server
+        .call_tool(
+            "readFile",
+            json!({ "path": "hint.txt" }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readFile should return");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("strReplace"),
+        "readFile hint should mention strReplace: {text}"
+    );
+    assert!(
+        !text.contains("editFile"),
+        "readFile hint should not mention editFile on strReplace builds: {text}"
+    );
+}

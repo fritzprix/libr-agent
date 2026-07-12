@@ -1,3 +1,4 @@
+use super::edit_mode::workspace_file_tools_context_list;
 use super::persistent_shell;
 use super::terminal_manager;
 use crate::session::SessionManager;
@@ -86,11 +87,14 @@ pub async fn build_context_prompt(
         }
     };
 
+    let file_tools_list = workspace_file_tools_context_list();
     let isolation_lines = if state.is_docker {
-        "- Isolation: Docker (shell commands run in a Linux container; workspace root is /workspace)\n\
-         - File tools (readFile, writeFile, listDirectory, editFile) access the same /workspace files via the host bind mount; changes outside /workspace are visible to shell only, not to file tools\n"
+        format!(
+            "- Isolation: Docker (shell commands run in a Linux container; workspace root is /workspace)\n\
+             - File tools ({file_tools_list}) access the same /workspace files via the host bind mount; changes outside /workspace are visible to shell only, not to file tools\n"
+        )
     } else {
-        ""
+        String::new()
     };
 
     format!(
