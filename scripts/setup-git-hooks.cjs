@@ -22,11 +22,20 @@ const hookContent = `#!/bin/sh
 # Git pre-commit hook to validate all bundled skills before commit
 echo "🔍 Running bundled skills quality audit..."
 pnpm skills:audit
-RESULT=$?
+AUDIT_RESULT=$?
 
-if [ $RESULT -ne 0 ]; then
+if [ $AUDIT_RESULT -ne 0 ]; then
   echo "❌ Git commit aborted! Some bundled skills did not pass validation."
   echo "   Please resolve the skill warnings and score issues before committing."
+  exit 1
+fi
+
+echo "🔍 Running skills mirror drift check..."
+pnpm skills:mirror:check
+MIRROR_RESULT=$?
+
+if [ $MIRROR_RESULT -ne 0 ]; then
+  echo "❌ Git commit aborted! Mirrored skills are out of sync with .agents/skills."
   exit 1
 fi
 

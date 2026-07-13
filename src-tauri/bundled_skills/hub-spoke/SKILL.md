@@ -35,3 +35,9 @@ The Hub-and-Spoke pattern designates a central Coordinator session (Hub) to mana
 
 - **Context Management**: Do not let the Hub read all conversation logs from all Spokes to prevent context overflow. Instruct the Hub to only request **summarized status reports and file list results**.
 - **Message Bridging**: If Worker B depends on Worker A's output, the Hub collects the artifact details from A and injects them to B via `agent__messageToSession`.
+
+## References
+
+- [Routing patterns](references/routing.md)
+- [Status polling](references/status-polling.md)
+- [Context budget](references/context-budget.md)

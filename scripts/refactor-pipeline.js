@@ -96,6 +96,11 @@ const VALIDATE_STAGES = [
     args: ['skills:audit'],
   },
   {
+    name: 'skills:mirror:check',
+    command: pnpmCommand,
+    args: ['skills:mirror:check'],
+  },
+  {
     name: 'assistants:validate',
     command: pnpmCommand,
     args: ['assistants:validate'],

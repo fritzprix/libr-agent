@@ -1,4 +1,4 @@
-name: 🚀 LibrAgent CI/CD
+name: LibrAgent CI/CD
 
 on:
   push:
@@ -8,47 +8,55 @@ on:
 
 jobs:
   test:
-    name: 🧪 Test
+    name: Test
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v7
 
-      - name: 🦀 Setup Rust
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: 🦀 Ensure Cargo bin on PATH (Windows)
+      - name: Ensure Cargo bin on PATH (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: 🦀 Rust cache
+      - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
           save-if: ${{ runner.os != 'Windows' }}
 
-      - name: 📦 Install pnpm
+      - name: Install pnpm
         uses: pnpm/action-setup@v5
 
-      - name: 📦 Setup Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: � Lint check
+      - name: Lint check
         run: pnpm lint
 
-      - name: �🔧 Install Tauri dependencies (Ubuntu)
+      - name: Validate bundled skills
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm skills:audit
+
+      - name: Check skills mirror drift
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm skills:mirror:check
+
+      - name: Install Tauri dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
@@ -65,49 +73,49 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
-      - name: 🧪 Run tests (if available)
+      - name: Run tests (if available)
         run: pnpm test || echo "No tests defined"
 
-      - name: 🔍 Check TypeScript
+      - name: Check TypeScript
         run: pnpm tsc --noEmit
 
-      - name: 📊 Check bundle budget (Ubuntu)
+      - name: Check bundle budget (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: pnpm build && pnpm perf:bundle
 
-      - name: 🦀 Check Rust
+      - name: Check Rust
         run: cd src-tauri && cargo check
 
-      - name: 🍎 Fix macOS SDKROOT for Rust linker
+      - name: Fix macOS SDKROOT for Rust linker
         if: runner.os == 'macOS'
         run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
 
-      - name: 🧪 Run Rust integration tests
+      - name: Run Rust integration tests
         run: pnpm rust:test
 
-      - name: 🧪 Run Rust integration tests (edit-file build)
+      - name: Run Rust integration tests (edit-file build)
         run: pnpm rust:test:edit-file
 
       # Code Quality Checks (PR only)
-      - name: 🦀 Install Clippy
+      - name: Install Clippy
         run: rustup component add clippy
-      - name: 🔍 Rust Clippy (PR)
+      - name: Rust Clippy (PR)
         if: github.event_name == 'pull_request'
         run: cd src-tauri && cargo clippy -- -D warnings
 
-      - name: 🦀 Install rustfmt
+      - name: Install rustfmt
         run: rustup component add rustfmt
-      - name: 🎨 Rust Format Check (PR)
+      - name: Rust Format Check (PR)
         if: github.event_name == 'pull_request'
         run: cd src-tauri && cargo fmt --check
 
       # Security Checks (PR only)
-      - name: 🔒 npm audit (PR)
+      - name: npm audit (PR)
         if: github.event_name == 'pull_request'
         run: pnpm audit --audit-level high
         continue-on-error: true
 
-      - name: 🔒 Cargo audit (PR)
+      - name: Cargo audit (PR)
         if: github.event_name == 'pull_request'
         run: |
           cargo install cargo-audit
@@ -115,7 +123,7 @@ jobs:
         continue-on-error: true
 
   build:
-    name: 🔨 Build
+    name: Build
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
@@ -123,31 +131,31 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v7
 
-      - name: 🦀 Setup Rust
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: 🦀 Ensure Cargo bin on PATH (Windows)
+      - name: Ensure Cargo bin on PATH (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: 📦 Install pnpm
+      - name: Install pnpm
         uses: pnpm/action-setup@v5
 
-      - name: 📦 Setup Node.js
+      - name: Install Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: 🔧 Install Tauri dependencies (Ubuntu)
+      - name: Install Tauri dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
@@ -164,7 +172,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
-      - name: 🏗️ Build Tauri app
+      - name: Build Tauri app
         run: >-
           pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
         shell: bash
@@ -173,7 +181,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: 📦 Upload build artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: libragent-build-${{ matrix.os }}
