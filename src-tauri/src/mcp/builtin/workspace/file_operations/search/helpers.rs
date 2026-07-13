@@ -1,4 +1,7 @@
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path;
+use crate::mcp::types::MCPResult;
+use serde_json::Value;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncReadExt;
@@ -196,4 +199,77 @@ pub(super) fn build_gitignore_matcher(
         search_root: search_root.to_path_buf(),
         matchers,
     })
+}
+
+pub(super) fn reject_empty_optional_str<'a>(
+    value: Option<&'a str>,
+    field: &str,
+    guidance: Vec<String>,
+) -> Result<Option<&'a str>, MCPResult> {
+    if matches!(value, Some("")) {
+        return Err(guided_error(
+            ErrorCategory::InvalidInput,
+            format!("Invalid {field}: {field} must not be empty"),
+            ToolGroup::Workspace,
+        )
+        .guidance(guidance)
+        .to_mcp_result());
+    }
+    Ok(value)
+}
+
+pub(super) fn parse_pagination(args: &Value) -> Result<(usize, usize), MCPResult> {
+    let limit_raw = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50);
+    if !(1..=1000).contains(&limit_raw) {
+        return Err(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "Invalid pagination parameter: limit must be between 1 and 1000, got {limit_raw}"
+            ),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Set limit to a value between 1 and 1000".to_string(),
+            "Use offset to paginate through additional results".to_string(),
+        ])
+        .to_mcp_result());
+    }
+    let limit = match usize::try_from(limit_raw) {
+        Ok(value) => value,
+        Err(_) => {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Invalid pagination parameter: limit is too large for this platform ({limit_raw})"
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Set limit to a value between 1 and 1000".to_string(),
+                "Use smaller page sizes when paginating search results".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
+
+    let offset_raw = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+    let offset = match usize::try_from(offset_raw) {
+        Ok(value) => value,
+        Err(_) => {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Invalid pagination parameter: offset is too large for this platform ({offset_raw})"
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Set offset to a smaller non-negative value".to_string(),
+                "Use limit and offset together to page through results".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
+
+    Ok((limit, offset))
 }

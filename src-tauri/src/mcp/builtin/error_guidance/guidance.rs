@@ -423,7 +423,7 @@ impl SuccessHint {
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
-                "Use searchFiles with filePattern to narrow down names".to_string(),
+                "Use globFiles with filePattern to narrow down names".to_string(),
             ],
             #[cfg(feature = "workspace-edit-file")]
             (
@@ -438,9 +438,20 @@ impl SuccessHint {
                 "Use readFile to verify your edits".to_string(),
                 "Use runShell to execute the updated code".to_string(),
             ],
-            ("searchFiles", ToolGroup::Workspace) => vec![
+            ("globFiles", ToolGroup::Workspace) => vec![
+                "Use grepFiles to search inside matched files".to_string(),
+                "Use readFile to inspect a specific match".to_string(),
+            ],
+            ("grepFiles", ToolGroup::Workspace) => vec![
                 "Use readFile on interesting matches".to_string(),
-                "Use listDirectory to explore the surrounding module".to_string(),
+                format!(
+                    "Use {} to make targeted edits",
+                    crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL
+                ),
+            ],
+            ("searchFiles", ToolGroup::Workspace) => vec![
+                "Use globFiles for filename search".to_string(),
+                "Use grepFiles for content search".to_string(),
             ],
 
             // Agent tools (Unified)

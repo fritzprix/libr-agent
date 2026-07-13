@@ -63,7 +63,9 @@
 - `WorkspaceServer` - Workspace server logs
 - `readFile` / `writeFile` / `editFile` - File operations
 - `listFiles` - Directory listing
-- `searchFiles` - File search
+- `globFiles` - Find files by glob pattern
+- `grepFiles` - Search file contents with regex
+- `searchFiles` - Legacy combined search (dispatch only)
 
 #### Knowledge Base
 
