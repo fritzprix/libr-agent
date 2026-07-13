@@ -364,8 +364,10 @@ pub fn create_search_tool() -> MCPTool {
 
     MCPTool {
         name: "searchFiles".to_string(),
-        title: Some("Search Workspace".to_string()),
-        description: "Search files by name or content. Content search uses regex against full file text with multiline mode enabled, reports line-based hits, and paginates by matching lines rather than files. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.".to_string(),
+        title: Some("Search Workspace (Deprecated)".to_string()),
+        description: "DEPRECATED: Use globFiles for filename search or grepFiles for content search. \
+                     This tool is kept for backward compatibility and will be removed in a future version. \
+                     Note: Requires either 'query' (content search) or 'filePattern' (filename search).".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
