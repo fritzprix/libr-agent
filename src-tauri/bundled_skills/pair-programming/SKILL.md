@@ -40,3 +40,9 @@ The Pair Programming pattern binds two sessions to a shared workspace (`workspac
 ## 🛠️ MCP Tools Guide
 
 - **Turn Coordination**: The parent session collects the Driver's changes summary and forwards them to the Navigator via `agent__messageToSession` to invoke the next turn, maintaining a lock-step loop.
+
+## References
+
+- [Role rotation](references/role-rotation.md)
+- [Turn protocol](references/turn-protocol.md)
+- [Diff review checklist](references/diff-review-checklist.md)

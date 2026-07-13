@@ -33,3 +33,9 @@ Input ──► [ Stage A ] ──► (Artifacts) ──► [ Stage B ] ──�
 - **Context Filtering**: Avoid passing the entire conversation logs of previous stages to prevent context bloat. Only pass the **summarized markdown text and file paths**.
 
 See [pipeline-specs.md](references/pipeline-specs.md) for details.
+
+## References
+
+- [Pipeline specs](references/pipeline-specs.md)
+- [Handover templates](references/handover-templates.md)
+- [Failure recovery](references/failure-recovery.md)

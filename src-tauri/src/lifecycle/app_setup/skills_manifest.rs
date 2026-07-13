@@ -2,7 +2,7 @@ use crate::services::skill_service::SKILL_FILE_NAME;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Marker file written into every bundled skill directory in AppData.
 /// Used to distinguish bundled skills from user-created ones so that skills
@@ -195,7 +195,7 @@ pub(crate) fn build_marked_bundled_skills_manifest(
     Ok(manifest)
 }
 
-pub(crate) fn load_persisted_bundled_skills_manifest(
+pub fn load_persisted_bundled_skills_manifest(
     manifest_path: &Path,
 ) -> Result<Option<BundledSkillsManifest>, String> {
     if !manifest_path.exists() {
@@ -222,6 +222,133 @@ pub(crate) fn load_persisted_bundled_skills_manifest(
     Ok(Some(manifest))
 }
 
+fn remove_path_if_exists(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    if path.is_file() {
+        std::fs::remove_file(path)
+    } else {
+        std::fs::remove_dir_all(path)
+    }
+}
+
+fn best_effort_remove_path(path: &Path, context: &str) {
+    if let Err(error) = remove_path_if_exists(path) {
+        log::warn!(
+            "Failed to remove {} at {}: {}",
+            context,
+            path.display(),
+            error
+        );
+    }
+}
+
+fn best_effort_rename(from: &Path, to: &Path, context: &str) {
+    if let Err(error) = std::fs::rename(from, to) {
+        log::warn!(
+            "Failed to {} from {} to {}: {}",
+            context,
+            from.display(),
+            to.display(),
+            error
+        );
+    }
+}
+
+/// Rolls back staged file replacement unless `commit()` is called after the target is updated.
+struct StagedFileReplaceGuard {
+    staging_path: PathBuf,
+    target_path: PathBuf,
+    backup_path: PathBuf,
+    moved_target_to_backup: bool,
+    committed: bool,
+}
+
+impl StagedFileReplaceGuard {
+    fn new(staging_path: PathBuf, target_path: PathBuf, backup_path: PathBuf) -> Self {
+        Self {
+            staging_path,
+            target_path,
+            backup_path,
+            moved_target_to_backup: false,
+            committed: false,
+        }
+    }
+
+    fn mark_target_moved_to_backup(&mut self) {
+        self.moved_target_to_backup = true;
+    }
+
+    fn commit(&mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for StagedFileReplaceGuard {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+
+        best_effort_remove_path(&self.staging_path, "staging manifest file");
+        if self.moved_target_to_backup && !self.target_path.exists() {
+            best_effort_rename(
+                &self.backup_path,
+                &self.target_path,
+                "restore manifest from backup",
+            );
+        }
+    }
+}
+
+/// Rolls back staged directory replacement unless `commit()` is called after the target is updated.
+struct StagedDirReplaceGuard {
+    staging_path: PathBuf,
+    target_path: PathBuf,
+    backup_path: PathBuf,
+    moved_target_to_backup: bool,
+    committed: bool,
+}
+
+impl StagedDirReplaceGuard {
+    fn new(staging_path: PathBuf, target_path: PathBuf, backup_path: PathBuf) -> Self {
+        Self {
+            staging_path,
+            target_path,
+            backup_path,
+            moved_target_to_backup: false,
+            committed: false,
+        }
+    }
+
+    fn mark_target_moved_to_backup(&mut self) {
+        self.moved_target_to_backup = true;
+    }
+
+    fn commit(&mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for StagedDirReplaceGuard {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+
+        best_effort_remove_path(&self.staging_path, "staging skill directory");
+        if self.moved_target_to_backup && !self.target_path.exists() {
+            best_effort_rename(
+                &self.backup_path,
+                &self.target_path,
+                "restore skill directory from backup",
+            );
+        }
+    }
+}
+
 pub fn write_manifest_atomically(
     manifest_path: &Path,
     manifest: &BundledSkillsManifest,
@@ -231,6 +358,15 @@ pub fn write_manifest_atomically(
     let temp_path = manifest_path.with_extension("json.tmp");
     let backup_path = manifest_path.with_extension("json.bak");
 
+    remove_path_if_exists(&temp_path).map_err(|error| {
+        log::warn!(
+            "Failed to clear stale temp manifest {}: {}",
+            temp_path.display(),
+            error
+        );
+        "Failed to clear stale temporary manifest file".to_string()
+    })?;
+
     std::fs::write(&temp_path, payload).map_err(|error| {
         log::warn!(
             "Failed to write temp manifest {}: {}",
@@ -239,6 +375,13 @@ pub fn write_manifest_atomically(
         );
         "Failed to write temporary manifest file".to_string()
     })?;
+
+    let mut guard = StagedFileReplaceGuard::new(
+        temp_path.clone(),
+        manifest_path.to_path_buf(),
+        backup_path.clone(),
+    );
+    let mut moved_existing_to_backup = false;
 
     if backup_path.exists() {
         std::fs::remove_file(&backup_path).map_err(|error| {
@@ -251,7 +394,7 @@ pub fn write_manifest_atomically(
         })?;
     }
 
-    let moved_existing_to_backup = if manifest_path.exists() {
+    if manifest_path.exists() {
         std::fs::rename(manifest_path, &backup_path).map_err(|error| {
             log::warn!(
                 "Failed to move existing manifest aside from {} to {}: {}",
@@ -261,39 +404,28 @@ pub fn write_manifest_atomically(
             );
             "Failed to move existing manifest aside".to_string()
         })?;
-        true
-    } else {
-        false
-    };
-
-    match std::fs::rename(&temp_path, manifest_path) {
-        Ok(()) => {
-            if moved_existing_to_backup {
-                std::fs::remove_file(&backup_path).map_err(|error| {
-                    log::warn!(
-                        "Failed to remove backup manifest {}: {}",
-                        backup_path.display(),
-                        error
-                    );
-                    "Failed to remove backup manifest".to_string()
-                })?;
-            }
-            Ok(())
-        }
-        Err(error) => {
-            let _ = std::fs::remove_file(&temp_path);
-            if moved_existing_to_backup && !manifest_path.exists() {
-                let _ = std::fs::rename(&backup_path, manifest_path);
-            }
-            log::warn!(
-                "Failed to finalize manifest from {} to {}: {}",
-                temp_path.display(),
-                manifest_path.display(),
-                error
-            );
-            Err("Failed to finalize manifest file".to_string())
-        }
+        moved_existing_to_backup = true;
+        guard.mark_target_moved_to_backup();
     }
+
+    std::fs::rename(&temp_path, manifest_path).map_err(|error| {
+        log::warn!(
+            "Failed to finalize manifest from {} to {}: {}",
+            temp_path.display(),
+            manifest_path.display(),
+            error
+        );
+        "Failed to finalize manifest file".to_string()
+    })?;
+
+    guard.commit();
+
+    // Manifest is committed; leftover backup files are non-fatal.
+    if moved_existing_to_backup {
+        best_effort_remove_path(&backup_path, "backup manifest file");
+    }
+
+    Ok(())
 }
 
 pub fn replace_skill_directory_atomically(
@@ -311,22 +443,18 @@ pub fn replace_skill_directory_atomically(
     let temp_dir = parent.join(format!(".sync-tmp-{}", skill_name));
     let backup_dir = parent.join(format!(".sync-backup-{}", skill_name));
 
-    if temp_dir.exists() {
-        std::fs::remove_dir_all(&temp_dir).map_err(|error| {
-            log::warn!("Failed to clear temp dir {}: {}", temp_dir.display(), error);
-            "Failed to clear temporary sync directory".to_string()
-        })?;
-    }
-    if backup_dir.exists() {
-        std::fs::remove_dir_all(&backup_dir).map_err(|error| {
-            log::warn!(
-                "Failed to clear backup dir {}: {}",
-                backup_dir.display(),
-                error
-            );
-            "Failed to clear existing backup directory".to_string()
-        })?;
-    }
+    remove_path_if_exists(&temp_dir).map_err(|error| {
+        log::warn!("Failed to clear temp dir {}: {}", temp_dir.display(), error);
+        "Failed to clear temporary sync directory".to_string()
+    })?;
+    remove_path_if_exists(&backup_dir).map_err(|error| {
+        log::warn!(
+            "Failed to clear backup dir {}: {}",
+            backup_dir.display(),
+            error
+        );
+        "Failed to clear existing backup directory".to_string()
+    })?;
 
     copy_dir_recursive_path(source_dir, &temp_dir).map_err(|e| {
         log::warn!(
@@ -338,7 +466,14 @@ pub fn replace_skill_directory_atomically(
         "Failed to copy skill directory".to_string()
     })?;
 
-    let moved_existing_to_backup = if target_dir.exists() {
+    let mut guard = StagedDirReplaceGuard::new(
+        temp_dir.clone(),
+        target_dir.to_path_buf(),
+        backup_dir.clone(),
+    );
+    let mut moved_existing_to_backup = false;
+
+    if target_dir.exists() {
         std::fs::rename(target_dir, &backup_dir).map_err(|error| {
             log::warn!(
                 "Failed to move existing managed skill aside from {} to {}: {}",
@@ -348,48 +483,38 @@ pub fn replace_skill_directory_atomically(
             );
             "Failed to move existing managed skill aside".to_string()
         })?;
-        true
-    } else {
-        false
-    };
-
-    match std::fs::rename(&temp_dir, target_dir) {
-        Ok(()) => {
-            let marker_path = target_dir.join(BUNDLED_SKILL_MARKER);
-            std::fs::write(&marker_path, b"bundled\n").map_err(|error| {
-                log::warn!(
-                    "Failed to write bundled marker at {}: {}",
-                    marker_path.display(),
-                    error
-                );
-                "Failed to write bundled skill marker".to_string()
-            })?;
-            if moved_existing_to_backup {
-                std::fs::remove_dir_all(&backup_dir).map_err(|error| {
-                    log::warn!(
-                        "Failed to remove backup dir {}: {}",
-                        backup_dir.display(),
-                        error
-                    );
-                    "Failed to remove backup directory".to_string()
-                })?;
-            }
-            Ok(())
-        }
-        Err(error) => {
-            let _ = std::fs::remove_dir_all(&temp_dir);
-            if moved_existing_to_backup && !target_dir.exists() {
-                let _ = std::fs::rename(&backup_dir, target_dir);
-            }
-            log::warn!(
-                "Failed to activate managed skill from {} to {}: {}",
-                temp_dir.display(),
-                target_dir.display(),
-                error
-            );
-            Err("Failed to activate managed skill".to_string())
-        }
+        moved_existing_to_backup = true;
+        guard.mark_target_moved_to_backup();
     }
+
+    std::fs::rename(&temp_dir, target_dir).map_err(|error| {
+        log::warn!(
+            "Failed to activate managed skill from {} to {}: {}",
+            temp_dir.display(),
+            target_dir.display(),
+            error
+        );
+        "Failed to activate managed skill".to_string()
+    })?;
+
+    guard.commit();
+
+    let marker_path = target_dir.join(BUNDLED_SKILL_MARKER);
+    std::fs::write(&marker_path, b"bundled\n").map_err(|error| {
+        log::warn!(
+            "Failed to write bundled marker at {}: {}",
+            marker_path.display(),
+            error
+        );
+        "Failed to write bundled skill marker".to_string()
+    })?;
+
+    // Skill directory is committed; leftover backup directories are non-fatal.
+    if moved_existing_to_backup {
+        best_effort_remove_path(&backup_dir, "backup skill directory");
+    }
+
+    Ok(())
 }
 
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
