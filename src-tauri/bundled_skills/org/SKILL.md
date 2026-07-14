@@ -8,6 +8,7 @@ description: Run explicit org-based teamwork in LibrAgent. Use when collaboratio
 Org is explicit lineage teamwork. It is not generic delegation and it is not scheduled automation.
 
 Use `teamwork` first when the workspace constitution is not ready.
+Use `org-restructure` when the org already exists and roles or constitution files need to change (add, layoff, merge, agents.md updates).
 
 ## Workflow
 
@@ -47,3 +48,4 @@ Use `teamwork` first when the workspace constitution is not ready.
 ## References
 
 - [Org patterns and tool call examples](references/org-patterns.md)
+- Living org changes (roles, constitution): use bundled skill `org-restructure`

@@ -848,8 +848,9 @@ async fn write_file_create_redirects_to_suffixed_path_when_target_exists() {
         "response must teach overwrite for intentional replace: {text}"
     );
     assert!(
-        text.contains("editFile"),
-        "response must mention editFile for in-place edits: {text}"
+        text.contains(tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL),
+        "response must mention {} for in-place edits: {text}",
+        tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL
     );
     assert!(
         text.contains("IMPORTANT:") || text.contains("Continue with"),
@@ -939,10 +940,22 @@ async fn write_file_append_returns_updated_anchors_without_forcing_followup_read
         text.contains("Append is verbatim"),
         "append response should explain newline behavior: {text}"
     );
+    #[cfg(feature = "workspace-edit-file")]
     assert!(
         text.contains("1:") && text.contains("2:"),
         "append response should include current anchored lines for immediate follow-up edits: {text}"
     );
+    #[cfg(feature = "workspace-str-replace")]
+    {
+        assert!(
+            text.contains("alpha") && text.contains("beta"),
+            "append response should include raw file preview for strReplace builds: {text}"
+        );
+        assert!(
+            !text.contains("Current anchors"),
+            "strReplace builds should not label preview as anchors: {text}"
+        );
+    }
     assert!(
         !text.contains("Use `readFile` to see the full content including the appended part."),
         "append response should not force a follow-up read just to inspect the result: {text}"
@@ -984,9 +997,15 @@ async fn write_file_append_truncation_keeps_appended_tail_visible() {
         text.contains("fresh-tail-line"),
         "truncated append response should include the appended line in the preview: {text}"
     );
+    #[cfg(feature = "workspace-edit-file")]
     assert!(
         text.contains("\n42:") && !text.contains("\n1:"),
         "truncated append response should keep the tail window instead of restarting from line 1: {text}"
+    );
+    #[cfg(feature = "workspace-str-replace")]
+    assert!(
+        text.contains("line-42") && text.contains("```\nline-42"),
+        "truncated append preview should start at the tail window, not line 1: {text}"
     );
 }
 
@@ -1033,4 +1052,212 @@ async fn search_skips_binary_looking_files_even_without_binary_extension() {
         .expect("structured content expected");
     assert_eq!(structured["files_with_matches"], json!(1));
     assert_eq!(structured["skipped_binary_files"], json!(1));
+}
+
+#[tokio::test]
+async fn glob_files_finds_by_pattern() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "glob-files-pattern";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(workspace_dir.join("src/main.ts"), "export {}\n").expect("write ts");
+    std::fs::write(workspace_dir.join("README.md"), "# docs\n").expect("write md");
+
+    let result = server
+        .handle_glob_files(
+            json!({
+                "path": ".",
+                "filePattern": "*.ts",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("globFiles should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(text.contains("src/main.ts"), "expected ts match: {text}");
+    assert!(
+        !text.contains("README.md"),
+        "md file should not match: {text}"
+    );
+}
+
+#[tokio::test]
+async fn grep_files_finds_content() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "grep-files-content";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(workspace_dir.join("src/main.ts"), "const needle = true;\n")
+        .expect("write source file");
+    std::fs::write(workspace_dir.join("src/other.ts"), "const hay = true;\n")
+        .expect("write other file");
+
+    let result = server
+        .handle_grep_files(
+            json!({
+                "path": ".",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("grepFiles should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("src/main.ts"),
+        "expected match in main.ts: {text}"
+    );
+    assert!(
+        !text.contains("other.ts"),
+        "other.ts should not match: {text}"
+    );
+}
+
+#[tokio::test]
+async fn glob_files_rejects_empty_file_pattern() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "glob-files-empty-pattern";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .handle_glob_files(
+            json!({
+                "path": ".",
+                "filePattern": "",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("globFiles should return");
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "empty filePattern should error: {result:?}"
+    );
+    let text = extract_text_content(&result);
+    assert!(text.contains("filePattern"), "{text}");
+}
+
+#[tokio::test]
+async fn grep_files_rejects_empty_query() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "grep-files-empty-query";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .handle_grep_files(
+            json!({
+                "path": ".",
+                "query": "",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("grepFiles should return");
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "empty query should error: {result:?}"
+    );
+    let text = extract_text_content(&result);
+    assert!(text.contains("query"), "{text}");
+}
+
+#[tokio::test]
+async fn grep_files_optional_file_pattern_scopes_results() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "grep-files-pattern-scope";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("match.rs"), "needle\n").expect("write rs");
+    std::fs::write(workspace_dir.join("match.ts"), "needle\n").expect("write ts");
+
+    let result = server
+        .handle_grep_files(
+            json!({
+                "path": ".",
+                "query": "needle",
+                "filePattern": "*.rs",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("grepFiles should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(text.contains("match.rs"), "expected rs match: {text}");
+    assert!(
+        !text.contains("match.ts"),
+        "ts file should be filtered out: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_files_compat_still_works() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-files-compat";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("legacy.ts"), "legacy-token\n").expect("write file");
+
+    let glob_result = server
+        .call_tool(
+            "globFiles",
+            json!({
+                "path": ".",
+                "filePattern": "*.ts",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("globFiles dispatch should succeed");
+    let glob_text = extract_text_content(&glob_result);
+    assert!(glob_text.contains("legacy.ts"), "{glob_text}");
+
+    let grep_result = server
+        .call_tool(
+            "grepFiles",
+            json!({
+                "path": ".",
+                "query": "legacy-token",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("grepFiles dispatch should succeed");
+    let grep_text = extract_text_content(&grep_result);
+    assert!(grep_text.contains("legacy.ts"), "{grep_text}");
+
+    let compat_result = server
+        .call_tool(
+            "searchFiles",
+            json!({
+                "path": ".",
+                "query": "legacy-token",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("searchFiles compat dispatch should succeed");
+    let compat_text = extract_text_content(&compat_result);
+    assert!(compat_text.contains("legacy.ts"), "{compat_text}");
+}
+
+#[tokio::test]
+async fn workspace_file_tools_expose_glob_and_grep_not_search_files() {
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools;
+
+    let names: Vec<String> = file_tools().into_iter().map(|tool| tool.name).collect();
+
+    assert!(names.contains(&"globFiles".to_string()), "{names:?}");
+    assert!(names.contains(&"grepFiles".to_string()), "{names:?}");
+    assert!(!names.contains(&"searchFiles".to_string()), "{names:?}");
 }

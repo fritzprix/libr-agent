@@ -35,4 +35,10 @@ The Gatekeeper pattern sets up a loop between a Creator session and a Reviewer/G
 ## 🛠️ MCP Tools Guide
 
 - **Feedback Delivery**: Inject the reviewer's audit report using `agent__messageToSession` to wake and direct the Creator to rework.
-- **Infinite Loop Avoidance**: The parent session must track and enforce a **maximum rework limit (default: 3)** to prevent endless loops over minor stylistic differences.
+- **Infinite Loop Avoidance**: The parent session must track and enforce a **maximum rework limit (default: 3)** to prevent endless loops over minor stylistic differences. See [rework-limit-examples.md](references/rework-limit-examples.md).
+
+## References
+
+- [Quality criteria](references/criteria.md)
+- [Rework limit examples](references/rework-limit-examples.md)
+- [Troubleshooting](references/troubleshooting.md)

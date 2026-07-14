@@ -74,9 +74,12 @@ async fn read_file_truncates_large_output_and_guides_next_chunk() {
     );
     assert!(
         text.contains(
-            "If you plan to use editFile next, rerun with showLineAnchors=true to get anchors"
+            tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::read_file_primary_next_action(
+                false
+            )
+            .as_str()
         ),
-        "plain readFile should keep anchor guidance optional instead of sounding mandatory: {text}"
+        "plain readFile should keep edit planning guidance optional instead of sounding mandatory: {text}"
     );
     assert!(
         !text.contains("line truncated to fit inline limit"),
@@ -203,6 +206,7 @@ async fn read_file_empty_file_preserves_standard_success_shape() {
     assert_eq!(structured["nextLineTooLarge"], json!(false));
 }
 
+#[cfg(feature = "workspace-edit-file")]
 #[tokio::test]
 async fn read_file_with_anchors_uses_more_conservative_line_budget() {
     let temp_dir = tempdir().expect("temp dir");
@@ -231,8 +235,11 @@ async fn read_file_with_anchors_uses_more_conservative_line_budget() {
         "anchored response should keep anchor guidance: {text}"
     );
     assert!(
-        text.contains("Do not pass `1:792c6f`"),
-        "anchored response should clarify that only the 6-character anchor is valid: {text}"
+        text.contains(
+            tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::read_file_anchor_output_suffix(
+            )
+        ),
+        "anchored response should include mode-specific anchor guidance: {text}"
     );
     assert!(
         !text.contains("line truncated to fit inline limit"),
@@ -283,6 +290,7 @@ async fn read_file_guides_single_line_retry_when_next_line_is_too_large() {
         text.contains("Do not rerun readFile on a broader range"),
         "response should warn against repeating a too-broad read: {text}"
     );
+    #[cfg(feature = "workspace-edit-file")]
     assert!(
         text.contains("rerun the same 1-line range without showLineAnchors"),
         "anchored retry guidance should mention dropping anchors if needed: {text}"

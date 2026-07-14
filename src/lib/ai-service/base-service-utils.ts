@@ -57,13 +57,31 @@ function stableClone<T>(value: T): T {
   return Object.fromEntries(sortedEntries) as T;
 }
 
+/** Deep-clone JSON-like values while preserving object key insertion order. */
+function clonePreservingKeyOrder<T>(value: T): T {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => clonePreservingKeyOrder(item)) as T;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).map(
+    ([key, nestedValue]) =>
+      [key, clonePreservingKeyOrder(nestedValue)] as [string, unknown],
+  );
+
+  return Object.fromEntries(entries) as T;
+}
+
 export function normalizeAvailableTools(tools: MCPTool[]): MCPTool[] {
   return tools
     .map((tool) => ({
       ...tool,
-      inputSchema: stableClone(tool.inputSchema),
+      inputSchema: clonePreservingKeyOrder(tool.inputSchema),
       outputSchema: tool.outputSchema
-        ? stableClone(tool.outputSchema)
+        ? clonePreservingKeyOrder(tool.outputSchema)
         : undefined,
       annotations: tool.annotations ? stableClone(tool.annotations) : undefined,
     }))

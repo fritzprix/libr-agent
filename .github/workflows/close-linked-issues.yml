@@ -1,0 +1,41 @@
+name: Close linked issues on merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  close-linked-issues:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const text = [
+              context.payload.pull_request.title ?? '',
+              context.payload.pull_request.body ?? '',
+            ].join('\n');
+
+            const regex =
+              /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s*:?\s+#(\d+)/gi;
+            const issueNumbers = new Set();
+
+            for (const match of text.matchAll(regex)) {
+              issueNumbers.add(Number.parseInt(match[1], 10));
+            }
+
+            for (const issue_number of issueNumbers) {
+              core.info(`Closing issue #${issue_number}`);
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+            }

@@ -2,59 +2,13 @@
 ///
 /// These live in `tests/` so they actually run under `cargo test` even though
 /// `[lib] test = false` is set in Cargo.toml.
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use super::env_var_guard::EnvVarGuard;
 use tauri_mcp_agent_lib::SecureFileManager;
 use tempfile::tempdir;
 
 // ---------------------------------------------------------------------------
-// RAII env-var guard
+// RAII env-var guard — see integration/env_var_guard.rs
 // ---------------------------------------------------------------------------
-
-/// Global mutex serialises mutations of LIBRAGENT_MAX_FILE_SIZE across tests
-/// to prevent races when tests run in parallel.
-static MAX_FILE_SIZE_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-fn max_file_size_env_mutex() -> &'static Mutex<()> {
-    MAX_FILE_SIZE_ENV_LOCK.get_or_init(|| Mutex::new(()))
-}
-
-/// RAII guard: temporarily sets an env var and restores it on `Drop`.
-struct EnvVarGuard {
-    name: String,
-    prev_value: Option<String>,
-    // Held for the lifetime of the guard to serialise access.
-    _lock: MutexGuard<'static, ()>,
-}
-
-impl EnvVarGuard {
-    fn set_temp(name: &str, value: &str) -> Self {
-        let lock = max_file_size_env_mutex()
-            .lock()
-            .expect("env mutex poisoned");
-        let prev_value = std::env::var(name).ok();
-        // SAFETY: single-threaded access is serialised by the mutex above.
-        unsafe { std::env::set_var(name, value) };
-        Self {
-            name: name.to_string(),
-            prev_value,
-            _lock: lock,
-        }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        // SAFETY: single-threaded access is serialised by the mutex in _lock.
-        unsafe {
-            if let Some(ref v) = self.prev_value {
-                std::env::set_var(&self.name, v);
-            } else {
-                std::env::remove_var(&self.name);
-            }
-        }
-        // _lock is dropped here, releasing the mutex.
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Regression test: append file size limit bypass (PR #564)

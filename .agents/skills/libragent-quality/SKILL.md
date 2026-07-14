@@ -77,8 +77,11 @@ pnpm rust:check
 # Check with all features
 pnpm rust:check:all
 
-# Run tests
+# Run tests (default strReplace build)
 pnpm rust:test
+
+# Run tests (edit-file-only build; anchor/editFile regression)
+pnpm rust:test:edit-file
 
 # Complete Rust validation
 pnpm rust:validate
@@ -95,9 +98,10 @@ The `refactor:validate` command executes:
 5. **Rust fmt** - Rust code formatting
 6. **Rust clippy** - Rust linting
 7. **Rust check** - Rust compilation check with all features
-8. **Rust test** - Rust test suite
-9. **Vite build** - Production build verification
-10. **Unimported** - Unused code detection
+8. **Rust test** - Rust test suite (default `workspace-str-replace` build)
+9. **Rust test (edit-file)** - Rust test suite with `--no-default-features --features workspace-edit-file`
+10. **Vite build** - Production build verification
+11. **Unimported** - Unused code detection
 
 ## Common Validation Scenarios
 

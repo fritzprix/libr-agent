@@ -56,3 +56,8 @@ Use the `knowledge__record_knowledge` tool to persist the findings:
 ## Safety & Efficiency
 - **De-duplication**: Before recording, use `knowledge__search_knowledge` to check if similar knowledge already exists to avoid redundant entries.
 - **Relevance**: Skip sessions that are purely social or don't contain reusable technical/project context.
+
+## References
+
+- [Extraction patterns](references/extraction-patterns.md)
+- [Knowledge schema](references/knowledge-schema.md)

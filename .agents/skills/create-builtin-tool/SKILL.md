@@ -201,6 +201,12 @@ impl BuiltinMCPServer for YourServer {
 - Tool `description` should focus on purpose, prerequisites, workflow, and next actions.
 - Do **not** add `PARAMETERS:` blocks in tool `description` when the same details already exist in schema.
 
+**Parameter ordering (LLM generation):**
+
+- Use `SchemaProperties` / `props.insert()` order deliberately — it is preserved through Rust serialization and the frontend tool pipeline.
+- Insert fields as: identifiers → enums/flags → small scalars → structured arrays/objects → large text blobs last (e.g. `path`, `mode`, `content` for `writeFile`).
+- Models often emit tool arguments in schema order; putting large `content` fields first makes later enums/paths easier to omit.
+
 **File:** `src-tauri/src/mcp/builtin/your_server/tools.rs`
 
 ```rust

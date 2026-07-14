@@ -1,6 +1,7 @@
 {
     "requires_approval": [
         "workspace__writeFile",
+        "workspace__strReplace",
         "workspace__editFile",
         "workspace__runShell",
         "workspace__runInPersistentShell",

@@ -17,6 +17,25 @@
 - **Circuit Breaker Improvements**: Replaced loop-prevention think injection with synthetic tool errors for more robust session recovery.
 - **Code Formatting**: Applied `rustfmt` to LLM circuit breaker modules for consistent code style.
 
+## [0.8.29] - 2026-07-14
+
+### 🚀 Features
+
+- **Enhanced Skills Infrastructure**: Added `org-restructure` skill, improved cross-platform tooling, and added CI drift detection for bundled skills
+- **Workspace Tool Refactoring**: Split `searchFiles` into `globFiles` and `grepFiles` for better functionality
+- **StrReplace Tool**: Added new `strReplace` tool for precise text replacement, gated behind compile feature
+
+### 🐛 Fixes
+
+- **Skills Manifest Reliability**: Hardened atomic writes with RAII guards to prevent corruption
+- **Windows MCP Stability**: Fixed IO error in junction creation for Windows paths
+- **X-CLI Hardening**: Improved message-file handling, compaction export, and test isolation
+
+### 🔧 Internal
+
+- **CI/CD Improvement**: Auto-close linked issues when PRs merge to non-default branches
+- **Documentation**: Deprecate `searchFiles` tool and update schema descriptions
+
 ## [0.8.27] - 2026-07-10
 
 ### 🐛 Fixes

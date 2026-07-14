@@ -113,6 +113,8 @@ except ImportError:
 
 CONFIG_PATH = Path.home() / ".libragent" / "x_config.json"
 COOKIES_PATH = Path.home() / ".libragent" / "x_cookies.json"
+# Tweet/thread text via --message-file; generous headroom above X limits.
+MAX_MESSAGE_FILE_BYTES = 64 * 1024
 
 def get_client() -> Client:
     if not COOKIES_PATH.exists():
@@ -124,6 +126,62 @@ def get_client() -> Client:
     except Exception as e:
         raise RuntimeError(f"Failed to load cookies: {e}")
     return client
+
+def read_message_file(file_path: str) -> str | None:
+    """Read tweet text from a UTF-8 file, avoiding shell quoting/expansion issues."""
+    path = Path(file_path)
+    if not path.exists():
+        print(
+            json.dumps({"status": "error", "message": f"Message file not found: {file_path}"}),
+            file=sys.stderr,
+        )
+        return None
+    try:
+        file_size = path.stat().st_size
+    except OSError as e:
+        print(
+            json.dumps({"status": "error", "message": f"Failed to access message file: {e}"}),
+            file=sys.stderr,
+        )
+        return None
+
+    if file_size > MAX_MESSAGE_FILE_BYTES:
+        print(
+            json.dumps({
+                "status": "error",
+                "message": (
+                    f"Message file exceeds the limit of {MAX_MESSAGE_FILE_BYTES} bytes "
+                    f"(got {file_size} bytes)."
+                ),
+            }),
+            file=sys.stderr,
+        )
+        return None
+
+    try:
+        content = path.read_text(encoding="utf-8").strip()
+    except OSError as e:
+        print(
+            json.dumps({"status": "error", "message": f"Failed to read message file: {e}"}),
+            file=sys.stderr,
+        )
+        return None
+
+    if not content:
+        print(
+            json.dumps({"status": "error", "message": "Message file is empty after stripping whitespace."}),
+            file=sys.stderr,
+        )
+        return None
+
+    return content
+
+
+def resolve_message(args) -> str | None:
+    if args.message_file:
+        return read_message_file(args.message_file)
+    return args.message
+
 
 def safe_int(val) -> int:
     if val is None:
@@ -183,8 +241,16 @@ async def run_cli(args) -> int:
         client = get_client()
 
         if args.action == "post_tweet":
-            if not args.message:
-                print(json.dumps({"status": "error", "message": "Message is required to post a tweet."}), file=sys.stderr)
+            message = resolve_message(args)
+            if not message:
+                if not args.message and not args.message_file:
+                    print(
+                        json.dumps({
+                            "status": "error",
+                            "message": "Message is required to post a tweet. Use --message or --message-file.",
+                        }),
+                        file=sys.stderr,
+                    )
                 return 3
             
             media_ids = []
@@ -198,7 +264,7 @@ async def run_cli(args) -> int:
                 media_ids.append(media_id)
             
             tweet = await client.create_tweet(
-                text=args.message,
+                text=message,
                 media_ids=media_ids if media_ids else None,
                 reply_to=args.reply_to,
             )
@@ -304,6 +370,10 @@ def main() -> int:
         "like_tweet", "retweet", "delete_tweet",
     ])
     parser.add_argument("--message", help="Tweet message content")
+    parser.add_argument(
+        "--message-file",
+        help="Read tweet text from a UTF-8 file (recommended when the message contains $ or shell-special characters)",
+    )
     parser.add_argument("--file", help="Path to image/video attachment")
     parser.add_argument("--limit", type=int, default=10, help="Number of tweets to retrieve")
     parser.add_argument("--username", help="X username/screen_name of target user")

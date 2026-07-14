@@ -84,6 +84,7 @@ After choosing the execution substrate, route to the matching specialist skill:
 
 - **Plain child sessions** - stay here and use `delegate` when child-session mechanics matter.
 - **Explicit org lineage** - switch to `org`.
+- **Living org restructure** (add/layoff/merge roles, constitution edits) - switch to `org-restructure` after the org exists.
 - **Global scheduled tasks or groups** - switch to `schedule`.
 - **In-session delays or session-bound recurrence** - switch to `session-schedule`.
 

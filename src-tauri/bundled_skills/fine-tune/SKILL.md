@@ -53,3 +53,8 @@ Once training completes, update the Assistant configuration to load the model pa
 
 - **Hardware Safety** — Always run pre-flight checks. If VRAM is less than 12GB, default to LoRA parameter-efficient training with low batch size.
 - **Privacy** — Ensure no credentials or API keys exist in the exported dataset before launching training.
+
+## References
+
+- [Hardware guide](references/hardware-guide.md)
+- [Llama-Factory setup](references/llama-factory-setup.md)

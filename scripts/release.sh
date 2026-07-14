@@ -20,6 +20,7 @@ pnpm test:run
 # 2. Backend Tests
 echo "Running Backend Tests..."
 pnpm rust:test
+pnpm rust:test:edit-file
 
 # 3. Verify Frontend Build (Type check + Build)
 echo "Verifying Frontend Build..."

@@ -186,8 +186,7 @@ fn create_symlink_or_junction(target: &Path, link: &Path) -> std::io::Result<()>
         if output.status.success() {
             Ok(())
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 String::from_utf8_lossy(&output.stderr).into_owned(),
             ))
         }
