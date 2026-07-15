@@ -86,21 +86,16 @@ fn assistant_message_has_only_internal_ui_callback_tool_calls(message: &Message)
         .unwrap_or(false)
 }
 
-async fn persist_assistant_message_to_db(message: &Message) {
+async fn persist_assistant_message_to_db(message: &Message) -> Result<(), String> {
     let repo = crate::state::get_message_repository();
-    if let Err(error) = repo.insert(message).await {
+    repo.insert(message).await.map_err(|error| {
         log::error!(
             "Failed to save assistant message to DB: msg_id={}, error={}",
             message.id,
             error
         );
-    }
-}
-
-fn spawn_persist_assistant_message_to_db(message: Message) {
-    tokio::spawn(async move {
-        persist_assistant_message_to_db(&message).await;
-    });
+        format!("Failed to save assistant message to DB: {}", error)
+    })
 }
 
 async fn cache_assistant_message(
@@ -419,7 +414,7 @@ pub async fn handle_llm_response(
         reset_streaming_recovery_retry_counts(active_sessions, &session_id).await;
 
         if crate::agent::workflow::session_has_pending_events(active_sessions, &session_id).await {
-            spawn_persist_assistant_message_to_db(msg_for_db);
+            persist_assistant_message_to_db(&msg_for_db).await?;
             crate::agent::workflow::continue_workflow_if_pending_events(
                 session_repo,
                 active_sessions,
@@ -446,7 +441,7 @@ pub async fn handle_llm_response(
             log::info!("Completed workflow for session: {}", session_id);
         }
     } else {
-        spawn_persist_assistant_message_to_db(msg_for_db);
+        persist_assistant_message_to_db(&msg_for_db).await?;
 
         // Tools found! Initiate execution
         log::info!(
