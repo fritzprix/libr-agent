@@ -1,3 +1,17 @@
+## [0.8.30] - 2026-07-15
+
+### 🐛 Fixes
+
+- **Workspace Tool Guidance**: Aligned agent-facing tool descriptions and success hints with actual behavior — clarified two-outcome sync vs timeout-handoff for `runShell`/`runPowerShell`, fixed `process_id` → `processId` consistency, removed misleading "Total Processes" from service context, and corrected wrong tool suggestions (e.g. `listProcesses` no longer suggests `waitForProcess`, `readFile` now correctly points to `strReplace` for edits).
+- **Teamwork Write Hardening**: Fixed absolute path write validation for teamwork root, added loop prevention, and hardened atomic writes to prevent corruption.
+- **Process Not-Found Guidance**: Improved error messages when process IDs are invalid or missing, with clear next-step hints.
+- **Agent Message Persistence**: Awaited database persistence of assistant messages to prevent race conditions on session resume.
+
+### 🔧 Internal
+
+- **Dependency Update**: Bumped `tauri-plugin-mcp-bridge` in `src-tauri`.
+- **Test Updates**: Updated integration tests to assert on virtual teamwork prefix and aligned process output tests.
+
 ## [0.8.28] - 2026-07-15
 
 ### 🚀 Features
