@@ -402,8 +402,9 @@ impl SuccessHint {
                 "Use readProcessOutput to see the final results".to_string(),
             ],
             ("readProcessOutput", ToolGroup::Workspace) => vec![
-                "Analyze the output to verify command success".to_string(),
-                "Use stopProcess if the output indicates it's stuck".to_string(),
+                "Works while the process is still running; finishing is not required".to_string(),
+                "Use waitForProcess(processId, 0) only to check status, not to unlock reading".to_string(),
+                "If processId is missing from the registry, use listProcesses() — do not assume it is still starting".to_string(),
             ],
             ("listProcesses", ToolGroup::Workspace) => vec![
                 "Use waitForProcess(processId) to block until completion".to_string(),

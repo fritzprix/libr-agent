@@ -171,12 +171,13 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
             "Create or reuse an app-local teamwork artifact directory for the current governing/root session.",
             &["Caller should be a root or governing session."],
             &[
-                "Call when coordination metadata must live outside the repo workspace.",
-                "This path is for scaffolding artifacts only — it does not change the session workspace.",
+                "Call once when coordination metadata must live outside the repo workspace.",
+                "This only prepares an empty @teamwork/ directory — it does not scaffold files and does not change the session workspace.",
             ],
             &[
-                "Create an explicit org with agent__createOrg if team coordination is needed.",
-                "Spawn org members with agent__startSession.",
+                "Do not call prepareTeamworkWorkspace again after success.",
+                "Scaffold next via the teamwork skill (prefer scripts/init_task_force.py with --output = response artifactPath) or write the full set under @teamwork/ including coordination/* and @teamwork/.libragent/teamwork.json.",
+                "Only after the org scaffold is complete, call agent__createOrg, then agent__startSession for org members.",
             ],
         ),
         input_schema: object_prop(vec![], vec![], None),

@@ -132,6 +132,41 @@ fn build_tool_result_signature(message: &Message) -> String {
     }
 }
 
+fn is_loop_prevention_message(message: &Message) -> bool {
+    if message
+        .metadata
+        .as_ref()
+        .and_then(|metadata| {
+            metadata
+                .get("loopPrevention")
+                .or_else(|| {
+                    metadata
+                        .get("structuredContent")
+                        .and_then(|value| value.get("loopPrevention"))
+                })
+                .and_then(|value| value.as_bool())
+        })
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    message.content.iter().any(|content| {
+        matches!(
+            content,
+            crate::mcp::types::MCPContent::Text { text, .. }
+                if text.starts_with("Loop prevention:")
+        )
+    })
+}
+
+/// Count trailing tool results whose call signature matches `matcher`.
+///
+/// A different tool call (name/args) ends the streak and resets the counter.
+/// Outcome text differences do NOT reset the counter — once the agent is looping the
+/// same call, further repeats stay blocked until a different tool/args appears.
+/// Loop-prevention short-circuit results also keep the streak (they must not look like
+/// a “new outcome” that clears the counter).
 fn count_consecutive_identical_call_outcomes<F>(
     messages: &[Message],
     matcher: F,
@@ -151,25 +186,23 @@ where
                     break;
                 };
 
-                if matcher(tool_call_id) {
+                if !matcher(tool_call_id) {
+                    break;
+                }
+
+                consecutive_matches += 1;
+
+                if is_loop_prevention_message(message) {
+                    continue;
+                }
+
+                if repeated_outcome.is_none() {
                     let signature = build_tool_result_signature(message);
-                    let current_outcome = if is_tool_error_message(message) {
+                    repeated_outcome = Some(if is_tool_error_message(message) {
                         RepeatedOutcome::Error { signature }
                     } else {
                         RepeatedOutcome::Success { signature }
-                    };
-
-                    if let Some(expected_outcome) = &repeated_outcome {
-                        if expected_outcome != &current_outcome {
-                            break;
-                        }
-                    } else {
-                        repeated_outcome = Some(current_outcome);
-                    }
-
-                    consecutive_matches += 1;
-                } else {
-                    break;
+                    });
                 }
             }
             "assistant" => {}
@@ -181,7 +214,14 @@ where
         }
     }
 
-    repeated_outcome.map(|outcome| (consecutive_matches, outcome))
+    if consecutive_matches == 0 {
+        return None;
+    }
+
+    let outcome = repeated_outcome.unwrap_or_else(|| RepeatedOutcome::Error {
+        signature: "__loop_prevention__".to_string(),
+    });
+    Some((consecutive_matches, outcome))
 }
 
 pub fn evaluate_circuit_breaker_action(

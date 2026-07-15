@@ -214,15 +214,13 @@ impl WorkspaceServer {
 
                 return Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
-                    format!("Process '{}' not found", process_id),
+                    format!(
+                        "Process '{}' is not registered in this session",
+                        process_id
+                    ),
                     ToolGroup::Workspace,
                 )
-                .guidance(vec![
-                    available_text,
-                    "Use listProcesses() to see all processes with IDs".to_string(),
-                    "Check if process has finished - finished processes are kept for 24 hours"
-                        .to_string(),
-                ])
+                .guidance(super::not_found::process_not_found_guidance(available_text))
                 .to_mcp_result());
             }
         };

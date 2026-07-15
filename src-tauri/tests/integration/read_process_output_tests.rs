@@ -413,3 +413,49 @@ async fn read_process_output_avoids_stop_hint_after_process_has_finished() {
         "finished processes should not suggest waiting again: {text}"
     );
 }
+
+/// readProcessOutput not-found means missing from registry — not "still running".
+#[tokio::test]
+async fn test_read_process_output_not_found_guidance_is_accurate() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-process-output-not-found";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .call_tool(
+            "readProcessOutput",
+            json!({
+                "processId": "missing-id",
+                "stream": "both"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("call_tool should return MCP result");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text_content(&result);
+
+    assert!(
+        text.contains("Process 'missing-id' is not registered in this session"),
+        "should surface registry miss: {text}"
+    );
+    assert!(
+        text.contains("not in the registry"),
+        "should diagnose registry miss, not unfinished process: {text}"
+    );
+    assert!(
+        text.contains("works while the process is still running"),
+        "must clarify finishing is not required: {text}"
+    );
+    assert!(
+        !text.contains("24 hours") && !text.contains("kept for"),
+        "must not include retention/TTL TMI: {text}"
+    );
+    assert!(
+        text.contains("listProcesses"),
+        "should point to listProcesses: {text}"
+    );
+}

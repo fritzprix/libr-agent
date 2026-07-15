@@ -239,3 +239,80 @@ async fn test_workspace_server_path_resolution_and_security() {
         "Path traversal outside teamwork root must fail security check"
     );
 }
+
+#[tokio::test]
+async fn test_absolute_path_write_under_teamwork_root() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db);
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+
+    let base_dir = temp_dir.path().join("session-root");
+    let session_manager = SessionManager::new_with_base_dir(base_dir.clone()).unwrap();
+    let session_id = "absolute-write-session";
+    let org_root_id = "absolute-write-session";
+
+    let session = make_session(session_id, None, Some(org_root_id));
+    repo.upsert_session(&session).await.unwrap();
+
+    let artifact_dir = prepare_teamwork_artifact_dir_for_session(&session_manager, session_id)
+        .await
+        .unwrap();
+
+    let _workspace_dir = ensure_session_workspace_dir(&repo, &session_manager, session_id)
+        .await
+        .unwrap();
+
+    use std::sync::Arc;
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::WorkspaceServer;
+    let server = WorkspaceServer::new(session_id.to_string(), Arc::new(session_manager));
+
+    // New file: absolute path under teamwork root must validate for write (create path).
+    let absolute_new_file = artifact_dir.join("coordination").join("KANBAN.md");
+    let absolute_new_file_str = absolute_new_file.to_string_lossy().to_string();
+    let validated = server
+        .validate_write_path_with_teamwork_access(&absolute_new_file_str, None)
+        .await
+        .expect("absolute path under teamwork root must be writable");
+    let expected = artifact_dir
+        .canonicalize()
+        .expect("teamwork root should canonicalize")
+        .join("coordination")
+        .join("KANBAN.md");
+    assert_eq!(
+        validated, expected,
+        "validated write path should resolve inside the teamwork artifact directory"
+    );
+
+    // Alias path remains the preferred write form and must agree on the same target.
+    let alias_validated = server
+        .validate_write_path_with_teamwork_access("@teamwork/coordination/KANBAN.md", None)
+        .await
+        .expect("@teamwork alias write must succeed");
+    assert_eq!(
+        alias_validated, expected,
+        "absolute and @teamwork writes must target the same path"
+    );
+
+    // Absolute path outside teamwork root must not be accepted by the teamwork write path.
+    let outside = temp_dir.path().join("outside.md");
+    let outside_str = outside.to_string_lossy().to_string();
+    let outside_result = server
+        .validate_write_path_with_teamwork_access(&outside_str, None)
+        .await;
+    assert!(
+        outside_result.is_err(),
+        "absolute paths outside teamwork root must still fail scoped write validation"
+    );
+
+    // Absolute path with ".." after the teamwork root must not be treated as a valid teamwork write.
+    let traversal = artifact_dir.join("..").join("escape.md");
+    let traversal_str = traversal.to_string_lossy().to_string();
+    let traversal_result = server
+        .validate_write_path_with_teamwork_access(&traversal_str, None)
+        .await;
+    assert!(
+        traversal_result.is_err(),
+        "absolute paths that lexically escape the teamwork root via .. must fail"
+    );
+}

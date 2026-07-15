@@ -3,7 +3,7 @@ use super::terminal_manager;
 use super::tools;
 use super::types::{PendingExecutions, PendingShellInputResolution};
 use super::utils;
-use crate::mcp::builtin::utils::path_starts_with;
+use crate::mcp::builtin::utils::{path_starts_with, relative_path_under_base};
 use crate::mcp::MCPTool;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::SessionRepository;
@@ -378,6 +378,71 @@ impl WorkspaceServer {
         })
     }
 
+    /// Map an absolute path under the teamwork artifact root to a scoped relative path.
+    ///
+    /// Handles new-file writes (path may not exist yet) and Windows/Unix canonicalize
+    /// asymmetry by trying the raw root, the canonical root, and an existing-ancestor walk.
+    fn extract_absolute_teamwork_relative_path(
+        candidate: &Path,
+        teamwork_root: &Path,
+    ) -> Option<String> {
+        let canonical_root = teamwork_root.canonicalize().ok();
+
+        if let Some(relative) = relative_path_under_base(candidate, teamwork_root) {
+            return Some(Self::normalize_teamwork_relative_path(&relative));
+        }
+
+        if let Some(ref canonical_root) = canonical_root {
+            if teamwork_root != canonical_root.as_path() {
+                if let Some(relative) = relative_path_under_base(candidate, canonical_root) {
+                    return Some(Self::normalize_teamwork_relative_path(&relative));
+                }
+            }
+        }
+
+        // New files often fail canonicalize(); walk up to an existing ancestor first.
+        let canonical_root = canonical_root?;
+        let mut suffix: Vec<std::ffi::OsString> = Vec::new();
+        let mut current = candidate.to_path_buf();
+
+        loop {
+            match current.canonicalize() {
+                Ok(canonical_current) => {
+                    let relative = relative_path_under_base(&canonical_current, &canonical_root)?;
+                    let mut full = relative;
+                    for part in suffix.iter().rev() {
+                        // Reject parent-dir names collected during the walk (e.g. "..").
+                        if part == ".." {
+                            return None;
+                        }
+                        if part == "." {
+                            continue;
+                        }
+                        full.push(part);
+                    }
+                    return Some(Self::normalize_teamwork_relative_path(&full));
+                }
+                Err(_) => {
+                    let file_name = current.file_name()?.to_os_string();
+                    suffix.push(file_name);
+                    if !current.pop() {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    fn normalize_teamwork_relative_path(relative: &Path) -> String {
+        if relative.as_os_str().is_empty() {
+            ".".to_string()
+        } else {
+            // Normalize Windows separators so scoped validators and agent-facing paths
+            // stay consistent across platforms (keep explicit '\\', not MAIN_SEPARATOR).
+            relative.to_string_lossy().replace('\\', "/")
+        }
+    }
+
     pub async fn validate_read_path_with_skill_access(
         &self,
         path_str: &str,
@@ -468,6 +533,24 @@ impl WorkspaceServer {
             .map_docker_container_file_tool_path(path_str, &target_session_id)
             .await?;
         let effective_path = mapped_path.as_deref().unwrap_or(path_str);
+
+        // Absolute path under the teamwork root: strip to a relative path and reuse the
+        // same scoped write validator as @teamwork/... (handles new-file create paths).
+        let candidate_path = PathBuf::from(effective_path);
+        if candidate_path.is_absolute() {
+            if let Ok(teamwork_root) = self.get_teamwork_artifact_root(&target_session_id).await {
+                if let Some(relative_path) =
+                    Self::extract_absolute_teamwork_relative_path(&candidate_path, &teamwork_root)
+                {
+                    let teamwork_manager =
+                        SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+                    return teamwork_manager
+                        .get_security_validator()
+                        .validate_path_for_write(&relative_path)
+                        .map_err(|e| format!("Security error: {e}"));
+                }
+            }
+        }
 
         self.validate_path_with_error_for_write(effective_path, Some(target_session_id))
     }
@@ -758,6 +841,33 @@ mod tests {
         assert_eq!(
             WorkspaceServer::extract_teamwork_alias_relative_path("docs/README.md"),
             None
+        );
+    }
+
+    #[test]
+    fn test_extract_absolute_teamwork_relative_path_for_new_files() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let teamwork_root = temp_dir.path().join("teamwork-artifacts").join("session-1");
+        std::fs::create_dir_all(&teamwork_root).expect("create teamwork root");
+
+        let new_file = teamwork_root.join("coordination").join("KANBAN.md");
+        let relative =
+            WorkspaceServer::extract_absolute_teamwork_relative_path(&new_file, &teamwork_root)
+                .expect("new absolute path under teamwork root must map to relative");
+        assert_eq!(relative, "coordination/KANBAN.md");
+
+        let outside = temp_dir.path().join("outside.md");
+        assert!(
+            WorkspaceServer::extract_absolute_teamwork_relative_path(&outside, &teamwork_root)
+                .is_none()
+        );
+
+        // Lexical escape via ".." after the root prefix must not map to a relative path.
+        let traversal = teamwork_root.join("..").join("outside.md");
+        assert!(
+            WorkspaceServer::extract_absolute_teamwork_relative_path(&traversal, &teamwork_root)
+                .is_none(),
+            "parent-dir components after the teamwork root must be rejected"
         );
     }
 }
