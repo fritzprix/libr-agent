@@ -33,6 +33,7 @@ pub struct CreateScheduledTaskInput {
     pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace_override: Option<String>,
+    pub reset_planning_state: bool,
     pub next_run_at: Option<i64>,
 }
 
@@ -107,6 +108,7 @@ impl ScheduledTaskService {
             created_by_session_id: input.created_by_session_id,
             session_id: input.session_id,
             workspace_override: input.workspace_override,
+            reset_planning_state: input.reset_planning_state,
             next_run_at: Some(next_run_at),
         })
         .await
@@ -240,15 +242,9 @@ impl ScheduledTaskService {
         repo.update_scheduled_task(
             id,
             UpdateScheduledTaskParams {
-                name: None,
-                cron_expression: None,
-                schedule_timezone: None,
-                assistant_id: None,
-                message: None,
-                execution_mode: None,
-                workspace_override: None,
                 enabled: Some(enabled),
                 next_run_at: Some(next_run_at),
+                ..Default::default()
             },
         )
         .await

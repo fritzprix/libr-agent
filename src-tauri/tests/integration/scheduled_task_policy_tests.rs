@@ -19,6 +19,7 @@ fn create_input(name: &str, cron: &str) -> CreateScheduledTaskInput {
         created_by_session_id: Some("session-origin".to_string()),
         session_id: None,
         workspace_override: None,
+        reset_planning_state: false,
         next_run_at: None,
     }
 }

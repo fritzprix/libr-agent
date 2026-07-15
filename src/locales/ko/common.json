@@ -1148,6 +1148,8 @@
       "messageHint": "자동 완성을 위해 @playbook:, @skill:, 또는 @file:을 사용하세요.",
       "workspaceAutocompleteHint": "워크스페이스 오버라이드가 @skill: 및 @file: 자동 완성을 활성화합니다.",
       "messagePlaceholder": "메시지를 입력하세요… 자동 완성을 위해 @playbook:, @skill:, 또는 @file:을 사용하세요",
+      "resetPlanningLabel": "실행 전 플래닝 상태 초기화",
+      "resetPlanningHint": "메시지 주입 전에 goal/todo/scratchpad만 지웁니다. 채팅 기록은 유지됩니다.",
       "cancel": "취소",
       "saveChanges": "변경사항 저장",
       "createTask": "작업 생성",

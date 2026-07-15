@@ -1165,6 +1165,8 @@
       "messageHint": "Use @playbook:, @skill:, or @file: for autocomplete.",
       "workspaceAutocompleteHint": "Workspace override enables @skill: and @file: autocomplete.",
       "messagePlaceholder": "Type a message… use @playbook:, @skill:, or @file: for autocomplete",
+      "resetPlanningLabel": "Reset planning state before run",
+      "resetPlanningHint": "Clears goal, todos, and scratchpad before injecting the message. Does not wipe chat history.",
       "cancel": "Cancel",
       "saveChanges": "Save changes",
       "createTask": "Create task",
