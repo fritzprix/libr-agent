@@ -287,13 +287,16 @@ pub async fn prepare_teamwork_workspace(
     let artifact_path =
         crate::services::WorkspaceService::provision_teamwork_workspace(caller_session_id).await?;
     let message = format!(
-        "Teamwork artifact directory is ready for session {}: {}",
-        caller_session_id, artifact_path
+        "Teamwork artifact directory is ready for session {}. Do not call prepareTeamworkWorkspace again — the empty @teamwork/ root already exists.",
+        caller_session_id
     );
     let hint = SuccessHint::new(
         message.clone(),
         vec![
-            "You must write all team-coordination files (like KANBAN.md, ROLES.md, MISSION.md) using the '@teamwork/' prefix (e.g., '@teamwork/coordination/KANBAN.md'). Do not write them in the project workspace root.".to_string(),
+            "Required next: scaffold the full org teamwork set. Prefer the teamwork skill + scripts/init_task_force.py with --output set to this response's artifactPath field. Or write under @teamwork/ (agents.md, MISSION.md, ROLES.md, coordination/*, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and orgLineage.intended=true)."
+                .to_string(),
+            "After that scaffold is complete, call createOrg(name=\"...\") from this root session, then startSession for org members so they inherit the shared workspace. Spawning children before createOrg leaves each spoke in an isolated workspace."
+                .to_string(),
         ],
     );
 
@@ -303,7 +306,17 @@ pub async fn prepare_teamwork_workspace(
         Some(caller_session_id),
         &message,
         "success",
-        vec![],
+        vec![
+            json!({
+                "actionType": "skill",
+                "toolName": "teamwork",
+                "reason": "Scaffold the full @teamwork/ artifact set (prefer init_task_force.py) before createOrg."
+            }),
+            json!({
+                "toolName": "createOrg",
+                "reason": "Create explicit org identity only after @teamwork/ scaffold + teamwork.json are ready."
+            }),
+        ],
     );
     response_data.insert(
         "sessionId".to_string(),

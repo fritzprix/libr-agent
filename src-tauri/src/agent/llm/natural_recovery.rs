@@ -38,7 +38,9 @@ pub fn loop_prevention_tool_result(guidance: &str) -> ToolExecutionResult {
     ToolExecutionResult {
         success: false,
         content: String::new(),
-        structured_content: None,
+        structured_content: Some(serde_json::json!({
+            "loopPrevention": true,
+        })),
         error: Some(guidance.to_string()),
         is_error: true,
         mcp_content: Some(vec![MCPContent::Text {

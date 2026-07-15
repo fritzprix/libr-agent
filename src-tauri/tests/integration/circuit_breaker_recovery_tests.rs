@@ -322,7 +322,9 @@ fn natural_recovery_prefers_repeated_identical_success_before_hard_break() {
 }
 
 #[test]
-fn different_success_results_do_not_trigger_natural_recovery() {
+fn same_call_signature_counts_even_when_success_text_differs() {
+    // Same tool + args is a loop even if the successful payload text changes
+    // (e.g. polling). Counter resets only when a different tool/args appears.
     let repeated_args = r#"{"path":"src/main.ts"}"#;
     let current_call = test_tool_call("tc-3", "workspace__readFile", repeated_args);
     let messages = vec![
@@ -372,5 +374,111 @@ fn different_success_results_do_not_trigger_natural_recovery() {
         ),
     ];
 
-    assert_eq!(evaluate(&messages, &current_call, 3), None);
+    assert_eq!(
+        evaluate(&messages, &current_call, 3),
+        Some(CircuitBreakerAction::NaturalRecoverySuccess {
+            count: 3,
+            tool_name: "workspace__readFile".to_string(),
+            args: repeated_args.to_string(),
+        })
+    );
+}
+
+#[test]
+fn loop_prevention_blocks_do_not_reset_repeat_counter() {
+    // After natural recovery short-circuits the 3rd identical call, further
+    // identical calls must keep failing — the loop-prevention tool result must
+    // not look like a “new outcome” that clears the streak.
+    let repeated_success = "Teamwork artifact directory is ready";
+    let loop_prevention = "Loop prevention: 'agent__prepareTeamworkWorkspace' was called 3 times with identical parameters and the same successful result.\n\nThis call was blocked.";
+    let current_call = test_tool_call("tc-4", "agent__prepareTeamworkWorkspace", "{}");
+    let messages = vec![
+        test_message(
+            "assistant-1",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-1",
+                "agent__prepareTeamworkWorkspace",
+                "{}",
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-1",
+            "tool",
+            None,
+            Some("tc-1"),
+            None,
+            repeated_success,
+            Some(false),
+        ),
+        test_message(
+            "assistant-2",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-2",
+                "agent__prepareTeamworkWorkspace",
+                "{}",
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-2",
+            "tool",
+            None,
+            Some("tc-2"),
+            None,
+            repeated_success,
+            Some(false),
+        ),
+        test_message(
+            "assistant-3",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-3",
+                "agent__prepareTeamworkWorkspace",
+                "{}",
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-3-loop-prevention",
+            "tool",
+            None,
+            Some("tc-3"),
+            Some(serde_json::json!({
+                "toolError": true,
+                "structuredContent": { "loopPrevention": true },
+                "loopPrevention": true
+            })),
+            loop_prevention,
+            Some(true),
+        ),
+    ];
+
+    assert_eq!(
+        evaluate(&messages, &current_call, 3),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 4,
+            tool_name: "agent__prepareTeamworkWorkspace".to_string(),
+            args: "{}".to_string(),
+        })
+    );
+
+    // A different tool/args after the streak resets counting.
+    let different_call = test_tool_call(
+        "tc-5",
+        "workspace__writeFile",
+        r#"{"path":"@teamwork/agents.md","content":"x"}"#,
+    );
+    assert_eq!(evaluate(&messages, &different_call, 3), None);
 }

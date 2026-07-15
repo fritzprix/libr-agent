@@ -171,15 +171,15 @@ pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Resul
 
     let mut guidance = scaffold.guidance_lines();
     guidance.push(
-        "If the app-local artifact directory has not been prepared yet, call prepareTeamworkWorkspace() from the root session first."
+        "If @teamwork/ has not been prepared yet, call prepareTeamworkWorkspace() from the root session first."
             .to_string(),
     );
     guidance.push(
-        "Use the teamwork skill or init_task_force.py to create or repair the required scaffold artifacts in that artifact directory."
+        "Use the teamwork skill or init_task_force.py to create or repair the required scaffold artifacts under @teamwork/."
             .to_string(),
     );
     guidance.push(
-        "After the scaffold exists and .libragent/teamwork.json declares executionSubstrate.mode=\"org\" plus executionSubstrate.orgLineage.intended=true, call createOrg(name=\"...\") again."
+        "After the scaffold exists and @teamwork/.libragent/teamwork.json declares executionSubstrate.mode=\"org\" plus executionSubstrate.orgLineage.intended=true, call createOrg(name=\"...\") again."
             .to_string(),
     );
 

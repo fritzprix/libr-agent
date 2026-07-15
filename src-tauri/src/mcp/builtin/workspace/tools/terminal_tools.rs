@@ -35,7 +35,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
         name: "readProcessOutput".to_string(),
         title: Some("Read Process Output".to_string()),
         description:
-            "Read captured stdout, stderr, or both streams from a background process using head/tail line windows. Returns output_paths so file tools can inspect the full captured files."
+            "Read captured stdout, stderr, or both from a background process ID (spawnProcess or sync-timeout handoff). Works while the process is still running and after it finishes. Not for synchronous isolated/shell commands that already returned stdout/stderr inline — those registry entries are removed immediately. Returns output_paths for diagnostics (absolute internal paths; do not pass them to readFile/listDirectory)."
                 .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string(), "stream".to_string()]),
         output_schema: None,
