@@ -214,10 +214,7 @@ impl WorkspaceServer {
 
                 return Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
-                    format!(
-                        "Process '{}' is not registered in this session",
-                        process_id
-                    ),
+                    format!("Process '{}' is not registered in this session", process_id),
                     ToolGroup::Workspace,
                 )
                 .guidance(super::not_found::process_not_found_guidance(available_text))
