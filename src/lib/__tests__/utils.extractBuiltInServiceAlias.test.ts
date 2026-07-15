@@ -5,7 +5,7 @@ describe('extractBuiltInServiceAlias', () => {
   it('should extract simple alias for known builtin services', () => {
     expect(extractBuiltInServiceAlias('browser__clickElement')).toBe('browser');
     expect(extractBuiltInServiceAlias('workspace__readFile')).toBe('workspace');
-    expect(extractBuiltInServiceAlias('planning__addTodo')).toBe('planning');
+    expect(extractBuiltInServiceAlias('scratchpad__addTodo')).toBe('scratchpad');
   });
 
   it('should extract alias with underscores for known services', () => {

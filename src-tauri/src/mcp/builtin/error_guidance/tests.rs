@@ -81,19 +81,6 @@ fn test_tool_group_isolation_browser() {
 }
 
 #[test]
-fn test_tool_group_isolation_planning() {
-    let error = ErrorGuidance::new(
-        ErrorCategory::DuplicateResource,
-        "Todo already exists",
-        ToolGroup::Planning,
-    );
-
-    // Should suggest planning tools only
-    assert!(error.guidance.iter().any(|g| g.contains("getCurrentState")));
-    assert!(!error.guidance.iter().any(|g| g.contains("navigateToUrl"))); // Should not suggest browser tools
-}
-
-#[test]
 fn test_guided_error_builder_uses_default_guidance() {
     let result = guided_error(
         ErrorCategory::ResourceNotFound,

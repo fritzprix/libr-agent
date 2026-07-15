@@ -15,7 +15,6 @@ src-tauri/src/mcp/builtin/
 ├── error_guidance.rs     # Error analysis and guidance utilities
 ├── knowledge/            # Semantic search and memory
 ├── media/                # Media processing tools
-├── planning/             # Task planning and tracking
 ├── playbook/             # Workflow automation
 ├── scratchpad/           # Scratchpad state and notes
 ├── session_api/          # Session-oriented agent APIs

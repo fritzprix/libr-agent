@@ -7,7 +7,7 @@ import { AgentChatHeader } from '../AgentChatHeader';
 const mockRenameSession = vi.fn();
 const mockToggleBookmark = vi.fn();
 const mockCopyToClipboard = vi.fn();
-const mockTogglePlanningPanel = vi.fn();
+
 const mockToggleWorkspacePanel = vi.fn();
 
 vi.mock('@/context/AgentSessionContext', () => ({
@@ -61,12 +61,7 @@ vi.mock('@/context/AgentSessionListContext', () => ({
   }),
 }));
 
-vi.mock('@/context/AgentPlanningContext', () => ({
-  useAgentPlanning: () => ({
-    showPlanningPanel: false,
-    togglePlanningPanel: mockTogglePlanningPanel,
-  }),
-}));
+
 
 vi.mock('@/context/AgentWorkspaceContext', () => ({
   useAgentWorkspace: () => ({

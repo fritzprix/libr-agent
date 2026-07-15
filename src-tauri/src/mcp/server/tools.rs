@@ -427,7 +427,6 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             let tool_count = get_static_tools_for_server(&name).len();
 
             let metadata = match entry.variant {
-                BuiltinServiceId::Planning => planning::PlanningServer::metadata_static(),
                 BuiltinServiceId::Scratchpad => scratchpad::ScratchpadServer::metadata_static(),
                 BuiltinServiceId::Knowledge => knowledge::KnowledgeServer::metadata_static(),
                 BuiltinServiceId::History => history::HistoryServer::metadata_static(),
@@ -584,7 +583,6 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
     };
 
     match service_id {
-        BuiltinServiceId::Planning => crate::mcp::builtin::planning::PlanningServer::tools_static(),
         BuiltinServiceId::Scratchpad => {
             crate::mcp::builtin::scratchpad::ScratchpadServer::tools_static()
         }

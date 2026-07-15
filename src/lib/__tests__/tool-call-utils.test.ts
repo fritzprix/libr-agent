@@ -98,8 +98,8 @@ describe('tool-call-utils', () => {
 
   describe('parseToolName', () => {
     it('should return group/tool display for builtin tool names', () => {
-      expect(parseToolName('planning__addScratchpad')).toBe(
-        'planning / addScratchpad',
+      expect(parseToolName('scratchpad__addScratchpad')).toBe(
+        'scratchpad / addScratchpad',
       );
     });
 
@@ -201,7 +201,7 @@ describe('tool-call-utils', () => {
   describe('isBuiltinTool', () => {
 
     it('returns true for known builtin prefixes', () => {
-      expect(isBuiltinTool('planning__addScratchpad')).toBe(true);
+      expect(isBuiltinTool('scratchpad__addScratchpad')).toBe(true);
       expect(isBuiltinTool('tool__listServers')).toBe(true);
     });
 
@@ -211,15 +211,15 @@ describe('tool-call-utils', () => {
     });
 
     it('returns false for strings without delimiter', () => {
-      expect(isBuiltinTool('planning')).toBe(false);
-      expect(isBuiltinTool('planning_tool')).toBe(false);
+      expect(isBuiltinTool('scratchpad')).toBe(false);
+      expect(isBuiltinTool('scratchpad_tool')).toBe(false);
     });
   });
 
   describe('parseBuiltinToolName', () => {
 
     it('returns parsed parts for builtin tools', () => {
-      expect(parseBuiltinToolName('planning__addScratchpad')).toEqual({ serviceId: 'planning', toolName: 'addScratchpad' });
+      expect(parseBuiltinToolName('scratchpad__addScratchpad')).toEqual({ serviceId: 'scratchpad', toolName: 'addScratchpad' });
     });
 
     it('returns null for unknown prefixes', () => {
@@ -227,11 +227,11 @@ describe('tool-call-utils', () => {
     });
 
     it('returns null for missing delimiter', () => {
-      expect(parseBuiltinToolName('planning')).toBe(null);
+      expect(parseBuiltinToolName('scratchpad')).toBe(null);
     });
 
     it('returns null for empty tool name', () => {
-      expect(parseBuiltinToolName('planning__')).toBe(null);
+      expect(parseBuiltinToolName('scratchpad__')).toBe(null);
     });
   });
 

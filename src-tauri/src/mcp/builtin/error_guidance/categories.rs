@@ -45,7 +45,6 @@ impl ErrorCategory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolGroup {
     Browser,
-    Planning,
     Scratchpad,
     Workspace,
     Agent, // Unified Agent Domain (Assistant/Swarm)

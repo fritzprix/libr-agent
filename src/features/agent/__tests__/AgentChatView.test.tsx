@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   agentSessionState: undefined as AgentSessionStateContextValue | undefined,
   isMobile: false,
   showWorkspacePanel: false,
-  showPlanningPanel: false,
 }));
 
 function createBaseRuntimeState(): SessionRuntimeState {
@@ -120,17 +119,7 @@ vi.mock('@/context/AgentWorkspaceContext', () => ({
   }),
 }));
 
-vi.mock('@/context/AgentPlanningContext', () => ({
-  AgentPlanningProvider: ({ children }: { children: ReactNode }) => (
-    <>{children}</>
-  ),
-  useAgentPlanning: () => ({
-    showPlanningPanel: mocks.showPlanningPanel,
-    openPlanningPanel: vi.fn(),
-    closePlanningPanel: vi.fn(),
-    togglePlanningPanel: vi.fn(),
-  }),
-}));
+
 
 vi.mock('@/hooks/use-mobile', () => ({
   useIsMobile: () => mocks.isMobile,
@@ -167,13 +156,7 @@ vi.mock('../components/AgentWorkspacePanel', () => ({
   AgentWorkspacePanel: () => <div>mock-workspace-panel</div>,
 }));
 
-vi.mock('../components/AgentPlanningPanel', () => ({
-  AgentPlanningPanel: () => <div>mock-planning-panel</div>,
-}));
 
-vi.mock('../components/AgentPlanningUpdates', () => ({
-  AgentPlanningUpdates: () => <div>mock-planning-updates</div>,
-}));
 
 vi.mock('@/components/ui/sheet', () => ({
   Sheet: ({
@@ -234,7 +217,6 @@ describe('AgentChatView', () => {
     mocks.agentSessionState = createSessionState();
     mocks.isMobile = false;
     mocks.showWorkspacePanel = false;
-    mocks.showPlanningPanel = false;
   });
 
   it('shows the blocking loader when there is no hydrated session yet', () => {
@@ -278,34 +260,29 @@ describe('AgentChatView', () => {
     expect(screen.getByTestId('chat-provider')).toBeInTheDocument();
   });
 
-  it('renders both desktop side panels at the same time', () => {
+  it('renders desktop workspace panel when open', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
     });
     mocks.showWorkspacePanel = true;
-    mocks.showPlanningPanel = true;
 
     render(<AgentChatView />);
 
     expect(screen.getByText('mock-workspace-panel')).toBeInTheDocument();
-    expect(screen.getByText('mock-planning-panel')).toBeInTheDocument();
+    expect(screen.queryByText('mock-planning-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sheet-content-left')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('sheet-content-right')).not.toBeInTheDocument();
   });
 
-  it('renders mobile panels inside sheets instead of desktop rails', () => {
+  it('renders mobile workspace panel inside sheet instead of desktop rail', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
     });
     mocks.isMobile = true;
     mocks.showWorkspacePanel = true;
-    mocks.showPlanningPanel = true;
 
     render(<AgentChatView />);
 
     expect(screen.getByTestId('sheet-content-left')).toBeInTheDocument();
-    expect(screen.getByTestId('sheet-content-right')).toBeInTheDocument();
     expect(screen.getAllByText('mock-workspace-panel')).toHaveLength(1);
-    expect(screen.getAllByText('mock-planning-panel')).toHaveLength(1);
   });
 });
