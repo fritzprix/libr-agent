@@ -229,7 +229,7 @@ async fn run_shell_timeout_hands_off_to_background_process() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("still running in background"),
+        text.contains("Sync timeout handoff") && text.contains("continues in background"),
         "timeout handoff should be explicit in text: {text}"
     );
     assert!(
