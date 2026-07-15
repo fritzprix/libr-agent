@@ -293,10 +293,7 @@ pub async fn prepare_teamwork_workspace(
     let hint = SuccessHint::new(
         message.clone(),
         vec![
-            "Scaffold teamwork coordination artifacts in this app-local directory, not in the repo root."
-                .to_string(),
-            "The current session workspace does not change; parent/child workspace inheritance stays intact."
-                .to_string(),
+            "You must write all team-coordination files (like KANBAN.md, ROLES.md, MISSION.md) using the '@teamwork/' prefix (e.g., '@teamwork/coordination/KANBAN.md'). Do not write them in the project workspace root.".to_string(),
         ],
     );
 

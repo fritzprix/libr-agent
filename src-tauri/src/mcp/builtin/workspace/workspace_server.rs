@@ -469,6 +469,38 @@ impl WorkspaceServer {
             .await?;
         let effective_path = mapped_path.as_deref().unwrap_or(path_str);
 
+        // Fallback for absolute paths: if the path is absolute and within the teamwork root,
+        // map it to a teamwork write dynamically, matching the read validation logic.
+        let candidate_path = PathBuf::from(effective_path);
+        if candidate_path.is_absolute() {
+            if let Ok(teamwork_root) = self.get_teamwork_artifact_root(&target_session_id).await {
+                let normalized_candidate = candidate_path.canonicalize().unwrap_or_else(|e| {
+                    tracing::debug!(
+                        "Failed to canonicalize candidate path {:?}: {}",
+                        candidate_path,
+                        e
+                    );
+                    candidate_path.clone()
+                });
+                let normalized_teamwork_root = teamwork_root.canonicalize().unwrap_or_else(|e| {
+                    tracing::debug!(
+                        "Failed to canonicalize teamwork root {:?}: {}",
+                        teamwork_root,
+                        e
+                    );
+                    teamwork_root.clone()
+                });
+                if path_starts_with(&normalized_candidate, &normalized_teamwork_root) {
+                    let teamwork_manager =
+                        SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+                    return teamwork_manager
+                        .get_security_validator()
+                        .validate_path_for_write(effective_path)
+                        .map_err(|e| format!("Security error: {e}"));
+                }
+            }
+        }
+
         self.validate_path_with_error_for_write(effective_path, Some(target_session_id))
     }
 

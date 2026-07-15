@@ -35,12 +35,7 @@ impl TeamworkScaffoldStatus {
     fn missing_paths(&self) -> Vec<String> {
         self.missing_files
             .iter()
-            .map(|relative| {
-                Path::new(&self.artifact_path)
-                    .join(relative)
-                    .display()
-                    .to_string()
-            })
+            .map(|relative| format!("@teamwork/{}", relative.replace('\\', "/")))
             .collect()
     }
 
@@ -49,29 +44,21 @@ impl TeamworkScaffoldStatus {
 
         if !self.missing_files.is_empty() {
             guidance.push(format!(
-                "Missing teamwork scaffold files under {}: {}.",
-                self.artifact_path,
+                "Missing teamwork scaffold files: {}.",
                 self.missing_paths().join(", ")
             ));
         }
 
         if let Some(error) = self.manifest_parse_error.as_deref() {
             guidance.push(format!(
-                "{} exists but could not be parsed: {}.",
-                Path::new(&self.artifact_path)
-                    .join(".libragent")
-                    .join("teamwork.json")
-                    .display(),
+                "@teamwork/.libragent/teamwork.json exists but could not be parsed: {}.",
                 error
             ));
         } else if !self.manifest_present {
-            guidance.push(format!(
-                "Missing machine-readable teamwork manifest: {}.",
-                Path::new(&self.artifact_path)
-                    .join(".libragent")
-                    .join("teamwork.json")
-                    .display()
-            ));
+            guidance.push(
+                "Missing machine-readable teamwork manifest: @teamwork/.libragent/teamwork.json."
+                    .to_string(),
+            );
         } else {
             if self.execution_substrate_mode.as_deref() != Some("org") {
                 let mode = self
@@ -79,7 +66,7 @@ impl TeamworkScaffoldStatus {
                     .as_deref()
                     .unwrap_or("missing");
                 guidance.push(format!(
-                    ".libragent/teamwork.json should declare executionSubstrate.mode=\"org\" (current: {}).",
+                    "@teamwork/.libragent/teamwork.json should declare executionSubstrate.mode=\"org\" (current: {}).",
                     mode
                 ));
             }
@@ -90,7 +77,7 @@ impl TeamworkScaffoldStatus {
                     .map(|value| value.to_string())
                     .unwrap_or_else(|| "missing".to_string());
                 guidance.push(format!(
-                    ".libragent/teamwork.json should declare executionSubstrate.orgLineage.intended=true (current: {}).",
+                    "@teamwork/.libragent/teamwork.json should declare executionSubstrate.orgLineage.intended=true (current: {}).",
                     intended
                 ));
             }
@@ -198,10 +185,7 @@ pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Resul
 
     Err(guided_error(
         ErrorCategory::InvalidState,
-        format!(
-            "createOrg requires a complete org teamwork scaffold in the app-local artifact directory before explicit org identity can be created.\n\nChecked artifact directory: {}",
-            scaffold.artifact_path
-        ),
+        "createOrg requires a complete org teamwork scaffold in the teamwork directory before explicit org identity can be created.\n\nChecked directory: @teamwork/".to_string(),
         ToolGroup::Agent,
     )
     .with_guidance(guidance)
