@@ -155,7 +155,7 @@ impl WorkspaceServer {
 
                 return Ok(SuccessHint::new(
                     format!("Process {} is currently {:?}", process_id, status),
-                    SuccessHint::for_tool("pollProcess", ToolGroup::Workspace),
+                    SuccessHint::for_tool("waitForProcess", ToolGroup::Workspace),
                 )
                 .to_mcp_result_with_data(Some(response)));
             }

@@ -406,20 +406,17 @@ impl SuccessHint {
                 "Use waitForProcess(processId, 0) only to check status, not to unlock reading".to_string(),
                 "If processId is missing from the registry, use listProcesses() — do not assume it is still starting".to_string(),
             ],
-            ("listProcesses", ToolGroup::Workspace) => vec![
-                "Use waitForProcess(processId) to block until completion".to_string(),
-                "Use stopProcess(processId) to kill a stuck task".to_string(),
-            ],
+            ("listProcesses", ToolGroup::Workspace) => vec![],
             ("writeFile", ToolGroup::Workspace) => vec![
                 "Use readFile to verify the content".to_string(),
                 "Use listDirectory to see the file in context".to_string(),
             ],
             ("readFile", ToolGroup::Workspace) => vec![
-                "Use writeFile to modify the content".to_string(),
                 format!(
-                    "Use {} to make targeted edits",
+                    "Use {} for targeted in-place edits",
                     crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL
                 ),
+                "Use writeFile only to create, overwrite, or append whole files".to_string(),
             ],
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),

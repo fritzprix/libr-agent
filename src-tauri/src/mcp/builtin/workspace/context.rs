@@ -41,8 +41,8 @@ pub async fn build_context_prompt(
 ) -> String {
     let state = build_workspace_live_state(session_id, session_manager, shell_manager).await;
 
-    // ✅ ENHANCED: Get running processes with IDs and commands for AI visibility
-    let (total_count, running_processes_text) = {
+    // Running processes with IDs for AI visibility (finished-only totals omitted — no actionable IDs).
+    let running_processes_text = {
         match process_registry.try_read() {
             Ok(reg) => {
                 let mut running_processes: Vec<(String, String)> = reg
@@ -57,32 +57,23 @@ pub async fn build_context_prompt(
                 let running_count = running_processes.len();
                 let displayed_processes = running_processes.into_iter().take(5).collect::<Vec<_>>();
 
-                let total_count = reg
-                    .entries
-                    .values()
-                    .filter(|e| e.session_id == session_id)
-                    .count();
-
-                let running_text = if running_count == 0 {
+                if running_count == 0 {
                     "None".to_string()
                 } else {
                     let process_list = displayed_processes
                         .iter()
                         .map(|(id, cmd)| {
-                            // Truncate command if too long (safe string slicing)
                             let display_cmd = crate::utils::truncate_chars(cmd, 77);
                             format!("  • {} - {}", id, display_cmd)
                         })
                         .collect::<Vec<_>>()
                         .join("\n");
                     format!("{}\n{}", running_count, process_list)
-                };
-
-                (total_count, running_text)
+                }
             }
             Err(_) => {
                 // Lock is held by another task, return defaults to avoid blocking
-                (0, "None".to_string())
+                "None".to_string()
             }
         }
     };
@@ -104,8 +95,7 @@ pub async fn build_context_prompt(
 {isolation_lines}- Workspace Root: {workspace_dir}
 - Persistent Shell CWD: {shell_cwd}
 - Running Processes: {running_processes_text}
-- Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.
-- Total Processes: {total_count}",
+- Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.",
         workspace_dir = state.workspace_dir,
         shell_cwd = state.shell_cwd,
     )
