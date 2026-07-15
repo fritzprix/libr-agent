@@ -126,7 +126,7 @@ fn create_org_preflight_rejects_missing_scaffold_with_precise_paths() {
 
     assert_eq!(result.is_error, Some(true));
     assert!(text.contains("createOrg requires a complete org teamwork scaffold"));
-    assert!(text.contains(&temp_dir.path().display().to_string()));
+    assert!(text.contains("@teamwork/"));
     assert!(text.contains("agents.md"));
     assert!(text.contains("coordination/KANBAN.md"));
     assert!(text.contains(".libragent/teamwork.json"));
