@@ -67,13 +67,11 @@ pub async fn create_basic_isolated_command(
         }
     }
 
-    // Keep the host home directory for tool config discovery, but pin shell state to the workspace.
-    let tmp_dir = config.workspace_path.join(".libragent/tmp");
-    tokio::fs::create_dir_all(&tmp_dir)
-        .await
-        .map_err(|e| format!("Failed to create tmp dir: {}", e))?;
+    // Keep the host home directory for tool config discovery, and pass through host temp variable.
     cmd.env("PWD", &config.workspace_path);
-    cmd.env("TMPDIR", &tmp_dir);
+    if let Ok(sys_tmpdir) = std::env::var("TMPDIR") {
+        cmd.env("TMPDIR", sys_tmpdir);
+    }
     // Force English output for consistent AI reasoning
     cmd.env("LC_ALL", "C.UTF-8");
     cmd.env("LANG", "C.UTF-8");

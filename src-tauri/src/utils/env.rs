@@ -160,39 +160,79 @@ pub fn get_effective_path() -> String {
 /// Returns a list of environment variables that are safe to pass to external processes
 /// (whitelisted essential system variables), preventing the leakage of host secrets.
 pub fn get_isolated_env() -> Vec<(String, String)> {
-    let preserved_vars = [
-        "PATH",
-        "SystemRoot",              // Windows
-        "COMSPEC",                 // Windows
-        "PATHEXT",                 // Windows
-        "WINDIR",                  // Windows
-        "APPDATA",                 // Windows
-        "LOCALAPPDATA",            // Windows
-        "ProgramData",             // Windows
-        "ProgramFiles",            // Windows
-        "ProgramFiles(x86)",       // Windows
-        "CommonProgramFiles",      // Windows
-        "CommonProgramFiles(x86)", // Windows
+    #[cfg(windows)]
+    let platform_preserved = [
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "WINDIR",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "ProgramData",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "CommonProgramFiles",
+        "CommonProgramFiles(x86)",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "PSModulePath", // PowerShell module path (essential for PS tools)
+    ];
+
+    #[cfg(not(windows))]
+    let platform_preserved = [
         "HOME",
-        "USERPROFILE", // Windows
-        "HOMEDRIVE",   // Windows
-        "HOMEPATH",    // Windows
-        "TEMP",
-        "TMP",
-        "TMPDIR",
-        "TERM",
-        "LANG",
+        "USER",
+        "LOGNAME",
         "DISPLAY",                  // GUI session (Unix)
         "WAYLAND_DISPLAY",          // GUI session (Unix)
         "DBUS_SESSION_BUS_ADDRESS", // GUI session (Unix)
     ];
 
+    let common_preserved = [
+        "PATH",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "TERM",
+        "LANG",
+        // Network Proxies (Crucial for CLI tools and MCP servers under VPN/Proxy)
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    ];
+
+    let dynamic_prefixes = ["GIT_", "CONDA_", "npm_config_"];
+
+    let dynamic_exact = ["PYTHONPATH", "VIRTUAL_ENV"];
+
     let mut envs = Vec::new();
     for (key, value) in std::env::vars() {
-        #[cfg(windows)]
-        let is_preserved = preserved_vars.iter().any(|&p| p.eq_ignore_ascii_case(&key));
-        #[cfg(not(windows))]
-        let is_preserved = preserved_vars.contains(&key.as_str());
+        let is_preserved = {
+            #[cfg(windows)]
+            {
+                common_preserved
+                    .iter()
+                    .any(|&p| p.eq_ignore_ascii_case(&key))
+                    || platform_preserved
+                        .iter()
+                        .any(|&p| p.eq_ignore_ascii_case(&key))
+                    || dynamic_exact.iter().any(|&p| p.eq_ignore_ascii_case(&key))
+                    || dynamic_prefixes
+                        .iter()
+                        .any(|&p| key.len() >= p.len() && key[..p.len()].eq_ignore_ascii_case(p))
+            }
+            #[cfg(not(windows))]
+            {
+                common_preserved.contains(&key.as_str())
+                    || platform_preserved.contains(&key.as_str())
+                    || dynamic_exact.contains(&key.as_str())
+                    || dynamic_prefixes.iter().any(|&p| key.starts_with(p))
+            }
+        };
 
         // XDG_RUNTIME_DIR exposes live D-Bus / Wayland sockets under /run/user/<uid>;
         // isolated processes have no business accessing them.
