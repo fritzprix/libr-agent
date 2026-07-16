@@ -18,14 +18,16 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
     match short_circuit.kind {
         LoopPreventionKind::RepeatedErrorOutcome => format!(
             "Loop prevention: '{}' was called {} times with identical parameters and the same error outcome.\n\n\
-            This call was blocked. Do not retry with the same arguments. Review what you have already tried, \
+            This call was blocked. Do not retry with the same arguments. If retrying, use different \
+            parameters or a different tool. Review what you have already tried, \
             re-read the user's request, and choose a different tool or approach. If you are completely blocked, \
             report your current progress and the specific blocker to the user.",
             short_circuit.tool_name, short_circuit.count
         ),
         LoopPreventionKind::RepeatedSuccessOutcome => format!(
             "Loop prevention: '{}' was called {} times with identical parameters and the same successful result.\n\n\
-            This call was blocked. Repeating it will not change the outcome. If you are waiting for an external \
+            This call was blocked. Repeating it with the same arguments will not change the outcome. If retrying, use different \
+            parameters or a different tool. If you are waiting for an external \
             state change, use a delay first (for example `workspace__runShell` with `sleep 5`, or \
             `workspace__waitForProcess` for background processes), then retry with updated parameters if needed. \
             Otherwise choose a different tool or approach.",

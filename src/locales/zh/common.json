@@ -498,7 +498,11 @@
       "title": "高级运行时控制",
       "summary": "这些设置会更改运行时安全护栏、多代理限制和 shell 隔离。大多数用户应保持默认值。",
       "loopPreventionThreshold": "循环预防阈值",
-      "loopPreventionThresholdDescription": "在代理尝试自然恢复或触发强制停止之前，允许重复出现相同工具结果的次数。"
+      "loopPreventionThresholdDescription": "在代理尝试自然恢复或触发强制停止之前，允许重复出现相同工具结果的次数。",
+      "loopPreventionThresholdPlaceholder": "例如 3",
+      "loopPreventionHardBreakOffset": "强制停止偏移量",
+      "loopPreventionHardBreakOffsetPlaceholder": "例如 1",
+      "loopPreventionHardBreakOffsetDescription": "在自然恢复警告后允许的额外相同工具调用次数，超过该次数将强制停止工作流。当阈值=3且偏移量=1时，在第3次调用时触发自然恢复，在第4次调用时强制停止。"
     },
     "system": {
       "title": "系统与性能",

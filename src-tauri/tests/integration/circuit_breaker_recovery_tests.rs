@@ -57,7 +57,7 @@ fn evaluate(
     threshold: usize,
 ) -> Option<CircuitBreakerAction> {
     let call_signature_by_id = build_tool_call_indices(messages);
-    evaluate_circuit_breaker_action(messages, tool_call, &call_signature_by_id, threshold)
+    evaluate_circuit_breaker_action(messages, tool_call, &call_signature_by_id, threshold, 1)
 }
 
 #[test]
@@ -481,4 +481,284 @@ fn loop_prevention_blocks_do_not_reset_repeat_counter() {
         r#"{"path":"@teamwork/agents.md","content":"x"}"#,
     );
     assert_eq!(evaluate(&messages, &different_call, 3), None);
+}
+
+#[test]
+fn hard_break_offset_allows_configurable_retries() {
+    let repeated_args = r#"{"path":"src/main.ts"}"#;
+    let repeated_error = "Error: file not found";
+    let threshold = 3;
+    let offset = 2; // Hard break at 3 + 2 = 5
+
+    // Helper to evaluate with custom threshold and offset
+    let eval_custom = |msgs: &[Message], call: &ToolCall| -> Option<CircuitBreakerAction> {
+        let call_signature_by_id = build_tool_call_indices(msgs);
+        evaluate_circuit_breaker_action(msgs, call, &call_signature_by_id, threshold, offset)
+    };
+
+    let call_3 = test_tool_call("tc-3", "workspace__readFile", repeated_args);
+    let call_4 = test_tool_call("tc-4", "workspace__readFile", repeated_args);
+    let call_5 = test_tool_call("tc-5", "workspace__readFile", repeated_args);
+
+    let messages = vec![
+        test_message(
+            "assistant-1",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-1",
+                "workspace__readFile",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-1",
+            "tool",
+            None,
+            Some("tc-1"),
+            Some(serde_json::json!({ "toolError": true })),
+            repeated_error,
+            Some(true),
+        ),
+        test_message(
+            "assistant-2",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-2",
+                "workspace__readFile",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-2",
+            "tool",
+            None,
+            Some("tc-2"),
+            Some(serde_json::json!({ "toolError": true })),
+            repeated_error,
+            Some(true),
+        ),
+    ];
+
+    // 3rd call: count is 3 (consecutive matches 2 + 1). Should trigger Natural Recovery.
+    assert_eq!(
+        eval_custom(&messages, &call_3),
+        Some(CircuitBreakerAction::NaturalRecoveryError {
+            count: 3,
+            tool_name: "workspace__readFile".to_string(),
+            args: repeated_args.to_string(),
+        })
+    );
+
+    // Prepare history where 3rd call failed with natural recovery loop-prevention error
+    let loop_prevention = "Loop prevention: blocked";
+    let mut messages_with_recovery = messages.clone();
+    messages_with_recovery.push(test_message(
+        "assistant-3",
+        "assistant",
+        Some(vec![test_tool_call(
+            "tc-3",
+            "workspace__readFile",
+            repeated_args,
+        )]),
+        None,
+        None,
+        "",
+        None,
+    ));
+    messages_with_recovery.push(test_message(
+        "tool-3-loop-prevention",
+        "tool",
+        None,
+        Some("tc-3"),
+        Some(serde_json::json!({
+            "toolError": true,
+            "structuredContent": { "loopPrevention": true },
+            "loopPrevention": true
+        })),
+        loop_prevention,
+        Some(true),
+    ));
+
+    // 4th call: count is 4. Since offset is 2, hard break is at 5. Should execute normally (return None).
+    assert_eq!(eval_custom(&messages_with_recovery, &call_4), None);
+
+    // Prepare history where 4th call also returns an error (meaning the agent retried and failed)
+    let mut messages_with_retry_failure = messages_with_recovery.clone();
+    messages_with_retry_failure.push(test_message(
+        "assistant-4",
+        "assistant",
+        Some(vec![test_tool_call(
+            "tc-4",
+            "workspace__readFile",
+            repeated_args,
+        )]),
+        None,
+        None,
+        "",
+        None,
+    ));
+    messages_with_retry_failure.push(test_message(
+        "tool-4",
+        "tool",
+        None,
+        Some("tc-4"),
+        Some(serde_json::json!({ "toolError": true })),
+        repeated_error,
+        Some(true),
+    ));
+
+    // 5th call: count is 5. Matches hard_break_at = 5. Should trigger Hard Break.
+    assert_eq!(
+        eval_custom(&messages_with_retry_failure, &call_5),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 5,
+            tool_name: "workspace__readFile".to_string(),
+            args: repeated_args.to_string(),
+        })
+    );
+}
+
+#[test]
+fn hard_break_offset_correct_flow_with_different_args() {
+    let repeated_args = r#"{"path":"src/main.ts"}"#;
+    let different_args = r#"{"path":"src/index.ts"}"#;
+    let repeated_error = "Error: file not found";
+    let threshold = 3;
+    let offset = 2;
+
+    let eval_custom = |msgs: &[Message], call: &ToolCall| -> Option<CircuitBreakerAction> {
+        let call_signature_by_id = build_tool_call_indices(msgs);
+        evaluate_circuit_breaker_action(msgs, call, &call_signature_by_id, threshold, offset)
+    };
+
+    let call_3 = test_tool_call("tc-3", "workspace__readFile", repeated_args);
+    let different_call = test_tool_call("tc-4", "workspace__readFile", different_args);
+
+    let messages = vec![
+        test_message(
+            "assistant-1",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-1",
+                "workspace__readFile",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-1",
+            "tool",
+            None,
+            Some("tc-1"),
+            Some(serde_json::json!({ "toolError": true })),
+            repeated_error,
+            Some(true),
+        ),
+        test_message(
+            "assistant-2",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-2",
+                "workspace__readFile",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-2",
+            "tool",
+            None,
+            Some("tc-2"),
+            Some(serde_json::json!({ "toolError": true })),
+            repeated_error,
+            Some(true),
+        ),
+    ];
+
+    // 1st. 3rd identical call triggers Natural Recovery warning
+    assert_eq!(
+        eval_custom(&messages, &call_3),
+        Some(CircuitBreakerAction::NaturalRecoveryError {
+            count: 3,
+            tool_name: "workspace__readFile".to_string(),
+            args: repeated_args.to_string(),
+        })
+    );
+
+    // 2nd. Simulate that 3rd call failed with natural recovery block
+    let mut messages_with_recovery = messages.clone();
+    messages_with_recovery.push(test_message(
+        "assistant-3",
+        "assistant",
+        Some(vec![test_tool_call(
+            "tc-3",
+            "workspace__readFile",
+            repeated_args,
+        )]),
+        None,
+        None,
+        "",
+        None,
+    ));
+    messages_with_recovery.push(test_message(
+        "tool-3-loop-prevention",
+        "tool",
+        None,
+        Some("tc-3"),
+        Some(serde_json::json!({
+            "toolError": true,
+            "structuredContent": { "loopPrevention": true },
+            "loopPrevention": true
+        })),
+        "Loop prevention: blocked",
+        Some(true),
+    ));
+
+    // 3rd. Now the agent retries with DIFFERENT arguments.
+    // This should execute successfully (return None) and break the loop.
+    assert_eq!(eval_custom(&messages_with_recovery, &different_call), None);
+
+    // 4th. Simulate that the different call executed successfully
+    let mut messages_with_success = messages_with_recovery.clone();
+    messages_with_success.push(test_message(
+        "assistant-4",
+        "assistant",
+        Some(vec![test_tool_call(
+            "tc-4",
+            "workspace__readFile",
+            different_args,
+        )]),
+        None,
+        None,
+        "",
+        None,
+    ));
+    messages_with_success.push(test_message(
+        "tool-4",
+        "tool",
+        None,
+        Some("tc-4"),
+        None,
+        "file contents",
+        Some(false),
+    ));
+
+    // 5th. If the agent now requests the original readFile with repeated_args again,
+    // the streak has been broken/reset, so it should not trigger recovery or hard break.
+    let call_5 = test_tool_call("tc-5", "workspace__readFile", repeated_args);
+    assert_eq!(eval_custom(&messages_with_success, &call_5), None);
 }

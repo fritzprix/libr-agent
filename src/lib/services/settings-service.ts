@@ -33,6 +33,7 @@ export interface AdvancedSettings {
   maxConcurrentActiveProcesses: number; // default 10 — simultaneous shell processes
   maxSuspendedProcesses: number; // default 20 — processes blocked on pollProcess
   loopPreventionThreshold: number; // default 3 - number of repeated identical tool outcomes to trigger natural recovery
+  loopPreventionHardBreakOffset: number; // default 1 - gap between natural recovery warning and hard break
 }
 
 export interface DisplaySettings {
@@ -121,6 +122,7 @@ export const DEFAULT_SETTING: Settings = {
     maxConcurrentActiveProcesses: 10,
     maxSuspendedProcesses: 20,
     loopPreventionThreshold: 3,
+    loopPreventionHardBreakOffset: 1,
   },
   display: {
     metricDisplayMode: 'inline',
