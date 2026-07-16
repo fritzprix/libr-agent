@@ -1,6 +1,5 @@
 use super::super::edit_mode::{
-    read_file_anchor_output_suffix, read_file_anchor_prefix_note, read_file_primary_next_action,
-    read_file_secondary_next_action, LINE_ANCHORS_ENABLED,
+    read_file_anchor_output_suffix, read_file_anchor_prefix_note, LINE_ANCHORS_ENABLED,
 };
 use super::super::WorkspaceServer;
 use super::utils::{
@@ -268,20 +267,9 @@ impl WorkspaceServer {
                     )
                 };
 
-                let first_hint = read_file_primary_next_action(show_line_anchors);
-                let mut next_actions = vec![first_hint];
-                next_actions.push(read_file_secondary_next_action().to_string());
-                next_actions.push("writeFile for full file replacement".to_string());
-                if let Some(next_start_line) = chunk.next_start_line {
-                    next_actions.insert(
-                        0,
-                        format!(
-                            "Read the next chunk with readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": {}}})",
-                            path_str, next_start_line, chunk.displayed_line_count
-                        ),
-                    );
-                }
-                let hint = SuccessHint::new(text_message, next_actions);
+                // Omit edit-promotion next-action hints on successful reads.
+                // Truncation / next-chunk coaching stays in the message body above.
+                let hint = SuccessHint::new(text_message, vec![]);
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
                     "content": chunk.content,

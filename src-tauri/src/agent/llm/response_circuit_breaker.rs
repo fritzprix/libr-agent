@@ -59,53 +59,116 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                     let call_signature_by_id = circuit_breaker::build_tool_call_indices(&messages);
 
                     let mut hard_break = None;
-                    for (index, tool_call) in tool_calls.iter().enumerate() {
-                        let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
-                            &messages,
-                            tool_call,
-                            &call_signature_by_id,
-                            loop_threshold,
-                            loop_break_offset,
-                        ) else {
-                            continue;
-                        };
 
+                    // Cross-turn identical mixed batches ([a,b,c] → [a,b,c]) are invisible
+                    // to the per-tool result streak scanner — check batch fingerprints first.
+                    if let Some(action) = circuit_breaker::evaluate_batch_circuit_breaker(
+                        &messages,
+                        tool_calls,
+                        loop_threshold,
+                        loop_break_offset,
+                    ) {
                         match action {
                             circuit_breaker::CircuitBreakerAction::HardBreak {
                                 count,
                                 tool_name,
                                 args,
                             } => {
-                                hard_break = Some((index, count, tool_name, args));
-                                break;
+                                hard_break = Some((0, count, tool_name, args));
                             }
-                            circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
+                            circuit_breaker::CircuitBreakerAction::RepeatedBatchSequence {
                                 count,
                                 tool_name,
                                 ..
                             } => {
-                                loop_prevention_short_circuits.insert(
-                                    tool_call.id.clone(),
-                                    LoopPreventionShortCircuit {
-                                        kind: LoopPreventionKind::RepeatedErrorOutcome,
-                                        tool_name,
-                                        count,
-                                    },
-                                );
+                                // Identical batch fingerprint ⇒ every call is part of
+                                // the repeated sequence; short-circuit the whole batch.
+                                for tool_call in tool_calls.iter() {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::RepeatedBatchSequence,
+                                            tool_name: tool_name.clone(),
+                                            count,
+                                        },
+                                    );
+                                }
                             }
-                            circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
-                                count,
-                                tool_name,
-                                ..
-                            } => {
+                            _ => {}
+                        }
+                    }
+
+                    if hard_break.is_none() && loop_prevention_short_circuits.is_empty() {
+                        let intra_batch_duplicates =
+                            circuit_breaker::find_intra_batch_duplicates(tool_calls);
+
+                        for (index, tool_call) in tool_calls.iter().enumerate() {
+                            if let Some(
+                                circuit_breaker::CircuitBreakerAction::DuplicateInBatch {
+                                    tool_name,
+                                    ..
+                                },
+                            ) = intra_batch_duplicates.get(&tool_call.id)
+                            {
                                 loop_prevention_short_circuits.insert(
                                     tool_call.id.clone(),
                                     LoopPreventionShortCircuit {
-                                        kind: LoopPreventionKind::RepeatedSuccessOutcome,
-                                        tool_name,
-                                        count,
+                                        kind: LoopPreventionKind::DuplicateInBatch,
+                                        tool_name: tool_name.clone(),
+                                        count: 2,
                                     },
                                 );
+                                continue;
+                            }
+
+                            let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
+                                &messages,
+                                tool_call,
+                                &call_signature_by_id,
+                                loop_threshold,
+                                loop_break_offset,
+                            ) else {
+                                continue;
+                            };
+
+                            match action {
+                                circuit_breaker::CircuitBreakerAction::HardBreak {
+                                    count,
+                                    tool_name,
+                                    args,
+                                } => {
+                                    hard_break = Some((index, count, tool_name, args));
+                                    break;
+                                }
+                                circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
+                                    count,
+                                    tool_name,
+                                    ..
+                                } => {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::RepeatedErrorOutcome,
+                                            tool_name,
+                                            count,
+                                        },
+                                    );
+                                }
+                                circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
+                                    count,
+                                    tool_name,
+                                    ..
+                                } => {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::RepeatedSuccessOutcome,
+                                            tool_name,
+                                            count,
+                                        },
+                                    );
+                                }
+                                _ => {}
                             }
                         }
                     }

@@ -132,6 +132,14 @@ async fn list_directory_empty_response_does_not_suggest_rerunning_same_call() {
         !text.contains("💡 Next Steps:"),
         "listDirectory should not duplicate next-step rendering in the message body: {text}"
     );
+    assert!(
+        !text.contains("💡 Next:"),
+        "listDirectory success should not append generic next-action hints: {text}"
+    );
+    assert!(
+        !text.contains("writeFile"),
+        "empty listDirectory should not promote writeFile: {text}"
+    );
 }
 
 #[tokio::test]

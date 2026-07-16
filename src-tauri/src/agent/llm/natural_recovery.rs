@@ -5,6 +5,10 @@ use crate::mcp::types::MCPContent;
 pub enum LoopPreventionKind {
     RepeatedErrorOutcome,
     RepeatedSuccessOutcome,
+    /// Same (name, args) appeared earlier in the current assistant tool_calls batch.
+    DuplicateInBatch,
+    /// The whole tool_calls batch fingerprint repeated across consecutive turns.
+    RepeatedBatchSequence,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +35,18 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
             state change, use a delay first (for example `workspace__runShell` with `sleep 5`, or \
             `workspace__waitForProcess` for background processes), then retry with updated parameters if needed. \
             Otherwise choose a different tool or approach.",
+            short_circuit.tool_name, short_circuit.count
+        ),
+        LoopPreventionKind::DuplicateInBatch => format!(
+            "Loop prevention: '{}' appears more than once in this tool-call batch with identical parameters.\n\n\
+            Duplicate calls in the same turn were blocked. Keep a single call per unique (tool, arguments) pair, \
+            then continue with a different tool or updated arguments.",
+            short_circuit.tool_name
+        ),
+        LoopPreventionKind::RepeatedBatchSequence => format!(
+            "Loop prevention: the same tool-call batch (including '{}') was repeated {} times across consecutive turns.\n\n\
+            This call was blocked. Repeating the identical mixed batch will not change the outcome. \
+            Change at least one tool or its arguments, or choose a different approach based on results you already have.",
             short_circuit.tool_name, short_circuit.count
         ),
     }
