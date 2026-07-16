@@ -1,6 +1,7 @@
 use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
+use serde_json::json;
 
 /// Get all planning tools
 pub fn all_tools() -> Vec<MCPTool> {
@@ -159,9 +160,9 @@ fn update_todo_tool() -> MCPTool {
                 (
                     "id".to_string(),
                     integer_prop(
+                        Some(1),
                         None,
-                        None,
-                        Some("The unique todo ID. Use getCurrentState to see current todo IDs."),
+                        Some("The unique todo ID (>= 1). Use getCurrentState to see current todo IDs."),
                     ),
                 ),
                 (
@@ -231,9 +232,13 @@ fn get_current_state_tool() -> MCPTool {
             vec![
                 (
                     "include_checked".to_string(),
-                    boolean_prop(Some(
-                        "Whether to include checked todos in the output. Defaults to true.",
-                    )),
+                    {
+                        let mut schema = boolean_prop(Some(
+                            "Whether to include checked todos in the output.",
+                        ));
+                        schema.default = Some(json!(true));
+                        schema
+                    },
                 ),
             ],
             vec![],

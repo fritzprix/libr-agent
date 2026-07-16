@@ -32,7 +32,7 @@ pub fn create_read_file_tool() -> MCPTool {
         integer_prop(
             None,
             None,
-            Some("Starting line index (1-based or 0-based; both 0 and 1 start at the first line). Alias to startLine. Can be negative in tail mode to skip from the end (e.g. -100)."),
+            Some("Starting line index (1-based or 0-based; both 0 and 1 start at the first line). Can be negative in tail mode to skip from the end (e.g. -100)."),
         ),
     );
     props.insert(
@@ -124,8 +124,8 @@ pub fn create_list_directory_tool() -> MCPTool {
         "limit".to_string(),
         integer_prop(
             Some(1),
-            Some(1000),
-            Some("Maximum number of items to return (default: 100)"),
+            Some(500),
+            Some("Maximum number of items to return (default: 100, max: 500)"),
         ),
     );
     props.insert(

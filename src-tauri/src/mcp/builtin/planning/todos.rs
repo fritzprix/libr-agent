@@ -139,7 +139,6 @@ pub async fn add_todo(
                 next_hints,
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
-                "id": cuid2::create_id(),
                 "success": true,
                 "todoId": id,
                 "todo": title
@@ -280,7 +279,6 @@ pub async fn check_todo(
     );
 
     Ok(hint.to_mcp_result_with_data(Some(json!({
-        "id": cuid2::create_id(),
         "success": true,
         "todoId": todo_id,
         "checked": checked
@@ -370,7 +368,6 @@ pub async fn cancel_todo(
     );
 
     Ok(hint.to_mcp_result_with_data(Some(json!({
-        "id": cuid2::create_id(),
         "success": true,
         "todoId": todo_id,
         "todo": todo_content

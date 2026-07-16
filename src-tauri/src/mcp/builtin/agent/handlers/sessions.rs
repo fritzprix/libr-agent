@@ -151,12 +151,11 @@ async fn start_session_impl(
     let session_id = response.id;
 
     if wait_for_result {
-        return check_session(
-            server,
-            json!({ "sessionId": session_id, "wait": true }),
-            caller_session_id,
-        )
-        .await;
+        let mut check_args = json!({ "sessionId": session_id, "wait": true });
+        if let Some(timeout) = args.get("timeout") {
+            check_args["timeout"] = timeout.clone();
+        }
+        return check_session(server, check_args, caller_session_id).await;
     }
 
     let workspace_note = if let Some(workspace_path) = effective_workspace_path.as_deref() {

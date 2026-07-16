@@ -61,7 +61,6 @@ pub async fn create_goal(
 
     match repo.create_goal(session_id, goal_text).await {
         Ok(id) => {
-            let response_id = cuid2::create_id();
             let mut next_hints = vec![
                 "Use addTodo to break down this goal into tasks".to_string(),
                 "Use getCurrentState to review the full plan".to_string(),
@@ -81,7 +80,6 @@ pub async fn create_goal(
             );
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
-                "id": response_id,
                 "success": true,
                 "goal": goal_text,
                 "goalId": id
@@ -122,7 +120,6 @@ pub async fn update_goal(
     match repo.update_goal(session_id, goal_text).await {
         Ok(updated) => {
             if updated {
-                let response_id = cuid2::create_id();
                 let mut next_hints = vec![
                     "Use addTodo to add tasks for this updated goal".to_string(),
                     "Use getCurrentState to review changes".to_string(),
@@ -143,7 +140,6 @@ pub async fn update_goal(
                 );
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "id": response_id,
                     "success": true,
                     "goal": goal_text
                 }))))

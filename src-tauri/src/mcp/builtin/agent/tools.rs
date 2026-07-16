@@ -196,7 +196,7 @@ fn start_session_tool() -> MCPTool {
             &[
                 "Pass agentId (config ID, not name) and a clear task description.",
                 "Org children inherit org workspace by default unless workspaceOverride is set.",
-                "Set waitForResult=true to block until the child finishes.",
+                "Set waitForResult=true to block until the child finishes (optional timeout, default 3600s).",
             ],
             &[
                 "Poll or wait with agent__checkSession.",
@@ -208,10 +208,19 @@ fn start_session_tool() -> MCPTool {
                 ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call agent__listAgents(type='configs') first, then use the returned ID. Do not put the agent name here.")),
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
                 ("waitForResult".to_string(), {
-                    let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer."));
+                    let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. Uses timeout (default 3600s) as the maximum wait."));
                     schema.default = Some(json!(false));
                     schema
                 }),
+                (
+                    "timeout".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(3600),
+                        3600,
+                        Some("Maximum seconds to wait when waitForResult is true. Ignored otherwise."),
+                    ),
+                ),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
             ],
             vec!["agentId".to_string(), "task".to_string()],
