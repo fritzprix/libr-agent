@@ -110,9 +110,33 @@ fn mixed_batch_history() -> Vec<Message> {
             "",
             None,
         ),
-        test_message("tool-1a", "tool", None, Some("tc-1a"), None, "ok a", Some(false)),
-        test_message("tool-1b", "tool", None, Some("tc-1b"), None, "ok b", Some(false)),
-        test_message("tool-1c", "tool", None, Some("tc-1c"), None, "ok c", Some(false)),
+        test_message(
+            "tool-1a",
+            "tool",
+            None,
+            Some("tc-1a"),
+            None,
+            "ok a",
+            Some(false),
+        ),
+        test_message(
+            "tool-1b",
+            "tool",
+            None,
+            Some("tc-1b"),
+            None,
+            "ok b",
+            Some(false),
+        ),
+        test_message(
+            "tool-1c",
+            "tool",
+            None,
+            Some("tc-1c"),
+            None,
+            "ok c",
+            Some(false),
+        ),
         test_message(
             "assistant-2",
             "assistant",
@@ -122,9 +146,33 @@ fn mixed_batch_history() -> Vec<Message> {
             "",
             None,
         ),
-        test_message("tool-2a", "tool", None, Some("tc-2a"), None, "ok a", Some(false)),
-        test_message("tool-2b", "tool", None, Some("tc-2b"), None, "ok b", Some(false)),
-        test_message("tool-2c", "tool", None, Some("tc-2c"), None, "ok c", Some(false)),
+        test_message(
+            "tool-2a",
+            "tool",
+            None,
+            Some("tc-2a"),
+            None,
+            "ok a",
+            Some(false),
+        ),
+        test_message(
+            "tool-2b",
+            "tool",
+            None,
+            Some("tc-2b"),
+            None,
+            "ok b",
+            Some(false),
+        ),
+        test_message(
+            "tool-2c",
+            "tool",
+            None,
+            Some("tc-2c"),
+            None,
+            "ok c",
+            Some(false),
+        ),
     ]
 }
 
@@ -320,13 +368,7 @@ fn batch_fingerprint_hashes_when_over_size_cap() {
     // Build a batch whose joined signatures exceed MAX_BATCH_FINGERPRINT_BYTES.
     let huge_args = format!(r#"{{"blob":"{}"}}"#, "x".repeat(40_000));
     let tool_calls: Vec<_> = (0..3)
-        .map(|i| {
-            test_tool_call(
-                &format!("tc-{i}"),
-                "workspace__readFile",
-                &huge_args,
-            )
-        })
+        .map(|i| test_tool_call(&format!("tc-{i}"), "workspace__readFile", &huge_args))
         .collect();
 
     let fingerprint = batch_fingerprint(&tool_calls);

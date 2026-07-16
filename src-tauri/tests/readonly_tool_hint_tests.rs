@@ -64,10 +64,7 @@ async fn list_directory_success_omits_generic_next_actions() {
     std::fs::create_dir_all(workspace_dir.join("empty")).expect("create empty dir");
 
     let result = server
-        .handle_list_directory(
-            json!({ "path": "empty" }),
-            Some(session_id.to_string()),
-        )
+        .handle_list_directory(json!({ "path": "empty" }), Some(session_id.to_string()))
         .await
         .expect("listDirectory should succeed");
 

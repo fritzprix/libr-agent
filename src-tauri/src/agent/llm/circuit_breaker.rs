@@ -18,10 +18,7 @@ pub enum CircuitBreakerAction {
         args: String,
     },
     /// Same (name, args) already present earlier in the current tool_calls batch.
-    DuplicateInBatch {
-        tool_name: String,
-        args: String,
-    },
+    DuplicateInBatch { tool_name: String, args: String },
     /// Entire assistant tool_calls batch fingerprint repeated across turns.
     RepeatedBatchSequence {
         count: usize,

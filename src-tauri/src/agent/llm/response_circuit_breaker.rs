@@ -103,12 +103,10 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                             circuit_breaker::find_intra_batch_duplicates(tool_calls);
 
                         for (index, tool_call) in tool_calls.iter().enumerate() {
-                            if let Some(
-                                circuit_breaker::CircuitBreakerAction::DuplicateInBatch {
-                                    tool_name,
-                                    ..
-                                },
-                            ) = intra_batch_duplicates.get(&tool_call.id)
+                            if let Some(circuit_breaker::CircuitBreakerAction::DuplicateInBatch {
+                                tool_name,
+                                ..
+                            }) = intra_batch_duplicates.get(&tool_call.id)
                             {
                                 loop_prevention_short_circuits.insert(
                                     tool_call.id.clone(),
