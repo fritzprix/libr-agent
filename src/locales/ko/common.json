@@ -504,7 +504,11 @@
       "title": "고급 런타임 제어",
       "summary": "런타임 안전장치, 다중 에이전트 제한 및 셸 격리를 변경하는 설정입니다. 일반 사용자는 기본값을 유지하는 것이 좋습니다.",
       "loopPreventionThreshold": "루프 방지 임계값",
-      "loopPreventionThresholdDescription": "에이전트가 자연적 복구를 시도하거나 강제 중단을 발생시키기 전까지 반복되는 동일한 도구 결과의 수입니다."
+      "loopPreventionThresholdDescription": "에이전트가 자연적 복구를 시도하거나 강제 중단을 발생시키기 전까지 반복되는 동일한 도구 결과의 수입니다.",
+      "loopPreventionThresholdPlaceholder": "예: 3",
+      "loopPreventionHardBreakOffset": "하드 브레이크 오프셋",
+      "loopPreventionHardBreakOffsetPlaceholder": "예: 1",
+      "loopPreventionHardBreakOffsetDescription": "자연적 복구 경고 후 워크플로우를 강제로 중단하기 전에 허용되는 추가 동일 도구 호출 수. 임계값=3, 오프셋=1일 경우 3번째 호출에서 경고, 4번째 호출에서 중단."
     },
     "system": {
       "title": "시스템 & 성능",

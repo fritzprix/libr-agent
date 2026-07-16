@@ -46,7 +46,8 @@ pub(crate) async fn preprocess_assistant_tool_calls(
     let mut loop_prevention_short_circuits = HashMap::new();
 
     if let Some(tool_calls) = &assistant_message.tool_calls {
-        let loop_threshold = circuit_breaker::load_loop_prevention_threshold().await;
+        let (loop_threshold, loop_break_offset) =
+            circuit_breaker::load_loop_prevention_settings().await;
 
         let (session_metadata, hard_break) = {
             let sessions = active_sessions.read().await;
@@ -64,6 +65,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                             tool_call,
                             &call_signature_by_id,
                             loop_threshold,
+                            loop_break_offset,
                         ) else {
                             continue;
                         };
@@ -164,7 +166,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                     forced_circuit_break_message =
                         Some(crate::mcp::types::MCPContent::Text {
                             text: format!(
-                                "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).\n\nThe 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls.",
+                                "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).\n\nThe 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls. Review your last attempts and propose a fundamentally different approach.",
                                 tool_name, count
                             ),
                             is_error: None,

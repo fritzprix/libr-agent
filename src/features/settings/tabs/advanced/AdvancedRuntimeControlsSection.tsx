@@ -22,7 +22,7 @@ function AdvancedRuntimeControlsSectionComponent({
           'Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop.',
         )}
         placeholder={t(
-          'settings.advanced.defaultSessionMaxDepthPlaceholder',
+          'settings.advanced.loopPreventionThresholdPlaceholder',
           'e.g., 3',
         )}
         min={2}
@@ -41,6 +41,35 @@ function AdvancedRuntimeControlsSectionComponent({
 
       <NumberSettingField
         label={t(
+          'settings.advanced.loopPreventionHardBreakOffset',
+          'Hard Break Offset',
+        )}
+        description={t(
+          'settings.advanced.loopPreventionHardBreakOffsetDescription',
+          'Additional identical tool calls allowed after natural recovery warning before hard-stopping the workflow. With threshold=3 and offset=1, natural recovery fires at call 3 and hard break at call 4.',
+        )}
+        placeholder={t(
+          'settings.advanced.loopPreventionHardBreakOffsetPlaceholder',
+          'e.g., 1',
+        )}
+        min={1}
+        max={20}
+        step={1}
+        value={localAdvancedSettings.loopPreventionHardBreakOffset ?? 1}
+        parseValue={(rawValue) =>
+          parseIntegerInput(rawValue, {
+            fallback: 1,
+            min: 1,
+            max: 20,
+          })
+        }
+        onValueChange={(value) =>
+          onChange('loopPreventionHardBreakOffset', value)
+        }
+      />
+
+      <NumberSettingField
+        label={t(
           'settings.advanced.defaultSessionMaxDepth',
           'Session Branching Limit (Advanced)',
         )}
@@ -49,8 +78,8 @@ function AdvancedRuntimeControlsSectionComponent({
           'Controls how many child-session levels are allowed by default. Set 0 for unlimited. Most users can leave this as-is.',
         )}
         placeholder={t(
-          'settings.advanced.defaultSessionMaxFanoutPlaceholder',
-          '0 = unlimited',
+          'settings.advanced.defaultSessionMaxDepthPlaceholder',
+          'e.g., 3',
         )}
         min={0}
         max={64}

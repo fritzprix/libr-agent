@@ -73,24 +73,34 @@ pub fn build_tool_call_indices(messages: &[Message]) -> std::collections::HashMa
     call_signature_by_id
 }
 
-pub(crate) async fn load_loop_prevention_threshold() -> usize {
+pub(crate) async fn load_loop_prevention_settings() -> (usize, usize) {
     let default_threshold = 3;
+    let default_offset = 1;
     let Some(settings_repo) = crate::state::try_get_settings_repository() else {
-        return default_threshold;
+        return (default_threshold, default_offset);
     };
 
-    let val = match settings_repo.get("advancedSettings").await {
+    match settings_repo.get("advancedSettings").await {
         Ok(Some(model)) => match serde_json::from_str::<serde_json::Value>(&model.value) {
-            Ok(json) => json
-                .get("loopPreventionThreshold")
-                .and_then(|value| value.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(default_threshold),
-            Err(_) => default_threshold,
+            Ok(json) => {
+                let threshold = json
+                    .get("loopPreventionThreshold")
+                    .and_then(|value| value.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(default_threshold)
+                    .clamp(2, 20);
+                let offset = json
+                    .get("loopPreventionHardBreakOffset")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(default_offset)
+                    .clamp(1, 20);
+                (threshold, offset)
+            }
+            Err(_) => (default_threshold, default_offset),
         },
-        _ => default_threshold,
-    };
-    val.clamp(2, 20)
+        _ => (default_threshold, default_offset),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,6 +239,7 @@ pub fn evaluate_circuit_breaker_action(
     tool_call: &ToolCall,
     call_signature_by_id: &std::collections::HashMap<String, String>,
     threshold: usize,
+    hard_break_offset: usize,
 ) -> Option<CircuitBreakerAction> {
     let tool_name = &tool_call.function.name;
     let args = &tool_call.function.arguments;
@@ -247,8 +258,9 @@ pub fn evaluate_circuit_breaker_action(
         })
     {
         let total_count = consecutive_identical_signature + 1;
+        let hard_break_at = threshold + hard_break_offset;
 
-        if total_count > threshold {
+        if total_count >= hard_break_at {
             return Some(CircuitBreakerAction::HardBreak {
                 count: total_count,
                 tool_name: tool_name.clone(),
