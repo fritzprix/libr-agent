@@ -8,11 +8,13 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { listen } from '@tauri-apps/api/event';
 
 import {
   useAgentSessionActions,
   useAgentSessionState,
 } from '@/context/AgentSessionContext';
+import type { AgentEventPayload } from '@/context/agent-session/types';
 import type { AgentResponse, InjectMessagesRequest } from '@/models/agent-ipc';
 import type { Message, MessageError, RustMessage } from '@/models/chat';
 import type { ServiceContext } from '@/models/service-context';
@@ -203,6 +205,62 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     } else {
       setServiceContexts({});
     }
+  }, [session?.id, updateServiceContexts]);
+
+  // Keep serviceContexts in sync with backend clear events:
+  // - session clear (/clear): wipe UI immediately, then refetch
+  // - planning clear (scheduled reset_planning_state): refetch only
+  useEffect(() => {
+    const sessionId = session?.id;
+    if (!sessionId) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    let isMounted = true;
+
+    void listen<AgentEventPayload>('agent:event', (event) => {
+      if (!isMounted) return;
+
+      const payload = event.payload;
+      if (payload.type !== 'resourceUpdated' || payload.action !== 'clear') {
+        return;
+      }
+      if (payload.resourceId !== sessionId) {
+        return;
+      }
+
+      if (payload.resourceType === 'session') {
+        setServiceContexts({});
+        void updateServiceContexts().catch((err: unknown) =>
+          logger.error(
+            'Failed to refresh service contexts after session clear',
+            err,
+          ),
+        );
+        return;
+      }
+
+      if (payload.resourceType === 'planning') {
+        void updateServiceContexts().catch((err: unknown) =>
+          logger.error(
+            'Failed to refresh service contexts after planning clear',
+            err,
+          ),
+        );
+      }
+    }).then((fn) => {
+      if (isMounted) {
+        unlisten = fn;
+      } else {
+        fn();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (unlisten) unlisten();
+    };
   }, [session?.id, updateServiceContexts]);
 
   // Reactive Service Context Update:

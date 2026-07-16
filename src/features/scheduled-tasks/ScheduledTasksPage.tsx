@@ -24,6 +24,7 @@ interface ScheduledTaskFormData {
   message: string;
   executionMode: ExecutionMode;
   workspaceOverride: string | null;
+  resetPlanningState: boolean;
 }
 
 export function ScheduledTasksPage() {

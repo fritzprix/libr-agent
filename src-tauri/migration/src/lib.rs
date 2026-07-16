@@ -42,6 +42,7 @@ mod m20260613_000037_add_unsafe_mode_to_scheduled_tasks;
 mod m20260614_000038_drop_group_fields_from_scheduled_tasks;
 mod m20260621_000039_normalize_execution_mode_columns;
 mod m20260704_000040_add_docker_workspace_isolation;
+mod m20260716_000041_add_reset_planning_state_to_scheduled_tasks;
 
 pub struct Migrator;
 
@@ -89,6 +90,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260614_000038_drop_group_fields_from_scheduled_tasks::Migration),
             Box::new(m20260621_000039_normalize_execution_mode_columns::Migration),
             Box::new(m20260704_000040_add_docker_workspace_isolation::Migration),
+            Box::new(m20260716_000041_add_reset_planning_state_to_scheduled_tasks::Migration),
         ]
     }
 }

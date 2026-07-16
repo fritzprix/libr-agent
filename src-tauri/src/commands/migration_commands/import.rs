@@ -655,6 +655,7 @@ async fn import_tasks_data(
             active.created_by_session_id = Set(r.created_by_session_id);
             active.session_id = Set(r.session_id);
             active.workspace_override = Set(r.workspace_override);
+            active.reset_planning_state = Set(r.reset_planning_state);
             active.enabled = Set(r.enabled);
             active.last_run_at = Set(r.last_run_at);
             active.next_run_at = Set(r.next_run_at);
@@ -677,6 +678,7 @@ async fn import_tasks_data(
                 created_by_session_id: Set(r.created_by_session_id),
                 session_id: Set(r.session_id),
                 workspace_override: Set(r.workspace_override),
+                reset_planning_state: Set(r.reset_planning_state),
                 enabled: Set(r.enabled),
                 last_run_at: Set(r.last_run_at),
                 next_run_at: Set(r.next_run_at),

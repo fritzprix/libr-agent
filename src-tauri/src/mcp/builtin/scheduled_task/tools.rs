@@ -166,6 +166,12 @@ fn create_scheduled_task_tool() -> MCPTool {
                         Some("Optional absolute workspace directory to use when the task runs."),
                     ),
                 ),
+                (
+                    "resetPlanningState".to_string(),
+                    boolean_prop(Some(
+                        "When true, clear goal/todo/scratchpad before injecting the task message. Does not wipe chat history. Defaults to false.",
+                    )),
+                ),
             ],
             vec![
                 "name".to_string(),
@@ -324,6 +330,12 @@ fn update_scheduled_task_tool() -> MCPTool {
                 (
                     "clearWorkspaceOverride".to_string(),
                     boolean_prop(Some("Set true to remove the workspace override.")),
+                ),
+                (
+                    "resetPlanningState".to_string(),
+                    boolean_prop(Some(
+                        "When true, clear goal/todo/scratchpad before each run. Does not wipe chat history.",
+                    )),
                 ),
                 (
                     "enabled".to_string(),

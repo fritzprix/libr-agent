@@ -274,6 +274,7 @@ pub async fn export_migration(
             created_by_session_id: t.created_by_session_id,
             session_id: t.session_id,
             workspace_override: t.workspace_override,
+            reset_planning_state: t.reset_planning_state,
             enabled: t.enabled,
             last_run_at: t.last_run_at,
             next_run_at: t.next_run_at,
