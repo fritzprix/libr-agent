@@ -26,7 +26,9 @@ pub fn read_file_tool_hint() -> &'static str {
     if LINE_ANCHORS_ENABLED {
         "Use showLineAnchors=true when you need anchors for editFile."
     } else {
-        "Read files before strReplace so old_string matches the on-disk content exactly."
+        // Kept in the tool schema (not success next-actions) so edit workflows
+        // still see a minimal affordance without padding every read result.
+        "When editing afterward, copy the exact on-disk text into strReplace."
     }
 }
 
@@ -46,52 +48,18 @@ pub fn search_show_line_anchors_schema_hint() -> &'static str {
     "Include edit anchors in results for use with editFile (default: false). Anchored lines look like '42:a31f2c|...'; for edit tools, pass only the 6-character anchor (for example 'a31f2c')."
 }
 
-pub fn read_file_primary_next_action(show_line_anchors: bool) -> String {
-    if LINE_ANCHORS_ENABLED {
-        if show_line_anchors {
-            "Use editFile with only the 6-character startAnchor in edits[]; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
-        } else {
-            "If you plan to use editFile next, rerun with showLineAnchors=true to get anchors"
-                .to_string()
-        }
-    } else {
-        "Copy the exact text block you want to change into strReplace.old_string".to_string()
-    }
-}
-
-pub fn read_file_secondary_next_action() -> &'static str {
-    if LINE_ANCHORS_ENABLED {
-        "Use editFile with op='insert_after', startLine, and startAnchor in edits[] to insert below an existing line"
-    } else {
-        "Use strReplace when you already know the exact old_string to replace"
-    }
-}
-
 pub fn search_inline_match_footer(show_hashes: bool) -> String {
     if LINE_ANCHORS_ENABLED {
         if show_hashes {
-            "Use the returned anchors with editFile. For range replacement/deletion, also copy endAnchor from the exact end line.\n".to_string()
-        } else {
-            "If you plan to use editFile next, run again with `showLineAnchors: true` to get anchors.\n"
+            "Anchors above can be passed to editFile; include endAnchor for range edits.\n"
                 .to_string()
-        }
-    } else {
-        let _ = show_hashes;
-        "Use readFile on a match, then strReplace with the exact old_string copied from that output.\n"
-            .to_string()
-    }
-}
-
-pub fn search_directory_next_step(show_hashes: bool) -> &'static str {
-    if LINE_ANCHORS_ENABLED {
-        if show_hashes {
-            "Use the returned anchors with editFile; add endAnchor for range replacement/deletion"
         } else {
-            "Run with `showLineAnchors: true` to get anchors for targeted editing tools"
+            "For targeted edits, rerun with showLineAnchors=true to get anchors.\n".to_string()
         }
     } else {
         let _ = show_hashes;
-        "Use readFile on a hit, then strReplace with old_string copied verbatim from the file"
+        "To edit a match, read the file and copy the exact on-disk text into strReplace.\n"
+            .to_string()
     }
 }
 

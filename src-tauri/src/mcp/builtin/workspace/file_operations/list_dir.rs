@@ -203,19 +203,15 @@ impl WorkspaceServer {
                     safe_path, total_items, offset, limit
                 );
 
-                // ✅ ENHANCED: Clear messaging for empty directories
+                // Omit generic next-action hints — listing is read-only and
+                // pagination/empty status is already clear in the message body.
                 let hint = if total_items == 0 {
                     SuccessHint::new(
                         format!(
                             "Directory listing for '{}':\n\n(This directory is empty)\n\nThis is a valid empty directory.",
                             path_str
                         ),
-                        vec![
-                            format!(
-                                "Use writeFile with {{\"path\": \"{}/filename.txt\", \"content\": \"...\"}} to create a file",
-                                path_str
-                            )
-                        ],
+                        vec![],
                     )
                 } else {
                     SuccessHint::new(
@@ -223,14 +219,7 @@ impl WorkspaceServer {
                             "Directory listing for '{}':\n\n{}{}",
                             path_str, listing_str, truncation_note
                         ),
-                        vec![
-                            format!("Use readFile('{}/filename') to read a file", path_str),
-                            format!(
-                                "Use listDirectory('{}/subdir') to explore subdirectories",
-                                path_str
-                            ),
-                            "Use search to search for content in files".to_string(),
-                        ],
+                        vec![],
                     )
                 };
 

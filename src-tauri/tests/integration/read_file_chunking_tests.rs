@@ -73,13 +73,16 @@ async fn read_file_truncates_large_output_and_guides_next_chunk() {
         "response should tell the agent how to continue reading: {text}"
     );
     assert!(
-        text.contains(
-            tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::read_file_primary_next_action(
-                false
-            )
-            .as_str()
-        ),
-        "plain readFile should keep edit planning guidance optional instead of sounding mandatory: {text}"
+        !text.contains("💡 Next:"),
+        "readFile success should not append edit-promotion next-action hints: {text}"
+    );
+    assert!(
+        !text.contains("writeFile for full file replacement"),
+        "readFile success should not promote writeFile: {text}"
+    );
+    assert!(
+        !text.contains("strReplace.old_string"),
+        "readFile success should not expose internal param names: {text}"
     );
     assert!(
         !text.contains("line truncated to fit inline limit"),
