@@ -788,16 +788,16 @@ pub async fn handle_tool_result(
                     session.pending_execution = None;
                 }
 
-                return Ok(Some((message, all_completed)));
+                Ok(Some((message, all_completed)))
             } else {
                 log::warn!(
                     "Received tool result for session {} but no pending execution state found",
                     session_id
                 );
-                return Ok(None); // Ignore or error? Safe to ignore to prevent crashes
+                Ok(None) // Ignore or error? Safe to ignore to prevent crashes
             }
         } else {
-            return Err(format!("Session not found: {}", session_id));
+            Err(format!("Session not found: {}", session_id))
         }
     }
 }

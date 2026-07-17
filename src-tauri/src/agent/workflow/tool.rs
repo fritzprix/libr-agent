@@ -53,7 +53,7 @@ pub async fn continue_workflow_after_tool(
                 active_sessions,
                 app_handle,
                 &session_id,
-                completed_messages.clone(),
+                completed_messages,
                 true,
             )
             .await
@@ -143,15 +143,14 @@ pub async fn continue_workflow_after_tool(
                         if msg.role == "assistant" {
                             break;
                         }
-                        if msg.role == "tool" {
-                            if msg
+                        if msg.role == "tool"
+                            && msg
                                 .content
                                 .iter()
                                 .any(|c| matches!(c, MCPContent::Resource { .. }))
-                            {
-                                has_resource = true;
-                                break;
-                            }
+                        {
+                            has_resource = true;
+                            break;
                         }
                     }
                     has_resource

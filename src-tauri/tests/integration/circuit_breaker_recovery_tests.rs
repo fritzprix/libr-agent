@@ -60,8 +60,12 @@ fn evaluate(
     evaluate_circuit_breaker_action(messages, tool_call, &call_signature_by_id, threshold, 1)
 }
 
+// With default settings (threshold=3, offset=1) the soft NaturalRecoveryError fires at count=3.
+// NaturalRecoveryErrorEscalate requires total_count > threshold, which only holds when
+// offset >= 2 creates a gap between the soft and escalate stages.
+// At offset=1: hard_break_at=4, pre_hard_count=3 == threshold → Escalate guard fails → soft fires.
 #[test]
-fn natural_recovery_prefers_repeated_identical_error_before_hard_break() {
+fn natural_recovery_fires_soft_error_at_threshold_with_offset_1() {
     let repeated_args = r#"{"path":"src/main.ts"}"#;
     let repeated_error = "Error: file not found";
     let current_call = test_tool_call("tc-3", "workspace__readFile", repeated_args);
@@ -112,9 +116,10 @@ fn natural_recovery_prefers_repeated_identical_error_before_hard_break() {
         ),
     ];
 
+    // count=3 == threshold: soft NaturalRecoveryError fires (Escalate guard: 3 > 3 is false).
     assert_eq!(
         evaluate(&messages, &current_call, 3),
-        Some(CircuitBreakerAction::NaturalRecoveryErrorEscalate {
+        Some(CircuitBreakerAction::NaturalRecoveryError {
             count: 3,
             tool_name: "workspace__readFile".to_string(),
             args: repeated_args.to_string(),

@@ -303,8 +303,17 @@ pub fn evaluate_circuit_breaker_action(
             });
         }
 
+        // NaturalRecoveryErrorEscalate fires strictly between NaturalRecoveryError and HardBreak.
+        // Guard: total_count > threshold ensures it cannot fire at the same count as
+        // NaturalRecoveryError (which would silently suppress the soft warning).
+        // With threshold=3, offset=1: hard_break_at=4, pre_hard_count=3 == threshold,
+        // so the guard keeps NaturalRecoveryError alive at count=3 and Escalate is never
+        // fired (offset too small for a 3-stage ladder). With offset>=2 the gap exists.
         let pre_hard_count = hard_break_at.saturating_sub(1);
-        if matches!(outcome, RepeatedOutcome::Error { .. }) && total_count == pre_hard_count {
+        if matches!(outcome, RepeatedOutcome::Error { .. })
+            && total_count > threshold
+            && total_count == pre_hard_count
+        {
             return Some(CircuitBreakerAction::NaturalRecoveryErrorEscalate {
                 count: total_count,
                 tool_name: tool_name.clone(),
