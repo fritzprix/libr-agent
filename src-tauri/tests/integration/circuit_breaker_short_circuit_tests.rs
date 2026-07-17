@@ -336,17 +336,14 @@ async fn natural_recovery_error_keeps_original_tool_call_and_registers_short_cir
         .loop_prevention_short_circuits
         .get("tc-3")
         .expect("short circuit registered");
-    assert_eq!(
-        short_circuit.kind,
-        LoopPreventionKind::RepeatedErrorEscalate
-    );
+    assert_eq!(short_circuit.kind, LoopPreventionKind::RepeatedErrorOutcome);
     let guidance =
         tauri_mcp_agent_lib::agent::llm::natural_recovery::build_loop_prevention_guidance(
             short_circuit,
         );
     assert!(
-        guidance.contains("planning__reflect"),
-        "pre-hard escalate guidance should recommend reflect: {guidance}"
+        !guidance.contains("planning__reflect"),
+        "soft error outcome guidance should not recommend reflect: {guidance}"
     );
     assert!(preprocess_result.forced_stop.is_none());
 }

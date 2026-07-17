@@ -127,6 +127,7 @@ fn extract_compact_summary_body(message: &Message) -> Option<String> {
         .or_else(|| text.strip_prefix("### Previous Conversation Summary\n\n"))?;
 
     let summary_only = body
+        // Legacy delimiter from older compact summaries.
         .split("\n\n## Continue From Below\n")
         .next()
         .unwrap_or(body)
