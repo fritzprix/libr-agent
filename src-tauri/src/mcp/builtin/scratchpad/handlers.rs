@@ -107,20 +107,23 @@ pub async fn add(
                 .check_scratchpad_limit(&session_id_owned)
                 .await
                 .unwrap_or(0);
-            let response_id = cuid2::create_id();
+            let guidance = if count >= 10 {
+                vec![
+                    "💡 Scratchpad is now full (10/10 items). Clear obsolete notes using scratchpad__clearNote or update notes in-place using scratchpad__updateNote.".to_string()
+                ]
+            } else {
+                vec![]
+            };
             let hint = SuccessHint::new(
                 format!(
                     "✓ Note added to scratchpad (ID: {})\nScratchpad: {}/10",
                     id, count
                 ),
-                vec![
-                    "Use scratchpad__listNote to see all items".to_string(),
-                    "Use scratchpad__readNote to view full content".to_string(),
-                ],
+                guidance,
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
-                "id": response_id,
-                "scratchpadId": id
+                "id": id,
+                "success": true
             }))))
         }
         Err(e) => Ok(guided_error(
@@ -176,15 +179,11 @@ pub async fn update(
             if found {
                 let hint = SuccessHint::new(
                     format!("✓ Scratchpad note (ID: {}) updated", id_val),
-                    vec![
-                        "Use scratchpad__readNote or scratchpad__listNote to verify".to_string(),
-                        "Use scratchpad__listNote to see all items".to_string(),
-                    ],
+                    vec![],
                 );
                 Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "id": cuid2::create_id(),
+                    "id": id_val,
                     "success": true,
-                    "scratchpadId": id_val,
                     "note": note_val
                 }))))
             } else {
@@ -346,16 +345,7 @@ pub async fn list(
         })
         .collect();
 
-    let guidance = if total_items == 0 {
-        vec!["Use scratchpad__addNote to create new notes".to_string()]
-    } else {
-        vec![
-            "Use scratchpad__readNote(ids) to read full content of specific items".to_string(),
-            "Use scratchpad__addNote to create new notes".to_string(),
-        ]
-    };
-
-    let hint = SuccessHint::new(text_output, guidance);
+    let hint = SuccessHint::new(text_output, vec![]);
     Ok(hint.to_mcp_result_with_data(Some(json!({
         "items": json_items,
         "pagination": {
@@ -439,10 +429,7 @@ pub async fn read(
             "Verify the IDs you provided are correct".to_string(),
         ]
     } else {
-        vec![
-            "Use scratchpad__updateNote to modify these items".to_string(),
-            "Use scratchpad__clearNote to remove them".to_string(),
-        ]
+        vec![]
     };
 
     let hint = SuccessHint::new(text_output, guidance);
@@ -471,17 +458,11 @@ pub async fn clear(
     match repo.delete_scratchpad_item(session_id, target_id).await {
         Ok(found) => {
             if found {
-                let hint = SuccessHint::new(
-                    format!("✓ Scratchpad note {} removed", target_id),
-                    vec![
-                        "Use scratchpad__addNote to add new items".to_string(),
-                        "Use scratchpad__listNote to see remaining items".to_string(),
-                    ],
-                );
+                let hint =
+                    SuccessHint::new(format!("✓ Scratchpad note {} removed", target_id), vec![]);
                 Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "id": cuid2::create_id(),
-                    "success": true,
-                    "scratchpadId": target_id
+                    "id": target_id,
+                    "success": true
                 }))))
             } else {
                 Ok(guided_error(
@@ -519,14 +500,7 @@ pub async fn think(args: Value) -> Result<MCPResult, String> {
         message.push_str(&format!("\n**Next Action:**\n{}", action));
     }
 
-    let hint = SuccessHint::new(
-        message,
-        if let Some(action) = next_action {
-            vec![format!("Proceed with next action: {}", action)]
-        } else {
-            vec!["Continue with the plan".to_string()]
-        },
-    );
+    let hint = SuccessHint::new(message, vec![]);
 
     Ok(hint.to_mcp_result_with_data(Some(json!({
         "id": response_id,
