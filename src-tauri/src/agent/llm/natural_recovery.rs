@@ -33,8 +33,8 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
         LoopPreventionKind::RepeatedErrorEscalate => format!(
             "Loop prevention: '{}' was called {} times with identical parameters and the same error outcome.\n\n\
             This call was blocked. Do not retry with the same arguments — another identical attempt will trigger a hard circuit break.\n\n\
-            Before continuing, call planning__reflect: critique why this loop failed, reflect on what you learned, \
-            and set one concrete nextAction that uses a different approach. Then proceed from that nextAction.",
+            Before continuing, critique why this loop failed, reflect on what you learned, \
+            and choose a different approach. Then proceed.",
             short_circuit.tool_name, short_circuit.count
         ),
         LoopPreventionKind::RepeatedSuccessOutcome => format!(
@@ -105,8 +105,8 @@ mod tests {
         });
 
         assert!(guidance.contains("blocked"));
-        assert!(guidance.contains("planning__reflect"));
-        assert!(guidance.contains("nextAction"));
+        assert!(guidance.contains("critique"));
+        assert!(guidance.contains("reflect"));
         assert!(!guidance.contains("sleep"));
     }
 

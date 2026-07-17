@@ -25,8 +25,6 @@ pub struct CreateScheduledTaskArgs {
     assistant_id: String,
     message: String,
     workspace_override: Option<String>,
-    #[serde(default)]
-    reset_planning_state: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,7 +51,6 @@ pub struct UpdateScheduledTaskArgs {
     message: Option<String>,
     workspace_override: Option<String>,
     clear_workspace_override: Option<bool>,
-    reset_planning_state: Option<bool>,
     enabled: Option<bool>,
 }
 
@@ -116,7 +113,6 @@ pub async fn handle_create_scheduled_task(
             created_by_session_id: session_id,
             session_id: None,
             workspace_override: args.workspace_override,
-            reset_planning_state: args.reset_planning_state.unwrap_or(false),
             next_run_at: None,
         },
     )
@@ -392,11 +388,6 @@ pub async fn handle_update_scheduled_task(
         "workspaceOverride",
         workspace_override.is_some(),
     );
-    collect_changed_field(
-        &mut changed_fields,
-        "resetPlanningState",
-        args.reset_planning_state.is_some(),
-    );
     collect_changed_field(&mut changed_fields, "enabled", args.enabled.is_some());
 
     if changed_fields.is_empty() {
@@ -417,7 +408,6 @@ pub async fn handle_update_scheduled_task(
             message: args.message,
             execution_mode: execution_mode_update,
             workspace_override,
-            reset_planning_state: args.reset_planning_state,
             enabled: args.enabled,
             next_run_at: None,
         },
@@ -601,7 +591,6 @@ pub async fn handle_schedule_callback(
             created_by_session_id: Some(session_id.clone()),
             session_id: Some(session_id),
             workspace_override: None,
-            reset_planning_state: false,
             next_run_at,
         },
     )

@@ -4,9 +4,9 @@
   "deletionProtected": true,
   "localServices": [],
   "allowedBuiltInServiceAliases": [
-    "planning",
     "attachments",
     "playbook",
-    "agent"
+    "agent",
+    "scratchpad"
   ]
 }

@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager};
 /// server instances for the session.
 ///
 /// # Arguments
-/// * `tool_id` - The builtin tool identifier (e.g., "knowledge", "planning")
+/// * `tool_id` - The builtin tool identifier (e.g., "knowledge", "scratchpad")
 /// * `session_id` - The session to bind the server to
 /// * `db` - Shared SeaORM database connection
 ///
@@ -51,9 +51,6 @@ pub(crate) async fn create_builtin_server(
         }
         BuiltinServiceId::History => Ok(Some(Box::new(
             crate::mcp::builtin::history::HistoryServer::new(_session_id, _db).await?,
-        ))),
-        BuiltinServiceId::Planning => Ok(Some(Box::new(
-            crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),
         BuiltinServiceId::Agent => {
             let agent_manager = app_handle.as_ref().map(|h| {

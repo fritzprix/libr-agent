@@ -7,9 +7,9 @@ pub mod knowledge_repository;
 pub mod knowledge_v2_repository;
 pub mod mcp_server_repository;
 pub mod message_repository;
-pub mod planning_repository;
 pub mod playbook_repository;
 pub mod scheduled_task_repository;
+pub mod scratchpad_repository;
 pub mod session_child_context;
 pub mod session_org_context;
 pub mod session_repository;
@@ -32,12 +32,12 @@ pub use knowledge_v2_repository::{
 };
 pub use mcp_server_repository::{MCPServerRepository, SqliteMCPServerRepository};
 pub use message_repository::{MessageRepository, SqliteMessageRepository};
-pub use planning_repository::{PlanningRepository, SqlitePlanningRepository};
 pub use playbook_repository::{PlaybookRepository, SqlitePlaybookRepository};
 pub use scheduled_task_repository::{
     CreateScheduledTaskParams, ScheduledTaskRepository, SqliteScheduledTaskRepository,
     UpdateScheduledTaskParams,
 };
+pub use scratchpad_repository::{ScratchpadRepository, SqliteScratchpadRepository};
 pub use session_child_context::{
     build_child_sessions_context, format_active_sessions_notice, format_child_sessions_context,
 };

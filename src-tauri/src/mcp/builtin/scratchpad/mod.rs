@@ -4,8 +4,8 @@ mod tools;
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
-use crate::repositories::PlanningRepository;
-use crate::state::get_planning_repository;
+use crate::repositories::ScratchpadRepository;
+use crate::state::get_scratchpad_repository;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
@@ -14,7 +14,7 @@ use std::sync::Arc;
 /// Scratchpad MCP Server
 ///
 /// Provides scratchpad (notes), thinking, and reflection tools for agent sessions.
-/// Session-scoped: each session gets dedicated scratchpad state backed by `planning_scratchpad` table.
+/// Session-scoped: each session gets dedicated scratchpad state backed by `scratchpad` table.
 #[derive(Debug)]
 pub struct ScratchpadServer {
     session_id: String,
@@ -83,7 +83,7 @@ impl BuiltinMCPServer for ScratchpadServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        let repo = get_planning_repository();
+        let repo = get_scratchpad_repository();
         let items = repo
             .list_scratchpad(&self.session_id)
             .await

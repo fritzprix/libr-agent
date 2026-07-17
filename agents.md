@@ -19,7 +19,7 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 
 - **External MCP Servers**: Stdio/HTTP protocol via `rmcp` library, managed by session-isolated managers
 - **Builtin MCP Servers**: Native Rust implementations via `BuiltinMCPServer` trait
-  - Planning, Knowledge, Browser, Workspace, Content Store, etc.
+  - Scratchpad, Knowledge, Browser, Workspace, Content Store, etc.
   - Session-isolated instances with dedicated state
 - **Unified Tool Discovery**: `MCPServiceProxy` routes calls to builtin or external servers transparently
 
@@ -39,7 +39,7 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 
 - **AI Agent Management**: Session-isolated agents with independent tool state and context
 - **LLM Provider Support**: 8 providers, 50+ models including reasoning models (o3, DeepSeek R1)
-- **Built-in Tool Ecosystem**: Planning, Knowledge, Browser, Workspace, Code Execution
+- **Built-in Tool Ecosystem**: Scratchpad, Knowledge, Browser, Workspace, Code Execution
 - **MCP Integration**: Session-isolated stdio/HTTP protocol with security validation
 
 ## Technology Stack
@@ -588,9 +588,9 @@ pub struct ServiceContext {
 
 Session abc123: https://example.com (Example Domain)
 
-## Planning
+## Scratchpad
 
-Current task: ...
+Session abc123: Note A (My scratchpad note)
 ```
 
 **What AI DOES NOT See:**
@@ -644,7 +644,7 @@ AgentSessionManager (Rust)
 **Session Isolation:**
 
 - **One MCPServiceProxy per Agent Session**: Each session gets isolated tool instances
-- **Stateful Tools**: Planning todos, Knowledge items, Browser sessions scoped to session ID
+- **Stateful Tools**: Scratchpad notes, Knowledge items, Browser sessions scoped to session ID
 - **No Global State**: Complete isolation prevents cross-session interference
 - **Session-Specific Workspace**: Each agent operates in isolated directory
 
@@ -660,9 +660,9 @@ Dynamic context providers inject read-only information into system prompts:
    ├── TimeLocationContextProvider (current time/location)
    └── SkillsContextProvider (available skills/documentation)
 4. Service Contexts (from builtin tools)
-   ├── Planning (current goal, todos)
-   ├── Browser (active sessions, URLs)
-   └── Workspace (file tree, recent changes)
+    ├── Scratchpad (session notes)
+    ├── Browser (active sessions, URLs)
+    └── Workspace (file tree, recent changes)
 ```
 
 **Event-Driven UI Updates:**
@@ -1075,7 +1075,7 @@ When refactoring or implementing new features, adhere to these fundamental softw
 
 - Each agent session has isolated `MCPServiceProxy` with dedicated builtin server instances
 - No global state sharing between sessions
-- Tool state (Planning todos, Knowledge items, etc.) scoped to session ID
+- Tool state (Scratchpad notes, Knowledge items, etc.) scoped to session ID
 - Workspace and Content Store use session-specific directories
 
 **Development Commands:**

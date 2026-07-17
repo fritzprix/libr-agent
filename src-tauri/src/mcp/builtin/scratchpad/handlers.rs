@@ -1,10 +1,10 @@
-use crate::entity::planning_scratchpad;
+use crate::entity::scratchpad;
 use crate::mcp::builtin::error_guidance::{
     guided_error, invalid_input_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::PlanningRepository;
-use crate::state::get_planning_repository;
+use crate::repositories::ScratchpadRepository;
+use crate::state::get_scratchpad_repository;
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 
@@ -36,7 +36,7 @@ pub async fn add(
     let title_owned = title.map(|s| s.to_string());
     let source_owned = source.map(|s| s.to_string());
 
-    let repo = get_planning_repository();
+    let repo = get_scratchpad_repository();
 
     match repo.check_scratchpad_limit(&session_id_owned).await {
         Ok(count) => {
@@ -164,7 +164,7 @@ pub async fn update(
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
 
-    let repo = get_planning_repository();
+    let repo = get_scratchpad_repository();
 
     match repo
         .update_scratchpad_by_id(
@@ -236,7 +236,7 @@ pub async fn list(
             .collect::<Vec<String>>()
     });
 
-    let repo = get_planning_repository();
+    let repo = get_scratchpad_repository();
     let all_items = match repo.list_scratchpad(session_id).await {
         Ok(items) => items,
         Err(e) => {
@@ -250,7 +250,7 @@ pub async fn list(
         }
     };
 
-    let filtered_items: Vec<&planning_scratchpad::Model> = if let Some(tags) = &filter_tags {
+    let filtered_items: Vec<&scratchpad::Model> = if let Some(tags) = &filter_tags {
         if tags.is_empty() {
             all_items.iter().collect()
         } else {
@@ -379,7 +379,7 @@ pub async fn read(
         }
     }
 
-    let repo = get_planning_repository();
+    let repo = get_scratchpad_repository();
     let retrieved_items = match repo.get_scratchpad_by_ids(target_ids).await {
         Ok(items) => items,
         Err(e) => {
@@ -453,7 +453,7 @@ pub async fn clear(
         ));
     }
 
-    let repo = get_planning_repository();
+    let repo = get_scratchpad_repository();
 
     match repo.delete_scratchpad_item(session_id, target_id).await {
         Ok(found) => {

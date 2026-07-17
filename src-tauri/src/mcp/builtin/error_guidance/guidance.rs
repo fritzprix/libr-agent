@@ -87,25 +87,6 @@ impl ErrorGuidance {
                 "Verify the target element is visible and interactable".to_string(),
             ],
 
-            // Planning tool errors
-            (ErrorCategory::DuplicateResource, ToolGroup::Planning) => vec![
-                "Use a different title for the new item".to_string(),
-                "Use updateTodo(id=..., action='done') to modify the existing item".to_string(),
-                "Use getCurrentState to see all existing items".to_string(),
-            ],
-            (ErrorCategory::ResourceNotFound, ToolGroup::Planning) => vec![
-                "Use getCurrentState to see available todos".to_string(),
-                "Verify the ID is correct and the item exists".to_string(),
-                "Use getCurrentState to see the full planning state".to_string(),
-                "Create as top-level todo instead".to_string(),
-                "Attach to a different parent that has no parent".to_string(),
-                "Use getCurrentState to see the current hierarchy".to_string(),
-            ],
-            (ErrorCategory::InvalidInput, ToolGroup::Planning) => vec![
-                "Ensure title is a non-empty string".to_string(),
-                "Priority must be 'low', 'medium', or 'high'".to_string(),
-                "Use getCurrentState to see existing todos for reference".to_string(),
-            ],
 
             // Workspace tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Workspace) => vec![
@@ -362,28 +343,6 @@ impl SuccessHint {
                 "Use getPageContent to see full page content".to_string(),
             ],
 
-            // Planning tools
-            ("addTodo", ToolGroup::Planning) => vec![
-                "Use getCurrentState to see all todos".to_string(),
-                "Use updateTodo(id=..., action='done') to mark as complete".to_string(),
-            ],
-            ("createGoal", ToolGroup::Planning) => vec![
-                "Use addTodo to create tasks for this goal".to_string(),
-                "Use getCurrentState to see the full planning state".to_string(),
-            ],
-            ("updateTodo", ToolGroup::Planning) => vec![
-                "Use getCurrentState to see remaining tasks".to_string(),
-                "Use addTodo to create follow-up tasks".to_string(),
-                "When all todos are done, use reflect to review progress".to_string(),
-            ],
-            ("getCurrentState", ToolGroup::Planning) => vec![
-                "Use updateTodo(id=..., action='done') to mark items as complete".to_string(),
-                "Use addTodo to create new tasks".to_string(),
-            ],
-            ("reflect", ToolGroup::Planning) => vec![
-                "Proceed with the next action identified in your reflection".to_string(),
-                "Use createGoal if starting a new task after reflection".to_string(),
-            ],
 
             // Workspace tools
             ("runShell" | "runPowerShell", ToolGroup::Workspace) => vec![],

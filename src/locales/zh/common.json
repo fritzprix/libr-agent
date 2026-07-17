@@ -884,8 +884,6 @@
       "copyTooltip": "将对话复制为 Markdown",
       "toggleWorkspaceAria": "切换工作区文件面板",
       "toggleWorkspaceTooltip": "切换工作区文件面板",
-      "togglePlanningAria": "切换 AI 计划面板",
-      "togglePlanningTooltip": "切换 AI 计划面板",
       "defaultAssistant": "智能体",
       "untitledSession": "未命名会话",
       "sessionLabel": "会话",
@@ -1022,21 +1020,6 @@
       "badgeBuiltin": "内置",
       "badgeMcp": "mcp",
       "viewSchema": "查看输入模式"
-    },
-    "planning": {
-      "title": "AI 计划",
-      "currentGoal": "当前目标",
-      "noGoal": "无活动目标",
-      "tasks": "任务",
-      "noTasks": "无任务",
-      "priorityHigh": "高",
-      "priorityMedium": "中",
-      "priorityLow": "低",
-      "scratchpad": "草稿板",
-      "noScratchpad": "没有草稿板笔记",
-      "untitledNote": "未命名笔记",
-      "moreTasks": "个更多任务",
-      "updated": "已更新"
     },
     "bubble": {
       "notification": "通知",

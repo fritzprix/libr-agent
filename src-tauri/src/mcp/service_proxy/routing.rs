@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_builtin_empty_tool_name() {
-        assert!(route_tool("planning__").is_err());
+        assert!(route_tool("knowledge__").is_err());
     }
 
     #[test]

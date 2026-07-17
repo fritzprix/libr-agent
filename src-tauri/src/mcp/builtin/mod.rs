@@ -14,7 +14,6 @@ pub mod error_guidance;
 pub mod history;
 pub mod knowledge;
 pub mod media;
-pub mod planning;
 pub mod playbook;
 pub mod scheduled_task;
 pub mod scratchpad;
@@ -360,7 +359,7 @@ impl BuiltinServerRegistry {
     /// Creates a new `BuiltinServerRegistry` and registers the default servers
     /// using the provided `SessionManager`.
     ///
-    /// Note: Only registers stateless servers. Stateful servers (knowledge, planning, playbook,
+    /// Note: Only registers stateless servers. Stateful servers (knowledge, playbook,
     /// agent, browser, scratchpad) are instantiated per-session in MCPServiceProxy.
     pub fn new_with_session_manager(session_manager: std::sync::Arc<SessionManager>) -> Self {
         let mut registry = Self {
@@ -385,7 +384,7 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(ui::UiServer::new()));
         registry.register_server(Box::new(tool::ToolServer::new()));
 
-        // Session-specific servers (knowledge, planning, playbook, agent, browser, scratchpad) are
+        // Session-specific servers (knowledge, playbook, agent, browser, scratchpad) are
         // instantiated per-session in MCPServiceProxy::create_builtin_server()
 
         registry
@@ -407,7 +406,7 @@ impl BuiltinServerRegistry {
         // V1 LEGACY: Only register servers that don't need session-specific parameters
         // Agent V2 uses MCPServiceProxy per-session instead
         registry.register_server(Box::new(setup_wizard::SetupWizardServer::new()));
-        // knowledge, planning, playbook, agent require session_id + db - can't instantiate globally
+        // knowledge, playbook, agent require session_id + db - can't instantiate globally
         // browser requires AppHandle + session_id - can't instantiate globally
 
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
@@ -449,7 +448,7 @@ impl BuiltinServerRegistry {
         // V1 LEGACY: Only register servers that don't need session-specific parameters
         // Agent V2 uses MCPServiceProxy per-session instead
         registry.register_server(Box::new(setup_wizard::SetupWizardServer::new()));
-        // knowledge, planning, playbook, agent require session_id + db - can't instantiate globally
+        // knowledge, playbook, agent require session_id + db - can't instantiate globally
         // browser requires AppHandle + session_id - can't instantiate globally
 
         registry.register_server(Box::new(workspace::WorkspaceServer::new(

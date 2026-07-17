@@ -33,14 +33,12 @@ import {
   ChevronDown,
   Shield,
   DatabaseZap,
-  ListTodo,
 } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { normalizeExecutionMode } from '@/lib/generated/execution-mode';
@@ -117,7 +115,6 @@ interface ScheduledTaskModalProps {
     message: string;
     executionMode: ExecutionMode;
     workspaceOverride: string | null;
-    resetPlanningState: boolean;
   }) => Promise<void>;
 }
 
@@ -167,7 +164,6 @@ interface ScheduledTaskFormProps {
     message: string;
     executionMode: ExecutionMode;
     workspaceOverride: string | null;
-    resetPlanningState: boolean;
   }) => Promise<void>;
 }
 
@@ -208,9 +204,6 @@ function ScheduledTaskForm({
   const [message, setMessage] = useState(task?.message ?? '');
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(
     task?.executionMode ?? 'normal',
-  );
-  const [resetPlanningState, setResetPlanningState] = useState(
-    task?.resetPlanningState ?? false,
   );
   const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
     task?.workspaceOverride ?? null,
@@ -273,7 +266,6 @@ function ScheduledTaskForm({
         message: message.trim(),
         executionMode,
         workspaceOverride,
-        resetPlanningState,
       });
       onClose();
     } catch (e: unknown) {
@@ -524,33 +516,6 @@ function ScheduledTaskForm({
                       'Approval and policy enforcement are bypassed. You are fully responsible for tool execution risk.',
                     )}
             </p>
-          </div>
-
-          <div className="flex items-start justify-between gap-3 rounded-lg border bg-muted/20 px-3 py-3">
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-              <div className="mt-0.5 rounded-md bg-primary/10 p-2">
-                <ListTodo className="h-4 w-4 text-primary" />
-              </div>
-              <div className="min-w-0 space-y-1">
-                <Label htmlFor="reset-planning-state" className="text-sm">
-                  {t(
-                    'scheduledTasks.modal.resetPlanningLabel',
-                    'Reset planning state before run',
-                  )}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    'scheduledTasks.modal.resetPlanningHint',
-                    'Clears goal, todos, and scratchpad before injecting the message. Does not wipe chat history.',
-                  )}
-                </p>
-              </div>
-            </div>
-            <Switch
-              id="reset-planning-state"
-              checked={resetPlanningState}
-              onCheckedChange={setResetPlanningState}
-            />
           </div>
         </div>
       </div>

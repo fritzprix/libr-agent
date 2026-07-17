@@ -63,8 +63,6 @@ pub struct ScheduledTaskRecord {
     pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace_override: Option<String>,
-    #[serde(default)]
-    pub reset_planning_state: bool,
     pub enabled: bool,
     pub last_run_at: Option<i64>,
     pub next_run_at: Option<i64>,

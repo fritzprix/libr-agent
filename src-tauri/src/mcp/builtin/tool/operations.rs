@@ -100,7 +100,10 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
             ),
             ToolGroup::Tool,
         )
-        .with_guidance(vec!["Use a unique name that doesn't match a builtin service (e.g. planning, browser, workspace)".to_string()])
+        .with_guidance(vec![
+            "Use a unique name that doesn't match a builtin service (e.g. browser, workspace)"
+                .to_string(),
+        ])
         .to_mcp_result());
     }
 
@@ -371,7 +374,10 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
             ),
             ToolGroup::Tool,
         )
-        .with_guidance(vec!["Use a unique name that doesn't match a builtin service (e.g. planning, browser, workspace)".to_string()])
+        .with_guidance(vec![
+            "Use a unique name that doesn't match a builtin service (e.g. browser, workspace)"
+                .to_string(),
+        ])
         .to_mcp_result());
     }
 

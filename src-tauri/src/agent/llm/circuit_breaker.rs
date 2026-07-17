@@ -542,10 +542,7 @@ pub fn evaluate_batch_circuit_breaker(
     }
 
     let first = &tool_calls[0];
-    if first.function.name == "ui__circuitBreak"
-        || first.function.name == "scratchpad__think"
-        || first.function.name == "planning__reflect"
-    {
+    if first.function.name == "ui__circuitBreak" || first.function.name == "scratchpad__think" {
         return None;
     }
 
@@ -585,10 +582,7 @@ pub fn evaluate_circuit_breaker_action(
     let tool_name = &tool_call.function.name;
     let args = &tool_call.function.arguments;
 
-    if tool_name == "ui__circuitBreak"
-        || tool_name == "scratchpad__think"
-        || tool_name == "planning__reflect"
-    {
+    if tool_name == "ui__circuitBreak" || tool_name == "scratchpad__think" {
         return None;
     }
 

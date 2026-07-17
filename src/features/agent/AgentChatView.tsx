@@ -31,18 +31,12 @@ import {
   AgentWorkspaceProvider,
   useAgentWorkspace,
 } from '@/context/AgentWorkspaceContext';
-import {
-  AgentPlanningProvider,
-  useAgentPlanning,
-} from '@/context/AgentPlanningContext';
 import { AgentChatHeader } from './components/AgentChatHeader';
 import { AgentChatStatusBar } from './components/AgentChatStatusBar';
 import { AgentChatMessages } from './components/AgentChatMessages';
 import { AgentChatInput } from './components/AgentChatInput';
 import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
 import { AgentWorkspacePanel } from './components/AgentWorkspacePanel';
-import { AgentPlanningPanel } from './components/AgentPlanningPanel';
-import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
 import { getLogger } from '@/lib/logger';
 import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
@@ -314,7 +308,6 @@ function InteractiveShellPromptDialog({
  * Layout:
  * - Left: Workspace panel (optional)
  * - Center: Chat interface
- * - Right: Planning panel (optional)
  *
  * Features:
  * - Virtualized message rendering with react-virtuoso
@@ -327,8 +320,6 @@ function AgentChatInner() {
   const isMobile = useIsMobile();
   const { closeWorkspacePanel, openWorkspacePanel, showWorkspacePanel } =
     useAgentWorkspace();
-  const { closePlanningPanel, openPlanningPanel, showPlanningPanel } =
-    useAgentPlanning();
   const { t } = useTranslation();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -337,7 +328,6 @@ function AgentChatInner() {
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
   const hasOpenedWorkspaceRef = useRef(!isMobile && showWorkspacePanel);
-  const hasOpenedPlanningRef = useRef(!isMobile && showPlanningPanel);
 
   useEffect(() => {
     if (!isMobile && showWorkspacePanel) {
@@ -345,16 +335,8 @@ function AgentChatInner() {
     }
   }, [isMobile, showWorkspacePanel]);
 
-  useEffect(() => {
-    if (!isMobile && showPlanningPanel) {
-      hasOpenedPlanningRef.current = true;
-    }
-  }, [isMobile, showPlanningPanel]);
-
   const hasOpenedWorkspaceDesktop =
     !isMobile && (showWorkspacePanel || hasOpenedWorkspaceRef.current);
-  const hasOpenedPlanningDesktop =
-    !isMobile && (showPlanningPanel || hasOpenedPlanningRef.current);
 
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
@@ -437,17 +419,6 @@ function AgentChatInner() {
     [closeWorkspacePanel, openWorkspacePanel],
   );
 
-  const handlePlanningSheetOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (nextOpen) {
-        openPlanningPanel();
-        return;
-      }
-      closePlanningPanel();
-    },
-    [closePlanningPanel, openPlanningPanel],
-  );
-
   return (
     <>
       {sessionId ? (
@@ -482,15 +453,6 @@ function AgentChatInner() {
             <AgentChatStatusBar />
             <AgentChatMessages />
           </div>
-
-          {!isMobile && hasOpenedPlanningDesktop && (
-            <DesktopPanelRail side="right" open={showPlanningPanel}>
-              <AgentPlanningPanel
-                isVisible={showPlanningPanel}
-                variant="rail"
-              />
-            </DesktopPanelRail>
-          )}
         </div>
         <AgentChatComposer />
       </div>
@@ -506,18 +468,8 @@ function AgentChatInner() {
           >
             <AgentWorkspacePanel isVisible variant="sheet" />
           </MobilePanelSheet>
-          <MobilePanelSheet
-            open={showPlanningPanel}
-            onOpenChange={handlePlanningSheetOpenChange}
-            side="right"
-            title={t('agent.planning.title')}
-            description={t('agent.planning.title')}
-          >
-            <AgentPlanningPanel isVisible variant="sheet" />
-          </MobilePanelSheet>
         </>
       )}
-      <AgentPlanningUpdates />
     </>
   );
 }
@@ -591,11 +543,9 @@ export default function AgentChatView() {
       ) : (
         <div className="relative h-full">
           <AgentChatProvider>
-            <AgentPlanningProvider>
-              <AgentWorkspaceProvider>
-                <AgentChatInner />
-              </AgentWorkspaceProvider>
-            </AgentPlanningProvider>
+            <AgentWorkspaceProvider>
+              <AgentChatInner />
+            </AgentWorkspaceProvider>
           </AgentChatProvider>
 
           {shouldShowOptimisticLoadingOverlay && (

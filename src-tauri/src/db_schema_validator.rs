@@ -31,7 +31,7 @@ impl std::error::Error for SchemaValidationError {}
 ///
 /// This function checks:
 /// - Core tables exist (sessions, messages, assistants)
-/// - Planning module tables have correct columns
+/// - Scratchpad module tables have correct columns
 ///
 /// Returns Ok(()) if validation passes, or SchemaValidationError if any check fails
 pub async fn validate_schema(db: &DatabaseConnection) -> Result<(), SchemaValidationError> {
@@ -45,34 +45,10 @@ pub async fn validate_schema(db: &DatabaseConnection) -> Result<(), SchemaValida
     // Validate sessions table has is_bookmarked and execution_mode columns
     validate_table_columns(db, "sessions", &["id", "is_bookmarked", "execution_mode"]).await?;
 
-    // Validate planning module tables with specific columns
+    // Validate scratchpad table with specific columns
     validate_table_columns(
         db,
-        "planning_goals",
-        &["id", "session_id", "goal_text", "status", "created_at"],
-    )
-    .await?;
-
-    validate_table_columns(
-        db,
-        "planning_todos",
-        &[
-            "id",
-            "session_id",
-            "content",
-            "description",
-            "priority",
-            "is_checked", // Critical: completion tracking
-            "status",
-            "created_at",
-            "updated_at",
-        ],
-    )
-    .await?;
-
-    validate_table_columns(
-        db,
-        "planning_scratchpad",
+        "scratchpad",
         &[
             "id",
             "session_id",
@@ -230,24 +206,10 @@ mod tests {
 
         db.execute(Statement::from_string(
             db.get_database_backend(),
-            "CREATE TABLE planning_goals (id INTEGER PRIMARY KEY, session_id TEXT, goal_text TEXT, status TEXT, created_at INTEGER)".to_string(),
+            "CREATE TABLE scratchpad (id INTEGER PRIMARY KEY, session_id TEXT, content TEXT, title TEXT, source TEXT, tags TEXT, created_at INTEGER, updated_at INTEGER)".to_string(),
         ))
         .await
-        .expect("Failed to create planning_goals table");
-
-        db.execute(Statement::from_string(
-            db.get_database_backend(),
-            "CREATE TABLE planning_todos (id INTEGER PRIMARY KEY, session_id TEXT, content TEXT, description TEXT, priority TEXT, is_checked INTEGER, status TEXT, created_at INTEGER, updated_at INTEGER)".to_string(),
-        ))
-        .await
-        .expect("Failed to create planning_todos table");
-
-        db.execute(Statement::from_string(
-            db.get_database_backend(),
-            "CREATE TABLE planning_scratchpad (id INTEGER PRIMARY KEY, session_id TEXT, content TEXT, title TEXT, source TEXT, tags TEXT, created_at INTEGER, updated_at INTEGER)".to_string(),
-        ))
-        .await
-        .expect("Failed to create planning_scratchpad table");
+        .expect("Failed to create scratchpad table");
 
         db
     }
@@ -335,21 +297,18 @@ mod tests {
             .await
             .expect("Failed to create in-memory database");
 
-        // Create table without parent_id column
+        // Create table without tags column
         db.execute(Statement::from_string(
             db.get_database_backend(),
-            "CREATE TABLE planning_todos (id INTEGER PRIMARY KEY, session_id TEXT, content TEXT)"
+            "CREATE TABLE scratchpad (id INTEGER PRIMARY KEY, session_id TEXT, content TEXT)"
                 .to_string(),
         ))
         .await
         .expect("Failed to create table");
 
-        let result = validate_table_columns(
-            &db,
-            "planning_todos",
-            &["id", "session_id", "content", "priority"],
-        )
-        .await;
+        let result =
+            validate_table_columns(&db, "scratchpad", &["id", "session_id", "content", "tags"])
+                .await;
 
         assert!(matches!(
             result,
@@ -361,9 +320,9 @@ mod tests {
     async fn test_get_table_columns() {
         let db = setup_test_db().await;
 
-        let columns = get_table_columns(&db, "planning_todos").await.unwrap();
+        let columns = get_table_columns(&db, "scratchpad").await.unwrap();
 
         assert!(columns.contains(&"id".to_string()));
-        assert!(columns.contains(&"is_checked".to_string()));
+        assert!(columns.contains(&"content".to_string()));
     }
 }

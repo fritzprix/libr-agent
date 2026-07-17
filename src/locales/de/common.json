@@ -884,8 +884,6 @@
       "copyTooltip": "Konversation als Markdown kopieren",
       "toggleWorkspaceAria": "Arbeitsbereich-Dateipanel umschalten",
       "toggleWorkspaceTooltip": "Arbeitsbereich-Dateipanel umschalten",
-      "togglePlanningAria": "KI-Planungspanel umschalten",
-      "togglePlanningTooltip": "KI-Planungspanel umschalten",
       "defaultAssistant": "Agent",
       "untitledSession": "Unbenannte Sitzung",
       "sessionLabel": "Sitzung",
@@ -1022,21 +1020,6 @@
       "badgeBuiltin": "integriert",
       "badgeMcp": "mcp",
       "viewSchema": "Eingabeschema anzeigen"
-    },
-    "planning": {
-      "title": "KI-Planung",
-      "currentGoal": "Aktuelles Ziel",
-      "noGoal": "Kein aktives Ziel",
-      "tasks": "Aufgaben",
-      "noTasks": "Keine Aufgaben",
-      "priorityHigh": "Hoch",
-      "priorityMedium": "Mittel",
-      "priorityLow": "Niedrig",
-      "scratchpad": "Scratchpad",
-      "noScratchpad": "Keine Scratchpad-Notizen",
-      "untitledNote": "Unbenannte Notiz",
-      "moreTasks": "weitere Aufgaben",
-      "updated": "aktualisiert"
     },
     "bubble": {
       "notification": "Benachrichtigung",

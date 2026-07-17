@@ -48,7 +48,6 @@ Enabled: {}\n\
 Cron: {}\n\
 Timezone: {}\n\
 Execution mode: {}\n\
-Reset planning state: {}\n\
 Next run: {}\n\
 Last run: {}\n\
 Created by session: {}\n\
@@ -63,11 +62,6 @@ Message:\n{}",
         task.cron_expression.as_deref().unwrap_or("(one-shot)"),
         task.schedule_timezone,
         execution_mode_label(task),
-        if task.reset_planning_state {
-            "yes"
-        } else {
-            "no"
-        },
         format_timestamp(task.next_run_at),
         format_timestamp(task.last_run_at),
         created_by_session,
@@ -90,7 +84,6 @@ pub fn task_to_json(task: &ScheduledTaskModel) -> Value {
         "createdBySessionId": task.created_by_session_id,
         "sessionId": task.session_id,
         "workspaceOverride": task.workspace_override,
-        "resetPlanningState": task.reset_planning_state,
         "enabled": task.enabled,
         "lastRunAt": task.last_run_at,
         "nextRunAt": task.next_run_at,

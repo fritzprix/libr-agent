@@ -210,13 +210,12 @@ mod tests {
         let json = r#"{
             "name": "Test",
             "systemPrompt": "You are helpful",
-            "allowedBuiltInServiceAliases": ["attachments", "planning", "browser"]
+            "allowedBuiltInServiceAliases": ["attachments", "browser"]
         }"#;
         let config = AgentConfig::from_json(json).unwrap();
         let aliases = config.allowed_built_in_service_aliases.unwrap();
         assert_eq!(aliases[0], BuiltinServiceId::Attachments);
-        assert_eq!(aliases[1], BuiltinServiceId::Planning);
-        assert_eq!(aliases[2], BuiltinServiceId::Browser);
+        assert_eq!(aliases[1], BuiltinServiceId::Browser);
     }
 
     /// Unknown alias string must cause a parse error (compile-time safety).

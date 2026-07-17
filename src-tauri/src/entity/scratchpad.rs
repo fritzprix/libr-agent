@@ -1,19 +1,16 @@
-//! Planning Todo Entity
-
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "planning_todos")]
+#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "scratchpad")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: i64,
+    pub id: i32,
     pub session_id: String,
     pub content: String,
-    pub description: Option<String>,
-    pub priority: String,
-    pub is_checked: bool,
-    pub status: String,
+    pub title: Option<String>,
+    pub source: Option<String>,
+    pub tags: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }

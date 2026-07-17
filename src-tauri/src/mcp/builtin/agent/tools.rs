@@ -304,7 +304,7 @@ fn message_to_session_tool() -> MCPTool {
                 "Pass sessionId and the message or instruction.",
                 "Use to wake paused or error sessions and retry from the latest stable state.",
                 "Set waitForResponse=false to send without blocking.",
-                "Set reset=true to clear the target session's message history and planning/compaction state before injecting the new message (defaults to false).",
+                "Set reset=true to clear the target session's message history and compaction state before injecting the new message (defaults to false).",
             ],
             &[
                 "Check outcome with agent__checkSession(wait=true).",
@@ -341,7 +341,7 @@ fn message_to_session_tool() -> MCPTool {
                 (
                     "reset".to_string(),
                     {
-                        let mut schema = boolean_prop(Some("If true, clear/reset the target session's message history and planning/compaction state before injecting the new message (preserving active browser session state for continuation). Defaults to false."));
+                        let mut schema = boolean_prop(Some("If true, clear/reset the target session's message history and compaction state before injecting the new message (preserving active browser session state for continuation). Defaults to false."));
                         schema.default = Some(json!(false));
                         schema
                     },

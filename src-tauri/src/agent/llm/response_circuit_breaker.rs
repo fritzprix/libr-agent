@@ -195,8 +195,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
         if let Some((index, count, tool_name, args)) = hard_break {
             loop_prevention_short_circuits.clear();
             if let Some(tool_calls) = assistant_message.tool_calls.as_mut() {
-                let safe_tool =
-                    circuit_breaker::sanitize_circuit_breaker_log_tool_name(&tool_name);
+                let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(&tool_name);
                 log::warn!(
                     "Circuit breaker triggered for session {} tool {} (count {})",
                     session_id,
@@ -309,12 +308,7 @@ fn hard_break_applied_ui_circuit_break(assistant_message: &Message) -> bool {
         })
 }
 
-fn emit_circuit_breaker_triggered(
-    session_id: &str,
-    tool_name: &str,
-    count: usize,
-    action: &str,
-) {
+fn emit_circuit_breaker_triggered(session_id: &str, tool_name: &str, count: usize, action: &str) {
     let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(tool_name);
     let Some(app_handle) = crate::state::get_app_handle() else {
         return;
@@ -419,10 +413,10 @@ async fn apply_tool_loop_token_fence(
     // Cap scans so pathological mega-batches cannot O(n²)-stall the agent.
     // Prefer keeping as many prefix tools as budget allows (same semantics as before).
     const TOOL_LOOP_FENCE_MAX_PREFIX_SCANS: usize = 64;
-    let max_prefix = original_tool_calls
-        .len()
-        .min(TOOL_LOOP_FENCE_MAX_PREFIX_SCANS)
-        .max(TOOL_LOOP_FENCE_MIN_KEEP_COUNT);
+    let max_prefix = original_tool_calls.len().clamp(
+        TOOL_LOOP_FENCE_MIN_KEEP_COUNT,
+        TOOL_LOOP_FENCE_MAX_PREFIX_SCANS,
+    );
 
     for prefix_len in 1..=max_prefix {
         let projected_messages = build_projected_messages_for_prefix(

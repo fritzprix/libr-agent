@@ -207,9 +207,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
   }, [session?.id, updateServiceContexts]);
 
-  // Keep serviceContexts in sync with backend clear events:
   // - session clear (/clear): wipe UI immediately, then refetch
-  // - planning clear (scheduled reset_planning_state): refetch only
   useEffect(() => {
     const sessionId = session?.id;
     if (!sessionId) {
@@ -239,15 +237,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
           ),
         );
         return;
-      }
-
-      if (payload.resourceType === 'planning') {
-        void updateServiceContexts().catch((err: unknown) =>
-          logger.error(
-            'Failed to refresh service contexts after planning clear',
-            err,
-          ),
-        );
       }
     }).then((fn) => {
       if (isMounted) {

@@ -882,7 +882,6 @@
       "dockerImageRequired": "Select a Docker image before starting a Docker-isolated session.",
       "dockerCreating": "Creating session — preparing Docker image {{image}}…",
       "newSession": "New Session",
-
       "workspaceOverrideActive": "Workspace Override Active",
       "workspaceOverrideDescription": "The agent will use this directory as its primary workspace for this session.",
       "filesWillBeListedAfterStart": "Files will be listed after session starts",
@@ -901,8 +900,6 @@
       "copyTooltip": "Copy conversation as Markdown",
       "toggleWorkspaceAria": "Toggle Workspace Files Panel",
       "toggleWorkspaceTooltip": "Toggle Workspace Files Panel",
-      "togglePlanningAria": "Toggle AI Planning Panel",
-      "togglePlanningTooltip": "Toggle AI Planning Panel",
       "defaultAssistant": "Agent",
       "untitledSession": "Untitled Session",
       "sessionLabel": "Session",
@@ -1051,32 +1048,6 @@
       "badgeMcp": "mcp",
       "viewSchema": "View Input Schema"
     },
-    "planning": {
-      "title": "AI Planning",
-      "currentGoal": "Current Goal",
-      "noGoal": "No active goal",
-      "tasks": "Tasks",
-      "noTasks": "No tasks",
-      "priorityHigh": "High",
-      "priorityMedium": "Medium",
-      "priorityLow": "Low",
-      "scratchpad": "Scratchpad",
-      "noScratchpad": "No scratchpad notes",
-      "untitledNote": "Untitled note",
-      "moreTasks": "more tasks",
-      "updated": "updated",
-      "schedules": {
-        "title": "Schedules",
-        "empty": "No session callbacks scheduled",
-        "oneShot": "One-shot",
-        "recurring": "Recurring",
-        "remaining": "{{time}} remaining",
-        "nextRun": "Next run: {{time}}",
-        "nextRunNone": "Not scheduled",
-        "cancelFailed": "Failed to cancel scheduled callback",
-        "cancelAria": "Cancel {{name}}"
-      }
-    },
     "bubble": {
       "notification": "Notification",
       "channel": "CHANNEL",
@@ -1131,6 +1102,17 @@
       "imageAlt": "Tool output",
       "unsupportedAudio": "Your browser does not support the audio element.",
       "unsupportedVideo": "Your browser does not support the video element."
+    },
+    "schedules": {
+      "title": "Schedules",
+      "empty": "No session callbacks scheduled",
+      "oneShot": "One-shot",
+      "recurring": "Recurring",
+      "remaining": "{{time}} remaining",
+      "nextRun": "Next run: {{time}}",
+      "nextRunNone": "Not scheduled",
+      "cancelFailed": "Failed to cancel scheduled callback",
+      "cancelAria": "Cancel {{name}}"
     }
   },
   "scheduledTasks": {
@@ -1169,8 +1151,6 @@
       "messageHint": "Use @playbook:, @skill:, or @file: for autocomplete.",
       "workspaceAutocompleteHint": "Workspace override enables @skill: and @file: autocomplete.",
       "messagePlaceholder": "Type a message… use @playbook:, @skill:, or @file: for autocomplete",
-      "resetPlanningLabel": "Reset planning state before run",
-      "resetPlanningHint": "Clears goal, todos, and scratchpad before injecting the message. Does not wipe chat history.",
       "cancel": "Cancel",
       "saveChanges": "Save changes",
       "createTask": "Create task",

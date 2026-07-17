@@ -33,8 +33,6 @@ pub struct Model {
     pub session_id: Option<String>,
     /// Optional workspace override path applied to the pinned session at execution time
     pub workspace_override: Option<String>,
-    /// When true, clear planning state (goal/todo/scratchpad) before injecting the task message
-    pub reset_planning_state: bool,
     /// Whether the task is active
     pub enabled: bool,
     /// Epoch milliseconds of last successful trigger (None = never run)

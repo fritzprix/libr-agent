@@ -65,8 +65,6 @@
     "refactor:prepare": "node scripts/refactor-pipeline.js prepare",
     "refactor:validate": "node scripts/refactor-pipeline.js validate",
     "refactor:validate:legacy": "pnpm refactor:prepare && pnpm lint && pnpm test:run:validate && pnpm rust:clippy && pnpm rust:check:all && pnpm rust:test && pnpm build && pnpm perf:bundle && pnpm dead-code",
-    "verify-planning": "node scripts/manage-logs.js --pattern=\"PLANNING\" -n=5000",
-    "verify-planning:file": "node scripts/manage-logs.js --pattern=\"PLANNING\" -n=5000",
     "log": "node scripts/manage-logs.js",
     "error": "node scripts/manage-logs.js --error",
     "release": "bash scripts/release.sh",

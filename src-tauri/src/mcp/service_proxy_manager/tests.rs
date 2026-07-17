@@ -1,8 +1,5 @@
 use super::*;
-use crate::entity::{
-    assistant, knowledge, mcp_server, planning_goal, planning_scratchpad, planning_todo, playbook,
-    session,
-};
+use crate::entity::{assistant, knowledge, mcp_server, playbook, scratchpad, session};
 use sea_orm::{ConnectionTrait, Database, EntityTrait, Schema, Set};
 use serde_json::json;
 use std::sync::Arc;
@@ -66,9 +63,7 @@ async fn create_test_harness() -> TestHarness {
         schema.create_table_from_entity(playbook::Entity),
         schema.create_table_from_entity(assistant::Entity),
         schema.create_table_from_entity(knowledge::Entity),
-        schema.create_table_from_entity(planning_goal::Entity),
-        schema.create_table_from_entity(planning_todo::Entity),
-        schema.create_table_from_entity(planning_scratchpad::Entity),
+        schema.create_table_from_entity(scratchpad::Entity),
         schema.create_table_from_entity(crate::entity::settings::Entity),
         schema.create_table_from_entity(mcp_server::Entity),
     ] {
@@ -448,7 +443,7 @@ async fn test_phase3_all_servers_integration() {
     let all_tools = vec![
         "bootstrap".to_string(),
         "attachments".to_string(),
-        "planning".to_string(),
+        "scratchpad".to_string(),
         "playbook".to_string(),
         "agent".to_string(),
     ];
@@ -483,18 +478,18 @@ async fn test_phase3_all_servers_integration() {
         "Knowledge save should work"
     );
 
-    // Test Planning (session-scoped)
-    let planning_result = manager
+    // Test Scratchpad (session-scoped)
+    let scratchpad_result = manager
         .call_tool(
             &session_id,
-            "planning__createGoal",
+            "scratchpad__addNote",
             json!({
-                "goal": "Complete Phase 3 integration"
+                "content": "Complete Phase 3 integration note"
             }),
         )
         .await
         .unwrap();
-    assert!(planning_result.error.is_none(), "Planning should work");
+    assert!(scratchpad_result.error.is_none(), "Scratchpad should work");
 
     // Test Playbook (session-scoped)
     let playbook_result = manager

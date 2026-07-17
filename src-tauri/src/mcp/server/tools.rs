@@ -427,7 +427,6 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             let tool_count = get_static_tools_for_server(&name).len();
 
             let metadata = match entry.variant {
-                BuiltinServiceId::Planning => planning::PlanningServer::metadata_static(),
                 BuiltinServiceId::Scratchpad => scratchpad::ScratchpadServer::metadata_static(),
                 BuiltinServiceId::Knowledge => knowledge::KnowledgeServer::metadata_static(),
                 BuiltinServiceId::History => history::HistoryServer::metadata_static(),
@@ -546,7 +545,6 @@ pub async fn get_service_context(
 /// This provides a centralized access point for discovering all available builtin tools.
 ///
 /// Returns a complete list of tool schemas from all active builtin servers:
-/// - Planning (15 tools): Goal and todo management
 /// - Knowledge (5 tools): Assistant-scoped knowledge base
 /// - Browser (13 tools): Web browser automation
 /// - Workspace (30+ tools): File operations and shell execution
@@ -584,7 +582,6 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
     };
 
     match service_id {
-        BuiltinServiceId::Planning => crate::mcp::builtin::planning::PlanningServer::tools_static(),
         BuiltinServiceId::Scratchpad => {
             crate::mcp::builtin::scratchpad::ScratchpadServer::tools_static()
         }

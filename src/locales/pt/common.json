@@ -884,8 +884,6 @@
       "copyTooltip": "Copiar conversa como Markdown",
       "toggleWorkspaceAria": "Alternar Painel de Arquivos do Espaço de Trabalho",
       "toggleWorkspaceTooltip": "Alternar Painel de Arquivos do Espaço de Trabalho",
-      "togglePlanningAria": "Alternar Painel de Planejamento de IA",
-      "togglePlanningTooltip": "Alternar Painel de Planejamento de IA",
       "defaultAssistant": "Agente",
       "untitledSession": "Sessão sem título",
       "sessionLabel": "Sessão",
@@ -1022,21 +1020,6 @@
       "badgeBuiltin": "integrada",
       "badgeMcp": "mcp",
       "viewSchema": "Ver Esquema de Entrada"
-    },
-    "planning": {
-      "title": "Planejamento de IA",
-      "currentGoal": "Objetivo Atual",
-      "noGoal": "Nenhum objetivo ativo",
-      "tasks": "Tarefas",
-      "noTasks": "Nenhuma tarefa",
-      "priorityHigh": "Alta",
-      "priorityMedium": "Média",
-      "priorityLow": "Baixa",
-      "scratchpad": "Scratchpad",
-      "noScratchpad": "Sem notas no scratchpad",
-      "untitledNote": "Nota sem título",
-      "moreTasks": "tarefas a mais",
-      "updated": "atualizado"
     },
     "bubble": {
       "notification": "Notificação",

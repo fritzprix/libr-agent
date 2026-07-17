@@ -20,7 +20,6 @@ export interface ScheduledTask {
   sessionId: string | null;
   taskCategory: string;
   workspaceOverride: string | null;
-  resetPlanningState: boolean;
   enabled: boolean;
   lastRunAt: number | null;
   nextRunAt: number | null;
@@ -28,7 +27,7 @@ export interface ScheduledTask {
   updatedAt: number;
 }
 
-/** SESSION callback shown in the active session planning panel */
+/** SESSION callback shown in the active session schedules panel */
 export interface SessionScheduledTask {
   id: string;
   name: string;
@@ -46,7 +45,6 @@ export interface CreateScheduledTaskRequest {
   message: string;
   executionMode?: ExecutionMode;
   workspaceOverride?: string | null;
-  resetPlanningState?: boolean;
 }
 
 export interface UpdateScheduledTaskRequest {
@@ -57,7 +55,6 @@ export interface UpdateScheduledTaskRequest {
   message?: string;
   executionMode?: ExecutionMode;
   workspaceOverride?: string | null;
-  resetPlanningState?: boolean;
   enabled?: boolean;
 }
 

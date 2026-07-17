@@ -59,7 +59,7 @@ export function SessionSchedulesSection({
 
   const formatNextRun = (nextRunAt: number | null): string => {
     if (!nextRunAt) {
-      return t('agent.planning.schedules.nextRunNone', 'Not scheduled');
+      return t('agent.schedules.nextRunNone', 'Not scheduled');
     }
 
     return getDateTimeFormatter().format(new Date(nextRunAt));
@@ -71,7 +71,7 @@ export function SessionSchedulesSection({
     } catch {
       toast.error(
         t(
-          'agent.planning.schedules.cancelFailed',
+          'agent.schedules.cancelFailed',
           'Failed to cancel scheduled callback',
         ),
       );
@@ -84,7 +84,7 @@ export function SessionSchedulesSection({
         <div className="flex items-center gap-2">
           <Timer className="h-3.5 w-3.5 text-muted-foreground" />
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('agent.planning.schedules.title', 'Schedules')}
+            {t('agent.schedules.title', 'Schedules')}
           </h4>
         </div>
         <span className="text-[11px] text-muted-foreground">
@@ -101,10 +101,7 @@ export function SessionSchedulesSection({
             </div>
           ) : tasks.length === 0 ? (
             <div className="px-3 py-4 text-sm text-muted-foreground">
-              {t(
-                'agent.planning.schedules.empty',
-                'No session callbacks scheduled',
-              )}
+              {t('agent.schedules.empty', 'No session callbacks scheduled')}
             </div>
           ) : (
             <div>
@@ -121,14 +118,11 @@ export function SessionSchedulesSection({
                         </span>
                         {task.isOneShot ? (
                           <Badge variant="secondary" className="text-[10px]">
-                            {t('agent.planning.schedules.oneShot', 'One-shot')}
+                            {t('agent.schedules.oneShot', 'One-shot')}
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-[10px]">
-                            {t(
-                              'agent.planning.schedules.recurring',
-                              'Recurring',
-                            )}
+                            {t('agent.schedules.recurring', 'Recurring')}
                           </Badge>
                         )}
                       </div>
@@ -141,7 +135,7 @@ export function SessionSchedulesSection({
                             <Timer className="h-3.5 w-3.5 shrink-0" />
                             <span>
                               {t(
-                                'agent.planning.schedules.remaining',
+                                'agent.schedules.remaining',
                                 '{{time}} remaining',
                                 { time: formatCountdown(task.nextRunAt) },
                               )}
@@ -152,7 +146,7 @@ export function SessionSchedulesSection({
                             <Clock className="h-3.5 w-3.5 shrink-0" />
                             <span>
                               {t(
-                                'agent.planning.schedules.nextRun',
+                                'agent.schedules.nextRun',
                                 'Next run: {{time}}',
                                 { time: formatNextRun(task.nextRunAt) },
                               )}
@@ -168,7 +162,7 @@ export function SessionSchedulesSection({
                       onClick={() => void handleCancel(task.id)}
                       disabled={cancellingIds.has(task.id)}
                       aria-label={t(
-                        'agent.planning.schedules.cancelAria',
+                        'agent.schedules.cancelAria',
                         'Cancel {{name}}',
                         { name: task.name },
                       )}

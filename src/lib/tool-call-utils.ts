@@ -56,7 +56,7 @@ export function hasUIResource(toolResult?: Message): boolean {
  * When the builtin naming convention changes, update ONLY this section.
  *
  * Current convention:  <service>__<tool>
- *   e.g.  planning__addScratchpad
+ *   e.g.  scratchpad__addNote
  *         tool__listServers
  *
  * External MCP tools use the same format:  <server>__<tool>
@@ -72,7 +72,7 @@ export const BUILTIN_SERVICE_NAMES = new Set<string>(
 );
 
 /** Returns true if the raw tool name belongs to a builtin service.
- * Requires the `server__tool` delimiter — bare service names (e.g. `'planning'`)
+ * Requires the `server__tool` delimiter — bare service names (e.g. `'scratchpad'`)
  * are NOT considered builtin tools.
  */
 export function isBuiltinTool(name: string): boolean {
@@ -87,8 +87,8 @@ export function isBuiltinTool(name: string): boolean {
  * Returns null for external MCP tools or names without a known service prefix.
  *
  * @example
- * parseBuiltinToolName("planning__addScratchpad")
- * // → { serviceId: "planning", toolName: "addScratchpad" }
+ * parseBuiltinToolName("scratchpad__addNote")
+ * // → { serviceId: "scratchpad", toolName: "addNote" }
  */
 export function parseBuiltinToolName(
   name: string,
@@ -104,7 +104,7 @@ export function parseBuiltinToolName(
 /**
  * Returns a human-friendly display name for any tool.
  *
- * Builtin:  "planning__addScratchpad"  → "planning / addScratchpad"
+ * Builtin:  "scratchpad__addNote"  → "scratchpad / addNote"
  * External: "github__search_code"      → "search_code"
  */
 export function parseToolName(fullToolName: string): string {

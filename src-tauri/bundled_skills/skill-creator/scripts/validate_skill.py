@@ -148,6 +148,41 @@ def validate_skill_full(skill_path):
     return True, success_msg
 
 
+class ValidationReport:
+    def __init__(self, valid, message, skill_path):
+        self.valid = valid
+        self.message = message
+        self.skill_path = Path(skill_path)
+
+    def fail_on_warnings(self, strict):
+        return self.valid
+
+
+def validate_skill_path(skill_path, strict=True):
+    valid, message = validate_skill_full(skill_path)
+    return ValidationReport(valid, message, skill_path)
+
+
+def get_skill_name(report):
+    skill_md = report.skill_path / "SKILL.md"
+    if not skill_md.exists():
+        return ""
+    try:
+        content = skill_md.read_text(encoding="utf-8")
+        fm_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
+        if fm_match:
+            fm = yaml.safe_load(fm_match.group(1))
+            if isinstance(fm, dict):
+                return fm.get("name", "") or ""
+    except Exception:
+        pass
+    return ""
+
+
+def format_detailed_report(report, phase):
+    return f"[{phase}] Validation Report:\nStatus: {'SUCCESS' if report.valid else 'FAILED'}\nDetails: {report.message}"
+
+
 if __name__ == "__main__":
     configure_stdio()
     if len(sys.argv) < 2:

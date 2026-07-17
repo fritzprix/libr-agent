@@ -401,7 +401,7 @@ pub async fn agent_execute_command(
             Ok(CommandResult {
                 success: true,
                 message:
-                    "Session history, planning data, and browser session cleared successfully."
+                    "Session history, scratchpad data, and browser session cleared successfully."
                         .to_string(),
             })
         }

@@ -24,7 +24,6 @@ pub struct CreateScheduledTaskParams {
     pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace_override: Option<String>,
-    pub reset_planning_state: bool,
     pub next_run_at: Option<i64>,
 }
 
@@ -38,7 +37,6 @@ pub struct UpdateScheduledTaskParams {
     pub message: Option<String>,
     pub execution_mode: Option<ExecutionMode>,
     pub workspace_override: Option<Option<String>>,
-    pub reset_planning_state: Option<bool>,
     pub enabled: Option<bool>,
     pub next_run_at: Option<Option<i64>>,
 }
@@ -136,7 +134,6 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
             created_by_session_id: Set(params.created_by_session_id),
             session_id: Set(params.session_id),
             workspace_override: Set(params.workspace_override),
-            reset_planning_state: Set(params.reset_planning_state),
             enabled: Set(true),
             last_run_at: Set(None),
             next_run_at: Set(params.next_run_at),
@@ -207,9 +204,6 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         }
         if let Some(v) = params.workspace_override {
             active.workspace_override = Set(v);
-        }
-        if let Some(v) = params.reset_planning_state {
-            active.reset_planning_state = Set(v);
         }
         if let Some(v) = params.enabled {
             active.enabled = Set(v);

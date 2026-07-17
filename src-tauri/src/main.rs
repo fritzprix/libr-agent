@@ -95,11 +95,14 @@ fn main() {
         let data_dir = dirs::data_dir()
             .expect("Failed to get data directory")
             .join("com.fritzprix.libragent");
-        // Use a different filename to avoid potential locking issues.
-        data_dir
-            .join("libragent_v2.db")
-            .to_string_lossy()
-            .to_string()
+
+        let db_filename = if cfg!(debug_assertions) {
+            "libragent_v2_dev.db"
+        } else {
+            "libragent_v2.db"
+        };
+
+        data_dir.join(db_filename).to_string_lossy().to_string()
     });
 
     // Check if the database directory exists and create it if it doesn't.

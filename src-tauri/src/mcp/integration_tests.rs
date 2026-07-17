@@ -14,8 +14,8 @@ mod tests {
 
     use crate::repositories::{
         SqliteAssistantRepository, SqliteAttachmentsRepository, SqliteKnowledgeRepository,
-        SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
-        SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
+        SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlaybookRepository,
+        SqliteScratchpadRepository, SqliteSessionRepository, SqliteSettingsRepository,
     };
     use crate::state;
     use std::sync::OnceLock;
@@ -118,7 +118,7 @@ mod tests {
             state::set_attachments_repository(SqliteAttachmentsRepository::new(db_clone.clone()));
             state::set_settings_repository(SqliteSettingsRepository::new(db_clone.clone()));
             state::set_knowledge_repository(SqliteKnowledgeRepository::new(db_clone.clone()));
-            state::set_planning_repository(SqlitePlanningRepository::new(db_clone.clone()));
+            state::set_scratchpad_repository(SqliteScratchpadRepository::new(db_clone.clone()));
         }));
 
         // Store in local static (best effort race)

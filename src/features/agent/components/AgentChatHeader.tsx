@@ -8,7 +8,6 @@ import {
   useAgentSessionListActions,
   useAgentSessionListState,
 } from '@/context/AgentSessionListContext';
-import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
@@ -18,7 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { PanelRight, FolderOpen, Copy, Loader2 } from 'lucide-react';
+import { FolderOpen, Copy, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useClipboard } from '@/hooks/useClipboard';
@@ -38,7 +37,6 @@ export function AgentChatHeader({
   const { renameSession } = useAgentSessionActions();
   const { toggleBookmark } = useAgentSessionListActions();
   const { sessions, notificationSessions } = useAgentSessionListState();
-  const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
   const { messages } = useAgentChat();
   const [isCopying, setIsCopying] = useState(false);
@@ -160,28 +158,6 @@ export function AgentChatHeader({
             </TooltipTrigger>
             <TooltipContent>
               {t('agent.header.toggleWorkspaceTooltip')}
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={togglePlanningPanel}
-                aria-label={t('agent.header.togglePlanningAria')}
-                aria-controls="agent-planning-panel"
-                aria-expanded={showPlanningPanel}
-                className="h-6 px-2"
-              >
-                <PanelRight
-                  className={`h-4 w-4 ${showPlanningPanel ? 'text-primary' : ''}`}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {t('agent.header.togglePlanningTooltip')}
             </TooltipContent>
           </Tooltip>
 

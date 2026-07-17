@@ -59,7 +59,7 @@ describe('detectRepeatedThinkingLoop', () => {
     });
   });
 
-  it('fires during streaming before the repeated planning loop completes', () => {
+  it('fires during streaming before the repeated thinking loop completes', () => {
     const repeatedBlock =
       'I will use the `ui__presentInteractive` tool.\n' +
       'I will use `workspace__readFile` to get the content.\n' +

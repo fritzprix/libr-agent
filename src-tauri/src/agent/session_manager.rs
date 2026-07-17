@@ -10,7 +10,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
     compact_context_repository::CompactContextRepository, message_repository::MessageRepository,
-    planning_repository::PlanningRepository, CompactContextRecord, SessionListCursor,
+    scratchpad_repository::ScratchpadRepository, CompactContextRecord, SessionListCursor,
     SessionListPage, SessionMetadata, SessionRepository,
 };
 use std::collections::HashMap;
@@ -778,12 +778,12 @@ impl AgentSessionManager {
             .await
             .map_err(|e| format!("Failed to delete messages from DB: {}", e))?;
 
-        // 2. Clear planning data (goal, todo, scratchpad)
-        let planning_repo = crate::state::get_planning_repository();
-        planning_repo
+        // 2. Clear scratchpad data
+        let scratchpad_repo = crate::state::get_scratchpad_repository();
+        scratchpad_repo
             .clear_session(session_id)
             .await
-            .map_err(|e| format!("Failed to clear planning data during reset: {}", e))?;
+            .map_err(|e| format!("Failed to clear scratchpad data during reset: {}", e))?;
 
         // 3. Delete compact context
         let compact_repo = crate::state::get_compact_context_repository();

@@ -77,20 +77,6 @@ fn test_tool_group_isolation_browser() {
 
     // Should suggest browser tools only
     assert!(error.guidance.iter().any(|g| g.contains("createSession")));
-    assert!(!error.guidance.iter().any(|g| g.contains("addTodo"))); // Should not suggest planning tools
-}
-
-#[test]
-fn test_tool_group_isolation_planning() {
-    let error = ErrorGuidance::new(
-        ErrorCategory::DuplicateResource,
-        "Todo already exists",
-        ToolGroup::Planning,
-    );
-
-    // Should suggest planning tools only
-    assert!(error.guidance.iter().any(|g| g.contains("getCurrentState")));
-    assert!(!error.guidance.iter().any(|g| g.contains("navigateToUrl"))); // Should not suggest browser tools
 }
 
 #[test]

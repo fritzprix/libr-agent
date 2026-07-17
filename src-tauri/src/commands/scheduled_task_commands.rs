@@ -26,7 +26,6 @@ pub struct ScheduledTaskDto {
     pub session_id: Option<String>,
     pub task_category: String,
     pub workspace_override: Option<String>,
-    pub reset_planning_state: bool,
     pub enabled: bool,
     pub last_run_at: Option<i64>,
     pub next_run_at: Option<i64>,
@@ -34,7 +33,7 @@ pub struct ScheduledTaskDto {
     pub updated_at: i64,
 }
 
-/// Session callback shown in the active session planning panel
+/// Session callback shown in the active session schedules panel
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionScheduledTaskDto {
@@ -91,7 +90,6 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
             session_id: m.session_id,
             task_category: m.task_category,
             workspace_override: m.workspace_override,
-            reset_planning_state: m.reset_planning_state,
             enabled: m.enabled,
             last_run_at: m.last_run_at,
             next_run_at,
@@ -114,8 +112,6 @@ pub struct CreateScheduledTaskRequest {
     #[serde(default)]
     pub execution_mode: Option<String>,
     pub workspace_override: Option<String>,
-    #[serde(default)]
-    pub reset_planning_state: Option<bool>,
 }
 
 /// Request to update a scheduled task
@@ -129,7 +125,6 @@ pub struct UpdateScheduledTaskRequest {
     pub message: Option<String>,
     pub execution_mode: Option<String>,
     pub workspace_override: Option<Option<String>>,
-    pub reset_planning_state: Option<bool>,
     pub enabled: Option<bool>,
 }
 
@@ -161,7 +156,6 @@ pub async fn create_scheduled_task(
             created_by_session_id: None,
             session_id: None,
             workspace_override: request.workspace_override,
-            reset_planning_state: request.reset_planning_state.unwrap_or(false),
             next_run_at: None,
         },
     )
@@ -215,7 +209,6 @@ pub async fn update_scheduled_task(
             .map(|mode| parse_execution_mode(Some(mode.as_str())))
             .transpose()?,
         workspace_override: request.workspace_override,
-        reset_planning_state: request.reset_planning_state,
         enabled: request.enabled,
         next_run_at: None,
     };

@@ -5,8 +5,8 @@
   "localServices": [],
   "allowedBuiltInServiceAliases": [
     "workspace",
-    "planning",
     "attachments",
-    "playbook"
+    "playbook",
+    "scratchpad"
   ]
 }

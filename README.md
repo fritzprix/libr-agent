@@ -104,7 +104,7 @@ LibrAgent treats security as a first-class architectural concern:
 MCP (Model Context Protocol) is the open standard behind LibrAgent's extensibility model. LibrAgent treats it not as a feature — but as the architectural backbone:
 
 - **Full transport support**: stdio, HTTP, SSE, and OAuth 2.1 — the complete spec
-- **15+ built-in servers**: Planning, Knowledge, Browser Automation, Workspace, Shell Execution, Content Store, and more
+- **15+ built-in servers**: Scratchpad, Knowledge, Browser Automation, Workspace, Shell Execution, Content Store, and more
 - **Preset catalog**: Install GitHub, Brave Search, Filesystem, and other popular servers in one click
 - **Session-isolated instances**: Each agent session has independent MCP server state — no interference between parallel agents
 - **Import from anywhere**: Migrate MCP configs from Cursor, VS Code, Claude Code, or Windsurf automatically
@@ -209,6 +209,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 Download the latest installer for your platform from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.31_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.31/LibrAgent_0.8.31_x64-setup.exe) · [`LibrAgent_0.8.31_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.31/LibrAgent_0.8.31_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.31_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.31/LibrAgent_0.8.31_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.31_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.31/LibrAgent_0.8.31_amd64.AppImage) · [`LibrAgent_0.8.31_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.31/LibrAgent_0.8.31_amd64.deb) · [`LibrAgent-0.8.31-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.31/LibrAgent-0.8.31-1.x86_64.rpm)

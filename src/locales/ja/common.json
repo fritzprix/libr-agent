@@ -858,8 +858,6 @@
       "copyTooltip": "会話をMarkdownとしてコピー",
       "toggleWorkspaceAria": "ワークスペースファイルパネルを切り替え",
       "toggleWorkspaceTooltip": "ワークスペースファイルパネルを切り替え",
-      "togglePlanningAria": "AIプランニングパネルを切り替え",
-      "togglePlanningTooltip": "AIプランニングパネルを切り替え",
       "defaultAssistant": "エージェント",
       "untitledSession": "無題のセッション",
       "sessionLabel": "セッション",
@@ -996,21 +994,6 @@
       "badgeBuiltin": "組み込み",
       "badgeMcp": "mcp",
       "viewSchema": "入力スキーマを表示"
-    },
-    "planning": {
-      "title": "AIプランニング",
-      "currentGoal": "現在の目標",
-      "noGoal": "アクティブな目標なし",
-      "tasks": "タスク",
-      "noTasks": "タスクなし",
-      "priorityHigh": "高",
-      "priorityMedium": "中",
-      "priorityLow": "低",
-      "scratchpad": "スクラッチパッド",
-      "noScratchpad": "スクラッチパッドのメモはありません",
-      "untitledNote": "無題のメモ",
-      "moreTasks": "件の追加タスク",
-      "updated": "更新済み"
     },
     "bubble": {
       "notification": "通知",

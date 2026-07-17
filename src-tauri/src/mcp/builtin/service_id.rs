@@ -5,7 +5,6 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BuiltinServiceId {
-    Planning,
     Scratchpad,
     Workspace,
     Knowledge,
@@ -36,7 +35,6 @@ impl BuiltinServiceId {
     /// Resolve a supported builtin service alias to a [`BuiltinServiceId`].
     pub fn from_alias(alias: &str) -> Option<Self> {
         match alias.trim().to_lowercase().as_str() {
-            "planning" => Some(Self::Planning),
             "scratchpad" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
@@ -58,7 +56,6 @@ impl BuiltinServiceId {
     /// Current canonical alias for this service.
     pub fn name(self) -> &'static str {
         match self {
-            Self::Planning => "planning",
             Self::Scratchpad => "scratchpad",
             Self::Workspace => "workspace",
             Self::Knowledge => "knowledge",
@@ -79,11 +76,6 @@ impl BuiltinServiceId {
 
 // Registry SSOT
 pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
-    BuiltinServiceEntry {
-        variant: BuiltinServiceId::Planning,
-        canonical: "planning",
-        optional: false,
-    },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Scratchpad,
         canonical: "scratchpad",
@@ -157,7 +149,6 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
 ];
 
 pub const CORE_BUILTIN_SERVICE_ALIASES: &[&str] = &[
-    "planning",
     "scratchpad",
     "workspace",
     "agent",

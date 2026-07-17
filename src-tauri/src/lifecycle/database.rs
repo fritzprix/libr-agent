@@ -52,8 +52,7 @@ pub(crate) fn register_sqlite_vec() {
 pub struct UserDataSummary {
     pub sessions: i64,
     pub messages: i64,
-    pub planning_goals: i64,
-    pub planning_todos: i64,
+    pub scratchpad: i64,
     pub settings: i64,
     pub mcp_servers: i64,
     pub assistants: i64,
@@ -61,12 +60,7 @@ pub struct UserDataSummary {
 
 impl UserDataSummary {
     pub fn meaningful_score(&self) -> i64 {
-        self.sessions
-            + self.messages
-            + self.planning_goals
-            + self.planning_todos
-            + self.settings
-            + self.mcp_servers
+        self.sessions + self.messages + self.scratchpad + self.settings + self.mcp_servers
     }
 
     pub fn has_meaningful_user_data(&self) -> bool {
@@ -200,8 +194,7 @@ pub async fn inspect_user_data_summary(db_file_path: &str) -> DatabaseResult<Use
     Ok(UserDataSummary {
         sessions: count_rows_if_table_exists(&db, "sessions").await?,
         messages: count_rows_if_table_exists(&db, "messages").await?,
-        planning_goals: count_rows_if_table_exists(&db, "planning_goals").await?,
-        planning_todos: count_rows_if_table_exists(&db, "planning_todos").await?,
+        scratchpad: count_rows_if_table_exists(&db, "scratchpad").await?,
         settings: count_rows_if_table_exists(&db, "settings").await?,
         mcp_servers: count_rows_if_table_exists(&db, "mcp_servers").await?,
         assistants: count_rows_if_table_exists(&db, "assistants").await?,
