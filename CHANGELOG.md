@@ -1,3 +1,27 @@
+## [0.8.31] - 2026-07-18
+
+### 🚀 Features
+
+- **Response Circuit Breaker**: Implemented a circuit breaker for agent tool execution that detects and escalates repeated errors to `planning__reflect` before hard-breaking the session, preventing agents from looping indefinitely on failing tools.
+- **Workspace Environment Isolation**: Refactored workspace environment variable handling and temp directory management for cleaner isolation between agent sessions.
+- **Scheduled Tasks — Planning-Only Reset**: Added `resetPlanningState` option for scheduled tasks, allowing agents to reset goals/todos without wiping chat history on task execution.
+
+### 🐛 Fixes
+
+- **Circuit Breaker Escalation Guard**: Fixed escalation logic to properly remove dead results field and optimize clone behavior.
+- **MCP Schema Alignment**: Aligned builtin tool schemas with actual runtime behavior to eliminate tool call failures.
+- **Read-Only Tool Hint Suppression**: Agents no longer receive edit suggestions (e.g. `strReplace`) for read-only tools, and fixed a batch loop blind spot.
+- **Duplicate Tool Results**: Preserved distinct tool results that happen to have identical content instead of deduplicating them incorrectly.
+- **CI Test Mock**: Removed dead `results` field from `builtin_service_registry_tests` mock data.
+
+### 🔧 Internal
+
+- **Compaction Handoff**: Switched compaction to deliverable-first handoff, dropping the previous continue-bias behavior.
+- **Agent Batch Ingestion**: Each tool result is now ingested immediately during batch execution instead of deferred.
+- **Scratchpad Hint Cleanup**: Removed redundant success hints from scratchpad tool and aligned ID responses.
+- **Rust Formatting**: Applied `rustfmt` to circuit breaker and hint test files.
+- **Test Alignment**: Updated `readFile` hint assertions in workspace tests and circuit breaker integration test for `RepeatedErrorOutcome`.
+
 ## [0.8.30] - 2026-07-15
 
 ### 🐛 Fixes
