@@ -2,6 +2,9 @@ use crate::agent::types::ToolCall;
 use crate::agent::AgentConfig;
 use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
+use serde_json::Value;
+use std::collections::BTreeMap;
+
 #[derive(Debug, PartialEq)]
 pub enum CircuitBreakerAction {
     NaturalRecoveryError {
@@ -16,6 +19,14 @@ pub enum CircuitBreakerAction {
         args: String,
     },
     NaturalRecoverySuccess {
+        count: usize,
+        tool_name: String,
+        args: String,
+    },
+    /// Same (name, args) already present earlier in the current tool_calls batch.
+    DuplicateInBatch { tool_name: String, args: String },
+    /// Entire assistant tool_calls batch fingerprint repeated across turns.
+    RepeatedBatchSequence {
         count: usize,
         tool_name: String,
         args: String,
@@ -58,6 +69,81 @@ fn is_tool_error_message(message: &Message) -> bool {
     })
 }
 
+/// Canonicalize tool arguments so key-order differences do not evade signatures.
+///
+/// `serde_json::from_str` already rejects nesting deeper than 128; we still pass an
+/// explicit depth budget as defense-in-depth for any future Value sources.
+pub fn normalize_tool_arguments(args: &str) -> String {
+    match serde_json::from_str::<Value>(args) {
+        Ok(value) => canonical_json_value(&value, 0),
+        Err(_) => args.to_string(),
+    }
+}
+
+/// Matches `serde_json`'s default recursion limit so we never walk deeper than the parser allows.
+const CANONICAL_JSON_MAX_DEPTH: usize = 128;
+
+/// Soft cap for batch fingerprints. Larger batches collapse to a length-tagged hash so
+/// pathological agent outputs cannot amplify memory while identical batches still match.
+const MAX_BATCH_FINGERPRINT_BYTES: usize = 64 * 1024;
+
+fn canonical_json_value(value: &Value, depth: usize) -> String {
+    if depth >= CANONICAL_JSON_MAX_DEPTH {
+        return "\"__max_depth__\"".to_string();
+    }
+
+    match value {
+        Value::Object(map) => {
+            let sorted: BTreeMap<&str, String> = map
+                .iter()
+                .map(|(key, child)| (key.as_str(), canonical_json_value(child, depth + 1)))
+                .collect();
+            let body = sorted
+                .into_iter()
+                .map(|(key, child)| format!("\"{}\":{}", key, child))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{{}}}", body)
+        }
+        Value::Array(items) => {
+            let body = items
+                .iter()
+                .map(|child| canonical_json_value(child, depth + 1))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("[{}]", body)
+        }
+        other => other.to_string(),
+    }
+}
+
+pub fn tool_call_signature(tool_call: &ToolCall) -> String {
+    format!(
+        "{}:{}",
+        tool_call.function.name,
+        normalize_tool_arguments(&tool_call.function.arguments)
+    )
+}
+
+/// Ordered fingerprint of an assistant tool_calls batch (name+args per call).
+pub fn batch_fingerprint(tool_calls: &[ToolCall]) -> String {
+    let full = tool_calls
+        .iter()
+        .map(tool_call_signature)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if full.len() <= MAX_BATCH_FINGERPRINT_BYTES {
+        return full;
+    }
+
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    full.hash(&mut hasher);
+    format!("hashed:{:016x}:len={}", hasher.finish(), full.len())
+}
+
 /// Build signature_by_id lookup map from message history in a single pass.
 pub fn build_tool_call_indices(messages: &[Message]) -> std::collections::HashMap<String, String> {
     let mut call_signature_by_id = std::collections::HashMap::new();
@@ -65,13 +151,7 @@ pub fn build_tool_call_indices(messages: &[Message]) -> std::collections::HashMa
     for message in messages {
         if let Some(tool_calls) = &message.tool_calls {
             for tool_call in tool_calls {
-                call_signature_by_id.insert(
-                    tool_call.id.clone(),
-                    format!(
-                        "{}:{}",
-                        tool_call.function.name, tool_call.function.arguments
-                    ),
-                );
+                call_signature_by_id.insert(tool_call.id.clone(), tool_call_signature(tool_call));
             }
         }
     }
@@ -269,6 +349,143 @@ where
     Some((consecutive_matches, outcome))
 }
 
+/// Maximum trailing assistant tool_calls batches to inspect when computing a
+/// batch-repetition streak. Threshold is clamped to ≤20, so this is ample and
+/// bounds work on very long sessions. User/system messages still reset the streak.
+const MAX_ASSISTANT_BATCHES_TO_SCAN: usize = 32;
+
+/// Count consecutive prior assistant batches whose fingerprint matches `fingerprint`.
+///
+/// Intervening tool results are ignored. A different non-empty tool_calls batch ends
+/// the streak. User/system messages after a seen batch also end the streak (same
+/// reset semantics as the per-tool scanner). This catches `[a,b,c] → [a,b,c]` which
+/// the per-tool result scan misses.
+///
+/// Like the per-tool streak, matching is on call identity (name+args fingerprint),
+/// not on identical result text — outcome text differences do not clear the streak.
+pub fn count_consecutive_identical_batches(messages: &[Message], fingerprint: &str) -> usize {
+    let mut consecutive = 0;
+    let mut saw_assistant_batch = false;
+    let mut assistant_batches_scanned = 0;
+
+    for message in messages.iter().rev() {
+        match message.role.as_str() {
+            "assistant" => {
+                let Some(tool_calls) = message.tool_calls.as_ref() else {
+                    if saw_assistant_batch {
+                        break;
+                    }
+                    continue;
+                };
+                if tool_calls.is_empty() {
+                    if saw_assistant_batch {
+                        break;
+                    }
+                    continue;
+                }
+                saw_assistant_batch = true;
+                assistant_batches_scanned += 1;
+                if assistant_batches_scanned > MAX_ASSISTANT_BATCHES_TO_SCAN {
+                    break;
+                }
+                if batch_fingerprint(tool_calls) == fingerprint {
+                    consecutive += 1;
+                } else {
+                    break;
+                }
+            }
+            "tool" => {}
+            _ => {
+                if saw_assistant_batch {
+                    break;
+                }
+            }
+        }
+    }
+
+    consecutive
+}
+
+/// Collect later-in-batch duplicates of an earlier (name, args) signature.
+///
+/// Signatures are computed once per call (O(n)), then checked with a set.
+pub fn find_intra_batch_duplicates(
+    tool_calls: &[ToolCall],
+) -> std::collections::HashMap<String, CircuitBreakerAction> {
+    let mut seen_signatures = std::collections::HashSet::new();
+    let mut duplicates = std::collections::HashMap::new();
+
+    for tool_call in tool_calls {
+        let signature = tool_call_signature(tool_call);
+        if !seen_signatures.insert(signature) {
+            duplicates.insert(
+                tool_call.id.clone(),
+                CircuitBreakerAction::DuplicateInBatch {
+                    tool_name: tool_call.function.name.clone(),
+                    args: tool_call.function.arguments.clone(),
+                },
+            );
+        }
+    }
+
+    duplicates
+}
+
+/// Detect repeated identical tool_calls batches across consecutive turns.
+///
+/// Triggers on structural fingerprint identity (ordered name+args), consistent with
+/// per-tool streak matching on call signature rather than identical result payloads.
+/// When the fingerprint matches, every call in the batch is part of the loop — the
+/// preprocess layer therefore short-circuits the whole batch (not a subset).
+pub fn evaluate_batch_circuit_breaker(
+    messages: &[Message],
+    tool_calls: &[ToolCall],
+    threshold: usize,
+    hard_break_offset: usize,
+) -> Option<CircuitBreakerAction> {
+    if tool_calls.is_empty() {
+        return None;
+    }
+
+    // Single-tool batches are already covered by per-call streak scanning.
+    if tool_calls.len() < 2 {
+        return None;
+    }
+
+    let first = &tool_calls[0];
+    if first.function.name == "ui__circuitBreak"
+        || first.function.name == "scratchpad__think"
+        || first.function.name == "planning__reflect"
+    {
+        return None;
+    }
+
+    let fingerprint = batch_fingerprint(tool_calls);
+    let previous = count_consecutive_identical_batches(messages, &fingerprint);
+    if previous == 0 {
+        return None;
+    }
+
+    let total_count = previous + 1;
+    let hard_break_at = threshold + hard_break_offset;
+
+    if total_count >= hard_break_at {
+        Some(CircuitBreakerAction::HardBreak {
+            count: total_count,
+            tool_name: first.function.name.clone(),
+            args: first.function.arguments.clone(),
+        })
+    } else if total_count >= threshold {
+        Some(CircuitBreakerAction::RepeatedBatchSequence {
+            count: total_count,
+            tool_name: first.function.name.clone(),
+            args: first.function.arguments.clone(),
+        })
+    } else {
+        None
+    }
+}
+
 pub fn evaluate_circuit_breaker_action(
     messages: &[Message],
     tool_call: &ToolCall,
@@ -286,7 +503,7 @@ pub fn evaluate_circuit_breaker_action(
         return None;
     }
 
-    let current_signature = format!("{}:{}", tool_name, args);
+    let current_signature = tool_call_signature(tool_call);
     if let Some((consecutive_identical_signature, outcome)) =
         count_consecutive_identical_call_outcomes(messages, |tool_call_id| {
             call_signature_by_id.get(tool_call_id) == Some(&current_signature)

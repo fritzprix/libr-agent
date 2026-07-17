@@ -166,7 +166,9 @@ async fn workspace_file_tools_expose_str_replace_not_edit_file() {
 }
 
 #[tokio::test]
-async fn read_file_success_hint_points_to_str_replace_not_edit_file() {
+async fn read_file_success_omits_edit_promotion_hints_on_str_replace_builds() {
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_read_file_tool;
+
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "read-hint-str-replace";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -184,12 +186,23 @@ async fn read_file_success_hint_points_to_str_replace_not_edit_file() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("strReplace"),
-        "readFile hint should mention strReplace: {text}"
+        !text.contains("💡 Next:"),
+        "readFile success should not append next-action hints: {text}"
     );
     assert!(
         !text.contains("editFile"),
-        "readFile hint should not mention editFile on strReplace builds: {text}"
+        "readFile success should not mention editFile on strReplace builds: {text}"
+    );
+
+    // Edit affordance remains in the tool schema, not success next-actions.
+    let description = create_read_file_tool().description;
+    assert!(
+        description.contains("strReplace"),
+        "readFile schema should still mention strReplace: {description}"
+    );
+    assert!(
+        !description.contains("editFile"),
+        "readFile schema should not mention editFile on strReplace builds: {description}"
     );
 }
 
