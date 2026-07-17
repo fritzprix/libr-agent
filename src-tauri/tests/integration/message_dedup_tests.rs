@@ -391,7 +391,7 @@ async fn test_tool_message_deduplication() {
         assert_eq!(cached_msgs[0].id, "tool-1");
     }
 
-    // 3. Inject tool message with different tool_call_id but same content -> should also be deduplicated (ignored)
+    // 3. Different tool_call_id with same content must be kept (each call needs its own result)
     let tool_msg3 = build_tool_message(session_id, "tool-3", "call_2", "Success");
     MessageService::inject_messages_to_session(
         &active_sessions,
@@ -407,9 +407,9 @@ async fn test_tool_message_deduplication() {
         let sessions = active_sessions.read().await;
         let session = sessions.get(session_id).expect("session exists");
         let cached_msgs = session.messages.read().await;
-        // Still only contain the first message (tool-1) because tool-3 has the exact same content.
-        assert_eq!(cached_msgs.len(), 1);
+        assert_eq!(cached_msgs.len(), 2);
         assert_eq!(cached_msgs[0].id, "tool-1");
+        assert_eq!(cached_msgs[1].id, "tool-3");
     }
 
     // 4. Inject tool message with different content -> should NOT be deduplicated
@@ -428,10 +428,10 @@ async fn test_tool_message_deduplication() {
         let sessions = active_sessions.read().await;
         let session = sessions.get(session_id).expect("session exists");
         let cached_msgs = session.messages.read().await;
-        // Both tool-1 and tool-4 should exist
-        assert_eq!(cached_msgs.len(), 2);
+        assert_eq!(cached_msgs.len(), 3);
         assert_eq!(cached_msgs[0].id, "tool-1");
-        assert_eq!(cached_msgs[1].id, "tool-4");
+        assert_eq!(cached_msgs[1].id, "tool-3");
+        assert_eq!(cached_msgs[2].id, "tool-4");
     }
 }
 
@@ -697,16 +697,17 @@ async fn test_batch_message_deduplication() {
     };
 
     // Inject multiple tool messages in a single batch.
-    // tool-1, tool-2 (duplicate of tool-1), and tool-3 (different content)
+    // Consecutive same tool_call_id+content is dropped; distinct call ids with same text are kept.
     let tool_msg1 = build_tool_message(session_id, "tool-1", "call_1", "Success");
-    let tool_msg2 = build_tool_message(session_id, "tool-2", "call_2", "Success"); // different tool_call_id but same content
+    let tool_msg1_dup = build_tool_message(session_id, "tool-1-dup", "call_1", "Success");
+    let tool_msg2 = build_tool_message(session_id, "tool-2", "call_2", "Success");
     let tool_msg3 = build_tool_message(session_id, "tool-3", "call_3", "Different Success");
 
     MessageService::inject_messages_to_session(
         &active_sessions,
         app_handle,
         session_id,
-        vec![tool_msg1, tool_msg2, tool_msg3],
+        vec![tool_msg1, tool_msg1_dup, tool_msg2, tool_msg3],
         false,
     )
     .await
@@ -716,10 +717,10 @@ async fn test_batch_message_deduplication() {
         let sessions = active_sessions.read().await;
         let session = sessions.get(session_id).expect("session exists");
         let cached_msgs = session.messages.read().await;
-        // Should contain tool-1 and tool-3 (tool-2 was deduplicated within the batch)
-        assert_eq!(cached_msgs.len(), 2);
+        assert_eq!(cached_msgs.len(), 3);
         assert_eq!(cached_msgs[0].id, "tool-1");
-        assert_eq!(cached_msgs[1].id, "tool-3");
+        assert_eq!(cached_msgs[1].id, "tool-2");
+        assert_eq!(cached_msgs[2].id, "tool-3");
     }
 }
 
