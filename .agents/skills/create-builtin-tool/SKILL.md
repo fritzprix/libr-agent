@@ -734,6 +734,14 @@ Use this checklist before submitting any builtin tool implementation:
 - [ ] Echoed summaries are truncated if too long (e.g., >50 chars)
 - [ ] Context prompt prioritizes recent state changes + reasons
 
+### Rule 8: Outcome-Conditioned Augmentation ✅
+
+- [ ] Next-action hints depend on post-call outcome class (not a fixed always-on template)
+- [ ] Steady successes stay lean when context already enables the next step
+- [ ] Phase-boundary successes escalate once to an in-domain consolidating/review action
+- [ ] Repeated/identical failures escalate to diagnosis or strategy-reset (no identical retry loop)
+- [ ] Escalation is gated by state — not confused with unconditional hint spam
+
 ---
 
 ## Common Pitfalls to Avoid
@@ -814,6 +822,32 @@ props.insert("name".to_string(), string_prop(Some(1), Some(100), Some("New resou
 description: "Update an existing resource.\n\nPREREQUISITE: get valid ID from listResources()."
 ```
 
+### ❌ Pitfall 6: Fixed Follow-Up Spam (Rule 8 Violation)
+
+```rust
+// ❌ WRONG: Same next-action on every success, even when context already has the data
+SuccessHint::new(message, vec!["Use listItems() to see the list".to_string()])
+```
+
+```rust
+// ❌ WRONG: Identical recovery forever after N matching failures
+vec!["Retry with corrected parameters".to_string()]
+```
+
+```rust
+// ✅ CORRECT: Condition on outcome class
+match classify_outcome(&before, &after, &error_history) {
+    Outcome::Steady => SuccessHint::new(message, vec![]),
+    Outcome::PhaseBoundary => SuccessHint::new(
+        message,
+        vec!["Milestone reached — run the in-domain review/consolidate action.".to_string()],
+    ),
+    Outcome::RepeatedFailure => guided_error(...).with_guidance(vec![
+        "Same failure repeated — stop retrying; diagnose root cause or reset strategy.".to_string(),
+    ]),
+}
+```
+
 ---
 
 ## 🚫 Critical Anti-Patterns
@@ -838,7 +872,13 @@ Check for these subtle design flaws that cripple agent reasoning:
 
 - **Symptom**: Tool returns `void` or generic "Success".
 - **Result**: Agent is left in a void, unsure if the action persisted.
-- **Fix**: Always return an "Echo" of the new state (Rule 7).
+- **Fix**: Dual-channel response with IDs and status in text (Rule 3). Always return an "Echo" of the new state (Rule 7).
+
+### 4. The "Retry Treadmill" Pattern
+
+- **Symptom**: Every failure returns the same "retry with X" hint; every success promotes the same sibling tool.
+- **Result**: Agent loops at the same abstraction level instead of consolidating wins or resetting strategy after stuck failures.
+- **Fix**: Outcome-conditioned augmentation (Rule 8) — lean on steady progress, escalate at phase boundaries, escalate on repeated identical failures.
 
 ---
 

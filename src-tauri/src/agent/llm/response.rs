@@ -208,7 +208,6 @@ async fn initialize_pending_execution(
         session.pending_execution = Some(crate::agent::state::PendingToolExecution {
             message_id: assistant_message_id.to_string(),
             total_expected: tool_calls.len(),
-            results: Vec::new(),
             tool_names: tool_calls
                 .iter()
                 .map(|tc| (tc.id.clone(), tc.function.name.clone()))

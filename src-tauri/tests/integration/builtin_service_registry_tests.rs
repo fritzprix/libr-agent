@@ -62,7 +62,6 @@ fn mock_pending_execution(expected: &[&str], completed: &[&str]) -> PendingToolE
     PendingToolExecution {
         message_id: "msg-1".to_string(),
         total_expected: expected.len(),
-        results: Vec::new(),
         tool_names: HashMap::new(),
         expected_tool_call_ids: expected.iter().map(|id| (*id).to_string()).collect(),
         completed_tool_call_ids: completed.iter().map(|id| (*id).to_string()).collect(),

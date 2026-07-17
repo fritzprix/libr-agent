@@ -152,6 +152,20 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                         },
                                     );
                                 }
+                                circuit_breaker::CircuitBreakerAction::NaturalRecoveryErrorEscalate {
+                                    count,
+                                    tool_name,
+                                    ..
+                                } => {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::RepeatedErrorEscalate,
+                                            tool_name,
+                                            count,
+                                        },
+                                    );
+                                }
                                 circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
                                     count,
                                     tool_name,

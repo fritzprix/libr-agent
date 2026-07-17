@@ -23,7 +23,7 @@ Use this skill when:
 
 ### Step 1: Understand the Tool Design Manifesto Rules
 
-Before auditing, internalize these 5 critical rules:
+Before auditing, internalize these critical rules:
 
 #### **Rule 1: The Immutable ID Rule (Schema Design)**
 
@@ -62,6 +62,14 @@ Before auditing, internalize these 5 critical rules:
 - **Never** leak internal system architectures (e.g., Rust struct names, routing mechanisms) to the AI agent
 - Keep context prompts, descriptions, and hints focused ONLY on what the agent needs to _act_
 - Make service context prompts as static as possible; avoid injecting volatile data (like system-wide tool counts) to maximize LLM prompt caching
+
+#### **Rule 7: Outcome-Conditioned Augmentation (Guidance)**
+
+- Next-action hints must depend on **post-call outcome class**, not a fixed template
+- **Steady progress**: Prefer empty/minimal hints when context already enables the next step
+- **Phase boundary**: When state shows a natural milestone (queue drained, goal satisfied, batch finished), escalate to a consolidating/review action in the same domain
+- **Stuck / repeated failure**: Escalate to diagnosis or strategy-reset instead of repeating the same recovery hint
+- Intentional escalation is not bloat; unconditional "use toolX next" on every call is
 
 ---
 
@@ -367,6 +375,69 @@ let hint = "To enable this server, add its Server ID to an agent using agent__up
 
 ---
 
+### 📈 **Auditing Rule 7: Outcome-Conditioned Augmentation**
+
+Hints should change with **what just happened**, not always advertise the same follow-up tool.
+
+**What to Look For:**
+
+```rust
+// ❌ VIOLATION: Fixed success hint regardless of state
+let hint = SuccessHint::new(
+    format!("Updated item #{}", id),
+    vec!["Use getState to see the list".to_string()], // always, even when list is already in context
+);
+```
+
+```rust
+// ❌ VIOLATION: Same recovery forever on repeated failure
+return Ok(operation_failed_error(
+    "Apply Patch",
+    "Patch failed",
+    vec!["Retry applyPatch with corrected anchors".to_string()], // never escalates
+    ToolGroup::Workspace,
+));
+```
+
+```rust
+// ✅ COMPLIANT: Condition hints on outcome class
+let next = match outcome {
+    Outcome::Steady => vec![], // context already sufficient
+    Outcome::PhaseComplete => vec![
+        "Milestone reached — run the domain review/consolidate action before continuing."
+            .to_string(),
+    ],
+    Outcome::RepeatedFailure => vec![
+        "Same failure repeated — stop retrying; diagnose root cause or reset strategy."
+            .to_string(),
+    ],
+};
+```
+
+**Outcome classes (apply across any tool group):**
+
+| Class                    | When                                                | Hint posture                                                          |
+| ------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
+| Steady progress          | Ordinary success; agent can continue from context   | Empty or one concrete fact (e.g. count), no tool promotion            |
+| Phase boundary           | Natural milestone / drained queue / terminal batch  | Escalate to consolidating or review action in-domain                  |
+| Stuck / repeated failure | Identical error signature or N consecutive failures | Escalate to diagnosis / strategy-reset; do not restate the same retry |
+
+**Audit Checklist:**
+
+- [ ] Success hints vary by post-call state (not a single always-on template)
+- [ ] Steady-path successes avoid redundant "use list/get/read" promotions when context already has the data
+- [ ] Phase-boundary successes escalate once to a higher-level in-domain action
+- [ ] Repeated/identical failures escalate instead of looping the same recovery sentence
+- [ ] Escalation targets stay actionable and domain-appropriate (not architectural lectures)
+
+**Common Issues:**
+
+- Treating every success like a tutorial (always promote sibling tools)
+- Confusing Rule 7 escalation with hint bloat — fixed spam is bloat; state-gated escalation is not
+- Error recovery that never changes after N identical failures
+
+---
+
 ## Step 4: Document Findings
 
 ### Compliance Matrix Template
@@ -374,14 +445,15 @@ let hint = "To enable this server, add its Server ID to an agent using agent__up
 ```markdown
 ## Compliance Audit: [ServerName] Builtin Tools
 
-| Rule                      | Status   | Grade | Evidence  |
-| ------------------------- | -------- | ----- | --------- |
-| 1. Immutable ID Rule      | ✅/⚠️/🔴 | A-F   | [Details] |
-| 2. Hallucination Firewall | ✅/⚠️/🔴 | A-F   | [Details] |
-| 3. Dual-Channel Response  | ✅/⚠️/🔴 | A-F   | [Details] |
-| 4. AI-Native Descriptions | ✅/⚠️/🔴 | A-F   | [Details] |
-| 5. Success Hint Pattern   | ✅/⚠️/🔴 | A-F   | [Details] |
-| 6. Zero TMI Context Rule  | ✅/⚠️/🔴 | A-F   | [Details] |
+| Rule                                | Status   | Grade | Evidence  |
+| ----------------------------------- | -------- | ----- | --------- |
+| 1. Immutable ID Rule                | ✅/⚠️/🔴 | A-F   | [Details] |
+| 2. Hallucination Firewall           | ✅/⚠️/🔴 | A-F   | [Details] |
+| 3. Dual-Channel Response            | ✅/⚠️/🔴 | A-F   | [Details] |
+| 4. AI-Native Descriptions           | ✅/⚠️/🔴 | A-F   | [Details] |
+| 5. Success Hint Pattern             | ✅/⚠️/🔴 | A-F   | [Details] |
+| 6. Zero TMI Context Rule            | ✅/⚠️/🔴 | A-F   | [Details] |
+| 7. Outcome-Conditioned Augmentation | ✅/⚠️/🔴 | A-F   | [Details] |
 
 **Overall Grade:** [A-F] - [Summary]
 ```
@@ -438,10 +510,12 @@ let hint = "To enable this server, add its Server ID to an agent using agent__up
 **P1 (High):** Should fix soon
 - Rule 2 partial violations (poor error messages)
 - Rule 5 violations (no recovery hints)
+- Rule 7 violations (fixed retry loops / missing phase-boundary escalation)
 
 **P2 (Medium):** Nice to have
 - Rule 4 improvements (better descriptions)
 - Inconsistent error formatting
+- Rule 7 steady-path hint noise (redundant list/get promotions)
 
 **P3 (Low):** Optional polish
 - Documentation improvements
@@ -701,6 +775,7 @@ When reviewing PR:
 - [ ] Tool descriptions are AI-native and avoid architectural jargon
 - [ ] No human UI verbs in descriptions
 - [ ] Success/error hints are context-specific and actionable (Zero TMI)
+- [ ] Outcome-conditioned augmentation: steady path stays lean; milestones escalate; repeated failures escalate (not same retry forever)
 - [ ] Shared context prompts are static to maximize LLM cache performance
 - [ ] Structured content mirrors text content
 

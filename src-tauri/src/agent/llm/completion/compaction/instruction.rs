@@ -6,6 +6,9 @@ use super::hints::build_compaction_preservation_hints_from_parts;
 const COMPACTION_SECTION_SCHEMA: &str = "Write plain Markdown summary text for a later resume.\n\
  Use headings only when helpful. Do not force all sections.\n\
 Keep these section titles unchanged when you use them so later compaction can recognize them:\n\
+- Target Deliverable\n\
+- Progress\n\
+- Completion Criteria\n\
 - Active Request\n\
 - Required References\n\
 - Next Actions\n\
@@ -19,18 +22,25 @@ const COMPACTION_RULES: &[&str] = &[
     "Pause first. You are not continuing the workflow; you are only compressing it into a handoff.",
     "Write a dense handoff for later resume. Brief bullets or short note fragments are fine.",
     "Keep only the details needed to resume safely: durable facts, decisions, constraints, user preferences, unresolved work, and exact file paths or identifiers.",
+    "Lead with the end-state: Target Deliverable and Completion Criteria before local next steps.",
     "You do not need to emit every possible section. Omit empty or low-value sections, and keep short sections brief.",
+    "Target Deliverable: list the CONCRETE final outputs the user wants. Not steps — the actual things the user cares about.",
+    "Progress: if the workflow has clear phases or milestones, include a Markdown table with columns Phase, Status, Notes. Use status values Done, In Progress, Not Started, or Blocked. If the workflow is too fluid, omit this section.",
+    "Completion Criteria: list verifiable checkpoints that define done. Prefer checkbox lines like `- [ ] ...`. Each criterion must be objectively testable. Remove criteria that are already satisfied.",
     "Active Request: keep only the current unresolved user ask. Remove resolved asks.",
     "Required References: keep only the minimum paths, symbols, or IDs needed for the active request.",
     "Put fast-changing details in Current State, Recent Tool Results, or Next Actions.",
     "Do not call tools. Even if tool definitions are visible, ignore them for this request.",
     "Do not emit XML, JSON, pseudo tool-call markup, command blocks, or meta commentary.",
-    "After generating the summary, explicitly state the next action the agent should take to continue the workflow.",
+    "Do not tell the agent to continue from later messages or otherwise prime continuation. If the work appears complete, say so via empty Active Request and satisfied Completion Criteria.",
 ];
 
 const COMPACTION_SECTION_LIMITS: &[&str] = &[
     "Keep the summary compact, but completeness matters more than rigid symmetry.",
     "Usually 1-5 bullets or note fragments per section.",
+    "Target Deliverable: at most 6 items.",
+    "Progress: at most 10 phases.",
+    "Completion Criteria: at most 8 items.",
     "Active Request: at most 4 items.",
     "Required References: at most 5 items.",
 ];
@@ -40,9 +50,9 @@ const COMPACTION_OUTPUT_CONSTRAINT: &str =
 
 const INCREMENTAL_COMPACTION_RESIDUAL_PREFIX: &str =
     "The first message is the prior compact summary for all earlier history.\n\
-Keep its Active Request and Required References unless newer messages clearly replace or resolve them.\n\
+Keep its Target Deliverable, Completion Criteria, Active Request, and Required References unless newer messages clearly replace or resolve them.\n\
+Merge deliverables and criteria across rounds; remove completed criteria and refresh Progress status from newer messages.\n\
 Preserve its durable facts, decisions, and constraints when merging the newer messages.";
-
 pub(super) const ACTIVE_REQUEST_BULLET_LIMIT: usize = 4;
 pub(super) const REQUIRED_REFERENCE_BULLET_LIMIT: usize = 5;
 pub(super) const REFERENCE_CONTEXT_WINDOW_MESSAGES: usize = 8;

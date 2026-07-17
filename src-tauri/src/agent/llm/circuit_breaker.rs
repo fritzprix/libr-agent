@@ -12,6 +12,12 @@ pub enum CircuitBreakerAction {
         tool_name: String,
         args: String,
     },
+    /// Pre-hard-break escalation for repeated identical errors: nudge strategy reset.
+    NaturalRecoveryErrorEscalate {
+        count: usize,
+        tool_name: String,
+        args: String,
+    },
     NaturalRecoverySuccess {
         count: usize,
         tool_name: String,
@@ -264,43 +270,72 @@ fn count_consecutive_identical_call_outcomes<F>(
 where
     F: Fn(&str) -> bool,
 {
-    let mut consecutive_matches = 0;
-    let mut saw_tool_result = false;
-    let mut repeated_outcome: Option<RepeatedOutcome> = None;
+    // 1. Group messages into sequential tool call turns (newest to oldest)
+    struct Turn<'a> {
+        assistant_message: &'a Message,
+        tool_results: Vec<&'a Message>,
+    }
+
+    let mut turns: Vec<Turn> = Vec::new();
+    let mut current_tool_results: Vec<&Message> = Vec::new();
 
     for message in messages.iter().rev() {
         match message.role.as_str() {
             "tool" => {
-                saw_tool_result = true;
-                let Some(tool_call_id) = message.tool_call_id.as_deref() else {
-                    break;
-                };
-
-                if !matcher(tool_call_id) {
-                    break;
-                }
-
-                consecutive_matches += 1;
-
-                if is_loop_prevention_message(message) {
-                    continue;
-                }
-
-                if repeated_outcome.is_none() {
-                    let signature = build_tool_result_signature(message);
-                    repeated_outcome = Some(if is_tool_error_message(message) {
-                        RepeatedOutcome::Error { signature }
-                    } else {
-                        RepeatedOutcome::Success { signature }
+                current_tool_results.push(message);
+            }
+            "assistant" => {
+                if message.tool_calls.is_some() {
+                    turns.push(Turn {
+                        assistant_message: message,
+                        tool_results: std::mem::take(&mut current_tool_results),
                     });
-                }
-            }
-            "assistant" => {}
-            _ => {
-                if saw_tool_result {
+                } else {
                     break;
                 }
             }
+            _ => {
+                // Any other message role (like "user") breaks the consecutive sequence.
+                break;
+            }
+        }
+    }
+
+    // 2. Count consecutive turns containing a matching tool call
+    let mut consecutive_matches = 0;
+    let mut repeated_outcome: Option<RepeatedOutcome> = None;
+
+    for turn in &turns {
+        let mut matched_in_turn = false;
+        if let Some(tool_calls) = &turn.assistant_message.tool_calls {
+            for tool_call in tool_calls {
+                if matcher(&tool_call.id) {
+                    matched_in_turn = true;
+                    // Find the tool result message corresponding to this tool_call_id
+                    if let Some(tool_result_msg) = turn
+                        .tool_results
+                        .iter()
+                        .find(|m| m.tool_call_id.as_deref() == Some(&tool_call.id))
+                    {
+                        if repeated_outcome.is_none()
+                            && !is_loop_prevention_message(tool_result_msg)
+                        {
+                            let signature = build_tool_result_signature(tool_result_msg);
+                            repeated_outcome = Some(if is_tool_error_message(tool_result_msg) {
+                                RepeatedOutcome::Error { signature }
+                            } else {
+                                RepeatedOutcome::Success { signature }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        if matched_in_turn {
+            consecutive_matches += 1;
+        } else {
+            break;
         }
     }
 
@@ -483,7 +518,27 @@ pub fn evaluate_circuit_breaker_action(
                 tool_name: tool_name.clone(),
                 args: args.clone(),
             });
-        } else if total_count == threshold {
+        }
+
+        // NaturalRecoveryErrorEscalate fires strictly between NaturalRecoveryError and HardBreak.
+        // Guard: total_count > threshold ensures it cannot fire at the same count as
+        // NaturalRecoveryError (which would silently suppress the soft warning).
+        // With threshold=3, offset=1: hard_break_at=4, pre_hard_count=3 == threshold,
+        // so the guard keeps NaturalRecoveryError alive at count=3 and Escalate is never
+        // fired (offset too small for a 3-stage ladder). With offset>=2 the gap exists.
+        let pre_hard_count = hard_break_at.saturating_sub(1);
+        if matches!(outcome, RepeatedOutcome::Error { .. })
+            && total_count > threshold
+            && total_count == pre_hard_count
+        {
+            return Some(CircuitBreakerAction::NaturalRecoveryErrorEscalate {
+                count: total_count,
+                tool_name: tool_name.clone(),
+                args: args.clone(),
+            });
+        }
+
+        if total_count == threshold {
             return Some(match outcome {
                 RepeatedOutcome::Error { .. } => CircuitBreakerAction::NaturalRecoveryError {
                     count: total_count,
