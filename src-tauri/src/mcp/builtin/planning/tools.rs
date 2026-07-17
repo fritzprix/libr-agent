@@ -143,43 +143,28 @@ fn update_todo_tool() -> MCPTool {
         name: "updateTodo".to_string(),
         title: Some("Update Todo".to_string()),
         description: tool_description(
-            "Update a todo's status or permanently remove it from the plan.",
-            &["Know the todo ID from planning__getCurrentState or system context."],
-            &[
-                "Use action='done' to complete a todo (keeps history in the list).",
-                "Use action='pending' to reopen a completed todo.",
-                "Use action='cancel' only when the task should never have existed; prefer 'done' to preserve history.",
-            ],
-            &[
-                "Add follow-up work with planning__addTodo.",
-                "Run planning__reflect after completing a batch of todos.",
-            ],
+            "Mark a todo done/pending, or cancel it. Prefer done over cancel to keep history.",
+            &[],
+            &[],
+            &[],
         ),
         input_schema: object_prop(
             vec![
                 (
                     "id".to_string(),
-                    integer_prop(
-                        Some(1),
-                        None,
-                        Some("The unique todo ID (>= 1). Use getCurrentState to see current todo IDs."),
-                    ),
+                    integer_prop(Some(1), None, Some("Todo ID from Planning context (>= 1).")),
                 ),
                 (
                     "action".to_string(),
                     enum_prop(
                         vec!["done", "pending", "cancel"],
                         "done",
-                        Some("Action to apply (default: 'done')."),
+                        Some("Status action (default: done)."),
                     ),
                 ),
                 (
                     "summary".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Only for action='done'. Optional completion note (e.g., 'Fixed in PR #42')."),
-                    ),
+                    string_prop(None, None, Some("Optional note when action='done'.")),
                 ),
             ],
             vec!["id".to_string()],

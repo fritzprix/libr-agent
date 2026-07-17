@@ -114,7 +114,7 @@ fn natural_recovery_prefers_repeated_identical_error_before_hard_break() {
 
     assert_eq!(
         evaluate(&messages, &current_call, 3),
-        Some(CircuitBreakerAction::NaturalRecoveryError {
+        Some(CircuitBreakerAction::NaturalRecoveryErrorEscalate {
             count: 3,
             tool_name: "workspace__readFile".to_string(),
             args: repeated_args.to_string(),
@@ -547,7 +547,7 @@ fn hard_break_offset_allows_configurable_retries() {
         ),
     ];
 
-    // 3rd call: count is 3 (consecutive matches 2 + 1). Should trigger Natural Recovery.
+    // 3rd call: count is 3 (consecutive matches 2 + 1). Soft natural recovery (threshold < pre-hard).
     assert_eq!(
         eval_custom(&messages, &call_3),
         Some(CircuitBreakerAction::NaturalRecoveryError {
@@ -587,12 +587,19 @@ fn hard_break_offset_allows_configurable_retries() {
         Some(true),
     ));
 
-    // 4th call: count is 4. Since offset is 2, hard break is at 5. Should execute normally (return None).
-    assert_eq!(eval_custom(&messages_with_recovery, &call_4), None);
+    // 4th call: count is 4 == hard_break_at - 1. Escalate to reflect before hard break.
+    assert_eq!(
+        eval_custom(&messages_with_recovery, &call_4),
+        Some(CircuitBreakerAction::NaturalRecoveryErrorEscalate {
+            count: 4,
+            tool_name: "workspace__readFile".to_string(),
+            args: repeated_args.to_string(),
+        })
+    );
 
-    // Prepare history where 4th call also returns an error (meaning the agent retried and failed)
-    let mut messages_with_retry_failure = messages_with_recovery.clone();
-    messages_with_retry_failure.push(test_message(
+    // Prepare history where 4th call was short-circuited with escalate guidance
+    let mut messages_with_escalate = messages_with_recovery.clone();
+    messages_with_escalate.push(test_message(
         "assistant-4",
         "assistant",
         Some(vec![test_tool_call(
@@ -605,19 +612,23 @@ fn hard_break_offset_allows_configurable_retries() {
         "",
         None,
     ));
-    messages_with_retry_failure.push(test_message(
-        "tool-4",
+    messages_with_escalate.push(test_message(
+        "tool-4-escalate",
         "tool",
         None,
         Some("tc-4"),
-        Some(serde_json::json!({ "toolError": true })),
-        repeated_error,
+        Some(serde_json::json!({
+            "toolError": true,
+            "structuredContent": { "loopPrevention": true },
+            "loopPrevention": true
+        })),
+        "Loop prevention: escalate to planning__reflect",
         Some(true),
     ));
 
     // 5th call: count is 5. Matches hard_break_at = 5. Should trigger Hard Break.
     assert_eq!(
-        eval_custom(&messages_with_retry_failure, &call_5),
+        eval_custom(&messages_with_escalate, &call_5),
         Some(CircuitBreakerAction::HardBreak {
             count: 5,
             tool_name: "workspace__readFile".to_string(),

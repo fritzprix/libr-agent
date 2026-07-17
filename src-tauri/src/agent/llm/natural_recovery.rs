@@ -4,6 +4,8 @@ use crate::mcp::types::MCPContent;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoopPreventionKind {
     RepeatedErrorOutcome,
+    /// Last soft intervention before hard break: escalate to strategy reset via reflect.
+    RepeatedErrorEscalate,
     RepeatedSuccessOutcome,
 }
 
@@ -22,6 +24,13 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
             parameters or a different tool. Review what you have already tried, \
             re-read the user's request, and choose a different tool or approach. If you are completely blocked, \
             report your current progress and the specific blocker to the user.",
+            short_circuit.tool_name, short_circuit.count
+        ),
+        LoopPreventionKind::RepeatedErrorEscalate => format!(
+            "Loop prevention: '{}' was called {} times with identical parameters and the same error outcome.\n\n\
+            This call was blocked. Do not retry with the same arguments — another identical attempt will trigger a hard circuit break.\n\n\
+            Before continuing, call planning__reflect: critique why this loop failed, reflect on what you learned, \
+            and set one concrete nextAction that uses a different approach. Then proceed from that nextAction.",
             short_circuit.tool_name, short_circuit.count
         ),
         LoopPreventionKind::RepeatedSuccessOutcome => format!(
@@ -66,6 +75,32 @@ mod tests {
 
         assert!(guidance.contains("blocked"));
         assert!(guidance.contains("sleep"));
+    }
+
+    #[test]
+    fn escalate_guidance_recommends_reflect() {
+        let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+            kind: LoopPreventionKind::RepeatedErrorEscalate,
+            tool_name: "workspace__readFile".to_string(),
+            count: 3,
+        });
+
+        assert!(guidance.contains("blocked"));
+        assert!(guidance.contains("planning__reflect"));
+        assert!(guidance.contains("nextAction"));
+        assert!(!guidance.contains("sleep"));
+    }
+
+    #[test]
+    fn soft_error_guidance_does_not_require_reflect() {
+        let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+            kind: LoopPreventionKind::RepeatedErrorOutcome,
+            tool_name: "workspace__readFile".to_string(),
+            count: 3,
+        });
+
+        assert!(guidance.contains("blocked"));
+        assert!(!guidance.contains("planning__reflect"));
     }
 
     #[test]

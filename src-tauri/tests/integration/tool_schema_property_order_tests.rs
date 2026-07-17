@@ -148,7 +148,13 @@ fn start_session_schema_property_order_puts_task_last() {
 
     assert_property_order(
         &tool,
-        &["agentId", "workspaceOverride", "waitForResult", "timeout", "task"],
+        &[
+            "agentId",
+            "workspaceOverride",
+            "waitForResult",
+            "timeout",
+            "task",
+        ],
     );
 }
 

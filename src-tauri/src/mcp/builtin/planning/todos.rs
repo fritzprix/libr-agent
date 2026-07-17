@@ -244,10 +244,7 @@ pub async fn check_todo(
                             .to_string(),
                     ]
                 } else if remaining > 0 {
-                    vec![format!(
-                        "{} todo(s) remaining — use getCurrentState to see the list",
-                        remaining
-                    )]
+                    vec![format!("{} todo(s) remaining", remaining)]
                 } else {
                     vec![]
                 }
@@ -262,10 +259,7 @@ pub async fn check_todo(
             }
         }
     } else {
-        vec![format!(
-            "Use updateTodo(id={}, action='done') to mark as done when completed",
-            todo_id
-        )]
+        vec![]
     };
     let mut next_hints = next_hints;
     next_hints.extend(follow_up_hints);
