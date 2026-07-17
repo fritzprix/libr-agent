@@ -9,6 +9,7 @@ import {
   useAgentSessionListState,
 } from '@/context/AgentSessionListContext';
 import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
+import { useAgentScratchpad } from '@/context/AgentScratchpadContext';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { FolderOpen, Copy, Loader2 } from 'lucide-react';
+import { FolderOpen, Copy, Loader2, PanelRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useClipboard } from '@/hooks/useClipboard';
@@ -37,6 +38,7 @@ export function AgentChatHeader({
   const { renameSession } = useAgentSessionActions();
   const { toggleBookmark } = useAgentSessionListActions();
   const { sessions, notificationSessions } = useAgentSessionListState();
+  const { showScratchpadPanel, toggleScratchpadPanel } = useAgentScratchpad();
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
   const { messages } = useAgentChat();
   const [isCopying, setIsCopying] = useState(false);
@@ -158,6 +160,34 @@ export function AgentChatHeader({
             </TooltipTrigger>
             <TooltipContent>
               {t('agent.header.toggleWorkspaceTooltip')}
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={toggleScratchpadPanel}
+                aria-label={t(
+                  'agent.header.togglePlanningAria',
+                  'Toggle Schedules & Notes',
+                )}
+                aria-controls="agent-scratchpad-panel"
+                aria-expanded={showScratchpadPanel}
+                className="h-6 px-2"
+              >
+                <PanelRight
+                  className={`h-4 w-4 ${showScratchpadPanel ? 'text-primary' : ''}`}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t(
+                'agent.header.togglePlanningTooltip',
+                'Toggle Schedules & Notes',
+              )}
             </TooltipContent>
           </Tooltip>
 

@@ -8,6 +8,7 @@ const mockRenameSession = vi.fn();
 const mockToggleBookmark = vi.fn();
 const mockCopyToClipboard = vi.fn();
 const mockToggleWorkspacePanel = vi.fn();
+const mockToggleScratchpadPanel = vi.fn();
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSessionState: () => ({
@@ -65,6 +66,13 @@ vi.mock('@/context/AgentWorkspaceContext', () => ({
   useAgentWorkspace: () => ({
     showWorkspacePanel: false,
     toggleWorkspacePanel: mockToggleWorkspacePanel,
+  }),
+}));
+
+vi.mock('@/context/AgentScratchpadContext', () => ({
+  useAgentScratchpad: () => ({
+    showScratchpadPanel: false,
+    toggleScratchpadPanel: mockToggleScratchpadPanel,
   }),
 }));
 
@@ -167,5 +175,16 @@ describe('AgentChatHeader', () => {
       renameButton.compareDocumentPosition(bookmarkButton) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('triggers scratchpad panel toggle when clicking the schedules and notes button', () => {
+    render(<AgentChatHeader />);
+
+    const toggleButton = screen.getByRole('button', {
+      name: 'Toggle Schedules & Notes',
+    });
+    fireEvent.click(toggleButton);
+
+    expect(mockToggleScratchpadPanel).toHaveBeenCalled();
   });
 });

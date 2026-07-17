@@ -31,7 +31,12 @@ import {
   AgentWorkspaceProvider,
   useAgentWorkspace,
 } from '@/context/AgentWorkspaceContext';
+import {
+  AgentScratchpadProvider,
+  useAgentScratchpad,
+} from '@/context/AgentScratchpadContext';
 import { AgentChatHeader } from './components/AgentChatHeader';
+import { AgentScratchpadPanel } from './components/AgentScratchpadPanel';
 import { AgentChatStatusBar } from './components/AgentChatStatusBar';
 import { AgentChatMessages } from './components/AgentChatMessages';
 import { AgentChatInput } from './components/AgentChatInput';
@@ -320,6 +325,8 @@ function AgentChatInner() {
   const isMobile = useIsMobile();
   const { closeWorkspacePanel, openWorkspacePanel, showWorkspacePanel } =
     useAgentWorkspace();
+  const { closeScratchpadPanel, openScratchpadPanel, showScratchpadPanel } =
+    useAgentScratchpad();
   const { t } = useTranslation();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -328,6 +335,7 @@ function AgentChatInner() {
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
   const hasOpenedWorkspaceRef = useRef(!isMobile && showWorkspacePanel);
+  const hasOpenedScratchpadRef = useRef(!isMobile && showScratchpadPanel);
 
   useEffect(() => {
     if (!isMobile && showWorkspacePanel) {
@@ -335,8 +343,17 @@ function AgentChatInner() {
     }
   }, [isMobile, showWorkspacePanel]);
 
+  useEffect(() => {
+    if (!isMobile && showScratchpadPanel) {
+      hasOpenedScratchpadRef.current = true;
+    }
+  }, [isMobile, showScratchpadPanel]);
+
   const hasOpenedWorkspaceDesktop =
     !isMobile && (showWorkspacePanel || hasOpenedWorkspaceRef.current);
+
+  const hasOpenedScratchpadDesktop =
+    !isMobile && (showScratchpadPanel || hasOpenedScratchpadRef.current);
 
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
@@ -419,6 +436,17 @@ function AgentChatInner() {
     [closeWorkspacePanel, openWorkspacePanel],
   );
 
+  const handleScratchpadSheetOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) {
+        openScratchpadPanel();
+        return;
+      }
+      closeScratchpadPanel();
+    },
+    [closeScratchpadPanel, openScratchpadPanel],
+  );
+
   return (
     <>
       {sessionId ? (
@@ -453,6 +481,15 @@ function AgentChatInner() {
             <AgentChatStatusBar />
             <AgentChatMessages />
           </div>
+
+          {!isMobile && hasOpenedScratchpadDesktop && (
+            <DesktopPanelRail side="right" open={showScratchpadPanel}>
+              <AgentScratchpadPanel
+                isVisible={showScratchpadPanel}
+                variant="rail"
+              />
+            </DesktopPanelRail>
+          )}
         </div>
         <AgentChatComposer />
       </div>
@@ -467,6 +504,15 @@ function AgentChatInner() {
             description={t('agent.workspace.title')}
           >
             <AgentWorkspacePanel isVisible variant="sheet" />
+          </MobilePanelSheet>
+          <MobilePanelSheet
+            open={showScratchpadPanel}
+            onOpenChange={handleScratchpadSheetOpenChange}
+            side="right"
+            title={t('agent.schedules.title')}
+            description={t('agent.schedules.title')}
+          >
+            <AgentScratchpadPanel isVisible variant="sheet" />
           </MobilePanelSheet>
         </>
       )}
@@ -543,9 +589,11 @@ export default function AgentChatView() {
       ) : (
         <div className="relative h-full">
           <AgentChatProvider>
-            <AgentWorkspaceProvider>
-              <AgentChatInner />
-            </AgentWorkspaceProvider>
+            <AgentScratchpadProvider>
+              <AgentWorkspaceProvider>
+                <AgentChatInner />
+              </AgentWorkspaceProvider>
+            </AgentScratchpadProvider>
           </AgentChatProvider>
 
           {shouldShowOptimisticLoadingOverlay && (

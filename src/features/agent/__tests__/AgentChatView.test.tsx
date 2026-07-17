@@ -155,6 +155,10 @@ vi.mock('../components/AgentWorkspacePanel', () => ({
   AgentWorkspacePanel: () => <div>mock-workspace-panel</div>,
 }));
 
+vi.mock('../components/AgentScratchpadPanel', () => ({
+  AgentScratchpadPanel: () => <div>mock-scratchpad-panel</div>,
+}));
+
 
 vi.mock('@/components/ui/sheet', () => ({
   Sheet: ({
