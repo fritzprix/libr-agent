@@ -32,8 +32,9 @@ export interface AdvancedSettings {
   maxSuspendedSessions: number; // default 8 — sessions blocked on awaitAgent
   maxConcurrentActiveProcesses: number; // default 10 — simultaneous shell processes
   maxSuspendedProcesses: number; // default 20 — processes blocked on pollProcess
-  loopPreventionThreshold: number; // default 3 - number of repeated identical tool outcomes to trigger natural recovery
-  loopPreventionHardBreakOffset: number; // default 1 - gap between natural recovery warning and hard break
+  loopPreventionThreshold: number; // default 3 — consecutive identical (call, outcome) streak before soft recovery
+  /** Gap after soft recovery before hard break. Default 2 so Soft→Escalate→Hard can fire for error loops. */
+  loopPreventionHardBreakOffset: number;
 }
 
 export interface DisplaySettings {
@@ -122,7 +123,7 @@ export const DEFAULT_SETTING: Settings = {
     maxConcurrentActiveProcesses: 10,
     maxSuspendedProcesses: 20,
     loopPreventionThreshold: 3,
-    loopPreventionHardBreakOffset: 1,
+    loopPreventionHardBreakOffset: 2,
   },
   display: {
     metricDisplayMode: 'inline',

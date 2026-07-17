@@ -125,6 +125,23 @@ pub fn tool_call_signature(tool_call: &ToolCall) -> String {
     )
 }
 
+/// Strip control characters and truncate labels before writing them to logs.
+pub fn sanitize_circuit_breaker_log_tool_name(tool_name: &str) -> String {
+    let sanitized: String = tool_name
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .take(200)
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if sanitized.is_empty() {
+        "<unknown-tool>".to_string()
+    } else {
+        sanitized
+    }
+}
+
 /// Ordered fingerprint of an assistant tool_calls batch (name+args per call).
 pub fn batch_fingerprint(tool_calls: &[ToolCall]) -> String {
     let full = tool_calls
@@ -159,9 +176,19 @@ pub fn build_tool_call_indices(messages: &[Message]) -> std::collections::HashMa
     call_signature_by_id
 }
 
+/// Load loop-prevention thresholds from advanced settings.
+///
+/// Returns `(threshold, hard_break_offset)`:
+/// - `threshold`: consecutive identical **(call, outcome)** streak length that
+///   triggers soft natural recovery (default 3). Outcome text changes reset the
+///   streak for both per-tool and multi-tool batch scanners.
+/// - `hard_break_offset`: added to `threshold` for hard break (default **2**).
+///   Soft blocks every count in `[threshold, hard_break)`. For repeated **errors**,
+///   `NaturalRecoveryErrorEscalate` fires once at `hard_break - 1` when
+///   `offset >= 2` (with offset=1 the escalate step is skipped: soft then hard).
 pub(crate) async fn load_loop_prevention_settings() -> (usize, usize) {
     let default_threshold = 3;
-    let default_offset = 1;
+    let default_offset = 2;
     let Some(settings_repo) = crate::state::try_get_settings_repository() else {
         return (default_threshold, default_offset);
     };
@@ -256,27 +283,23 @@ fn is_loop_prevention_message(message: &Message) -> bool {
     })
 }
 
-/// Count trailing tool results whose call signature matches `matcher`.
-///
-/// A different tool call (name/args) ends the streak and resets the counter.
-/// Outcome text differences do NOT reset the counter — once the agent is looping the
-/// same call, further repeats stay blocked until a different tool/args appears.
-/// Loop-prevention short-circuit results also keep the streak (they must not look like
-/// a “new outcome” that clears the counter).
-fn count_consecutive_identical_call_outcomes<F>(
-    messages: &[Message],
-    matcher: F,
-) -> Option<(usize, RepeatedOutcome)>
-where
-    F: Fn(&str) -> bool,
-{
-    // 1. Group messages into sequential tool call turns (newest to oldest)
-    struct Turn<'a> {
-        assistant_message: &'a Message,
-        tool_results: Vec<&'a Message>,
+fn repeated_outcome_key(outcome: &RepeatedOutcome) -> (&str, bool) {
+    match outcome {
+        RepeatedOutcome::Success { signature } => (signature.as_str(), false),
+        RepeatedOutcome::Error { signature } => (signature.as_str(), true),
     }
+}
 
-    let mut turns: Vec<Turn> = Vec::new();
+/// Trailing assistant tool-call turns, newest first.
+///
+/// Stops at the first non-tool / non-tool-calling-assistant message (e.g. user).
+struct ToolCallTurn<'a> {
+    assistant_message: &'a Message,
+    tool_results: Vec<&'a Message>,
+}
+
+fn group_trailing_tool_call_turns(messages: &[Message]) -> Vec<ToolCallTurn<'_>> {
+    let mut turns: Vec<ToolCallTurn> = Vec::new();
     let mut current_tool_results: Vec<&Message> = Vec::new();
 
     for message in messages.iter().rev() {
@@ -286,7 +309,7 @@ where
             }
             "assistant" => {
                 if message.tool_calls.is_some() {
-                    turns.push(Turn {
+                    turns.push(ToolCallTurn {
                         assistant_message: message,
                         tool_results: std::mem::take(&mut current_tool_results),
                     });
@@ -295,33 +318,81 @@ where
                 }
             }
             _ => {
-                // Any other message role (like "user") breaks the consecutive sequence.
                 break;
             }
         }
     }
 
-    // 2. Count consecutive turns containing a matching tool call
+    turns
+}
+
+/// Build a stable outcome fingerprint for every tool in a batch.
+///
+/// Returns `None` when any result is **missing** or is a **loop-prevention**
+/// short-circuit. Callers must treat `None` as "preserve call-fingerprint streak
+/// without comparing outcomes" — not as a shared empty signature. Two incomplete
+/// turns with the same call fingerprint therefore continue the streak (intentional:
+/// Soft/Hard ladders must not reset when a prior Soft result or partial tool set
+/// is present). Complete divergent outcomes still break the streak via `Some(...)`.
+fn build_batch_outcome_signature(
+    tool_calls: &[ToolCall],
+    tool_results: &[&Message],
+) -> Option<String> {
+    let mut parts = Vec::with_capacity(tool_calls.len());
+    for tool_call in tool_calls {
+        let tool_result_msg = tool_results
+            .iter()
+            .find(|message| message.tool_call_id.as_deref() == Some(&tool_call.id))?;
+        if is_loop_prevention_message(tool_result_msg) {
+            return None;
+        }
+        let signature = build_tool_result_signature(tool_result_msg);
+        let kind = if is_tool_error_message(tool_result_msg) {
+            'E'
+        } else {
+            'S'
+        };
+        parts.push(format!("{kind}:{signature}"));
+    }
+    Some(parts.join("\n"))
+}
+
+/// Count trailing tool results whose call signature matches `matcher`.
+///
+/// Counts only the trailing streak of identical (call, outcome) pairs:
+/// - A different tool call (name/args) ends the streak.
+/// - A different tool-result signature also ends the streak (allows legitimate
+///   polling where status progresses, e.g. running → completed).
+/// - Loop-prevention short-circuit results keep the streak (they must not look
+///   like a “new outcome” that clears the counter).
+fn count_consecutive_identical_call_outcomes<F>(
+    messages: &[Message],
+    matcher: F,
+) -> Option<(usize, RepeatedOutcome)>
+where
+    F: Fn(&str) -> bool,
+{
+    let turns = group_trailing_tool_call_turns(messages);
+
     let mut consecutive_matches = 0;
     let mut repeated_outcome: Option<RepeatedOutcome> = None;
 
     for turn in &turns {
         let mut matched_in_turn = false;
+        let mut turn_outcome: Option<RepeatedOutcome> = None;
+
         if let Some(tool_calls) = &turn.assistant_message.tool_calls {
             for tool_call in tool_calls {
                 if matcher(&tool_call.id) {
                     matched_in_turn = true;
-                    // Find the tool result message corresponding to this tool_call_id
                     if let Some(tool_result_msg) = turn
                         .tool_results
                         .iter()
                         .find(|m| m.tool_call_id.as_deref() == Some(&tool_call.id))
                     {
-                        if repeated_outcome.is_none()
-                            && !is_loop_prevention_message(tool_result_msg)
-                        {
+                        if !is_loop_prevention_message(tool_result_msg) {
                             let signature = build_tool_result_signature(tool_result_msg);
-                            repeated_outcome = Some(if is_tool_error_message(tool_result_msg) {
+                            turn_outcome = Some(if is_tool_error_message(tool_result_msg) {
                                 RepeatedOutcome::Error { signature }
                             } else {
                                 RepeatedOutcome::Success { signature }
@@ -332,10 +403,27 @@ where
             }
         }
 
-        if matched_in_turn {
-            consecutive_matches += 1;
-        } else {
+        if !matched_in_turn {
             break;
+        }
+
+        if let Some(outcome) = turn_outcome {
+            match &repeated_outcome {
+                None => {
+                    repeated_outcome = Some(outcome);
+                    consecutive_matches += 1;
+                }
+                Some(prev) if repeated_outcome_key(prev) == repeated_outcome_key(&outcome) => {
+                    consecutive_matches += 1;
+                }
+                Some(_) => {
+                    // Outcome changed — stop at the trailing identical-outcome segment.
+                    break;
+                }
+            }
+        } else {
+            // Loop-prevention or missing result: keep the streak alive.
+            consecutive_matches += 1;
         }
     }
 
@@ -354,52 +442,52 @@ where
 /// bounds work on very long sessions. User/system messages still reset the streak.
 const MAX_ASSISTANT_BATCHES_TO_SCAN: usize = 32;
 
-/// Count consecutive prior assistant batches whose fingerprint matches `fingerprint`.
+/// Count consecutive prior assistant batches whose fingerprint matches `fingerprint`
+/// **and** whose complete tool-result outcomes match the trailing outcome segment.
 ///
-/// Intervening tool results are ignored. A different non-empty tool_calls batch ends
-/// the streak. User/system messages after a seen batch also end the streak (same
-/// reset semantics as the per-tool scanner). This catches `[a,b,c] → [a,b,c]` which
-/// the per-tool result scan misses.
-///
-/// Like the per-tool streak, matching is on call identity (name+args fingerprint),
-/// not on identical result text — outcome text differences do not clear the streak.
+/// Intervening incomplete or loop-prevention results keep the streak. A different
+/// non-empty tool_calls batch, a different complete batch outcome, or a user/system
+/// message ends the streak. This catches `[a,b,c] → [a,b,c]` which the per-tool
+/// result scan misses, while allowing progressive polling across repeated batches.
 pub fn count_consecutive_identical_batches(messages: &[Message], fingerprint: &str) -> usize {
+    let turns = group_trailing_tool_call_turns(messages);
     let mut consecutive = 0;
-    let mut saw_assistant_batch = false;
+    let mut repeated_batch_outcome: Option<String> = None;
     let mut assistant_batches_scanned = 0;
 
-    for message in messages.iter().rev() {
-        match message.role.as_str() {
-            "assistant" => {
-                let Some(tool_calls) = message.tool_calls.as_ref() else {
-                    if saw_assistant_batch {
-                        break;
-                    }
-                    continue;
-                };
-                if tool_calls.is_empty() {
-                    if saw_assistant_batch {
-                        break;
-                    }
-                    continue;
-                }
-                saw_assistant_batch = true;
-                assistant_batches_scanned += 1;
-                if assistant_batches_scanned > MAX_ASSISTANT_BATCHES_TO_SCAN {
-                    break;
-                }
-                if batch_fingerprint(tool_calls) == fingerprint {
+    for turn in &turns {
+        let Some(tool_calls) = turn.assistant_message.tool_calls.as_ref() else {
+            break;
+        };
+        if tool_calls.is_empty() {
+            break;
+        }
+
+        assistant_batches_scanned += 1;
+        if assistant_batches_scanned > MAX_ASSISTANT_BATCHES_TO_SCAN {
+            break;
+        }
+
+        if batch_fingerprint(tool_calls) != fingerprint {
+            break;
+        }
+
+        if let Some(outcome) = build_batch_outcome_signature(tool_calls, &turn.tool_results) {
+            match &repeated_batch_outcome {
+                None => {
+                    repeated_batch_outcome = Some(outcome);
                     consecutive += 1;
-                } else {
+                }
+                Some(prev) if prev == &outcome => {
+                    consecutive += 1;
+                }
+                Some(_) => {
                     break;
                 }
             }
-            "tool" => {}
-            _ => {
-                if saw_assistant_batch {
-                    break;
-                }
-            }
+        } else {
+            // Incomplete results or loop-prevention: keep the streak.
+            consecutive += 1;
         }
     }
 
@@ -433,10 +521,11 @@ pub fn find_intra_batch_duplicates(
 
 /// Detect repeated identical tool_calls batches across consecutive turns.
 ///
-/// Triggers on structural fingerprint identity (ordered name+args), consistent with
-/// per-tool streak matching on call signature rather than identical result payloads.
-/// When the fingerprint matches, every call in the batch is part of the loop — the
-/// preprocess layer therefore short-circuits the whole batch (not a subset).
+/// Triggers when both the structural fingerprint (ordered name+args) and the
+/// trailing complete batch outcome signature repeat. Progressive polling that
+/// changes tool results resets the streak. When triggered, every call in the
+/// batch is part of the loop — the preprocess layer short-circuits the whole
+/// batch (not a subset).
 pub fn evaluate_batch_circuit_breaker(
     messages: &[Message],
     tool_calls: &[ToolCall],
@@ -523,9 +612,8 @@ pub fn evaluate_circuit_breaker_action(
         // NaturalRecoveryErrorEscalate fires strictly between NaturalRecoveryError and HardBreak.
         // Guard: total_count > threshold ensures it cannot fire at the same count as
         // NaturalRecoveryError (which would silently suppress the soft warning).
-        // With threshold=3, offset=1: hard_break_at=4, pre_hard_count=3 == threshold,
-        // so the guard keeps NaturalRecoveryError alive at count=3 and Escalate is never
-        // fired (offset too small for a 3-stage ladder). With offset>=2 the gap exists.
+        // With threshold=3, offset=1: hard_break_at=4, pre_hard_count=3 == threshold →
+        // Escalate guard fails → soft fires. With offset>=2 the gap exists.
         let pre_hard_count = hard_break_at.saturating_sub(1);
         if matches!(outcome, RepeatedOutcome::Error { .. })
             && total_count > threshold
@@ -538,7 +626,10 @@ pub fn evaluate_circuit_breaker_action(
             });
         }
 
-        if total_count == threshold {
+        // Soft-block every identical-(call, outcome) attempt from threshold until hard break.
+        // Using `== threshold` would allow retries in the offset gap (e.g. counts 4–5 when
+        // threshold=3 and offset=3), which defeats loop prevention.
+        if total_count >= threshold {
             return Some(match outcome {
                 RepeatedOutcome::Error { .. } => CircuitBreakerAction::NaturalRecoveryError {
                     count: total_count,

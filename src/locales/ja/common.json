@@ -465,7 +465,7 @@
       "loopPreventionThresholdDescription": "同一のツール結果が繰り返された回数です。これを超えると、エージェントは自然回復を試みるか強制停止を行います。",
       "loopPreventionThresholdPlaceholder": "例: 3",
       "loopPreventionHardBreakOffset": "ハードブレイクオフセット",
-      "loopPreventionHardBreakOffsetPlaceholder": "例: 1",
+      "loopPreventionHardBreakOffsetPlaceholder": "例: 2",
       "loopPreventionHardBreakOffsetDescription": "自然回復警告の後、ワークフローを強制停止するまでに許容される追加の同一ツール呼び出し回数。しきい値=3、オフセット=1の場合、3回目の呼び出しで警告、4回目の呼び出しで停止します。",
       "maxConcurrentActiveProcessesPlaceholder": "例: 10",
       "maxConcurrentActiveSessionsPlaceholder": "例: 4",

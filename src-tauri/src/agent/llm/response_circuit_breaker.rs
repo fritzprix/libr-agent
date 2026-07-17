@@ -1,3 +1,4 @@
+use crate::agent::events::AgentEvent;
 use crate::agent::llm::circuit_breaker;
 use crate::agent::llm::completion::load_context_management_settings;
 use crate::agent::llm::completion::request::apply_compact_summary_projection;
@@ -28,7 +29,8 @@ pub struct CircuitBreakerPreprocessResult {
     pub forced_stop: Option<ForcedCircuitBreakStop>,
 }
 
-/// Hard-stop path when repetition exceeds `loopPreventionThreshold`.
+/// Hard-stop path when the identical-(call, outcome) streak exceeds
+/// `loopPreventionThreshold + hardBreakOffset`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ForcedCircuitBreakStop {
     /// `ui__circuitBreak` was injected into `assistant_message.tool_calls`.
@@ -193,12 +195,15 @@ pub(crate) async fn preprocess_assistant_tool_calls(
         if let Some((index, count, tool_name, args)) = hard_break {
             loop_prevention_short_circuits.clear();
             if let Some(tool_calls) = assistant_message.tool_calls.as_mut() {
+                let safe_tool =
+                    circuit_breaker::sanitize_circuit_breaker_log_tool_name(&tool_name);
                 log::warn!(
                     "Circuit breaker triggered for session {} tool {} (count {})",
                     session_id,
-                    tool_name,
+                    safe_tool,
                     count
                 );
+                emit_circuit_breaker_triggered(session_id, &tool_name, count, "hardBreak");
 
                 let ui_alias_enabled = match session_metadata.as_ref() {
                     Some(metadata) => match crate::agent::resolve_agent_config(metadata).await {
@@ -242,7 +247,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                         Some(crate::mcp::types::MCPContent::Text {
                             text: format!(
                                 "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).\n\nThe 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls. Review your last attempts and propose a fundamentally different approach.",
-                                tool_name, count
+                                safe_tool, count
                             ),
                             is_error: None,
                         });
@@ -250,12 +255,21 @@ pub(crate) async fn preprocess_assistant_tool_calls(
             }
         } else if !loop_prevention_short_circuits.is_empty() {
             for short_circuit in loop_prevention_short_circuits.values() {
+                let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(
+                    &short_circuit.tool_name,
+                );
                 log::warn!(
                     "Loop prevention short-circuit for session {} tool {} (count {}, kind={:?})",
                     session_id,
-                    short_circuit.tool_name,
+                    safe_tool,
                     short_circuit.count,
                     short_circuit.kind
+                );
+                emit_circuit_breaker_triggered(
+                    session_id,
+                    &short_circuit.tool_name,
+                    short_circuit.count,
+                    circuit_breaker_action_label(&short_circuit.kind),
                 );
             }
         }
@@ -293,6 +307,38 @@ fn hard_break_applied_ui_circuit_break(assistant_message: &Message) -> bool {
                 .iter()
                 .any(|tool_call| tool_call.function.name == "ui__circuitBreak")
         })
+}
+
+fn emit_circuit_breaker_triggered(
+    session_id: &str,
+    tool_name: &str,
+    count: usize,
+    action: &str,
+) {
+    let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(tool_name);
+    let Some(app_handle) = crate::state::get_app_handle() else {
+        return;
+    };
+    let _ = crate::agent::tauri_events::emit_agent_event(
+        app_handle,
+        AgentEvent::CircuitBreakerTriggered {
+            session_id: session_id.to_string(),
+            tool_name: safe_tool,
+            count,
+            action: action.to_string(),
+        },
+    );
+}
+
+fn circuit_breaker_action_label(kind: &LoopPreventionKind) -> &'static str {
+    match kind {
+        LoopPreventionKind::RepeatedErrorOutcome | LoopPreventionKind::RepeatedSuccessOutcome => {
+            "softRecovery"
+        }
+        LoopPreventionKind::RepeatedErrorEscalate => "errorEscalate",
+        LoopPreventionKind::RepeatedBatchSequence => "repeatedBatch",
+        LoopPreventionKind::DuplicateInBatch => "duplicateInBatch",
+    }
 }
 
 pub async fn preprocess_assistant_tool_calls_for_testing(
@@ -370,7 +416,15 @@ async fn apply_tool_loop_token_fence(
     let mut kept_projection_total = 0usize;
     let mut kept_projection_prompt = 0usize;
 
-    for prefix_len in 1..=original_tool_calls.len() {
+    // Cap scans so pathological mega-batches cannot O(n²)-stall the agent.
+    // Prefer keeping as many prefix tools as budget allows (same semantics as before).
+    const TOOL_LOOP_FENCE_MAX_PREFIX_SCANS: usize = 64;
+    let max_prefix = original_tool_calls
+        .len()
+        .min(TOOL_LOOP_FENCE_MAX_PREFIX_SCANS)
+        .max(TOOL_LOOP_FENCE_MIN_KEEP_COUNT);
+
+    for prefix_len in 1..=max_prefix {
         let projected_messages = build_projected_messages_for_prefix(
             &projection_history,
             assistant_message,
@@ -399,6 +453,11 @@ async fn apply_tool_loop_token_fence(
             kept_projection_total = projected_total_budget_tokens;
         }
         break;
+    }
+
+    // If the batch is larger than the scan cap and every scanned prefix fit, keep the cap.
+    if max_prefix < original_tool_calls.len() && kept_count == max_prefix {
+        kept_count = max_prefix;
     }
 
     if kept_count >= original_tool_calls.len() {

@@ -501,7 +501,7 @@
       "loopPreventionThresholdDescription": "Anzahl identischer, wiederholter Tool-Ergebnisse, bevor der Agent eine natürliche Wiederherstellung versucht oder einen harten Stopp auslöst.",
       "loopPreventionThresholdPlaceholder": "z. B. 3",
       "loopPreventionHardBreakOffset": "Hard-Break-Offset",
-      "loopPreventionHardBreakOffsetPlaceholder": "z. B. 1",
+      "loopPreventionHardBreakOffsetPlaceholder": "z. B. 2",
       "loopPreventionHardBreakOffsetDescription": "Zusätzliche identische Werkzeugaufrufe, die nach der Warnung zur natürlichen Wiederherstellung zulässig sind, bevor der Workflow hart gestoppt wird. Bei Schwellenwert=3 und Offset=1 erfolgt die natürliche Wiederherstellung beim 3. Aufruf und der harte Stopp beim 4. Aufruf."
     },
     "system": {

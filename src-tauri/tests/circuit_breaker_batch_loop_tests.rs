@@ -1,4 +1,5 @@
-//! Windows-safe circuit-breaker batch-loop coverage.
+//! Windows-safe circuit-breaker batch-loop coverage (including outcome-aware
+//! batch streaks).
 //!
 //! The consolidated `integration_tests` binary is `#![cfg(not(windows))]` because
 //! it links the full Tauri/WebView path. These cases stay runnable on Windows.
@@ -188,6 +189,93 @@ fn mixed_batch_repetition_is_detected_across_turns() {
             tool_name: "workspace__readFile".to_string(),
             args: r#"{"path":"a.ts"}"#.to_string(),
         })
+    );
+}
+
+#[test]
+fn mixed_batch_different_outcomes_do_not_accumulate_toward_threshold() {
+    // Same batch fingerprint with progressing tool results only counts the
+    // trailing identical-outcome segment.
+    let messages = vec![
+        test_message(
+            "assistant-1",
+            "assistant",
+            Some(mixed_batch(["tc-1a", "tc-1b", "tc-1c"], "")),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-1a",
+            "tool",
+            None,
+            Some("tc-1a"),
+            None,
+            "running a",
+            Some(false),
+        ),
+        test_message(
+            "tool-1b",
+            "tool",
+            None,
+            Some("tc-1b"),
+            None,
+            "running b",
+            Some(false),
+        ),
+        test_message(
+            "tool-1c",
+            "tool",
+            None,
+            Some("tc-1c"),
+            None,
+            "running c",
+            Some(false),
+        ),
+        test_message(
+            "assistant-2",
+            "assistant",
+            Some(mixed_batch(["tc-2a", "tc-2b", "tc-2c"], "")),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-2a",
+            "tool",
+            None,
+            Some("tc-2a"),
+            None,
+            "done a",
+            Some(false),
+        ),
+        test_message(
+            "tool-2b",
+            "tool",
+            None,
+            Some("tc-2b"),
+            None,
+            "done b",
+            Some(false),
+        ),
+        test_message(
+            "tool-2c",
+            "tool",
+            None,
+            Some("tc-2c"),
+            None,
+            "done c",
+            Some(false),
+        ),
+    ];
+    let current = mixed_batch(["tc-3a", "tc-3b", "tc-3c"], "");
+
+    assert_eq!(
+        evaluate_batch_circuit_breaker(&messages, &current, 3, 1),
+        None,
+        "changing batch outcomes must not Soft-block the next identical batch"
     );
 }
 

@@ -5,6 +5,9 @@ use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 
+// Outcome-aware per-tool streak cases live in the Windows-safe binary
+// `tests/circuit_breaker_outcome_streak_tests.rs` (this module is cfg(not(windows))).
+
 fn test_message(
     id: &str,
     role: &str,
@@ -312,69 +315,6 @@ fn natural_recovery_prefers_repeated_identical_success_before_hard_break() {
             Some("tc-2"),
             None,
             repeated_success,
-            Some(false),
-        ),
-    ];
-
-    assert_eq!(
-        evaluate(&messages, &current_call, 3),
-        Some(CircuitBreakerAction::NaturalRecoverySuccess {
-            count: 3,
-            tool_name: "workspace__readFile".to_string(),
-            args: repeated_args.to_string(),
-        })
-    );
-}
-
-#[test]
-fn same_call_signature_counts_even_when_success_text_differs() {
-    // Same tool + args is a loop even if the successful payload text changes
-    // (e.g. polling). Counter resets only when a different tool/args appears.
-    let repeated_args = r#"{"path":"src/main.ts"}"#;
-    let current_call = test_tool_call("tc-3", "workspace__readFile", repeated_args);
-    let messages = vec![
-        test_message(
-            "assistant-1",
-            "assistant",
-            Some(vec![test_tool_call(
-                "tc-1",
-                "workspace__readFile",
-                repeated_args,
-            )]),
-            None,
-            None,
-            "",
-            None,
-        ),
-        test_message(
-            "tool-1",
-            "tool",
-            None,
-            Some("tc-1"),
-            None,
-            "src/main.ts contents v1",
-            Some(false),
-        ),
-        test_message(
-            "assistant-2",
-            "assistant",
-            Some(vec![test_tool_call(
-                "tc-2",
-                "workspace__readFile",
-                repeated_args,
-            )]),
-            None,
-            None,
-            "",
-            None,
-        ),
-        test_message(
-            "tool-2",
-            "tool",
-            None,
-            Some("tc-2"),
-            None,
-            "src/main.ts contents v2",
             Some(false),
         ),
     ];

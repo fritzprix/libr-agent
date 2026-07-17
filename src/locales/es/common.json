@@ -501,7 +501,7 @@
       "loopPreventionThresholdDescription": "Número de resultados idénticos repetidos de herramientas antes de que el agente intente recuperarse de forma natural o active una detención forzada.",
       "loopPreventionThresholdPlaceholder": "p. ej., 3",
       "loopPreventionHardBreakOffset": "Desviación de parada forzada",
-      "loopPreventionHardBreakOffsetPlaceholder": "p. ej., 1",
+      "loopPreventionHardBreakOffsetPlaceholder": "p. ej., 2",
       "loopPreventionHardBreakOffsetDescription": "Llamadas de herramientas idénticas adicionales permitidas después de la advertencia de recuperación natural antes de detener el flujo de trabajo de forma forzada. Con umbral=3 y desviación=1, la recuperación natural se activa en la llamada 3 y la parada forzada en la llamada 4."
     },
     "system": {

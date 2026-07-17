@@ -174,6 +174,16 @@ pub enum AgentEvent {
         /// Optional resource identifier
         resource_id: Option<String>,
     },
+
+    /// Loop-prevention circuit breaker fired (soft recovery, escalate, or hard break).
+    #[serde(rename_all = "camelCase")]
+    CircuitBreakerTriggered {
+        session_id: String,
+        tool_name: String,
+        count: usize,
+        /// `hardBreak` | `softRecovery` | `errorEscalate` | `repeatedBatch` | `duplicateInBatch`
+        action: String,
+    },
 }
 
 pub trait AgentEventDispatcher: Send + Sync {
@@ -291,6 +301,14 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
         } => format!(
             "ResourceUpdated(type={resource_type}, action={action}, resource_id={})",
             resource_id.as_deref().unwrap_or("-")
+        ),
+        AgentEvent::CircuitBreakerTriggered {
+            session_id,
+            tool_name,
+            count,
+            action,
+        } => format!(
+            "CircuitBreakerTriggered(session={session_id}, tool={tool_name}, count={count}, action={action})"
         ),
     }
 }

@@ -508,8 +508,8 @@
       "loopPreventionThresholdDescription": "Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop.",
       "loopPreventionThresholdPlaceholder": "e.g., 3",
       "loopPreventionHardBreakOffset": "Hard Break Offset",
-      "loopPreventionHardBreakOffsetPlaceholder": "e.g., 1",
-      "loopPreventionHardBreakOffsetDescription": "Additional identical tool calls allowed after natural recovery warning before hard-stopping the workflow. With threshold=3 and offset=1, natural recovery fires at call 3 and hard break at call 4."
+      "loopPreventionHardBreakOffsetPlaceholder": "e.g., 2",
+      "loopPreventionHardBreakOffsetDescription": "Additional identical (call, outcome) attempts after soft recovery before hard-stopping. Default 2: with threshold=3, soft recovery at call 3, error escalate at call 4, hard break at call 5. Offset 1 skips escalate (soft then hard)."
     },
     "system": {
       "title": "System & Performance",

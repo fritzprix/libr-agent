@@ -39,11 +39,12 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
         ),
         LoopPreventionKind::RepeatedSuccessOutcome => format!(
             "Loop prevention: '{}' was called {} times with identical parameters and the same successful result.\n\n\
-            This call was blocked. Repeating it with the same arguments will not change the outcome. If retrying, use different \
-            parameters or a different tool. If you are waiting for an external \
-            state change, use a delay first (for example `workspace__runShell` with `sleep 5`, or \
-            `workspace__waitForProcess` for background processes), then retry with updated parameters if needed. \
-            Otherwise choose a different tool or approach.",
+            This call was blocked. This environment strictly limits repeating the same tool with the same arguments.\n\n\
+            If you are waiting for background work to finish, do not poll with snapshot/status-only calls. \
+            Prefer a single blocking wait on that tool (for example wait=true, or a non-zero timeout) \
+            so one call covers the wait window. Only re-check after a wait returns incomplete — \
+            and change approach if the state is not progressing. \
+            Otherwise use different parameters or a different tool.",
             short_circuit.tool_name, short_circuit.count
         ),
         LoopPreventionKind::DuplicateInBatch => format!(
@@ -90,7 +91,9 @@ mod tests {
         });
 
         assert!(guidance.contains("blocked"));
-        assert!(guidance.contains("sleep"));
+        assert!(guidance.contains("blocking wait"));
+        assert!(guidance.contains("wait=true"));
+        assert!(!guidance.contains("sleep"));
     }
 
     #[test]
