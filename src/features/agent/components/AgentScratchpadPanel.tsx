@@ -59,7 +59,7 @@ export function AgentScratchpadPanel({
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             <PanelRight className="h-3.5 w-3.5" />
-            <span>{t('agent.schedules.title', 'Schedules')}</span>
+            <span>{t('agent.schedules.panelTitle', 'Schedules & Notes')}</span>
           </div>
 
           <div className="flex flex-wrap gap-2">
