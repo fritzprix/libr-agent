@@ -349,7 +349,7 @@ async fn natural_recovery_error_keeps_original_tool_call_and_registers_short_cir
 }
 
 #[tokio::test]
-async fn natural_recovery_does_not_replace_with_scratchpad_think() {
+async fn natural_recovery_preserves_original_tool() {
     let session_id = "loop-prevention-no-think-session";
     let repeated_args = r#"{"path":"src/main.ts"}"#;
     let history = repeated_success_history(repeated_args, "same content");
@@ -385,5 +385,7 @@ async fn natural_recovery_does_not_replace_with_scratchpad_think() {
     .await;
 
     let tool_calls = assistant_message.tool_calls.as_ref().expect("tool calls");
-    assert_ne!(tool_calls[0].function.name, "scratchpad__think");
+    // Regression: natural recovery must keep the original tool (never substitute
+    // scratchpad__think or any other recovery tool).
+    assert_eq!(tool_calls[0].function.name, "workspace__readFile");
 }
