@@ -509,8 +509,11 @@ function AgentChatInner() {
             open={showScratchpadPanel}
             onOpenChange={handleScratchpadSheetOpenChange}
             side="right"
-            title={t('agent.schedules.title')}
-            description={t('agent.schedules.title')}
+            title={t('agent.schedules.panelTitle', 'Schedules & Notes')}
+            description={t(
+              'agent.schedules.panelDescription',
+              'View and manage active schedules and notes.',
+            )}
           >
             <AgentScratchpadPanel isVisible variant="sheet" />
           </MobilePanelSheet>

@@ -171,7 +171,7 @@ export function AgentChatHeader({
                 size="sm"
                 onClick={toggleScratchpadPanel}
                 aria-label={t(
-                  'agent.header.togglePlanningAria',
+                  'agent.header.toggleScratchpadAria',
                   'Toggle Schedules & Notes',
                 )}
                 aria-controls="agent-scratchpad-panel"
@@ -185,7 +185,7 @@ export function AgentChatHeader({
             </TooltipTrigger>
             <TooltipContent>
               {t(
-                'agent.header.togglePlanningTooltip',
+                'agent.header.toggleScratchpadTooltip',
                 'Toggle Schedules & Notes',
               )}
             </TooltipContent>

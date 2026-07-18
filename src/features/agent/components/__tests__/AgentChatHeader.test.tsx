@@ -132,6 +132,9 @@ vi.mock('react-i18next', () => ({
       if (key === 'agent.header.toggleWorkspaceAria') {
         return 'Toggle workspace';
       }
+      if (key === 'agent.header.toggleScratchpadAria') {
+        return 'Toggle Schedules & Notes';
+      }
       if (key === 'agent.header.defaultAssistant') {
         return 'Agent';
       }

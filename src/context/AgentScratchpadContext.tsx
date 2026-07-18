@@ -4,6 +4,7 @@ import {
   useState,
   type ReactNode,
   useCallback,
+  useMemo,
 } from 'react';
 
 interface AgentScratchpadContextType {
@@ -32,15 +33,23 @@ export function AgentScratchpadProvider({ children }: { children: ReactNode }) {
     setShowScratchpadPanel(false);
   }, []);
 
+  const value = useMemo(
+    () => ({
+      showScratchpadPanel,
+      toggleScratchpadPanel,
+      openScratchpadPanel,
+      closeScratchpadPanel,
+    }),
+    [
+      showScratchpadPanel,
+      toggleScratchpadPanel,
+      openScratchpadPanel,
+      closeScratchpadPanel,
+    ],
+  );
+
   return (
-    <AgentScratchpadContext.Provider
-      value={{
-        showScratchpadPanel,
-        toggleScratchpadPanel,
-        openScratchpadPanel,
-        closeScratchpadPanel,
-      }}
-    >
+    <AgentScratchpadContext.Provider value={value}>
       {children}
     </AgentScratchpadContext.Provider>
   );
