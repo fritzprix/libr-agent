@@ -53,7 +53,7 @@ impl BuiltinMCPServer for WorkspaceServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        Self::tools_static()
+        Self::tools_for_isolation(self.workspace_isolation)
     }
 
     async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {

@@ -20,6 +20,8 @@ use tracing::info;
 pub struct WorkspaceServer {
     pub(crate) session_id: String,
     pub(crate) session_manager: Arc<SessionManager>,
+    /// Fixed at session create; drives which shell tools are discoverable.
+    pub(crate) workspace_isolation: WorkspaceIsolationMode,
     pub(crate) isolation_manager: crate::session_isolation::SessionIsolationManager,
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
     pub(crate) pending_executions: Arc<PendingExecutions>,
@@ -35,8 +37,21 @@ const TEAMWORK_ALIAS_PREFIX: &str = "@teamwork";
 const TEAMWORK_PARENT_CHAIN_LIMIT: usize = 64;
 
 impl WorkspaceServer {
+    /// Create a workspace server for host isolation (tests / legacy global registry).
     pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
-        info!("WorkspaceServer created for session: {}", session_id);
+        Self::with_isolation(session_id, session_manager, WorkspaceIsolationMode::Host)
+    }
+
+    /// Create a workspace server bound to a session's workspace isolation mode.
+    pub fn with_isolation(
+        session_id: String,
+        session_manager: Arc<SessionManager>,
+        workspace_isolation: WorkspaceIsolationMode,
+    ) -> Self {
+        info!(
+            "WorkspaceServer created for session: {} (isolation={})",
+            session_id, workspace_isolation
+        );
         let process_registry = terminal_manager::create_process_registry();
         let pending_executions = Arc::new(PendingExecutions::new());
         let cleanup_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -48,6 +63,7 @@ impl WorkspaceServer {
         Self {
             session_id,
             session_manager,
+            workspace_isolation,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
             pending_executions,
@@ -56,6 +72,10 @@ impl WorkspaceServer {
             cleanup_shutdown,
             cleanup_tasks: vec![process_cleanup_task],
         }
+    }
+
+    pub(crate) fn code_tools_profile(&self) -> tools::CodeToolsProfile {
+        tools::CodeToolsProfile::from_isolation(self.workspace_isolation)
     }
 
     /// Invalidate the service context cache (call after state changes)
@@ -669,10 +689,17 @@ impl WorkspaceServer {
         build_tree(workspace_root, "", 0, max_depth, workspace_root)
     }
 
+    /// Host-platform tool definitions for static registry / UI catalogs.
+    /// Agent-facing lists use [`Self::tools_for_isolation`] with the session mode.
     pub fn tools_static() -> Vec<MCPTool> {
+        Self::tools_for_isolation(WorkspaceIsolationMode::Host)
+    }
+
+    pub fn tools_for_isolation(isolation: WorkspaceIsolationMode) -> Vec<MCPTool> {
+        let profile = tools::CodeToolsProfile::from_isolation(isolation);
         let mut tools = Vec::new();
         tools.extend(tools::file_tools());
-        tools.extend(tools::code_tools());
+        tools.extend(tools::code_tools(profile));
         tools.extend(tools::export_tools());
         tools.extend(tools::terminal_tools());
         tools

@@ -43,7 +43,7 @@ fn create_tool() -> MCPTool {
                 ("name".to_string(), string_prop_required("Unique name for the agent configuration.")),
                 ("description".to_string(), string_prop(None, None, Some("Short description of what this agent does. If omitted, the configuration is created without a description."))),
                 ("temperature".to_string(), number_prop(Some(0.0), Some(2.0), Some("Sampling temperature (0.0 to 2.0). If omitted, the configuration leaves temperature unset and the runtime/model default applies."))),
-                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted, all optional builtin services stay enabled."))),
+                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['planning', 'browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted, all optional builtin services stay enabled."))),
                 ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow (e.g. ['github', 'google-search']). If omitted, the configuration leaves external MCP server overrides unset."))),
                 ("systemPrompt".to_string(), string_prop(None, None, Some("The core personality and instructions for the agent. If omitted, no custom system prompt is stored."))),
             ],
