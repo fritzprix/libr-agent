@@ -1,3 +1,22 @@
+## [0.8.32] - 2026-07-19
+
+### 🚀 Features
+
+- **Isolation-Aware Shell Tools**: Workspace shell tools (`runShell`, `runPowerShell`, `runInPersistentShell`, `runInPersistentPowerShell`) are now exposed based on the session's workspace isolation mode — Docker sessions get bash/sh tools, Host Windows gets PowerShell only, Host Unix gets bash/sh. Cross-dialect tool calls are rejected with clear guidance.
+- **Planning Service — Optional**: The `planning` service is no longer auto-included as a core builtin. It must be explicitly requested via `builtinCapabilities: ["planning"]` when creating agents that need goal/todo management.
+
+### 🐛 Fixes
+
+- **Docker on Windows Shell Exposure**: Fixed Docker sessions on Windows hosts not exposing `runShell`/`runInPersistentShell`, which are required since Docker always executes via `docker exec … -lc` (bash/sh).
+- **Cross-Dialect Tool Guidance**: Agents now receive actionable error messages when calling platform-incompatible shell tools, with clear suggestions for the correct tool.
+- **Circuit Breaker Exemption Cleanup**: Removed a stale `scratchpad__think` loop-detection exemption so repeated failures escalate correctly while preserving `planning__reflect` and `ui__circuitBreak` handling.
+
+### 🔧 Internal
+
+- **Workspace Server Isolation Propagation**: `WorkspaceServer` now reads the session's `workspace_isolation` mode at construction via `MCPServiceProxyFactory`, replacing the previous hardcoded Host assumption.
+- **Tool Discovery Simplification**: Replaced `#[cfg(windows)]`/`#[cfg(unix)]` conditional compilation in tool discovery with a `CodeToolsProfile` enum, improving testability and maintainability.
+- **Test Coverage**: Added `workspace_shell_tool_profile_tests.rs` with 4 new tests validating isolation-aware tool exposure and cross-dialect rejection.
+
 ## [0.8.31] - 2026-07-18
 
 ### 🚀 Features
