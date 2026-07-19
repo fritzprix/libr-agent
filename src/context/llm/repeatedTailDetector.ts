@@ -81,32 +81,34 @@ export function detectRepeatedTailLoop(
   return null;
 }
 
-export const REPEATED_THINKING_TAIL_CHARS = 1024;
-export const REPEATED_THINKING_MIN_PATTERN_LENGTH = 64;
-export const REPEATED_THINKING_MIN_REPETITIONS = 2;
+/** Shared thresholds for thinking and text stream loop detection. */
+export const REPEATED_LOOP_TAIL_CHARS = 1024;
+export const REPEATED_LOOP_MIN_PATTERN_LENGTH = 64;
+export const REPEATED_LOOP_MIN_REPETITIONS = 3;
 
-export const REPEATED_THINKING_CONFIG: RepeatedTailDetectorConfig = {
-  minPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
-  minRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
-  tailChars: REPEATED_THINKING_TAIL_CHARS,
+export const REPEATED_LOOP_CONFIG: RepeatedTailDetectorConfig = {
+  minPatternLength: REPEATED_LOOP_MIN_PATTERN_LENGTH,
+  minRepetitions: REPEATED_LOOP_MIN_REPETITIONS,
+  tailChars: REPEATED_LOOP_TAIL_CHARS,
 };
+
+export const REPEATED_THINKING_TAIL_CHARS = REPEATED_LOOP_TAIL_CHARS;
+export const REPEATED_THINKING_MIN_PATTERN_LENGTH =
+  REPEATED_LOOP_MIN_PATTERN_LENGTH;
+export const REPEATED_THINKING_MIN_REPETITIONS = REPEATED_LOOP_MIN_REPETITIONS;
+export const REPEATED_THINKING_CONFIG = REPEATED_LOOP_CONFIG;
+
+export const REPEATED_TEXT_TAIL_CHARS = REPEATED_LOOP_TAIL_CHARS;
+export const REPEATED_TEXT_MIN_PATTERN_LENGTH = REPEATED_LOOP_MIN_PATTERN_LENGTH;
+export const REPEATED_TEXT_MIN_REPETITIONS = REPEATED_LOOP_MIN_REPETITIONS;
+export const REPEATED_TEXT_CONFIG = REPEATED_LOOP_CONFIG;
 
 export function detectRepeatedThinkingLoop(
   thinking: string,
 ): RepeatedTailMatch | null {
-  return detectRepeatedTailLoop(thinking, REPEATED_THINKING_CONFIG);
+  return detectRepeatedTailLoop(thinking, REPEATED_LOOP_CONFIG);
 }
 
-export const REPEATED_TEXT_TAIL_CHARS = 1024;
-export const REPEATED_TEXT_MIN_PATTERN_LENGTH = 64;
-export const REPEATED_TEXT_MIN_REPETITIONS = 3;
-
-export const REPEATED_TEXT_CONFIG: RepeatedTailDetectorConfig = {
-  minPatternLength: REPEATED_TEXT_MIN_PATTERN_LENGTH,
-  minRepetitions: REPEATED_TEXT_MIN_REPETITIONS,
-  tailChars: REPEATED_TEXT_TAIL_CHARS,
-};
-
 export function detectRepeatedTextLoop(text: string): RepeatedTailMatch | null {
-  return detectRepeatedTailLoop(text, REPEATED_TEXT_CONFIG);
+  return detectRepeatedTailLoop(text, REPEATED_LOOP_CONFIG);
 }

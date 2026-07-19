@@ -35,11 +35,13 @@ Backend (handle_streaming_issue)
 
 ## Thresholds
 
-| Parameter          | Thinking | Text  | Rationale                                                        |
-| ------------------ | -------- | ----- | ---------------------------------------------------------------- |
-| `minRepetitions`   | 2        | **3** | Text has more natural surface repetition (lists, JSON, markdown) |
-| `minPatternLength` | 64       | 64    | Short patterns are noise                                         |
-| `tailChars`        | 1024     | 1024  | Same sliding window as thinking                                  |
+Thinking and text share one config (`REPEATED_LOOP_*`):
+
+| Parameter          | Value | Rationale                                                                 |
+| ------------------ | ----- | ------------------------------------------------------------------------- |
+| `minRepetitions`   | **3** | Two natural phrase/sentence repeats are common; require a third cycle     |
+| `minPatternLength` | 64    | Short patterns are noise                                                  |
+| `tailChars`        | 1024  | Sliding window over the recent stream tail                                |
 
 ## Retry counter policy
 
@@ -123,8 +125,8 @@ the loop may continue until a later report succeeds or the user aborts.
 
 ## Test plan
 
-- Unit: `repeatedTailDetector.test.ts` — text threshold (3×), list/JSON false
-  negatives where possible, thinking preset unchanged
+- Unit: `repeatedTailDetector.test.ts` / `repeatedThinkingDetector.test.ts` —
+  shared 3× threshold, list/JSON false negatives where possible
 - Integration: `repeated_thinking_recovery_tests.rs` — text loop action
   evaluation with separate counter semantics
 - Manual: provoke text-only repetition in a session without tools; confirm
