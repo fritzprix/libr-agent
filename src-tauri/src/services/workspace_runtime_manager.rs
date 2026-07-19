@@ -422,7 +422,7 @@ pub fn normalize_docker_arch(arch: &str) -> String {
         "arm64" | "aarch64" => "aarch64".to_string(),
         "arm" | "armhf" | "armv7" | "armv7l" => "arm".to_string(),
         "i386" | "i686" | "386" => "x86".to_string(),
-        other if other.is_empty() => std::env::consts::ARCH.to_string(),
+        "" => std::env::consts::ARCH.to_string(),
         other => other.to_string(),
     }
 }

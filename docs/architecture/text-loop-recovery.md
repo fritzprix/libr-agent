@@ -37,11 +37,11 @@ Backend (handle_streaming_issue)
 
 Thinking and text share one config (`REPEATED_LOOP_*`):
 
-| Parameter          | Value | Rationale                                                                 |
-| ------------------ | ----- | ------------------------------------------------------------------------- |
-| `minRepetitions`   | **3** | Two natural phrase/sentence repeats are common; require a third cycle     |
-| `minPatternLength` | 64    | Short patterns are noise                                                  |
-| `tailChars`        | 1024  | Sliding window over the recent stream tail                                |
+| Parameter          | Value | Rationale                                                             |
+| ------------------ | ----- | --------------------------------------------------------------------- |
+| `minRepetitions`   | **3** | Two natural phrase/sentence repeats are common; require a third cycle |
+| `minPatternLength` | 64    | Short patterns are noise                                              |
+| `tailChars`        | 1024  | Sliding window over the recent stream tail                            |
 
 ## Retry counter policy
 
