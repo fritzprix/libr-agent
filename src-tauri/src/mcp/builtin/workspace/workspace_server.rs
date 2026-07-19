@@ -768,6 +768,7 @@ impl WorkspaceServer {
 
         let workspace_dir = live_state.workspace_dir;
         let shell_cwd = live_state.shell_cwd;
+        let platform = context::ExecutionPlatform::for_session(&session_id, live_state.is_docker);
 
         let (running_count, total_count) = match self.process_registry.try_read() {
             Ok(reg) => {
@@ -792,11 +793,7 @@ impl WorkspaceServer {
                 "workspace_dir": workspace_dir,
                 "shell_cwd": shell_cwd,
                 "is_docker": live_state.is_docker,
-                "platform": {
-                    "os": std::env::consts::OS,
-                    "arch": std::env::consts::ARCH,
-                    "shell": context::detect_shell(std::env::consts::OS)
-                },
+                "platform": platform.to_structured_json(),
                 "processes": {
                     "running": running_count,
                     "total": total_count,

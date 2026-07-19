@@ -1,6 +1,7 @@
 use super::edit_mode::workspace_file_tools_context_list;
 use super::persistent_shell;
 use super::terminal_manager;
+use crate::services::workspace_runtime_manager::WorkspaceRuntimeManager;
 use crate::session::SessionManager;
 
 /// Agent-facing workspace state shared by the context prompt and structured service context.
@@ -9,6 +10,84 @@ pub struct WorkspaceLiveState {
     pub workspace_dir: String,
     pub shell_cwd: String,
     pub is_docker: bool,
+}
+
+/// OS / arch / shell that shell tools actually execute against.
+///
+/// In Docker isolation this describes the container, not the host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionPlatform {
+    pub os: String,
+    pub arch: String,
+    pub shell: String,
+}
+
+impl ExecutionPlatform {
+    /// Resolve execution platform for prompt text and structured UI state.
+    ///
+    /// `docker_shell` / `docker_arch` come from runtime caches when available.
+    /// Fallbacks avoid hardcoding a single arch and avoid claiming bash when
+    /// the container may only expose `sh`.
+    pub fn resolve(
+        is_docker: bool,
+        host_os: &str,
+        host_arch: &str,
+        docker_shell: Option<&str>,
+        docker_arch: Option<&str>,
+    ) -> Self {
+        if is_docker {
+            Self {
+                os: "linux".to_string(),
+                arch: docker_arch.unwrap_or(host_arch).to_string(),
+                shell: docker_shell.unwrap_or("bash").to_string(),
+            }
+        } else {
+            Self {
+                os: host_os.to_string(),
+                arch: host_arch.to_string(),
+                shell: detect_shell(host_os),
+            }
+        }
+    }
+
+    /// Look up Docker runtime caches and resolve the platform for a session.
+    pub fn for_session(session_id: &str, is_docker: bool) -> Self {
+        let docker_shell = if is_docker {
+            WorkspaceRuntimeManager::cached_docker_shell(session_id)
+                .map(|shell| shell.command().to_string())
+        } else {
+            None
+        };
+        let docker_arch = if is_docker {
+            WorkspaceRuntimeManager::cached_docker_arch(session_id)
+        } else {
+            None
+        };
+
+        Self::resolve(
+            is_docker,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            docker_shell.as_deref(),
+            docker_arch.as_deref(),
+        )
+    }
+
+    pub fn platform_line(&self) -> String {
+        format!("- Platform: {} ({})", self.os, self.arch)
+    }
+
+    pub fn shell_line(&self) -> String {
+        format!("- Default Shell: {}", self.shell)
+    }
+
+    pub fn to_structured_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "os": self.os,
+            "arch": self.arch,
+            "shell": self.shell,
+        })
+    }
 }
 
 /// Build workspace display state for a session.
@@ -88,12 +167,18 @@ pub async fn build_context_prompt(
         String::new()
     };
 
+    let platform = ExecutionPlatform::for_session(session_id, state.is_docker);
+    let platform_info = platform.platform_line();
+    let shell_info = platform.shell_line();
+
     format!(
         "## Workspace
 
 ### Live State
 {isolation_lines}- Workspace Root: {workspace_dir}
 - Persistent Shell CWD: {shell_cwd}
+{platform_info}
+{shell_info}
 - Running Processes: {running_processes_text}
 - Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.",
         workspace_dir = state.workspace_dir,

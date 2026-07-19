@@ -31,6 +31,9 @@ static DOCKER_CONTAINER_READY_CACHE: Lazy<DashMap<String, Instant>> = Lazy::new(
 /// Resolved shell type cache: session_id → bash/sh.
 static DOCKER_SHELL_CACHE: Lazy<DashMap<String, ShellType>> = Lazy::new(DashMap::new);
 
+/// Resolved container architecture cache: session_id → Rust-style arch (x86_64/aarch64/…).
+static DOCKER_ARCH_CACHE: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
+
 /// Waiters notified when background Docker provisioning completes for a session.
 static DOCKER_PROVISIONING_WAITERS: Lazy<DashMap<String, Arc<Notify>>> = Lazy::new(DashMap::new);
 
@@ -113,6 +116,16 @@ impl WorkspaceRuntimeManager {
         prepare_docker_runtime(session, false, false, None)
             .await
             .map(|_| ())
+    }
+
+    /// Returns the cached Docker shell for a session, if runtime has been prepared.
+    pub fn cached_docker_shell(session_id: &str) -> Option<ShellType> {
+        DOCKER_SHELL_CACHE.get(session_id).map(|entry| *entry)
+    }
+
+    /// Returns the cached Docker container architecture for a session, if known.
+    pub fn cached_docker_arch(session_id: &str) -> Option<String> {
+        DOCKER_ARCH_CACHE.get(session_id).map(|entry| entry.clone())
     }
 
     /// Cache-aware variant used by high-frequency shell execution paths.
@@ -300,6 +313,7 @@ fn clear_session_docker_caches(session_id: &str) {
     DOCKER_HEALTH_CACHE.remove(session_id);
     DOCKER_CONTAINER_READY_CACHE.remove(session_id);
     DOCKER_SHELL_CACHE.remove(session_id);
+    DOCKER_ARCH_CACHE.remove(session_id);
     DOCKER_SESSION_LOCKS.remove(session_id);
     DOCKER_PROVISIONING_IN_FLIGHT.remove(session_id);
     DOCKER_PROVISIONING_WAITERS.remove(session_id);
@@ -385,9 +399,37 @@ async fn prepare_docker_runtime(
     )
     .await?;
 
+    let arch = match docker_container_architecture(&container_name).await {
+        Ok(arch) => arch,
+        Err(error) => {
+            tracing::warn!(
+                "Failed to inspect Docker architecture for {container_name}: {error}; falling back to host arch"
+            );
+            std::env::consts::ARCH.to_string()
+        }
+    };
+
     DOCKER_SHELL_CACHE.insert(session.id.clone(), shell);
+    DOCKER_ARCH_CACHE.insert(session.id.clone(), arch);
     DOCKER_CONTAINER_READY_CACHE.insert(session.id.clone(), now);
     Ok(shell)
+}
+
+/// Normalize Docker GOARCH / inspect Architecture values to Rust `std::env::consts::ARCH` style.
+pub fn normalize_docker_arch(arch: &str) -> String {
+    match arch.trim().to_ascii_lowercase().as_str() {
+        "amd64" | "x86_64" | "x64" => "x86_64".to_string(),
+        "arm64" | "aarch64" => "aarch64".to_string(),
+        "arm" | "armhf" | "armv7" | "armv7l" => "arm".to_string(),
+        "i386" | "i686" | "386" => "x86".to_string(),
+        other if other.is_empty() => std::env::consts::ARCH.to_string(),
+        other => other.to_string(),
+    }
+}
+
+async fn docker_container_architecture(container_name: &str) -> RuntimeResult<String> {
+    let arch = docker_output(["inspect", "-f", "{{.Architecture}}", container_name]).await?;
+    Ok(normalize_docker_arch(&arch))
 }
 
 async fn ensure_bash_image_contract(
