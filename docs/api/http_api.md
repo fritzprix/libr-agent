@@ -1,6 +1,6 @@
 # LibrAgent HTTP API Documentation
 
-LibrAgent provides a robust HTTP API for remote management of AI agents, sessions, and multi-tool orchestration. This guide is intended for client developers building third-party integrations or headless automation.
+LibrAgent provides a robust HTTP API for remote management of AI agents, sessions, and multi-tool orchestration. This guide is intended for client developers building third-party integrations, automated test runners, or headless benchmark environments (e.g., `tau-bench`, `agent-bench`).
 
 ## Server Configuration
 
@@ -25,8 +25,9 @@ LibrAgent uses standard HTTP status codes to indicate the success or failure of 
 ### Common Status Codes
 
 | Code  | Description                                                                                           |
-| :---- | :---------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `200  | 201`                                                                                                  | **Success**: The request was handled successfully. |
+| :---- | :---------------------------------------------------------------------------------------------------- |
+| `200` | **Success**: The request was handled successfully.                                                    |
+| `201` | **Created**: The resource (e.g., Session) was successfully created.                                   |
 | `400` | **Bad Request**: The request body is malformed or contains invalid values (e.g., non-absolute paths). |
 | `404` | **Not Found**: The requested resource (Assistant, Session) does not exist.                            |
 | `500` | **Internal Error**: An unexpected server-side error occurred (e.g., DB failure, config corruption).   |
@@ -47,15 +48,28 @@ Creates a new isolated agent session and starts an initial workflow.
 
 ```json
 {
-  "assistantId": "string",
+  "assistantId": "string (required)",
   "name": "string (optional)",
+  "model": "string (optional, e.g., 'gpt-4o' or 'claude-3-5-sonnet')",
+  "provider": "string (optional, e.g., 'openai' or 'anthropic')",
   "workspacePath": "absolute path (optional)",
-  "request": "initial user prompt (required)"
+  "workspaceIsolation": "Standard | Docker (optional)",
+  "dockerConfig": {
+    "image": "string (optional)",
+    "env": { "KEY": "VALUE" }
+  },
+  "request": "initial user prompt (required)",
+  "parentSessionId": "string (optional)",
+  "maxDepth": 5,
+  "maxFanout": 3,
+  "orgId": "string (optional)",
+  "orgName": "string (optional)",
+  "orgRootSessionId": "string (optional)"
 }
 ```
 
 > [!NOTE]
-> The API automatically resolves the `model` and `provider` from the user's **Preferred Model** in global settings.
+> If `model` and `provider` are omitted, the API automatically falls back to the user's **Preferred Model** in global settings.
 
 #### Response Body
 
@@ -63,7 +77,15 @@ Creates a new isolated agent session and starts an initial workflow.
 {
   "id": "session-uuid",
   "name": "Session Name",
-  "status": "Busy"
+  "status": "Idle | Provisioning",
+  "parentSessionId": null,
+  "lineageId": "session-uuid",
+  "depth": 0,
+  "maxDepth": 5,
+  "maxFanout": 3,
+  "orgId": null,
+  "orgName": null,
+  "orgRootSessionId": null
 }
 ```
 
@@ -82,10 +104,31 @@ Retrieves current session metadata and execution state.
 {
   "id": "string",
   "name": "string",
-  "status": "Idle | Busy | Paused | Error",
+  "status": "Idle | Busy | Paused | Error | Provisioning",
   "model": "string",
   "provider": "string",
-  "createdAt": 1739000000000
+  "assistantId": "string",
+  "parentSessionId": "string (nullable)",
+  "lineageId": "string",
+  "depth": 0,
+  "maxDepth": 5,
+  "maxFanout": 3,
+  "orgId": "string (nullable)",
+  "orgName": "string (nullable)",
+  "orgRootSessionId": "string (nullable)",
+  "isBookmarked": false,
+  "createdAt": 1739000000000,
+  "updatedAt": 1739000000000,
+  "lastViewedAt": 1739000000000,
+  "lastMessageAt": 1739000000000,
+  "lastAttentionAt": null,
+  "lastAttentionReason": null,
+  "executionMode": "Normal | Yolo | Unsafe",
+  "workspaceOverride": "string (nullable)",
+  "workspaceIsolation": "Standard | Docker",
+  "dockerConfig": null,
+  "dockerContainerName": null,
+  "dockerHostWorkspacePath": null
 }
 ```
 
@@ -129,7 +172,7 @@ Retrieves a list of child sessions spawned by a parent session.
 
 ### Resume Session
 
-Resumes a paused session.
+Loads a paused/crashed session into active memory and resumes the workflow.
 
 - **Method**: `POST`
 - **Path**: `/api/sessions/:id/resume`
@@ -160,7 +203,8 @@ Sends a new user message to an existing session.
 
 ```json
 {
-  "content": "New message text"
+  "content": "New message text",
+  "source": "api" // Optional message source (defaults to "api")
 }
 ```
 
@@ -201,6 +245,98 @@ Retrieves the message history for a session.
       "createdAt": 1739000000000
     }
   ]
+}
+```
+
+---
+
+## 🔌 Channels & Tool Approvals
+
+These endpoints are crucial for **headless automated testing**. They allow external scripts to simulate remote notifications and programmatic tool permissions.
+
+### Inject Channel Message (Scoped)
+
+Injects a channel-originated system notification into a specific session.
+
+- **Method**: `POST`
+- **Path**: `/api/sessions/:id/channel`
+
+#### Request Body
+
+```json
+{
+  "serverName": "github-webhook",
+  "content": "A new PR was opened by user-123",
+  "meta": {
+    "action": "opened",
+    "prNumber": "42"
+  }
+}
+```
+
+#### Response Body
+
+```json
+{
+  "messageId": "msg-uuid",
+  "status": "processed | queued"
+}
+```
+
+---
+
+### Inject Channel Message (Auto-Route)
+
+Automatically routes a channel message to the uniquely active session listening on that channel.
+
+- **Method**: `POST`
+- **Path**: `/api/channel`
+
+#### Request Body
+
+```json
+{
+  "serverName": "github-webhook",
+  "content": "PR #42 updated"
+}
+```
+
+#### Response Body
+
+```json
+{
+  "messageId": "msg-uuid",
+  "sessionId": "active-session-uuid",
+  "sessionName": "Benchmark Task 1",
+  "status": "processed"
+}
+```
+
+---
+
+### Programmatic Tool Approval
+
+Responds to a pending tool execution approval (e.g., executing shell commands in a benchmark) from an external script.
+
+- **Method**: `POST`
+- **Path**: `/api/sessions/:id/channel/permission`
+
+#### Request Body
+
+```json
+{
+  "requestId": "approval-request-uuid",
+  "behavior": "yolo | normal | unsafe | deny"
+}
+```
+
+#### Response Body
+
+```json
+{
+  "requestId": "approval-request-uuid",
+  "toolCallId": "call-uuid",
+  "approved": true
 }
 ```
 

@@ -198,6 +198,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 
 ## 📖 Documentation & Guides
 
+- **[HTTP REST API Documentation](docs/api/http_api.md)**: Complete specification of endpoints for remote control, session lifecycle, message injection, and programmatic tool approvals.
 - **[Navigation Guide](docs/guides/navigation-guide.md)**: The Command & Control hub — `/assistants` (Role Definitions) and `/playbooks` (Workflow Blueprints).
 - **[Architecture Guide](docs/architecture/agent-workflow-architecture.md)**: Session isolation, orchestration engine, and the Rust-driven Think-Act-Observe loop.
 - **[Built-in Tools Guide](docs/guides/builtin_tool_bp.md)**: Tool design standards and MCP response patterns.
@@ -209,6 +210,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 Download the latest installer for your platform from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.32_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.32/LibrAgent_0.8.32_x64-setup.exe) · [`LibrAgent_0.8.32_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.32/LibrAgent_0.8.32_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.32_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.32/LibrAgent_0.8.32_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.32_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.32/LibrAgent_0.8.32_amd64.AppImage) · [`LibrAgent_0.8.32_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.32/LibrAgent_0.8.32_amd64.deb) · [`LibrAgent-0.8.32-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.32/LibrAgent-0.8.32-1.x86_64.rpm)
