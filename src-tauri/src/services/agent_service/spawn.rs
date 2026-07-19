@@ -105,11 +105,22 @@ impl AgentService {
             .insert(session_id.clone(), lineage_meta.clone());
         drop(parent_spawn_guard);
 
-        if let Some(parent_id) = lineage_meta.parent_session_id.as_deref() {
-            let parent_mode = manager.get_execution_mode(parent_id).await;
-            if parent_mode != ExecutionMode::Normal {
-                let _ = manager.set_execution_mode(&session_id, parent_mode).await;
-            }
+        // Resolve execution mode before starting the workflow so the first tool
+        // calls are not blocked on Normal-mode approvals.
+        // Explicit request wins; otherwise inherit a non-normal parent mode.
+        let resolved_mode = if let Some(mode) = body.execution_mode {
+            mode
+        } else if let Some(parent_id) = lineage_meta.parent_session_id.as_deref() {
+            manager.get_execution_mode(parent_id).await
+        } else {
+            ExecutionMode::Normal
+        };
+
+        if resolved_mode != ExecutionMode::Normal {
+            manager
+                .set_execution_mode(&session_id, resolved_mode)
+                .await
+                .map_err(|e| format!("Failed to set execution mode: {}", e))?;
         }
 
         let initial_message = Message::new_user_message(

@@ -53,11 +53,12 @@ Creates a new isolated agent session and starts an initial workflow.
   "model": "string (optional, e.g., 'gpt-4o' or 'claude-3-5-sonnet')",
   "provider": "string (optional, e.g., 'openai' or 'anthropic')",
   "workspacePath": "absolute path (optional)",
-  "workspaceIsolation": "Standard | Docker (optional)",
+  "workspaceIsolation": "host | docker (optional)",
   "dockerConfig": {
     "image": "string (optional)",
     "env": { "KEY": "VALUE" }
   },
+  "executionMode": "normal | yolo | unsafe (optional)",
   "request": "initial user prompt (required)",
   "parentSessionId": "string (optional)",
   "maxDepth": 5,
@@ -70,6 +71,9 @@ Creates a new isolated agent session and starts an initial workflow.
 
 > [!NOTE]
 > If `model` and `provider` are omitted, the API automatically falls back to the user's **Preferred Model** in global settings.
+
+> [!NOTE]
+> `executionMode` is applied **before** the initial workflow starts. Use `yolo` for unattended benchmark/automation runs that need standard tools auto-approved, or `unsafe` when hard-approval tools must also run without a human. When omitted, child sessions inherit a non-`normal` parent mode; otherwise the session defaults to `normal`.
 
 #### Response Body
 
@@ -123,9 +127,9 @@ Retrieves current session metadata and execution state.
   "lastMessageAt": 1739000000000,
   "lastAttentionAt": null,
   "lastAttentionReason": null,
-  "executionMode": "Normal | Yolo | Unsafe",
+  "executionMode": "normal | yolo | unsafe",
   "workspaceOverride": "string (nullable)",
-  "workspaceIsolation": "Standard | Docker",
+  "workspaceIsolation": "host | docker",
   "dockerConfig": null,
   "dockerContainerName": null,
   "dockerHostWorkspacePath": null

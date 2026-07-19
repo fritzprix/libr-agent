@@ -72,7 +72,10 @@
     "release": "bash scripts/release.sh",
     "preinstall": "node scripts/enforce-pnpm-version.cjs",
     "prepare": "node scripts/setup-git-hooks.cjs",
-    "lockfile:check": "pnpm install --frozen-lockfile"
+    "lockfile:check": "pnpm install --frozen-lockfile",
+    "bench:hello": "powershell -ExecutionPolicy Bypass -File scripts/run-harbor-bench.ps1 -Preset hello",
+    "bench:terminal": "powershell -ExecutionPolicy Bypass -File scripts/run-harbor-bench.ps1 -Preset terminal-bench -NTasks 1",
+    "bench:terminal:all": "powershell -ExecutionPolicy Bypass -File scripts/run-harbor-bench.ps1 -Preset terminal-bench"
   },
   "pnpm": {
     "overrides": {
