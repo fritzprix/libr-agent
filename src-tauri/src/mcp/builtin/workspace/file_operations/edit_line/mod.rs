@@ -262,9 +262,25 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let canonical_args = canonicalize_edit_file_args(&args);
+        let canonical_args = match canonicalize_edit_file_args(&args) {
+            Ok(value) => value,
+            Err(error) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("editFile argument error: {error}"),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Provide start as \"N:anchor\" (e.g. \"start\": \"42:a31f2c\")".to_string(),
+                    "Copy the \"42:a31f2c\" prefix from readFile output: 42:a31f2c|content"
+                        .to_string(),
+                    "Replace: {\"path\": \"src/a.ts\", \"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
 
-        if let Err(validation_error) = validate_edit_file_arguments(&canonical_args) {
+        if let Err(validation_error) = validate_edit_file_arguments(&args, &canonical_args) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
@@ -273,12 +289,11 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Replace: {\"path\": \"src/a.ts\", \"edits\": [{\"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
-                "Prepend: {\"path\": \"src/a.ts\", \"edits\": [{\"content\": \"header\"}]}".to_string(),
-                "Insert below a line: {\"path\": \"src/a.ts\", \"edits\": [{\"op\": \"insert_after\", \"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
-                "Delete range: {\"path\": \"src/b.ts\", \"edits\": [{\"startLine\": 10, \"endLine\": 15, \"anchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]}".to_string(),
-                "Existing lines are 1-based; use startLine=0 only to prepend at the top".to_string(),
-                "Use readFile(showLineAnchors=true) first to get anchor values".to_string(),
+                "Replace: {\"path\": \"src/a.ts\", \"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
+                "Prepend: {\"path\": \"src/a.ts\", \"content\": \"header\"}".to_string(),
+                "Insert below a line: {\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
+                "Delete range: {\"path\": \"src/b.ts\", \"start\": \"10:a31f2c\", \"end\": \"15:b47aa1\"}".to_string(),
+                "One edit per call; copy start/end as \"N:anchor\" from readFile(showLineAnchors=true)".to_string(),
             ])
             .to_mcp_result());
         }
@@ -350,8 +365,8 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Single-line: {\"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
-                        "Range: {\"startLine\": 10, \"endLine\": 15, \"anchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}".to_string(),
+                        "Single-line: {\"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
+                        "Range: {\"start\": \"10:a31f2c\", \"end\": \"15:b47aa1\", \"content\": \"...\"}".to_string(),
                     ])
                     .to_mcp_result());
                 }

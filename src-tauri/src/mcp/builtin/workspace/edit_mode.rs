@@ -37,7 +37,7 @@ pub fn read_file_tool_hint() -> &'static str {
     not(feature = "workspace-str-replace")
 ))]
 pub fn read_file_show_line_anchors_schema_hint() -> &'static str {
-    "Optional: include opaque edit anchors for each line in the form '42:a31f2c|...'. For editFile, pass only the 6-character anchor (for example 'a31f2c'), not '42:a31f2c' or the trailing '|...'."
+    "Optional: include opaque edit anchors for each line in the form '42:a31f2c|...'. For editFile, pass the full '42:a31f2c' (line + anchor) — omit only the trailing '|...'."
 }
 
 #[cfg(all(
@@ -45,13 +45,13 @@ pub fn read_file_show_line_anchors_schema_hint() -> &'static str {
     not(feature = "workspace-str-replace")
 ))]
 pub fn search_show_line_anchors_schema_hint() -> &'static str {
-    "Include edit anchors in results for use with editFile (default: false). Anchored lines look like '42:a31f2c|...'; for edit tools, pass only the 6-character anchor (for example 'a31f2c')."
+    "Include edit anchors in results for use with editFile (default: false). Anchored lines look like '42:a31f2c|...'; for editFile, pass '42:a31f2c' (line:anchor prefix only)."
 }
 
 pub fn search_inline_match_footer(show_hashes: bool) -> String {
     if LINE_ANCHORS_ENABLED {
         if show_hashes {
-            "Anchors above can be passed to editFile; include endAnchor for range edits.\n"
+            "Copy each line's N:anchor prefix into editFile start/end (omit '|content'); include end for range edits.\n"
                 .to_string()
         } else {
             "For targeted edits, rerun with showLineAnchors=true to get anchors.\n".to_string()
@@ -84,5 +84,5 @@ pub fn read_file_anchor_prefix_note() -> &'static str {
 }
 
 pub fn read_file_anchor_output_suffix() -> &'static str {
-    "\n\nFor edit tools, pass only the 6-character anchor (example: `792c6f`). Do not pass `1:792c6f` or `|{content}`."
+    "\n\nFor editFile, pass the full `N:anchor` from each line (e.g. `42:a31f2c`). Omit the trailing `|{content}`."
 }
