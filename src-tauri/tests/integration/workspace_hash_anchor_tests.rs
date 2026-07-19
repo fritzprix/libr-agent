@@ -926,8 +926,9 @@ async fn edit_file_rejects_multiline_replace_without_end_hash() {
     assert_eq!(result.is_error, Some(true));
     let text = extract_text_content(&result);
     assert!(
-        text.contains("requires 'endAnchor'"),
-        "expected missing endAnchor error, got: {text}"
+        text.contains("requires 'end'")
+            || text.contains("requires 'endAnchor'"),
+        "expected missing end/endAnchor error, got: {text}"
     );
 }
 
