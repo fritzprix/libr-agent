@@ -10,7 +10,7 @@ fn build_session_manager(base_dir: &std::path::Path) -> Arc<SessionManager> {
 }
 
 #[tokio::test]
-async fn workspace_service_context_drops_platform_and_process_guidance() {
+async fn workspace_service_context_exposes_platform_and_drops_process_guidance() {
     let temp = tempdir().expect("tempdir");
     let server = WorkspaceServer::new(
         "workspace-noise-test".to_string(),
@@ -24,7 +24,9 @@ async fn workspace_service_context_drops_platform_and_process_guidance() {
     assert!(service_context
         .context_prompt
         .contains("- Persistent Shell CWD:"));
-    assert!(!service_context.context_prompt.contains("- Platform:"));
+    // Platform/shell are intentional agent-facing live state (not noise).
+    assert!(service_context.context_prompt.contains("- Platform:"));
+    assert!(service_context.context_prompt.contains("- Default Shell:"));
     assert!(!service_context
         .context_prompt
         .contains("Use waitForProcess"));
