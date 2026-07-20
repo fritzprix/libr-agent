@@ -7,6 +7,7 @@ from benchmarks.harbor.libragent_agent import (
     is_workflow_complete,
     resolve_execution_mode,
     resolve_poll_timeout_sec,
+    sanitize_docker_compose_project_name,
 )
 
 
@@ -51,3 +52,30 @@ def test_resolve_poll_timeout_sec_from_env() -> None:
     assert resolve_poll_timeout_sec(None, env={}) is None
     assert resolve_poll_timeout_sec(None, env={"LIBRAGENT_POLL_TIMEOUT_SEC": "900"}) == 900.0
     assert resolve_poll_timeout_sec(120.0, env={"LIBRAGENT_POLL_TIMEOUT_SEC": "900"}) == 120.0
+
+
+def test_sanitize_docker_compose_project_name() -> None:
+    assert (
+        sanitize_docker_compose_project_name("hello-world__bZZeEkw__env")
+        == "hello-world__bzzeekw__env"
+    )
+    assert sanitize_docker_compose_project_name("  My Task ") == "mytask"
+    assert sanitize_docker_compose_project_name("9bad") == "p9bad"
+    assert sanitize_docker_compose_project_name("---") == "p---"
+    assert sanitize_docker_compose_project_name("@@@") == "harbor"
+    assert len(sanitize_docker_compose_project_name("a" * 100)) == 63
+
+
+def test_attach_session_payload_shape() -> None:
+    """Document expected dockerConfig when Harbor main container is resolved."""
+    payload = {
+        "workspaceIsolation": "docker",
+        "dockerConfig": {
+            "attachContainer": "cid123",
+            "workdir": "/app",
+            "manageLifecycle": False,
+        },
+    }
+    assert payload["dockerConfig"]["manageLifecycle"] is False
+    assert payload["dockerConfig"]["workdir"] == "/app"
+    assert "image" not in payload["dockerConfig"]

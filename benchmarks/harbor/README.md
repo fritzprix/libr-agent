@@ -7,6 +7,25 @@ Benchmark sessions default to **`unsafe`** so shell and other hard-approval tool
 without manual approval. Override with Harbor `--ak execution_mode=yolo|normal` or
 `LIBRAGENT_EXECUTION_MODE`.
 
+## Workspace modes (Docker attach vs host sync)
+
+For **Docker-backed Harbor trials**, the adapter prefers attaching LibrAgent to
+Harbor’s existing Compose `main` container:
+
+- Session uses `workspaceIsolation: "docker"` with
+  `dockerConfig: { attachContainer, workdir: "/app" (or task workdir), manageLifecycle: false }`
+- Shell and file tools run **inside** that container (`docker exec -w …` /
+  `docker cp`). Absolute paths like `/app/gpt2.c` are valid.
+- LibrAgent does **not** create a second container and does **not** destroy
+  Harbor’s container on session end.
+- Host download/upload sync of `/app` is **skipped** on the attach path.
+
+If the main container ID cannot be resolved (non-Docker Harbor providers such as
+Modal/E2B, or missing Compose labels), the adapter **falls back** to the older
+host-sync path: pull `/app` to a host trial workspace, run a host session, then
+push changes back. On that path, prefer relative paths under the synced
+workspace rather than absolute `/app/...`.
+
 ## Prerequisites
 
 1. `pnpm tauri dev` (HTTP API on `http://localhost:3030/api`)
@@ -15,9 +34,9 @@ without manual approval. Override with Harbor `--ak execution_mode=yolo|normal` 
 
 ## Quick start (recommended)
 
-From the repo root, with LibrAgent already running:
+From the repo root, with LibrAgent already running (`pnpm` works on Windows, Linux, and macOS):
 
-```powershell
+```sh
 # Smoke: Harbor hello-world (expect reward=1)
 pnpm bench:hello
 
@@ -28,24 +47,39 @@ pnpm bench:terminal
 pnpm bench:terminal:all
 ```
 
-Or call the script directly:
+`pnpm bench:*` dispatches via `scripts/run-harbor-bench.cjs` to PowerShell on Windows
+and bash on Linux/macOS.
 
-```powershell
-# Named Terminal-Bench task(s)
-.\scripts\run-harbor-bench.ps1 -Preset terminal-bench -Include "hello*" -NTasks 3
+Or call the platform script directly:
 
-# Custom assistant / API
+```sh
+# Cross-platform (Node dispatcher)
+node scripts/run-harbor-bench.cjs --preset terminal-bench --include "hello*" --n-tasks 3
+node scripts/run-harbor-bench.cjs --preset hello --dry-run
+
+# Linux / macOS
+./scripts/run-harbor-bench.sh --preset terminal-bench --n-tasks 1 \
+  --api-url http://localhost:3030/api \
+  --assistant-id <uuid> \
+  --execution-mode unsafe
+
+# Windows PowerShell
 .\scripts\run-harbor-bench.ps1 -Preset terminal-bench -NTasks 1 `
   -ApiUrl http://localhost:3030/api `
   -AssistantId <uuid> `
   -ExecutionMode unsafe
+```
 
-# Or set globally for the shell session
-$env:LIBRAGENT_EXECUTION_MODE = "unsafe"
+Environment override example:
+
+```sh
+# bash / zsh
+export LIBRAGENT_EXECUTION_MODE=unsafe
 pnpm bench:terminal
 
-# Dry-run (print harbor command only)
-.\scripts\run-harbor-bench.ps1 -Preset hello -DryRun
+# PowerShell
+$env:LIBRAGENT_EXECUTION_MODE = "unsafe"
+pnpm bench:terminal
 ```
 
 Environment overrides:
@@ -66,27 +100,29 @@ were scoring unfinished runs as finished.
 - On Harbor cancel (`CancelledError`), the adapter re-raises and skips harvest.
 - For long Terminal-Bench tasks, increase the agent budget, e.g.:
 
-```powershell
-.\scripts\run-harbor-bench.ps1 -Preset terminal-bench -NTasks 1 `
-  -AgentTimeoutMultiplier 3
+```sh
+# Cross-platform
+node scripts/run-harbor-bench.cjs --preset terminal-bench --n-tasks 1 \
+  --agent-timeout-multiplier 3
 # or
-$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER = "3"
+export LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER=3   # bash
+# $env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER = "3"  # PowerShell
 pnpm bench:terminal
 ```
 
 ## Manual Harbor CLI
 
-```powershell
-$env:PYTHONPATH = (Get-Location).Path
-$env:PYTHONUTF8 = "1"
-harbor run `
-  -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter `
-  --ak api_url=http://localhost:3030/api `
-  --ak assistant_id=<CODING_EXPERT_UUID> `
-  --ak execution_mode=unsafe `
-  --agent-timeout-multiplier 3 `
-  -d terminal-bench@2.0 `
-  -l 1 `
+```sh
+export PYTHONPATH="$(pwd)"
+export PYTHONUTF8=1
+harbor run \
+  -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter \
+  --ak api_url=http://localhost:3030/api \
+  --ak assistant_id=<CODING_EXPERT_UUID> \
+  --ak execution_mode=unsafe \
+  --agent-timeout-multiplier 3 \
+  -d terminal-bench@2.0 \
+  -l 1 \
   -n 1
 ```
 

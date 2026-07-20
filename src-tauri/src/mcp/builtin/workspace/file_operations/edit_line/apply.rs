@@ -344,6 +344,25 @@ pub(super) async fn prepare_file_edit_batch(
         }
     };
 
+    let target_session_id = session_id
+        .clone()
+        .unwrap_or_else(|| server.session_id.clone());
+    if let Err(sync_error) = server
+        .sync_attach_before_host_read(&resolved_path, Some(target_session_id.as_str()))
+        .await
+    {
+        return Err(guided_error(
+            ErrorCategory::OperationFailed,
+            format!("Failed to sync attached container file before edit: {sync_error}"),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Verify the Harbor/Docker container is still running".to_string(),
+            "Retry editFile after confirming docker exec works".to_string(),
+        ])
+        .to_mcp_result());
+    }
+
     let original_content = match read_validated_text_file(&resolved_path).await {
         Ok(content) => content,
         Err(error) => {

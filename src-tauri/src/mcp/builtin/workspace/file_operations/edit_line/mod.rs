@@ -53,7 +53,7 @@ async fn validate_edit_target_path(
     session_id: Option<String>,
 ) -> Result<(), MCPResult> {
     let safe_path = match server
-        .validate_write_path_with_teamwork_access(path_str, session_id)
+        .validate_write_path_with_teamwork_access(path_str, session_id.clone())
         .await
     {
         Ok(path) => path,
@@ -70,6 +70,23 @@ async fn validate_edit_target_path(
             .to_mcp_result());
         }
     };
+
+    let target_session_id = session_id.unwrap_or_else(|| server.session_id.clone());
+    if let Err(sync_error) = server
+        .sync_attach_before_host_read(&safe_path, Some(target_session_id.as_str()))
+        .await
+    {
+        return Err(guided_error(
+            ErrorCategory::OperationFailed,
+            format!("Failed to sync attached container file before edit: {sync_error}"),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Verify the Harbor/Docker container is still running".to_string(),
+            "Retry editFile after confirming docker exec works".to_string(),
+        ])
+        .to_mcp_result());
+    }
 
     if !safe_path.exists() {
         return Err(guided_error(
@@ -139,6 +156,17 @@ async fn write_prepared_batches(
                     {
                         rollback_failures
                             .push(format!("{} ({})", previous_batch.path, rollback_error));
+                        continue;
+                    }
+                    let host_path = std::path::Path::new(&previous_batch.resolved_path);
+                    if let Err(sync_error) = server
+                        .sync_attach_after_host_write(host_path, Some(target_session_id.as_str()))
+                        .await
+                    {
+                        rollback_failures.push(format!(
+                            "{} (attach sync: {sync_error})",
+                            previous_batch.path
+                        ));
                     }
                 }
             }
@@ -159,6 +187,70 @@ async fn write_prepared_batches(
                 "Check file permissions and available disk space".to_string(),
                 "Rerun readFile(showLineAnchors=true) before retrying if files may have changed"
                     .to_string(),
+            ])
+            .to_mcp_result());
+        }
+
+        let host_path = std::path::Path::new(&resolved_path);
+        if let Err(sync_error) = server
+            .sync_attach_after_host_write(host_path, Some(target_session_id.as_str()))
+            .await
+        {
+            // Keep host + container consistent: restore this file and previously synced files.
+            let mut rollback_failures = Vec::new();
+            let _ = file_manager
+                .write_file_string(&resolved_path, &batch.original_content)
+                .await;
+            for written_path in written_paths.iter().rev() {
+                if let Some(previous_batch) = prepared_batches
+                    .iter()
+                    .find(|candidate| &candidate.resolved_path == written_path)
+                {
+                    if let Err(rollback_error) = file_manager
+                        .write_file_string(
+                            &previous_batch.resolved_path,
+                            &previous_batch.original_content,
+                        )
+                        .await
+                    {
+                        rollback_failures
+                            .push(format!("{} ({})", previous_batch.path, rollback_error));
+                        continue;
+                    }
+                    let previous_host = std::path::Path::new(&previous_batch.resolved_path);
+                    if let Err(previous_sync_error) = server
+                        .sync_attach_after_host_write(
+                            previous_host,
+                            Some(target_session_id.as_str()),
+                        )
+                        .await
+                    {
+                        rollback_failures.push(format!(
+                            "{} (attach sync: {previous_sync_error})",
+                            previous_batch.path
+                        ));
+                    }
+                }
+            }
+
+            let rollback_note = if rollback_failures.is_empty() {
+                "Earlier synced edits in this request were rolled back.".to_string()
+            } else {
+                format!("Rollback failed for: {}", rollback_failures.join(", "))
+            };
+
+            return Err(guided_error(
+                ErrorCategory::OperationFailed,
+                format!(
+                    "File '{}' was updated locally but failed to sync into the attached container: {sync_error}",
+                    batch.path
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                rollback_note,
+                "Verify the Harbor/Docker container is still running".to_string(),
+                "Retry the edit after confirming docker exec works".to_string(),
             ])
             .to_mcp_result());
         }

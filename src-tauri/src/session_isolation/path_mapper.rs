@@ -1,6 +1,8 @@
 use path_clean::PathClean;
 use std::path::{Path, PathBuf};
 
+use crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathMappingLayer {
     host_workspace: PathBuf,
@@ -9,9 +11,16 @@ pub struct PathMappingLayer {
 
 impl PathMappingLayer {
     pub fn new(host_workspace: PathBuf) -> Self {
+        Self::with_container_root(host_workspace, DEFAULT_DOCKER_WORKDIR)
+    }
+
+    pub fn with_container_root(
+        host_workspace: PathBuf,
+        container_workspace: impl AsRef<Path>,
+    ) -> Self {
         Self {
             host_workspace,
-            container_workspace: PathBuf::from("/workspace"),
+            container_workspace: PathBuf::from(container_workspace.as_ref()),
         }
     }
 
@@ -21,6 +30,14 @@ impl PathMappingLayer {
 
     pub fn container_workspace(&self) -> &Path {
         &self.container_workspace
+    }
+
+    fn container_root_unix(&self) -> String {
+        self.container_workspace
+            .to_string_lossy()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string()
     }
 
     pub fn container_to_host(&self, container_path: &str) -> Option<PathBuf> {
@@ -42,12 +59,13 @@ impl PathMappingLayer {
                 .replace('\\', "/")
         };
 
-        // Strict prefix matching against "/workspace"
-        if normalized == "/workspace" {
+        let root = self.container_root_unix();
+        if normalized == root {
             return Some(self.host_workspace.clone());
         }
 
-        if let Some(relative_str) = normalized.strip_prefix("/workspace/") {
+        let prefix = format!("{root}/");
+        if let Some(relative_str) = normalized.strip_prefix(&prefix) {
             if relative_str.is_empty() {
                 return Some(self.host_workspace.clone());
             }
@@ -88,5 +106,18 @@ mod tests {
         // Outside workspace or relative breakout attempts
         assert_eq!(mapper.container_to_host("/workspace/../outside"), None);
         assert_eq!(mapper.container_to_host("/other/path"), None);
+    }
+
+    #[test]
+    fn test_container_to_host_mapping_custom_root() {
+        let host = PathBuf::from("/tmp/staging");
+        let mapper = PathMappingLayer::with_container_root(host.clone(), "/app");
+
+        assert_eq!(mapper.container_to_host("/app"), Some(host.clone()));
+        assert_eq!(
+            mapper.container_to_host("/app/gpt2.c"),
+            Some(host.join("gpt2.c"))
+        );
+        assert_eq!(mapper.container_to_host("/workspace/gpt2.c"), None);
     }
 }

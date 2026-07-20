@@ -558,6 +558,9 @@ export default function AgentChatView() {
     isStartingSession,
     isDockerProvisioning,
     session?.dockerConfig?.image ??
+      (session?.dockerConfig?.attachContainer
+        ? `attach:${session.dockerConfig.attachContainer}`
+        : undefined) ??
       optionalSessionState.runtimeState.initialization.docker?.image,
     t,
   );

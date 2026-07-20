@@ -96,9 +96,13 @@ pub async fn build_workspace_live_state(
     session_manager: &SessionManager,
     shell_manager: &persistent_shell::PersistentShellManager,
 ) -> WorkspaceLiveState {
-    let is_docker = super::utils::is_session_docker_isolated(session_id).await;
+    let (is_docker, docker_root) = super::utils::session_docker_root(session_id).await;
     let host_workspace = session_manager.get_session_workspace_dir_by_id(session_id);
-    let workspace_dir = super::utils::effective_workspace_root(is_docker, &host_workspace);
+    let workspace_dir = super::utils::effective_workspace_root_with_docker_root(
+        is_docker,
+        &host_workspace,
+        &docker_root,
+    );
     let shell_cwd = match shell_manager.get_shell_cwd(session_id).await {
         Some(cwd) => super::utils::display_shell_cwd(&cwd, &workspace_dir, is_docker),
         None => ".".to_string(),
@@ -159,9 +163,10 @@ pub async fn build_context_prompt(
 
     let file_tools_list = workspace_file_tools_context_list();
     let isolation_lines = if state.is_docker {
+        let root = &state.workspace_dir;
         format!(
-            "- Isolation: Docker (shell commands run in a Linux container; workspace root is /workspace)\n\
-             - File tools ({file_tools_list}) access the same /workspace files via the host bind mount; changes outside /workspace are visible to shell only, not to file tools\n"
+            "- Isolation: Docker (shell commands run in a Linux container; workspace root is {root})\n\
+             - File tools ({file_tools_list}) access the same {root} files (bind mount or attach sync); changes outside {root} are visible to shell only, not to file tools\n"
         )
     } else {
         String::new()

@@ -461,12 +461,21 @@ export function AgentWorkspacePanel({
                     {session?.workspaceIsolation === 'docker' && (
                       <div
                         className="inline-flex items-center gap-1 text-[9px] font-mono text-primary bg-primary/10 rounded px-1.5 py-0.5 border border-primary/20 max-w-[180px] truncate"
-                        title={session.dockerConfig?.image}
+                        title={
+                          session.dockerConfig?.image ??
+                          (session.dockerConfig?.attachContainer
+                            ? `attach:${session.dockerConfig.attachContainer}`
+                            : undefined)
+                        }
                       >
                         <span>🐳 Docker</span>
-                        {session.dockerConfig?.image && (
+                        {(session.dockerConfig?.image ||
+                          session.dockerConfig?.attachContainer) && (
                           <span className="opacity-70">
-                            ({session.dockerConfig.image})
+                            (
+                            {session.dockerConfig.image ??
+                              `attach:${session.dockerConfig.attachContainer}`}
+                            )
                           </span>
                         )}
                       </div>

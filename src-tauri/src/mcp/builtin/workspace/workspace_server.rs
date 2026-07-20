@@ -602,14 +602,52 @@ impl WorkspaceServer {
         let host_workspace = session.docker_host_workspace_path.as_ref().ok_or_else(|| {
             format!("Missing Docker host workspace path for session {target_session_id}")
         })?;
-        let mapper = PathMappingLayer::new(PathBuf::from(host_workspace));
+        let workdir = session
+            .docker_config
+            .as_ref()
+            .map(|config| config.workdir().to_string())
+            .unwrap_or_else(|| {
+                crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR.to_string()
+            });
+        let mapper = PathMappingLayer::with_container_root(PathBuf::from(host_workspace), &workdir);
         let Some(host_path) = mapper.container_to_host(path_str) else {
             return Err(format!(
-                "Docker container path '{path_str}' is outside /workspace. Shell commands may access it, but workspace file tools only map /workspace paths to the host workspace."
+                "Docker container path '{path_str}' is outside {workdir}. Shell commands may access it, but workspace file tools only map {workdir} paths to the host workspace."
             ));
         };
 
         Ok(Some(host_path.to_string_lossy().to_string()))
+    }
+
+    /// After a mutating file tool write, push staging → attach container when needed.
+    pub async fn sync_attach_after_host_write(
+        &self,
+        host_path: &std::path::Path,
+        session_id: Option<&str>,
+    ) -> Result<(), String> {
+        let target_session_id = session_id.unwrap_or(self.session_id.as_str());
+        let Some(session) =
+            crate::services::container_attach_fs::load_session(target_session_id).await?
+        else {
+            return Ok(());
+        };
+        crate::services::container_attach_fs::push_host_file_to_container(&session, host_path).await
+    }
+
+    /// Before reading a staged path, pull attach container → staging when needed.
+    /// Propagates docker failures for workdir paths so tools do not read stale staging.
+    pub async fn sync_attach_before_host_read(
+        &self,
+        host_path: &std::path::Path,
+        session_id: Option<&str>,
+    ) -> Result<(), String> {
+        let target_session_id = session_id.unwrap_or(self.session_id.as_str());
+        let Some(session) =
+            crate::services::container_attach_fs::load_session(target_session_id).await?
+        else {
+            return Ok(());
+        };
+        crate::services::container_attach_fs::pull_container_file_to_host(&session, host_path).await
     }
 
     /// Validate path with security checks (helper for file operations)
