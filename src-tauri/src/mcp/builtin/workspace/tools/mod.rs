@@ -90,9 +90,7 @@ pub fn code_tools(profile: CodeToolsProfile) -> Vec<MCPTool> {
             }
             #[cfg(not(windows))]
             {
-                unreachable!(
-                    "CodeToolsProfile::HostWindows is only constructed on Windows hosts"
-                );
+                unreachable!("CodeToolsProfile::HostWindows is only constructed on Windows hosts");
             }
         }
     }

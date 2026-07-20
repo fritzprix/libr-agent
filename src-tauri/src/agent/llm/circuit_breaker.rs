@@ -307,15 +307,11 @@ fn group_trailing_tool_call_turns(messages: &[Message]) -> Vec<ToolCallTurn<'_>>
             "tool" => {
                 current_tool_results.push(message);
             }
-            "assistant" => {
-                if message.tool_calls.is_some() {
-                    turns.push(ToolCallTurn {
-                        assistant_message: message,
-                        tool_results: std::mem::take(&mut current_tool_results),
-                    });
-                } else {
-                    break;
-                }
+            "assistant" if message.tool_calls.is_some() => {
+                turns.push(ToolCallTurn {
+                    assistant_message: message,
+                    tool_results: std::mem::take(&mut current_tool_results),
+                });
             }
             _ => {
                 break;

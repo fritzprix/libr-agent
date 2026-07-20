@@ -92,6 +92,14 @@ test_results_*.txt
 
 # LibrAgent workspace-generated artifacts
 /.libragent/
+
+# Harbor / Terminal-Bench local run outputs (never commit)
+/jobs/
+/hello.txt
+/harbor-workspace-*/
+harbor-workspace-*/
+*.ctrf.json
+
 # LibrAgent internal marketing & research docs (not for public repo)
 docs/marketing/
 docs/research/

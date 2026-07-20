@@ -55,7 +55,16 @@ describe('detectRepeatedTextLoop', () => {
     });
   });
 
-  it('does not treat short enumerated lines as a loop at the text threshold', () => {
+  it('uses the same repetition threshold as thinking detection', () => {
+    expect(REPEATED_THINKING_MIN_REPETITIONS).toBe(
+      REPEATED_TEXT_MIN_REPETITIONS,
+    );
+    expect(REPEATED_THINKING_MIN_PATTERN_LENGTH).toBe(
+      REPEATED_TEXT_MIN_PATTERN_LENGTH,
+    );
+  });
+
+  it('does not treat short enumerated lines as a loop at the shared threshold', () => {
     const line = '- item one: do the thing\n';
     const listLike = line.repeat(8);
 
