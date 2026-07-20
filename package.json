@@ -75,7 +75,9 @@
     "lockfile:check": "pnpm install --frozen-lockfile",
     "bench:hello": "powershell -ExecutionPolicy Bypass -File scripts/run-harbor-bench.ps1 -Preset hello",
     "bench:terminal": "powershell -ExecutionPolicy Bypass -File scripts/run-harbor-bench.ps1 -Preset terminal-bench -NTasks 1",
-    "bench:terminal:all": "powershell -ExecutionPolicy Bypass -File scripts/run-harbor-bench.ps1 -Preset terminal-bench"
+    "bench:terminal:all": "powershell -ExecutionPolicy Bypass -File scripts/run-harbor-bench.ps1 -Preset terminal-bench",
+    "bench:termial": "pnpm bench:terminal",
+    "bench:termial:all": "pnpm bench:terminal:all"
   },
   "pnpm": {
     "overrides": {

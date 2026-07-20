@@ -68,7 +68,40 @@ function Write-Step([string]$Message) {
 
 function Assert-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-    throw "Required command not found: $Name"
+    if ($Name -eq "harbor") {
+      Write-Step "harbor command not found. Attempting to bootstrap/install..."
+      # Install using pip or uv
+      if (Get-Command uv -ErrorAction SilentlyContinue) {
+        Write-Host "Installing harbor and httpx using uv..."
+        uv pip install harbor httpx --system
+      } else {
+        # Check if python is available first
+        if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+          throw "Required command 'python' is not installed, which is needed to install 'harbor'."
+        }
+        Write-Host "Installing harbor and httpx using pip..."
+        python -m pip install harbor httpx
+      }
+      
+      # If still not found in PATH, try to locate Python script directory and add it to PATH
+      if (-not (Get-Command harbor -ErrorAction SilentlyContinue)) {
+        if (Get-Command python -ErrorAction SilentlyContinue) {
+          $pythonScriptDir = python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+          if ($pythonScriptDir -and (Test-Path $pythonScriptDir)) {
+            Write-Host "Adding $pythonScriptDir to env:Path for this session" -ForegroundColor Yellow
+            $env:Path = "$pythonScriptDir;" + $env:Path
+          }
+        }
+      }
+      
+      # Final check
+      if (-not (Get-Command harbor -ErrorAction SilentlyContinue)) {
+        throw "Could not bootstrap harbor. Please install harbor manually (e.g. 'pip install harbor httpx')."
+      }
+      Write-Step "harbor successfully bootstrapped and ready!"
+    } else {
+      throw "Required command not found: $Name"
+    }
   }
 }
 
@@ -164,8 +197,8 @@ function Show-LatestRewards {
   }
 }
 
-Assert-Command "harbor"
 Assert-Command "python"
+Assert-Command "harbor"
 
 $script:ResolvedAssistantId = Resolve-AssistantId -ApiBase $ApiUrl -PreferredId $AssistantId -NameHint $AssistantName
 Write-Host "Using assistantId=$($script:ResolvedAssistantId)"
