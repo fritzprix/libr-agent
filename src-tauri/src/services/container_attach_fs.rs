@@ -237,13 +237,25 @@ fn parse_ls_apf_entry(raw: &str) -> ContainerDirEntry {
 }
 
 /// Resolve session metadata for attach sync helpers.
+///
+/// Returns `Ok(None)` when the repository is unavailable, the session is missing,
+/// or metadata cannot be loaded. Callers must only treat docker sync failures as
+/// hard errors after confirming the session is attach-mode.
 pub async fn load_session(session_id: &str) -> Result<Option<SessionMetadata>, String> {
     let Some(repo) = crate::state::try_get_session_repository() else {
         return Ok(None);
     };
-    repo.get_session(session_id)
-        .await
-        .map_err(|e| format!("Failed to load session for attach sync: {e}"))
+    match repo.get_session(session_id).await {
+        Ok(session) => Ok(session),
+        Err(error) => {
+            tracing::warn!(
+                session_id,
+                error = %error,
+                "Skipping attach sync; failed to load session metadata"
+            );
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
