@@ -1,3 +1,23 @@
+## [0.8.33] - 2026-07-21
+
+### 🚀 Features
+
+- **Harbor Benchmark Runner**: Added a Harbor / Terminal-Bench adapter and `pnpm bench:*` scripts that spawn Session API runs with `executionMode` (default `unsafe` for unattended hard-approval tools).
+- **Session API `executionMode`**: `POST /api/sessions` now accepts `executionMode` (`normal` | `yolo` | `unsafe`) before the initial workflow starts.
+- **Flattened `editFile` Anchors**: `editFile` now uses start/end `N:anchor` refs for clearer, flatter line edits.
+- **Execution Platform in Workspace Context**: Agents see the current OS/platform in the workspace service context to pick the right shell tools.
+
+### 🐛 Fixes
+
+- **Thinking-Only Stuck Turns**: Thinking-only LLM completions no longer stop the workflow as finished — they forward to Rust recovery and retry with the shared thinking retry budget. Content-array thinking is no longer misclassified as renderable output.
+- **Harbor Incomplete Harvest**: Harbor agent timeouts no longer harvest workspace/messages as a successful finish; only `idle`/`error` complete a trial. Timeout multipliers are exposed on the bench scripts.
+- **Loop Detection Threshold**: Thinking/text loop recovery now requires 3 repetitions before cancel-and-retry, reducing false positives.
+
+### 🔧 Internal
+
+- **Assistant Message Shape Helper**: Extracted `inspect_assistant_message_shape` for consistent empty / thinking-only detection.
+- **Bench Bootstrap**: Harbor CLI can be installed on demand from the PowerShell runner; typo aliases for `bench:terminal` remain available.
+
 ## [0.8.32] - 2026-07-19
 
 ### 🚀 Features
