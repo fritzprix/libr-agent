@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   Requires `pnpm tauri dev` (or any LibrAgent build) with HTTP API enabled.
-  Uses benchmarks/harbor/libragent_agent.py (executionMode=yolo by default).
+  Uses benchmarks/harbor/libragent_agent.py (executionMode=unsafe by default).
+  Pass -AgentTimeoutMultiplier for long Terminal-Bench tasks (Harbor default is often ~360s).
 
 .EXAMPLE
   # Smoke task (hello-world)
@@ -42,7 +43,11 @@ param(
   [string]$AssistantId = $env:LIBRAGENT_ASSISTANT_ID,
 
   [ValidateSet("yolo", "unsafe", "normal")]
-  [string]$ExecutionMode = "yolo",
+  [string]$ExecutionMode = $(if ($env:LIBRAGENT_EXECUTION_MODE) { $env:LIBRAGENT_EXECUTION_MODE } else { "unsafe" }),
+
+  [double]$TimeoutMultiplier = $(if ($env:LIBRAGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_TIMEOUT_MULTIPLIER } else { 1.0 }),
+
+  [double]$AgentTimeoutMultiplier = $(if ($env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER } else { 0 }),
 
   [string]$AssistantName = "Coding Expert",
 
@@ -213,8 +218,13 @@ $harborArgs = @(
   "--ak", "api_url=$ApiUrl",
   "--ak", "assistant_id=$($script:ResolvedAssistantId)",
   "--ak", "execution_mode=$ExecutionMode",
-  "-n", "$Concurrent"
+  "-n", "$Concurrent",
+  "--timeout-multiplier", "$TimeoutMultiplier"
 )
+
+if ($AgentTimeoutMultiplier -gt 0) {
+  $harborArgs += @("--agent-timeout-multiplier", "$AgentTimeoutMultiplier")
+}
 
 switch ($Preset) {
   "hello" {

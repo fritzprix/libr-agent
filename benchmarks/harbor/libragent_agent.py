@@ -27,6 +27,58 @@ try:
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
+EXECUTION_MODE_VALUES = ("normal", "yolo", "unsafe")
+DEFAULT_EXECUTION_MODE = "unsafe"
+# Idle/error end the workflow. Paused means approval wait — not done for benchmarks.
+TERMINAL_WORKFLOW_STATUSES = frozenset({"idle", "error"})
+DEFAULT_POLL_INTERVAL_SEC = 3.0
+
+
+def resolve_execution_mode(
+    explicit_mode: str | None = None,
+    *,
+    env: dict[str, str] | None = None,
+) -> str:
+    """Resolve benchmark execution mode from explicit arg or LIBRAGENT_EXECUTION_MODE."""
+    env_map = env if env is not None else os.environ
+    candidate = (explicit_mode or env_map.get("LIBRAGENT_EXECUTION_MODE") or DEFAULT_EXECUTION_MODE)
+    mode = candidate.strip().lower()
+    if mode not in EXECUTION_MODE_VALUES:
+        allowed = ", ".join(EXECUTION_MODE_VALUES)
+        raise ValueError(
+            f"Invalid execution mode '{candidate}'. Expected one of: {allowed}."
+        )
+    return mode
+
+
+def is_workflow_complete(status: str, *, seen_non_idle: bool) -> bool:
+    """Return True only when session status is a real workflow completion.
+
+    Harbor must not harvest while Busy/Queued/Provisioning/Paused. Brief Idle
+    before Busy is ignored until a non-idle status has been observed.
+    """
+    normalized = status.strip().lower()
+    if normalized not in TERMINAL_WORKFLOW_STATUSES:
+        return False
+    if normalized == "idle" and not seen_non_idle:
+        return False
+    return True
+
+
+def resolve_poll_timeout_sec(
+    explicit_timeout: float | None = None,
+    *,
+    env: dict[str, str] | None = None,
+) -> float | None:
+    """Optional wall-clock poll budget (seconds). None = wait until Harbor cancels."""
+    env_map = env if env is not None else os.environ
+    if explicit_timeout is not None:
+        return float(explicit_timeout)
+    raw = env_map.get("LIBRAGENT_POLL_TIMEOUT_SEC")
+    if raw is None or raw.strip() == "":
+        return None
+    return float(raw)
+
 
 class LibrAgentHarborAdapter(BaseAgent):
     """
@@ -44,13 +96,17 @@ class LibrAgentHarborAdapter(BaseAgent):
         *args: Any,
         api_url: str = "http://localhost:3030/api",
         assistant_id: str = "coder-assistant",
-        execution_mode: str = "yolo",
+        execution_mode: str | None = None,
+        poll_timeout_sec: float | None = None,
+        poll_interval_sec: float = DEFAULT_POLL_INTERVAL_SEC,
         extra_env: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> None:
         self.api_url = api_url.rstrip("/")
         self.assistant_id = assistant_id
-        self.execution_mode = execution_mode.strip().lower()
+        self.execution_mode = resolve_execution_mode(execution_mode)
+        self.poll_timeout_sec = resolve_poll_timeout_sec(poll_timeout_sec)
+        self.poll_interval_sec = float(poll_interval_sec)
         super().__init__(
             logs_dir,
             model_name,
@@ -161,13 +217,36 @@ class LibrAgentHarborAdapter(BaseAgent):
                 f"[{self.name()}] Session {session_id} spawned successfully "
                 f"(executionMode={self.execution_mode}). Awaiting execution completion..."
             )
+            if self.poll_timeout_sec is not None:
+                print(
+                    f"[{self.name()}] Poll wall-clock budget: "
+                    f"{self.poll_timeout_sec:.0f}s"
+                )
 
-            poll_interval = 3.0
-            terminal_statuses = {"idle", "error", "paused"}
+            poll_interval = self.poll_interval_sec
             seen_non_idle = False
+            completed = False
+            last_status = "unknown"
+            poll_deadline = (
+                asyncio.get_running_loop().time() + self.poll_timeout_sec
+                if self.poll_timeout_sec is not None
+                else None
+            )
 
             try:
                 while True:
+                    if (
+                        poll_deadline is not None
+                        and asyncio.get_running_loop().time() >= poll_deadline
+                    ):
+                        raise TimeoutError(
+                            f"LibrAgent session {session_id} did not reach a terminal "
+                            f"workflow status within {self.poll_timeout_sec:.0f}s "
+                            f"(last status={last_status}). Increase Harbor "
+                            f"--agent-timeout-multiplier / LIBRAGENT_POLL_TIMEOUT_SEC "
+                            f"or wait for the agent to finish before harvesting."
+                        )
+
                     await asyncio.sleep(poll_interval)
                     try:
                         status_res = await client.get(
@@ -188,22 +267,32 @@ class LibrAgentHarborAdapter(BaseAgent):
 
                     session_info = status_res.json()
                     current_status = str(session_info.get("status", "idle")).lower()
-                    if current_status not in terminal_statuses:
+                    last_status = current_status
+                    if current_status not in TERMINAL_WORKFLOW_STATUSES:
                         seen_non_idle = True
 
-                    # Avoid treating the brief Idle window before Busy as completion.
-                    if current_status in terminal_statuses and (
-                        seen_non_idle or current_status != "idle"
+                    if is_workflow_complete(
+                        current_status, seen_non_idle=seen_non_idle
                     ):
                         print(
                             f"[{self.name()}] Session workflow reached terminal state: "
                             f"{current_status}"
                         )
+                        completed = True
                         break
             except asyncio.CancelledError:
+                # Harbor agent timeout cancels this coroutine. Do NOT harvest as
+                # success — that caused verifiers to score incomplete workspaces.
                 print(
-                    f"[{self.name()}] Session polling cancelled (Harbor timeout). "
-                    "Will still harvest results."
+                    f"[{self.name()}] Session polling cancelled (Harbor timeout) "
+                    f"while status={last_status}. Refusing to harvest incomplete results."
+                )
+                raise
+
+            if not completed:
+                raise RuntimeError(
+                    f"LibrAgent session {session_id} ended polling without a completed "
+                    f"workflow (last status={last_status})."
                 )
 
             print(
@@ -250,10 +339,13 @@ class LibrAgentHarborAdapter(BaseAgent):
             context.metadata = {
                 "output": final_answer,
                 "trajectory": messages,
+                "sessionId": session_id,
+                "finalStatus": last_status,
+                "completed": True,
             }
             print(
                 f"[{self.name()}] Task complete. Response harvested successfully "
-                f"({len(messages)} messages)."
+                f"({len(messages)} messages, status={last_status})."
             )
 
     def _resolve_local_workspace(

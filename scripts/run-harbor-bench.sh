@@ -10,7 +10,9 @@ N_TASKS=0
 CONCURRENT=1
 API_URL="${LIBRAGENT_API_URL:-http://localhost:3030/api}"
 ASSISTANT_ID="${LIBRAGENT_ASSISTANT_ID:-}"
-EXECUTION_MODE="yolo"
+EXECUTION_MODE="${LIBRAGENT_EXECUTION_MODE:-unsafe}"
+TIMEOUT_MULTIPLIER="${LIBRAGENT_TIMEOUT_MULTIPLIER:-1.0}"
+AGENT_TIMEOUT_MULTIPLIER="${LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER:-}"
 ASSISTANT_NAME="Coding Expert"
 SKIP_HEALTH=0
 DRY_RUN=0
@@ -29,7 +31,9 @@ Options:
   --concurrent N                       Concurrent trials (-n), default 1
   --api-url URL                        Default: http://localhost:3030/api
   --assistant-id UUID                  Or set LIBRAGENT_ASSISTANT_ID
-  --execution-mode yolo|unsafe|normal  Default: yolo
+  --execution-mode yolo|unsafe|normal  Default: unsafe (or LIBRAGENT_EXECUTION_MODE)
+  --timeout-multiplier N               Harbor task timeout multiplier (default: 1.0)
+  --agent-timeout-multiplier N         Harbor agent-only timeout multiplier
   --skip-health-check
   --dry-run
   --debug
@@ -48,6 +52,8 @@ while [[ $# -gt 0 ]]; do
     --api-url) API_URL="$2"; shift 2 ;;
     --assistant-id) ASSISTANT_ID="$2"; shift 2 ;;
     --execution-mode) EXECUTION_MODE="$2"; shift 2 ;;
+    --timeout-multiplier) TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
+    --agent-timeout-multiplier) AGENT_TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
     --skip-health-check) SKIP_HEALTH=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --debug) DEBUG_HARBOR=1; shift ;;
@@ -127,7 +133,11 @@ ARGS=(
   --ak "assistant_id=$ASSISTANT_ID"
   --ak "execution_mode=$EXECUTION_MODE"
   -n "$CONCURRENT"
+  --timeout-multiplier "$TIMEOUT_MULTIPLIER"
 )
+if [[ -n "$AGENT_TIMEOUT_MULTIPLIER" ]]; then
+  ARGS+=(--agent-timeout-multiplier "$AGENT_TIMEOUT_MULTIPLIER")
+fi
 
 case "$PRESET" in
   hello)

@@ -3,7 +3,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
-import type { Message, MessageError } from '@/models/chat';
+import type { Message } from '@/models/chat';
 import { buildTestMessage } from './agent-session-test-utils';
 import { __resetLLMListenerStartupLogStateForTests } from '../llm/useLLMListener';
 import * as streamEvents from '@/lib/ai-service/stream-events';
@@ -657,7 +657,7 @@ describe('LLMServiceContext – Completion Execution', () => {
       expect(mockDispose).not.toHaveBeenCalled();
     });
 
-    it('throws thinking_only_response_from_provider error when completion contains thinking but no renderable content or tool calls', async () => {
+    it('returns thinking-only completion to Rust recovery instead of throwing in the frontend', async () => {
       const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
@@ -670,35 +670,24 @@ describe('LLMServiceContext – Completion Execution', () => {
         buildTestMessage({ id: 'msg1' }),
       ];
 
-      let errorThrown: unknown;
+      let completedMessage: Message | undefined;
       await act(async () => {
-        try {
-          await result.current.executeCompletionRequest(
-            'test-session',
-            'response-msg-thinking-only',
-            messages,
-            'gpt-4',
-            'openai',
-            'test-key',
-          );
-        } catch (error) {
-          errorThrown = error;
-        }
+        completedMessage = await result.current.executeCompletionRequest(
+          'test-session',
+          'response-msg-thinking-only',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
       });
 
-      expect(errorThrown).toBeDefined();
-      const isMessageError = (err: unknown): err is MessageError => {
-        return typeof err === 'object' && err !== null && 'type' in err && 'displayMessage' in err;
-      };
-      expect(isMessageError(errorThrown)).toBe(true);
-      if (isMessageError(errorThrown)) {
-        expect(errorThrown.type).toBe('AI_SERVICE_ERROR');
-        expect(errorThrown.displayMessage).toContain('Received thinking-only response from LLM provider');
-        expect(errorThrown.details?.originalError).toBe('thinking_only_response_from_provider');
-      }
+      expect(completedMessage).toBeDefined();
+      expect(completedMessage?.thinking).toBe('Thinking about the problem...');
+      expect(completedMessage?.tool_calls).toBeUndefined();
     });
 
-    it('throws thinking_only_response_from_provider error when completion contains thinking but only empty/whitespace text content', async () => {
+    it('returns thinking-only completion with whitespace-only text to Rust recovery', async () => {
       const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
@@ -714,32 +703,21 @@ describe('LLMServiceContext – Completion Execution', () => {
         buildTestMessage({ id: 'msg1' }),
       ];
 
-      let errorThrown: unknown;
+      let completedMessage: Message | undefined;
       await act(async () => {
-        try {
-          await result.current.executeCompletionRequest(
-            'test-session',
-            'response-msg-thinking-empty-text',
-            messages,
-            'gpt-4',
-            'openai',
-            'test-key',
-          );
-        } catch (error) {
-          errorThrown = error;
-        }
+        completedMessage = await result.current.executeCompletionRequest(
+          'test-session',
+          'response-msg-thinking-empty-text',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
       });
 
-      expect(errorThrown).toBeDefined();
-      const isMessageError = (err: unknown): err is MessageError => {
-        return typeof err === 'object' && err !== null && 'type' in err && 'displayMessage' in err;
-      };
-      expect(isMessageError(errorThrown)).toBe(true);
-      if (isMessageError(errorThrown)) {
-        expect(errorThrown.type).toBe('AI_SERVICE_ERROR');
-        expect(errorThrown.displayMessage).toContain('Received thinking-only response from LLM provider');
-        expect(errorThrown.details?.originalError).toBe('thinking_only_response_from_provider');
-      }
+      expect(completedMessage).toBeDefined();
+      expect(completedMessage?.thinking).toBe('Thinking about the problem...');
+      expect(completedMessage?.tool_calls).toBeUndefined();
     });
 
     it('does NOT throw when thinking is accompanied by non-text content (e.g. image)', async () => {

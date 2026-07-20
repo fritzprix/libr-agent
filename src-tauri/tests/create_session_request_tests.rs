@@ -25,6 +25,18 @@ fn create_session_request_defaults_execution_mode_when_omitted() {
 }
 
 #[test]
+fn create_session_request_deserializes_execution_mode_unsafe() {
+    let request: CreateSessionRequest = serde_json::from_value(serde_json::json!({
+        "assistantId": "assistant-1",
+        "request": "run shell unattended",
+        "executionMode": "unsafe"
+    }))
+    .expect("request should deserialize");
+
+    assert_eq!(request.execution_mode, Some(ExecutionMode::Unsafe));
+}
+
+#[test]
 fn create_session_request_rejects_invalid_execution_mode() {
     let result = serde_json::from_value::<CreateSessionRequest>(serde_json::json!({
         "assistantId": "assistant-1",

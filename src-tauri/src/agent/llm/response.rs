@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 use super::response_admission;
 use super::response_circuit_breaker;
 use super::tool_execution;
+use crate::agent::llm::assistant_message_shape::inspect_assistant_message_shape;
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,35 +29,6 @@ pub fn completion_result_from_error_handling_outcome(
     match outcome {
         LlmErrorHandlingOutcome::RecoveredByCompaction => Ok(()),
         LlmErrorHandlingOutcome::FinalizedWorkflowError => Err(error.into()),
-    }
-}
-
-struct AssistantMessageShape {
-    has_content: bool,
-    has_thinking: bool,
-    has_tool_calls: bool,
-}
-
-fn inspect_assistant_message_shape(message: &Message) -> AssistantMessageShape {
-    let has_content = message.content.iter().any(|content| match content {
-        crate::mcp::types::MCPContent::Text { text, .. } => !text.trim().is_empty(),
-        _ => true,
-    });
-    let has_thinking = message
-        .thinking
-        .as_ref()
-        .map(|thinking| !thinking.is_empty())
-        .unwrap_or(false);
-    let has_tool_calls = message
-        .tool_calls
-        .as_ref()
-        .map(|tool_calls| !tool_calls.is_empty())
-        .unwrap_or(false);
-
-    AssistantMessageShape {
-        has_content,
-        has_thinking,
-        has_tool_calls,
     }
 }
 
@@ -335,7 +307,7 @@ pub async fn handle_llm_response(
     let assistant_shape = inspect_assistant_message_shape(&assistant_message);
 
     if !assistant_shape.has_tool_calls {
-        if !assistant_shape.has_content && !assistant_shape.has_thinking {
+        if !assistant_shape.has_renderable_content && !assistant_shape.has_thinking {
             // content, tool_calls, AND thinking are all empty - this is an error
             log::warn!(
                 "⚠️  Empty LLM response detected for session {}: no content, tool calls, or thinking. This may indicate a model inference issue.",
@@ -358,7 +330,7 @@ pub async fn handle_llm_response(
             return Ok(());
         }
 
-        if assistant_shape.has_thinking && !assistant_shape.has_content {
+        if assistant_shape.is_thinking_only_completion() {
             return crate::agent::llm::stream_recovery::handle_thinking_only_completion(
                 session_repo,
                 active_sessions,
