@@ -161,22 +161,20 @@ fn start_session_schema_property_order_puts_task_last() {
 #[cfg(feature = "workspace-edit-file")]
 #[test]
 fn edit_file_line_variant_property_order_puts_content_last() {
-    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_item_schema;
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_file_input_schema;
 
     let keys = edit_variant_property_keys(
-        &create_edit_item_schema(),
+        &create_edit_file_input_schema(),
         "Replace or delete existing lines",
     );
 
     assert_eq!(
         keys,
         vec![
-            "startLine".to_string(),
-            "endLine".to_string(),
+            "path".to_string(),
+            "start".to_string(),
+            "end".to_string(),
             "op".to_string(),
-            "anchor".to_string(),
-            "startAnchor".to_string(),
-            "endAnchor".to_string(),
             "content".to_string(),
         ]
     );
@@ -185,34 +183,39 @@ fn edit_file_line_variant_property_order_puts_content_last() {
 #[cfg(feature = "workspace-edit-file")]
 #[test]
 fn edit_file_prepend_variant_property_order_puts_content_last() {
-    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_item_schema;
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_file_input_schema;
 
     let keys = edit_variant_property_keys(
-        &create_edit_item_schema(),
+        &create_edit_file_input_schema(),
         "Prepend content at the top of the file",
     );
 
-    assert_eq!(keys, vec!["startLine".to_string(), "content".to_string()]);
+    assert_eq!(
+        keys,
+        vec![
+            "path".to_string(),
+            "start".to_string(),
+            "content".to_string(),
+        ]
+    );
 }
 
 #[cfg(feature = "workspace-edit-file")]
 #[test]
 fn edit_file_insert_after_variant_property_order_puts_content_last() {
-    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_item_schema;
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_edit_file_input_schema;
 
     let keys = edit_variant_property_keys(
-        &create_edit_item_schema(),
+        &create_edit_file_input_schema(),
         "Insert content after an existing line",
     );
 
     assert_eq!(
         keys,
         vec![
+            "path".to_string(),
             "op".to_string(),
-            "startLine".to_string(),
-            "anchor".to_string(),
-            "startAnchor".to_string(),
-            "endAnchor".to_string(),
+            "start".to_string(),
             "content".to_string(),
         ]
     );

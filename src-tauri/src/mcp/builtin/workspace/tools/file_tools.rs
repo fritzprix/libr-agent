@@ -748,15 +748,45 @@ Use writeFile mode='create' for new files and mode='overwrite' only when replaci
 }
 
 #[cfg(feature = "workspace-edit-file")]
-/// Maximum number of edit operations allowed in a single editFile call.
+/// Maximum number of edit operations allowed in a legacy batch `edits` array.
 pub const EDIT_FILE_MAX_EDITS: u32 = 50;
+
+#[cfg(feature = "workspace-edit-file")]
+fn edit_file_path_prop() -> JSONSchema {
+    string_prop(
+        Some(1),
+        Some(1000),
+        Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork files without changing workspaceOverride."),
+    )
+}
+
+#[cfg(feature = "workspace-edit-file")]
+fn edit_start_prop(include_zero: bool) -> JSONSchema {
+    let description = if include_zero {
+        "Copy the '42:a31f2c' from readFile's '42:a31f2c|content' line format. Omit only the trailing '|content'. Use \"0\" only to prepend at the file top."
+    } else {
+        "Copy the '42:a31f2c' from readFile's '42:a31f2c|content' line format. Omit only the trailing '|content'."
+    };
+    string_prop(Some(1), Some(32), Some(description))
+}
+
+#[cfg(feature = "workspace-edit-file")]
+fn edit_end_prop() -> JSONSchema {
+    string_prop(
+        Some(1),
+        Some(32),
+        Some(
+            "Copy the end line's '72:b47aa1' from readFile's '72:b47aa1|content' format for multi-line ranges. Omit for single-line edits.",
+        ),
+    )
+}
 
 #[cfg(feature = "workspace-edit-file")]
 fn edit_anchor_props() -> SchemaProperties {
     let start_anchor_desc =
-        "6-character opaque anchor for the start line from readFile(showLineAnchors=true). Required for edits that touch an existing line. Do not include the line number or '|content'.";
+        "Legacy: 6-character opaque anchor for the start line. Prefer start: \"N:anchor\" instead.";
     let end_anchor_desc =
-        "6-character opaque anchor for the end line. Required when endLine is set for a multi-line replace/delete range.";
+        "Legacy: 6-character opaque anchor for the end line. Prefer end: \"N:anchor\" instead.";
 
     let mut props = SchemaProperties::new();
     props.insert(
@@ -765,11 +795,7 @@ fn edit_anchor_props() -> SchemaProperties {
     );
     props.insert(
         "startAnchor".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Alias for anchor. Prefer anchor for new edits."),
-        ),
+        string_prop(None, None, Some(start_anchor_desc)),
     );
     props.insert(
         "endAnchor".to_string(),
@@ -779,10 +805,102 @@ fn edit_anchor_props() -> SchemaProperties {
 }
 
 #[cfg(feature = "workspace-edit-file")]
-fn create_prepend_edit_variant() -> JSONSchema {
-    let content_desc =
-        "Content to insert at the beginning of the file. startLine defaults to 0 when omitted.";
+fn create_prepend_flat_variant() -> JSONSchema {
+    let mut props = SchemaProperties::new();
+    props.insert("path".to_string(), edit_file_path_prop());
+    props.insert(
+        "start".to_string(),
+        string_const_prop(
+            "0",
+            Some("Optional. Must be \"0\" when provided for prepend."),
+        ),
+    );
+    props.insert(
+        "content".to_string(),
+        string_prop(
+            Some(0),
+            None,
+            Some("Content to insert at the beginning of the file."),
+        ),
+    );
 
+    let mut schema = object_schema(props, vec!["path".to_string(), "content".to_string()]);
+    schema.description = Some(
+        "Prepend content at the top of the file. Provide path + content (optionally start: \"0\")."
+            .to_string(),
+    );
+    schema
+}
+
+#[cfg(feature = "workspace-edit-file")]
+fn create_line_edit_flat_variant() -> JSONSchema {
+    let mut props = SchemaProperties::new();
+    props.insert("path".to_string(), edit_file_path_prop());
+    props.insert("start".to_string(), edit_start_prop(false));
+    props.insert("end".to_string(), edit_end_prop());
+    props.insert(
+        "op".to_string(),
+        enum_prop_optional(
+            vec!["replace", "delete"],
+            Some("Optional hint for replace or delete. Omit to let the server infer from content."),
+        ),
+    );
+    props.insert(
+        "content".to_string(),
+        string_prop(
+            None,
+            None,
+            Some(
+                "Replacement content. Omit to delete the targeted line or range. The server infers replace vs delete from content presence when op is omitted.",
+            ),
+        ),
+    );
+
+    let mut schema = object_schema(props, vec!["path".to_string(), "start".to_string()]);
+    schema.description = Some(
+        "Replace or delete existing lines. Copy start (and optional end) as \"N:anchor\" from readFile."
+            .to_string(),
+    );
+    schema
+}
+
+#[cfg(feature = "workspace-edit-file")]
+fn create_insert_after_flat_variant() -> JSONSchema {
+    let mut props = SchemaProperties::new();
+    props.insert("path".to_string(), edit_file_path_prop());
+    props.insert(
+        "op".to_string(),
+        string_const_prop(
+            "insert_after",
+            Some("Must be insert_after for this edit shape."),
+        ),
+    );
+    props.insert("start".to_string(), edit_start_prop(true));
+    props.insert(
+        "content".to_string(),
+        string_prop(
+            Some(0),
+            None,
+            Some("Content to insert after the anchored line (or at top when start is \"0\")."),
+        ),
+    );
+
+    let mut schema = object_schema(
+        props,
+        vec![
+            "path".to_string(),
+            "op".to_string(),
+            "start".to_string(),
+            "content".to_string(),
+        ],
+    );
+    schema.description =
+        Some("Insert content after an existing line (or prepend when start is \"0\").".to_string());
+    schema
+}
+
+#[cfg(feature = "workspace-edit-file")]
+fn create_prepend_edit_item_variant() -> JSONSchema {
     let mut props = SchemaProperties::new();
     props.insert(
         "startLine".to_string(),
@@ -793,39 +911,47 @@ fn create_prepend_edit_variant() -> JSONSchema {
     );
     props.insert(
         "content".to_string(),
-        string_prop(Some(0), None, Some(content_desc)),
+        string_prop(
+            Some(0),
+            None,
+            Some("Content to insert at the beginning of the file."),
+        ),
     );
 
     let mut schema = object_schema(props, vec!["content".to_string()]);
     schema.description = Some(
-        "Prepend content at the top of the file. Provide content only, or content with startLine: 0. Do not include anchors."
+        "Prepend content at the top of the file. Provide content only, or content with startLine: 0."
             .to_string(),
     );
     schema
 }
 
 #[cfg(feature = "workspace-edit-file")]
-fn create_line_edit_variant() -> JSONSchema {
-    let start_line_desc = "Target start line number (1-based). Use endLine only for multi-line replace/delete ranges.";
-    let end_line_desc =
-        "Inclusive end line for a multi-line replace/delete range. Omit for a single-line edit.";
-    let content_desc =
-        "Replacement content. Omit to delete the targeted line or range. The server infers replace vs delete from content presence when op is omitted.";
-
+fn create_line_edit_item_variant() -> JSONSchema {
     let mut props = SchemaProperties::new();
     props.insert(
         "startLine".to_string(),
-        integer_prop(Some(1), None, Some(start_line_desc)),
+        integer_prop(
+            Some(1),
+            None,
+            Some(
+                "Target start line number (1-based). Prefer flat start: \"N:anchor\" on editFile.",
+            ),
+        ),
     );
     props.insert(
         "endLine".to_string(),
-        integer_prop(Some(1), None, Some(end_line_desc)),
+        integer_prop(
+            Some(1),
+            None,
+            Some("Inclusive end line for a multi-line replace/delete range."),
+        ),
     );
     props.insert(
         "op".to_string(),
         enum_prop_optional(
             vec!["replace", "delete"],
-            Some("Optional hint for replace or delete. Omit to let the server infer from content."),
+            Some("Optional hint for replace or delete."),
         ),
     );
     for (key, value) in edit_anchor_props() {
@@ -833,7 +959,11 @@ fn create_line_edit_variant() -> JSONSchema {
     }
     props.insert(
         "content".to_string(),
-        string_prop(None, None, Some(content_desc)),
+        string_prop(
+            None,
+            None,
+            Some("Replacement content. Omit to delete the targeted line or range."),
+        ),
     );
 
     let mut schema = object_schema(props, vec!["startLine".to_string()]);
@@ -845,11 +975,7 @@ fn create_line_edit_variant() -> JSONSchema {
 }
 
 #[cfg(feature = "workspace-edit-file")]
-fn create_insert_after_edit_variant() -> JSONSchema {
-    let start_line_desc =
-        "Line number to insert after (1-based). Use 0 only to prepend at the file top.";
-    let content_desc = "Content to insert after the anchored line.";
-
+fn create_insert_after_edit_item_variant() -> JSONSchema {
     let mut props = SchemaProperties::new();
     props.insert(
         "op".to_string(),
@@ -860,14 +986,22 @@ fn create_insert_after_edit_variant() -> JSONSchema {
     );
     props.insert(
         "startLine".to_string(),
-        integer_prop(Some(0), None, Some(start_line_desc)),
+        integer_prop(
+            Some(0),
+            None,
+            Some("Line number to insert after (1-based). Use 0 only to prepend at the file top."),
+        ),
     );
     for (key, value) in edit_anchor_props() {
         props.insert(key, value);
     }
     props.insert(
         "content".to_string(),
-        string_prop(Some(0), None, Some(content_desc)),
+        string_prop(
+            Some(0),
+            None,
+            Some("Content to insert after the anchored line."),
+        ),
     );
 
     let mut schema = object_schema(
@@ -878,44 +1012,52 @@ fn create_insert_after_edit_variant() -> JSONSchema {
             "content".to_string(),
         ],
     );
-    schema.description = Some(
-        "Insert content after an existing line (or prepend when startLine is 0). Requires anchor unless startLine is 0."
-            .to_string(),
-    );
+    schema.description =
+        Some("Insert content after an existing line (or prepend when startLine is 0).".to_string());
     schema
 }
 
 #[cfg(feature = "workspace-edit-file")]
+/// Internal/legacy item schema used after flat args are wrapped into `edits: [one]`.
 pub fn create_edit_item_schema() -> JSONSchema {
     one_of_object_schema(
         vec![
-            create_prepend_edit_variant(),
-            create_line_edit_variant(),
-            create_insert_after_edit_variant(),
+            create_prepend_edit_item_variant(),
+            create_line_edit_item_variant(),
+            create_insert_after_edit_item_variant(),
         ],
         Some(
-            "A single edit operation. Choose the variant that matches the intent: prepend, replace/delete existing lines, or insert_after.",
+            "A single edit operation after canonicalization. Prefer the flat editFile discovery schema with start/end.",
         ),
     )
 }
 
 #[cfg(feature = "workspace-edit-file")]
+/// Model-facing schema: one flat edit object (path + start/end/content).
 pub fn create_edit_file_input_schema() -> JSONSchema {
-    let mut props = SchemaProperties::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork files without changing workspaceOverride."),
+    one_of_object_schema(
+        vec![
+            create_prepend_flat_variant(),
+            create_line_edit_flat_variant(),
+            create_insert_after_flat_variant(),
+        ],
+        Some(
+            "Edit one location in a file. Copy start/end as \"N:anchor\" from readFile(showLineAnchors=true).",
         ),
-    );
+    )
+}
+
+#[cfg(feature = "workspace-edit-file")]
+/// Runtime validation schema after flat calls are wrapped into `{ path, edits: [...] }`.
+pub fn create_edit_file_validation_schema() -> JSONSchema {
+    let mut props = SchemaProperties::new();
+    props.insert("path".to_string(), edit_file_path_prop());
     props.insert(
         "edits".to_string(),
         array_schema_with_max_items(
             create_edit_item_schema(),
             Some(EDIT_FILE_MAX_EDITS),
-            Some("Ordered list of edit operations to apply atomically to one file. All edits are schema-validated and anchor-validated before any write. Edits must not overlap."),
+            Some("Internal edit list after canonicalization. Model-facing editFile uses a single flat object."),
         ),
     );
 
@@ -926,19 +1068,19 @@ pub fn create_edit_file_input_schema() -> JSONSchema {
 pub fn create_edit_file_tool() -> MCPTool {
     MCPTool {
         name: "editFile".to_string(),
-        title: Some("Edit File (Batch)".to_string()),
-        description: "Apply multiple line edits to one file atomically in a single operation.
+        title: Some("Edit File".to_string()),
+        description: "Apply one line edit to a file.
 
-PREREQUISITE: Obtain anchors from a prior readFile(showLineAnchors=true), writeFile response, or previous editFile response. Anchored lines look like `42:a31f2c|...`; for anchors, pass only the 6-character code such as `a31f2c`, not `42:a31f2c`.
+PREREQUISITE: Obtain anchors from readFile(showLineAnchors=true), writeFile, or a previous editFile response. Anchored lines look like `42:a31f2c|...` — copy the `42:a31f2c` prefix into start (and end for ranges).
 
-Edit shapes (one per array item):
-- Prepend: `{ \"content\": \"...\" }` or `{ \"startLine\": 0, \"content\": \"...\" }`
-- Replace/delete existing lines: `{ \"startLine\": N, \"anchor\": \"...\", \"content\": \"...\" }` (omit content to delete)
-- Insert after a line: `{ \"op\": \"insert_after\", \"startLine\": N, \"anchor\": \"...\", \"content\": \"...\" }`
+Shapes:
+- Prepend: `{ \"path\": \"a.rs\", \"content\": \"...\" }`
+- Replace: `{ \"path\": \"a.rs\", \"start\": \"10:a31f2c\", \"content\": \"...\" }`
+- Delete: `{ \"path\": \"a.rs\", \"start\": \"10:a31f2c\" }`
+- Range replace: `{ \"path\": \"a.rs\", \"start\": \"10:a31f2c\", \"end\": \"15:b47aa1\", \"content\": \"...\" }`
+- Insert after: `{ \"path\": \"a.rs\", \"op\": \"insert_after\", \"start\": \"10:a31f2c\", \"content\": \"...\" }`
 
-Line numbering is 1-based for existing content. The only valid 0 value is startLine=0, which prepends at the file top.
-
-All edits are validated before any write begins."
+One edit per call. For multiple locations, call editFile again (re-read when line numbers may have shifted)."
             .to_string(),
         input_schema: create_edit_file_input_schema(),
         output_schema: None,

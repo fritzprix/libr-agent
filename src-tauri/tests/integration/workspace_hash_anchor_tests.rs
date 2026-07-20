@@ -39,6 +39,11 @@ fn extract_anchor(hashlines: &str, line_index: usize) -> String {
         .to_string()
 }
 
+fn line_ref(hashlines: &str, line_number: usize) -> String {
+    let anchor = extract_anchor(hashlines, line_number - 1);
+    format!("{line_number}:{anchor}")
+}
+
 #[test]
 fn anchored_line_format_uses_single_opaque_anchor() {
     let rendered = format_as_hashlines("alpha\nbeta");
@@ -66,36 +71,13 @@ fn later_prefix_hash_changes_when_earlier_content_changes() {
 }
 
 #[test]
-fn edit_file_schema_uses_discriminated_edit_variants() {
+fn edit_file_schema_uses_flat_start_anchor_variants() {
     let schema_json =
         serde_json::to_value(create_edit_file_input_schema()).expect("serialize editFile schema");
-    let root_required = schema_json
-        .get("required")
-        .and_then(|value| value.as_array())
-        .expect("root required array");
-    assert!(root_required
-        .iter()
-        .any(|value| value.as_str() == Some("path")));
-    assert!(root_required
-        .iter()
-        .any(|value| value.as_str() == Some("edits")));
-
-    let edits_property = schema_json
-        .get("properties")
-        .and_then(|properties| properties.get("edits"))
-        .expect("edits property");
-    assert_eq!(
-        edits_property
-            .get("maxItems")
-            .and_then(|value| value.as_u64()),
-        Some(50)
-    );
-
-    let edits_items = edits_property.get("items").expect("edits.items schema");
-    let one_of = edits_items
+    let one_of = schema_json
         .get("oneOf")
         .and_then(|value| value.as_array())
-        .expect("edits.items.oneOf array");
+        .expect("root oneOf array");
     assert_eq!(
         one_of.len(),
         3,
@@ -109,12 +91,15 @@ fn edit_file_schema_uses_discriminated_edit_variants() {
         .expect("prepend required");
     assert!(prepend_required
         .iter()
+        .any(|value| value.as_str() == Some("path")));
+    assert!(prepend_required
+        .iter()
         .any(|value| value.as_str() == Some("content")));
     assert!(
         !prepend_required
             .iter()
-            .any(|value| value.as_str() == Some("startLine")),
-        "prepend variant should not require startLine"
+            .any(|value| value.as_str() == Some("start")),
+        "prepend variant should not require start"
     );
 
     let line_edit_variant = &one_of[1];
@@ -124,7 +109,31 @@ fn edit_file_schema_uses_discriminated_edit_variants() {
         .expect("line edit required");
     assert!(line_edit_required
         .iter()
-        .any(|value| value.as_str() == Some("startLine")));
+        .any(|value| value.as_str() == Some("path")));
+    assert!(line_edit_required
+        .iter()
+        .any(|value| value.as_str() == Some("start")));
+    assert!(
+        line_edit_variant
+            .get("properties")
+            .and_then(|properties| properties.get("start"))
+            .is_some(),
+        "line-edit variant should expose start"
+    );
+    assert!(
+        line_edit_variant
+            .get("properties")
+            .and_then(|properties| properties.get("end"))
+            .is_some(),
+        "line-edit variant should expose end"
+    );
+    assert!(
+        !schema_json
+            .get("properties")
+            .and_then(|properties| properties.get("edits"))
+            .is_some(),
+        "discovery schema should not expose edits array"
+    );
 
     let insert_after_variant = &one_of[2];
     let insert_after_required = insert_after_variant
@@ -136,25 +145,77 @@ fn edit_file_schema_uses_discriminated_edit_variants() {
         .any(|value| value.as_str() == Some("op")));
     assert!(insert_after_required
         .iter()
-        .any(|value| value.as_str() == Some("startLine")));
-    assert!(
-        insert_after_variant
-            .get("properties")
-            .and_then(|properties| properties.get("anchor"))
-            .is_some(),
-        "insert_after variant should expose anchor for existing-line inserts"
-    );
+        .any(|value| value.as_str() == Some("start")));
 
-    let start_line_description = line_edit_variant
+    let start_description = line_edit_variant
         .get("properties")
-        .and_then(|properties| properties.get("startLine"))
+        .and_then(|properties| properties.get("start"))
         .and_then(|value| value.get("description"))
         .and_then(|value| value.as_str())
-        .expect("startLine description");
+        .expect("start description");
     assert!(
-        start_line_description.contains("1-based"),
-        "startLine description should make the 1-based rule explicit: {start_line_description}"
+        start_description.contains("42:a31f2c")
+            || start_description.contains("N:anchor")
+            || start_description.contains("|content"),
+        "start description should map to readFile line format: {start_description}"
     );
+}
+
+#[tokio::test]
+async fn edit_file_flat_start_ref_replaces_single_line() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-flat-start-ref";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
+    let start = line_ref(&format_as_hashlines("alpha\nbeta\n"), 1);
+
+    let result = server
+        .handle_edit_file(
+            json!({
+                "path": "sample.txt",
+                "start": start,
+                "content": "ALPHA"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("flat edit should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "ALPHA\nbeta\n");
+}
+
+#[tokio::test]
+async fn edit_file_flat_start_and_end_replace_range() {
+    let _env_test_read_scope = super::env_var_guard::EnvTestReadGuard::acquire();
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-flat-start-end";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "a\nb\nc\nd\n").expect("write sample file");
+    let hashlines = format_as_hashlines("a\nb\nc\nd\n");
+
+    let result = server
+        .handle_edit_file(
+            json!({
+                "path": "sample.txt",
+                "start": line_ref(&hashlines, 2),
+                "end": line_ref(&hashlines, 3),
+                "content": "BC"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("flat range edit should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "a\nBC\nd\n");
 }
 
 #[tokio::test]
@@ -365,7 +426,8 @@ async fn edit_file_rejects_start_line_zero_for_replace_and_delete() {
         let text = extract_text_content(&result);
         assert_eq!(result.is_error, Some(true));
         assert!(
-            text.contains("'startLine' must be >= 1")
+            text.contains("'start' must be a 1-based")
+                || text.contains("'startLine' must be >= 1")
                 || text.contains("do not match the declared schema"),
             "expected invalid startLine guidance for op={op}, got: {text}"
         );
@@ -864,8 +926,8 @@ async fn edit_file_rejects_multiline_replace_without_end_hash() {
     assert_eq!(result.is_error, Some(true));
     let text = extract_text_content(&result);
     assert!(
-        text.contains("requires 'endAnchor'"),
-        "expected missing endAnchor error, got: {text}"
+        text.contains("requires 'end'") || text.contains("requires 'endAnchor'"),
+        "expected missing end/endAnchor error, got: {text}"
     );
 }
 
