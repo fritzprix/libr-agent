@@ -21,7 +21,8 @@ use crate::execution_mode::ExecutionMode;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::{Message, MessageSource};
 use crate::repositories::{
-    AssistantRepository, ScheduledTaskRepository, SessionRepository, UpdateScheduledTaskParams,
+    AssistantRepository, PlanningRepository, ScheduledTaskRepository, SessionRepository,
+    UpdateScheduledTaskParams,
 };
 use crate::scheduled::{is_one_shot_task, is_session_task, ScheduleTimezone};
 use crate::services::WorkspaceService;
@@ -96,15 +97,8 @@ pub async fn sync_task_workspace_override(
             repo.update_scheduled_task(
                 task_id,
                 UpdateScheduledTaskParams {
-                    name: None,
-                    cron_expression: None,
-                    schedule_timezone: None,
-                    assistant_id: None,
-                    message: None,
-                    execution_mode: None,
                     workspace_override: Some(None),
-                    enabled: None,
-                    next_run_at: None,
+                    ..Default::default()
                 },
             )
             .await
@@ -485,11 +479,42 @@ async fn is_session_busy(
     false
 }
 
+/// Clear planning goal/todo/scratchpad for a session without wiping messages or other state.
+///
+/// This is intentionally narrower than `/clear` (`reset_session` / `AgentSession::clear`).
+async fn clear_planning_state_only(session_id: &str) -> Result<(), String> {
+    let planning_repo = crate::state::get_planning_repository();
+    planning_repo
+        .clear_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to clear planning state: {e}"))?;
+
+    // Invalidate cached system prompt so the next Think sees empty planning context.
+    {
+        let sessions = get_active_sessions().read().await;
+        if let Some(session) = sessions.get(session_id) {
+            *session.cached_stable_prompt.write().await = None;
+        }
+    }
+
+    crate::agent::tauri_events::emit_resource_updated(
+        "planning",
+        "clear",
+        Some(session_id.to_string()),
+    );
+
+    Ok(())
+}
+
 async fn inject_scheduled_message(
     manager: &AgentSessionManager,
     session_id: &str,
     task: &crate::entity::scheduled_task::Model,
 ) -> Result<(), String> {
+    if task.reset_planning_state {
+        clear_planning_state_only(session_id).await?;
+    }
+
     let now_ts = chrono::Utc::now().timestamp_millis();
     let user_message = Message {
         id: Uuid::new_v4().to_string(),

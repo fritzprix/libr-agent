@@ -671,7 +671,7 @@ pub async fn handle_tool_result(
     session_id: String,
     tool_call_id: String,
     result: crate::commands::agent_commands::ToolExecutionResult,
-) -> Result<Option<Vec<Message>>, String> {
+) -> Result<Option<(Message, bool)>, String> {
     let crate::commands::agent_commands::ToolExecutionResult {
         success,
         content,
@@ -762,7 +762,6 @@ pub async fn handle_tool_result(
                     )
                 };
 
-                pending.results.push(message);
                 pending.completed_tool_call_ids.insert(tool_call_id.clone());
 
                 // Emit ToolExecutionCompleted event for external tools (progress tracking)
@@ -783,29 +782,24 @@ pub async fn handle_tool_result(
                 );
 
                 // Check if all results are in
-                if pending.completed_tool_call_ids.len() >= pending.total_expected {
-                    // Move results out of pending state
-                    let accumulated_messages: Vec<Message> = pending.results.drain(..).collect();
+                let all_completed = pending.completed_tool_call_ids.len() >= pending.total_expected;
+                if all_completed {
                     // Clear pending state
                     session.pending_execution = None;
-
-                    // Return the accumulated messages
-                    return Ok(Some(accumulated_messages));
                 }
+
+                Ok(Some((message, all_completed)))
             } else {
                 log::warn!(
                     "Received tool result for session {} but no pending execution state found",
                     session_id
                 );
-                return Ok(None); // Ignore or error? Safe to ignore to prevent crashes
+                Ok(None) // Ignore or error? Safe to ignore to prevent crashes
             }
         } else {
-            return Err(format!("Session not found: {}", session_id));
+            Err(format!("Session not found: {}", session_id))
         }
     }
-
-    // If we're here, it means we haven't finished collecting all results yet
-    Ok(None)
 }
 
 #[cfg(test)]

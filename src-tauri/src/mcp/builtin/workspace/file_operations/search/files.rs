@@ -181,14 +181,8 @@ pub(super) async fn search_files_only(
                 },
             ));
         }
-        (
-            text,
-            vec![
-                "Refine search query or filePattern if too many results were returned".to_string(),
-                "Use offset and limit to paginate through results if truncated".to_string(),
-                "Use search on specific directories to narrow down".to_string(),
-            ],
-        )
+        // Pagination notes are already in the body; omit generic next-action hints.
+        (text, vec![])
     };
 
     Ok(

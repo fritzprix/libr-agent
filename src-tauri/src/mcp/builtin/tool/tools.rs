@@ -1,6 +1,7 @@
 use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
+use serde_json::json;
 
 fn oauth_config_schema(description: Option<&str>) -> crate::mcp::schema::JSONSchema {
     object_prop(
@@ -158,7 +159,7 @@ pub fn register_server_tool() -> MCPTool {
                         Some(1),
                         Some(63),
                         Some("Unique human-readable slug for management (e.g., 'github', 'local-fs')."),
-                        vec![],
+                        vec![json!("github"), json!("local-fs")],
                     ),
                 ),
                 (

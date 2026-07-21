@@ -53,7 +53,6 @@ export type BuiltinServiceAlias = (typeof ALL_BUILTIN_SERVICE_ALIASES)[number];
 
 /** Core builtin services (optional: false in Rust) */
 export const CORE_BUILTIN_SERVICE_ALIASES = [
-  'planning',
   'scratchpad',
   'workspace',
   'agent',
@@ -67,6 +66,7 @@ export const CORE_BUILTIN_SERVICE_ALIASES = [
 
 /** Optional builtin services (optional: true in Rust) */
 export const OPTIONAL_BUILTIN_SERVICE_ALIASES = [
+  'planning',
   'knowledge',
   'history',
   'browser',

@@ -22,7 +22,8 @@ type SettingValue =
   | null // fallbackModel can be null (cleared)
   | number // windowSize, toolCallGroupVisibleCount
   | string // uiLanguage, agentHubUrl
-  | AdvancedSettings // advancedSettings
+  | AdvancedSettings
+  | Partial<AdvancedSettings> // advancedSettings
   | DisplaySettings // displaySettings
   | SystemSettings // systemSettings
   | ExperimentalSettings // experimentalSettings
@@ -43,6 +44,34 @@ function invalidateCachedSettingsState() {
   settingsCacheGeneration += 1;
   cachedSettingsValue = null;
   cachedSettingsPromise = null;
+}
+
+function isPartialAdvancedSettings(
+  val: unknown,
+): val is Partial<AdvancedSettings> {
+  if (typeof val !== 'object' || val === null) {
+    return false;
+  }
+  const obj = val as Record<string, unknown>;
+  const keys: (keyof AdvancedSettings)[] = [
+    'maxRetries',
+    'retryDelay',
+    'diffContextLines',
+    'defaultMaxOutputTokens',
+    'toolResultInlineLimitBytes',
+    'defaultSessionMaxDepth',
+    'defaultSessionMaxFanout',
+    'maxConcurrentActiveSessions',
+    'maxSuspendedSessions',
+    'maxConcurrentActiveProcesses',
+    'maxSuspendedProcesses',
+    'loopPreventionThreshold',
+    'loopPreventionHardBreakOffset',
+  ];
+  return keys.every((key) => {
+    const value = obj[key];
+    return value === undefined || typeof value === 'number';
+  });
 }
 
 function mapDtosToSettings(dtos: SettingDto[]): Settings {
@@ -100,7 +129,14 @@ function mapDtosToSettings(dtos: SettingDto[]): Settings {
       DEFAULT_SETTING.toolCallGroupVisibleCount,
     ),
     agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
-    advanced: getTypedValue('advancedSettings', DEFAULT_SETTING.advanced),
+    advanced: {
+      ...DEFAULT_SETTING.advanced,
+      ...getTypedValue<Partial<AdvancedSettings>>(
+        'advancedSettings',
+        {},
+        isPartialAdvancedSettings,
+      ),
+    },
     display: getTypedValue('displaySettings', DEFAULT_SETTING.display),
     system: {
       ...DEFAULT_SETTING.system,

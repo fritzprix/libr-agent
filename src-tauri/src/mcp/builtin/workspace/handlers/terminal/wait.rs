@@ -92,13 +92,10 @@ impl WorkspaceServer {
 
                     return Ok(guided_error(
                         ErrorCategory::ResourceNotFound,
-                        format!("Process '{}' not found in session", process_id),
+                        format!("Process '{}' is not registered in this session", process_id),
                         ToolGroup::Workspace,
                     )
-                    .guidance(vec![
-                        available_text,
-                        "Use listProcesses() to see all active processes".to_string(),
-                    ])
+                    .guidance(super::not_found::process_not_found_guidance(available_text))
                     .to_mcp_result());
                 }
             };
@@ -155,7 +152,7 @@ impl WorkspaceServer {
 
                 return Ok(SuccessHint::new(
                     format!("Process {} is currently {:?}", process_id, status),
-                    SuccessHint::for_tool("pollProcess", ToolGroup::Workspace),
+                    SuccessHint::for_tool("waitForProcess", ToolGroup::Workspace),
                 )
                 .to_mcp_result_with_data(Some(response)));
             }

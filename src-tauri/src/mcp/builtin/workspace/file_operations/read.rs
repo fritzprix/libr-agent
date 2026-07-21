@@ -1,6 +1,5 @@
 use super::super::edit_mode::{
-    read_file_anchor_output_suffix, read_file_anchor_prefix_note, read_file_primary_next_action,
-    read_file_secondary_next_action, LINE_ANCHORS_ENABLED,
+    read_file_anchor_output_suffix, read_file_anchor_prefix_note, LINE_ANCHORS_ENABLED,
 };
 use super::super::WorkspaceServer;
 use super::utils::{
@@ -142,6 +141,22 @@ impl WorkspaceServer {
             }
         };
 
+        if let Err(sync_error) = self
+            .sync_attach_before_host_read(&safe_path, session_id.as_deref())
+            .await
+        {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!("Failed to sync attached container file before read: {sync_error}"),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Verify the Harbor/Docker container is still running".to_string(),
+                "Retry readFile after confirming docker exec works".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         // 5. File existence check
         if !safe_path.exists() {
             return Ok(not_found_error("File", path_str, ToolGroup::Workspace));
@@ -268,20 +283,9 @@ impl WorkspaceServer {
                     )
                 };
 
-                let first_hint = read_file_primary_next_action(show_line_anchors);
-                let mut next_actions = vec![first_hint];
-                next_actions.push(read_file_secondary_next_action().to_string());
-                next_actions.push("writeFile for full file replacement".to_string());
-                if let Some(next_start_line) = chunk.next_start_line {
-                    next_actions.insert(
-                        0,
-                        format!(
-                            "Read the next chunk with readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": {}}})",
-                            path_str, next_start_line, chunk.displayed_line_count
-                        ),
-                    );
-                }
-                let hint = SuccessHint::new(text_message, next_actions);
+                // Omit edit-promotion next-action hints on successful reads.
+                // Truncation / next-chunk coaching stays in the message body above.
+                let hint = SuccessHint::new(text_message, vec![]);
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
                     "content": chunk.content,

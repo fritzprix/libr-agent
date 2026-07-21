@@ -1,12 +1,14 @@
 use crate::mcp::{schema::SchemaProperties, utils::schema_builder::*, MCPTool};
 
+const PROCESS_ID_PROP: &str = "Process ID from spawnProcess, a sync-timeout handoff response, or listProcesses. Never invent an ID.";
+
 /// Create read_process_output tool
 pub fn create_read_process_output_tool() -> MCPTool {
     let mut props = SchemaProperties::new();
 
     props.insert(
         "processId".to_string(),
-        string_prop_required("Process ID returned by spawnProcess or listProcesses"),
+        string_prop_required(PROCESS_ID_PROP),
     );
 
     props.insert(
@@ -35,7 +37,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
         name: "readProcessOutput".to_string(),
         title: Some("Read Process Output".to_string()),
         description:
-            "Read captured stdout, stderr, or both streams from a background process using head/tail line windows. Returns output_paths so file tools can inspect the full captured files."
+            "Read captured stdout, stderr, or both from a background process ID (spawnProcess or sync-timeout handoff). Works while the process is still running and after it finishes. Not for synchronous isolated/shell commands that already returned stdout/stderr inline — those registry entries are removed immediately. Returns output_paths for diagnostics (absolute internal paths; do not pass them to readFile/listDirectory)."
                 .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string(), "stream".to_string()]),
         output_schema: None,
@@ -49,7 +51,7 @@ pub fn create_wait_for_process_tool() -> MCPTool {
 
     props.insert(
         "processId".to_string(),
-        string_prop_required("Process ID returned by spawnProcess or listProcesses"),
+        string_prop_required(PROCESS_ID_PROP),
     );
     props.insert(
         "timeout".to_string(),
@@ -66,7 +68,7 @@ pub fn create_wait_for_process_tool() -> MCPTool {
     MCPTool {
         name: "waitForProcess".to_string(),
         title: Some("Wait For Process".to_string()),
-        description: "Block until a background process finishes or times out. Returns process status and metadata."
+        description: "Block until a background process finishes or times out. Requires a processId from spawnProcess, a sync-timeout handoff, or listProcesses — not for completed sync runShell/runPowerShell results (those have no processId)."
             .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
@@ -103,13 +105,14 @@ pub fn create_stop_process_tool() -> MCPTool {
 
     props.insert(
         "processId".to_string(),
-        string_prop_required("Process ID returned by spawnProcess or listProcesses"),
+        string_prop_required(PROCESS_ID_PROP),
     );
 
     MCPTool {
         name: "stopProcess".to_string(),
         title: Some("Stop Process".to_string()),
-        description: "Terminate a running background process immediately.".to_string(),
+        description: "Terminate a running background process immediately. Requires a processId from spawnProcess, a sync-timeout handoff, or listProcesses."
+            .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
         annotations: None,

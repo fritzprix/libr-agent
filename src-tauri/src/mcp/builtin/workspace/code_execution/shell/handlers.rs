@@ -6,7 +6,7 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::types::MCPResult;
 
-use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL, RUN_SHELL_TOOL};
+use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::validation;
 use super::policy::{evaluate_shell_policy, ShellPolicyAction, ShellPolicyContext};
 
@@ -28,6 +28,13 @@ impl WorkspaceServer {
 
     #[cfg(windows)]
     fn validate_windows_shell_syntax(&self, raw_command: &str) -> Option<MCPResult> {
+        // Docker sessions run bash/sh inside the container — PowerShell chaining rules do not apply.
+        if self.workspace_isolation
+            == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
+        {
+            return None;
+        }
+
         if !validation::contains_unquoted_andand(raw_command) {
             return None;
         }
@@ -54,6 +61,17 @@ impl WorkspaceServer {
     }
 
     fn sync_timeout_exceeded_result(&self, timeout_secs: u64, max_timeout: u64) -> MCPResult {
+        let primary_shell = match self.code_tools_profile() {
+            super::super::super::tools::CodeToolsProfile::HostWindows => "runPowerShell",
+            _ => "runShell",
+        };
+        let persistent_shell = match self.code_tools_profile() {
+            super::super::super::tools::CodeToolsProfile::HostWindows => {
+                "runInPersistentPowerShell"
+            }
+            _ => "runInPersistentShell",
+        };
+
         guided_error(
             ErrorCategory::InvalidInput,
             format!(
@@ -70,7 +88,7 @@ impl WorkspaceServer {
             "Background processes do not block the active agent workflow".to_string(),
             format!(
                 "{} and {} stay bounded because they run synchronously",
-                RUN_SHELL_TOOL, PERSISTENT_SHELL_TOOL
+                primary_shell, persistent_shell
             ),
         ])
         .to_mcp_result()
@@ -80,6 +98,7 @@ impl WorkspaceServer {
         &self,
         args: Value,
         session_id: &str,
+        tool_name: &str,
     ) -> Result<MCPResult, String> {
         let raw_command = match args.get("command").and_then(|v| v.as_str()) {
             Some(cmd) => cmd,
@@ -101,7 +120,7 @@ impl WorkspaceServer {
             .await
             .map(std::path::PathBuf::from);
         if let Some(result) = self.apply_shell_policy_block(
-            PERSISTENT_SHELL_TOOL,
+            tool_name,
             raw_command,
             &workspace_path,
             current_dir.as_deref(),
@@ -136,7 +155,7 @@ impl WorkspaceServer {
         };
 
         // Execute with persistent shell (state preservation)
-        self.execute_shell_persistent(raw_command, PERSISTENT_SHELL_TOOL, timeout_secs, session_id)
+        self.execute_shell_persistent(raw_command, tool_name, timeout_secs, session_id)
             .await
     }
 
@@ -145,6 +164,7 @@ impl WorkspaceServer {
         &self,
         args: Value,
         session_id: &str,
+        tool_name: &str,
     ) -> Result<MCPResult, String> {
         let raw_command = match args.get("command").and_then(|v| v.as_str()) {
             Some(cmd) => cmd,
@@ -180,7 +200,7 @@ impl WorkspaceServer {
             .session_manager
             .get_session_workspace_dir_by_id(session_id);
         if let Some(result) = self.apply_shell_policy_block(
-            RUN_SHELL_TOOL,
+            tool_name,
             raw_command,
             &workspace_path,
             None,
@@ -204,7 +224,7 @@ impl WorkspaceServer {
         let isolation_level = utils::get_shell_isolation_level().await;
         self.execute_shell_with_isolation(
             raw_command,
-            RUN_SHELL_TOOL,
+            tool_name,
             isolation_level,
             timeout_secs,
             session_id,

@@ -194,7 +194,7 @@ fn validate_edit_anchors(
             .guidance(vec![
                 "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
                     .to_string(),
-                "Copy only the 6-character anchor from the returned line format N:anchor|content. Example: from '42:a31f2c|let x = 1;', pass only 'a31f2c'."
+                "Pass start as \"N:anchor\" from readFile (e.g. from '42:a31f2c|let x = 1;', use \"start\": \"42:a31f2c\")."
                     .to_string(),
             ])
             .to_mcp_result());
@@ -216,8 +216,8 @@ fn validate_edit_anchors(
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Run readFile with showLineAnchors=true to get current anchors".to_string(),
-            "Rebuild the edit using the latest anchor".to_string(),
+            "Run readFile with showLineAnchors=true to get current line prefixes".to_string(),
+            "Rebuild the edit with an updated start: \"N:anchor\"".to_string(),
         ])
         .to_mcp_result());
     }
@@ -236,8 +236,8 @@ fn validate_edit_anchors(
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Run readFile with showLineAnchors=true to get current anchors".to_string(),
-            "Rebuild the edit using the latest anchor".to_string(),
+            "Run readFile with showLineAnchors=true to get current line prefixes".to_string(),
+            "Rebuild the edit with an updated start: \"N:anchor\"".to_string(),
         ])
         .to_mcp_result());
     }
@@ -263,7 +263,8 @@ fn validate_edit_anchors(
                 .guidance(vec![
                     "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
                         .to_string(),
-                    "Copy only the 6-character endAnchor from the returned line format N:anchor|content. Example: from '42:a31f2c|let x = 1;', pass only 'a31f2c'.".to_string(),
+                    "Pass end as \"N:anchor\" from readFile (e.g. from '72:b47aa1|...;', use \"end\": \"72:b47aa1\")."
+                        .to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -284,8 +285,9 @@ fn validate_edit_anchors(
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Run readFile with showLineAnchors=true to get the current end anchor".to_string(),
-                "Rebuild the edit with an updated endAnchor".to_string(),
+                "Run readFile with showLineAnchors=true to get the current end line prefix"
+                    .to_string(),
+                "Rebuild the edit with an updated end: \"N:anchor\"".to_string(),
             ])
             .to_mcp_result());
         }
@@ -304,8 +306,9 @@ fn validate_edit_anchors(
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Run readFile with showLineAnchors=true to get the current end anchor".to_string(),
-                "Rebuild the edit with an updated endAnchor".to_string(),
+                "Run readFile with showLineAnchors=true to get the current end line prefix"
+                    .to_string(),
+                "Rebuild the edit with an updated end: \"N:anchor\"".to_string(),
             ])
             .to_mcp_result());
         }
@@ -340,6 +343,25 @@ pub(super) async fn prepare_file_edit_batch(
             .to_mcp_result());
         }
     };
+
+    let target_session_id = session_id
+        .clone()
+        .unwrap_or_else(|| server.session_id.clone());
+    if let Err(sync_error) = server
+        .sync_attach_before_host_read(&resolved_path, Some(target_session_id.as_str()))
+        .await
+    {
+        return Err(guided_error(
+            ErrorCategory::OperationFailed,
+            format!("Failed to sync attached container file before edit: {sync_error}"),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Verify the Harbor/Docker container is still running".to_string(),
+            "Retry editFile after confirming docker exec works".to_string(),
+        ])
+        .to_mcp_result());
+    }
 
     let original_content = match read_validated_text_file(&resolved_path).await {
         Ok(content) => content,

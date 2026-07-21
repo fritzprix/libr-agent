@@ -158,6 +158,7 @@ async fn run_shell_rejects_timeout_above_sync_limit() {
                 "timeout": excessive_timeout
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
         )
         .await
         .expect("runShell should return MCPResult");
@@ -190,6 +191,7 @@ async fn persistent_shell_rejects_timeout_above_sync_limit() {
                 "timeout": excessive_timeout
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::PERSISTENT_SHELL_TOOL,
         )
         .await
         .expect("runInPersistentShell should return MCPResult");
@@ -221,6 +223,7 @@ async fn run_shell_timeout_hands_off_to_background_process() {
                 "timeout": 1
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
         )
         .await
         .expect("runShell should return MCPResult");
@@ -229,7 +232,7 @@ async fn run_shell_timeout_hands_off_to_background_process() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("still running in background"),
+        text.contains("Sync timeout handoff") && text.contains("continues in background"),
         "timeout handoff should be explicit in text: {text}"
     );
     assert!(
@@ -320,6 +323,7 @@ async fn run_shell_success_does_not_leave_process_registry_artifacts() {
                 "timeout": 5
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
         )
         .await
         .expect("runShell should return MCPResult");

@@ -75,4 +75,17 @@ fn create_session_request_deserializes_optional_model_and_provider() {
 
     assert_eq!(request.model.as_deref(), Some("claude-sonnet-4.5"));
     assert_eq!(request.provider.as_deref(), Some("anthropic"));
+    assert_eq!(request.execution_mode, None);
+}
+
+#[test]
+fn create_session_request_deserializes_execution_mode() {
+    let request: CreateSessionRequest = serde_json::from_value(serde_json::json!({
+        "assistantId": "assistant-1",
+        "request": "run unattended",
+        "executionMode": "yolo"
+    }))
+    .expect("request should deserialize");
+
+    assert_eq!(request.execution_mode, Some(ExecutionMode::Yolo));
 }

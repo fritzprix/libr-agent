@@ -504,7 +504,11 @@
       "title": "고급 런타임 제어",
       "summary": "런타임 안전장치, 다중 에이전트 제한 및 셸 격리를 변경하는 설정입니다. 일반 사용자는 기본값을 유지하는 것이 좋습니다.",
       "loopPreventionThreshold": "루프 방지 임계값",
-      "loopPreventionThresholdDescription": "에이전트가 자연적 복구를 시도하거나 강제 중단을 발생시키기 전까지 반복되는 동일한 도구 결과의 수입니다."
+      "loopPreventionThresholdDescription": "에이전트가 자연적 복구를 시도하거나 강제 중단을 발생시키기 전까지 반복되는 동일한 도구 결과의 수입니다.",
+      "loopPreventionThresholdPlaceholder": "예: 3",
+      "loopPreventionHardBreakOffset": "하드 브레이크 오프셋",
+      "loopPreventionHardBreakOffsetPlaceholder": "예: 2",
+      "loopPreventionHardBreakOffsetDescription": "소프트 복구 이후 하드 중단까지 허용하는 추가 동일 (호출, 결과) 횟수. 기본값 2: 임계값=3이면 3번째 소프트 복구, 4번째 에러 Escalate, 5번째 하드 브레이크. 오프셋 1이면 Escalate 없이 소프트 후 바로 하드."
     },
     "system": {
       "title": "시스템 & 성능",
@@ -1148,6 +1152,8 @@
       "messageHint": "자동 완성을 위해 @playbook:, @skill:, 또는 @file:을 사용하세요.",
       "workspaceAutocompleteHint": "워크스페이스 오버라이드가 @skill: 및 @file: 자동 완성을 활성화합니다.",
       "messagePlaceholder": "메시지를 입력하세요… 자동 완성을 위해 @playbook:, @skill:, 또는 @file:을 사용하세요",
+      "resetPlanningLabel": "실행 전 플래닝 상태 초기화",
+      "resetPlanningHint": "메시지 주입 전에 goal/todo/scratchpad만 지웁니다. 채팅 기록은 유지됩니다.",
       "cancel": "취소",
       "saveChanges": "변경사항 저장",
       "createTask": "작업 생성",

@@ -208,6 +208,15 @@ export function useAgentSessionEvents(
               break;
             }
 
+            case 'circuitBreakerTriggered': {
+              logger.warn('Circuit breaker triggered', {
+                toolName: payload.toolName,
+                count: payload.count,
+                action: payload.action,
+              });
+              break;
+            }
+
             case 'toolExecutionApprovalResolved': {
               setters.setPendingApprovals((prev) =>
                 prev.filter((p) => p.toolCallId !== payload.toolCallId),

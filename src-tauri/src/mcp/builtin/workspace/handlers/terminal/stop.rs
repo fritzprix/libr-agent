@@ -55,13 +55,13 @@ impl WorkspaceServer {
 
             return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
-                format!("Process '{}' not found", process_id),
+                format!("Process '{}' is not registered in this session", process_id),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
                 running_text,
-                "Use listProcesses() to see all processes".to_string(),
-                "Only running processes can be stopped".to_string(),
+                "Use listProcesses() to find a valid processId.".to_string(),
+                "Only starting/running processes can be stopped.".to_string(),
             ])
             .to_mcp_result());
         }

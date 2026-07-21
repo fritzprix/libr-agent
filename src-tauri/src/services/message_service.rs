@@ -55,9 +55,18 @@ fn normalize_whitespace(s: &str) -> String {
 }
 
 /// Generates a normalized signature for a message to detect consecutive duplicates.
-/// Compares content items, thinking, and tool calls while ignoring volatile fields.
+/// Compares content items, thinking, tool_call_id, and tool calls while ignoring volatile fields.
+///
+/// `tool_call_id` must be part of the signature: loop-prevention (and similar) can emit
+/// multiple tool results with identical text for different calls in one batch. Dropping
+/// those breaks the tool_call → tool_result chain and leaves the UI in a loading state.
 pub(crate) fn message_signature(msg: &Message) -> Option<String> {
     let mut parts = Vec::new();
+
+    // 0. tool_call_id — distinguishes otherwise-identical tool result messages
+    if let Some(tool_call_id) = &msg.tool_call_id {
+        parts.push(format!("tool_call_id:{}", tool_call_id));
+    }
 
     // 1. content (Text, Thinking, Image, Audio, Resource, ToolCall)
     for c in &msg.content {

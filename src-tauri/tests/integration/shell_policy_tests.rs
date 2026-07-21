@@ -214,6 +214,7 @@ async fn run_shell_returns_permission_denied_for_protected_path() {
                 "command": "cat ~/.ssh/id_rsa"
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
         )
         .await
         .expect("runShell should return an MCPResult");
@@ -429,6 +430,7 @@ async fn run_shell_blocks_symlinked_protected_target() {
                 "command": "cat ./etc-link/ssh_config"
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
         )
         .await
         .expect("runShell should return an MCPResult");

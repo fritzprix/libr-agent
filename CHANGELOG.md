@@ -1,3 +1,83 @@
+## [0.8.33] - 2026-07-21
+
+### 🚀 Features
+
+- **Harbor Docker Attach**: Harbor Docker trials attach LibrAgent to the existing Compose `main` container (`attachContainer` + `workdir`, usually `/app`) so shell/file tools share the verifier filesystem; host pull/push sync is skipped on that path.
+- **Harbor Benchmark Runner**: Added a Harbor / Terminal-Bench adapter and `pnpm bench:*` scripts that spawn Session API runs with `executionMode` (default `unsafe` for unattended hard-approval tools).
+- **Session API `executionMode`**: `POST /api/sessions` now accepts `executionMode` (`normal` | `yolo` | `unsafe`) before the initial workflow starts.
+- **Flattened `editFile` Anchors**: `editFile` now uses start/end `N:anchor` refs for clearer, flatter line edits.
+- **Execution Platform in Workspace Context**: Agents see the current OS/platform in the workspace service context to pick the right shell tools.
+
+### 🐛 Fixes
+
+- **Thinking-Only Stuck Turns**: Thinking-only LLM completions no longer stop the workflow as finished — they forward to Rust recovery and retry with the shared thinking retry budget. Content-array thinking is no longer misclassified as renderable output.
+- **Harbor Incomplete Harvest**: Harbor agent timeouts no longer harvest workspace/messages as a successful finish; only `idle`/`error` complete a trial. Timeout multipliers are exposed on the bench scripts.
+- **Loop Detection Threshold**: Thinking/text loop recovery now requires 3 repetitions before cancel-and-retry, reducing false positives.
+- **Cross-Platform Bench Scripts**: `pnpm bench:*` now runs via a Node dispatcher on Windows (PowerShell), Linux, and macOS (bash), instead of requiring PowerShell everywhere.
+
+### 🔧 Internal
+
+- **Docker Attach Config**: `DockerWorkspaceConfig` supports optional `attachContainer` / `workdir` / `manageLifecycle` for attaching to an existing container without creating or destroying it.
+- **Assistant Message Shape Helper**: Extracted `inspect_assistant_message_shape` for consistent empty / thinking-only detection.
+- **Bench Bootstrap**: Harbor CLI can be installed on demand from the PowerShell and bash runners; typo aliases for `bench:terminal` remain available.
+
+## [0.8.32] - 2026-07-19
+
+### 🚀 Features
+
+- **Isolation-Aware Shell Tools**: Workspace shell tools (`runShell`, `runPowerShell`, `runInPersistentShell`, `runInPersistentPowerShell`) are now exposed based on the session's workspace isolation mode — Docker sessions get bash/sh tools, Host Windows gets PowerShell only, Host Unix gets bash/sh. Cross-dialect tool calls are rejected with clear guidance.
+- **Planning Service — Optional**: The `planning` service is no longer auto-included as a core builtin. It must be explicitly requested via `builtinCapabilities: ["planning"]` when creating agents that need goal/todo management.
+
+### 🐛 Fixes
+
+- **Docker on Windows Shell Exposure**: Fixed Docker sessions on Windows hosts not exposing `runShell`/`runInPersistentShell`, which are required since Docker always executes via `docker exec … -lc` (bash/sh).
+- **Cross-Dialect Tool Guidance**: Agents now receive actionable error messages when calling platform-incompatible shell tools, with clear suggestions for the correct tool.
+- **Circuit Breaker Exemption Cleanup**: Removed a stale `scratchpad__think` loop-detection exemption so repeated failures escalate correctly while preserving `planning__reflect` and `ui__circuitBreak` handling.
+
+### 🔧 Internal
+
+- **Workspace Server Isolation Propagation**: `WorkspaceServer` now reads the session's `workspace_isolation` mode at construction via `MCPServiceProxyFactory`, replacing the previous hardcoded Host assumption.
+- **Tool Discovery Simplification**: Replaced `#[cfg(windows)]`/`#[cfg(unix)]` conditional compilation in tool discovery with a `CodeToolsProfile` enum, improving testability and maintainability.
+- **Test Coverage**: Added `workspace_shell_tool_profile_tests.rs` with 4 new tests validating isolation-aware tool exposure and cross-dialect rejection.
+
+## [0.8.31] - 2026-07-18
+
+### 🚀 Features
+
+- **Response Circuit Breaker**: Implemented a circuit breaker for agent tool execution that detects and escalates repeated errors to `planning__reflect` before hard-breaking the session, preventing agents from looping indefinitely on failing tools.
+- **Workspace Environment Isolation**: Refactored workspace environment variable handling and temp directory management for cleaner isolation between agent sessions.
+- **Scheduled Tasks — Planning-Only Reset**: Added `resetPlanningState` option for scheduled tasks, allowing agents to reset goals/todos without wiping chat history on task execution.
+
+### 🐛 Fixes
+
+- **Circuit Breaker Escalation Guard**: Fixed escalation logic to properly remove dead results field and optimize clone behavior.
+- **MCP Schema Alignment**: Aligned builtin tool schemas with actual runtime behavior to eliminate tool call failures.
+- **Read-Only Tool Hint Suppression**: Agents no longer receive edit suggestions (e.g. `strReplace`) for read-only tools, and fixed a batch loop blind spot.
+- **Duplicate Tool Results**: Preserved distinct tool results that happen to have identical content instead of deduplicating them incorrectly.
+- **CI Test Mock**: Removed dead `results` field from `builtin_service_registry_tests` mock data.
+
+### 🔧 Internal
+
+- **Compaction Handoff**: Switched compaction to deliverable-first handoff, dropping the previous continue-bias behavior.
+- **Agent Batch Ingestion**: Each tool result is now ingested immediately during batch execution instead of deferred.
+- **Scratchpad Hint Cleanup**: Removed redundant success hints from scratchpad tool and aligned ID responses.
+- **Rust Formatting**: Applied `rustfmt` to circuit breaker and hint test files.
+- **Test Alignment**: Updated `readFile` hint assertions in workspace tests and circuit breaker integration test for `RepeatedErrorOutcome`.
+
+## [0.8.30] - 2026-07-15
+
+### 🐛 Fixes
+
+- **Workspace Tool Guidance**: Aligned agent-facing tool descriptions and success hints with actual behavior — clarified two-outcome sync vs timeout-handoff for `runShell`/`runPowerShell`, fixed `process_id` → `processId` consistency, removed misleading "Total Processes" from service context, and corrected wrong tool suggestions (e.g. `listProcesses` no longer suggests `waitForProcess`, `readFile` now correctly points to `strReplace` for edits).
+- **Teamwork Write Hardening**: Fixed absolute path write validation for teamwork root, added loop prevention, and hardened atomic writes to prevent corruption.
+- **Process Not-Found Guidance**: Improved error messages when process IDs are invalid or missing, with clear next-step hints.
+- **Agent Message Persistence**: Awaited database persistence of assistant messages to prevent race conditions on session resume.
+
+### 🔧 Internal
+
+- **Dependency Update**: Bumped `tauri-plugin-mcp-bridge` in `src-tauri`.
+- **Test Updates**: Updated integration tests to assert on virtual teamwork prefix and aligned process output tests.
+
 ## [0.8.28] - 2026-07-15
 
 ### 🚀 Features

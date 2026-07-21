@@ -77,9 +77,36 @@ pub(crate) async fn create_builtin_server(
         BuiltinServiceId::Playbook => Ok(Some(Box::new(
             crate::mcp::builtin::playbook::PlaybookServer::new(_session_id, _db).await?,
         ))),
-        BuiltinServiceId::Workspace => Ok(Some(Box::new(
-            crate::mcp::builtin::workspace::WorkspaceServer::new(_session_id, _session_manager),
-        ))),
+        BuiltinServiceId::Workspace => {
+            let isolation = match crate::get_session_repository()
+                .get_session(&_session_id)
+                .await
+            {
+                Ok(Some(session)) => session.workspace_isolation,
+                Ok(None) => {
+                    log::warn!(
+                        "Session '{}' not found when creating WorkspaceServer; defaulting to host isolation",
+                        _session_id
+                    );
+                    crate::models::workspace_isolation::WorkspaceIsolationMode::Host
+                }
+                Err(error) => {
+                    log::warn!(
+                        "Failed to load session '{}' for WorkspaceServer isolation ({}); defaulting to host",
+                        _session_id,
+                        error
+                    );
+                    crate::models::workspace_isolation::WorkspaceIsolationMode::Host
+                }
+            };
+            Ok(Some(Box::new(
+                crate::mcp::builtin::workspace::WorkspaceServer::with_isolation(
+                    _session_id,
+                    _session_manager,
+                    isolation,
+                ),
+            )))
+        }
         BuiltinServiceId::Attachments => Ok(Some(Box::new(
             crate::mcp::builtin::attachments::AttachmentsServer::new(_session_id, _session_manager),
         ))),

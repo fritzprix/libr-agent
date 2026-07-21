@@ -24,7 +24,9 @@ pub fn create_run_shell_tool() -> MCPTool {
             Some(1),
             Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
             crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
-            Some("Timeout in seconds for synchronous execution."),
+            Some(
+                "Max seconds to wait for this call to finish. If the command ends (success or failure) within this window, stdout/stderr are returned here with no processId. Only if it is still running after this timeout does the call hand off a processId.",
+            ),
         ),
     );
 
@@ -32,8 +34,10 @@ pub fn create_run_shell_tool() -> MCPTool {
         name: "runShell".to_string(),
         title: Some("Run Shell Command (Isolated)".to_string()),
         description: "Run a synchronous shell command (bash/sh). Stateless — each call starts fresh at workspace root.\n\
-                        Use 'cd dir && command' for subdirectories.\n\
-                       If the command exceeds the sync timeout, it stays alive in background and returns a processId for waitForProcess/readProcessOutput/stopProcess.\n\
+                       Use 'cd dir && command' for subdirectories.\n\
+                       Two outcomes:\n\
+                       1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call waitForProcess/readProcessOutput for this run.\n\
+                       2) Still running after the sync timeout: response includes processId; only then use waitForProcess/readProcessOutput/stopProcess.\n\
                        For persistent cd/env vars: runInPersistentShell. For explicitly non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
@@ -151,9 +155,9 @@ pub fn create_spawn_process_tool() -> MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
         description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
-                       Optional name is a label only; waitForProcess, stopProcess, and readProcessOutput still require process_id.\n\
+                       Optional name is a label only; waitForProcess, stopProcess, and readProcessOutput still require processId.\n\
                        Stateless — starts from workspace root each call. No interactive input.\n\
-                       Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."
+                       Use waitForProcess(processId) to wait for completion, readProcessOutput(processId) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -184,20 +188,24 @@ pub fn create_run_powershell_tool() -> MCPTool {
             Some(1),
             Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
             crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
-            Some("Timeout in seconds for synchronous execution."),
+            Some(
+                "Max seconds to wait for this call to finish. If the command ends (success or failure) within this window, stdout/stderr are returned here with no processId. Only if it is still running after this timeout does the call hand off a processId.",
+            ),
         ),
     );
 
     MCPTool {
         name: "runPowerShell".to_string(),
         title: Some("Run PowerShell Command (Isolated)".to_string()),
-        description: "Execute a synchronous PowerShell command on Windows. This is the primary tool for Windows command-line tasks.
-
-Guidelines:
-- Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.
-- Access environment variables using '$env:VARNAME'.
-- Each call starts fresh at the workspace root. For persistent state, use runInPersistentPowerShell.
-- For longer or non-blocking tasks: spawnProcess."
+        description: "Execute a synchronous PowerShell command on Windows. This is the primary tool for Windows command-line tasks.\n\
+                       Guidelines:\n\
+                       - Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.\n\
+                       - Access environment variables using '$env:VARNAME'.\n\
+                       - Each call starts fresh at the workspace root. For persistent state, use runInPersistentPowerShell.\n\
+                       Two outcomes:\n\
+                       1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call waitForProcess/readProcessOutput for this run.\n\
+                       2) Still running after the sync timeout: response includes processId; only then use waitForProcess/readProcessOutput/stopProcess.\n\
+                       - For explicitly non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -309,9 +317,9 @@ pub fn create_spawn_process_tool() -> MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
         description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
-                       Optional name is a label only; waitForProcess, stopProcess, and readProcessOutput still require process_id.\n\
+                       Optional name is a label only; waitForProcess, stopProcess, and readProcessOutput still require processId.\n\
                        Stateless — starts from workspace root each call. No interactive input.\n\
-                       Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."
+                       Use waitForProcess(processId) to wait for completion, readProcessOutput(processId) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,

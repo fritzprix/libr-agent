@@ -132,6 +132,14 @@ async fn list_directory_empty_response_does_not_suggest_rerunning_same_call() {
         !text.contains("💡 Next Steps:"),
         "listDirectory should not duplicate next-step rendering in the message body: {text}"
     );
+    assert!(
+        !text.contains("💡 Next:"),
+        "listDirectory success should not append generic next-action hints: {text}"
+    );
+    assert!(
+        !text.contains("writeFile"),
+        "empty listDirectory should not promote writeFile: {text}"
+    );
 }
 
 #[tokio::test]
@@ -148,6 +156,7 @@ async fn run_shell_success_hint_no_longer_mentions_stop_process() {
                 "command": simple_shell_command()
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
         )
         .await
         .expect("runShell should succeed");
@@ -197,6 +206,7 @@ async fn persistent_shell_at_workspace_root_does_not_suggest_file_tools() {
                 "command": simple_shell_command()
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::PERSISTENT_SHELL_TOOL,
         )
         .await
         .expect("runInPersistentShell should succeed");
@@ -226,6 +236,7 @@ async fn persistent_shell_uses_shell_specific_guidance_after_changing_cwd() {
                 "command": move_into_subdir_command()
             }),
             session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::PERSISTENT_SHELL_TOOL,
         )
         .await
         .expect("runInPersistentShell should succeed");

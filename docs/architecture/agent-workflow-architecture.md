@@ -779,9 +779,9 @@ impl BuiltinMCPServer for ContentStoreServer {
 ```rust
 // src-tauri/src/agent/tools.rs  (also TypeScript mirror in runtime-builtins.ts)
 pub(crate) const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
-    BuiltinServiceEntry { canonical: planning::NAME,      optional: false },
+    BuiltinServiceEntry { canonical: planning::NAME,      optional: true },
     BuiltinServiceEntry { canonical: content_store::NAME, optional: false },
-    // … all 12 servers
+    // … all builtin servers
 ];
 ```
 

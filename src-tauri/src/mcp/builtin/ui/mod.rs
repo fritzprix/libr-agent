@@ -92,17 +92,25 @@ impl UiServer {
             .unwrap_or(0);
         let args_str = args.get("args").and_then(|v| v.as_str()).unwrap_or("");
 
+        // Handlebars {{toolName}}/{{args}} HTML-escape once. Triple-stash {{{contextJson}}}
+        // is raw — neutralize </script> breakouts from LLM-controlled strings.
         let context_json = json!({
             "toolName": tool_name,
             "repetitionCount": repetition_count,
             "args": args_str,
         });
+        let context_json_for_script = context_json
+            .to_string()
+            .replace('<', "\\u003c")
+            .replace('>', "\\u003e")
+            .replace('\u{2028}', "\\u2028")
+            .replace('\u{2029}', "\\u2029");
 
         let data = json!({
             "toolName": tool_name,
             "repetitionCount": repetition_count,
             "args": args_str,
-            "contextJson": context_json.to_string(),
+            "contextJson": context_json_for_script,
         });
 
         let handlebars = self.handlebars.lock().unwrap();
@@ -147,7 +155,7 @@ impl UiServer {
             .unwrap_or(0);
 
         let text = format!(
-            "🔄 Execution Resumed by User\n\n⚠️ IMPORTANT: You have called \"{}\" {} times with the same parameters.\n\nThis suggests your current approach is not working. Please:\n1. Analyze why the previous attempts failed\n2. Try a DIFFERENT approach or tool\n3. If the error persists, inform the user about the limitation\n\nDo NOT repeat the same tool call again.",
+            "🔄 Execution Resumed by User\n\n⚠️ IMPORTANT: You have called \"{}\" {} times with the same parameters.\n\nThis suggests your current approach is not working. Please:\n1. Analyze why the previous attempts failed (use planning__reflect if you need a structured critique → reflection → nextAction)\n2. Try a DIFFERENT approach or tool\n3. If the error persists, inform the user about the limitation\n\nDo NOT repeat the same tool call again.",
             tool_name, repetition_count
         );
 

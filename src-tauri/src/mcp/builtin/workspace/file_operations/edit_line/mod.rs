@@ -53,7 +53,7 @@ async fn validate_edit_target_path(
     session_id: Option<String>,
 ) -> Result<(), MCPResult> {
     let safe_path = match server
-        .validate_write_path_with_teamwork_access(path_str, session_id)
+        .validate_write_path_with_teamwork_access(path_str, session_id.clone())
         .await
     {
         Ok(path) => path,
@@ -70,6 +70,23 @@ async fn validate_edit_target_path(
             .to_mcp_result());
         }
     };
+
+    let target_session_id = session_id.unwrap_or_else(|| server.session_id.clone());
+    if let Err(sync_error) = server
+        .sync_attach_before_host_read(&safe_path, Some(target_session_id.as_str()))
+        .await
+    {
+        return Err(guided_error(
+            ErrorCategory::OperationFailed,
+            format!("Failed to sync attached container file before edit: {sync_error}"),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Verify the Harbor/Docker container is still running".to_string(),
+            "Retry editFile after confirming docker exec works".to_string(),
+        ])
+        .to_mcp_result());
+    }
 
     if !safe_path.exists() {
         return Err(guided_error(
@@ -139,6 +156,17 @@ async fn write_prepared_batches(
                     {
                         rollback_failures
                             .push(format!("{} ({})", previous_batch.path, rollback_error));
+                        continue;
+                    }
+                    let host_path = std::path::Path::new(&previous_batch.resolved_path);
+                    if let Err(sync_error) = server
+                        .sync_attach_after_host_write(host_path, Some(target_session_id.as_str()))
+                        .await
+                    {
+                        rollback_failures.push(format!(
+                            "{} (attach sync: {sync_error})",
+                            previous_batch.path
+                        ));
                     }
                 }
             }
@@ -159,6 +187,70 @@ async fn write_prepared_batches(
                 "Check file permissions and available disk space".to_string(),
                 "Rerun readFile(showLineAnchors=true) before retrying if files may have changed"
                     .to_string(),
+            ])
+            .to_mcp_result());
+        }
+
+        let host_path = std::path::Path::new(&resolved_path);
+        if let Err(sync_error) = server
+            .sync_attach_after_host_write(host_path, Some(target_session_id.as_str()))
+            .await
+        {
+            // Keep host + container consistent: restore this file and previously synced files.
+            let mut rollback_failures = Vec::new();
+            let _ = file_manager
+                .write_file_string(&resolved_path, &batch.original_content)
+                .await;
+            for written_path in written_paths.iter().rev() {
+                if let Some(previous_batch) = prepared_batches
+                    .iter()
+                    .find(|candidate| &candidate.resolved_path == written_path)
+                {
+                    if let Err(rollback_error) = file_manager
+                        .write_file_string(
+                            &previous_batch.resolved_path,
+                            &previous_batch.original_content,
+                        )
+                        .await
+                    {
+                        rollback_failures
+                            .push(format!("{} ({})", previous_batch.path, rollback_error));
+                        continue;
+                    }
+                    let previous_host = std::path::Path::new(&previous_batch.resolved_path);
+                    if let Err(previous_sync_error) = server
+                        .sync_attach_after_host_write(
+                            previous_host,
+                            Some(target_session_id.as_str()),
+                        )
+                        .await
+                    {
+                        rollback_failures.push(format!(
+                            "{} (attach sync: {previous_sync_error})",
+                            previous_batch.path
+                        ));
+                    }
+                }
+            }
+
+            let rollback_note = if rollback_failures.is_empty() {
+                "Earlier synced edits in this request were rolled back.".to_string()
+            } else {
+                format!("Rollback failed for: {}", rollback_failures.join(", "))
+            };
+
+            return Err(guided_error(
+                ErrorCategory::OperationFailed,
+                format!(
+                    "File '{}' was updated locally but failed to sync into the attached container: {sync_error}",
+                    batch.path
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                rollback_note,
+                "Verify the Harbor/Docker container is still running".to_string(),
+                "Retry the edit after confirming docker exec works".to_string(),
             ])
             .to_mcp_result());
         }
@@ -262,9 +354,25 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let canonical_args = canonicalize_edit_file_args(&args);
+        let canonical_args = match canonicalize_edit_file_args(&args) {
+            Ok(value) => value,
+            Err(error) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("editFile argument error: {error}"),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Provide start as \"N:anchor\" (e.g. \"start\": \"42:a31f2c\")".to_string(),
+                    "Copy the \"42:a31f2c\" prefix from readFile output: 42:a31f2c|content"
+                        .to_string(),
+                    "Replace: {\"path\": \"src/a.ts\", \"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
 
-        if let Err(validation_error) = validate_edit_file_arguments(&canonical_args) {
+        if let Err(validation_error) = validate_edit_file_arguments(&args, &canonical_args) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
@@ -273,12 +381,11 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Replace: {\"path\": \"src/a.ts\", \"edits\": [{\"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
-                "Prepend: {\"path\": \"src/a.ts\", \"edits\": [{\"content\": \"header\"}]}".to_string(),
-                "Insert below a line: {\"path\": \"src/a.ts\", \"edits\": [{\"op\": \"insert_after\", \"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}]}".to_string(),
-                "Delete range: {\"path\": \"src/b.ts\", \"edits\": [{\"startLine\": 10, \"endLine\": 15, \"anchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]}".to_string(),
-                "Existing lines are 1-based; use startLine=0 only to prepend at the top".to_string(),
-                "Use readFile(showLineAnchors=true) first to get anchor values".to_string(),
+                "Replace: {\"path\": \"src/a.ts\", \"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
+                "Prepend: {\"path\": \"src/a.ts\", \"content\": \"header\"}".to_string(),
+                "Insert below a line: {\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
+                "Delete range: {\"path\": \"src/b.ts\", \"start\": \"10:a31f2c\", \"end\": \"15:b47aa1\"}".to_string(),
+                "One edit per call; copy start/end as \"N:anchor\" from readFile(showLineAnchors=true)".to_string(),
             ])
             .to_mcp_result());
         }
@@ -350,8 +457,8 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Single-line: {\"startLine\": 10, \"anchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
-                        "Range: {\"startLine\": 10, \"endLine\": 15, \"anchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}".to_string(),
+                        "Single-line: {\"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
+                        "Range: {\"start\": \"10:a31f2c\", \"end\": \"15:b47aa1\", \"content\": \"...\"}".to_string(),
                     ])
                     .to_mcp_result());
                 }

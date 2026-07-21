@@ -746,7 +746,9 @@ export function useExecuteCompletion({
               }
             : undefined,
         });
-        // Check for thinking-only message (anti-pattern: has thinking but no renderable content or tool calls)
+        // Thinking-only completions (thinking but no text/tool calls) are forwarded to
+        // Rust so handle_thinking_only_completion can cancel and retry with the shared
+        // repeated_thinking_retry_count budget instead of failing in the frontend.
         const hasRenderableContent = finalMessage.content.some((item) =>
           item.type === 'text'
             ? !!(item as MCPTextContent).text?.trim()
@@ -756,15 +758,12 @@ export function useExecuteCompletion({
         const hasThinking = !!finalMessage.thinking;
 
         if (hasThinking && !hasRenderableContent && !hasToolCalls) {
-          logger.error('❌ Thinking-only response detected', {
-            sessionId,
-            thinkingLength: finalMessage.thinking?.length,
-          });
-          throw createExecutionError(
-            'AI_SERVICE_ERROR',
-            'Received thinking-only response from LLM provider (no text output or tool calls)',
-            'thinking_only_response_from_provider',
-            { sessionId },
+          logger.warn(
+            'Thinking-only completion detected; forwarding to Rust recovery',
+            {
+              sessionId,
+              thinkingLength: finalMessage.thinking?.length,
+            },
           );
         }
 

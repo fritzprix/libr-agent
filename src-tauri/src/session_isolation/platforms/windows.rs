@@ -57,9 +57,13 @@ pub async fn create_basic_isolated_command(
         cmd.env(k, v);
     }
 
-    // Keep host home directories so CLI tools can discover their config, but isolate temp files.
-    cmd.env("TEMP", clean_workspace.join(".libragent/tmp"));
-    cmd.env("TMP", clean_workspace.join(".libragent/tmp"));
+    // Keep host home directories so CLI tools can discover their config, and pass through host temp variables.
+    if let Ok(sys_temp) = std::env::var("TEMP") {
+        cmd.env("TEMP", sys_temp);
+    }
+    if let Ok(sys_tmp) = std::env::var("TMP") {
+        cmd.env("TMP", sys_tmp);
+    }
 
     // Add user-specified environment variables
     for (key, value) in &config.env_vars {

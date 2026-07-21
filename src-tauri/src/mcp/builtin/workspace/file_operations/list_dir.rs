@@ -46,7 +46,7 @@ impl WorkspaceServer {
         let workspace_root = self.get_workspace_dir(&target_session_id);
 
         let safe_path = match self
-            .validate_read_path_with_skill_access(&path_str, Some(target_session_id))
+            .validate_read_path_with_skill_access(&path_str, Some(target_session_id.clone()))
             .await
         {
             Ok(path) => path,
@@ -64,6 +64,90 @@ impl WorkspaceServer {
                 .to_mcp_result());
             }
         };
+
+        if let Some(session) =
+            crate::services::container_attach_fs::load_session(&target_session_id)
+                .await
+                .ok()
+                .flatten()
+        {
+            match crate::services::container_attach_fs::list_container_directory(
+                &session, &safe_path,
+            )
+            .await
+            {
+                Ok(Some(entries)) => {
+                    let total = entries.len();
+                    let page: Vec<_> = entries
+                        .into_iter()
+                        .skip(offset)
+                        .take(limit)
+                        .map(|entry| {
+                            json!({
+                                "name": entry.name,
+                                "type": entry.entry_type,
+                                "size": null,
+                            })
+                        })
+                        .collect();
+                    let shown = page.len();
+                    let message = if total == 0 {
+                        format!("Directory listing for '{path_str}':\n\n(This directory is empty)")
+                    } else {
+                        format!(
+                            "Directory listing for '{path_str}' (attached container, showing {shown} of {total}):\n\n{}",
+                            page.iter()
+                                .map(|item| {
+                                    let name =
+                                        item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                                    let kind =
+                                        item.get("type").and_then(|v| v.as_str()).unwrap_or("file");
+                                    if kind == "directory" {
+                                        format!("- {name}/")
+                                    } else {
+                                        format!("- {name}")
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        )
+                    };
+                    return Ok(SuccessHint::new(
+                        message,
+                        vec![
+                            "Use readFile on files (not directories) to inspect contents"
+                                .to_string(),
+                            "Use listDirectory on subdirectory names ending with '/'".to_string(),
+                        ],
+                    )
+                    .to_mcp_result_with_data(Some(json!({
+                        "path": path_str,
+                        "entries": page,
+                        "total": total,
+                        "offset": offset,
+                        "limit": limit,
+                        "source": "attach-container",
+                    }))));
+                }
+                Ok(None) => {
+                    // Not attach, or path is host-only (skills/teamwork) — fall through.
+                }
+                Err(error) => {
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        format!(
+                            "Failed to list '{path_str}' inside the attached container: {error}"
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Verify the Harbor/Docker container is still running".to_string(),
+                        "Retry listDirectory after confirming docker exec works".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            }
+        }
 
         // If the validated path is actually a file, return a clear InvalidInput-style error
         if safe_path.is_file() {
@@ -203,19 +287,15 @@ impl WorkspaceServer {
                     safe_path, total_items, offset, limit
                 );
 
-                // ✅ ENHANCED: Clear messaging for empty directories
+                // Omit generic next-action hints — listing is read-only and
+                // pagination/empty status is already clear in the message body.
                 let hint = if total_items == 0 {
                     SuccessHint::new(
                         format!(
                             "Directory listing for '{}':\n\n(This directory is empty)\n\nThis is a valid empty directory.",
                             path_str
                         ),
-                        vec![
-                            format!(
-                                "Use writeFile with {{\"path\": \"{}/filename.txt\", \"content\": \"...\"}} to create a file",
-                                path_str
-                            )
-                        ],
+                        vec![],
                     )
                 } else {
                     SuccessHint::new(
@@ -223,14 +303,7 @@ impl WorkspaceServer {
                             "Directory listing for '{}':\n\n{}{}",
                             path_str, listing_str, truncation_note
                         ),
-                        vec![
-                            format!("Use readFile('{}/filename') to read a file", path_str),
-                            format!(
-                                "Use listDirectory('{}/subdir') to explore subdirectories",
-                                path_str
-                            ),
-                            "Use search to search for content in files".to_string(),
-                        ],
+                        vec![],
                     )
                 };
 

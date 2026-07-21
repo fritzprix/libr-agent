@@ -495,7 +495,7 @@ impl WorkspaceServer {
 
                 let might_be_interactive = validation::is_likely_interactive_command(command);
                 let mut message = format!(
-                    "Command exceeded the synchronous wait window after {} seconds and is still running in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending",
+                    "Sync timeout handoff: command was still running after {} seconds, so it continues in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending\n\nUse waitForProcess/readProcessOutput only with this processId — completed sync runs (success or failure) never get a processId.",
                     timeout_secs, process_id, status
                 );
 

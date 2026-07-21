@@ -33,29 +33,10 @@ pub async fn continue_workflow_after_tool(
     )
     .await
     {
-        Ok(Some(accumulated_messages)) => {
-            log::info!(
-                "All tool results received for session {}. Proceeding.",
-                session_id
-            );
-
-            // [Race Mitigation] Verify session was not reset/cancelled before injecting results
-            {
-                let active = active_sessions.read().await;
-                if let Some(session) = active.get(&session_id) {
-                    if session.cancellation_token.is_cancelled() {
-                        log::info!(
-                            "Workflow was cancelled or reset for session {} before tool message injection. Discarding tool results.",
-                            session_id
-                        );
-                        return Ok(());
-                    }
-                }
-            }
-
-            let accumulated_messages = crate::agent::tools::spill_oversized_tool_result_messages(
+        Ok(Some((completed_message, all_completed))) => {
+            let completed_messages = crate::agent::tools::spill_oversized_tool_result_messages(
                 &session_id,
-                accumulated_messages,
+                vec![completed_message],
             )
             .await
             .map_err(|e| {
@@ -67,14 +48,12 @@ pub async fn continue_workflow_after_tool(
                 e
             })?;
 
-            // Use MessageService to handle message caching, event emission, and DB persistence.
-            // Propagate errors so the LLM loop does not continue with a stale context window
-            // if injection fails (e.g. due to a DB initialization error).
+            // Ingest the completed tool message immediately!
             crate::services::MessageService::inject_messages_to_session(
                 active_sessions,
                 app_handle,
                 &session_id,
-                accumulated_messages.clone(),
+                completed_messages,
                 true,
             )
             .await
@@ -85,6 +64,30 @@ pub async fn continue_workflow_after_tool(
                 );
                 e
             })?;
+
+            if !all_completed {
+                // If not all tools are completed, we are still waiting for other tools to execute.
+                return Ok(());
+            }
+
+            log::info!(
+                "All tool results received for session {}. Proceeding.",
+                session_id
+            );
+
+            // [Race Mitigation] Verify session was not reset/cancelled before proceeding
+            {
+                let active = active_sessions.read().await;
+                if let Some(session) = active.get(&session_id) {
+                    if session.cancellation_token.is_cancelled() {
+                        log::info!(
+                            "Workflow was cancelled or reset for session {} before continuation. Discarding.",
+                            session_id
+                        );
+                        return Ok(());
+                    }
+                }
+            }
 
             // Message-boundary cancel handling:
             // If cancel was requested while tools were running, consume it now
@@ -131,11 +134,30 @@ pub async fn continue_workflow_after_tool(
             }
 
             // Check for UI interaction (stop condition)
-            let has_ui_interaction = accumulated_messages.iter().any(|msg| {
-                msg.content
-                    .iter()
-                    .any(|c| matches!(c, MCPContent::Resource { .. }))
-            });
+            let has_ui_interaction = {
+                let sessions = active_sessions.read().await;
+                if let Some(session) = sessions.get(&session_id) {
+                    let msgs = session.messages.read().await;
+                    let mut has_resource = false;
+                    for msg in msgs.iter().rev() {
+                        if msg.role == "assistant" {
+                            break;
+                        }
+                        if msg.role == "tool"
+                            && msg
+                                .content
+                                .iter()
+                                .any(|c| matches!(c, MCPContent::Resource { .. }))
+                        {
+                            has_resource = true;
+                            break;
+                        }
+                    }
+                    has_resource
+                } else {
+                    false
+                }
+            };
 
             if has_ui_interaction {
                 log::info!(

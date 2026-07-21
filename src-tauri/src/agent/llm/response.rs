@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 use super::response_admission;
 use super::response_circuit_breaker;
 use super::tool_execution;
+use crate::agent::llm::assistant_message_shape::inspect_assistant_message_shape;
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,35 +29,6 @@ pub fn completion_result_from_error_handling_outcome(
     match outcome {
         LlmErrorHandlingOutcome::RecoveredByCompaction => Ok(()),
         LlmErrorHandlingOutcome::FinalizedWorkflowError => Err(error.into()),
-    }
-}
-
-struct AssistantMessageShape {
-    has_content: bool,
-    has_thinking: bool,
-    has_tool_calls: bool,
-}
-
-fn inspect_assistant_message_shape(message: &Message) -> AssistantMessageShape {
-    let has_content = message.content.iter().any(|content| match content {
-        crate::mcp::types::MCPContent::Text { text, .. } => !text.trim().is_empty(),
-        _ => true,
-    });
-    let has_thinking = message
-        .thinking
-        .as_ref()
-        .map(|thinking| !thinking.is_empty())
-        .unwrap_or(false);
-    let has_tool_calls = message
-        .tool_calls
-        .as_ref()
-        .map(|tool_calls| !tool_calls.is_empty())
-        .unwrap_or(false);
-
-    AssistantMessageShape {
-        has_content,
-        has_thinking,
-        has_tool_calls,
     }
 }
 
@@ -86,21 +58,16 @@ fn assistant_message_has_only_internal_ui_callback_tool_calls(message: &Message)
         .unwrap_or(false)
 }
 
-async fn persist_assistant_message_to_db(message: &Message) {
+async fn persist_assistant_message_to_db(message: &Message) -> Result<(), String> {
     let repo = crate::state::get_message_repository();
-    if let Err(error) = repo.insert(message).await {
+    repo.insert(message).await.map_err(|error| {
         log::error!(
             "Failed to save assistant message to DB: msg_id={}, error={}",
             message.id,
             error
         );
-    }
-}
-
-fn spawn_persist_assistant_message_to_db(message: Message) {
-    tokio::spawn(async move {
-        persist_assistant_message_to_db(&message).await;
-    });
+        format!("Failed to save assistant message to DB: {}", error)
+    })
 }
 
 async fn cache_assistant_message(
@@ -213,7 +180,6 @@ async fn initialize_pending_execution(
         session.pending_execution = Some(crate::agent::state::PendingToolExecution {
             message_id: assistant_message_id.to_string(),
             total_expected: tool_calls.len(),
-            results: Vec::new(),
             tool_names: tool_calls
                 .iter()
                 .map(|tc| (tc.id.clone(), tc.function.name.clone()))
@@ -341,7 +307,7 @@ pub async fn handle_llm_response(
     let assistant_shape = inspect_assistant_message_shape(&assistant_message);
 
     if !assistant_shape.has_tool_calls {
-        if !assistant_shape.has_content && !assistant_shape.has_thinking {
+        if !assistant_shape.has_renderable_content && !assistant_shape.has_thinking {
             // content, tool_calls, AND thinking are all empty - this is an error
             log::warn!(
                 "⚠️  Empty LLM response detected for session {}: no content, tool calls, or thinking. This may indicate a model inference issue.",
@@ -364,7 +330,7 @@ pub async fn handle_llm_response(
             return Ok(());
         }
 
-        if assistant_shape.has_thinking && !assistant_shape.has_content {
+        if assistant_shape.is_thinking_only_completion() {
             return crate::agent::llm::stream_recovery::handle_thinking_only_completion(
                 session_repo,
                 active_sessions,
@@ -419,7 +385,7 @@ pub async fn handle_llm_response(
         reset_streaming_recovery_retry_counts(active_sessions, &session_id).await;
 
         if crate::agent::workflow::session_has_pending_events(active_sessions, &session_id).await {
-            spawn_persist_assistant_message_to_db(msg_for_db);
+            persist_assistant_message_to_db(&msg_for_db).await?;
             crate::agent::workflow::continue_workflow_if_pending_events(
                 session_repo,
                 active_sessions,
@@ -446,7 +412,7 @@ pub async fn handle_llm_response(
             log::info!("Completed workflow for session: {}", session_id);
         }
     } else {
-        spawn_persist_assistant_message_to_db(msg_for_db);
+        persist_assistant_message_to_db(&msg_for_db).await?;
 
         // Tools found! Initiate execution
         log::info!(

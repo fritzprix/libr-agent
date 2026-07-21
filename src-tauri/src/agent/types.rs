@@ -1,3 +1,4 @@
+use crate::execution_mode::ExecutionMode;
 use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,11 @@ pub struct CreateSessionRequest {
     pub workspace_path: Option<String>,
     pub workspace_isolation: Option<WorkspaceIsolationMode>,
     pub docker_config: Option<DockerWorkspaceConfig>,
+    /// Tool approval mode for the new session (`normal` | `yolo` | `unsafe`).
+    /// Applied before the initial workflow starts. When omitted, inherits a
+    /// non-normal parent mode when spawning a child; otherwise defaults to `normal`.
+    #[serde(default)]
+    pub execution_mode: Option<ExecutionMode>,
     pub request: String,
     pub parent_session_id: Option<String>,
     pub max_depth: Option<u32>,

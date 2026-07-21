@@ -56,7 +56,9 @@ pub struct SessionRuntimeProxyState {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRuntimeDockerState {
-    pub image: String,
+    /// Managed image ref, or `attach:<container>` for attach sessions. Absent when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
     pub step: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<u8>,

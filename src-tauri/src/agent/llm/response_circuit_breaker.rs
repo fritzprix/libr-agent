@@ -1,3 +1,4 @@
+use crate::agent::events::AgentEvent;
 use crate::agent::llm::circuit_breaker;
 use crate::agent::llm::completion::load_context_management_settings;
 use crate::agent::llm::completion::request::apply_compact_summary_projection;
@@ -28,7 +29,8 @@ pub struct CircuitBreakerPreprocessResult {
     pub forced_stop: Option<ForcedCircuitBreakStop>,
 }
 
-/// Hard-stop path when repetition exceeds `loopPreventionThreshold`.
+/// Hard-stop path when the identical-(call, outcome) streak exceeds
+/// `loopPreventionThreshold + hardBreakOffset`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ForcedCircuitBreakStop {
     /// `ui__circuitBreak` was injected into `assistant_message.tool_calls`.
@@ -46,7 +48,8 @@ pub(crate) async fn preprocess_assistant_tool_calls(
     let mut loop_prevention_short_circuits = HashMap::new();
 
     if let Some(tool_calls) = &assistant_message.tool_calls {
-        let loop_threshold = circuit_breaker::load_loop_prevention_threshold().await;
+        let (loop_threshold, loop_break_offset) =
+            circuit_breaker::load_loop_prevention_settings().await;
 
         let (session_metadata, hard_break) = {
             let sessions = active_sessions.read().await;
@@ -58,52 +61,128 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                     let call_signature_by_id = circuit_breaker::build_tool_call_indices(&messages);
 
                     let mut hard_break = None;
-                    for (index, tool_call) in tool_calls.iter().enumerate() {
-                        let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
-                            &messages,
-                            tool_call,
-                            &call_signature_by_id,
-                            loop_threshold,
-                        ) else {
-                            continue;
-                        };
 
+                    // Cross-turn identical mixed batches ([a,b,c] → [a,b,c]) are invisible
+                    // to the per-tool result streak scanner — check batch fingerprints first.
+                    if let Some(action) = circuit_breaker::evaluate_batch_circuit_breaker(
+                        &messages,
+                        tool_calls,
+                        loop_threshold,
+                        loop_break_offset,
+                    ) {
                         match action {
                             circuit_breaker::CircuitBreakerAction::HardBreak {
                                 count,
                                 tool_name,
                                 args,
                             } => {
-                                hard_break = Some((index, count, tool_name, args));
-                                break;
+                                hard_break = Some((0, count, tool_name, args));
                             }
-                            circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
+                            circuit_breaker::CircuitBreakerAction::RepeatedBatchSequence {
                                 count,
                                 tool_name,
                                 ..
                             } => {
-                                loop_prevention_short_circuits.insert(
-                                    tool_call.id.clone(),
-                                    LoopPreventionShortCircuit {
-                                        kind: LoopPreventionKind::RepeatedErrorOutcome,
-                                        tool_name,
-                                        count,
-                                    },
-                                );
+                                // Identical batch fingerprint ⇒ every call is part of
+                                // the repeated sequence; short-circuit the whole batch.
+                                for tool_call in tool_calls.iter() {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::RepeatedBatchSequence,
+                                            tool_name: tool_name.clone(),
+                                            count,
+                                        },
+                                    );
+                                }
                             }
-                            circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
-                                count,
+                            _ => {}
+                        }
+                    }
+
+                    if hard_break.is_none() && loop_prevention_short_circuits.is_empty() {
+                        let intra_batch_duplicates =
+                            circuit_breaker::find_intra_batch_duplicates(tool_calls);
+
+                        for (index, tool_call) in tool_calls.iter().enumerate() {
+                            if let Some(circuit_breaker::CircuitBreakerAction::DuplicateInBatch {
                                 tool_name,
                                 ..
-                            } => {
+                            }) = intra_batch_duplicates.get(&tool_call.id)
+                            {
                                 loop_prevention_short_circuits.insert(
                                     tool_call.id.clone(),
                                     LoopPreventionShortCircuit {
-                                        kind: LoopPreventionKind::RepeatedSuccessOutcome,
-                                        tool_name,
-                                        count,
+                                        kind: LoopPreventionKind::DuplicateInBatch,
+                                        tool_name: tool_name.clone(),
+                                        count: 2,
                                     },
                                 );
+                                continue;
+                            }
+
+                            let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
+                                &messages,
+                                tool_call,
+                                &call_signature_by_id,
+                                loop_threshold,
+                                loop_break_offset,
+                            ) else {
+                                continue;
+                            };
+
+                            match action {
+                                circuit_breaker::CircuitBreakerAction::HardBreak {
+                                    count,
+                                    tool_name,
+                                    args,
+                                } => {
+                                    hard_break = Some((index, count, tool_name, args));
+                                    break;
+                                }
+                                circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
+                                    count,
+                                    tool_name,
+                                    ..
+                                } => {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::RepeatedErrorOutcome,
+                                            tool_name,
+                                            count,
+                                        },
+                                    );
+                                }
+                                circuit_breaker::CircuitBreakerAction::NaturalRecoveryErrorEscalate {
+                                    count,
+                                    tool_name,
+                                    ..
+                                } => {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::RepeatedErrorEscalate,
+                                            tool_name,
+                                            count,
+                                        },
+                                    );
+                                }
+                                circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
+                                    count,
+                                    tool_name,
+                                    ..
+                                } => {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::RepeatedSuccessOutcome,
+                                            tool_name,
+                                            count,
+                                        },
+                                    );
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -116,12 +195,14 @@ pub(crate) async fn preprocess_assistant_tool_calls(
         if let Some((index, count, tool_name, args)) = hard_break {
             loop_prevention_short_circuits.clear();
             if let Some(tool_calls) = assistant_message.tool_calls.as_mut() {
+                let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(&tool_name);
                 log::warn!(
                     "Circuit breaker triggered for session {} tool {} (count {})",
                     session_id,
-                    tool_name,
+                    safe_tool,
                     count
                 );
+                emit_circuit_breaker_triggered(session_id, &tool_name, count, "hardBreak");
 
                 let ui_alias_enabled = match session_metadata.as_ref() {
                     Some(metadata) => match crate::agent::resolve_agent_config(metadata).await {
@@ -164,8 +245,8 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                     forced_circuit_break_message =
                         Some(crate::mcp::types::MCPContent::Text {
                             text: format!(
-                                "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).\n\nThe 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls.",
-                                tool_name, count
+                                "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).\n\nThe 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls. Review your last attempts and propose a fundamentally different approach.",
+                                safe_tool, count
                             ),
                             is_error: None,
                         });
@@ -173,12 +254,21 @@ pub(crate) async fn preprocess_assistant_tool_calls(
             }
         } else if !loop_prevention_short_circuits.is_empty() {
             for short_circuit in loop_prevention_short_circuits.values() {
+                let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(
+                    &short_circuit.tool_name,
+                );
                 log::warn!(
                     "Loop prevention short-circuit for session {} tool {} (count {}, kind={:?})",
                     session_id,
-                    short_circuit.tool_name,
+                    safe_tool,
                     short_circuit.count,
                     short_circuit.kind
+                );
+                emit_circuit_breaker_triggered(
+                    session_id,
+                    &short_circuit.tool_name,
+                    short_circuit.count,
+                    circuit_breaker_action_label(&short_circuit.kind),
                 );
             }
         }
@@ -216,6 +306,33 @@ fn hard_break_applied_ui_circuit_break(assistant_message: &Message) -> bool {
                 .iter()
                 .any(|tool_call| tool_call.function.name == "ui__circuitBreak")
         })
+}
+
+fn emit_circuit_breaker_triggered(session_id: &str, tool_name: &str, count: usize, action: &str) {
+    let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(tool_name);
+    let Some(app_handle) = crate::state::get_app_handle() else {
+        return;
+    };
+    let _ = crate::agent::tauri_events::emit_agent_event(
+        app_handle,
+        AgentEvent::CircuitBreakerTriggered {
+            session_id: session_id.to_string(),
+            tool_name: safe_tool,
+            count,
+            action: action.to_string(),
+        },
+    );
+}
+
+fn circuit_breaker_action_label(kind: &LoopPreventionKind) -> &'static str {
+    match kind {
+        LoopPreventionKind::RepeatedErrorOutcome | LoopPreventionKind::RepeatedSuccessOutcome => {
+            "softRecovery"
+        }
+        LoopPreventionKind::RepeatedErrorEscalate => "errorEscalate",
+        LoopPreventionKind::RepeatedBatchSequence => "repeatedBatch",
+        LoopPreventionKind::DuplicateInBatch => "duplicateInBatch",
+    }
 }
 
 pub async fn preprocess_assistant_tool_calls_for_testing(
@@ -293,7 +410,15 @@ async fn apply_tool_loop_token_fence(
     let mut kept_projection_total = 0usize;
     let mut kept_projection_prompt = 0usize;
 
-    for prefix_len in 1..=original_tool_calls.len() {
+    // Cap scans so pathological mega-batches cannot O(n²)-stall the agent.
+    // Prefer keeping as many prefix tools as budget allows (same semantics as before).
+    const TOOL_LOOP_FENCE_MAX_PREFIX_SCANS: usize = 64;
+    let max_prefix = original_tool_calls.len().clamp(
+        TOOL_LOOP_FENCE_MIN_KEEP_COUNT,
+        TOOL_LOOP_FENCE_MAX_PREFIX_SCANS,
+    );
+
+    for prefix_len in 1..=max_prefix {
         let projected_messages = build_projected_messages_for_prefix(
             &projection_history,
             assistant_message,
@@ -322,6 +447,11 @@ async fn apply_tool_loop_token_fence(
             kept_projection_total = projected_total_budget_tokens;
         }
         break;
+    }
+
+    // If the batch is larger than the scan cap and every scanned prefix fit, keep the cap.
+    if max_prefix < original_tool_calls.len() && kept_count == max_prefix {
+        kept_count = max_prefix;
     }
 
     if kept_count >= original_tool_calls.len() {

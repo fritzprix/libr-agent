@@ -43,7 +43,7 @@ fn create_tool() -> MCPTool {
                 ("name".to_string(), string_prop_required("Unique name for the agent configuration.")),
                 ("description".to_string(), string_prop(None, None, Some("Short description of what this agent does. If omitted, the configuration is created without a description."))),
                 ("temperature".to_string(), number_prop(Some(0.0), Some(2.0), Some("Sampling temperature (0.0 to 2.0). If omitted, the configuration leaves temperature unset and the runtime/model default applies."))),
-                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted, all optional builtin services stay enabled."))),
+                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['planning', 'browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted, all optional builtin services stay enabled."))),
                 ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow (e.g. ['github', 'google-search']). If omitted, the configuration leaves external MCP server overrides unset."))),
                 ("systemPrompt".to_string(), string_prop(None, None, Some("The core personality and instructions for the agent. If omitted, no custom system prompt is stored."))),
             ],
@@ -171,12 +171,13 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
             "Create or reuse an app-local teamwork artifact directory for the current governing/root session.",
             &["Caller should be a root or governing session."],
             &[
-                "Call when coordination metadata must live outside the repo workspace.",
-                "This path is for scaffolding artifacts only — it does not change the session workspace.",
+                "Call once when coordination metadata must live outside the repo workspace.",
+                "This only prepares an empty @teamwork/ directory — it does not scaffold files and does not change the session workspace.",
             ],
             &[
-                "Create an explicit org with agent__createOrg if team coordination is needed.",
-                "Spawn org members with agent__startSession.",
+                "Do not call prepareTeamworkWorkspace again after success.",
+                "Scaffold next via the teamwork skill (prefer scripts/init_task_force.py with --output = response artifactPath) or write the full set under @teamwork/ including coordination/* and @teamwork/.libragent/teamwork.json.",
+                "Only after the org scaffold is complete, call agent__createOrg, then agent__startSession for org members.",
             ],
         ),
         input_schema: object_prop(vec![], vec![], None),
@@ -195,7 +196,7 @@ fn start_session_tool() -> MCPTool {
             &[
                 "Pass agentId (config ID, not name) and a clear task description.",
                 "Org children inherit org workspace by default unless workspaceOverride is set.",
-                "Set waitForResult=true to block until the child finishes.",
+                "Set waitForResult=true to block until the child finishes (optional timeout, default 3600s).",
             ],
             &[
                 "Poll or wait with agent__checkSession.",
@@ -207,10 +208,19 @@ fn start_session_tool() -> MCPTool {
                 ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call agent__listAgents(type='configs') first, then use the returned ID. Do not put the agent name here.")),
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
                 ("waitForResult".to_string(), {
-                    let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer."));
+                    let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. Uses timeout (default 3600s) as the maximum wait."));
                     schema.default = Some(json!(false));
                     schema
                 }),
+                (
+                    "timeout".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(3600),
+                        3600,
+                        Some("Maximum seconds to wait when waitForResult is true. Ignored otherwise."),
+                    ),
+                ),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
             ],
             vec!["agentId".to_string(), "task".to_string()],

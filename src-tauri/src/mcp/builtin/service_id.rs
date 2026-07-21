@@ -82,7 +82,7 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Planning,
         canonical: "planning",
-        optional: false,
+        optional: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Scratchpad,
@@ -157,7 +157,6 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
 ];
 
 pub const CORE_BUILTIN_SERVICE_ALIASES: &[&str] = &[
-    "planning",
     "scratchpad",
     "workspace",
     "agent",

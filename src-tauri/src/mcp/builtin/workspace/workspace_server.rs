@@ -3,7 +3,7 @@ use super::terminal_manager;
 use super::tools;
 use super::types::{PendingExecutions, PendingShellInputResolution};
 use super::utils;
-use crate::mcp::builtin::utils::path_starts_with;
+use crate::mcp::builtin::utils::{path_starts_with, relative_path_under_base};
 use crate::mcp::MCPTool;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::SessionRepository;
@@ -20,6 +20,8 @@ use tracing::info;
 pub struct WorkspaceServer {
     pub(crate) session_id: String,
     pub(crate) session_manager: Arc<SessionManager>,
+    /// Fixed at session create; drives which shell tools are discoverable.
+    pub(crate) workspace_isolation: WorkspaceIsolationMode,
     pub(crate) isolation_manager: crate::session_isolation::SessionIsolationManager,
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
     pub(crate) pending_executions: Arc<PendingExecutions>,
@@ -35,8 +37,21 @@ const TEAMWORK_ALIAS_PREFIX: &str = "@teamwork";
 const TEAMWORK_PARENT_CHAIN_LIMIT: usize = 64;
 
 impl WorkspaceServer {
+    /// Create a workspace server for host isolation (tests / legacy global registry).
     pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
-        info!("WorkspaceServer created for session: {}", session_id);
+        Self::with_isolation(session_id, session_manager, WorkspaceIsolationMode::Host)
+    }
+
+    /// Create a workspace server bound to a session's workspace isolation mode.
+    pub fn with_isolation(
+        session_id: String,
+        session_manager: Arc<SessionManager>,
+        workspace_isolation: WorkspaceIsolationMode,
+    ) -> Self {
+        info!(
+            "WorkspaceServer created for session: {} (isolation={})",
+            session_id, workspace_isolation
+        );
         let process_registry = terminal_manager::create_process_registry();
         let pending_executions = Arc::new(PendingExecutions::new());
         let cleanup_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -48,6 +63,7 @@ impl WorkspaceServer {
         Self {
             session_id,
             session_manager,
+            workspace_isolation,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
             pending_executions,
@@ -56,6 +72,10 @@ impl WorkspaceServer {
             cleanup_shutdown,
             cleanup_tasks: vec![process_cleanup_task],
         }
+    }
+
+    pub(crate) fn code_tools_profile(&self) -> tools::CodeToolsProfile {
+        tools::CodeToolsProfile::from_isolation(self.workspace_isolation)
     }
 
     /// Invalidate the service context cache (call after state changes)
@@ -378,6 +398,71 @@ impl WorkspaceServer {
         })
     }
 
+    /// Map an absolute path under the teamwork artifact root to a scoped relative path.
+    ///
+    /// Handles new-file writes (path may not exist yet) and Windows/Unix canonicalize
+    /// asymmetry by trying the raw root, the canonical root, and an existing-ancestor walk.
+    fn extract_absolute_teamwork_relative_path(
+        candidate: &Path,
+        teamwork_root: &Path,
+    ) -> Option<String> {
+        let canonical_root = teamwork_root.canonicalize().ok();
+
+        if let Some(relative) = relative_path_under_base(candidate, teamwork_root) {
+            return Some(Self::normalize_teamwork_relative_path(&relative));
+        }
+
+        if let Some(ref canonical_root) = canonical_root {
+            if teamwork_root != canonical_root.as_path() {
+                if let Some(relative) = relative_path_under_base(candidate, canonical_root) {
+                    return Some(Self::normalize_teamwork_relative_path(&relative));
+                }
+            }
+        }
+
+        // New files often fail canonicalize(); walk up to an existing ancestor first.
+        let canonical_root = canonical_root?;
+        let mut suffix: Vec<std::ffi::OsString> = Vec::new();
+        let mut current = candidate.to_path_buf();
+
+        loop {
+            match current.canonicalize() {
+                Ok(canonical_current) => {
+                    let relative = relative_path_under_base(&canonical_current, &canonical_root)?;
+                    let mut full = relative;
+                    for part in suffix.iter().rev() {
+                        // Reject parent-dir names collected during the walk (e.g. "..").
+                        if part == ".." {
+                            return None;
+                        }
+                        if part == "." {
+                            continue;
+                        }
+                        full.push(part);
+                    }
+                    return Some(Self::normalize_teamwork_relative_path(&full));
+                }
+                Err(_) => {
+                    let file_name = current.file_name()?.to_os_string();
+                    suffix.push(file_name);
+                    if !current.pop() {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    fn normalize_teamwork_relative_path(relative: &Path) -> String {
+        if relative.as_os_str().is_empty() {
+            ".".to_string()
+        } else {
+            // Normalize Windows separators so scoped validators and agent-facing paths
+            // stay consistent across platforms (keep explicit '\\', not MAIN_SEPARATOR).
+            relative.to_string_lossy().replace('\\', "/")
+        }
+    }
+
     pub async fn validate_read_path_with_skill_access(
         &self,
         path_str: &str,
@@ -469,6 +554,24 @@ impl WorkspaceServer {
             .await?;
         let effective_path = mapped_path.as_deref().unwrap_or(path_str);
 
+        // Absolute path under the teamwork root: strip to a relative path and reuse the
+        // same scoped write validator as @teamwork/... (handles new-file create paths).
+        let candidate_path = PathBuf::from(effective_path);
+        if candidate_path.is_absolute() {
+            if let Ok(teamwork_root) = self.get_teamwork_artifact_root(&target_session_id).await {
+                if let Some(relative_path) =
+                    Self::extract_absolute_teamwork_relative_path(&candidate_path, &teamwork_root)
+                {
+                    let teamwork_manager =
+                        SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+                    return teamwork_manager
+                        .get_security_validator()
+                        .validate_path_for_write(&relative_path)
+                        .map_err(|e| format!("Security error: {e}"));
+                }
+            }
+        }
+
         self.validate_path_with_error_for_write(effective_path, Some(target_session_id))
     }
 
@@ -499,14 +602,52 @@ impl WorkspaceServer {
         let host_workspace = session.docker_host_workspace_path.as_ref().ok_or_else(|| {
             format!("Missing Docker host workspace path for session {target_session_id}")
         })?;
-        let mapper = PathMappingLayer::new(PathBuf::from(host_workspace));
+        let workdir = session
+            .docker_config
+            .as_ref()
+            .map(|config| config.workdir().to_string())
+            .unwrap_or_else(|| {
+                crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR.to_string()
+            });
+        let mapper = PathMappingLayer::with_container_root(PathBuf::from(host_workspace), &workdir);
         let Some(host_path) = mapper.container_to_host(path_str) else {
             return Err(format!(
-                "Docker container path '{path_str}' is outside /workspace. Shell commands may access it, but workspace file tools only map /workspace paths to the host workspace."
+                "Docker container path '{path_str}' is outside {workdir}. Shell commands may access it, but workspace file tools only map {workdir} paths to the host workspace."
             ));
         };
 
         Ok(Some(host_path.to_string_lossy().to_string()))
+    }
+
+    /// After a mutating file tool write, push staging → attach container when needed.
+    pub async fn sync_attach_after_host_write(
+        &self,
+        host_path: &std::path::Path,
+        session_id: Option<&str>,
+    ) -> Result<(), String> {
+        let target_session_id = session_id.unwrap_or(self.session_id.as_str());
+        let Some(session) =
+            crate::services::container_attach_fs::load_session(target_session_id).await?
+        else {
+            return Ok(());
+        };
+        crate::services::container_attach_fs::push_host_file_to_container(&session, host_path).await
+    }
+
+    /// Before reading a staged path, pull attach container → staging when needed.
+    /// Propagates docker failures for workdir paths so tools do not read stale staging.
+    pub async fn sync_attach_before_host_read(
+        &self,
+        host_path: &std::path::Path,
+        session_id: Option<&str>,
+    ) -> Result<(), String> {
+        let target_session_id = session_id.unwrap_or(self.session_id.as_str());
+        let Some(session) =
+            crate::services::container_attach_fs::load_session(target_session_id).await?
+        else {
+            return Ok(());
+        };
+        crate::services::container_attach_fs::pull_container_file_to_host(&session, host_path).await
     }
 
     /// Validate path with security checks (helper for file operations)
@@ -586,10 +727,17 @@ impl WorkspaceServer {
         build_tree(workspace_root, "", 0, max_depth, workspace_root)
     }
 
+    /// Host-platform tool definitions for static registry / UI catalogs.
+    /// Agent-facing lists use [`Self::tools_for_isolation`] with the session mode.
     pub fn tools_static() -> Vec<MCPTool> {
+        Self::tools_for_isolation(WorkspaceIsolationMode::Host)
+    }
+
+    pub fn tools_for_isolation(isolation: WorkspaceIsolationMode) -> Vec<MCPTool> {
+        let profile = tools::CodeToolsProfile::from_isolation(isolation);
         let mut tools = Vec::new();
         tools.extend(tools::file_tools());
-        tools.extend(tools::code_tools());
+        tools.extend(tools::code_tools(profile));
         tools.extend(tools::export_tools());
         tools.extend(tools::terminal_tools());
         tools
@@ -658,6 +806,7 @@ impl WorkspaceServer {
 
         let workspace_dir = live_state.workspace_dir;
         let shell_cwd = live_state.shell_cwd;
+        let platform = context::ExecutionPlatform::for_session(&session_id, live_state.is_docker);
 
         let (running_count, total_count) = match self.process_registry.try_read() {
             Ok(reg) => {
@@ -682,11 +831,7 @@ impl WorkspaceServer {
                 "workspace_dir": workspace_dir,
                 "shell_cwd": shell_cwd,
                 "is_docker": live_state.is_docker,
-                "platform": {
-                    "os": std::env::consts::OS,
-                    "arch": std::env::consts::ARCH,
-                    "shell": context::detect_shell(std::env::consts::OS)
-                },
+                "platform": platform.to_structured_json(),
                 "processes": {
                     "running": running_count,
                     "total": total_count,
@@ -758,6 +903,33 @@ mod tests {
         assert_eq!(
             WorkspaceServer::extract_teamwork_alias_relative_path("docs/README.md"),
             None
+        );
+    }
+
+    #[test]
+    fn test_extract_absolute_teamwork_relative_path_for_new_files() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let teamwork_root = temp_dir.path().join("teamwork-artifacts").join("session-1");
+        std::fs::create_dir_all(&teamwork_root).expect("create teamwork root");
+
+        let new_file = teamwork_root.join("coordination").join("KANBAN.md");
+        let relative =
+            WorkspaceServer::extract_absolute_teamwork_relative_path(&new_file, &teamwork_root)
+                .expect("new absolute path under teamwork root must map to relative");
+        assert_eq!(relative, "coordination/KANBAN.md");
+
+        let outside = temp_dir.path().join("outside.md");
+        assert!(
+            WorkspaceServer::extract_absolute_teamwork_relative_path(&outside, &teamwork_root)
+                .is_none()
+        );
+
+        // Lexical escape via ".." after the root prefix must not map to a relative path.
+        let traversal = teamwork_root.join("..").join("outside.md");
+        assert!(
+            WorkspaceServer::extract_absolute_teamwork_relative_path(&traversal, &teamwork_root)
+                .is_none(),
+            "parent-dir components after the teamwork root must be rejected"
         );
     }
 }

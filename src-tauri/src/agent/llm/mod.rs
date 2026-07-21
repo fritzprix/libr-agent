@@ -1,3 +1,4 @@
+pub mod assistant_message_shape;
 pub mod circuit_breaker;
 pub mod completion;
 pub mod context_selector;
@@ -12,6 +13,7 @@ pub mod token_utils;
 pub(crate) mod tool_execution;
 pub mod types;
 
+pub use assistant_message_shape::{inspect_assistant_message_shape, AssistantMessageShape};
 pub use completion::*;
 pub use context_selector::*;
 pub use prompt::*;

@@ -498,7 +498,11 @@
       "title": "Contrôles d'exécution avancés",
       "summary": "Ces paramètres modifient les garde-fous d'exécution, les limites multi-agents et l'isolation du shell. La plupart des utilisateurs devraient les laisser tels quels.",
       "loopPreventionThreshold": "Seuil de prévention des boucles",
-      "loopPreventionThresholdDescription": "Nombre de résultats d'outils identiques répétés avant que l'agent ne tente une récupération naturelle ou ne déclenche un arrêt forcé."
+      "loopPreventionThresholdDescription": "Nombre de résultats d'outils identiques répétés avant que l'agent ne tente une récupération naturelle ou ne déclenche un arrêt forcé.",
+      "loopPreventionThresholdPlaceholder": "par ex. 3",
+      "loopPreventionHardBreakOffset": "Décalage d'arrêt forcé",
+      "loopPreventionHardBreakOffsetPlaceholder": "par ex. 2",
+      "loopPreventionHardBreakOffsetDescription": "Appels d'outils identiques supplémentaires autorisés après l'avertissement de récupération naturelle avant l'arrêt forcé du flux de travail. Avec seuil=3 et décalage=1, la récupération naturelle se déclenche à l'appel 3 et l'arrêt forcé à l'appel 4."
     },
     "system": {
       "title": "Système & Performance",

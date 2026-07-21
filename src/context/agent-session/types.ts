@@ -86,6 +86,19 @@ export type AgentEventPayload =
       resourceType: string;
       action: string;
       resourceId?: string;
+    }
+  | {
+      type: 'circuitBreakerTriggered';
+      sessionId: string;
+      toolName: string;
+      count: number;
+      action:
+        | 'hardBreak'
+        | 'softRecovery'
+        | 'errorEscalate'
+        | 'repeatedBatch'
+        | 'duplicateInBatch'
+        | string;
     };
 
 export interface PendingInteractiveShellPrompt {

@@ -132,6 +132,22 @@ impl WorkspaceServer {
             }
         };
 
+        if let Err(error) = self
+            .sync_attach_before_host_read(&safe_path, session_id.as_deref())
+            .await
+        {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!("Failed to sync attached container file before edit: {error}"),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Verify the Harbor/Docker container is still running".to_string(),
+                "Retry after confirming docker exec works".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         if !safe_path.exists() {
             return Ok(not_found_error("file", path_str, ToolGroup::Workspace));
         }
@@ -200,6 +216,20 @@ impl WorkspaceServer {
             return Ok(guided_error(
                 ErrorCategory::InternalError,
                 format!("Failed to write file: {error}"),
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        if let Err(sync_error) = self
+            .sync_attach_after_host_write(&safe_path, session_id.as_deref())
+            .await
+        {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!(
+                    "File was updated locally but failed to sync into the attached container: {sync_error}"
+                ),
                 ToolGroup::Workspace,
             )
             .to_mcp_result());

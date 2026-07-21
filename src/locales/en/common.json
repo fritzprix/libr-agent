@@ -505,7 +505,11 @@
       "title": "Advanced Runtime Controls",
       "summary": "These settings change runtime safety rails, multi-agent limits, and shell isolation. Most users should leave them alone.",
       "loopPreventionThreshold": "Loop Prevention Threshold",
-      "loopPreventionThresholdDescription": "Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop."
+      "loopPreventionThresholdDescription": "Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop.",
+      "loopPreventionThresholdPlaceholder": "e.g., 3",
+      "loopPreventionHardBreakOffset": "Hard Break Offset",
+      "loopPreventionHardBreakOffsetPlaceholder": "e.g., 2",
+      "loopPreventionHardBreakOffsetDescription": "Additional identical (call, outcome) attempts after soft recovery before hard-stopping. Default 2: with threshold=3, soft recovery at call 3, error escalate at call 4, hard break at call 5. Offset 1 skips escalate (soft then hard)."
     },
     "system": {
       "title": "System & Performance",
@@ -1165,6 +1169,8 @@
       "messageHint": "Use @playbook:, @skill:, or @file: for autocomplete.",
       "workspaceAutocompleteHint": "Workspace override enables @skill: and @file: autocomplete.",
       "messagePlaceholder": "Type a message… use @playbook:, @skill:, or @file: for autocomplete",
+      "resetPlanningLabel": "Reset planning state before run",
+      "resetPlanningHint": "Clears goal, todos, and scratchpad before injecting the message. Does not wipe chat history.",
       "cancel": "Cancel",
       "saveChanges": "Save changes",
       "createTask": "Create task",

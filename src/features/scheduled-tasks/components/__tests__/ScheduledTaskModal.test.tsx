@@ -117,6 +117,7 @@ vi.mock('lucide-react', () => ({
   Upload: () => <span />,
   X: () => <span />,
   ChevronDown: () => <span />,
+  ListTodo: () => <span />,
 }));
 
 vi.mock('@/components/ui/collapsible', () => ({

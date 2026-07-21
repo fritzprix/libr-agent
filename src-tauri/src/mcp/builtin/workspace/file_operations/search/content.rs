@@ -1,4 +1,4 @@
-use super::super::super::edit_mode::{search_directory_next_step, search_inline_match_footer};
+use super::super::super::edit_mode::search_inline_match_footer;
 use super::super::utils::{
     compute_anchor, detect_language, format_file_size, initial_prefix_hash_state,
     update_prefix_hash_state,
@@ -615,9 +615,6 @@ pub(super) async fn search_content_in_dir(
         })).collect::<Vec<_>>(),
     });
 
-    let mut next_steps =
-        vec!["Use search with a specific file path to see all matches in that file".to_string()];
-    next_steps.push(search_directory_next_step(show_hashes).to_string());
-
-    Ok(SuccessHint::new(text, next_steps).to_mcp_result_with_data(Some(structured)))
+    // Matches already include pagination notes in the body; omit edit-promotion hints.
+    Ok(SuccessHint::new(text, vec![]).to_mcp_result_with_data(Some(structured)))
 }

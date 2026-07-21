@@ -3,12 +3,50 @@ use super::types::{
 };
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
+use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use serde_json::Value;
 use tracing::info;
 
 use super::workspace_server::WorkspaceServer;
 
 impl WorkspaceServer {
+    fn shell_tool_unavailable_result(&self, tool_name: &str) -> MCPResult {
+        let (reason, guidance) = match self.workspace_isolation {
+            WorkspaceIsolationMode::Docker => (
+                format!(
+                    "Tool '{tool_name}' is not available in Docker workspace isolation (Linux container shell only)"
+                ),
+                vec![
+                    "Use runShell for one-shot commands".to_string(),
+                    "Use runInPersistentShell for stateful shell sessions".to_string(),
+                ],
+            ),
+            WorkspaceIsolationMode::Host if cfg!(windows) => (
+                format!(
+                    "Tool '{tool_name}' is not available on Windows host isolation (PowerShell only)"
+                ),
+                vec![
+                    "Use runPowerShell for one-shot commands".to_string(),
+                    "Use runInPersistentPowerShell for stateful shell sessions".to_string(),
+                    "Enable Docker Mode to use bash/sh (runShell) in a Linux container".to_string(),
+                ],
+            ),
+            WorkspaceIsolationMode::Host => (
+                format!(
+                    "Tool '{tool_name}' is not available on this host platform (bash/sh only)"
+                ),
+                vec![
+                    "Use runShell for one-shot commands".to_string(),
+                    "Use runInPersistentShell for stateful shell sessions".to_string(),
+                ],
+            ),
+        };
+
+        guided_error(ErrorCategory::InvalidInput, reason, ToolGroup::Workspace)
+            .guidance(guidance)
+            .to_mcp_result()
+    }
+
     /// Dispatch a tool call to the appropriate handler method.
     /// This is extracted from the main mod.rs to reduce cognitive load.
     pub async fn call_tool(
@@ -30,6 +68,10 @@ impl WorkspaceServer {
         let target_session_id = session_id
             .clone()
             .unwrap_or_else(|| self.session_id.clone());
+
+        if !self.code_tools_profile().allows_shell_tool(tool_name) {
+            return Ok(self.shell_tool_unavailable_result(tool_name));
+        }
 
         match tool_name {
             // ── File operation tools ──────────────────────────────────────────
@@ -55,12 +97,14 @@ impl WorkspaceServer {
 
             // ── Code execution tools ──────────────────────────────────────────
             // PRIMARY isolated shell execution tools (recommended)
-            "runShell" => self.handle_run_shell(args, &target_session_id).await,
-            "runPowerShell" => self.handle_run_shell(args, &target_session_id).await,
+            "runShell" | "runPowerShell" => {
+                self.handle_run_shell(args, &target_session_id, tool_name)
+                    .await
+            }
             // ADVANCED persistent shell execution tools (for state preservation)
-            "runInPersistentShell" => self.handle_execute_shell(args, &target_session_id).await,
-            "runInPersistentPowerShell" => {
-                self.handle_execute_shell(args, &target_session_id).await
+            "runInPersistentShell" | "runInPersistentPowerShell" => {
+                self.handle_execute_shell(args, &target_session_id, tool_name)
+                    .await
             }
             // Background process execution (platform-agnostic)
             "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,

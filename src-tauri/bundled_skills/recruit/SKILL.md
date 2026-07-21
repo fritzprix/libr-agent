@@ -23,8 +23,8 @@ Instead of passively asking the user what domain they want or waiting for exact 
 
 | Layer | Examples | Set via `agent__create`? |
 | --- | --- | --- |
-| **Core builtins** | `planning`, `workspace`, `agent`, `tool`, `skills` | Always on — do not list redundantly |
-| **Optional builtins** | `browser`, `knowledge`, `setup-wizard`, `media`, `history` | `builtinCapabilities` — restricts/enables optional services |
+| **Core builtins** | `workspace`, `agent`, `tool`, `skills`, `scratchpad`, … | Always on — do not list redundantly |
+| **Optional builtins** | `planning`, `browser`, `knowledge`, `setup-wizard`, `media`, `history` | `builtinCapabilities` — restricts/enables optional services |
 | **External MCP** | GitHub, search, filesystem servers | `externalMcpServers` — **server IDs** from `tool__list`, not display names |
 | **Bundled skills** | `docx`, `deep-research` | **Not** via `agent__create` — suggest `@skill:name` separately |
 
@@ -89,12 +89,12 @@ agent__create({
   "description": "...",
   "systemPrompt": "...",
   "temperature": 0.3,
-  "builtinCapabilities": ["browser"],
+  "builtinCapabilities": ["planning", "browser"],
   "externalMcpServers": ["<mcp-server-id-from-inventory>"]
 })
 ```
 
-*Note: Ensure `externalMcpServers` contains only CUID IDs from `tool__list`, never display names or slugs.*
+*Note: Ensure `externalMcpServers` contains only CUID IDs from `tool__list`, never display names or slugs. `planning` is optional — include it when the specialist needs goal/todo tools.*
 
 ### 5. Verification & Handoff
 

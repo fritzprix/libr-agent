@@ -498,7 +498,11 @@
       "title": "Controles avançados de execução",
       "summary": "Essas configurações alteram as proteções de execução, os limites multiagente e o isolamento do shell. A maioria dos usuários deve deixá-las como estão.",
       "loopPreventionThreshold": "Limite de prevenção de loop",
-      "loopPreventionThresholdDescription": "Número de resultados idênticos e repetidos de ferramentas antes de o agente tentar uma recuperação natural ou acionar uma parada forçada."
+      "loopPreventionThresholdDescription": "Número de resultados idênticos e repetidos de ferramentas antes de o agente tentar uma recuperação natural ou acionar uma parada forçada.",
+      "loopPreventionThresholdPlaceholder": "ex: 3",
+      "loopPreventionHardBreakOffset": "Deslocamento de parada forçada",
+      "loopPreventionHardBreakOffsetPlaceholder": "ex: 2",
+      "loopPreventionHardBreakOffsetDescription": "Chamadas de ferramenta idênticas adicionais permitidas após o aviso de recuperação natural antes de parar o fluxo de trabalho de forma forçada. Com limite=3 e deslocamento=1, a recuperação natural é acionada na chamada 3 e a parada forçada na chamada 4."
     },
     "system": {
       "title": "Sistema e Desempenho",

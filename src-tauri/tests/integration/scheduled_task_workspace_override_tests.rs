@@ -75,6 +75,7 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
             created_by_session_id: Some(session_id.to_string()),
             session_id: None,
             workspace_override: Some(missing_workspace_str.clone()),
+            reset_planning_state: false,
             next_run_at: None,
         },
         &ScheduledTaskGovernanceSettings::default(),

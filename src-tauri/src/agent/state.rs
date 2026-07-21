@@ -19,7 +19,6 @@ pub const MAX_CACHED_MESSAGES: usize = 1000;
 pub struct PendingToolExecution {
     pub message_id: String,
     pub total_expected: usize,
-    pub results: Vec<Message>,
     /// Maps tool_call_id to tool_name for event emission
     pub tool_names: HashMap<String, String>,
     /// Tool call IDs expected for the current message execution
@@ -629,7 +628,6 @@ mod tests {
         session.pending_execution = Some(PendingToolExecution {
             message_id: "exec-1".to_string(),
             total_expected: 0,
-            results: Vec::new(),
             tool_names: HashMap::new(),
             expected_tool_call_ids: HashSet::new(),
             completed_tool_call_ids: HashSet::new(),

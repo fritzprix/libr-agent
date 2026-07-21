@@ -292,10 +292,19 @@ impl SecurityValidator {
 
 /// Helper to check if a path starts with a base path, safely handling Windows UNC prefixes and case-insensitivity.
 pub fn path_starts_with(path: &Path, base: &Path) -> bool {
+    relative_path_under_base(path, base).is_some()
+}
+
+/// Return the relative suffix of `path` under `base`, or `None` if `path` is not under `base`.
+///
+/// Handles Windows verbatim vs normal drive prefixes and case-insensitive component matching.
+/// An exact match returns an empty `PathBuf` (callers may treat that as `"."`).
+///
+/// Returns `None` if the relative suffix contains `..` (parent-dir) components — a lexical
+/// prefix match alone is not enough to consider the path "under" the base.
+pub fn relative_path_under_base(path: &Path, base: &Path) -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        // On Windows, paths may have different prefixes (e.g., `\\?\C:\` vs `C:\`)
-        // and are case-insensitive. We compare path components individually.
         let mut path_comps = path.components();
         let mut base_comps = base.components();
 
@@ -303,21 +312,40 @@ pub fn path_starts_with(path: &Path, base: &Path) -> bool {
             match (path_comps.next(), base_comps.next()) {
                 (Some(p), Some(b)) => {
                     if !components_equal_ignore_case(&p, &b) {
-                        return false;
+                        return None;
                     }
                 }
-                // If base is fully matched, then path indeed starts with base.
-                (_, None) => return true,
-                // If path is shorter than base, it cannot start with it.
-                (None, Some(_)) => return false,
+                (_, None) => {
+                    return clean_relative_components(path_comps);
+                }
+                (None, Some(_)) => return None,
             }
         }
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        path.starts_with(base)
+        let relative = path.strip_prefix(base).ok()?;
+        clean_relative_components(relative.components())
     }
+}
+
+/// Build a relative path from components, skipping `.` and rejecting `..`.
+fn clean_relative_components<'a, I>(components: I) -> Option<PathBuf>
+where
+    I: Iterator<Item = Component<'a>>,
+{
+    let mut relative = PathBuf::new();
+    for component in components {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(name) => relative.push(name),
+            Component::ParentDir => return None,
+            // Prefix/RootDir must not appear in a relative suffix.
+            Component::Prefix(_) | Component::RootDir => return None,
+        }
+    }
+    Some(relative)
 }
 
 #[cfg(target_os = "windows")]
