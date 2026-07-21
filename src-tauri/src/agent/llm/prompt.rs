@@ -186,6 +186,7 @@ async fn build_and_cache_stable_prefix(
     let workspace_instructions = load_workspace_agent_instructions(session_id).await;
     let stable = build_stable_prefix(
         agent_config,
+        session_id,
         session_name,
         soul_instruction,
         workspace_instructions,
@@ -233,6 +234,7 @@ pub async fn build_system_prompt(
 ) -> Result<String, String> {
     let stable = build_stable_prefix(
         agent_config,
+        "(unknown-session)",
         session_name,
         soul_instruction,
         workspace_instructions,
@@ -258,6 +260,7 @@ pub async fn build_system_prompt(
 /// These sections never change within a session so callers may cache the result.
 fn build_stable_prefix(
     agent_config: &crate::agent::AgentConfig,
+    session_id: &str,
     session_name: Option<String>,
     soul_instruction: Option<(String, String)>,
     workspace_instructions: Vec<(String, String)>,
@@ -274,9 +277,11 @@ fn build_stable_prefix(
         parts.push(format!(
             "\n\n## Agent Runtime Identity\n\
             - Agent Name: {}\n\
-            - Agent ID: {}",
+            - Agent ID: {}\n\
+            - Session ID: {}",
             agent_config.name.trim(),
-            agent_id
+            agent_id,
+            session_id
         ));
     }
 

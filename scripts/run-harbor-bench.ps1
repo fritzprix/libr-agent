@@ -47,7 +47,7 @@ param(
 
   [double]$TimeoutMultiplier = $(if ($env:LIBRAGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_TIMEOUT_MULTIPLIER } else { 1.0 }),
 
-  [double]$AgentTimeoutMultiplier = $(if ($env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER } else { 0 }),
+  [double]$AgentTimeoutMultiplier = $(if ($env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER } else { 100.0 }),
 
   [string]$AssistantName = "Coding Expert",
 
