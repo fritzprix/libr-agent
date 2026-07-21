@@ -319,6 +319,31 @@ class LibrAgentHarborAdapter(BaseAgent):
                 f"[{self.name()}] Session {session_id} spawned successfully "
                 f"(executionMode={self.execution_mode}). Awaiting execution completion..."
             )
+
+            # In attach/docker mode, download initial container files to host staging workspace
+            # so that host-based file search tools (like globFiles, grepFiles) can find them.
+            if use_attach:
+                try:
+                    session_res = await client.get(f"{self.api_url}/sessions/{session_id}")
+                    if session_res.status_code == 200:
+                        session_info = session_res.json()
+                        host_workspace = session_info.get("dockerHostWorkspacePath")
+                        if host_workspace:
+                            host_workspace_path = Path(host_workspace)
+                            os.makedirs(host_workspace_path, exist_ok=True)
+                            print(
+                                f"[{self.name()}] Pulling initial container files from "
+                                f"{container_workdir} to host staging workspace ({host_workspace})..."
+                            )
+                            await environment.download_dir(
+                                source_dir=container_workdir,
+                                target_dir=str(host_workspace_path.resolve().absolute()),
+                            )
+                            print(f"[{self.name()}] Successfully pulled initial files to host staging workspace.")
+                except Exception as e:
+                    print(
+                        f"[{self.name()}] Warning: failed to pull initial container files to host staging: {e}"
+                    )
             if self.poll_timeout_sec is not None:
                 print(
                     f"[{self.name()}] Poll wall-clock budget: "
@@ -418,6 +443,23 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"[{self.name()}] Attach mode: skipping host→container upload "
                     f"(agent wrote in-place under {container_workdir})."
                 )
+                local_workspace = self._resolve_local_workspace(environment, context)
+                local_workspace_str = str(local_workspace.resolve().absolute())
+                os.makedirs(local_workspace_str, exist_ok=True)
+                print(
+                    f"[{self.name()}] Pulling final container files from "
+                    f"{container_workdir} to local workspace ({local_workspace_str})..."
+                )
+                try:
+                    await environment.download_dir(
+                        source_dir=container_workdir,
+                        target_dir=local_workspace_str,
+                    )
+                    print(f"[{self.name()}] Successfully pulled final files to local workspace.")
+                except Exception as e:
+                    print(
+                        f"[{self.name()}] Warning: failed to pull final container files: {e}"
+                    )
 
             messages_res = await client.get(
                 f"{self.api_url}/sessions/{session_id}/messages"
