@@ -24,11 +24,23 @@ pub struct DockerProvisioningDeps {
 
 struct DockerRuntimeStepParams<'a> {
     session_id: &'a str,
-    image: &'a str,
+    /// Managed image or `attach:<container>`; `None` when unavailable (never a fake sentinel).
+    image: Option<&'a str>,
     step: &'a str,
     failed: bool,
     is_final: bool,
     error: Option<&'a str>,
+}
+
+fn docker_runtime_image_label(
+    config: &crate::models::workspace_isolation::DockerWorkspaceConfig,
+) -> Option<String> {
+    if let Some(image) = config.image_ref() {
+        return Some(image.to_string());
+    }
+    config
+        .attach_container_name()
+        .map(|name| format!("attach:{name}"))
 }
 
 pub fn spawn_docker_provisioning(
@@ -137,15 +149,14 @@ async fn run_docker_provisioning(
     let image = session
         .docker_config
         .as_ref()
-        .map(|config| config.image.clone())
-        .ok_or_else(|| "dockerConfig is required for Docker workspace isolation".to_string())?;
+        .and_then(docker_runtime_image_label);
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
         Some(&deps.app_handle),
         DockerRuntimeStepParams {
             session_id: &session.id,
-            image: &image,
+            image: image.as_deref(),
             step: "Preparing Docker workspace",
             failed: false,
             is_final: false,
@@ -171,7 +182,7 @@ async fn run_docker_provisioning(
                 Some(&app_handle),
                 DockerRuntimeStepParams {
                     session_id: &session_id,
-                    image: &image,
+                    image: image.as_deref(),
                     step: &step,
                     failed: false,
                     is_final: false,
@@ -196,24 +207,22 @@ async fn complete_docker_provisioning(
         active
             .get(session_id)
             .and_then(|session| session.metadata.docker_config.as_ref())
-            .map(|config| config.image.clone())
+            .and_then(docker_runtime_image_label)
     };
 
-    if let Some(image) = image.as_ref() {
-        emit_docker_runtime_step(
-            &deps.proxy_manager,
-            Some(&deps.app_handle),
-            DockerRuntimeStepParams {
-                session_id,
-                image,
-                step: "Docker workspace ready",
-                failed: false,
-                is_final: true,
-                error: None,
-            },
-        )
-        .await;
-    }
+    emit_docker_runtime_step(
+        &deps.proxy_manager,
+        Some(&deps.app_handle),
+        DockerRuntimeStepParams {
+            session_id,
+            image: image.as_deref(),
+            step: "Docker workspace ready",
+            failed: false,
+            is_final: true,
+            error: None,
+        },
+    )
+    .await;
 
     crate::agent::lifecycle::update_session_status(
         &deps.session_repo,
@@ -236,15 +245,14 @@ async fn fail_docker_provisioning(
     let image = session
         .docker_config
         .as_ref()
-        .map(|config| config.image.clone())
-        .unwrap_or_else(|| "unknown".to_string());
+        .and_then(docker_runtime_image_label);
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
         Some(&deps.app_handle),
         DockerRuntimeStepParams {
             session_id: &session.id,
-            image: &image,
+            image: image.as_deref(),
             step: "Docker workspace setup failed",
             failed: true,
             is_final: false,
@@ -287,7 +295,7 @@ async fn emit_docker_runtime_step(
         is_final,
         error,
     } = params;
-    let image = image.to_string();
+    let image = image.map(str::to_string);
     let step = step.to_string();
     let error = error.map(str::to_string);
 
@@ -310,7 +318,7 @@ async fn emit_docker_runtime_step(
             };
             state.initialization.error = error.clone();
             state.initialization.docker = Some(SessionRuntimeDockerState {
-                image,
+                image: image.clone(),
                 step: Some(step),
                 progress: None,
                 error,

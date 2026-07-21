@@ -1,3 +1,4 @@
+use crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR;
 use crate::session_isolation::IsolationLevel;
 use regex::Regex;
 use serde_json::Value;
@@ -8,7 +9,8 @@ pub const INTERNAL_WORKSPACE_STATE_DIR: &str = ".libragent";
 pub const INTERNAL_WORKSPACE_TMP_DIR: &str = "tmp";
 pub const INTERNAL_WORKSPACE_EXPORTS_DIR: &str = "exports";
 pub const MAX_SYNC_EXECUTION_TIMEOUT_SECONDS: u64 = 300;
-pub const DOCKER_WORKSPACE_ROOT: &str = "/workspace";
+/// Alias kept for call sites; single source of truth is `DEFAULT_DOCKER_WORKDIR`.
+pub const DOCKER_WORKSPACE_ROOT: &str = DEFAULT_DOCKER_WORKDIR;
 
 /// Get configured shell isolation level from settings
 /// Returns the configured isolation level or Medium as default
@@ -183,8 +185,16 @@ pub fn normalize_workspace_path(path: &str) -> String {
 
 /// Resolve the workspace root shown to the agent and returned in shell tool responses.
 pub fn effective_workspace_root(is_docker: bool, host_workspace: &Path) -> String {
+    effective_workspace_root_with_docker_root(is_docker, host_workspace, DOCKER_WORKSPACE_ROOT)
+}
+
+pub fn effective_workspace_root_with_docker_root(
+    is_docker: bool,
+    host_workspace: &Path,
+    docker_root: &str,
+) -> String {
     if is_docker {
-        DOCKER_WORKSPACE_ROOT.to_string()
+        docker_root.trim_end_matches('/').to_string()
     } else {
         normalize_workspace_path(&host_workspace.to_string_lossy())
     }
@@ -193,11 +203,12 @@ pub fn effective_workspace_root(is_docker: bool, host_workspace: &Path) -> Strin
 /// Format persistent-shell CWD for agent context (relative to workspace root when possible).
 pub fn display_shell_cwd(raw_cwd: &str, workspace_dir: &str, is_docker: bool) -> String {
     let cwd = normalize_workspace_path(raw_cwd);
+    let root = workspace_dir.trim_end_matches('/');
 
     if is_docker {
-        if cwd == DOCKER_WORKSPACE_ROOT {
+        if cwd == root {
             ".".to_string()
-        } else if let Some(relative) = cwd.strip_prefix("/workspace/") {
+        } else if let Some(relative) = cwd.strip_prefix(&format!("{root}/")) {
             format!("./{relative}")
         } else {
             cwd
@@ -211,22 +222,32 @@ pub fn display_shell_cwd(raw_cwd: &str, workspace_dir: &str, is_docker: bool) ->
 
 /// Helper to check if a session is Docker isolated.
 pub async fn is_session_docker_isolated(session_id: &str) -> bool {
+    session_docker_root(session_id).await.0
+}
+
+/// Single DB read for Docker isolation + configured workdir (`/workspace` or attach `/app`).
+pub async fn session_docker_root(session_id: &str) -> (bool, String) {
     use crate::models::workspace_isolation::WorkspaceIsolationMode;
     use crate::repositories::session_repository::SessionRepository;
 
     if let Some(session_repo) = crate::state::try_get_session_repository() {
-        match session_repo.get_session(session_id).await {
-            Ok(Some(session)) => session.workspace_isolation == WorkspaceIsolationMode::Docker,
-            Ok(None) | Err(_) => false,
+        if let Ok(Some(session)) = session_repo.get_session(session_id).await {
+            let is_docker = session.workspace_isolation == WorkspaceIsolationMode::Docker;
+            let workdir = session
+                .docker_config
+                .as_ref()
+                .map(|config| config.workdir().to_string())
+                .unwrap_or_else(|| DEFAULT_DOCKER_WORKDIR.to_string());
+            return (is_docker, workdir);
         }
-    } else {
-        false
     }
+    (false, DEFAULT_DOCKER_WORKDIR.to_string())
 }
 
 /// CWD reported by isolated/async shell tools for a session.
 pub async fn effective_command_cwd(session_id: &str, host_workspace: &Path) -> String {
-    effective_workspace_root(is_session_docker_isolated(session_id).await, host_workspace)
+    let (is_docker, docker_root) = session_docker_root(session_id).await;
+    effective_workspace_root_with_docker_root(is_docker, host_workspace, &docker_root)
 }
 
 #[cfg(test)]

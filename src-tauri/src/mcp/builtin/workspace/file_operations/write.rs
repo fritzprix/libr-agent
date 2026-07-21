@@ -241,6 +241,22 @@ impl WorkspaceServer {
             }
         };
 
+        if let Err(sync_error) = self
+            .sync_attach_before_host_read(&safe_path, Some(target_session_id.as_str()))
+            .await
+        {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!("Failed to sync attached container file before write: {sync_error}"),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Verify the Harbor/Docker container is still running".to_string(),
+                "Retry writeFile after confirming docker exec works".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         // Resolve the actual write target.
         // mode=create: if the path already exists, keep it and write to stem-N.ext instead
         // (avoids discarding already-generated content / forcing a costly retry).
@@ -359,6 +375,24 @@ impl WorkspaceServer {
 
         match result {
             Ok(()) => {
+                if let Err(sync_error) = self
+                    .sync_attach_after_host_write(&write_safe_path, Some(&target_session_id))
+                    .await
+                {
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        format!(
+                            "File was written to staging but failed to sync into the attached container: {sync_error}"
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Verify the Harbor/Docker container is still running".to_string(),
+                        "Retry writeFile after confirming docker exec works".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+
                 self.invalidate_context_cache().await;
 
                 let max_display_lines = 100;

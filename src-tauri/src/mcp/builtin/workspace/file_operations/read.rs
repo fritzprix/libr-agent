@@ -141,6 +141,22 @@ impl WorkspaceServer {
             }
         };
 
+        if let Err(sync_error) = self
+            .sync_attach_before_host_read(&safe_path, session_id.as_deref())
+            .await
+        {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!("Failed to sync attached container file before read: {sync_error}"),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Verify the Harbor/Docker container is still running".to_string(),
+                "Retry readFile after confirming docker exec works".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         // 5. File existence check
         if !safe_path.exists() {
             return Ok(not_found_error("File", path_str, ToolGroup::Workspace));

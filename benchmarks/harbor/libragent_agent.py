@@ -1,14 +1,20 @@
 """Harbor Framework adapter for LibrAgent.
 
 Bridges Harbor's terminal-benchmark loop to LibrAgent's headless Session API.
-The agent runs on a host workspace; files are synced to/from the Harbor
-container so the verifier sees the same tree under the task workdir (usually /app).
+
+When the Harbor environment is a local Docker Compose trial, the adapter attaches
+LibrAgent's Docker session to Harbor's existing main container (workdir usually
+`/app`) so absolute task paths work without host↔container sync.
+
+Non-Docker Harbor backends fall back to the legacy host-workspace sync path.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +38,7 @@ DEFAULT_EXECUTION_MODE = "unsafe"
 # Idle/error end the workflow. Paused means approval wait — not done for benchmarks.
 TERMINAL_WORKFLOW_STATUSES = frozenset({"idle", "error"})
 DEFAULT_POLL_INTERVAL_SEC = 3.0
+MAIN_COMPOSE_SERVICE = "main"
 
 
 def resolve_execution_mode(
@@ -80,6 +87,79 @@ def resolve_poll_timeout_sec(
     return float(raw)
 
 
+def sanitize_docker_compose_project_name(name: str) -> str:
+    """Mirror Harbor's compose project-name sanitizer."""
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", name.lower().replace(" ", ""))
+    if not sanitized:
+        return "harbor"
+    if sanitized[0].isdigit() or sanitized[0] == "-":
+        sanitized = f"p{sanitized}"
+    return sanitized[:63]
+
+
+def resolve_container_workdir(environment: BaseEnvironment) -> str:
+    workdir = "/app"
+    if hasattr(environment, "task_env_config") and environment.task_env_config:
+        workdir = getattr(environment.task_env_config, "workdir", None) or "/app"
+    return workdir
+
+
+def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None:
+    """Resolve Harbor's Docker Compose `main` container id, if available."""
+    session_id = getattr(environment, "session_id", None)
+    if not session_id:
+        print(
+            "[LibrAgent] Warning: Harbor environment has no session_id; "
+            "cannot resolve Compose main container for attach."
+        )
+        return None
+
+    project = sanitize_docker_compose_project_name(str(session_id))
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project={project}",
+                "--filter",
+                f"label=com.docker.compose.service={MAIN_COMPOSE_SERVICE}",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(
+            f"[LibrAgent] Warning: docker ps failed while resolving Harbor main "
+            f"container (project={project!r}): {exc}"
+        )
+        return None
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        print(
+            f"[LibrAgent] Warning: docker ps returned {result.returncode} while "
+            f"resolving Harbor main container (project={project!r})"
+            + (f": {stderr}" if stderr else "")
+        )
+        return None
+
+    for line in (result.stdout or "").splitlines():
+        cid = line.strip()
+        if cid:
+            return cid
+
+    print(
+        f"[LibrAgent] Warning: no running Compose service '{MAIN_COMPOSE_SERVICE}' "
+        f"for project={project!r} (session_id={session_id!r}). "
+        "If Harbor's sanitizer differs, attach will be skipped and host-sync fallback used."
+    )
+    return None
+
+
 class LibrAgentHarborAdapter(BaseAgent):
     """
     Harbor Framework Adapter for LibrAgent.
@@ -123,7 +203,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         return "LibrAgent"
 
     def version(self) -> str | None:
-        return "0.8.32"
+        return "0.8.33"
 
     async def setup(self, environment: BaseEnvironment) -> None:
         """Validates connection with the running LibrAgent daemon."""
@@ -160,45 +240,67 @@ class LibrAgentHarborAdapter(BaseAgent):
         if httpx is None:
             raise RuntimeError("Python library 'httpx' is missing.")
 
-        local_workspace = self._resolve_local_workspace(environment, context)
-        local_workspace_str = str(local_workspace.resolve().absolute())
-        os.makedirs(local_workspace_str, exist_ok=True)
+        container_workdir = resolve_container_workdir(environment)
+        attach_container_id = resolve_harbor_main_container_id(environment)
+        use_attach = attach_container_id is not None
 
-        container_workdir = "/app"
-        if hasattr(environment, "task_env_config") and environment.task_env_config:
-            container_workdir = (
-                getattr(environment.task_env_config, "workdir", None) or "/app"
-            )
+        local_workspace: Path | None = None
+        local_workspace_str: str | None = None
 
-        print(
-            f"[{self.name()}] Pulling initial container files from "
-            f"{container_workdir} to {local_workspace_str}..."
-        )
-        try:
-            await environment.download_dir(
-                source_dir=container_workdir,
-                target_dir=local_workspace_str,
-            )
-            print(f"[{self.name()}] Successfully pulled initial files.")
-        except Exception as e:
+        if use_attach:
             print(
-                f"[{self.name()}] Warning: failed to pull initial container files: {e}"
+                f"[{self.name()}] Attaching LibrAgent Docker session to Harbor "
+                f"container {attach_container_id} (workdir={container_workdir})..."
             )
+        else:
+            local_workspace = self._resolve_local_workspace(environment, context)
+            local_workspace_str = str(local_workspace.resolve().absolute())
+            os.makedirs(local_workspace_str, exist_ok=True)
+            print(
+                f"[{self.name()}] Harbor container id not resolved; falling back to "
+                f"host workspace sync ({local_workspace_str})."
+            )
+            print(
+                f"[{self.name()}] Pulling initial container files from "
+                f"{container_workdir} to {local_workspace_str}..."
+            )
+            try:
+                await environment.download_dir(
+                    source_dir=container_workdir,
+                    target_dir=local_workspace_str,
+                )
+                print(f"[{self.name()}] Successfully pulled initial files.")
+            except Exception as e:
+                print(
+                    f"[{self.name()}] Warning: failed to pull initial container files: {e}"
+                )
 
         task_id = getattr(context, "task_id", None) or "bench"
-        payload = {
+        payload: dict[str, Any] = {
             "assistantId": self.assistant_id,
             "name": f"Harbor Benchmark Task: {task_id}",
-            "workspacePath": local_workspace_str,
-            "workspaceIsolation": "host",
             "request": instruction,
             "executionMode": self.execution_mode,
         }
 
+        if use_attach and attach_container_id is not None:
+            payload["workspaceIsolation"] = "docker"
+            payload["dockerConfig"] = {
+                "attachContainer": attach_container_id,
+                "workdir": container_workdir,
+                "manageLifecycle": False,
+            }
+        else:
+            payload["workspacePath"] = local_workspace_str
+            payload["workspaceIsolation"] = "host"
+
         async with httpx.AsyncClient(timeout=600.0) as client:
-            print(
-                f"[{self.name()}] Creating session on workspace: {local_workspace_str}..."
+            mode_desc = (
+                f"attach:{attach_container_id}"
+                if use_attach
+                else f"host:{local_workspace_str}"
             )
+            print(f"[{self.name()}] Creating session ({mode_desc})...")
             res = await client.post(f"{self.api_url}/sessions", json=payload)
             if res.status_code != 201:
                 raise RuntimeError(
@@ -295,21 +397,27 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"workflow (last status={last_status})."
                 )
 
-            print(
-                f"[{self.name()}] Pushing updated workspace files from "
-                f"{local_workspace_str} to container {container_workdir}..."
-            )
-            try:
-                await self._upload_workspace(
-                    environment,
-                    Path(local_workspace_str),
-                    container_workdir,
+            if not use_attach and local_workspace is not None:
+                print(
+                    f"[{self.name()}] Pushing updated workspace files from "
+                    f"{local_workspace} to container {container_workdir}..."
                 )
-                print(f"[{self.name()}] Successfully pushed workspace files.")
-            except Exception as e:
-                raise RuntimeError(
-                    f"Error pushing workspace files back to container: {e}"
-                ) from e
+                try:
+                    await self._upload_workspace(
+                        environment,
+                        local_workspace,
+                        container_workdir,
+                    )
+                    print(f"[{self.name()}] Successfully pushed workspace files.")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Error pushing workspace files back to container: {e}"
+                    ) from e
+            elif use_attach:
+                print(
+                    f"[{self.name()}] Attach mode: skipping host→container upload "
+                    f"(agent wrote in-place under {container_workdir})."
+                )
 
             messages_res = await client.get(
                 f"{self.api_url}/sessions/{session_id}/messages"
@@ -342,6 +450,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "sessionId": session_id,
                 "finalStatus": last_status,
                 "completed": True,
+                "attachContainer": attach_container_id,
+                "workspaceMode": "attach" if use_attach else "host-sync",
             }
             print(
                 f"[{self.name()}] Task complete. Response harvested successfully "

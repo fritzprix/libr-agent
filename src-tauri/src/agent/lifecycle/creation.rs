@@ -153,7 +153,14 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     };
 
     let docker_container_name = if workspace_isolation == WorkspaceIsolationMode::Docker {
-        Some(format!("libragent-session-{session_id}"))
+        if let Some(attach) = docker_config
+            .as_ref()
+            .and_then(DockerWorkspaceConfig::attach_container_name)
+        {
+            Some(attach.to_string())
+        } else {
+            Some(format!("libragent-session-{session_id}"))
+        }
     } else {
         None
     };

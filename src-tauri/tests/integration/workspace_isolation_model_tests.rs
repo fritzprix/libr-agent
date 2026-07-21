@@ -27,14 +27,17 @@ fn docker_workspace_config_defaults_missing_env_to_empty_map() {
     }))
     .expect("config should deserialize");
 
-    assert_eq!(config.image, "ubuntu:24.04");
+    assert_eq!(config.image.as_deref(), Some("ubuntu:24.04"));
     assert!(config.env.is_empty());
 }
 
 #[test]
 fn docker_workspace_config_rejects_empty_image() {
     let config = DockerWorkspaceConfig {
-        image: "   ".to_string(),
+        image: Some("   ".to_string()),
+        attach_container: None,
+        workdir: None,
+        manage_lifecycle: None,
         env: Default::default(),
         port_bindings: Vec::new(),
     };
@@ -72,7 +75,10 @@ fn docker_workspace_config_accepts_loopback_port_bindings() {
 #[test]
 fn docker_workspace_config_rejects_duplicate_port_bindings() {
     let duplicate_container_port = DockerWorkspaceConfig {
-        image: "ubuntu:24.04".to_string(),
+        image: Some("ubuntu:24.04".to_string()),
+        attach_container: None,
+        workdir: None,
+        manage_lifecycle: None,
         env: Default::default(),
         port_bindings: vec![
             DockerPortBinding {
@@ -88,7 +94,10 @@ fn docker_workspace_config_rejects_duplicate_port_bindings() {
     assert!(duplicate_container_port.validate().is_err());
 
     let duplicate_host_port = DockerWorkspaceConfig {
-        image: "ubuntu:24.04".to_string(),
+        image: Some("ubuntu:24.04".to_string()),
+        attach_container: None,
+        workdir: None,
+        manage_lifecycle: None,
         env: Default::default(),
         port_bindings: vec![
             DockerPortBinding {
@@ -125,6 +134,45 @@ fn docker_env_key_validation_rejects_flag_like_or_invalid_names() {
 fn docker_env_value_validation_rejects_nul_bytes() {
     validate_env_value("TOKEN", "abc").expect("normal values should pass");
     assert!(validate_env_value("TOKEN", "abc\0def").is_err());
+}
+
+#[test]
+fn docker_workspace_config_accepts_attach_without_image() {
+    let config: DockerWorkspaceConfig = serde_json::from_value(serde_json::json!({
+        "attachContainer": "abc123",
+        "workdir": "/app",
+        "manageLifecycle": false
+    }))
+    .expect("attach config should deserialize");
+
+    assert!(config.is_attach());
+    assert_eq!(config.attach_container_name(), Some("abc123"));
+    assert_eq!(config.workdir(), "/app");
+    assert!(!config.manage_lifecycle());
+    config.validate().expect("attach config should validate");
+}
+
+#[test]
+fn docker_workspace_config_rejects_neither_image_nor_attach() {
+    let config = DockerWorkspaceConfig {
+        image: None,
+        attach_container: None,
+        workdir: None,
+        manage_lifecycle: None,
+        env: Default::default(),
+        port_bindings: Vec::new(),
+    };
+    assert!(config.validate().is_err());
+}
+
+#[test]
+fn path_mapping_maps_custom_app_root() {
+    let mapper = PathMappingLayer::with_container_root("/tmp/staging".into(), "/app");
+    assert_eq!(
+        mapper.container_to_host("/app/gpt2.c").as_deref(),
+        Some(std::path::Path::new("/tmp/staging/gpt2.c"))
+    );
+    assert!(mapper.container_to_host("/workspace/gpt2.c").is_none());
 }
 
 #[test]

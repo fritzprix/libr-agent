@@ -71,9 +71,52 @@ export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 need() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }
 }
-need harbor
-need python
+
+resolve_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
+  elif command -v python >/dev/null 2>&1; then
+    command -v python
+  else
+    echo "Missing required command: python3 or python" >&2
+    exit 1
+  fi
+}
+
+PYTHON="$(resolve_python)"
+
+ensure_harbor() {
+  if command -v harbor >/dev/null 2>&1; then
+    return
+  fi
+
+  echo "==> harbor command not found. Attempting to bootstrap/install..."
+
+  if command -v uv >/dev/null 2>&1; then
+    echo "Installing harbor and httpx using uv..."
+    uv pip install harbor httpx --system
+  else
+    echo "Installing harbor and httpx using pip..."
+    "$PYTHON" -m pip install harbor httpx
+  fi
+
+  if ! command -v harbor >/dev/null 2>&1; then
+    scripts_dir="$("$PYTHON" -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>/dev/null || true)"
+    if [[ -n "$scripts_dir" && -d "$scripts_dir" ]]; then
+      echo "Adding $scripts_dir to PATH for this session" >&2
+      export PATH="$scripts_dir:$PATH"
+    fi
+  fi
+
+  if ! command -v harbor >/dev/null 2>&1; then
+    echo "Could not bootstrap harbor. Please install manually (e.g. 'pip install harbor httpx')." >&2
+    exit 1
+  fi
+  echo "==> harbor successfully bootstrapped and ready!"
+}
+
 need curl
+ensure_harbor
 
 resolve_assistant_id() {
   if [[ -n "$ASSISTANT_ID" ]]; then
@@ -81,7 +124,7 @@ resolve_assistant_id() {
     return
   fi
   echo "==> Resolving assistant '$ASSISTANT_NAME'" >&2
-  python - "$API_URL" "$ASSISTANT_NAME" <<'PY'
+  "$PYTHON" - "$API_URL" "$ASSISTANT_NAME" <<'PY'
 import json, sys, urllib.request
 api, name = sys.argv[1], sys.argv[2]
 with urllib.request.urlopen(f"{api}/assistants", timeout=15) as resp:
@@ -105,7 +148,7 @@ if [[ "$SKIP_HEALTH" -eq 0 ]]; then
   echo "==> Smoke-checking executionMode=$EXECUTION_MODE"
   CREATE=$(curl -fsS -X POST "$API_URL/sessions" \
     -H 'Content-Type: application/json' \
-    -d "$(python - <<PY
+    -d "$("$PYTHON" - <<PY
 import json
 print(json.dumps({
   "assistantId": "$ASSISTANT_ID",
@@ -116,9 +159,9 @@ print(json.dumps({
 }))
 PY
 )")
-  SID=$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$CREATE")
+  SID=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$CREATE")
   sleep 1
-  MODE=$(curl -fsS "$API_URL/sessions/$SID" | python -c 'import json,sys; print(json.load(sys.stdin).get("executionMode"))')
+  MODE=$(curl -fsS "$API_URL/sessions/$SID" | "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("executionMode"))')
   echo "  session=$SID executionMode=$MODE"
   if [[ "$EXECUTION_MODE" != "normal" && "$MODE" != "$EXECUTION_MODE" ]]; then
     echo "API did not apply executionMode=$EXECUTION_MODE (got $MODE)" >&2
@@ -183,7 +226,29 @@ set -e
 LATEST=$(ls -1d jobs/*/ 2>/dev/null | sort | tail -n 1 || true)
 if [[ -n "$LATEST" ]]; then
   echo "==> Latest job: $LATEST"
-  find "$LATEST" -path '*/verifier/reward.txt' -print -exec cat {} \;
+  if [[ -f "${LATEST}result.json" ]]; then
+    "$PYTHON" - "${LATEST}result.json" <<'PY' || true
+import json, sys
+path = sys.argv[1]
+try:
+    job = json.load(open(path, encoding="utf-8"))
+except Exception:
+    print("  (could not parse job result.json)")
+    raise SystemExit(0)
+evals = (job.get("stats") or {}).get("evals") or {}
+for name, value in evals.items():
+    metrics = value.get("metrics") or []
+    mean = metrics[0].get("mean") if metrics else None
+    print(
+        f"  eval {name}: mean={mean} trials={value.get('n_trials')} errors={value.get('n_errors')}"
+    )
+PY
+  fi
+  while IFS= read -r -d '' reward_file; do
+    trial="$(basename "$(dirname "$(dirname "$reward_file")")")"
+    reward="$(tr -d '[:space:]' <"$reward_file")"
+    echo "  trial ${trial}: reward=${reward}"
+  done < <(find "$LATEST" -path '*/verifier/reward.txt' -print0 2>/dev/null || true)
 fi
 
 exit "$CODE"

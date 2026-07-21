@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
+pub const DEFAULT_DOCKER_WORKDIR: &str = "/workspace";
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum WorkspaceIsolationMode {
@@ -41,7 +43,20 @@ impl FromStr for WorkspaceIsolationMode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerWorkspaceConfig {
-    pub image: String,
+    /// Image for managed LibrAgent Docker sessions. Optional when attaching to an
+    /// existing container (`attach_container`).
+    #[serde(default)]
+    pub image: Option<String>,
+    /// Existing Docker container id/name to attach instead of creating one.
+    #[serde(default)]
+    pub attach_container: Option<String>,
+    /// Container working directory / file-tool root. Defaults to `/workspace`.
+    #[serde(default)]
+    pub workdir: Option<String>,
+    /// When false, session cleanup must not stop/remove the container.
+    /// Defaults to true for managed containers.
+    #[serde(default)]
+    pub manage_lifecycle: Option<bool>,
     #[serde(default)]
     pub env: HashMap<String, String>,
     #[serde(default)]
@@ -56,9 +71,59 @@ pub struct DockerPortBinding {
 }
 
 impl DockerWorkspaceConfig {
+    pub fn is_attach(&self) -> bool {
+        self.attach_container
+            .as_ref()
+            .is_some_and(|value| !value.trim().is_empty())
+    }
+
+    pub fn attach_container_name(&self) -> Option<&str> {
+        self.attach_container
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    pub fn image_ref(&self) -> Option<&str> {
+        self.image
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    pub fn workdir(&self) -> &str {
+        self.workdir
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(DEFAULT_DOCKER_WORKDIR)
+    }
+
+    pub fn manage_lifecycle(&self) -> bool {
+        self.manage_lifecycle.unwrap_or(true)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
-        if self.image.trim().is_empty() {
-            return Err("Docker image cannot be empty".to_string());
+        let has_attach = self.is_attach();
+        let has_image = self.image_ref().is_some();
+
+        if !has_attach && !has_image {
+            return Err(
+                "Docker config requires either 'image' (managed) or 'attachContainer' (attach)"
+                    .to_string(),
+            );
+        }
+
+        if has_attach {
+            let workdir = self.workdir();
+            if !workdir.starts_with('/') {
+                return Err(format!(
+                    "Docker workdir must be an absolute Unix path, got '{workdir}'"
+                ));
+            }
+            if workdir.contains('\0') {
+                return Err("Docker workdir must not contain NUL bytes".to_string());
+            }
         }
 
         for (key, value) in &self.env {

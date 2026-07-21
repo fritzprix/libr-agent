@@ -66,7 +66,10 @@ async fn docker_workspace_run_shell_smoke_test() {
         workspace_override: None,
         workspace_isolation: WorkspaceIsolationMode::Docker,
         docker_config: Some(DockerWorkspaceConfig {
-            image: "ubuntu:24.04".to_string(),
+            image: Some("ubuntu:24.04".to_string()),
+            attach_container: None,
+            workdir: None,
+            manage_lifecycle: None,
             env: docker_env,
             port_bindings: Vec::new(),
         }),
@@ -176,7 +179,10 @@ async fn docker_workspace_persistent_shell_smoke_test() {
         workspace_override: None,
         workspace_isolation: WorkspaceIsolationMode::Docker,
         docker_config: Some(DockerWorkspaceConfig {
-            image: "ubuntu:24.04".to_string(),
+            image: Some("ubuntu:24.04".to_string()),
+            attach_container: None,
+            workdir: None,
+            manage_lifecycle: None,
             env: HashMap::new(),
             port_bindings: Vec::new(),
         }),
@@ -294,7 +300,10 @@ async fn docker_workspace_loopback_dynamic_port_smoke_test() {
         workspace_override: None,
         workspace_isolation: WorkspaceIsolationMode::Docker,
         docker_config: Some(DockerWorkspaceConfig {
-            image: "ubuntu:24.04".to_string(),
+            image: Some("ubuntu:24.04".to_string()),
+            attach_container: None,
+            workdir: None,
+            manage_lifecycle: None,
             env: HashMap::new(),
             port_bindings: vec![DockerPortBinding {
                 container_port: 8080,
@@ -379,7 +388,10 @@ async fn docker_workspace_sh_fallback_smoke_test() {
         workspace_override: None,
         workspace_isolation: WorkspaceIsolationMode::Docker,
         docker_config: Some(DockerWorkspaceConfig {
-            image: "alpine:3.20".to_string(),
+            image: Some("alpine:3.20".to_string()),
+            attach_container: None,
+            workdir: None,
+            manage_lifecycle: None,
             env: HashMap::new(),
             port_bindings: Vec::new(),
         }),

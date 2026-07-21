@@ -42,7 +42,14 @@ export interface AgentConfig {
 export type WorkspaceIsolationMode = 'host' | 'docker';
 
 export interface DockerWorkspaceConfig {
-  image: string;
+  /** Required for managed Docker sessions; omit when attaching to an existing container. */
+  image?: string;
+  /** Existing container id/name to attach (Harbor task containers). */
+  attachContainer?: string;
+  /** Container workdir / file-tool root. Defaults to `/workspace`. */
+  workdir?: string;
+  /** When false, session cleanup must not stop/remove the container. */
+  manageLifecycle?: boolean;
   env?: Record<string, string>;
   portBindings?: DockerPortBinding[];
 }
@@ -199,7 +206,8 @@ export interface SessionRuntimeProxyState {
 }
 
 export interface SessionRuntimeDockerState {
-  image: string;
+  /** Managed image ref, or `attach:<container>`. Absent when unknown. */
+  image?: string;
   step?: string;
   progress?: number;
   error?: string;

@@ -30,10 +30,7 @@ fn content_item_has_thinking(content: &MCPContent) -> bool {
 }
 
 pub fn inspect_assistant_message_shape(message: &Message) -> AssistantMessageShape {
-    let has_renderable_content = message
-        .content
-        .iter()
-        .any(content_item_is_renderable);
+    let has_renderable_content = message.content.iter().any(content_item_is_renderable);
     let has_thinking = message
         .thinking
         .as_ref()
@@ -45,9 +42,10 @@ pub fn inspect_assistant_message_shape(message: &Message) -> AssistantMessageSha
         .as_ref()
         .map(|tool_calls| !tool_calls.is_empty())
         .unwrap_or(false)
-        || message.content.iter().any(|content| {
-            matches!(content, MCPContent::ToolCall { .. })
-        });
+        || message
+            .content
+            .iter()
+            .any(|content| matches!(content, MCPContent::ToolCall { .. }));
 
     AssistantMessageShape {
         has_renderable_content,

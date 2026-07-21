@@ -248,9 +248,16 @@ async fn docker_path_mapper_for_session(
         .as_ref()
         .ok_or_else(|| format!("Missing Docker host workspace path for session {session_id}"))?;
 
-    Ok(Some(PathMappingLayer::new(std::path::PathBuf::from(
-        host_workspace,
-    ))))
+    let workdir = session
+        .docker_config
+        .as_ref()
+        .map(|config| config.workdir().to_string())
+        .unwrap_or_else(|| crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR.to_string());
+
+    Ok(Some(PathMappingLayer::with_container_root(
+        std::path::PathBuf::from(host_workspace),
+        workdir,
+    )))
 }
 
 fn display_shell_cwd(

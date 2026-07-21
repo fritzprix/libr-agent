@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::models::workspace_isolation::{
-    validate_env_key, validate_env_value, WorkspaceIsolationMode,
+    validate_env_key, validate_env_value, WorkspaceIsolationMode, DEFAULT_DOCKER_WORKDIR,
 };
 use crate::repositories::{SessionMetadata, SessionRepository};
 use crate::session_isolation::{PathMappingLayer, ShellDialect, ShellType, SpawnedShell};
@@ -175,9 +175,10 @@ impl WorkspaceRuntimeManager {
         let shell = prepare_docker_runtime(session, true, true, None).await?;
 
         let container_name = docker_container_name(session)?;
+        let workdir = session_docker_workdir(session);
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
-        cmd.args(["exec", "-i", "-w", "/workspace"]);
+        cmd.args(["exec", "-i", "-w", &workdir]);
 
         let mut merged_env = session
             .docker_config
@@ -209,9 +210,10 @@ impl WorkspaceRuntimeManager {
 
         let container_name = docker_container_name(session)?;
         let host_workspace = docker_host_workspace_path(session)?;
+        let workdir = session_docker_workdir(session);
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
-        cmd.args(["exec", "-i", "-w", "/workspace"]);
+        cmd.args(["exec", "-i", "-w", &workdir]);
 
         if let Some(config) = &session.docker_config {
             for (key, value) in &config.env {
@@ -237,8 +239,8 @@ impl WorkspaceRuntimeManager {
 
         Ok(SpawnedShell {
             child,
-            initial_cwd: "/workspace".to_string(),
-            path_mapper: PathMappingLayer::new(host_workspace),
+            initial_cwd: workdir,
+            path_mapper: path_mapper_for_session(session, host_workspace),
             shell_type: shell,
             shell_dialect: match shell {
                 ShellType::Bash => ShellDialect::Bash,
@@ -254,6 +256,10 @@ impl WorkspaceRuntimeManager {
         }
 
         clear_session_docker_caches(&session.id);
+
+        if !session_manage_lifecycle(session) {
+            return Ok(());
+        }
 
         Self::healthcheck().await?;
         let container_name = docker_container_name(session)?;
@@ -387,8 +393,9 @@ async fn prepare_docker_runtime(
     let image = session
         .docker_config
         .as_ref()
-        .map(|config| config.image.clone())
-        .unwrap_or_else(|| "unknown".to_string());
+        .and_then(|config| config.image_ref())
+        .unwrap_or("attached")
+        .to_string();
     let shell = ensure_bash_image_contract(
         &session.id,
         &container_name,
@@ -440,6 +447,24 @@ async fn ensure_bash_image_contract(
     image: &str,
     reporter: Option<&DockerStepReporter>,
 ) -> RuntimeResult<ShellType> {
+    if session_is_attach(session) {
+        if !docker_container_exists(container_name).await? {
+            return Err(WorkspaceRuntimeError::DockerCommandFailed(format!(
+                "Attach container '{container_name}' was not found"
+            )));
+        }
+        if !docker_container_running(container_name).await? {
+            if let Some(reporter) = reporter {
+                reporter("Starting attached container");
+            }
+            run_docker_status(["start", container_name]).await?;
+        }
+        if let Some(reporter) = reporter {
+            reporter("Verifying shell");
+        }
+        return ensure_supported_shell(session_id, container_name).await;
+    }
+
     if docker_container_exists(container_name).await? {
         verify_container_label(container_name, session_id).await?;
         if !docker_container_running(container_name).await? {
@@ -456,6 +481,11 @@ async fn ensure_bash_image_contract(
         config
             .validate()
             .map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        let image_ref = config.image_ref().ok_or_else(|| {
+            WorkspaceRuntimeError::InvalidConfig(
+                "Managed Docker sessions require an image".to_string(),
+            )
+        })?;
 
         tokio::fs::create_dir_all(host_workspace)
             .await
@@ -489,11 +519,12 @@ async fn ensure_bash_image_contract(
 
         let volume_args = build_docker_volume_args(host_workspace, tw_dir_arg)?;
         let label = format!("com.libragent.session_id={session_id}");
+        let workdir = session_docker_workdir(session);
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
         cmd.args(volume_args);
-        cmd.args(["-w", "/workspace"]);
+        cmd.args(["-w", &workdir]);
 
         if let Some(config) = &session.docker_config {
             append_port_binding_args(&mut cmd, config).await?;
@@ -507,7 +538,7 @@ async fn ensure_bash_image_contract(
             reporter("Starting container");
         }
 
-        cmd.args([&config.image, "tail", "-f", "/dev/null"]);
+        cmd.args([image_ref, "tail", "-f", "/dev/null"]);
         run_status_command(cmd).await?;
     }
 
@@ -620,6 +651,33 @@ fn docker_host_workspace_path(session: &SessionMetadata) -> RuntimeResult<PathBu
         .as_ref()
         .map(PathBuf::from)
         .ok_or_else(|| WorkspaceRuntimeError::MissingHostWorkspacePath(session.id.clone()))
+}
+
+fn session_is_attach(session: &SessionMetadata) -> bool {
+    session
+        .docker_config
+        .as_ref()
+        .is_some_and(|config| config.is_attach())
+}
+
+fn session_manage_lifecycle(session: &SessionMetadata) -> bool {
+    session
+        .docker_config
+        .as_ref()
+        .map(|config| config.manage_lifecycle())
+        .unwrap_or(true)
+}
+
+pub(crate) fn session_docker_workdir(session: &SessionMetadata) -> String {
+    session
+        .docker_config
+        .as_ref()
+        .map(|config| config.workdir().to_string())
+        .unwrap_or_else(|| DEFAULT_DOCKER_WORKDIR.to_string())
+}
+
+fn path_mapper_for_session(session: &SessionMetadata, host_workspace: PathBuf) -> PathMappingLayer {
+    PathMappingLayer::with_container_root(host_workspace, session_docker_workdir(session))
 }
 
 fn docker_mount_path(path: &Path) -> RuntimeResult<String> {
