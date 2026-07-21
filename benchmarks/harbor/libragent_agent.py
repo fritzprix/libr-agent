@@ -12,6 +12,7 @@ Non-Docker Harbor backends fall back to the legacy host-workspace sync path.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 import subprocess
@@ -366,6 +367,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                         poll_deadline is not None
                         and asyncio.get_running_loop().time() >= poll_deadline
                     ):
+                        await self._terminate_session(session_id)
                         raise TimeoutError(
                             f"LibrAgent session {session_id} did not reach a terminal "
                             f"workflow status within {self.poll_timeout_sec:.0f}s "
@@ -412,11 +414,15 @@ class LibrAgentHarborAdapter(BaseAgent):
                 # success — that caused verifiers to score incomplete workspaces.
                 print(
                     f"[{self.name()}] Session polling cancelled (Harbor timeout) "
-                    f"while status={last_status}. Refusing to harvest incomplete results."
+                    f"while status={last_status}. Terminating session and refusing "
+                    f"to harvest incomplete results."
                 )
+                # Shielded terminate re-raises CancelledError after teardown.
+                await self._terminate_session(session_id)
                 raise
 
             if not completed:
+                await self._terminate_session(session_id)
                 raise RuntimeError(
                     f"LibrAgent session {session_id} ended polling without a completed "
                     f"workflow (last status={last_status})."
@@ -435,6 +441,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                     )
                     print(f"[{self.name()}] Successfully pushed workspace files.")
                 except Exception as e:
+                    await self._terminate_session(session_id)
                     raise RuntimeError(
                         f"Error pushing workspace files back to container: {e}"
                     ) from e
@@ -498,6 +505,54 @@ class LibrAgentHarborAdapter(BaseAgent):
             print(
                 f"[{self.name()}] Task complete. Response harvested successfully "
                 f"({len(messages)} messages, status={last_status})."
+            )
+
+            # Harvest finished; release the LibrAgent session so it does not keep
+            # running (and, in attach mode, keep writing into Harbor's container)
+            # after Harbor moves on to the next task.
+            await self._terminate_session(session_id)
+
+    async def _terminate_session(self, session_id: str) -> None:
+        """Terminate a LibrAgent session, surviving Harbor's coroutine cancellation.
+
+        The terminate request is shielded so a Harbor agent-timeout cancel still
+        tears the session down instead of orphaning it (which would otherwise keep
+        the workflow running and, in attach mode, keep mutating Harbor's container).
+        When the caller is being cancelled, CancelledError is re-raised only after
+        the terminate request completes, preserving abort semantics.
+        """
+        task = asyncio.ensure_future(self._terminate_session_best_effort(session_id))
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            with contextlib.suppress(BaseException):
+                await task
+            raise
+
+    async def _terminate_session_best_effort(self, session_id: str) -> None:
+        """POST /sessions/{id}/terminate, logging and swallowing transport errors.
+
+        Uses a dedicated short-lived client because the primary request client may
+        already be closing while the surrounding coroutine unwinds.
+        """
+        if httpx is None:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res = await client.post(
+                    f"{self.api_url}/sessions/{session_id}/terminate"
+                )
+            if res.status_code == 200:
+                print(f"[{self.name()}] Terminated LibrAgent session {session_id}.")
+            else:
+                print(
+                    f"[{self.name()}] Warning: terminate for session {session_id} "
+                    f"returned {res.status_code}: {res.text}"
+                )
+        except Exception as e:
+            print(
+                f"[{self.name()}] Warning: failed to terminate session "
+                f"{session_id}: {e}"
             )
 
     def _resolve_local_workspace(

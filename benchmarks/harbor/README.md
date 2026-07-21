@@ -98,6 +98,12 @@ were scoring unfinished runs as finished.
 
 - Wait for session status `idle` or `error` only (`paused`/`busy` are not done).
 - On Harbor cancel (`CancelledError`), the adapter re-raises and skips harvest.
+- On every terminal path (success after harvest, poll-budget/agent timeout,
+  cancel, or error) the adapter calls `POST /sessions/{id}/terminate` so the
+  LibrAgent session is torn down instead of running on as an orphan. On success
+  it terminates only **after** harvesting messages; on abort it terminates
+  before re-raising. The terminate request is shielded so a Harbor cancel still
+  completes the teardown.
 - For long Terminal-Bench tasks, increase the agent budget, e.g.:
 
 ```sh
