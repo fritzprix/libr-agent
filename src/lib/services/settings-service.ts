@@ -1,5 +1,9 @@
 import { AIServiceProvider } from '@/lib/ai-service';
 import { llmConfigManager } from '@/lib/llm-config-manager';
+import {
+  REPEATED_THINKING_MIN_PATTERN_LENGTH,
+  REPEATED_THINKING_MIN_REPETITIONS,
+} from '@/context/llm/repeatedTailDetector';
 
 export interface SafetySetting {
   category: string;
@@ -35,6 +39,8 @@ export interface AdvancedSettings {
   loopPreventionThreshold: number; // default 3 — consecutive identical (call, outcome) streak before soft recovery
   /** Gap after soft recovery before hard break. Default 2 so Soft→Escalate→Hard can fire for error loops. */
   loopPreventionHardBreakOffset: number;
+  thinkingLoopMinPatternLength: number; // default 256 — minimum repeating sequence length for thinking loops
+  thinkingLoopMinRepetitions: number; // default 4 — minimum repetitions for thinking loops
 }
 
 export interface DisplaySettings {
@@ -124,6 +130,8 @@ export const DEFAULT_SETTING: Settings = {
     maxSuspendedProcesses: 20,
     loopPreventionThreshold: 3,
     loopPreventionHardBreakOffset: 2,
+    thinkingLoopMinPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
+    thinkingLoopMinRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
   },
   display: {
     metricDisplayMode: 'inline',

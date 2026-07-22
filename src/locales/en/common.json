@@ -509,7 +509,13 @@
       "loopPreventionThresholdPlaceholder": "e.g., 3",
       "loopPreventionHardBreakOffset": "Hard Break Offset",
       "loopPreventionHardBreakOffsetPlaceholder": "e.g., 2",
-      "loopPreventionHardBreakOffsetDescription": "Additional identical (call, outcome) attempts after soft recovery before hard-stopping. Default 2: with threshold=3, soft recovery at call 3, error escalate at call 4, hard break at call 5. Offset 1 skips escalate (soft then hard)."
+      "loopPreventionHardBreakOffsetDescription": "Additional identical (call, outcome) attempts after soft recovery before hard-stopping. Default 2: with threshold=3, soft recovery at call 3, error escalate at call 4, hard break at call 5. Offset 1 skips escalate (soft then hard).",
+      "thinkingLoopMinPatternLength": "Thinking Loop Min Pattern Length",
+      "thinkingLoopMinPatternLengthDescription": "Minimum repeating string length required to trigger a thinking loop detection. Larger values avoid false positives during long reasoning paths.",
+      "thinkingLoopMinPatternLengthPlaceholder": "e.g., 256",
+      "thinkingLoopMinRepetitions": "Thinking Loop Min Repetitions",
+      "thinkingLoopMinRepetitionsDescription": "Minimum number of times a repeating pattern must occur in the thinking block stream to trigger a thinking loop detection.",
+      "thinkingLoopMinRepetitionsPlaceholder": "e.g., 4"
     },
     "system": {
       "title": "System & Performance",
