@@ -100,7 +100,6 @@ pub(crate) async fn build_session_system_prompt_split(
     };
 
     let agent_config = crate::agent::resolve_agent_config(&session_metadata).await?;
-    let session_name = session_metadata.name.clone();
     let source_key = crate::agent::stable_prompt_source_key(&agent_config);
 
     // --- Build (or reuse) stable prefix ---
@@ -115,7 +114,6 @@ pub(crate) async fn build_session_system_prompt_split(
                     build_and_cache_stable_prefix(
                         &cached_stable_prompt_arc,
                         &agent_config,
-                        session_name.clone(),
                         session_id,
                         &source_key,
                     )
@@ -126,7 +124,6 @@ pub(crate) async fn build_session_system_prompt_split(
                 build_and_cache_stable_prefix(
                     &cached_stable_prompt_arc,
                     &agent_config,
-                    session_name.clone(),
                     session_id,
                     &source_key,
                 )
@@ -137,7 +134,6 @@ pub(crate) async fn build_session_system_prompt_split(
             build_and_cache_stable_prefix(
                 &cached_stable_prompt_arc,
                 &agent_config,
-                session_name,
                 session_id,
                 &source_key,
             )
@@ -169,7 +165,6 @@ pub(crate) async fn build_session_system_prompt_split(
 async fn build_and_cache_stable_prefix(
     cached_stable_prompt_arc: &Arc<RwLock<Option<String>>>,
     agent_config: &crate::agent::AgentConfig,
-    _session_name: Option<String>,
     session_id: &str,
     source_key: &str,
 ) -> String {
@@ -224,7 +219,6 @@ pub async fn build_session_system_prompt(
 /// 5. Service Contexts (tools & current state - immediately actionable)
 pub async fn build_system_prompt(
     agent_config: &crate::agent::AgentConfig,
-    _session_name: Option<String>,
     proxy: Option<Arc<MCPServiceProxy>>,
     context_registry: Option<Arc<crate::agent::context::registry::ContextRegistry>>,
     soul_instruction: Option<(String, String)>,
@@ -414,18 +408,14 @@ mod tests {
         let workspace_instructions =
             vec![("agents.md".to_string(), "Custom agents.md rule".to_string())];
 
-        // 4. Session Context
-        let session_name = Some("Test Session 123".to_string());
-
-        // 5. Read-only Context Providers (Simulate empty for unit test simplicty, or mock)
+        // 4. Read-only Context Providers (Simulate empty for unit test simplicty, or mock)
         let context_registry = Some(Arc::new(ContextRegistry::new()));
 
-        // 6. Service Contexts (Simulate None representing no MCPs for now)
+        // 5. Service Contexts (Simulate None representing no MCPs for now)
         let proxy: Option<Arc<MCPServiceProxy>> = None;
 
         let prompt = build_system_prompt(
             &agent_config,
-            session_name,
             proxy,
             context_registry,
             soul_instruction,
@@ -459,7 +449,6 @@ mod tests {
 
         let prompt = build_system_prompt(
             &agent_config,
-            None,   // No session name
             None,   // No proxy
             None,   // No context registry
             None,   // No soul instruction
