@@ -400,6 +400,16 @@ class LibrAgentHarborAdapter(BaseAgent):
                     if current_status not in TERMINAL_WORKFLOW_STATUSES:
                         seen_non_idle = True
 
+                    if current_status == "paused":
+                        print(
+                            f"[{self.name()}] Session workflow was paused (or cancelled). "
+                            f"Terminating session and failing fast."
+                        )
+                        await self._terminate_session(session_id)
+                        raise RuntimeError(
+                            f"LibrAgent session {session_id} was paused/cancelled."
+                        )
+
                     if is_workflow_complete(
                         current_status, seen_non_idle=seen_non_idle
                     ):
