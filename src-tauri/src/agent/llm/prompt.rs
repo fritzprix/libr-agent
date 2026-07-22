@@ -169,7 +169,7 @@ pub(crate) async fn build_session_system_prompt_split(
 async fn build_and_cache_stable_prefix(
     cached_stable_prompt_arc: &Arc<RwLock<Option<String>>>,
     agent_config: &crate::agent::AgentConfig,
-    session_name: Option<String>,
+    _session_name: Option<String>,
     session_id: &str,
     source_key: &str,
 ) -> String {
