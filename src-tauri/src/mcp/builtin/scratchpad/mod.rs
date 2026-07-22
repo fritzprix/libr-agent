@@ -95,15 +95,15 @@ impl BuiltinMCPServer for ScratchpadServer {
         let mut parts = vec!["## Scratchpad".to_string(), String::new()];
 
         if items.is_empty() {
-            parts.push("### Live State".to_string());
-            parts.push("- No scratchpad notes.".to_string());
+            parts.push(
+                "No scratchpad notes. Use `scratchpad__create_note` to save temporary notes."
+                    .to_string(),
+            );
         } else {
-            parts.push("### Live State".to_string());
-            parts.push(format!("- Notes: {} item(s)", items.len()));
             for item in &items {
                 let content = item.content.replace(['\n', '\r'], " ");
-                let summary = if content.chars().count() > 80 {
-                    let s: String = content.chars().take(77).collect();
+                let summary = if content.chars().count() > 50 {
+                    let s: String = content.chars().take(47).collect();
                     format!("{}...", s)
                 } else {
                     content

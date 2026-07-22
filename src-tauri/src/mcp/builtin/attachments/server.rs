@@ -273,33 +273,28 @@ impl AttachmentsServer {
             Err(_) => Vec::new(),
         };
 
-        // Build context prompt with file details
-        let mut prompt_parts = vec![
-            "## Attachments\n".to_string(),
-            "### Live State\n".to_string(),
-            format!(
-                "- {} available, 5 tools\n",
-                Self::format_file_count(total_count)
-            ),
-            "- This service shows indexed attachments only. Workspace-only files and inline media do not appear here.\n".to_string(),
-            "- If a referenced file is missing here, it was likely kept in the workspace instead; use workspace tools for text-readable files.\n".to_string(),
-        ];
+        let mut prompt_parts = vec!["## Attachments\n".to_string()];
 
-        if !recent_files.is_empty() {
-            prompt_parts.push("\n**Recently Attached:**\n".to_string());
+        if total_count == 0 {
+            prompt_parts
+                .push("No files attached. Use `attachments__upload` to add files.\n".to_string());
+        } else {
+            prompt_parts.push(format!("- {}\n", Self::format_file_count(total_count)));
 
-            for (i, file) in recent_files.iter().take(10).enumerate() {
-                prompt_parts.push(format!(
-                    "{}. `{}` (ID: `{}`, {} lines, {})\n",
-                    i + 1,
-                    file.filename,
-                    file.content_id,
-                    file.line_count,
-                    Self::format_mime_type(&file.mime_type)
-                ));
+            if !recent_files.is_empty() {
+                prompt_parts.push("\n**Recently Attached:**\n".to_string());
+
+                for (i, file) in recent_files.iter().take(10).enumerate() {
+                    prompt_parts.push(format!(
+                        "{}. `{}` (ID: `{}`, {} lines, {})\n",
+                        i + 1,
+                        file.filename,
+                        file.content_id,
+                        file.line_count,
+                        Self::format_mime_type(&file.mime_type)
+                    ));
+                }
             }
-        } else if total_count == 0 {
-            prompt_parts.push("Attachments: None\n".to_string());
         }
 
         let context_prompt = prompt_parts.join("");
