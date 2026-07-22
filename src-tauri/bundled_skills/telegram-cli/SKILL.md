@@ -174,39 +174,49 @@ On Windows, always set these before invoking any CLI command:
 $env:PYTHONUTF8 = "1"
 ```
 
-### Input encoding (Windows / Unicode workaround)
+### Input encoding & PowerShell escaping (Windows / Unicode / Literal $ workaround)
 
 On Windows, passing Unicode characters (like Korean) as command-line arguments can cause character corruption (mojibake) due to PowerShell's default encoding (`cp949`).
 
-To bypass this bottleneck, it is highly **recommended** to write the message or query to a UTF-8 file and use `--message-file` or `--query-file` instead of `--message` or `--query` (especially on older Windows PowerShell environments; PowerShell 7+ with `$OutputEncoding` set to UTF-8 may work with inline arguments):
+To bypass this bottleneck, it is highly **recommended** to write the message or query to a UTF-8 file and use `--message-file` or `--query-file` instead of `--message` or `--query`.
 
-#### Send Message (Windows Recommended)
+> [!WARNING]
+> **PowerShell Here-String Interpolation Danger**:
+> If you use double-quoted Here-Strings (`@" ... "@`) in PowerShell, characters starting with `$` are treated as variables. For example, `$3,000` will evaluate `$3` as an empty variable, resulting in `,000`, and `$1.5B` will evaluate `$1` as empty, resulting in `.5B`.
+> 
+> **How to avoid this:**
+> 1. **(Best/Recommended)**: Use the agent's `writeFile` (or `workspace__writeFile`) tool to directly create and write the message content to a file (e.g., `<workspace>/tg_message.txt`) as UTF-8. This completely bypasses any PowerShell escaping or variable interpolation issues.
+> 2. **(Alternative - Single Quotes)**: If you must write the file via PowerShell, use single-quoted Here-Strings (`@' ... '@`) which disable variable interpolation.
+
+#### Send Message (Windows Recommended via writeFile)
+
+1. Use the `writeFile` (or `workspace__writeFile`) tool to save your message (e.g. including `$3,000` or Korean text) directly to `<workspace>/tg_message.txt` in UTF-8 format.
+2. Call the CLI pointing to the file:
+
 ```powershell
-# 1. Write the message to a UTF-8 file in the workspace
-$msg = "안녕하세요, 텔레그램 메시지 테스트입니다."
-$msg | Out-File -Encoding utf8 "<workspace>/tg_message.txt"
-
-# 2. Call the CLI with --message-file
 python "<skill-base-dir>/scripts/telegram_cli.py" --action send_message `
   --chat "<chat_id_or_username>" `
   --message-file "<workspace>/tg_message.txt"
+```
 
-# 3. Clean up the temporary file (recommended)
+3. Clean up the temporary file afterwards:
+```powershell
 Remove-Item -Path "<workspace>/tg_message.txt" -ErrorAction SilentlyContinue
 ```
 
-#### Search Messages (Windows Recommended)
-```powershell
-# 1. Write the query to a UTF-8 file in the workspace
-$query = "테스트"
-$query | Out-File -Encoding utf8 "<workspace>/tg_query.txt"
+#### Search Messages (Windows Recommended via writeFile)
 
-# 2. Call the CLI with --query-file
+1. Use the `writeFile` (or `workspace__writeFile`) tool to save your query directly to `<workspace>/tg_query.txt` in UTF-8 format.
+2. Call the CLI pointing to the file:
+
+```powershell
 python "<skill-base-dir>/scripts/telegram_cli.py" --action search_messages `
   --query-file "<workspace>/tg_query.txt" `
   --output "<workspace>/telegram_search.json"
+```
 
-# 3. Clean up the temporary file (recommended)
+3. Clean up the temporary file afterwards:
+```powershell
 Remove-Item -Path "<workspace>/tg_query.txt" -ErrorAction SilentlyContinue
 ```
 

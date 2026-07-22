@@ -115,3 +115,9 @@ docs/proposals/
 .ai-cache/
 .analysis-cache/
 /tmp/
+
+# Local/temporary run artifacts and state
+kilo.json
+.tmp_*
+.slibragent/
+
