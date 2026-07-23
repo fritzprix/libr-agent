@@ -457,7 +457,13 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(prompt, "Base prompt only.\n\n\n## Agent Runtime Identity\n- Agent Name: Default Assistant\n- Agent ID: (unknown)");
+        assert_eq!(
+            prompt,
+            "Base prompt only.\n\n\n## Agent Runtime Identity\n\
+            - Agent Name: Default Assistant\n\
+            - Agent ID: (unknown)\n\
+            - Session ID: (unknown-session)"
+        );
         assert!(!prompt.contains("## Session Context"));
         assert!(!prompt.contains("## Workspace Instructions"));
         assert!(!prompt.contains("## Available Tools & Current State"));

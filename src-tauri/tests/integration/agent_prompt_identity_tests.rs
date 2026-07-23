@@ -10,7 +10,7 @@ async fn system_prompt_exposes_agent_runtime_identity() {
         ..AgentConfig::default()
     };
 
-    let prompt = build_system_prompt(&config, None, None, None, None, Vec::new())
+    let prompt = build_system_prompt(&config, None, None, None, Vec::new())
         .await
         .expect("prompt should build");
 
