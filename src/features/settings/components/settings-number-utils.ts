@@ -32,6 +32,39 @@ export function parseIntegerInput(
   return clampNumber(parsedValue, options);
 }
 
+/**
+ * Returns true when `rawValue` is a finite integer already inside [min, max].
+ * Used by number inputs to avoid clamping mid-keystroke (e.g. typing "256" with min=32).
+ */
+export function isIntegerInRange(
+  rawValue: string,
+  { min, max }: Omit<IntegerInputOptions, 'fallback'>,
+): boolean {
+  if (rawValue.trim() === '') {
+    return false;
+  }
+
+  const parsedValue = Number.parseInt(rawValue, 10);
+  if (Number.isNaN(parsedValue)) {
+    return false;
+  }
+
+  // Reject partial numeric strings that parseInt would accept ("12abc" → 12).
+  if (String(parsedValue) !== rawValue.trim()) {
+    return false;
+  }
+
+  if (typeof min === 'number' && parsedValue < min) {
+    return false;
+  }
+
+  if (typeof max === 'number' && parsedValue > max) {
+    return false;
+  }
+
+  return true;
+}
+
 interface KilobyteInputOptions {
   fallbackKilobytes: number;
   minKilobytes: number;

@@ -49,6 +49,8 @@ param(
 
   [double]$AgentTimeoutMultiplier = $(if ($env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER } else { 100.0 }),
 
+  [string[]]$VerifierEnv,
+
   [string]$AssistantName = "Coding Expert",
 
   [switch]$SkipHealthCheck,
@@ -224,6 +226,15 @@ $harborArgs = @(
 
 if ($AgentTimeoutMultiplier -gt 0) {
   $harborArgs += @("--agent-timeout-multiplier", "$AgentTimeoutMultiplier")
+}
+
+if ($VerifierEnv) {
+  $envList = $VerifierEnv -split ','
+  foreach ($ve in $envList) {
+    if ($ve.Trim()) {
+      $harborArgs += @("--ve", $ve.Trim())
+    }
+  }
 }
 
 switch ($Preset) {

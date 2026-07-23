@@ -17,6 +17,7 @@ ASSISTANT_NAME="Coding Expert"
 SKIP_HEALTH=0
 DRY_RUN=0
 DEBUG_HARBOR=0
+VERIFIER_ENV=()
 
 usage() {
   cat <<'EOF'
@@ -34,6 +35,7 @@ Options:
   --execution-mode yolo|unsafe|normal  Default: unsafe (or LIBRAGENT_EXECUTION_MODE)
   --timeout-multiplier N               Harbor task timeout multiplier (default: 1.0)
   --agent-timeout-multiplier N         Harbor agent-only timeout multiplier
+  --verifier-env KEY=VALUE             Pass environment variable to verifier (repeatable)
   --skip-health-check
   --dry-run
   --debug
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --execution-mode) EXECUTION_MODE="$2"; shift 2 ;;
     --timeout-multiplier) TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
     --agent-timeout-multiplier) AGENT_TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
+    --verifier-env|--ve) VERIFIER_ENV+=("$2"); shift 2 ;;
     --skip-health-check) SKIP_HEALTH=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --debug) DEBUG_HARBOR=1; shift ;;
@@ -181,6 +184,9 @@ ARGS=(
 if [[ -n "$AGENT_TIMEOUT_MULTIPLIER" ]]; then
   ARGS+=(--agent-timeout-multiplier "$AGENT_TIMEOUT_MULTIPLIER")
 fi
+for ve in "${VERIFIER_ENV[@]}"; do
+  ARGS+=(--ve "$ve")
+done
 
 case "$PRESET" in
   hello)
