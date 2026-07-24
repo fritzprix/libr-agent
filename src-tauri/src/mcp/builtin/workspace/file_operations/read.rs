@@ -501,66 +501,27 @@ async fn read_file_lines_range(
     show_line_anchors: bool,
     visible_content_limit_bytes: usize,
 ) -> Result<ReadFileChunk, String> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
-
-    // ✅ ENHANCED: Use spawn_blocking for large files to prevent async runtime blocking
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let path_buf = path.to_path_buf();
 
-    if file_size > LARGE_FILE_THRESHOLD {
-        // Offload to blocking thread for large files
-        let path = path.to_path_buf();
-
-        let result = tokio::task::spawn_blocking(move || {
-            // Blocking file I/O for CPU-intensive line enumeration
-            use std::io::BufRead;
-            let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-            let reader = std::io::BufReader::new(file);
-            let total_lines = reader.lines().count();
-
-            let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
-
-            let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-            let reader = std::io::BufReader::new(file);
-            let chunk = read_chunk_from_lines(
-                reader.lines(),
-                start,
-                end,
-                show_line_anchors,
-                visible_content_limit_bytes,
-            )?;
-            Ok::<_, String>(chunk)
+    let (collected_lines, decode_note) = if file_size > LARGE_FILE_THRESHOLD {
+        tokio::task::spawn_blocking(move || {
+            let bytes = std::fs::read(&path_buf).map_err(|e| e.to_string())?;
+            decode_file_bytes_to_lines(&bytes)
         })
         .await
-        .map_err(|e| format!("Task join error: {}", e))??;
-
-        return Ok(result);
-    }
-
-    // Small files: use async path (original implementation)
-    let file = tokio::fs::File::open(path)
-        .await
-        .map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
-    let mut collected_lines = Vec::new();
-
-    loop {
-        match lines.next_line().await {
-            Ok(Some(line)) => collected_lines.push(line),
-            Ok(None) => break,
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::InvalidData {
-                    return Err("Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string());
-                }
-                return Err(format!("Failed to read file: {}", e));
-            }
-        }
-    }
+        .map_err(|e| format!("Task join error: {}", e))??
+    } else {
+        let bytes = tokio::fs::read(path)
+            .await
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+        decode_file_bytes_to_lines(&bytes)?
+    };
 
     let total_lines = collected_lines.len();
     let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
 
-    read_chunk_from_lines(
+    let mut chunk = read_chunk_from_lines(
         collected_lines
             .into_iter()
             .map(Ok::<String, std::io::Error>),
@@ -568,7 +529,35 @@ async fn read_file_lines_range(
         end,
         show_line_anchors,
         visible_content_limit_bytes,
-    )
+    )?;
+
+    if let Some(note) = decode_note {
+        if !chunk.content.is_empty() {
+            chunk.content = format!("[encoding: {note}]\n{}", chunk.content);
+        } else {
+            chunk.content = format!("[encoding: {note}]");
+        }
+    }
+
+    Ok(chunk)
+}
+
+fn decode_file_bytes_to_lines(bytes: &[u8]) -> Result<(Vec<String>, Option<&'static str>), String> {
+    use crate::mcp::builtin::workspace::text_encoding::{decode_text_bytes, DecodedText};
+
+    match decode_text_bytes(bytes) {
+        DecodedText::Binary => Err(
+            "Failed to read file: content appears to be binary (embedded null bytes). \
+             Use a specialized tool or shell commands for binary files."
+                .to_string(),
+        ),
+        DecodedText::Text { text, note } => {
+            // Normalize newlines then split without discarding a trailing empty line oddly:
+            // split_inclusive-style via lines() is fine for agent display.
+            let lines: Vec<String> = text.lines().map(|line| line.to_string()).collect();
+            Ok((lines, note))
+        }
+    }
 }
 
 fn read_chunk_from_lines<I>(

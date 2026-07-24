@@ -15,6 +15,7 @@ pub mod file_operations;
 pub mod handlers;
 pub mod persistent_shell;
 pub mod terminal_manager;
+pub mod text_encoding;
 pub mod tools;
 pub mod types;
 pub mod ui_resources;

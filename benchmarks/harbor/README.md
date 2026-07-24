@@ -13,18 +13,23 @@ For **Docker-backed Harbor trials**, the adapter prefers attaching LibrAgent to
 Harbor’s existing Compose `main` container:
 
 - Session uses `workspaceIsolation: "docker"` with
-  `dockerConfig: { attachContainer, workdir: "/app" (or task workdir), manageLifecycle: false }`
+  `dockerConfig: { attachContainer, workdir, manageLifecycle: false }`
+  - `workdir` is resolved **per task**, not a fixed path:
+    1. task `[environment].workdir` when set
+    2. else container image `WORKDIR` (`docker inspect`)
+    3. else live `docker exec … pwd`
+    4. else last-resort `/app` (legacy TB convention; logged as a warning)
 - Shell and file tools run **inside** that container (`docker exec -w …` /
-  `docker cp`). Absolute paths like `/app/gpt2.c` are valid.
+  `docker cp`). Absolute paths under that workdir are valid.
 - LibrAgent does **not** create a second container and does **not** destroy
   Harbor’s container on session end.
-- Host download/upload sync of `/app` is **skipped** on the attach path.
+- Host download/upload sync of the workdir is **skipped** on the attach path.
 
 If the main container ID cannot be resolved (non-Docker Harbor providers such as
 Modal/E2B, or missing Compose labels), the adapter **falls back** to the older
-host-sync path: pull `/app` to a host trial workspace, run a host session, then
-push changes back. On that path, prefer relative paths under the synced
-workspace rather than absolute `/app/...`.
+host-sync path: pull the container workdir to a host trial workspace, run a host
+session, then push changes back. On that path, prefer relative paths under the
+synced workspace rather than absolute container paths.
 
 ## Prerequisites
 
@@ -43,12 +48,30 @@ pnpm bench:hello
 # Terminal-Bench: first task only
 pnpm bench:terminal
 
-# Terminal-Bench: full dataset (long)
+# Terminal-Bench: full dataset (-k 5, no timeout overrides)
 pnpm bench:terminal:all
+
+# Harbor Index: first task only
+pnpm bench:harbor
+
+# Harbor Index: full dataset (-k 5)
+pnpm bench:harbor:all
 ```
 
 `pnpm bench:*` dispatches via `scripts/run-harbor-bench.cjs` to PowerShell on Windows
-and bash on Linux/macOS.
+and bash on Linux/macOS. Defaults omit Harbor timeout/resource overrides so runs match
+official submission rules (`submissions may not modify timeouts or resources`).
+`bench:terminal:all` / `bench:harbor:all` pass Harbor `-k 5` (attempts per task), matching:
+
+```sh
+harbor run -d terminal-bench/terminal-bench-2-1 -a <agent> -m <model> -k 5
+harbor run -d harbor-index/harbor-index-1.0 -a <agent> -m <model> -k 5
+```
+
+LibrAgent maps `-a`/`-m` to the custom adapter + in-app assistant (model from settings), not Harbor `-m`.
+
+Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
+`--ve` (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) for LLM-judge tasks.
 
 Or call the platform script directly:
 
@@ -87,10 +110,15 @@ Environment overrides:
 - `LIBRAGENT_API_URL` (default `http://localhost:3030/api`)
 - `LIBRAGENT_ASSISTANT_ID` (otherwise resolves assistant named `Coding Expert`)
 - `LIBRAGENT_EXECUTION_MODE` (`normal` | `yolo` | `unsafe`, default `unsafe` in adapter/scripts)
-- `LIBRAGENT_TIMEOUT_MULTIPLIER` / `LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER` — Harbor timeouts (Terminal-Bench agent default is often ~360s; raise for long tasks)
+- `LIBRAGENT_TIMEOUT_MULTIPLIER` / `LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER` — **local debug only**.
+  Official Terminal-Bench submissions must not modify timeouts or resources; `pnpm bench:*`
+  omits these flags unless you set the env vars or pass CLI options.
 - `LIBRAGENT_POLL_TIMEOUT_SEC` — optional adapter wall-clock poll budget; omit to wait until Harbor cancels
 
 ## Timeouts (important)
+
+Official submissions use Harbor’s default task/agent timeouts (do **not** pass
+`--timeout-multiplier` / `--agent-timeout-multiplier`).
 
 Harbor cancels the agent coroutine when the **agent timeout** elapses. The adapter
 must **not** harvest workspace/messages after that cancel — incomplete harvests
@@ -104,10 +132,10 @@ were scoring unfinished runs as finished.
   it terminates only **after** harvesting messages; on abort it terminates
   before re-raising. The terminate request is shielded so a Harbor cancel still
   completes the teardown.
-- For long Terminal-Bench tasks, increase the agent budget, e.g.:
+- For **local** debugging of long tasks only, you may raise the agent budget:
 
 ```sh
-# Cross-platform
+# Local debug only — not for official submissions
 node scripts/run-harbor-bench.cjs --preset terminal-bench --n-tasks 1 \
   --agent-timeout-multiplier 3
 # or
@@ -121,20 +149,24 @@ pnpm bench:terminal
 ```sh
 export PYTHONPATH="$(pwd)"
 export PYTHONUTF8=1
+# Submission-compatible (no timeout/resource overrides)
 harbor run \
   -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter \
   --ak api_url=http://localhost:3030/api \
   --ak assistant_id=<CODING_EXPERT_UUID> \
   --ak execution_mode=unsafe \
-  --agent-timeout-multiplier 3 \
-  -d terminal-bench@2.0 \
-  -l 1 \
+  -d terminal-bench/terminal-bench-2-1 \
+  -k 5 \
   -n 1
 ```
 
 ## Success criteria
 
-- Script health check prints `executionMode=unsafe` (or your override)
+- Script health check prints `executionMode=unsafe` (or your override), then
+  **terminates** the smoke session before `harbor run` starts (so it does not
+  stay `busy` / burn LLM while Docker builds the task environment)
+- Harbor’s progress bar timer includes **environment build**, not only agent
+  runtime; agent timeout starts when the adapter runs
 - Trial `verifier/reward.txt` is `1` (or job eval mean `1.0`)
 - Agent logs show `Session workflow reached terminal state: idle|error` before harvest
   (not `Session polling cancelled ... Will still harvest`)

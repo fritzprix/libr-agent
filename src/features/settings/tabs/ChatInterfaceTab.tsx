@@ -3,6 +3,22 @@ import { useTranslation } from 'react-i18next';
 import { AdvancedSettings, ContextStrategy } from '@/context/SettingsContext';
 import { Button, Input, Slider } from '@/components/ui';
 
+const OUTPUT_TOKEN_PRESETS = [
+  1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
+] as const;
+
+function findNearestPresetIndex(value: number): number {
+  return OUTPUT_TOKEN_PRESETS.reduce((bestIndex, preset, index) => {
+    const bestDistance = Math.abs(OUTPUT_TOKEN_PRESETS[bestIndex] - value);
+    const nextDistance = Math.abs(preset - value);
+    return nextDistance < bestDistance ? index : bestIndex;
+  }, 0);
+}
+
+function formatTokenPreset(value: number): string {
+  return value >= 1024 ? `${Math.round(value / 1024)}K` : `${value}`;
+}
+
 interface ChatInterfaceTabProps {
   localContextStrategy: ContextStrategy;
   localWindowSize: number;
@@ -32,6 +48,11 @@ function ChatInterfaceTabComponent({
   onAdvancedSettingsChange,
 }: ChatInterfaceTabProps) {
   const { t } = useTranslation('common');
+  const defaultMaxOutputTokens =
+    localAdvancedSettings.defaultMaxOutputTokens ?? 8192;
+  const selectedOutputTokenIndex = findNearestPresetIndex(
+    defaultMaxOutputTokens,
+  );
 
   const updateToolCallCount = (delta: number) => {
     onToolCallGroupVisibleCountChange(
@@ -51,7 +72,6 @@ function ChatInterfaceTabComponent({
 
   return (
     <div className="space-y-6">
-      {/* Context Strategy Selector */}
       <div>
         <label className="block text-muted-foreground mb-2 font-medium">
           {t('settings.contextStrategyLabel', 'Context Management Strategy')}
@@ -100,6 +120,56 @@ function ChatInterfaceTabComponent({
             );
           })}
         </div>
+      </div>
+
+      <div className="min-w-0 rounded-xl border border-border/70 p-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <label className="block text-muted-foreground font-medium">
+            {t(
+              'settings.advanced.maxOutputTokens',
+              'Max Output Tokens (Default)',
+            )}
+          </label>
+          <span className="rounded-md bg-primary/10 px-2 py-1 text-sm font-mono text-primary">
+            {formatTokenPreset(defaultMaxOutputTokens)}
+          </span>
+        </div>
+        <Slider
+          min={0}
+          max={OUTPUT_TOKEN_PRESETS.length - 1}
+          step={1}
+          value={[selectedOutputTokenIndex]}
+          onValueChange={([index]) =>
+            onAdvancedSettingsChange(
+              'defaultMaxOutputTokens',
+              OUTPUT_TOKEN_PRESETS[index] ?? 8192,
+            )
+          }
+          className="w-full max-w-xl"
+        />
+        <div className="mt-3 flex flex-wrap gap-2">
+          {OUTPUT_TOKEN_PRESETS.map((preset) => (
+            <Button
+              key={preset}
+              type="button"
+              variant={
+                preset === defaultMaxOutputTokens ? 'default' : 'outline'
+              }
+              className="h-8 px-2 text-xs"
+              onClick={() =>
+                onAdvancedSettingsChange('defaultMaxOutputTokens', preset)
+              }
+            >
+              {formatTokenPreset(preset)}
+            </Button>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          {t(
+            'settings.advanced.maxOutputTokensDescription',
+            'Default maximum output tokens for new sessions if not specified by assistant.',
+          )}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

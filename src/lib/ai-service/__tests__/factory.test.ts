@@ -137,6 +137,22 @@ describe('AIServiceFactory', () => {
       expect(OpenAIService).toHaveBeenCalledTimes(2);
     });
 
+    it('should create a new instance if retry settings change', () => {
+      const service1 = AIServiceFactory.getService(
+        AIServiceProvider.OpenAI,
+        'test-key',
+        { maxRetries: 1, retryDelay: 1000 },
+      );
+      const service2 = AIServiceFactory.getService(
+        AIServiceProvider.OpenAI,
+        'test-key',
+        { maxRetries: 3, retryDelay: 1000 },
+      );
+
+      expect(service1).not.toBe(service2);
+      expect(OpenAIService).toHaveBeenCalledTimes(2);
+    });
+
     it('should create a new instance if baseUrl is different', () => {
       const service1 = AIServiceFactory.getService(
         AIServiceProvider.Ollama,

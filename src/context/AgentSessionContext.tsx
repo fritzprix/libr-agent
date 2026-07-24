@@ -30,7 +30,7 @@ export function AgentSessionProvider({
 }: AgentSessionProviderProps) {
   const { markSessionViewed, clearPendingApproval, renameSession } =
     useAgentSessionListActions();
-  const { refreshCompactedRange } = useLLMService();
+  const { refreshCompactedRange, clearStreamingMessage } = useLLMService();
   const stateProps = useAgentSessionStateLogic();
 
   React.useEffect(() => {
@@ -54,6 +54,7 @@ export function AgentSessionProvider({
 
   useAgentSessionEvents(sessionId, stateProps, {
     persistViewedAt,
+    clearStreamingMessage,
   });
 
   const customActions = useAgentSessionActionsLogic(sessionId, stateProps, {

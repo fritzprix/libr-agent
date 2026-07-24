@@ -4,12 +4,15 @@
 
 use std::path::Path;
 
+use crate::mcp::builtin::utils::relative_path_under_base;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
 use tokio::process::Command as AsyncCommand;
 
 fn apply_docker_cli_env(cmd: &mut AsyncCommand) {
+    // Same as WorkspaceRuntimeManager: hide docker.exe console on Windows GUI hosts.
+    crate::utils::platform::suppress_console_window_async(cmd);
     if let Ok(host) = std::env::var("DOCKER_HOST") {
         cmd.env("DOCKER_HOST", host);
     }
@@ -44,13 +47,18 @@ pub struct AttachSessionInfo<'a> {
 
 impl AttachSessionInfo<'_> {
     pub fn container_path_for_host_file(&self, host_file: &Path) -> Result<String, String> {
-        let relative = host_file.strip_prefix(self.host_workspace).map_err(|_| {
-            format!(
-                "Host path '{}' is outside attach staging workspace '{}'",
-                host_file.display(),
-                self.host_workspace.display()
-            )
-        })?;
+        // Use Windows-aware relative matching (verbatim `\\?\` vs normal drive, case).
+        // Raw Path::strip_prefix silently fails across those forms and previously caused
+        // writeFile to skip docker cp while listDirectory fell back to host staging —
+        // so the agent saw the file but the container shell did not.
+        let relative =
+            relative_path_under_base(host_file, self.host_workspace).ok_or_else(|| {
+                format!(
+                    "Host path '{}' is outside attach staging workspace '{}'",
+                    host_file.display(),
+                    self.host_workspace.display()
+                )
+            })?;
         let rel = relative.to_string_lossy().replace('\\', "/");
         if rel.is_empty() || rel == "." {
             Ok(self.workdir.trim_end_matches('/').to_string())
@@ -124,7 +132,7 @@ pub async fn push_host_file_to_container(
     let Some(info) = attach_session_info(session) else {
         return Ok(());
     };
-    if host_file.strip_prefix(info.host_workspace).is_err() {
+    if relative_path_under_base(host_file, info.host_workspace).is_none() {
         // Teamwork / skill / other host-only roots — not mirrored into the task container.
         return Ok(());
     }
@@ -137,7 +145,44 @@ pub async fn push_host_file_to_container(
     let container_path = info.container_path_for_host_file(host_file)?;
     ensure_container_parent_dirs(info.container, &container_path).await?;
     let dest = format!("{}:{}", info.container, container_path);
-    run_docker(&["cp", &host_file.to_string_lossy(), &dest]).await
+    // Prefer a non-verbatim host path for docker.exe on Windows.
+    let host_cp_path = simplify_host_path_for_docker(host_file);
+    run_docker(&["cp", &host_cp_path, &dest]).await?;
+    verify_container_file(info.container, &container_path).await
+}
+
+fn simplify_host_path_for_docker(path: &Path) -> String {
+    #[cfg(windows)]
+    {
+        let lossy = path.to_string_lossy();
+        if let Some(stripped) = lossy.strip_prefix(r"\\?\") {
+            if !stripped.starts_with(r"UNC\") {
+                return stripped.to_string();
+            }
+        }
+        lossy.into_owned()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_string_lossy().into_owned()
+    }
+}
+
+async fn verify_container_file(container: &str, container_path: &str) -> Result<(), String> {
+    let mut cmd = AsyncCommand::new("docker");
+    apply_docker_cli_env(&mut cmd);
+    cmd.args(["exec", container, "test", "-f", container_path]);
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to verify attach file after docker cp: {e}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "docker cp reported success but '{container_path}' is not a regular file inside container '{container}'. \
+         File tools and shell may disagree until sync succeeds — retry writeFile."
+    ))
 }
 
 /// Pull a container file into the staging host workspace.
@@ -152,7 +197,7 @@ pub async fn pull_container_file_to_host(
     let Some(info) = attach_session_info(session) else {
         return Ok(());
     };
-    if host_file.strip_prefix(info.host_workspace).is_err() {
+    if relative_path_under_base(host_file, info.host_workspace).is_none() {
         // Skill / teamwork / other host-only roots — no container sync.
         return Ok(());
     }
@@ -166,7 +211,8 @@ pub async fn pull_container_file_to_host(
         })?;
     }
     let source = format!("{}:{}", info.container, container_path);
-    match run_docker(&["cp", &source, &host_file.to_string_lossy()]).await {
+    let host_dest = simplify_host_path_for_docker(host_file);
+    match run_docker(&["cp", &source, &host_dest]).await {
         Ok(()) => Ok(()),
         Err(err) if is_missing_container_path_error(&err) => Ok(()),
         Err(err) => Err(err),
@@ -193,7 +239,7 @@ pub async fn list_container_directory(
     let Some(info) = attach_session_info(session) else {
         return Ok(None);
     };
-    if host_dir.strip_prefix(info.host_workspace).is_err() {
+    if relative_path_under_base(host_dir, info.host_workspace).is_none() {
         return Ok(None);
     }
     let container_path = info.container_path_for_host_file(host_dir)?;
@@ -282,6 +328,34 @@ mod tests {
         assert!(info
             .container_path_for_host_file(Path::new("/tmp/other/file"))
             .is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn attach_paths_match_across_verbatim_and_disk_prefixes() {
+        use std::path::PathBuf;
+        let host_workspace = Path::new(r"C:\Users\test\staging");
+        let info = AttachSessionInfo {
+            container: "abc",
+            workdir: "/workspace",
+            host_workspace,
+        };
+        let verbatim = PathBuf::from(r"\\?\C:\Users\test\staging\analysis.py");
+        assert_eq!(
+            info.container_path_for_host_file(&verbatim)
+                .expect("verbatim path under staging"),
+            "/workspace/analysis.py"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn simplify_host_path_strips_verbatim_prefix() {
+        let path = Path::new(r"\\?\C:\Users\test\staging\analysis.py");
+        assert_eq!(
+            simplify_host_path_for_docker(path),
+            r"C:\Users\test\staging\analysis.py"
+        );
     }
 
     #[test]

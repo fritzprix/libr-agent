@@ -5,6 +5,7 @@ import pytest
 from benchmarks.harbor.libragent_agent import (
     DEFAULT_EXECUTION_MODE,
     is_workflow_complete,
+    resolve_container_workdir,
     resolve_execution_mode,
     resolve_poll_timeout_sec,
     sanitize_docker_compose_project_name,
@@ -66,16 +67,92 @@ def test_sanitize_docker_compose_project_name() -> None:
     assert len(sanitize_docker_compose_project_name("a" * 100)) == 63
 
 
+def test_resolve_container_workdir_prefers_task_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _EnvConfig:
+        workdir = "/custom/task/root"
+
+    class _Env:
+        task_env_config = _EnvConfig()
+
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_inspect_workdir",
+        lambda _cid: "/should-not-use",
+    )
+    assert resolve_container_workdir(_Env(), container_id="cid") == "/custom/task/root"
+
+
+def test_resolve_container_workdir_uses_image_workdir_when_task_omits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _EnvConfig:
+        workdir = None
+
+    class _Env:
+        task_env_config = _EnvConfig()
+
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_inspect_workdir",
+        lambda _cid: "/workspace",
+    )
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_exec_pwd",
+        lambda _cid: "/should-not-use",
+    )
+    assert resolve_container_workdir(_Env(), container_id="cid") == "/workspace"
+
+
+def test_resolve_container_workdir_uses_live_pwd_when_inspect_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _EnvConfig:
+        workdir = None
+
+    class _Env:
+        task_env_config = _EnvConfig()
+
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_inspect_workdir",
+        lambda _cid: None,
+    )
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_exec_pwd",
+        lambda _cid: "/home/agent",
+    )
+    assert resolve_container_workdir(_Env(), container_id="cid") == "/home/agent"
+
+
+def test_resolve_container_workdir_falls_back_to_app_with_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _EnvConfig:
+        workdir = None
+
+    class _Env:
+        task_env_config = _EnvConfig()
+
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_inspect_workdir",
+        lambda _cid: None,
+    )
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_exec_pwd",
+        lambda _cid: None,
+    )
+    assert resolve_container_workdir(_Env(), container_id="cid") == "/app"
+
+
 def test_attach_session_payload_shape() -> None:
     """Document expected dockerConfig when Harbor main container is resolved."""
     payload = {
         "workspaceIsolation": "docker",
         "dockerConfig": {
             "attachContainer": "cid123",
-            "workdir": "/app",
+            "workdir": "/workspace",
             "manageLifecycle": False,
         },
     }
     assert payload["dockerConfig"]["manageLifecycle"] is False
-    assert payload["dockerConfig"]["workdir"] == "/app"
+    assert payload["dockerConfig"]["workdir"] == "/workspace"
     assert "image" not in payload["dockerConfig"]

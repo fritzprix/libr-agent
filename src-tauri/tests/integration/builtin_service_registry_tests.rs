@@ -295,6 +295,10 @@ fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
         "presentInteractive must remain on the public UI surface"
     );
     assert!(
+        tool_names.contains(&"reportResult".to_string()),
+        "reportResult must be on the public UI surface for explicit task completion"
+    );
+    assert!(
         !tool_names.contains(&"visualizeData".to_string()),
         "visualizeData should be hidden from the AI-facing UI surface in favor of presentInteractive"
     );

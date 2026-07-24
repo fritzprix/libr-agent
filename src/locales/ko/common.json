@@ -465,6 +465,8 @@
       "maxRetriesDescription": "실패한 AI 요청에 대한 최대 재시도 횟수입니다.",
       "retryDelay": "재시도 지연 (ms)",
       "retryDelayDescription": "재시도 시도 사이의 밀리초 단위 지연 시간입니다.",
+      "requestReliability": "요청 안정성",
+      "requestReliabilityDescription": "실패한 AI 프로바이더 요청을 어떻게 재시도할지 제어합니다.",
       "circuitBreaker": "도구 루프 임계값",
       "circuitBreakerDescription": "회로 차단기를 트리거하기 전의 반복된 오류 또는 도구 호출 횟수입니다.",
       "maxOutputTokens": "최대 출력 토큰 (기본값)",

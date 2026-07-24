@@ -9,6 +9,11 @@ import type { AgentEventPayload } from './types';
 import { buildMessageError, syncSessionMetadataFromBackend } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
 import type { SessionRuntimeState } from '@/models/agent-ipc';
+import {
+  applyWorkflowInactiveCleanup,
+  isInactiveWorkflowStatus,
+  stripMessageStreamingFlags,
+} from './workflow-inactive-cleanup';
 
 const logger = getLogger('AgentSessionEvents');
 
@@ -57,9 +62,17 @@ export function useAgentSessionEvents(
   stateProps: ReturnType<typeof useAgentSessionState>,
   actions: {
     persistViewedAt: (viewedAt?: Date) => Promise<void>;
+    /** Clears LLM streaming placeholders when the workflow becomes inactive. */
+    clearStreamingMessage: (sessionId: string) => void;
   },
 ) {
   const { setters, refs } = stateProps;
+  const clearStreamingOnInactive = () =>
+    applyWorkflowInactiveCleanup({
+      sessionId,
+      clearStreamingMessage: actions.clearStreamingMessage,
+      setMessages: setters.setMessages,
+    });
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -122,8 +135,12 @@ export function useAgentSessionEvents(
                 );
               } else if (newStatus === 'idle') {
                 setters.setWorkflowPhase('idle');
+                clearStreamingOnInactive();
               } else if (newStatus === 'error') {
                 setters.setWorkflowPhase('error');
+                clearStreamingOnInactive();
+              } else if (newStatus === 'paused') {
+                clearStreamingOnInactive();
               }
               break;
             }
@@ -301,6 +318,7 @@ export function useAgentSessionEvents(
               );
               setters.setWorkflowPhase('idle');
               setters.setPendingInteractiveShellPrompt(null);
+              clearStreamingOnInactive();
               logger.info('Workflow phase: idle', {
                 sessionId,
                 reason: payload.reason,
@@ -329,7 +347,15 @@ export function useAgentSessionEvents(
         setters.setSession(sessionData);
         setters.setWorkflowStatus(sessionData.status);
         setters.applyExecutionMode(sessionData.executionMode);
-        setters.setMessages(response.messages.items.map(rustMessageToMessage));
+        const hydratedMessages = response.messages.items.map(rustMessageToMessage);
+        setters.setMessages(
+          isInactiveWorkflowStatus(sessionData.status)
+            ? stripMessageStreamingFlags(hydratedMessages)
+            : hydratedMessages,
+        );
+        if (isInactiveWorkflowStatus(sessionData.status)) {
+          actions.clearStreamingMessage(sessionId);
+        }
         setters.setHasOlderMessages(response.messages.hasMoreBefore);
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
         setters.setPendingApprovals(response.pendingApprovals ?? []);
@@ -369,7 +395,7 @@ export function useAgentSessionEvents(
       isMounted = false;
       if (unlisten) unlisten();
     };
-  }, [sessionId, actions.persistViewedAt]);
+  }, [sessionId, actions.persistViewedAt, actions.clearStreamingMessage]);
 
   useEffect(() => {
     const markViewedOnReturn = () => {

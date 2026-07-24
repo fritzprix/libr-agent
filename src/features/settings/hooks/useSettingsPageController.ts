@@ -340,18 +340,6 @@ export function useSettingsPageController() {
     (lang: string) => update('uiLanguage', lang),
     [update],
   );
-  const handleMaxRetriesChange = useCallback(
-    (value: number) => updateAdvanced('maxRetries', value),
-    [updateAdvanced],
-  );
-  const handleRetryDelayChange = useCallback(
-    (value: number) => updateAdvanced('retryDelay', value),
-    [updateAdvanced],
-  );
-  const handleDefaultMaxOutputTokensChange = useCallback(
-    (value: number) => updateAdvanced('defaultMaxOutputTokens', value),
-    [updateAdvanced],
-  );
 
   const systemSettingsProps = useMemo(
     () => ({
@@ -430,16 +418,13 @@ export function useSettingsPageController() {
     formState,
     handleClose,
     handleContextStrategyChange,
-    handleDefaultMaxOutputTokensChange,
     handleDiscard,
     handleDiscardAndLeave,
     handleFallbackModelChange,
     handleLanguageChange,
     handleMaxInputContextChange,
-    handleMaxRetriesChange,
     handlePendingChange,
     handlePreferredModelChange,
-    handleRetryDelayChange,
     handleSave,
     handleSaveAndLeave,
     handleTabChange,

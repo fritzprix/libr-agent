@@ -190,18 +190,20 @@ export function useExecuteCompletion({
       const abortController = new AbortController();
       abortControllersRef.current.set(sessionId, abortController);
 
-      // Create service instance via factory using the provider/apiKey from this request
+      // Create service instance via factory using the provider/apiKey from this request.
+      // Pass runtimeConfig (includes settings.advanced maxRetries/retryDelay) so withRetry
+      // uses the user's settings instead of BaseAIService defaults.
       const providerConfig =
         settingsRef.current.serviceConfigs?.[provider as AIServiceProvider] ||
         {};
-      const service = AIServiceFactory.getService(
-        provider as AIServiceProvider,
-        apiKey ?? '',
-        providerConfig,
-      );
       const runtimeConfig = buildServiceRuntimeConfig(
         settingsRef.current,
         providerConfig,
+      );
+      const service = AIServiceFactory.getService(
+        provider as AIServiceProvider,
+        apiKey ?? '',
+        runtimeConfig,
       );
       activeServicesRef.current.set(sessionId, service);
 

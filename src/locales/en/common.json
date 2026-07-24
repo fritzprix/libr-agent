@@ -466,6 +466,8 @@
       "maxRetriesDescription": "Maximum number of retries for failed AI requests.",
       "retryDelay": "Retry Delay (ms)",
       "retryDelayDescription": "Delay in milliseconds between retry attempts.",
+      "requestReliability": "Request Reliability",
+      "requestReliabilityDescription": "Controls how failed AI provider requests are retried.",
       "circuitBreaker": "Tool Loop Threshold",
       "circuitBreakerDescription": "Number of repeated errors or tool calls before triggering the circuit breaker.",
       "maxOutputTokens": "Max Output Tokens (Default)",

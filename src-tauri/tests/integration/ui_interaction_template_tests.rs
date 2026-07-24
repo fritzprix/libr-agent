@@ -265,3 +265,44 @@ async fn present_interactive_html_mode_sanitizes_unsafe_markup() {
     assert!(html.contains("<tr bgcolor=\"#eeeeee\">"));
     assert!(html.contains("<td colspan=\"2\" align=\"center\">metric</td>"));
 }
+
+#[tokio::test]
+async fn report_result_renders_and_instructs_stop() {
+    let server = UiServer::new();
+
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "title": "Done",
+                "status": "success",
+                "result": "Wrote /workspace/answer.txt with the ordinal-logit summary."
+            }),
+            None,
+        )
+        .await
+        .expect("reportResult should render");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("STOP: Do not call any more tools"),
+        "reportResult must tell the model to stop tool use: {text}"
+    );
+    assert!(text.contains("status=success"));
+    assert!(text.contains("/workspace/answer.txt"));
+
+    let content = result.content.expect("reportResult should return content");
+    let resource = content
+        .iter()
+        .find_map(|item| match item {
+            MCPContent::Resource { resource, .. } => Some(resource),
+            _ => None,
+        })
+        .expect("reportResult should return HTML resource");
+    let uri = resource["uri"].as_str().unwrap_or("");
+    assert!(
+        uri.starts_with("ui://result/"),
+        "reportResult URI should use ui://result/: {uri}"
+    );
+}

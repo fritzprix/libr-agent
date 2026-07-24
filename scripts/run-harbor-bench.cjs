@@ -21,6 +21,7 @@ const FLAG_TO_PS = {
   '--path': '-Path',
   '--include': '-Include',
   '--n-tasks': '-NTasks',
+  '--n-attempts': '-NAttempts',
   '--concurrent': '-Concurrent',
   '--api-url': '-ApiUrl',
   '--assistant-id': '-AssistantId',

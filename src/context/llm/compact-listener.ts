@@ -121,7 +121,7 @@ export async function setupCompactRequestListener({
         const service: AIContextCompactionService = AIServiceFactory.getService(
           provider,
           apiKey,
-          providerConfig,
+          runtimeConfig,
         );
         logger.info(
           `🧪 Compact provider handoff ingredients: session=${sessionId}, provider=${provider}, model=${model}`,

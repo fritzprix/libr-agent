@@ -75,7 +75,9 @@
     "lockfile:check": "pnpm install --frozen-lockfile",
     "bench:hello": "node scripts/run-harbor-bench.cjs --preset hello",
     "bench:terminal": "node scripts/run-harbor-bench.cjs --preset terminal-bench --n-tasks 1",
-    "bench:terminal:all": "node scripts/run-harbor-bench.cjs --preset terminal-bench",
+    "bench:terminal:all": "node scripts/run-harbor-bench.cjs --preset terminal-bench --n-attempts 5",
+    "bench:harbor": "node scripts/run-harbor-bench.cjs --preset harbor-index --n-tasks 1",
+    "bench:harbor:all": "node scripts/run-harbor-bench.cjs --preset harbor-index --n-attempts 5",
     "bench:termial": "pnpm bench:terminal",
     "bench:termial:all": "pnpm bench:terminal:all"
   },

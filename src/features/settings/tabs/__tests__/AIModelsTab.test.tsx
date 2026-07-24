@@ -116,15 +116,9 @@ describe('AIModelsTab', () => {
           model: 'gpt-4o',
         }}
         localFallbackModel={undefined}
-        localMaxRetries={1}
-        localRetryDelay={5000}
-        localDefaultMaxOutputTokens={8192}
         onPendingChange={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
-        onMaxRetriesChange={vi.fn()}
-        onRetryDelayChange={vi.fn()}
-        onDefaultMaxOutputTokensChange={vi.fn()}
       />,
     );
 
@@ -158,17 +152,9 @@ describe('AIModelsTab', () => {
         model: 'llama3.1',
       },
       localFallbackModel: undefined,
-      localAgentHubUrl: '',
-      localMaxRetries: 1,
-      localRetryDelay: 5000,
-      localDefaultMaxOutputTokens: 8192,
       onPendingChange,
       onPreferredModelChange: vi.fn(),
       onFallbackModelChange: vi.fn(),
-      onAgentHubUrlChange: vi.fn(),
-      onMaxRetriesChange: vi.fn(),
-      onRetryDelayChange: vi.fn(),
-      onDefaultMaxOutputTokensChange: vi.fn(),
     };
 
     const { rerender } = render(

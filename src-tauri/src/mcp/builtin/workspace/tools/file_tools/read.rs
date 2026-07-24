@@ -50,7 +50,7 @@ pub fn create_read_file_tool() -> MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
         description: format!(
-            "Read the contents of a file. Supports reading from a specific offset and line count (size), including negative size for tailing the end of the file. Large responses are chunked automatically to stay inline. {}",
+            "Read the contents of a file. Supports UTF-8 (with BOM), UTF-16, and Windows ANSI code pages (e.g. CP949); non-UTF-8 text is decoded instead of failing. Binary files with embedded nulls are rejected. Supports reading from a specific offset and line count (size), including negative size for tailing the end of the file. Large responses are chunked automatically to stay inline. {}",
             read_file_tool_hint()
         ),
         input_schema: object_schema(props, vec!["path".to_string()]),

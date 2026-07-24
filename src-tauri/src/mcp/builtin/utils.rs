@@ -315,9 +315,11 @@ pub fn relative_path_under_base(path: &Path, base: &Path) -> Option<PathBuf> {
                         return None;
                     }
                 }
-                (_, None) => {
-                    return clean_relative_components(path_comps);
+                // Base exhausted: keep the already-fetched path component (do not drop it).
+                (Some(p), None) => {
+                    return clean_relative_components(std::iter::once(p).chain(path_comps));
                 }
+                (None, None) => return Some(PathBuf::new()),
                 (None, Some(_)) => return None,
             }
         }
