@@ -206,6 +206,8 @@ function Test-LibrAgentApi {
 }
 
 function Show-LatestRewards {
+  param([int]$HarborExitCode = 0)
+
   $jobsDir = Join-Path $RepoRoot "jobs"
   if (-not (Test-Path $jobsDir)) {
     return
@@ -216,6 +218,9 @@ function Show-LatestRewards {
   }
 
   Write-Step "Latest job: $($latest.Name)"
+  if ($HarborExitCode -ne 0) {
+    Write-Host "  (Harbor exited $HarborExitCode; if download/extract failed, this may be a previous job.)" -ForegroundColor Yellow
+  }
   $resultJson = Join-Path $latest.FullName "result.json"
   if (Test-Path $resultJson) {
     try {
@@ -242,6 +247,64 @@ function Show-LatestRewards {
       Write-Host ("  trial {0}: reward={1}" -f $_.Name, $reward)
     }
   }
+}
+
+function Test-WindowsLongPathsEnabled {
+  try {
+    $value = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction Stop
+    return [bool]([int]$value.LongPathsEnabled -eq 1)
+  } catch {
+    return $false
+  }
+}
+
+function Get-HarborPython {
+  $harborCmd = Get-Command harbor -ErrorAction Stop
+  $candidate = Join-Path (Split-Path -Parent $harborCmd.Source) 'python.exe'
+  if (Test-Path $candidate) {
+    return $candidate
+  }
+  return (Get-Command python -ErrorAction Stop).Source
+}
+
+# Harbor nests packages under ~/.cache/harbor/tasks/packages/... Deep
+# harbor-index trees exceed Windows MAX_PATH (~260). On Windows we run Harbor
+# via scripts/harbor_short_cache_run.py which patches PACKAGE_CACHE_DIR to a
+# short root (default C:\p; override with LIBRAGENT_HARBOR_CACHE).
+#
+# Do not assign the function output ($x = Invoke-Harbor): native stdout would
+# be captured into the return value. Exit code is written to $script:HarborExitCode.
+function Invoke-Harbor {
+  param([Parameter(Mandatory = $true)][string[]]$HarborArgs)
+
+  $script:HarborExitCode = 0
+
+  if ($env:OS -ne 'Windows_NT') {
+    & harbor @HarborArgs
+    $script:HarborExitCode = $LASTEXITCODE
+    return
+  }
+
+  $cacheRoot = if ($env:LIBRAGENT_HARBOR_CACHE) {
+    $env:LIBRAGENT_HARBOR_CACHE.TrimEnd('\')
+  } else {
+    'C:\p'
+  }
+  $null = New-Item -ItemType Directory -Force -Path $cacheRoot
+  $env:LIBRAGENT_HARBOR_CACHE = $cacheRoot
+
+  if (-not (Test-WindowsLongPathsEnabled)) {
+    Write-Host ("Windows LongPathsEnabled=0; Harbor package cache -> {0} via harbor_short_cache_run.py (LIBRAGENT_HARBOR_CACHE). Durable fix:" -f $cacheRoot) -ForegroundColor Yellow
+    Write-Host '  New-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force' -ForegroundColor DarkYellow
+  } else {
+    Write-Step "Harbor package cache (patched): $cacheRoot"
+  }
+
+  $wrapper = Join-Path $PSScriptRoot 'harbor_short_cache_run.py'
+  $harborPython = Get-HarborPython
+  Write-Step "Running Harbor via $harborPython $wrapper"
+  & $harborPython $wrapper @HarborArgs
+  $script:HarborExitCode = $LASTEXITCODE
 }
 
 Assert-Command "python"
@@ -350,13 +413,15 @@ if ($DryRun) {
   exit 0
 }
 
-& harbor @harborArgs
-$exitCode = $LASTEXITCODE
+Invoke-Harbor -HarborArgs $harborArgs
+$exitCode = [int]$script:HarborExitCode
 
-Show-LatestRewards
+Show-LatestRewards -HarborExitCode $exitCode
 
 if ($exitCode -ne 0) {
-  Write-Host "`nHarbor exited with code $exitCode (Windows console encoding issues can still leave reward.txt=1)." -ForegroundColor Yellow
+  Write-Host "`nHarbor exited with code $exitCode." -ForegroundColor Yellow
+  Write-Host "If the traceback was FileNotFoundError during tar.extractall, that is usually Windows MAX_PATH (enable LongPathsEnabled, or ensure LIBRAGENT_HARBOR_CACHE is a short path like C:\p)." -ForegroundColor Yellow
+  Write-Host "Console emoji encoding can also yield a non-zero exit even when reward.txt=1; trust jobs/<timestamp>/verifier/reward.txt when a job was created." -ForegroundColor Yellow
 }
 
 exit $exitCode

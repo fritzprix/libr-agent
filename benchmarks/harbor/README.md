@@ -174,3 +174,23 @@ harbor run \
 
 On Windows, Harbor may still exit non-zero due to console emoji encoding; trust
 `reward.txt` / pytest output under `jobs/<timestamp>/`.
+
+### Windows: `FileNotFoundError` while extracting Harbor packages
+
+Some `harbor-index` tasks (e.g. `spider2-dbt-*`) unpack nested
+`dbt_packages/...` trees whose full path exceeds classic Windows `MAX_PATH`
+(~260). Harbor always caches under `~/.cache/harbor/tasks/packages/...` (no
+cache-dir flag). Even a short `USERPROFILE` like `C:\h` can still fail (paths
+~270 chars). A previous `jobs/` summary with `mean=1.0` can still print — that
+is not proof the current run succeeded.
+
+`scripts/run-harbor-bench.ps1` runs Harbor through
+`scripts/harbor_short_cache_run.py`, which patches `PACKAGE_CACHE_DIR` to a
+short root (`C:\p` by default; override with `LIBRAGENT_HARBOR_CACHE`) before
+the CLI starts. Prefer enabling OS long paths when you can (admin; reboot may
+be required):
+
+```powershell
+New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' `
+  -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force
+```
