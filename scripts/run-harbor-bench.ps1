@@ -5,7 +5,10 @@
 .DESCRIPTION
   Requires `pnpm tauri dev` (or any LibrAgent build) with HTTP API enabled.
   Uses benchmarks/harbor/libragent_agent.py (executionMode=unsafe by default).
-  Pass -AgentTimeoutMultiplier for long Terminal-Bench tasks (Harbor default is often ~360s).
+
+  Official Terminal-Bench submissions must not modify timeouts or resources.
+  Timeout multipliers are omitted by default; pass -TimeoutMultiplier /
+  -AgentTimeoutMultiplier (or env vars) only for local debugging.
 
 .EXAMPLE
   # Smoke task (hello-world)
@@ -25,16 +28,19 @@
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet("hello", "terminal-bench", "path")]
+  [ValidateSet("hello", "terminal-bench", "harbor-index", "path")]
   [string]$Preset = "hello",
 
   [string]$Path,
 
-  [string]$Dataset = "terminal-bench@2.0",
+  [string]$Dataset = "terminal-bench/terminal-bench-2-1",
 
   [string]$Include,
 
   [int]$NTasks = 0,
+
+  # Harbor -k. Official TB 2.1 submissions require at least 5.
+  [int]$NAttempts = $(if ($env:LIBRAGENT_N_ATTEMPTS) { [int]$env:LIBRAGENT_N_ATTEMPTS } else { 1 }),
 
   [int]$Concurrent = 1,
 
@@ -45,9 +51,16 @@ param(
   [ValidateSet("yolo", "unsafe", "normal")]
   [string]$ExecutionMode = $(if ($env:LIBRAGENT_EXECUTION_MODE) { $env:LIBRAGENT_EXECUTION_MODE } else { "unsafe" }),
 
-  [double]$TimeoutMultiplier = $(if ($env:LIBRAGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_TIMEOUT_MULTIPLIER } else { 1.0 }),
+  # Omitted by default (submission-compatible). Set via flag or env for local debugging only.
+  [Nullable[double]]$TimeoutMultiplier = $(
+    if ($env:LIBRAGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_TIMEOUT_MULTIPLIER } else { $null }
+  ),
 
-  [double]$AgentTimeoutMultiplier = $(if ($env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER } else { 100.0 }),
+  [Nullable[double]]$AgentTimeoutMultiplier = $(
+    if ($env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER } else { $null }
+  ),
+
+  [string[]]$VerifierEnv,
 
   [string]$AssistantName = "Coding Expert",
 
@@ -145,7 +158,9 @@ function Test-LibrAgentApi {
     throw "Unexpected health response: $($health | ConvertTo-Json -Compress)"
   }
 
-  Write-Step "Smoke-checking executionMode=$ExecutionMode"
+  Write-Step "Smoke-checking executionMode=$ExecutionMode (create → verify mode → await idle → terminate)"
+  # Start a real turn so we verify the session can run, but wait for idle before
+  # cleanup — terminating ~500ms into an LLM turn aborts the reply mid-flight.
   $bodyObj = @{
     assistantId         = $script:ResolvedAssistantId
     name                = "harbor-bench-smoke"
@@ -155,15 +170,44 @@ function Test-LibrAgentApi {
   }
   $body = $bodyObj | ConvertTo-Json
   $created = Invoke-RestMethod -Uri "$ApiBase/sessions" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 60
-  Start-Sleep -Seconds 1
-  $session = Invoke-RestMethod -Uri "$ApiBase/sessions/$($created.id)" -Method GET -TimeoutSec 15
-  Write-Host ("  session={0} executionMode={1} status={2}" -f $session.id, $session.executionMode, $session.status)
-  if ($ExecutionMode -ne "normal" -and $session.executionMode -ne $ExecutionMode) {
-    throw "API did not apply executionMode=$ExecutionMode (got '$($session.executionMode)'). Is pnpm tauri dev running a build that includes the CreateSessionRequest change?"
+  $sessionId = $created.id
+  try {
+    $session = Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId" -Method GET -TimeoutSec 15
+    Write-Host ("  session={0} executionMode={1} status={2}" -f $session.id, $session.executionMode, $session.status)
+    if ($ExecutionMode -ne "normal" -and $session.executionMode -ne $ExecutionMode) {
+      throw "API did not apply executionMode=$ExecutionMode (got '$($session.executionMode)'). Is pnpm tauri dev running a build that includes CreateSessionRequest.executionMode?"
+    }
+    if ($session.status -eq "idle" -and -not $session.lastMessageAt) {
+      throw "Smoke session did not start a workflow (status=idle with no messages). CreateSessionRequest.request may have been ignored."
+    }
+
+    $deadline = (Get-Date).AddSeconds(90)
+    while ((Get-Date) -lt $deadline) {
+      if ($session.status -in @("idle", "error", "paused")) {
+        break
+      }
+      Start-Sleep -Seconds 1
+      $session = Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId" -Method GET -TimeoutSec 15
+    }
+    Write-Host ("  settled status={0}" -f $session.status)
+    if ($session.status -notin @("idle", "error", "paused")) {
+      throw "Smoke session did not settle within 90s (status='$($session.status)')."
+    }
+  }
+  finally {
+    try {
+      Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId/terminate" -Method POST -TimeoutSec 30 | Out-Null
+      Write-Host "  smoke session terminated ($sessionId)"
+    }
+    catch {
+      Write-Warning "Failed to terminate smoke session ${sessionId}: $_"
+    }
   }
 }
 
 function Show-LatestRewards {
+  param([int]$HarborExitCode = 0)
+
   $jobsDir = Join-Path $RepoRoot "jobs"
   if (-not (Test-Path $jobsDir)) {
     return
@@ -174,6 +218,9 @@ function Show-LatestRewards {
   }
 
   Write-Step "Latest job: $($latest.Name)"
+  if ($HarborExitCode -ne 0) {
+    Write-Host "  (Harbor exited $HarborExitCode; if download/extract failed, this may be a previous job.)" -ForegroundColor Yellow
+  }
   $resultJson = Join-Path $latest.FullName "result.json"
   if (Test-Path $resultJson) {
     try {
@@ -202,6 +249,64 @@ function Show-LatestRewards {
   }
 }
 
+function Test-WindowsLongPathsEnabled {
+  try {
+    $value = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction Stop
+    return [bool]([int]$value.LongPathsEnabled -eq 1)
+  } catch {
+    return $false
+  }
+}
+
+function Get-HarborPython {
+  $harborCmd = Get-Command harbor -ErrorAction Stop
+  $candidate = Join-Path (Split-Path -Parent $harborCmd.Source) 'python.exe'
+  if (Test-Path $candidate) {
+    return $candidate
+  }
+  return (Get-Command python -ErrorAction Stop).Source
+}
+
+# Harbor nests packages under ~/.cache/harbor/tasks/packages/... Deep
+# harbor-index trees exceed Windows MAX_PATH (~260). On Windows we run Harbor
+# via scripts/harbor_short_cache_run.py which patches PACKAGE_CACHE_DIR to a
+# short root (default C:\p; override with LIBRAGENT_HARBOR_CACHE).
+#
+# Do not assign the function output ($x = Invoke-Harbor): native stdout would
+# be captured into the return value. Exit code is written to $script:HarborExitCode.
+function Invoke-Harbor {
+  param([Parameter(Mandatory = $true)][string[]]$HarborArgs)
+
+  $script:HarborExitCode = 0
+
+  if ($env:OS -ne 'Windows_NT') {
+    & harbor @HarborArgs
+    $script:HarborExitCode = $LASTEXITCODE
+    return
+  }
+
+  $cacheRoot = if ($env:LIBRAGENT_HARBOR_CACHE) {
+    $env:LIBRAGENT_HARBOR_CACHE.TrimEnd('\')
+  } else {
+    'C:\p'
+  }
+  $null = New-Item -ItemType Directory -Force -Path $cacheRoot
+  $env:LIBRAGENT_HARBOR_CACHE = $cacheRoot
+
+  if (-not (Test-WindowsLongPathsEnabled)) {
+    Write-Host ("Windows LongPathsEnabled=0; Harbor package cache -> {0} via harbor_short_cache_run.py (LIBRAGENT_HARBOR_CACHE). Durable fix:" -f $cacheRoot) -ForegroundColor Yellow
+    Write-Host '  New-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force' -ForegroundColor DarkYellow
+  } else {
+    Write-Step "Harbor package cache (patched): $cacheRoot"
+  }
+
+  $wrapper = Join-Path $PSScriptRoot 'harbor_short_cache_run.py'
+  $harborPython = Get-HarborPython
+  Write-Step "Running Harbor via $harborPython $wrapper"
+  & $harborPython $wrapper @HarborArgs
+  $script:HarborExitCode = $LASTEXITCODE
+}
+
 Assert-Command "python"
 Assert-Command "harbor"
 
@@ -219,11 +324,24 @@ $harborArgs = @(
   "--ak", "assistant_id=$($script:ResolvedAssistantId)",
   "--ak", "execution_mode=$ExecutionMode",
   "-n", "$Concurrent",
-  "--timeout-multiplier", "$TimeoutMultiplier"
+  "-k", "$NAttempts"
 )
 
-if ($AgentTimeoutMultiplier -gt 0) {
+if ($null -ne $TimeoutMultiplier) {
+  $harborArgs += @("--timeout-multiplier", "$TimeoutMultiplier")
+}
+
+if ($null -ne $AgentTimeoutMultiplier) {
   $harborArgs += @("--agent-timeout-multiplier", "$AgentTimeoutMultiplier")
+}
+
+if ($VerifierEnv) {
+  $envList = $VerifierEnv -split ','
+  foreach ($ve in $envList) {
+    if ($ve.Trim()) {
+      $harborArgs += @("--ve", $ve.Trim())
+    }
+  }
 }
 
 switch ($Preset) {
@@ -248,6 +366,19 @@ switch ($Preset) {
   }
   "terminal-bench" {
     Write-Step "Preset: Terminal-Bench dataset ($Dataset)"
+    $harborArgs += @("-d", $Dataset)
+    if ($Include) {
+      $harborArgs += @("-i", $Include)
+    }
+    if ($NTasks -gt 0) {
+      $harborArgs += @("-l", "$NTasks")
+    }
+  }
+  "harbor-index" {
+    if (-not $PSBoundParameters.ContainsKey('Dataset')) {
+      $Dataset = "harbor-index/harbor-index-1.0"
+    }
+    Write-Step "Preset: Harbor Index dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
     if ($Include) {
       $harborArgs += @("-i", $Include)
@@ -282,13 +413,15 @@ if ($DryRun) {
   exit 0
 }
 
-& harbor @harborArgs
-$exitCode = $LASTEXITCODE
+Invoke-Harbor -HarborArgs $harborArgs
+$exitCode = [int]$script:HarborExitCode
 
-Show-LatestRewards
+Show-LatestRewards -HarborExitCode $exitCode
 
 if ($exitCode -ne 0) {
-  Write-Host "`nHarbor exited with code $exitCode (Windows console encoding issues can still leave reward.txt=1)." -ForegroundColor Yellow
+  Write-Host "`nHarbor exited with code $exitCode." -ForegroundColor Yellow
+  Write-Host "If the traceback was FileNotFoundError during tar.extractall, that is usually Windows MAX_PATH (enable LongPathsEnabled, or ensure LIBRAGENT_HARBOR_CACHE is a short path like C:\p)." -ForegroundColor Yellow
+  Write-Host "Console emoji encoding can also yield a non-zero exit even when reward.txt=1; trust jobs/<timestamp>/verifier/reward.txt when a job was created." -ForegroundColor Yellow
 }
 
 exit $exitCode

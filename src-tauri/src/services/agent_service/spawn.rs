@@ -29,11 +29,17 @@ impl AgentService {
     ) -> Result<CreateSessionResponse, String> {
         let assistant = load_assistant(&body.assistant_id).await?;
         let session_id = format!("session-{}", uuid::Uuid::new_v4());
+        let initial_request = body
+            .request
+            .as_deref()
+            .map(str::trim)
+            .filter(|request| !request.is_empty())
+            .map(str::to_string);
         let session_name = build_session_name(
             body.name.clone(),
             &assistant.name,
             &session_id,
-            &body.request,
+            initial_request.as_deref().unwrap_or(""),
         );
         let explicit_org = normalize_explicit_org(
             body.org_id.clone(),
@@ -123,9 +129,27 @@ impl AgentService {
                 .map_err(|e| format!("Failed to set execution mode: {}", e))?;
         }
 
+        let Some(initial_request) = initial_request else {
+            return Ok(CreateSessionResponse {
+                id: session.id,
+                name: session.name,
+                status: crate::repositories::SessionStatus::Idle
+                    .as_str()
+                    .to_string(),
+                parent_session_id: lineage_meta.parent_session_id,
+                lineage_id: lineage_meta.lineage_id,
+                depth: lineage_meta.depth,
+                max_depth: lineage_meta.max_depth,
+                max_fanout: lineage_meta.max_fanout,
+                org_id: lineage_meta.org_id,
+                org_name: lineage_meta.org_name,
+                org_root_session_id: lineage_meta.org_root_session_id,
+            });
+        };
+
         let initial_message = Message::new_user_message(
             session_id.clone(),
-            body.request,
+            initial_request,
             message_source,
             assistant_id,
         );

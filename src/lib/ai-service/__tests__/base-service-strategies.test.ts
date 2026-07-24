@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { throwStreamingError } from '../base-service-strategies';
+import {
+  throwStreamingError,
+  withRetryPolicy,
+} from '../base-service-strategies';
 import type { StreamingErrorContext } from '../base-service-shared';
 import { AIServiceError, AIServiceProvider } from '../types';
 
@@ -10,6 +13,45 @@ const context: StreamingErrorContext = {
   },
   config: {},
 };
+
+describe('withRetryPolicy', () => {
+  it('honors maxRetries from config', async () => {
+    const logger = { warn: vi.fn() };
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary'))
+      .mockRejectedValueOnce(new Error('temporary'))
+      .mockResolvedValueOnce('ok');
+
+    const result = await withRetryPolicy({
+      fn: operation,
+      config: { maxRetries: 2, retryDelay: 1 },
+      logger,
+      provider: AIServiceProvider.OpenAI,
+      shouldRetry: () => true,
+    });
+
+    expect(result).toBe('ok');
+    expect(operation).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry beyond maxRetries', async () => {
+    const logger = { warn: vi.fn() };
+    const operation = vi.fn().mockRejectedValue(new Error('always fails'));
+
+    await expect(
+      withRetryPolicy({
+        fn: operation,
+        config: { maxRetries: 1, retryDelay: 1 },
+        logger,
+        provider: AIServiceProvider.OpenAI,
+        shouldRetry: () => true,
+      }),
+    ).rejects.toThrow('always fails');
+
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('throwStreamingError', () => {
   it('classifies RESOURCE_EXHAUSTED provider statuses as rate limits', () => {

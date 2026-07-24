@@ -278,6 +278,43 @@ describe('AgentSessionContext – Event Handling', () => {
             });
         });
 
+        it('returns to idle when workflowCompleted is emitted with terminated reason', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            listenMock.mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => useAgentSessionState(),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(result.current.isSessionLoading).toBe(false);
+                expect(eventHandler).toBeDefined();
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'workflowCompleted',
+                        sessionId: TEST_SESSION_ID,
+                        reason: 'terminated',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.workflowStatus).toBe('idle');
+                expect(result.current.workflowPhase).toBe('idle');
+            });
+        });
+
         it('should append message on messageAdded event', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
             listenMock.mockImplementation(

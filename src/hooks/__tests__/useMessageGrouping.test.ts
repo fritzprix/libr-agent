@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { useMessageGrouping } from '../useMessageGrouping';
-import type { Message } from '@/models/chat';
+import type { Message, MessageSource } from '@/models/chat';
 import { describe, it, expect } from 'vitest';
 import { StrictMode, createElement } from 'react';
 import { createMessage } from './helpers';
@@ -490,5 +490,21 @@ describe('useMessageGrouping', () => {
 
     expect(result.current.groupedMessages).toEqual(first.groupedMessages);
     expect(result.current.toolResultsMap).toBe(first.toolResultsMap);
+  });
+
+  it('filters out internal scaffolding messages (session-context, compaction-instruction, recovery)', () => {
+    const messages: Message[] = [
+      { ...createMessage('1', 'user', 'Normal message'), source: 'ui' as MessageSource },
+      { ...createMessage('2', 'user', 'Session context background info'), source: 'session-context' as MessageSource },
+      { ...createMessage('3', 'user', 'Compaction request'), source: 'compaction-instruction' as MessageSource },
+      { ...createMessage('4', 'user', 'Recovery checkpoint'), source: 'recovery' as MessageSource },
+      { ...createMessage('5', 'assistant', 'Response message'), source: 'api' as MessageSource },
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+    expect(result.current.groupedMessages.length).toBe(2);
+    expect(result.current.groupedMessages[0].message.id).toBe('1');
+    expect(result.current.groupedMessages[1].message.id).toBe('5');
   });
 });

@@ -303,6 +303,21 @@ impl PersistentShell {
         self.path_mapper.as_ref()
     }
 
+    /// Whether command framing should use host PowerShell syntax.
+    ///
+    /// Key off the *shell dialect*, not the host OS: Docker attach on Windows
+    /// hosts still runs bash/sh inside the Linux container.
+    pub(crate) fn uses_host_powershell_protocol(&self) -> bool {
+        #[cfg(windows)]
+        {
+            matches!(self.shell_type, ShellType::PowerShell)
+        }
+        #[cfg(unix)]
+        {
+            false
+        }
+    }
+
     /// Execute a command in the persistent shell
     ///
     /// # Arguments
@@ -330,84 +345,79 @@ impl PersistentShell {
             self.session_id, command
         );
 
-        // Send command
-        #[cfg(windows)]
-        {
-            match self.shell_type {
-                ShellType::PowerShell => {
-                    // Encode command to Base64 to avoid encoding issues in the pipe
-                    // This ensures that characters like Korean are transmitted correctly
-                    // regardless of the current console code page.
-                    let encoded = general_purpose::STANDARD.encode(command);
-                    // We use Invoke-Expression to execute the decoded string
-                    let wrapper = format!(
-                        "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
-                        encoded
-                    );
-                    self.stdin.write_all(wrapper.as_bytes()).await?;
-                }
-                ShellType::Bash => {
-                    // Should not reach here on Windows
-                }
-                ShellType::Sh => {
-                    // Should not reach here on Windows
-                }
-            }
-        }
-
-        #[cfg(unix)]
-        {
-            // Wrap in group with /dev/null redirection to prevent stdin consumption
-            // Use { ...; } to preserve side effects like 'cd' or 'export'
-            // We use multiple lines to handle comments in command safely
+        if self.uses_host_powershell_protocol() {
+            self.write_powershell_framed_command(command, &sentinel)
+                .await?;
+        } else {
+            // Bash/sh protocol — also used for Docker containers spawned from Windows hosts.
+            // Wrap in group with /dev/null redirection to prevent stdin consumption.
+            // Use { ...; } to preserve side effects like 'cd' or 'export'.
+            // Multiple lines handle comments in command safely.
             self.stdin.write_all(b"{\n").await?;
             self.stdin.write_all(command.as_bytes()).await?;
             self.stdin.write_all(b"\n} < /dev/null\n").await?;
-        }
 
-        // Send sentinel markers (platform-specific exit code syntax)
-        #[cfg(unix)]
-        {
             // Capture exit code BEFORE echoing sentinel (which would reset $?)
             self.stdin
                 .write_all(
-                    format!("__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n")
-                        .as_bytes(),
+                    format!(
+                        "__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n"
+                    )
+                    .as_bytes(),
                 )
                 .await?;
-        }
-
-        #[cfg(windows)]
-        {
-            match self.shell_type {
-                ShellType::PowerShell => {
-                    self.stdin
-                        .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
-                        .await?;
-
-                    // Capture CWD
-                    self.stdin
-                        .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
-                        .await?;
-
-                    // Robust exit code capture for PowerShell (PS 5.1 compatible):
-                    // If $LASTEXITCODE is non-zero OR $? is false:
-                    //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
-                    //   Else return $LASTEXITCODE.
-                    // Else return 0.
-                    // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
-                    self.stdin
-                        .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
-                        .await?;
-                }
-                ShellType::Bash => {}
-                ShellType::Sh => {}
-            }
         }
 
         self.stdin.flush().await?;
 
         self.read_until_sentinel(&sentinel).await
+    }
+
+    #[cfg(windows)]
+    async fn write_powershell_framed_command(
+        &mut self,
+        command: &str,
+        sentinel: &str,
+    ) -> Result<()> {
+        // Encode command to Base64 to avoid encoding issues in the pipe
+        // This ensures that characters like Korean are transmitted correctly
+        // regardless of the current console code page.
+        let encoded = general_purpose::STANDARD.encode(command);
+        // We use Invoke-Expression to execute the decoded string
+        let wrapper = format!(
+            "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
+            encoded
+        );
+        self.stdin.write_all(wrapper.as_bytes()).await?;
+
+        self.stdin
+            .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
+            .await?;
+
+        // Capture CWD
+        self.stdin
+            .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
+            .await?;
+
+        // Robust exit code capture for PowerShell (PS 5.1 compatible):
+        // If $LASTEXITCODE is non-zero OR $? is false:
+        //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
+        //   Else return $LASTEXITCODE.
+        // Else return 0.
+        // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
+        self.stdin
+            .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
+            .await?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    async fn write_powershell_framed_command(
+        &mut self,
+        _command: &str,
+        _sentinel: &str,
+    ) -> Result<()> {
+        anyhow::bail!("PowerShell framing is not available on Unix hosts")
     }
 
     async fn read_until_sentinel(
@@ -549,7 +559,7 @@ impl PersistentShell {
         #[cfg_attr(unix, allow(unused_variables))] stdin_delivery: StdinDelivery,
     ) -> Result<(String, String, i32, String)> {
         #[cfg(windows)]
-        if stdin_delivery == StdinDelivery::Child {
+        if stdin_delivery == StdinDelivery::Child && self.uses_host_powershell_protocol() {
             let piped_command = format!(
                 "{} | {command}",
                 format_powershell_stdin_literal(user_input)
@@ -568,9 +578,10 @@ impl PersistentShell {
             self.session_id, command
         );
 
-        // Send command with heredoc for input (Unix) or piped input (Windows)
-        #[cfg(unix)]
-        {
+        if self.uses_host_powershell_protocol() {
+            self.write_powershell_host_stdin_command(command, user_input, &sentinel)
+                .await?;
+        } else {
             // Use a unique sentinel for the heredoc to avoid conflicts with input content
             let input_sentinel = format!("INPUT_SENTINEL_{}", generate_sentinel());
 
@@ -588,35 +599,11 @@ impl PersistentShell {
             // Capture exit code BEFORE echoing sentinel (which would reset $?)
             self.stdin
                 .write_all(
-                    format!("__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n")
-                        .as_bytes(),
+                    format!(
+                        "__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n"
+                    )
+                    .as_bytes(),
                 )
-                .await?;
-        }
-
-        #[cfg(windows)]
-        {
-            // Send command first
-            self.stdin.write_all(command.as_bytes()).await?;
-            self.stdin.write_all(b"\n").await?;
-
-            // Send user input (stdin injection)
-            self.stdin.write_all(user_input.as_bytes()).await?;
-            self.stdin.write_all(b"\n").await?;
-
-            // Send sentinel markers
-            self.stdin
-                .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
-                .await?;
-
-            // Capture CWD
-            self.stdin
-                .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
-                .await?;
-
-            // Robust exit code capture for PowerShell (PS 5.1 compatible)
-            self.stdin
-                .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
                 .await?;
         }
 
@@ -628,6 +615,48 @@ impl PersistentShell {
         self.last_known_cwd = cwd.clone();
 
         Ok((stdout, stderr, exit_code, cwd))
+    }
+
+    #[cfg(windows)]
+    async fn write_powershell_host_stdin_command(
+        &mut self,
+        command: &str,
+        user_input: &str,
+        sentinel: &str,
+    ) -> Result<()> {
+        // Send command first
+        self.stdin.write_all(command.as_bytes()).await?;
+        self.stdin.write_all(b"\n").await?;
+
+        // Send user input (stdin injection)
+        self.stdin.write_all(user_input.as_bytes()).await?;
+        self.stdin.write_all(b"\n").await?;
+
+        // Send sentinel markers
+        self.stdin
+            .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
+            .await?;
+
+        // Capture CWD
+        self.stdin
+            .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
+            .await?;
+
+        // Robust exit code capture for PowerShell (PS 5.1 compatible)
+        self.stdin
+            .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
+            .await?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    async fn write_powershell_host_stdin_command(
+        &mut self,
+        _command: &str,
+        _user_input: &str,
+        _sentinel: &str,
+    ) -> Result<()> {
+        anyhow::bail!("PowerShell host-stdin framing is not available on Unix hosts")
     }
 
     /// Get the session ID

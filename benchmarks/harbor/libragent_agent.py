@@ -3,8 +3,9 @@
 Bridges Harbor's terminal-benchmark loop to LibrAgent's headless Session API.
 
 When the Harbor environment is a local Docker Compose trial, the adapter attaches
-LibrAgent's Docker session to Harbor's existing main container (workdir usually
-`/app`) so absolute task paths work without host↔container sync.
+LibrAgent's Docker session to Harbor's existing main container. Workdir is taken
+from task config when set; otherwise from the container image WORKDIR (often
+`/workspace` for Harbor Index / BixBench, `/app` for classic Terminal-Bench).
 
 Non-Docker Harbor backends fall back to the legacy host-workspace sync path.
 """
@@ -98,11 +99,104 @@ def sanitize_docker_compose_project_name(name: str) -> str:
     return sanitized[:63]
 
 
-def resolve_container_workdir(environment: BaseEnvironment) -> str:
-    workdir = "/app"
-    if hasattr(environment, "task_env_config") and environment.task_env_config:
-        workdir = getattr(environment.task_env_config, "workdir", None) or "/app"
+def docker_inspect_workdir(container_id: str) -> str | None:
+    """Read the container's configured WorkingDir (image WORKDIR), if any."""
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "inspect",
+                "-f",
+                "{{.Config.WorkingDir}}",
+                container_id,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(
+            f"[LibrAgent] Warning: docker inspect workdir failed for "
+            f"{container_id!r}: {exc}"
+        )
+        return None
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        print(
+            f"[LibrAgent] Warning: docker inspect workdir failed for "
+            f"{container_id!r}: {stderr or result.returncode}"
+        )
+        return None
+    workdir = (result.stdout or "").strip()
+    if not workdir or workdir == "/":
+        return None
     return workdir
+
+
+def docker_exec_pwd(container_id: str) -> str | None:
+    """Ask the live container for its current working directory."""
+    try:
+        result = subprocess.run(
+            ["docker", "exec", container_id, "pwd"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(
+            f"[LibrAgent] Warning: docker exec pwd failed for "
+            f"{container_id!r}: {exc}"
+        )
+        return None
+    if result.returncode != 0:
+        return None
+    workdir = (result.stdout or "").strip()
+    if not workdir or workdir == "/":
+        return None
+    return workdir
+
+
+def resolve_container_workdir(
+    environment: BaseEnvironment,
+    container_id: str | None = None,
+) -> str:
+    """Resolve the container path LibrAgent should treat as workspace root.
+
+    Workdir is **per-task / per-image**, never a single hardcoded benchmark path.
+
+    Priority:
+    1. Harbor task ``[environment].workdir`` when the task sets it explicitly
+    2. Docker image WORKDIR of the attached Harbor main container
+    3. Live ``docker exec … pwd`` (container process cwd)
+    4. Last-resort ``/app`` with a warning (legacy Terminal-Bench convention only)
+    """
+    if hasattr(environment, "task_env_config") and environment.task_env_config:
+        configured = getattr(environment.task_env_config, "workdir", None)
+        if configured:
+            workdir = str(configured)
+            print(f"[LibrAgent] Using task-configured container workdir: {workdir}")
+            return workdir
+
+    if container_id:
+        inspected = docker_inspect_workdir(container_id)
+        if inspected:
+            print(
+                f"[LibrAgent] Using container image WORKDIR for attach: {inspected}"
+            )
+            return inspected
+
+        live_pwd = docker_exec_pwd(container_id)
+        if live_pwd:
+            print(f"[LibrAgent] Using live container pwd for attach: {live_pwd}")
+            return live_pwd
+
+    print(
+        "[LibrAgent] Warning: no task workdir / image WORKDIR / live pwd found; "
+        "falling back to /app (may be wrong for this task)"
+    )
+    return "/app"
 
 
 def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None:
@@ -241,8 +335,9 @@ class LibrAgentHarborAdapter(BaseAgent):
         if httpx is None:
             raise RuntimeError("Python library 'httpx' is missing.")
 
-        container_workdir = resolve_container_workdir(environment)
-        attach_container_id = resolve_harbor_main_container_id(environment)
+        container_id = resolve_harbor_main_container_id(environment)
+        container_workdir = resolve_container_workdir(environment, container_id)
+        attach_container_id = container_id
         use_attach = attach_container_id is not None
 
         local_workspace: Path | None = None
@@ -399,6 +494,16 @@ class LibrAgentHarborAdapter(BaseAgent):
                     last_status = current_status
                     if current_status not in TERMINAL_WORKFLOW_STATUSES:
                         seen_non_idle = True
+
+                    if current_status == "paused":
+                        print(
+                            f"[{self.name()}] Session workflow was paused (or cancelled). "
+                            f"Terminating session and failing fast."
+                        )
+                        await self._terminate_session(session_id)
+                        raise RuntimeError(
+                            f"LibrAgent session {session_id} was paused/cancelled."
+                        )
 
                     if is_workflow_complete(
                         current_status, seen_non_idle=seen_non_idle

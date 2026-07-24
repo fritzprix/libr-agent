@@ -1,9 +1,11 @@
 use crate::mcp::types::MCPContent;
 use crate::models::chat::{Message, MessageSource};
 
-const SESSION_CONTEXT_BACKGROUND_HEADER: &str =
-    "<!-- session context: background reference only -->";
-const SESSION_CONTEXT_BACKGROUND_FOOTER: &str = "<!-- end of session context -->";
+/// XML tag wrapper to isolate volatile session context (planning, workspace state, etc.)
+/// within a synthetic user message for LLMs. This is cleaner than HTML comments for parsing,
+/// prevents cache churn in system prompts, and clearly scopes background reference context.
+const SESSION_CONTEXT_BACKGROUND_HEADER: &str = "<session-context>";
+const SESSION_CONTEXT_BACKGROUND_FOOTER: &str = "</session-context>";
 
 #[derive(Debug, Clone)]
 pub struct RequestLayout {
@@ -109,8 +111,22 @@ pub fn build_request_layout(
             messages,
         }
     } else {
-        RequestLayout {
-            system_prompt: Some(
+        let mut merged = false;
+        for message in messages.iter_mut().rev() {
+            if message.role == "user" && !message.is_internal_synthetic_user_message() {
+                let mut new_content = vec![MCPContent::Text {
+                    text: format_session_context_text(provider, &session_context),
+                    is_error: None,
+                }];
+                new_content.append(&mut message.content);
+                message.content = new_content;
+                merged = true;
+                break;
+            }
+        }
+
+        let system_prompt = if !merged {
+            Some(
                 [system_prompt, Some(session_context)]
                     .into_iter()
                     .flatten()
@@ -118,7 +134,13 @@ pub fn build_request_layout(
                     .collect::<Vec<_>>()
                     .join("\n\n"),
             )
-            .filter(|prompt| !prompt.is_empty()),
+            .filter(|prompt| !prompt.is_empty())
+        } else {
+            system_prompt
+        };
+
+        RequestLayout {
+            system_prompt,
             messages,
         }
     }

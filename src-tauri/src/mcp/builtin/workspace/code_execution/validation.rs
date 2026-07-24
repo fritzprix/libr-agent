@@ -248,6 +248,58 @@ pub fn resolve_stdin_delivery(command: &str, args: &Value) -> StdinDelivery {
     StdinDelivery::Host
 }
 
+/// Last few non-empty lines from stdout/stderr (joined).
+fn output_tail(stdout: &str, stderr: &str, max_lines: usize) -> String {
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{stdout}\n{stderr}"),
+        (false, true) => stdout.to_string(),
+        (true, false) => stderr.to_string(),
+        (true, true) => String::new(),
+    };
+
+    let lines: Vec<&str> = combined
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..].join("\n")
+}
+
+/// True when the *tail* of output looks like a process waiting for stdin.
+///
+/// Intentionally narrow: whole-buffer substrings like `"? "`, `confirm`, or
+/// `skipping` false-positive on diffs and logs (e.g. `git diff`).
+pub fn looks_like_waiting_prompt(stdout: &str, stderr: &str) -> bool {
+    let tail = output_tail(stdout, stderr, 3).to_lowercase();
+    if tail.is_empty() {
+        return false;
+    }
+
+    const STRONG_TAIL_PROMPTS: &[&str] = &[
+        "[y/n]",
+        "[yes/no]",
+        "(y/n)",
+        "(yes/no)",
+        "enter password:",
+        "password:",
+    ];
+    if STRONG_TAIL_PROMPTS
+        .iter()
+        .any(|prompt| tail.contains(prompt))
+    {
+        return true;
+    }
+
+    let last = tail.lines().next_back().unwrap_or("").trim();
+    last.ends_with('?')
+        && (last.contains("overwrite")
+            || last.contains("(y/n)")
+            || last.contains("[y/n]")
+            || last.contains("yes/no")
+            || last.contains("y/n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +380,41 @@ mod tests {
             resolve_stdin_delivery("$code = Read-Host; python setup.py --code-stdin", &args),
             StdinDelivery::Host
         );
+    }
+
+    #[test]
+    fn test_looks_like_waiting_prompt_ignores_git_diff_noise() {
+        let diff = r#"
+diff --git a/src/lib/ai-service/factory.ts b/src/lib/ai-service/factory.ts
+index 111..222 100644
+--- a/src/lib/ai-service/factory.ts
++++ b/src/lib/ai-service/factory.ts
+@@ -10,6 +10,7 @@ export function create() {
+   const options?: Options;
+   // confirm strategy selection
+   return factory;
+ }
+"#;
+        assert!(!looks_like_waiting_prompt(diff, ""));
+        assert!(!looks_like_waiting_prompt("? foo.ts\n M bar.ts", ""));
+        assert!(!looks_like_waiting_prompt(
+            "no changes made\nskipping file",
+            ""
+        ));
+    }
+
+    #[test]
+    fn test_looks_like_waiting_prompt_matches_strong_tail_only() {
+        assert!(looks_like_waiting_prompt(
+            "Package name: (demo)\nOverwrite? (y/n)",
+            ""
+        ));
+        assert!(looks_like_waiting_prompt("", "Enter password:"));
+        assert!(looks_like_waiting_prompt(
+            "lots of log\nmore log\nContinue [y/n]",
+            ""
+        ));
+        assert!(!looks_like_waiting_prompt("Overwrite complete", ""));
     }
 
     #[test]

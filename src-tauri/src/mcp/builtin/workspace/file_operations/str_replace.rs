@@ -10,6 +10,8 @@ use tokio::fs;
 use tokio::io::AsyncReadExt;
 
 async fn read_validated_utf8_file(path: &Path) -> Result<String, String> {
+    use crate::mcp::builtin::workspace::text_encoding::{decode_text_bytes, DecodedText};
+
     let max_size = crate::config::max_file_size();
     let metadata = fs::metadata(path)
         .await
@@ -39,10 +41,12 @@ async fn read_validated_utf8_file(path: &Path) -> Result<String, String> {
         ));
     }
 
-    String::from_utf8(buffer).map_err(|_| {
-        "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters"
-            .to_string()
-    })
+    match decode_text_bytes(&buffer) {
+        DecodedText::Binary => Err(
+            "Failed to read file: content appears to be binary (embedded null bytes)".to_string(),
+        ),
+        DecodedText::Text { text, .. } => Ok(text),
+    }
 }
 
 fn count_occurrences(content: &str, needle: &str) -> usize {

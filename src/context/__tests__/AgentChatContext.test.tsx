@@ -296,6 +296,15 @@ describe('AgentChatContext', () => {
         });
       });
 
+      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+        session: { id: 'test-session', name: 'Test Session' },
+        messages: mockMessages,
+        isSessionLoading: false,
+        error: null,
+        llmError: null,
+        workflowStatus: 'busy',
+      });
+
       const { result } = renderHook(
         () => ({
           llm: useLLMService(),

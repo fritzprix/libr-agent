@@ -35,7 +35,12 @@ import {
   extractToolCalls,
   hasRenderableAssistantOutput,
 } from './streaming-message-utils';
-import { detectRepeatedThinkingLoop } from './repeatedThinkingDetector';
+import {
+  detectRepeatedThinkingLoop,
+  REPEATED_THINKING_TAIL_CHARS,
+  REPEATED_THINKING_MIN_PATTERN_LENGTH,
+  REPEATED_THINKING_MIN_REPETITIONS,
+} from './repeatedThinkingDetector';
 import { detectRepeatedTextLoop } from './repeatedTailDetector';
 
 const logger = getLogger('useExecuteCompletion');
@@ -185,18 +190,20 @@ export function useExecuteCompletion({
       const abortController = new AbortController();
       abortControllersRef.current.set(sessionId, abortController);
 
-      // Create service instance via factory using the provider/apiKey from this request
+      // Create service instance via factory using the provider/apiKey from this request.
+      // Pass runtimeConfig (includes settings.advanced maxRetries/retryDelay) so withRetry
+      // uses the user's settings instead of BaseAIService defaults.
       const providerConfig =
         settingsRef.current.serviceConfigs?.[provider as AIServiceProvider] ||
         {};
-      const service = AIServiceFactory.getService(
-        provider as AIServiceProvider,
-        apiKey ?? '',
-        providerConfig,
-      );
       const runtimeConfig = buildServiceRuntimeConfig(
         settingsRef.current,
         providerConfig,
+      );
+      const service = AIServiceFactory.getService(
+        provider as AIServiceProvider,
+        apiKey ?? '',
+        runtimeConfig,
       );
       activeServicesRef.current.set(sessionId, service);
 
@@ -343,6 +350,16 @@ export function useExecuteCompletion({
           signal: abortController.signal,
         });
 
+        const thinkingConfig = {
+          minPatternLength:
+            settingsRef.current.advanced?.thinkingLoopMinPatternLength ??
+            REPEATED_THINKING_MIN_PATTERN_LENGTH,
+          minRepetitions:
+            settingsRef.current.advanced?.thinkingLoopMinRepetitions ??
+            REPEATED_THINKING_MIN_REPETITIONS,
+          tailChars: REPEATED_THINKING_TAIL_CHARS,
+        };
+
         for await (const rawChunk of streamGenerator) {
           ensureRequestStillActive('stream processing');
 
@@ -429,7 +446,10 @@ export function useExecuteCompletion({
               const detection =
                 repeatedThinkingCheckCounter % REPEATED_TAIL_CHECK_INTERVAL ===
                   0 && currentThinkingText
-                  ? detectRepeatedThinkingLoop(currentThinkingText)
+                  ? detectRepeatedThinkingLoop(
+                      currentThinkingText,
+                      thinkingConfig,
+                    )
                   : null;
               if (detection) {
                 repeatedThinkingIssueReported = true;

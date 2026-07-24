@@ -465,6 +465,8 @@
       "maxRetriesDescription": "실패한 AI 요청에 대한 최대 재시도 횟수입니다.",
       "retryDelay": "재시도 지연 (ms)",
       "retryDelayDescription": "재시도 시도 사이의 밀리초 단위 지연 시간입니다.",
+      "requestReliability": "요청 안정성",
+      "requestReliabilityDescription": "실패한 AI 프로바이더 요청을 어떻게 재시도할지 제어합니다.",
       "circuitBreaker": "도구 루프 임계값",
       "circuitBreakerDescription": "회로 차단기를 트리거하기 전의 반복된 오류 또는 도구 호출 횟수입니다.",
       "maxOutputTokens": "최대 출력 토큰 (기본값)",
@@ -508,7 +510,13 @@
       "loopPreventionThresholdPlaceholder": "예: 3",
       "loopPreventionHardBreakOffset": "하드 브레이크 오프셋",
       "loopPreventionHardBreakOffsetPlaceholder": "예: 2",
-      "loopPreventionHardBreakOffsetDescription": "소프트 복구 이후 하드 중단까지 허용하는 추가 동일 (호출, 결과) 횟수. 기본값 2: 임계값=3이면 3번째 소프트 복구, 4번째 에러 Escalate, 5번째 하드 브레이크. 오프셋 1이면 Escalate 없이 소프트 후 바로 하드."
+      "loopPreventionHardBreakOffsetDescription": "소프트 복구 이후 하드 중단까지 허용하는 추가 동일 (호출, 결과) 횟수. 기본값 2: 임계값=3이면 3번째 소프트 복구, 4번째 에러 Escalate, 5번째 하드 브레이크. 오프셋 1이면 Escalate 없이 소프트 후 바로 하드.",
+      "thinkingLoopMinPatternLength": "생각 루프 최소 패턴 길이",
+      "thinkingLoopMinPatternLengthDescription": "생각 루프(thinking loop) 감지를 트리거하기 위한 최소 반복 문자열 길이입니다. 값이 클수록 긴 추론 과정 중 오탐을 방지할 수 있습니다.",
+      "thinkingLoopMinPatternLengthPlaceholder": "예: 256",
+      "thinkingLoopMinRepetitions": "생각 루프 최소 반복 횟수",
+      "thinkingLoopMinRepetitionsDescription": "생각 루프 감지를 트리거하기 위해 동일한 패턴이 생각 블록 스트림에 반복되어야 하는 최소 횟수입니다.",
+      "thinkingLoopMinRepetitionsPlaceholder": "예: 4"
     },
     "system": {
       "title": "시스템 & 성능",

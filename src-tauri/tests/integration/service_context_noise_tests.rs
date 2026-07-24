@@ -43,7 +43,10 @@ async fn attachments_service_context_uses_compact_empty_state() {
     let service_context = server.get_service_context(None).await;
 
     assert!(service_context.context_prompt.contains("## Attachments"));
-    assert!(service_context.context_prompt.contains("Attachments: None"));
+    assert!(service_context
+        .context_prompt
+        .contains("No files attached. Use `attachments__upload` to add files."));
+    assert!(!service_context.context_prompt.contains("Attachments: None"));
     assert!(!service_context
         .context_prompt
         .contains("No attachments available yet"));

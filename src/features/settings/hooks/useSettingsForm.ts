@@ -41,9 +41,6 @@ function getAiModelsComparableState(settings: SettingsFormState) {
     preferredModel: settings.preferredModel,
     fallbackModel: settings.fallbackModel,
     agentHubUrl: settings.agentHubUrl,
-    maxRetries: settings.advanced.maxRetries,
-    retryDelay: settings.advanced.retryDelay,
-    defaultMaxOutputTokens: settings.advanced.defaultMaxOutputTokens,
   };
 }
 
@@ -54,6 +51,7 @@ function getChatInterfaceComparableState(settings: SettingsFormState) {
     maxInputContext: settings.maxInputContext,
     toolCallGroupVisibleCount: settings.toolCallGroupVisibleCount,
     diffContextLines: settings.advanced.diffContextLines,
+    defaultMaxOutputTokens: settings.advanced.defaultMaxOutputTokens,
   };
 }
 
@@ -74,14 +72,16 @@ function getSystemComparableState(settings: SettingsFormState) {
 }
 
 function getAdvancedComparableState(settings: SettingsFormState) {
-  const { diffContextLines, ...advancedWithoutChatFields } = settings.advanced;
+  const {
+    diffContextLines,
+    defaultMaxOutputTokens,
+    ...advancedWithoutChatFields
+  } = settings.advanced;
   void diffContextLines;
+  void defaultMaxOutputTokens;
 
   return {
     ...advancedWithoutChatFields,
-    maxRetries: undefined,
-    retryDelay: undefined,
-    defaultMaxOutputTokens: undefined,
     shellIsolationLevel: settings.system.shellIsolationLevel,
     shellRuntimeBootstrap: settings.system.shellRuntimeBootstrap,
   };

@@ -59,7 +59,7 @@ Creates a new isolated agent session and starts an initial workflow.
     "env": { "KEY": "VALUE" }
   },
   "executionMode": "normal | yolo | unsafe (optional)",
-  "request": "initial user prompt (required)",
+  "request": "initial user prompt (optional; omit or blank to create an idle session without starting a workflow)",
   "parentSessionId": "string (optional)",
   "maxDepth": 5,
   "maxFanout": 3,
@@ -73,7 +73,10 @@ Creates a new isolated agent session and starts an initial workflow.
 > If `model` and `provider` are omitted, the API automatically falls back to the user's **Preferred Model** in global settings.
 
 > [!NOTE]
-> `executionMode` is applied **before** the initial workflow starts. Use `yolo` for unattended benchmark/automation runs that need standard tools auto-approved, or `unsafe` when hard-approval tools must also run without a human. When omitted, child sessions inherit a non-`normal` parent mode; otherwise the session defaults to `normal`.
+> `executionMode` is applied **before** the initial workflow starts (or immediately when creating an idle session with no `request`). Use `yolo` for unattended benchmark/automation runs that need standard tools auto-approved, or `unsafe` when hard-approval tools must also run without a human. When omitted, child sessions inherit a non-`normal` parent mode; otherwise the session defaults to `normal`.
+
+> [!NOTE]
+> When `request` is omitted or blank, the session is created in `idle` status and no workflow is started. This is useful for API smoke checks that only need to verify configuration (for example `executionMode`) without burning an LLM turn.
 
 #### Response Body
 
@@ -150,6 +153,24 @@ Immediately stops any running workflows and cleans up session resources.
 ```json
 {
   "success": true
+}
+```
+
+---
+
+### Delete Session
+
+Deletes a session and cascaded descendants from the database and in-memory state.
+
+- **Method**: `DELETE`
+- **Path**: `/api/sessions/:id`
+
+#### Response Body
+
+```json
+{
+  "success": true,
+  "deletedIds": ["session-uuid"]
 }
 ```
 

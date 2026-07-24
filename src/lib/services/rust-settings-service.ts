@@ -67,6 +67,8 @@ function isPartialAdvancedSettings(
     'maxSuspendedProcesses',
     'loopPreventionThreshold',
     'loopPreventionHardBreakOffset',
+    'thinkingLoopMinPatternLength',
+    'thinkingLoopMinRepetitions',
   ];
   return keys.every((key) => {
     const value = obj[key];

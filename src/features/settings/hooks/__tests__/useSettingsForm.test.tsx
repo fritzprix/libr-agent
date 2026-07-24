@@ -74,8 +74,8 @@ describe('useSettingsForm', () => {
 
     expect(result.current.formState.advanced.maxRetries).toBe(5);
     expect(result.current.isDirty).toBe(true);
-    expect(result.current.dirtyState['ai-models']).toBe(true);
-    expect(result.current.dirtyState.advanced).toBe(false);
+    expect(result.current.dirtyState.advanced).toBe(true);
+    expect(result.current.dirtyState['ai-models']).toBe(false);
   });
 
   it('should reset changes', () => {
