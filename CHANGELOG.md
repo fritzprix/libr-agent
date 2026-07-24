@@ -1,3 +1,23 @@
+## [0.8.34] - 2026-07-22
+
+### 🚀 Features
+
+- **Configurable Loop Detection Thresholds**: Thinking and text loop detection thresholds are now separate and configurable, allowing fine-tuned recovery behavior per deployment.
+
+### 🐛 Fixes
+
+- **Docker Attach/Harden Paths**: Hardened Docker attach and shell path handling, consolidated session cleanup, and skip attach sync when session metadata is unavailable.
+- **Harbor Session Termination**: Harbor tasks now properly terminate LibrAgent sessions on task end/timeout instead of harvesting incomplete state.
+- **Harbor Windows Cache Path**: Fixed MAX_PATH limit issue on Windows by patching Harbor cache path.
+- **Agent Prompt Cleanup**: Removed unused `session_name` parameter from prompt builder functions, resolved unused variable warning, and optimized system prompt session context with enhanced sub-agent hierarchy awareness.
+- **CI Test Alignment**: Aligned service context and build_system_prompt tests with updated function signatures and compact prompt format.
+- **Harbor Paused Hang**: Fixed Harbor benchmark runner hanging on paused sessions during context optimization.
+
+### 🔧 Internal
+
+- **File Tools Module Split**: Optimized session context and split `file_tools` module for better maintainability.
+- **Formatting**: Applied `cargo fmt` and `prettier` across Rust and TypeScript codebases.
+
 ## [0.8.33] - 2026-07-21
 
 ### 🚀 Features
