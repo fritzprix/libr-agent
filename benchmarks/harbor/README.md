@@ -162,9 +162,10 @@ harbor run \
 
 ## Success criteria
 
-- Script health check prints `executionMode=unsafe` (or your override), then
-  **terminates** the smoke session before `harbor run` starts (so it does not
-  stay `busy` / burn LLM while Docker builds the task environment)
+- Script health check creates a short smoke session (`Reply with exactly: ok`),
+  verifies `executionMode=unsafe` (or your override), **waits until idle**, then
+  **terminates** it before `harbor run` starts (so smoke does not abort an in-flight
+  LLM turn or leave a busy session while Docker builds the task environment)
 - Harbor’s progress bar timer includes **environment build**, not only agent
   runtime; agent timeout starts when the adapter runs
 - Trial `verifier/reward.txt` is `1` (or job eval mean `1.0`)

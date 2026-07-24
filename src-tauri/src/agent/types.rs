@@ -30,7 +30,10 @@ pub struct CreateSessionRequest {
     /// non-normal parent mode when spawning a child; otherwise defaults to `normal`.
     #[serde(default)]
     pub execution_mode: Option<ExecutionMode>,
-    pub request: String,
+    /// Initial user message. When omitted or blank, the session is created idle
+    /// without starting a workflow (useful for API smoke / mode checks).
+    #[serde(default)]
+    pub request: Option<String>,
     pub parent_session_id: Option<String>,
     pub max_depth: Option<u32>,
     pub max_fanout: Option<u32>,

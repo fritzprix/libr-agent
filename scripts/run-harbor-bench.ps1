@@ -158,7 +158,9 @@ function Test-LibrAgentApi {
     throw "Unexpected health response: $($health | ConvertTo-Json -Compress)"
   }
 
-  Write-Step "Smoke-checking executionMode=$ExecutionMode (create → verify → terminate)"
+  Write-Step "Smoke-checking executionMode=$ExecutionMode (create → verify mode → await idle → terminate)"
+  # Start a real turn so we verify the session can run, but wait for idle before
+  # cleanup — terminating ~500ms into an LLM turn aborts the reply mid-flight.
   $bodyObj = @{
     assistantId         = $script:ResolvedAssistantId
     name                = "harbor-bench-smoke"
@@ -170,15 +172,29 @@ function Test-LibrAgentApi {
   $created = Invoke-RestMethod -Uri "$ApiBase/sessions" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 60
   $sessionId = $created.id
   try {
-    Start-Sleep -Milliseconds 500
     $session = Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId" -Method GET -TimeoutSec 15
     Write-Host ("  session={0} executionMode={1} status={2}" -f $session.id, $session.executionMode, $session.status)
     if ($ExecutionMode -ne "normal" -and $session.executionMode -ne $ExecutionMode) {
-      throw "API did not apply executionMode=$ExecutionMode (got '$($session.executionMode)'). Is pnpm tauri dev running a build that includes the CreateSessionRequest change?"
+      throw "API did not apply executionMode=$ExecutionMode (got '$($session.executionMode)'). Is pnpm tauri dev running a build that includes CreateSessionRequest.executionMode?"
+    }
+    if ($session.status -eq "idle" -and -not $session.lastMessageAt) {
+      throw "Smoke session did not start a workflow (status=idle with no messages). CreateSessionRequest.request may have been ignored."
+    }
+
+    $deadline = (Get-Date).AddSeconds(90)
+    while ((Get-Date) -lt $deadline) {
+      if ($session.status -in @("idle", "error", "paused")) {
+        break
+      }
+      Start-Sleep -Seconds 1
+      $session = Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId" -Method GET -TimeoutSec 15
+    }
+    Write-Host ("  settled status={0}" -f $session.status)
+    if ($session.status -notin @("idle", "error", "paused")) {
+      throw "Smoke session did not settle within 90s (status='$($session.status)')."
     }
   }
   finally {
-    # Always tear down so smoke does not keep the LLM busy while Harbor builds the task env.
     try {
       Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId/terminate" -Method POST -TimeoutSec 30 | Out-Null
       Write-Host "  smoke session terminated ($sessionId)"

@@ -172,7 +172,8 @@ export type SessionAttentionReason = 'recurringStop' | 'pendingApproval';
 export type WorkflowCompletionReason =
   | 'natural'
   | 'recurringStop'
-  | 'cancelled';
+  | 'cancelled'
+  | 'terminated';
 
 export type SessionRuntimePhase =
   | 'not_started'

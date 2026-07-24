@@ -51,7 +51,7 @@ describe('stripMessageStreamingFlags', () => {
 });
 
 describe('applyWorkflowInactiveCleanup', () => {
-  it('clears streaming placeholder and strips message flags', () => {
+  it('clears streaming placeholder and strips message flags without aborting', () => {
     const clearStreamingMessage = vi.fn();
     const setMessages = vi.fn((updater: (prev: Message[]) => Message[]) => {
       const prev = [msg({ id: 'a', isStreaming: true })];

@@ -14,7 +14,10 @@ diff --git a/src/lib/ai-service/factory.ts b/src/lib/ai-service/factory.ts
    // confirm strategy selection
 "#;
     assert!(!looks_like_waiting_prompt(diff, ""));
-    assert!(!looks_like_waiting_prompt("? untracked.ts\n M modified.ts", ""));
+    assert!(!looks_like_waiting_prompt(
+        "? untracked.ts\n M modified.ts",
+        ""
+    ));
     assert!(!looks_like_waiting_prompt(
         "Operation cancelled\nno changes made\nskipping",
         ""

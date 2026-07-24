@@ -38,16 +38,20 @@ export interface WorkflowInactiveCleanupArgs {
 }
 
 /**
- * Single cleanup entry for workflow becoming inactive.
+ * Soft cleanup when the workflow becomes inactive.
  *
- * Clears both:
- * 1. LLM in-flight streaming placeholder (`streamingMessages` map)
+ * Clears:
+ * 1. LLM streaming placeholder (`streamingMessages` map)
  * 2. Stuck `message.isStreaming` flags in the session message list
  *
- * Call from Rust-driven transitions (statusChanged, workflowCompleted) and
- * when hydrating an already-inactive session. Manual cancel may still call
- * `clearStreamingMessage` immediately for snappier UI; this remains safe to
- * invoke again when the matching status event arrives.
+ * Does NOT abort in-flight frontend LLM completions. Aborting here races with
+ * legitimate turns (stale idle events / hydrate remounts) and drops the response
+ * before Rust receives it. Frontend aborts must come from:
+ * - manual `cancel()` / `cancelCompletionRequest`
+ * - Rust `llm:completion-cancel` (cancel_workflow / terminate_session)
+ *
+ * `displayMessages` also refuses to render streaming placeholders while inactive,
+ * so late chunks cannot resurrect ThinkingBubble after soft clear.
  */
 export function applyWorkflowInactiveCleanup({
   sessionId,

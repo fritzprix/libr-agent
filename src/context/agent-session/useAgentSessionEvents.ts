@@ -310,6 +310,7 @@ export function useAgentSessionEvents(
             }
 
             case 'workflowCompleted': {
+              // Soft cancel → paused (resume). Terminate / natural stop → idle.
               const nextStatus =
                 payload.reason === 'cancelled' ? 'paused' : 'idle';
               setters.setWorkflowStatus(nextStatus);
@@ -347,14 +348,15 @@ export function useAgentSessionEvents(
         setters.setSession(sessionData);
         setters.setWorkflowStatus(sessionData.status);
         setters.applyExecutionMode(sessionData.executionMode);
-        const hydratedMessages = response.messages.items.map(rustMessageToMessage);
+        const hydratedMessages =
+          response.messages.items.map(rustMessageToMessage);
         setters.setMessages(
           isInactiveWorkflowStatus(sessionData.status)
             ? stripMessageStreamingFlags(hydratedMessages)
             : hydratedMessages,
         );
         if (isInactiveWorkflowStatus(sessionData.status)) {
-          actions.clearStreamingMessage(sessionId);
+          clearStreamingOnInactive();
         }
         setters.setHasOlderMessages(response.messages.hasMoreBefore);
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);

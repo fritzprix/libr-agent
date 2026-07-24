@@ -20,7 +20,10 @@ pub enum InitializationStatus {
 pub enum WorkflowCompletionReason {
     Natural,
     RecurringStop,
+    /// Soft cancel: leave the session paused so the user can resume.
     Cancelled,
+    /// Hard stop / terminate: session returns to idle (no resume stack).
+    Terminated,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

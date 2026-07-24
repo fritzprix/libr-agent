@@ -158,7 +158,9 @@ echo "Using assistantId=$ASSISTANT_ID"
 if [[ "$SKIP_HEALTH" -eq 0 ]]; then
   echo "==> Checking $API_URL/health"
   curl -fsS "$API_URL/health" >/dev/null
-  echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify → terminate)"
+  echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify mode → await idle → terminate)"
+  # Start a real turn so we verify the session can run, but wait for idle before
+  # cleanup — terminating ~0.5s into an LLM turn aborts the reply mid-flight.
   CREATE=$(curl -fsS -X POST "$API_URL/sessions" \
     -H 'Content-Type: application/json' \
     -d "$("$PYTHON" - <<PY
@@ -178,13 +180,30 @@ PY
     echo "  smoke session terminated ($SID)"
   }
   trap cleanup_smoke EXIT
-  sleep 0.5
   SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")
   MODE=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("executionMode"))' <<<"$SESSION_JSON")
   STATUS=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("status"))' <<<"$SESSION_JSON")
+  LAST_MSG=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("lastMessageAt"))' <<<"$SESSION_JSON")
   echo "  session=$SID executionMode=$MODE status=$STATUS"
   if [[ "$EXECUTION_MODE" != "normal" && "$MODE" != "$EXECUTION_MODE" ]]; then
     echo "API did not apply executionMode=$EXECUTION_MODE (got $MODE)" >&2
+    exit 1
+  fi
+  if [[ "$STATUS" == "idle" && "$LAST_MSG" == "None" ]]; then
+    echo "Smoke session did not start a workflow (status=idle with no messages)." >&2
+    exit 1
+  fi
+  for _ in $(seq 1 90); do
+    if [[ "$STATUS" == "idle" || "$STATUS" == "error" || "$STATUS" == "paused" ]]; then
+      break
+    fi
+    sleep 1
+    SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")
+    STATUS=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("status"))' <<<"$SESSION_JSON")
+  done
+  echo "  settled status=$STATUS"
+  if [[ "$STATUS" != "idle" && "$STATUS" != "error" && "$STATUS" != "paused" ]]; then
+    echo "Smoke session did not settle within 90s (status=$STATUS)" >&2
     exit 1
   fi
   cleanup_smoke

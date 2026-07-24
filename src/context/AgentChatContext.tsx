@@ -21,6 +21,7 @@ import type { ServiceContext } from '@/models/service-context';
 import { isValidMessage } from '@/models/validation';
 import { isAssistantStreamingMessageSuperseded } from '@/lib/message-streaming-supersession';
 import { summarizeMessageForLog, toRustMessage } from '@/lib/message-utils';
+import { isInactiveWorkflowStatus } from '@/context/agent-session/workflow-inactive-cleanup';
 import { useDebounce } from 'react-use';
 import { getLogger } from '../lib/logger';
 import { useLLMService, useStreamingMessage } from './LLMServiceContext';
@@ -382,8 +383,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       });
     }
 
-    // If there's a streaming message that's not yet in persisted messages
-    if (isValidMessage(currentStreamingMessage)) {
+    // If there's a streaming message that's not yet in persisted messages.
+    // Skip when the workflow is already inactive — late LLM chunks must not
+    // resurrect ThinkingBubble after idle/paused/error cleanup.
+    if (
+      !isInactiveWorkflowStatus(workflowStatus) &&
+      isValidMessage(currentStreamingMessage)
+    ) {
       const isSupersededByPersistedAssistant =
         !!lastPersistedAssistantMessage &&
         isAssistantStreamingMessageSuperseded(
@@ -401,7 +407,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
 
     return displayed;
-  }, [sessionMessages, pendingMessages, currentStreamingMessage, session?.id]);
+  }, [
+    sessionMessages,
+    pendingMessages,
+    currentStreamingMessage,
+    session?.id,
+    workflowStatus,
+  ]);
 
   /**
    * Inject messages into the session

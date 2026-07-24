@@ -14,5 +14,6 @@ pub use channel::{
 pub use health::health;
 pub use messages::{get_messages, send_message};
 pub use sessions::{
-    create_session, get_child_sessions, get_session, resume_session_workflow, terminate_session,
+    create_session, delete_session, get_child_sessions, get_session, resume_session_workflow,
+    terminate_session,
 };

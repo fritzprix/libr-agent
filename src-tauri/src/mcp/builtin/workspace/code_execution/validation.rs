@@ -284,7 +284,10 @@ pub fn looks_like_waiting_prompt(stdout: &str, stderr: &str) -> bool {
         "enter password:",
         "password:",
     ];
-    if STRONG_TAIL_PROMPTS.iter().any(|prompt| tail.contains(prompt)) {
+    if STRONG_TAIL_PROMPTS
+        .iter()
+        .any(|prompt| tail.contains(prompt))
+    {
         return true;
     }
 
@@ -394,7 +397,10 @@ index 111..222 100644
 "#;
         assert!(!looks_like_waiting_prompt(diff, ""));
         assert!(!looks_like_waiting_prompt("? foo.ts\n M bar.ts", ""));
-        assert!(!looks_like_waiting_prompt("no changes made\nskipping file", ""));
+        assert!(!looks_like_waiting_prompt(
+            "no changes made\nskipping file",
+            ""
+        ));
     }
 
     #[test]
