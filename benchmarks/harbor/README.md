@@ -65,8 +65,8 @@ official submission rules (`submissions may not modify timeouts or resources`).
 Pass `--n-attempts 5` explicitly for official leaderboard submissions:
 
 ```sh
-pnpm bench:terminal:all -- --n-attempts 5
-pnpm bench:harbor:all -- --n-attempts 5
+pnpm bench:terminal:all --n-attempts 5
+pnpm bench:harbor:all --n-attempts 5
 ```
 
 Or call Harbor directly for submission-compatible runs:
@@ -86,6 +86,14 @@ Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
 Use `--dataset <org/name-version>` to run any dataset from the
 [Harbor Hub registry](https://harbor.laude-institute.org) without touching the scripts.
 Omitting `--preset` when `--dataset` is supplied automatically selects the `dataset` preset.
+`pnpm bench:registry` is a shortcut for `--preset dataset` — always pass `--dataset`
+(pnpm 9+ forwards unknown script flags without requiring `--`):
+
+```sh
+pnpm bench:registry --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
+pnpm bench:registry --dataset aider-bench/aider-bench-1.0
+pnpm bench:registry --dataset NovitaAI/tb21-file-recovery
+```
 
 ```sh
 # One-shot via node dispatcher (cross-platform)
@@ -117,7 +125,7 @@ Then run as usual:
 ```sh
 pnpm bench:swe          # first task only
 pnpm bench:swe:all      # full dataset, n-attempts=1 (default)
-pnpm bench:swe:all -- --n-attempts 5   # leaderboard submission
+pnpm bench:swe:all --n-attempts 5   # leaderboard submission
 ```
 
 Or call the platform script directly:

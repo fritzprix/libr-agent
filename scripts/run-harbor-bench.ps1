@@ -407,7 +407,9 @@ switch ($Preset) {
     }
   }
   "dataset" {
-    if (-not $Dataset) {
+    # Default -Dataset is terminal-bench; require an explicit value so bare
+    # -Preset dataset does not silently run the wrong registry entry.
+    if (-not $PSBoundParameters.ContainsKey('Dataset')) {
       throw "Preset 'dataset' requires -Dataset <org/name-version> (e.g. swe-bench/swe-bench-verified-1.0)"
     }
     Write-Step "Preset: dataset ($Dataset)"

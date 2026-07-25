@@ -3,6 +3,7 @@
 set -euo pipefail
 
 PRESET="hello"
+PRESET_EXPLICIT=0
 DATASET="terminal-bench/terminal-bench-2-1"
 DATASET_EXPLICIT=0
 HARBOR_INDEX_DATASET="harbor-index/harbor-index-1.0"
@@ -33,7 +34,9 @@ Options:
                                        Default: hello
   --dataset NAME                       Default depends on preset
                                        (terminal-bench/terminal-bench-2-1 or
-                                       harbor-index/harbor-index-1.0)
+                                       harbor-index/harbor-index-1.0).
+                                       Required for preset=dataset; omitting
+                                       --preset with --dataset selects dataset.
   --path DIR                           Local task/dataset path (preset=path)
   --include GLOB                       Include task name pattern (-i)
   --n-tasks N                          Max tasks (-l)
@@ -54,7 +57,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --preset) PRESET="$2"; shift 2 ;;
+    --preset) PRESET="$2"; PRESET_EXPLICIT=1; shift 2 ;;
     --dataset) DATASET="$2"; DATASET_EXPLICIT=1; shift 2 ;;
     --path) PATH_ARG="$2"; shift 2 ;;
     --include) INCLUDE="$2"; shift 2 ;;
@@ -76,7 +79,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Convenience: if --dataset is set without an explicit --preset, treat as dataset preset.
-if [[ "$PRESET" == "hello" && "$DATASET_EXPLICIT" -eq 1 ]]; then
+if [[ "$PRESET_EXPLICIT" -eq 0 && "$DATASET_EXPLICIT" -eq 1 ]]; then
   PRESET="dataset"
 fi
 
@@ -266,7 +269,10 @@ case "$PRESET" in
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;
   dataset)
-    [[ -n "$DATASET" ]] || { echo "--dataset required for preset=dataset (e.g. --dataset swe-bench/swe-bench-verified-1.0)" >&2; exit 1; }
+    [[ "$DATASET_EXPLICIT" -eq 1 ]] || {
+      echo "--dataset required for preset=dataset (e.g. --dataset swe-bench/swe-bench-verified-1.0)" >&2
+      exit 1
+    }
     echo "==> Preset: dataset ($DATASET)"
     ARGS+=(-d "$DATASET")
     [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
