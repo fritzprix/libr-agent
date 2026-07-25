@@ -29,7 +29,7 @@ usage() {
 Usage: scripts/run-harbor-bench.sh [options]
 
 Options:
-  --preset hello|terminal-bench|harbor-index|path
+  --preset hello|terminal-bench|harbor-index|path|dataset
                                        Default: hello
   --dataset NAME                       Default depends on preset
                                        (terminal-bench/terminal-bench-2-1 or
@@ -74,6 +74,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+# Convenience: if --dataset is set without an explicit --preset, treat as dataset preset.
+if [[ "$PRESET" == "hello" && "$DATASET_EXPLICIT" -eq 1 ]]; then
+  PRESET="dataset"
+fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -257,6 +262,13 @@ case "$PRESET" in
   path)
     [[ -n "$PATH_ARG" ]] || { echo "--path required for preset=path" >&2; exit 1; }
     ARGS+=(-p "$PATH_ARG")
+    [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
+    [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
+    ;;
+  dataset)
+    [[ -n "$DATASET" ]] || { echo "--dataset required for preset=dataset (e.g. --dataset swe-bench/swe-bench-verified-1.0)" >&2; exit 1; }
+    echo "==> Preset: dataset ($DATASET)"
+    ARGS+=(-d "$DATASET")
     [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;

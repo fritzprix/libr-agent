@@ -28,7 +28,7 @@
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet("hello", "terminal-bench", "harbor-index", "path")]
+  [ValidateSet("hello", "terminal-bench", "harbor-index", "path", "dataset")]
   [string]$Preset = "hello",
 
   [string]$Path,
@@ -74,6 +74,11 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
+
+# Convenience: if --dataset was explicitly supplied without --preset, treat as dataset preset.
+if (-not $PSBoundParameters.ContainsKey('Preset') -and $PSBoundParameters.ContainsKey('Dataset')) {
+  $Preset = "dataset"
+}
 
 # Avoid Windows cp949 crashes on Harbor's emoji progress UI.
 $env:PYTHONUTF8 = "1"
@@ -394,6 +399,19 @@ switch ($Preset) {
     $resolvedPath = (Resolve-Path $Path).Path
     Write-Step "Preset: local path ($resolvedPath)"
     $harborArgs += @("-p", $resolvedPath)
+    if ($Include) {
+      $harborArgs += @("-i", $Include)
+    }
+    if ($NTasks -gt 0) {
+      $harborArgs += @("-l", "$NTasks")
+    }
+  }
+  "dataset" {
+    if (-not $Dataset) {
+      throw "Preset 'dataset' requires -Dataset <org/name-version> (e.g. swe-bench/swe-bench-verified-1.0)"
+    }
+    Write-Step "Preset: dataset ($Dataset)"
+    $harborArgs += @("-d", $Dataset)
     if ($Include) {
       $harborArgs += @("-i", $Include)
     }

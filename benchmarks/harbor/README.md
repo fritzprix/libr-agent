@@ -48,20 +48,28 @@ pnpm bench:hello
 # Terminal-Bench: first task only
 pnpm bench:terminal
 
-# Terminal-Bench: full dataset (-k 5, no timeout overrides)
+# Terminal-Bench: full dataset (n-attempts defaults to 1; add --n-attempts 5 for official submission)
 pnpm bench:terminal:all
 
 # Harbor Index: first task only
 pnpm bench:harbor
 
-# Harbor Index: full dataset (-k 5)
+# Harbor Index: full dataset (n-attempts defaults to 1; add --n-attempts 5 for official submission)
 pnpm bench:harbor:all
 ```
 
 `pnpm bench:*` dispatches via `scripts/run-harbor-bench.cjs` to PowerShell on Windows
 and bash on Linux/macOS. Defaults omit Harbor timeout/resource overrides so runs match
 official submission rules (`submissions may not modify timeouts or resources`).
-`bench:terminal:all` / `bench:harbor:all` pass Harbor `-k 5` (attempts per task), matching:
+`bench:terminal:all` / `bench:harbor:all` now default to **1 attempt per task** (`-k 1`).
+Pass `--n-attempts 5` explicitly for official leaderboard submissions:
+
+```sh
+pnpm bench:terminal:all -- --n-attempts 5
+pnpm bench:harbor:all -- --n-attempts 5
+```
+
+Or call Harbor directly for submission-compatible runs:
 
 ```sh
 harbor run -d terminal-bench/terminal-bench-2-1 -a <agent> -m <model> -k 5
@@ -72,6 +80,45 @@ LibrAgent maps `-a`/`-m` to the custom adapter + in-app assistant (model from se
 
 Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
 `--ve` (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) for LLM-judge tasks.
+
+## Running any Harbor Hub dataset
+
+Use `--dataset <org/name-version>` to run any dataset from the
+[Harbor Hub registry](https://harbor.laude-institute.org) without touching the scripts.
+Omitting `--preset` when `--dataset` is supplied automatically selects the `dataset` preset.
+
+```sh
+# One-shot via node dispatcher (cross-platform)
+node scripts/run-harbor-bench.cjs --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
+node scripts/run-harbor-bench.cjs --preset dataset --dataset aider-bench/aider-bench-1.0
+
+# bash
+./scripts/run-harbor-bench.sh --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
+
+# PowerShell
+.\scripts\run-harbor-bench.ps1 -Dataset swe-bench/swe-bench-verified-1.0 -NTasks 1
+```
+
+### Adding a permanent alias to `package.json`
+
+For frequently-run benchmarks, add a shortcut pair to the `scripts` section of
+[`package.json`](../../package.json):
+
+```jsonc
+// package.json → scripts
+"bench:swe":     "node scripts/run-harbor-bench.cjs --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1",
+"bench:swe:all": "node scripts/run-harbor-bench.cjs --dataset swe-bench/swe-bench-verified-1.0",
+"bench:aider":     "node scripts/run-harbor-bench.cjs --dataset aider-bench/aider-bench-1.0 --n-tasks 1",
+"bench:aider:all": "node scripts/run-harbor-bench.cjs --dataset aider-bench/aider-bench-1.0"
+```
+
+Then run as usual:
+
+```sh
+pnpm bench:swe          # first task only
+pnpm bench:swe:all      # full dataset, n-attempts=1 (default)
+pnpm bench:swe:all -- --n-attempts 5   # leaderboard submission
+```
 
 Or call the platform script directly:
 
