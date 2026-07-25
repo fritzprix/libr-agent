@@ -131,7 +131,10 @@ export function LayeredPendingQueue({
                       #{index + 1}
                     </span>
                   </div>
-                  <p className="truncate text-sm text-foreground/90" title={preview}>
+                  <p
+                    className="truncate text-sm text-foreground/90"
+                    title={preview}
+                  >
                     {preview}
                   </p>
                 </div>
