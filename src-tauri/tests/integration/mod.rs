@@ -83,6 +83,7 @@ pub mod scheduled_task_session_callback_tests;
 pub mod scheduled_task_timezone_tests;
 pub mod scheduled_task_workspace_override_tests;
 pub mod scratchpad_schema_tests;
+pub mod scratchpad_think_tests;
 pub mod seaorm_migration_verification;
 pub mod secure_file_manager_tests;
 pub mod security_env_isolation_test;

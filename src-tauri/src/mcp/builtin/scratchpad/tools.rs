@@ -221,7 +221,7 @@ fn think_tool() -> MCPTool {
             "Pause to reason through a problem before acting — evaluate options and plan the next move.",
             &[],
             &[
-                "Write your analysis in thought.",
+                "Write a concise reasoning summary in thought (avoid restating long context).",
                 "Optionally specify nextAction for what you will do immediately after.",
             ],
             &[
@@ -233,11 +233,17 @@ fn think_tool() -> MCPTool {
             vec![
                 (
                     "thought".to_string(),
-                    string_prop_required("Your reasoning, analysis, or chain of thought."),
+                    string_prop_required(
+                        "Concise reasoning summary or analysis. Keep it short; do not dump full context.",
+                    ),
                 ),
                 (
                     "nextAction".to_string(),
-                    string_prop(None, None, Some("Optional: What you plan to do next based on this thought.")),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional: What you plan to do next based on this thought."),
+                    ),
                 ),
             ],
             vec!["thought".to_string()],
