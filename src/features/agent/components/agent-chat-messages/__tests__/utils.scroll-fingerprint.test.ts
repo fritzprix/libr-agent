@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
 import {
   getLatestMessageScrollFingerprint,
+  isLayoutNeutralLatestMessageUpdate,
   isThinkingOnlyLatestMessageUpdate,
 } from '../utils';
 
@@ -31,7 +32,23 @@ describe('latest message scroll fingerprint', () => {
     expect(getLatestMessageScrollFingerprint(previous)).toBe(
       getLatestMessageScrollFingerprint(next),
     );
+    expect(isLayoutNeutralLatestMessageUpdate(previous, next)).toBe(true);
     expect(isThinkingOnlyLatestMessageUpdate(previous, next)).toBe(true);
+  });
+
+  it('treats Non-Thinking text token growth as layout-neutral', () => {
+    const previous = createMessage({
+      content: [{ type: 'text', text: 'Hello' }],
+    });
+    const next = createMessage({
+      content: [{ type: 'text', text: 'Hello world, more tokens' }],
+    });
+
+    expect(getLatestMessageScrollFingerprint(previous)).toBe(
+      getLatestMessageScrollFingerprint(next),
+    );
+    expect(isLayoutNeutralLatestMessageUpdate(previous, next)).toBe(true);
+    expect(isThinkingOnlyLatestMessageUpdate(previous, next)).toBe(false);
   });
 
   it('detects layout changes when assistant text starts streaming', () => {
@@ -47,6 +64,7 @@ describe('latest message scroll fingerprint', () => {
       ],
     });
 
+    expect(isLayoutNeutralLatestMessageUpdate(previous, next)).toBe(false);
     expect(isThinkingOnlyLatestMessageUpdate(previous, next)).toBe(false);
   });
 
@@ -67,6 +85,7 @@ describe('latest message scroll fingerprint', () => {
       ],
     });
 
+    expect(isLayoutNeutralLatestMessageUpdate(previous, next)).toBe(false);
     expect(isThinkingOnlyLatestMessageUpdate(previous, next)).toBe(false);
   });
 });
