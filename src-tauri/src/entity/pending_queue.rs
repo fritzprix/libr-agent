@@ -7,6 +7,7 @@ pub struct Model {
     pub message_id: String,
     pub session_id: String,
     pub created_at: i64,
+    pub queue_seq: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

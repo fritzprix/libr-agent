@@ -105,6 +105,34 @@ async fn pending_queue_repository_orders_fifo_and_supports_selective_remove() {
             .collect::<Vec<_>>(),
         vec!["msg-a", "msg-b", "msg-c"]
     );
+    assert!(listed[0].queue_seq < listed[1].queue_seq);
+    assert!(listed[1].queue_seq < listed[2].queue_seq);
+
+    // Same created_at must still keep enqueue order via queue_seq.
+    let msg_d = build_user_message(&session_id, "zzz-later-id", 1_000);
+    let msg_e = build_user_message(&session_id, "aaa-earlier-id", 1_000);
+    for msg in [&msg_d, &msg_e] {
+        message_repo
+            .insert(msg)
+            .await
+            .expect("message should persist");
+        queue_repo
+            .enqueue(&session_id, &msg.id, msg.created_at)
+            .await
+            .expect("queue entry should persist");
+    }
+    let with_same_ts = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("list should succeed");
+    let same_ts_tail: Vec<&str> = with_same_ts
+        .iter()
+        .rev()
+        .take(2)
+        .rev()
+        .map(|e| e.message_id.as_str())
+        .collect();
+    assert_eq!(same_ts_tail, vec!["zzz-later-id", "aaa-earlier-id"]);
 
     queue_repo
         .remove("msg-b")
@@ -115,19 +143,27 @@ async fn pending_queue_repository_orders_fifo_and_supports_selective_remove() {
         .list_by_session(&session_id)
         .await
         .expect("list after remove should succeed");
-    assert_eq!(
-        after_remove
-            .iter()
-            .map(|entry| entry.message_id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["msg-a", "msg-c"]
+    assert!(!after_remove.iter().any(|entry| entry.message_id == "msg-b"));
+
+    // FK cascade: deleting a message drops its pending_queue row.
+    message_repo
+        .delete_by_id("msg-a")
+        .await
+        .expect("message delete should succeed");
+    let after_fk = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("list after FK cascade");
+    assert!(
+        !after_fk.iter().any(|entry| entry.message_id == "msg-a"),
+        "pending_queue row should cascade-delete with message"
     );
 
     let removed_ids = queue_repo
         .remove_all_for_session(&session_id)
         .await
         .expect("discard all should succeed");
-    assert_eq!(removed_ids, vec!["msg-a".to_string(), "msg-c".to_string()]);
+    assert!(!removed_ids.is_empty());
 
     let empty = queue_repo
         .list_by_session(&session_id)

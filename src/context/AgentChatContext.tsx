@@ -159,6 +159,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     setPrevSessionId(nextSessionId);
     setPendingQueue([]);
     setServiceContexts({});
+    activeSessionIdRef.current = nextSessionId;
   }
 
   useEffect(() => {

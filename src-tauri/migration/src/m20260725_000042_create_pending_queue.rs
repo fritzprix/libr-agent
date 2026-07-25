@@ -26,6 +26,11 @@ impl MigrationTrait for Migration {
                             .big_integer()
                             .not_null(),
                     )
+                    .col(
+                        ColumnDef::new(PendingQueue::QueueSeq)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk-pending_queue-session_id")
@@ -49,10 +54,21 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 Index::create()
-                    .name("idx_pending_queue_session_created")
+                    .name("idx_pending_queue_seq_unique")
+                    .table(PendingQueue::Table)
+                    .col(PendingQueue::QueueSeq)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_pending_queue_session_seq")
                     .table(PendingQueue::Table)
                     .col(PendingQueue::SessionId)
-                    .col(PendingQueue::CreatedAt)
+                    .col(PendingQueue::QueueSeq)
                     .to_owned(),
             )
             .await?;
@@ -78,6 +94,7 @@ enum PendingQueue {
     MessageId,
     SessionId,
     CreatedAt,
+    QueueSeq,
 }
 
 #[derive(DeriveIden)]

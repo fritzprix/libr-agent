@@ -1086,9 +1086,11 @@
       }
     },
     "pendingQueue": {
+      "label": "대기 중인 프롬프트",
       "next": "다음",
       "queued": "대기",
       "cancel": "대기 중인 프롬프트 취소",
+      "cancelNamed": "대기 중인 프롬프트 취소: {{preview}}",
       "more": "+{{count}}개 더"
     },
     "bubble": {

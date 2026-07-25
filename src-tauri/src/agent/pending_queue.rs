@@ -4,7 +4,7 @@ use crate::agent::events::AgentEvent;
 use crate::agent::state::AgentSession;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
-use crate::repositories::pending_queue_repository::PendingQueueRepository;
+use crate::repositories::pending_queue_repository::{PendingQueueEntry, PendingQueueRepository};
 use crate::state::{get_message_repository, get_pending_queue_repository};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -75,11 +75,7 @@ pub async fn enqueue_pending_user_message(
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {session_id}"))?;
         let mut pending = session.pending_events.write().await;
-        if pending
-            .message_ids()
-            .iter()
-            .any(|id| id == &user_message.id)
-        {
+        if pending.contains_message(&user_message.id) {
             return Ok(());
         }
         pending.add(crate::agent::state::PendingEvent::Message(
@@ -89,7 +85,6 @@ pub async fn enqueue_pending_user_message(
 
     let message_repo = get_message_repository();
     if let Err(e) = message_repo.insert(user_message).await {
-        // Roll back in-memory enqueue on DB failure.
         if let Some(session) = active_sessions.read().await.get(session_id) {
             session
                 .pending_events
@@ -104,8 +99,12 @@ pub async fn enqueue_pending_user_message(
         .enqueue(session_id, &user_message.id, user_message.created_at)
         .await
     {
-        // Best-effort cleanup of the orphaned message row.
-        let _ = message_repo.delete_by_id(&user_message.id).await;
+        if let Err(cleanup_err) = message_repo.delete_by_id(&user_message.id).await {
+            log::error!(
+                "Failed to delete orphaned queued message {}: {cleanup_err}",
+                user_message.id
+            );
+        }
         if let Some(session) = active_sessions.read().await.get(session_id) {
             session
                 .pending_events
@@ -122,9 +121,8 @@ pub async fn enqueue_pending_user_message(
 
 /// Promote the next waiting prompt into the active message cache (FIFO).
 ///
-/// Memory is drained first for a short critical section, then durable index
-/// removal runs. On durable failure the id is restored to the FIFO front so
-/// the in-session queue stays consistent with SQLite.
+/// Memory is drained first, then the durable index row is removed and returned
+/// so failure recovery can restore the original `queue_seq` / `created_at`.
 pub async fn claim_next_pending_message(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
@@ -143,26 +141,30 @@ pub async fn claim_next_pending_message(
         return Ok(None);
     };
 
-    if let Err(e) = get_pending_queue_repository().remove(&message_id).await {
-        restore_front_pending_message(active_sessions, session_id, message_id).await;
-        return Err(e.to_string());
-    }
+    let index_entry = match get_pending_queue_repository()
+        .remove_returning(&message_id)
+        .await
+    {
+        Ok(entry) => entry,
+        Err(e) => {
+            restore_front_pending_message(active_sessions, session_id, message_id).await;
+            return Err(e.to_string());
+        }
+    };
+
+    let Some(index_entry) = index_entry else {
+        log::warn!(
+            "Pending index missing for claimed message {message_id} in session {session_id}; skipping"
+        );
+        let _ = emit_pending_queue_updated(active_sessions, app_handle, session_id).await;
+        return Ok(None);
+    };
 
     let repo = get_message_repository();
     let messages = match repo.get_by_ids(vec![message_id.clone()]).await {
         Ok(messages) => messages,
         Err(e) => {
-            // Index already dropped; re-enqueue so hydrate can recover later,
-            // and restore memory so the live session still sees the prompt.
-            let created_at = chrono::Utc::now().timestamp_millis();
-            if let Err(requeue_err) = get_pending_queue_repository()
-                .enqueue(session_id, &message_id, created_at)
-                .await
-            {
-                log::error!(
-                    "Failed to re-enqueue pending index for {message_id} after load error: {requeue_err}"
-                );
-            }
+            restore_index_entry(&index_entry).await;
             restore_front_pending_message(active_sessions, session_id, message_id).await;
             return Err(e.to_string());
         }
@@ -199,71 +201,73 @@ pub async fn claim_next_pending_message(
     Ok(Some(message))
 }
 
-/// Cancel a waiting prompt. Durable deletes run before memory mutation; on
-/// durable failure the in-memory queue is left unchanged (or the index is restored).
+/// Cancel a waiting prompt.
+///
+/// Takes ownership from the in-memory queue first so a concurrent claim cannot
+/// promote the same id into the LLM cache while this path deletes the DB row
+/// (TOCTOU). Durable delete runs in a transaction; on failure memory is restored.
 pub async fn cancel_pending_message(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: &str,
     message_id: &str,
 ) -> Result<bool, String> {
-    {
+    let owned = {
         let sessions = active_sessions.read().await;
         let Some(session) = sessions.get(session_id) else {
             return Err(format!("Session not found: {session_id}"));
         };
-        if !session
+        let removed = session
             .pending_events
-            .read()
+            .write()
             .await
-            .contains_message(message_id)
-        {
-            return Ok(false);
-        }
-    }
-
-    // Prefer the persisted timestamp so a mid-cancel index restore keeps FIFO order.
-    let created_at = {
-        let loaded = get_message_repository()
-            .get_by_ids(vec![message_id.to_string()])
-            .await
-            .map_err(|e| e.to_string())?;
-        loaded
-            .into_iter()
-            .next()
-            .map(|m| m.created_at)
-            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis())
+            .remove_message(message_id);
+        removed
     };
 
-    if let Err(e) = get_pending_queue_repository().remove(message_id).await {
-        return Err(e.to_string());
+    if !owned {
+        // Already claimed or cancelled — do not delete a promoted message.
+        return Ok(false);
     }
 
-    if let Err(e) = get_message_repository().delete_by_id(message_id).await {
-        if let Err(requeue_err) = get_pending_queue_repository()
-            .enqueue(session_id, message_id, created_at)
-            .await
-        {
-            log::error!(
-                "Failed to restore pending index for {message_id} after delete error: {requeue_err}"
-            );
-        }
-        return Err(format!("Failed to delete cancelled pending message: {e}"));
-    }
-
+    match get_pending_queue_repository()
+        .remove_index_and_message(message_id)
+        .await
     {
-        let sessions = active_sessions.read().await;
-        if let Some(session) = sessions.get(session_id) {
-            session
-                .pending_events
-                .write()
-                .await
-                .remove_message(message_id);
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            // Index already gone; still try to drop a leftover message row.
+            if let Err(e) = get_message_repository().delete_by_id(message_id).await {
+                log::warn!("Cancel found no pending index for {message_id}; message delete: {e}");
+            }
+        }
+        Err(e) => {
+            restore_front_pending_message(active_sessions, session_id, message_id.to_string())
+                .await;
+            return Err(format!("Failed to delete cancelled pending message: {e}"));
         }
     }
 
     emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
     Ok(true)
+}
+
+async fn restore_index_entry(entry: &PendingQueueEntry) {
+    if let Err(e) = get_pending_queue_repository()
+        .enqueue_with_seq(
+            &entry.session_id,
+            &entry.message_id,
+            entry.created_at,
+            entry.queue_seq,
+        )
+        .await
+    {
+        log::error!(
+            "Failed to restore pending index for {} (seq={}): {e}",
+            entry.message_id,
+            entry.queue_seq
+        );
+    }
 }
 
 async fn restore_front_pending_message(
@@ -289,8 +293,7 @@ pub async fn discard_all_pending_messages(
     let message_ids = {
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(session_id) {
-            let drained = session.pending_events.write().await.drain_messages();
-            drained
+            session.pending_events.write().await.drain_messages()
         } else {
             Vec::new()
         }
@@ -311,7 +314,6 @@ pub async fn discard_all_pending_messages(
         }
     }
 
-    // Ensure waiting prompts are not left in the in-memory cache.
     {
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(session_id) {
@@ -333,18 +335,39 @@ pub async fn hydrate_pending_queue_into_session(
     session_id: &str,
     messages: &mut Vec<Message>,
 ) -> Result<(), String> {
-    let entries = get_pending_queue_repository()
+    let queue_repo = get_pending_queue_repository();
+    if let Err(e) = queue_repo.delete_orphans_for_session(session_id).await {
+        log::warn!("Failed to purge orphan pending_queue rows for {session_id}: {e}");
+    }
+
+    let entries = queue_repo
         .list_by_session(session_id)
         .await
         .map_err(|e| e.to_string())?;
 
-    let pending_ids: HashSet<String> = entries.iter().map(|e| e.message_id.clone()).collect();
-    messages.retain(|m| !pending_ids.contains(&m.id));
+    let pending_ids: Vec<String> = entries.iter().map(|e| e.message_id.clone()).collect();
+    let existing = if pending_ids.is_empty() {
+        Vec::new()
+    } else {
+        get_message_repository()
+            .get_by_ids(pending_ids.clone())
+            .await
+            .map_err(|e| e.to_string())?
+    };
+    let existing_ids: HashSet<String> = existing.into_iter().map(|m| m.id).collect();
+
+    let valid_ids: Vec<String> = pending_ids
+        .into_iter()
+        .filter(|id| existing_ids.contains(id))
+        .collect();
+
+    let valid_set: HashSet<String> = valid_ids.iter().cloned().collect();
+    messages.retain(|m| !valid_set.contains(&m.id));
 
     let mut pending = session.pending_events.write().await;
     pending.clear();
-    for entry in entries {
-        pending.add(crate::agent::state::PendingEvent::Message(entry.message_id));
+    for id in valid_ids {
+        pending.add(crate::agent::state::PendingEvent::Message(id));
     }
 
     Ok(())

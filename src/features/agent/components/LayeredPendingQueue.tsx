@@ -79,18 +79,24 @@ export function LayeredPendingQueue({
                 minHeight: `${Math.min(44 + (visibleItems.length - 1) * 8, 72)}px`,
               }
         }
+        role="status"
+        aria-live="polite"
+        aria-label={t('agent.pendingQueue.label', 'Queued prompts')}
       >
         {visibleItems.map((item, index) => {
           const depth = index;
           const isFront = depth === 0;
           const isCancelling = cancellingId === item.id;
+          const preview = previewText(item);
 
           return (
             <div
               key={item.id}
               className={cn(
                 'absolute inset-x-0 rounded-xl border border-border/50 bg-background/80 px-3 py-2 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-background/55 transition-all duration-200 ease-out motion-reduce:transition-none',
-                !expanded && 'pointer-events-none',
+                // Collapsed: only the front card receives pointer events so tap
+                // expands / cancels on touch devices without hover.
+                !expanded && !isFront && 'pointer-events-none',
                 expanded && 'pointer-events-auto relative mb-1.5 last:mb-0',
               )}
               style={
@@ -107,6 +113,11 @@ export function LayeredPendingQueue({
                       zIndex: visibleItems.length - depth,
                     }
               }
+              onClick={() => {
+                if (!expanded) {
+                  setExpanded(true);
+                }
+              }}
             >
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
@@ -120,8 +131,8 @@ export function LayeredPendingQueue({
                       #{index + 1}
                     </span>
                   </div>
-                  <p className="truncate text-sm text-foreground/90">
-                    {previewText(item)}
+                  <p className="truncate text-sm text-foreground/90" title={preview}>
+                    {preview}
                   </p>
                 </div>
                 <Button
@@ -134,10 +145,12 @@ export function LayeredPendingQueue({
                   )}
                   disabled={disabled || !!cancellingId}
                   aria-label={t(
-                    'agent.pendingQueue.cancel',
-                    'Cancel queued prompt',
+                    'agent.pendingQueue.cancelNamed',
+                    'Cancel queued prompt: {{preview}}',
+                    { preview },
                   )}
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation();
                     void handleCancel(item.id);
                   }}
                 >

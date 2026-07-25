@@ -37,9 +37,20 @@ pub async fn setup_test_db() -> DatabaseConnection {
     opt.max_connections(1)
         .min_connections(1)
         .sqlx_logging(false);
-    Database::connect(opt)
+    let db = Database::connect(opt)
         .await
-        .expect("Failed to create in-memory database")
+        .expect("Failed to create in-memory database");
+
+    // Match production: enforce FK / ON DELETE CASCADE on every connection.
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    db.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        "PRAGMA foreign_keys = ON".to_string(),
+    ))
+    .await
+    .expect("Failed to enable SQLite foreign_keys");
+
+    db
 }
 
 #[allow(dead_code)]
