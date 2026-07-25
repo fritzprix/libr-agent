@@ -290,12 +290,23 @@ pub async fn discard_all_pending_messages(
     app_handle: Option<&AppHandle>,
     session_id: &str,
 ) -> Result<(), String> {
-    let message_ids = {
+    let (message_ids, protected_ids) = {
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(session_id) {
-            session.pending_events.write().await.drain_messages()
+            let pending_ids = session.pending_events.write().await.drain_messages();
+            // Promoted prompts may still linger in pending_queue after docker
+            // drain/start_workflow. Never delete ids already in the active
+            // transcript cache — that is the Session-API first-bubble loss bug.
+            let protected_ids: HashSet<String> = session
+                .messages
+                .read()
+                .await
+                .iter()
+                .map(|message| message.id.clone())
+                .collect();
+            (pending_ids, protected_ids)
         } else {
-            Vec::new()
+            (Vec::new(), HashSet::new())
         }
     };
 
@@ -306,6 +317,7 @@ pub async fn discard_all_pending_messages(
 
     let mut delete_set: HashSet<String> = message_ids.into_iter().collect();
     delete_set.extend(index_ids);
+    delete_set.retain(|message_id| !protected_ids.contains(message_id));
 
     let repo = get_message_repository();
     for msg_id in &delete_set {

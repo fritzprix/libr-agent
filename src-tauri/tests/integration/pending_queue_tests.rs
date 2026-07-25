@@ -172,6 +172,122 @@ async fn pending_queue_repository_orders_fifo_and_supports_selective_remove() {
     assert!(empty.is_empty());
 }
 
+/// Regression: Session API + Docker queues the initial prompt while status is
+/// Provisioning. After provisioning, drain promotes that prompt via
+/// `start_workflow` into the active transcript. The durable `pending_queue`
+/// index row must be cleared (message body kept). Otherwise
+/// `terminate` → `discard_all_pending_messages` deletes the first user message,
+/// so Harbor/API sessions lose the first bubble while host/GUI sessions keep it.
+#[tokio::test]
+async fn promoted_pending_prompt_survives_terminate_discard_after_index_clear() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db);
+    let session_id = format!("promote-pending-{}", uuid::Uuid::new_v4());
+    let message_id = "api-first-user";
+
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let message = build_user_message(&session_id, message_id, 1_000);
+    message_repo
+        .insert(&message)
+        .await
+        .expect("queued user message should persist");
+    queue_repo
+        .enqueue(&session_id, message_id, 1_000)
+        .await
+        .expect("pending index should enqueue");
+
+    // Simulate docker drain_and_start: clear index only, keep message body.
+    queue_repo
+        .remove(message_id)
+        .await
+        .expect("promoted prompt must leave pending_queue");
+
+    let index_after_promote = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("list after promote");
+    assert!(
+        index_after_promote.is_empty(),
+        "promoted prompt must not remain indexed as waiting"
+    );
+
+    // Simulate terminate discard: remove_all + delete indexed message ids.
+    let discarded_ids = queue_repo
+        .remove_all_for_session(&session_id)
+        .await
+        .expect("discard index should succeed");
+    for id in &discarded_ids {
+        message_repo
+            .delete_by_id(id)
+            .await
+            .expect("discard deletes only still-indexed waiting prompts");
+    }
+
+    let surviving = message_repo
+        .get_by_ids(vec![message_id.to_string()])
+        .await
+        .expect("lookup after terminate discard");
+    assert_eq!(
+        surviving.len(),
+        1,
+        "first API user message must survive terminate after docker promote"
+    );
+    assert_eq!(surviving[0].id, message_id);
+}
+
+#[tokio::test]
+async fn stale_pending_index_after_promote_lets_terminate_delete_first_user_message() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db);
+    let session_id = format!("stale-pending-{}", uuid::Uuid::new_v4());
+    let message_id = "api-first-user-stale";
+
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let message = build_user_message(&session_id, message_id, 1_000);
+    message_repo
+        .insert(&message)
+        .await
+        .expect("queued user message should persist");
+    queue_repo
+        .enqueue(&session_id, message_id, 1_000)
+        .await
+        .expect("pending index should enqueue");
+
+    // Bug shape: prompt was promoted to the active transcript but index remained.
+    let discarded_ids = queue_repo
+        .remove_all_for_session(&session_id)
+        .await
+        .expect("discard index should succeed");
+    assert_eq!(discarded_ids, vec![message_id.to_string()]);
+    for id in &discarded_ids {
+        message_repo
+            .delete_by_id(id)
+            .await
+            .expect("stale index causes delete of active first user message");
+    }
+
+    let surviving = message_repo
+        .get_by_ids(vec![message_id.to_string()])
+        .await
+        .expect("lookup after buggy terminate discard");
+    assert!(
+        surviving.is_empty(),
+        "documents pre-fix failure: stale pending_queue index deletes first user message"
+    );
+}
+
 #[test]
 fn pending_event_manager_drains_one_message_in_fifo_order() {
     let mut manager = PendingEventManager::new();
