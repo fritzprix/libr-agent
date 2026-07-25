@@ -14,6 +14,8 @@ N_ATTEMPTS="${LIBRAGENT_N_ATTEMPTS:-1}"
 CONCURRENT=1
 API_URL="${LIBRAGENT_API_URL:-http://localhost:3030/api}"
 ASSISTANT_ID="${LIBRAGENT_ASSISTANT_ID:-}"
+# Harbor -m. Prefer explicit CLI/env; otherwise read global preferredModel from LibrAgent.
+HARBOR_MODEL="${LIBRAGENT_MODEL:-${LIBRAGENT_HARBOR_MODEL:-}}"
 EXECUTION_MODE="${LIBRAGENT_EXECUTION_MODE:-unsafe}"
 # Omitted by default (official submissions must not modify timeouts/resources).
 # Set LIBRAGENT_* or pass CLI flags for local debugging only.
@@ -44,6 +46,9 @@ Options:
   --concurrent N                       Concurrent trials (-n), default 1
   --api-url URL                        Default: http://localhost:3030/api
   --assistant-id UUID                  Or set LIBRAGENT_ASSISTANT_ID
+  --model NAME                         Harbor -m (provider/model). Default: LibrAgent
+                                       global preferredModel via GET /api/settings/preferredModel
+                                       (or LIBRAGENT_MODEL / LIBRAGENT_HARBOR_MODEL)
   --execution-mode yolo|unsafe|normal  Default: unsafe (or LIBRAGENT_EXECUTION_MODE)
   --timeout-multiplier N               Local debug only (omitted by default; submissions must not set this)
   --agent-timeout-multiplier N         Local debug only (omitted by default; submissions must not set this)
@@ -66,6 +71,7 @@ while [[ $# -gt 0 ]]; do
     --concurrent) CONCURRENT="$2"; shift 2 ;;
     --api-url) API_URL="$2"; shift 2 ;;
     --assistant-id) ASSISTANT_ID="$2"; shift 2 ;;
+    --model) HARBOR_MODEL="$2"; shift 2 ;;
     --execution-mode) EXECUTION_MODE="$2"; shift 2 ;;
     --timeout-multiplier) TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
     --agent-timeout-multiplier) AGENT_TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
@@ -163,6 +169,57 @@ PY
 ASSISTANT_ID="$(resolve_assistant_id)"
 echo "Using assistantId=$ASSISTANT_ID"
 
+resolve_harbor_model() {
+  if [[ -n "$HARBOR_MODEL" ]]; then
+    echo "$HARBOR_MODEL"
+    return
+  fi
+  echo "==> Resolving Harbor -m from LibrAgent global preferredModel" >&2
+  "$PYTHON" - "$API_URL" <<'PY'
+import json, sys, urllib.error, urllib.request
+
+api = sys.argv[1].rstrip("/")
+url = f"{api}/settings/preferredModel"
+try:
+    with urllib.request.urlopen(url, timeout=15) as resp:
+        payload = json.load(resp)
+except urllib.error.HTTPError as e:
+    body = e.read().decode("utf-8", errors="replace")
+    raise SystemExit(
+        f"Failed to read preferredModel from {url} (HTTP {e.code}): {body}\n"
+        "Restart LibrAgent (pnpm tauri dev) so GET /api/settings/preferredModel is available, "
+        "or pass --model provider/model."
+    ) from e
+except Exception as e:
+    raise SystemExit(
+        f"Failed to read preferredModel from {url}: {e}\n"
+        "Is LibrAgent running? Or pass --model provider/model."
+    ) from e
+
+harbor_model = (payload.get("harborModel") or "").strip()
+if not harbor_model:
+    model = (payload.get("model") or "").strip()
+    provider = (payload.get("provider") or "").strip()
+    if model and provider and "/" not in model:
+        harbor_model = f"{provider}/{model}"
+    else:
+        harbor_model = model
+if not harbor_model:
+    raise SystemExit(
+        "preferredModel is empty. Set a preferred model in LibrAgent settings, "
+        "or pass --model provider/model."
+    )
+print(harbor_model)
+print(
+    f"  preferredModel provider={payload.get('provider')!r} model={payload.get('model')!r}",
+    file=sys.stderr,
+)
+PY
+}
+
+HARBOR_MODEL="$(resolve_harbor_model)"
+echo "Using Harbor model (-m)=$HARBOR_MODEL"
+
 if [[ "$SKIP_HEALTH" -eq 0 ]]; then
   echo "==> Checking $API_URL/health"
   curl -fsS "$API_URL/health" >/dev/null
@@ -221,6 +278,7 @@ fi
 ARGS=(
   run
   -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter
+  -m "$HARBOR_MODEL"
   --ak "api_url=$API_URL"
   --ak "assistant_id=$ASSISTANT_ID"
   --ak "execution_mode=$EXECUTION_MODE"

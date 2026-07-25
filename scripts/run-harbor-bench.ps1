@@ -48,6 +48,13 @@ param(
 
   [string]$AssistantId = $env:LIBRAGENT_ASSISTANT_ID,
 
+  # Harbor -m. Prefer this / LIBRAGENT_MODEL; else GET /api/settings/preferredModel.
+  [string]$Model = $(
+    if ($env:LIBRAGENT_MODEL) { $env:LIBRAGENT_MODEL }
+    elseif ($env:LIBRAGENT_HARBOR_MODEL) { $env:LIBRAGENT_HARBOR_MODEL }
+    else { $null }
+  ),
+
   [ValidateSet("yolo", "unsafe", "normal")]
   [string]$ExecutionMode = $(if ($env:LIBRAGENT_EXECUTION_MODE) { $env:LIBRAGENT_EXECUTION_MODE } else { "unsafe" }),
 
@@ -152,6 +159,44 @@ function Resolve-AssistantId {
     throw "Could not resolve assistant id. Pass -AssistantId or set LIBRAGENT_ASSISTANT_ID."
   }
   return [string]$match.id
+}
+
+function Resolve-HarborModel {
+  param(
+    [string]$ApiBase,
+    [string]$PreferredModel
+  )
+
+  if ($PreferredModel -and $PreferredModel.Trim().Length -gt 0) {
+    return $PreferredModel.Trim()
+  }
+
+  Write-Step "Resolving Harbor -m from LibrAgent global preferredModel"
+  $url = "$ApiBase/settings/preferredModel"
+  try {
+    $payload = Invoke-RestMethod -Uri $url -Method GET -TimeoutSec 15
+  } catch {
+    throw @"
+Failed to read preferredModel from $url : $_
+Restart LibrAgent (pnpm tauri dev) so GET /api/settings/preferredModel is available, or pass -Model provider/model.
+"@
+  }
+
+  $harborModel = [string]$payload.harborModel
+  if (-not $harborModel -or $harborModel.Trim().Length -eq 0) {
+    $model = [string]$payload.model
+    $provider = [string]$payload.provider
+    if ($model -and $provider -and ($model -notmatch '/')) {
+      $harborModel = "$provider/$model"
+    } else {
+      $harborModel = $model
+    }
+  }
+  if (-not $harborModel -or $harborModel.Trim().Length -eq 0) {
+    throw "preferredModel is empty. Set a preferred model in LibrAgent settings, or pass -Model provider/model."
+  }
+  Write-Host ("  preferredModel provider={0} model={1}" -f $payload.provider, $payload.model)
+  return $harborModel.Trim()
 }
 
 function Test-LibrAgentApi {
@@ -318,6 +363,9 @@ Assert-Command "harbor"
 $script:ResolvedAssistantId = Resolve-AssistantId -ApiBase $ApiUrl -PreferredId $AssistantId -NameHint $AssistantName
 Write-Host "Using assistantId=$($script:ResolvedAssistantId)"
 
+$script:ResolvedHarborModel = Resolve-HarborModel -ApiBase $ApiUrl -PreferredModel $Model
+Write-Host "Using Harbor model (-m)=$($script:ResolvedHarborModel)"
+
 if (-not $SkipHealthCheck) {
   Test-LibrAgentApi -ApiBase $ApiUrl
 }
@@ -325,6 +373,7 @@ if (-not $SkipHealthCheck) {
 $harborArgs = @(
   "run",
   "-a", "benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter",
+  "-m", "$($script:ResolvedHarborModel)",
   "--ak", "api_url=$ApiUrl",
   "--ak", "assistant_id=$($script:ResolvedAssistantId)",
   "--ak", "execution_mode=$ExecutionMode",

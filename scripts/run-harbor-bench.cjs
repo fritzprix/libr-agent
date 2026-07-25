@@ -25,6 +25,7 @@ const FLAG_TO_PS = {
   '--concurrent': '-Concurrent',
   '--api-url': '-ApiUrl',
   '--assistant-id': '-AssistantId',
+  '--model': '-Model',
   '--execution-mode': '-ExecutionMode',
   '--timeout-multiplier': '-TimeoutMultiplier',
   '--agent-timeout-multiplier': '-AgentTimeoutMultiplier',

@@ -76,7 +76,13 @@ harbor run -d terminal-bench/terminal-bench-2-1 -a <agent> -m <model> -k 5
 harbor run -d harbor-index/harbor-index-1.0 -a <agent> -m <model> -k 5
 ```
 
-LibrAgent maps `-a`/`-m` to the custom adapter + in-app assistant (model from settings), not Harbor `-m`.
+`pnpm bench:*` resolves Harbor `-m` from LibrAgent's **global** `preferredModel`
+setting (`GET /api/settings/preferredModel`) before the run starts — the same
+source session creation uses when no per-session model is set. Override with
+`--model provider/model` or `LIBRAGENT_MODEL`.
+
+LibrAgent still runs the assistant's tools/API keys from the selected assistant;
+`-m` is for Harbor reporting / Hub upload metadata (model_info + token rows).
 
 Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
 `--ve` (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) for LLM-judge tasks.
