@@ -4,6 +4,7 @@ import pytest
 
 from benchmarks.harbor.libragent_agent import (
     DEFAULT_EXECUTION_MODE,
+    LibrAgentHarborAdapter,
     extract_model_name_from_assistant_payload,
     extract_model_name_from_session_payload,
     extract_trajectory_error,
@@ -13,6 +14,7 @@ from benchmarks.harbor.libragent_agent import (
     resolve_execution_mode,
     resolve_poll_timeout_sec,
     sanitize_docker_compose_project_name,
+    split_harbor_model_name,
     summarize_trajectory,
 )
 
@@ -184,6 +186,23 @@ def test_extract_model_name_from_assistant_payload() -> None:
     assert extract_model_name_from_assistant_payload(None) is None
 
 
+def test_extract_model_name_from_assistant_payload_parses_json_string_config() -> None:
+    """The assistants API serializes ``config`` as JSON text, not an object."""
+    payload = {
+        "id": "coder",
+        "config": '{"model": "gpt-5.4", "provider": "openai", "mcpServerIds": []}',
+    }
+    assert extract_model_name_from_assistant_payload(payload) == "openai/gpt-5.4"
+
+
+def test_extract_model_name_from_assistant_payload_tolerates_broken_config() -> None:
+    assert extract_model_name_from_assistant_payload({"config": "not json"}) is None
+    assert (
+        extract_model_name_from_assistant_payload({"config": '{"mcpServerIds": []}'})
+        is None
+    )
+
+
 def test_extract_model_name_from_session_payload() -> None:
     assert (
         extract_model_name_from_session_payload(
@@ -191,6 +210,42 @@ def test_extract_model_name_from_session_payload() -> None:
         )
         == "anthropic/claude-sonnet-4"
     )
+
+
+def test_split_harbor_model_name() -> None:
+    assert split_harbor_model_name("openai/gpt-5.4") == ("openai", "gpt-5.4")
+    assert split_harbor_model_name("gpt-5.4") == (None, "gpt-5.4")
+    assert split_harbor_model_name(None) == (None, None)
+    assert split_harbor_model_name("  ") == (None, None)
+
+
+def _make_adapter(tmp_path, model_name: str | None = None) -> LibrAgentHarborAdapter:
+    return LibrAgentHarborAdapter(logs_dir=tmp_path, model_name=model_name)
+
+
+def test_to_agent_info_returns_stable_instance(tmp_path) -> None:
+    adapter = _make_adapter(tmp_path)
+    assert adapter.to_agent_info() is adapter.to_agent_info()
+
+
+def test_apply_model_name_backfills_captured_agent_info(tmp_path) -> None:
+    """Harbor snapshots agent_info before run but serializes it after."""
+    adapter = _make_adapter(tmp_path)
+    captured = adapter.to_agent_info()
+    assert captured.model_info is None
+
+    assert adapter._apply_model_name("openai/Qwen3.6-35B") is True
+
+    assert captured.model_info is not None
+    assert captured.model_info.name == "Qwen3.6-35B"
+    assert captured.model_info.provider == "openai"
+
+
+def test_apply_model_name_ignores_empty_and_unchanged(tmp_path) -> None:
+    adapter = _make_adapter(tmp_path, model_name="openai/gpt-5.4")
+    assert adapter._apply_model_name(None) is False
+    assert adapter._apply_model_name("openai/gpt-5.4") is False
+    assert adapter.to_agent_info().model_info.name == "gpt-5.4"
 
 
 def test_summarize_trajectory_sums_usage_and_tool_calls() -> None:

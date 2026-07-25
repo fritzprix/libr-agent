@@ -26,6 +26,7 @@ try:
     from harbor.agents.base import BaseAgent
     from harbor.environments.base import BaseEnvironment
     from harbor.models.agent.context import AgentContext
+    from harbor.models.trial.result import AgentInfo
 except ImportError as exc:  # pragma: no cover - import-time guard for editors
     raise ImportError(
         "The 'harbor' package is required for LibrAgentHarborAdapter. "
@@ -107,32 +108,65 @@ def format_harbor_model_name(
     return f"{provider_name}/{model_name}"
 
 
-def extract_model_name_from_assistant_payload(payload: Any) -> str | None:
-    """Read model/provider from ``GET /assistants/:id`` JSON."""
-    if not isinstance(payload, dict):
+def split_harbor_model_name(model_name: str | None) -> tuple[str | None, str | None]:
+    """Split Harbor ``provider/model`` form into ``(provider, model)``."""
+    text = (model_name or "").strip()
+    if not text:
+        return None, None
+    if "/" not in text:
+        return None, text
+    provider, model = text.split("/", maxsplit=1)
+    return (provider.strip() or None), (model.strip() or None)
+
+
+def _string_field(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if not isinstance(value, str):
         return None
+    return value.strip() or None
+
+
+def _assistant_config(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize the assistant ``config`` field, which the API serializes as JSON text."""
     config = payload.get("config")
-    if not isinstance(config, dict):
-        config = {}
-    model = payload.get("model") or config.get("model")
-    provider = payload.get("provider") or config.get("provider")
-    if not isinstance(model, str):
-        model = None
-    if not isinstance(provider, str):
-        provider = None
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except (TypeError, ValueError):
+            return {}
+    return config if isinstance(config, dict) else {}
+
+
+def extract_model_provider_from_assistant_payload(
+    payload: Any,
+) -> tuple[str | None, str | None]:
+    """Read ``(model, provider)`` from ``GET /assistants/:id`` JSON."""
+    if not isinstance(payload, dict):
+        return None, None
+    config = _assistant_config(payload)
+    model = _string_field(payload, "model") or _string_field(config, "model")
+    provider = _string_field(payload, "provider") or _string_field(config, "provider")
+    return model, provider
+
+
+def extract_model_name_from_assistant_payload(payload: Any) -> str | None:
+    """Build the Harbor model name from ``GET /assistants/:id`` JSON."""
+    model, provider = extract_model_provider_from_assistant_payload(payload)
     return format_harbor_model_name(model, provider)
 
 
-def extract_model_name_from_session_payload(payload: Any) -> str | None:
-    """Read model/provider from ``GET /sessions/:id`` JSON."""
+def extract_model_provider_from_session_payload(
+    payload: Any,
+) -> tuple[str | None, str | None]:
+    """Read ``(model, provider)`` from ``GET /sessions/:id`` JSON."""
     if not isinstance(payload, dict):
-        return None
-    model = payload.get("model")
-    provider = payload.get("provider")
-    if not isinstance(model, str):
-        model = None
-    if not isinstance(provider, str):
-        provider = None
+        return None, None
+    return _string_field(payload, "model"), _string_field(payload, "provider")
+
+
+def extract_model_name_from_session_payload(payload: Any) -> str | None:
+    """Build the Harbor model name from ``GET /sessions/:id`` JSON."""
+    model, provider = extract_model_provider_from_session_payload(payload)
     return format_harbor_model_name(model, provider)
 
 
@@ -464,6 +498,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         self.execution_mode = resolve_execution_mode(execution_mode)
         self.poll_timeout_sec = resolve_poll_timeout_sec(poll_timeout_sec)
         self.poll_interval_sec = float(poll_interval_sec)
+        self._agent_info: AgentInfo | None = None
         super().__init__(
             logs_dir,
             model_name,
@@ -481,6 +516,29 @@ class LibrAgentHarborAdapter(BaseAgent):
 
     def version(self) -> str | None:
         return "0.8.33"
+
+    def to_agent_info(self) -> AgentInfo:
+        """Return one stable AgentInfo instance for the whole trial.
+
+        Harbor captures this object before ``run`` but serializes it after, so
+        keeping a single instance lets :meth:`_apply_model_name` backfill
+        ``model_info`` once the LibrAgent session reports the model it used.
+        Without ``model_info`` the Harbor uploader skips the ``trial_model`` row
+        that carries token counts and cost, and the hub shows "No token data".
+        """
+        if self._agent_info is None:
+            self._agent_info = super().to_agent_info()
+        return self._agent_info
+
+    def _apply_model_name(self, model_name: str | None) -> bool:
+        """Adopt ``model_name`` for Harbor reporting; True when it changed."""
+        if not model_name or model_name == self.model_name:
+            return False
+        self.model_name = model_name
+        self._init_model_info()
+        if self._agent_info is not None:
+            self._agent_info.model_info = super().to_agent_info().model_info
+        return True
 
     async def setup(self, environment: BaseEnvironment) -> None:
         """Validates connection and resolves Harbor model_info from the assistant."""
@@ -543,13 +601,12 @@ class LibrAgentHarborAdapter(BaseAgent):
         model_name = extract_model_name_from_assistant_payload(payload)
         if not model_name:
             print(
-                f"[{self.name()}] Warning: assistant {self.assistant_id} has no "
-                f"model/provider in config; agent_info.model_info will stay null."
+                f"[{self.name()}] Assistant {self.assistant_id} pins no model/provider; "
+                f"will adopt the model reported by the LibrAgent session during run."
             )
             return
 
-        self.model_name = model_name
-        self._init_model_info()
+        self._apply_model_name(model_name)
         print(f"[{self.name()}] Resolved Harbor model_info from assistant: {model_name}")
 
     async def run(
@@ -839,9 +896,17 @@ class LibrAgentHarborAdapter(BaseAgent):
             # LibrAgent does not currently expose USD cost in message usage.
             context.cost_usd = None
 
+            # The session knows which model actually ran (assistants may inherit the
+            # app default instead of pinning one). Adopt it so agent_info.model_info
+            # is populated before Harbor writes result.json.
             session_model_name = extract_model_name_from_session_payload(
                 last_session_info
             )
+            if self._apply_model_name(session_model_name):
+                print(
+                    f"[{self.name()}] Adopted Harbor model_info from session: "
+                    f"{session_model_name}"
+                )
             metadata: dict[str, Any] = {
                 "output": final_answer,
                 "trajectory": messages,
@@ -854,9 +919,11 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "n_turns": telemetry.n_turns,
                 "tool_calls_count": telemetry.tool_calls_count,
             }
-            resolved_model = session_model_name or self.model_name
+            resolved_provider, resolved_model = split_harbor_model_name(self.model_name)
             if resolved_model:
                 metadata["model_name"] = resolved_model
+            if resolved_provider:
+                metadata["provider"] = resolved_provider
             if last_status in {"error", "cancel", "cancelled"} and telemetry.error:
                 metadata["error"] = telemetry.error
             context.metadata = metadata
