@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +43,186 @@ DEFAULT_EXECUTION_MODE = "unsafe"
 TERMINAL_WORKFLOW_STATUSES = frozenset({"idle", "error"})
 DEFAULT_POLL_INTERVAL_SEC = 3.0
 MAIN_COMPOSE_SERVICE = "main"
+
+
+@dataclass(frozen=True)
+class TrajectoryTelemetry:
+    """Aggregated Harbor-facing metrics harvested from LibrAgent messages."""
+
+    n_input_tokens: int | None
+    n_output_tokens: int | None
+    n_cache_tokens: int | None
+    n_turns: int
+    tool_calls_count: int
+    has_usage: bool
+    error: str | None
+
+
+def _as_non_negative_int(value: Any) -> int | None:
+    """Coerce JSON number-like values to a non-negative int, else None."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        if value < 0 or not value.is_integer():
+            return None
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = int(text)
+        except ValueError:
+            return None
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def _usage_token(usage: Any, *keys: str) -> int | None:
+    if not isinstance(usage, dict):
+        return None
+    for key in keys:
+        parsed = _as_non_negative_int(usage.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def format_harbor_model_name(
+    model: str | None,
+    provider: str | None = None,
+) -> str | None:
+    """Build Harbor ``provider/model`` form when both sides are known."""
+    model_name = (model or "").strip()
+    if not model_name:
+        return None
+    provider_name = (provider or "").strip()
+    if not provider_name:
+        return model_name
+    if "/" in model_name:
+        # Already provider-qualified (e.g. openrouter/...).
+        return model_name
+    return f"{provider_name}/{model_name}"
+
+
+def extract_model_name_from_assistant_payload(payload: Any) -> str | None:
+    """Read model/provider from ``GET /assistants/:id`` JSON."""
+    if not isinstance(payload, dict):
+        return None
+    config = payload.get("config")
+    if not isinstance(config, dict):
+        config = {}
+    model = payload.get("model") or config.get("model")
+    provider = payload.get("provider") or config.get("provider")
+    if not isinstance(model, str):
+        model = None
+    if not isinstance(provider, str):
+        provider = None
+    return format_harbor_model_name(model, provider)
+
+
+def extract_model_name_from_session_payload(payload: Any) -> str | None:
+    """Read model/provider from ``GET /sessions/:id`` JSON."""
+    if not isinstance(payload, dict):
+        return None
+    model = payload.get("model")
+    provider = payload.get("provider")
+    if not isinstance(model, str):
+        model = None
+    if not isinstance(provider, str):
+        provider = None
+    return format_harbor_model_name(model, provider)
+
+
+def _format_message_error(error: Any) -> str | None:
+    if error is None:
+        return None
+    if isinstance(error, str):
+        text = error.strip()
+        return text or None
+    if isinstance(error, dict):
+        for key in ("message", "error", "reason", "detail", "code"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        try:
+            return json.dumps(error, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError):
+            return str(error)
+    return str(error)
+
+
+def extract_trajectory_error(messages: list[Any]) -> str | None:
+    """Prefer the latest assistant/tool message error, else any message error."""
+    last_any: str | None = None
+    last_preferred: str | None = None
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        formatted = _format_message_error(message.get("error"))
+        if not formatted:
+            continue
+        last_any = formatted
+        role = str(message.get("role") or "").lower()
+        if role in {"assistant", "tool", "system"}:
+            last_preferred = formatted
+    return last_preferred or last_any
+
+
+def summarize_trajectory(messages: list[Any]) -> TrajectoryTelemetry:
+    """Aggregate token/turn/tool metrics from harvested LibrAgent messages.
+
+    Harbor ``n_input_tokens`` is total input *including* cache. LibrAgent's
+    ``usage.promptTokens`` already includes cached prompt tokens;
+    ``usage.cachedPromptTokens`` is recorded separately as ``n_cache_tokens``.
+    """
+    n_input = 0
+    n_output = 0
+    n_cache = 0
+    has_usage = False
+    n_turns = 0
+    tool_calls_count = 0
+
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").lower()
+        if role == "assistant":
+            n_turns += 1
+            tool_calls = message.get("toolCalls")
+            if isinstance(tool_calls, list):
+                tool_calls_count += len(tool_calls)
+
+        usage = message.get("usage")
+        prompt = _usage_token(usage, "promptTokens", "prompt_tokens", "input_tokens")
+        completion = _usage_token(
+            usage, "completionTokens", "completion_tokens", "output_tokens"
+        )
+        cached = _usage_token(
+            usage,
+            "cachedPromptTokens",
+            "cached_prompt_tokens",
+            "cache_read_input_tokens",
+            "cached_tokens",
+        )
+        if prompt is None and completion is None and cached is None:
+            continue
+        has_usage = True
+        n_input += prompt or 0
+        n_output += completion or 0
+        n_cache += cached or 0
+
+    return TrajectoryTelemetry(
+        n_input_tokens=n_input if has_usage else None,
+        n_output_tokens=n_output if has_usage else None,
+        n_cache_tokens=n_cache if has_usage else None,
+        n_turns=n_turns,
+        tool_calls_count=tool_calls_count,
+        has_usage=has_usage,
+        error=extract_trajectory_error(messages),
+    )
 
 
 def resolve_execution_mode(
@@ -301,7 +483,8 @@ class LibrAgentHarborAdapter(BaseAgent):
         return "0.8.33"
 
     async def setup(self, environment: BaseEnvironment) -> None:
-        """Validates connection with the running LibrAgent daemon."""
+        """Validates connection and resolves Harbor model_info from the assistant."""
+        _ = environment  # Harbor requires the arg; health/model lookup is API-only.
         if httpx is None:
             raise RuntimeError(
                 "Python library 'httpx' is missing. Please run: pip install httpx"
@@ -321,6 +504,53 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"Unable to connect to LibrAgent daemon at {self.api_url}. "
                     f"Please make sure LibrAgent is running and API is active. Error: {e}"
                 ) from e
+
+            # Harbor records agent_info.model_info from self.model_name during
+            # prepare (after setup, before run). Prefer an explicit Harbor -m /
+            # constructor model_name; otherwise resolve from the assistant config.
+            if not self.model_name:
+                await self._resolve_model_name_from_assistant(client)
+
+    async def _resolve_model_name_from_assistant(self, client: Any) -> None:
+        """Populate ``self.model_name`` from ``GET /assistants/{id}`` when unset."""
+        try:
+            res = await client.get(
+                f"{self.api_url}/assistants/{self.assistant_id}",
+                timeout=10.0,
+            )
+        except Exception as e:
+            print(
+                f"[{self.name()}] Warning: failed to fetch assistant "
+                f"{self.assistant_id} for model_info: {e}"
+            )
+            return
+
+        if res.status_code != 200:
+            print(
+                f"[{self.name()}] Warning: assistant lookup for model_info returned "
+                f"{res.status_code}: {res.text}"
+            )
+            return
+
+        try:
+            payload = res.json()
+        except Exception as e:
+            print(
+                f"[{self.name()}] Warning: assistant payload was not JSON: {e}"
+            )
+            return
+
+        model_name = extract_model_name_from_assistant_payload(payload)
+        if not model_name:
+            print(
+                f"[{self.name()}] Warning: assistant {self.assistant_id} has no "
+                f"model/provider in config; agent_info.model_info will stay null."
+            )
+            return
+
+        self.model_name = model_name
+        self._init_model_info()
+        print(f"[{self.name()}] Resolved Harbor model_info from assistant: {model_name}")
 
     async def run(
         self,
@@ -450,6 +680,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             seen_non_idle = False
             completed = False
             last_status = "unknown"
+            last_session_info: dict[str, Any] | None = None
             poll_deadline = (
                 asyncio.get_running_loop().time() + self.poll_timeout_sec
                 if self.poll_timeout_sec is not None
@@ -490,6 +721,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                         continue
 
                     session_info = status_res.json()
+                    if isinstance(session_info, dict):
+                        last_session_info = session_info
                     current_status = str(session_info.get("status", "idle")).lower()
                     last_status = current_status
                     if current_status not in TERMINAL_WORKFLOW_STATUSES:
@@ -598,7 +831,18 @@ class LibrAgentHarborAdapter(BaseAgent):
                 )
                 break
 
-            context.metadata = {
+            telemetry = summarize_trajectory(messages)
+            # Harbor result.json reads these top-level AgentContext fields — not metadata.
+            context.n_input_tokens = telemetry.n_input_tokens
+            context.n_output_tokens = telemetry.n_output_tokens
+            context.n_cache_tokens = telemetry.n_cache_tokens
+            # LibrAgent does not currently expose USD cost in message usage.
+            context.cost_usd = None
+
+            session_model_name = extract_model_name_from_session_payload(
+                last_session_info
+            )
+            metadata: dict[str, Any] = {
                 "output": final_answer,
                 "trajectory": messages,
                 "sessionId": session_id,
@@ -606,10 +850,23 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "completed": True,
                 "attachContainer": attach_container_id,
                 "workspaceMode": "attach" if use_attach else "host-sync",
+                "assistant_id": self.assistant_id,
+                "n_turns": telemetry.n_turns,
+                "tool_calls_count": telemetry.tool_calls_count,
             }
+            resolved_model = session_model_name or self.model_name
+            if resolved_model:
+                metadata["model_name"] = resolved_model
+            if last_status in {"error", "cancel", "cancelled"} and telemetry.error:
+                metadata["error"] = telemetry.error
+            context.metadata = metadata
             print(
                 f"[{self.name()}] Task complete. Response harvested successfully "
-                f"({len(messages)} messages, status={last_status})."
+                f"({len(messages)} messages, status={last_status}, "
+                f"turns={telemetry.n_turns}, tools={telemetry.tool_calls_count}, "
+                f"tokens_in={telemetry.n_input_tokens}, "
+                f"tokens_out={telemetry.n_output_tokens}, "
+                f"tokens_cache={telemetry.n_cache_tokens})."
             )
 
             # Harvest finished; release the LibrAgent session so it does not keep

@@ -61,8 +61,9 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell vite to ignore watching `src-tauri`
-      ignored: ['**/src-tauri/**', '**/.worktrees/**'],
+      // 3. tell vite to ignore watching `src-tauri` and Harbor bench outputs
+      // (Harbor writes jobs/**/result.json etc.; watching them causes spurious reloads)
+      ignored: ['**/src-tauri/**', '**/.worktrees/**', '**/jobs/**'],
     },
   },
 }));

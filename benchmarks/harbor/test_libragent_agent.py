@@ -4,11 +4,16 @@ import pytest
 
 from benchmarks.harbor.libragent_agent import (
     DEFAULT_EXECUTION_MODE,
+    extract_model_name_from_assistant_payload,
+    extract_model_name_from_session_payload,
+    extract_trajectory_error,
+    format_harbor_model_name,
     is_workflow_complete,
     resolve_container_workdir,
     resolve_execution_mode,
     resolve_poll_timeout_sec,
     sanitize_docker_compose_project_name,
+    summarize_trajectory,
 )
 
 
@@ -156,3 +161,100 @@ def test_attach_session_payload_shape() -> None:
     assert payload["dockerConfig"]["manageLifecycle"] is False
     assert payload["dockerConfig"]["workdir"] == "/workspace"
     assert "image" not in payload["dockerConfig"]
+
+
+def test_format_harbor_model_name() -> None:
+    assert format_harbor_model_name(None) is None
+    assert format_harbor_model_name("  ") is None
+    assert format_harbor_model_name("gpt-5.4") == "gpt-5.4"
+    assert format_harbor_model_name("gpt-5.4", "openai") == "openai/gpt-5.4"
+    assert (
+        format_harbor_model_name("openrouter/foo", "openrouter") == "openrouter/foo"
+    )
+
+
+def test_extract_model_name_from_assistant_payload() -> None:
+    assert (
+        extract_model_name_from_assistant_payload(
+            {"config": {"model": "gpt-5.4", "provider": "openai"}}
+        )
+        == "openai/gpt-5.4"
+    )
+    assert extract_model_name_from_assistant_payload({"config": {}}) is None
+    assert extract_model_name_from_assistant_payload(None) is None
+
+
+def test_extract_model_name_from_session_payload() -> None:
+    assert (
+        extract_model_name_from_session_payload(
+            {"model": "claude-sonnet-4", "provider": "anthropic"}
+        )
+        == "anthropic/claude-sonnet-4"
+    )
+
+
+def test_summarize_trajectory_sums_usage_and_tool_calls() -> None:
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "hi"}], "usage": None},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "working"}],
+            "toolCalls": [{"id": "1", "name": "shell"}],
+            "usage": {
+                "promptTokens": 100,
+                "completionTokens": 10,
+                "cachedPromptTokens": 40,
+            },
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "done"}],
+            "toolCalls": [{"id": "2", "name": "shell"}, {"id": "3", "name": "read"}],
+            "usage": {
+                "promptTokens": 200,
+                "completionTokens": 20,
+                "cachedPromptTokens": 150,
+            },
+        },
+    ]
+    telemetry = summarize_trajectory(messages)
+    assert telemetry.has_usage is True
+    assert telemetry.n_input_tokens == 300
+    assert telemetry.n_output_tokens == 30
+    assert telemetry.n_cache_tokens == 190
+    assert telemetry.n_turns == 2
+    assert telemetry.tool_calls_count == 3
+    assert telemetry.error is None
+
+
+def test_summarize_trajectory_without_usage_leaves_tokens_none() -> None:
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "bye"}], "toolCalls": []},
+    ]
+    telemetry = summarize_trajectory(messages)
+    assert telemetry.has_usage is False
+    assert telemetry.n_input_tokens is None
+    assert telemetry.n_output_tokens is None
+    assert telemetry.n_cache_tokens is None
+    assert telemetry.n_turns == 1
+    assert telemetry.tool_calls_count == 0
+
+
+def test_extract_trajectory_error_prefers_latest_assistant_error() -> None:
+    messages = [
+        {"role": "user", "error": "ignored user error"},
+        {"role": "assistant", "error": {"message": "429 quota exceeded"}},
+        {"role": "assistant", "error": None},
+        {"role": "tool", "error": "tool timeout"},
+    ]
+    assert extract_trajectory_error(messages) == "tool timeout"
+    assert (
+        extract_trajectory_error(
+            [
+                {"role": "user", "error": "user side"},
+                {"role": "assistant", "error": {"message": "model overloaded"}},
+            ]
+        )
+        == "model overloaded"
+    )
