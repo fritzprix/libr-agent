@@ -111,7 +111,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     await refreshSkills();
   }, [refreshSkills]);
 
-  const { input, setInput, isSubmitting, handleSubmit } = useChatSubmit({
+  const { input, setInput, handleSubmit } = useChatSubmit({
     session,
     submit,
     pendingFiles,
@@ -132,21 +132,16 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     [pendingFiles],
   );
 
-  // Agent busy state (shown as Cancel button)
+  // Cancel is only for an active agent turn. Do NOT map slash-command
+  // `isSubmitting` (e.g. hung `/clear`) or session hydrate onto Cancel —
+  // that falsely enables Cancel while workflowStatus is still idle.
   const isBusy = useMemo(() => {
     return (
-      isSessionLoading ||
-      isSubmitting ||
       workflowStatus === 'busy' ||
+      workflowStatus === 'queued' ||
       (session?.id ? isCompacting(session.id) : false)
     );
-  }, [
-    isSessionLoading,
-    isSubmitting,
-    workflowStatus,
-    session?.id,
-    isCompacting,
-  ]);
+  }, [workflowStatus, session?.id, isCompacting]);
 
   const isPaused = workflowStatus === 'paused' && !isBusy;
 

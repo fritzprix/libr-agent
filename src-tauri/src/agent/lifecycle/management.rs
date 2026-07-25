@@ -269,6 +269,25 @@ pub async fn update_session_status_with_dispatcher(
     session_id: &str,
     status: SessionStatus,
 ) -> Result<(), String> {
+    // Acquire concurrency permits OUTSIDE `transition_lock`. Waiting on a full
+    // gate while holding the lock deadlocks cancel/clear for the same session
+    // (and blocks every other status transition for it).
+    let mut pre_acquired_permit: Option<ActiveAgentPermit> = None;
+    {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        let needs_permit = session.metadata.status != SessionStatus::Busy
+            && status == SessionStatus::Busy
+            && session.active_permit.is_none();
+        if needs_permit {
+            drop(active);
+            let gate = crate::state::get_concurrency_gate();
+            pre_acquired_permit = Some(gate.acquire_active_agent().await?);
+        }
+    }
+
     let (initial_status, transition_lock, transition_handle) = {
         let active = active_sessions.read().await;
         let session = active
@@ -295,13 +314,12 @@ pub async fn update_session_status_with_dispatcher(
     };
     let is_prev_busy = prev_status == SessionStatus::Busy;
     let is_next_busy = status == SessionStatus::Busy;
-    let mut acquired_permit: Option<ActiveAgentPermit> = None;
+    let mut acquired_permit: Option<ActiveAgentPermit> = pre_acquired_permit.take();
     let mut released_permit: Option<ActiveAgentPermit> = None;
 
     *transition_handle.write().await = Some(SessionStatusTransition::ToStatus(status.clone()));
 
     if !matches!((is_prev_busy, is_next_busy), (false, false) | (true, true)) {
-        let gate = crate::state::get_concurrency_gate();
         match (is_prev_busy, is_next_busy) {
             (false, true) => {
                 let active = active_sessions.read().await;
@@ -309,11 +327,22 @@ pub async fn update_session_status_with_dispatcher(
                     .get(session_id)
                     .and_then(|s| s.active_permit.as_ref())
                     .is_some();
-                if !has_permit {
-                    acquired_permit = Some(gate.acquire_active_agent().await?);
+                if has_permit {
+                    if let Some(permit) = acquired_permit.take() {
+                        drop(permit);
+                    }
+                } else if acquired_permit.is_none() {
+                    *transition_handle.write().await = None;
+                    return Err(format!(
+                        "Cannot transition session {} to Busy without an active agent permit",
+                        session_id
+                    ));
                 }
             }
             (true, false) => {
+                if let Some(permit) = acquired_permit.take() {
+                    drop(permit);
+                }
                 let mut active = active_sessions.write().await;
                 let session = active
                     .get_mut(session_id)
@@ -322,6 +351,8 @@ pub async fn update_session_status_with_dispatcher(
             }
             _ => {}
         }
+    } else if let Some(permit) = acquired_permit.take() {
+        drop(permit);
     }
 
     let persist_result = session_repo.update_status(session_id, status.clone()).await;

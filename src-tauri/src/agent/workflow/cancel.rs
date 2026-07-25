@@ -29,6 +29,14 @@ pub fn should_consume_cancel_at_message_boundary(cancel_pending: bool) -> bool {
     cancel_pending
 }
 
+/// Cancel is a no-op when the session is already inactive — no workflow to stop.
+pub fn is_inactive_cancel_noop(status: &SessionStatus) -> bool {
+    matches!(
+        status,
+        SessionStatus::Idle | SessionStatus::Paused | SessionStatus::Error
+    )
+}
+
 /// Abort any in-flight frontend LLM completion for this session.
 ///
 /// Status transitions alone must not cancel from the React side — that races with
@@ -161,14 +169,43 @@ pub async fn cancel_workflow(
     // Determine whether to stop immediately or defer to message boundary.
     // If a tool-call batch is in progress, we only set cancel_pending and let
     // continue_workflow_after_tool consume it after the full message completes.
-    let has_pending_execution = {
+    let (has_pending_execution, current_status) = {
         let active = active_sessions.read().await;
         let session = active
             .get(&session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        session.cancel_pending.store(true, Ordering::SeqCst);
-        session.pending_execution.is_some()
+        (
+            session.pending_execution.is_some(),
+            session.metadata.status.clone(),
+        )
     };
+
+    // Idle/Paused/Error: nothing to cancel. Still abort a stale frontend LLM
+    // completion if one is registered, but do not force a Paused transition or
+    // contend on status locks — that races with `/clear` (reset_session) and
+    // falsely leaves Cancel UI armed while the session is already inactive.
+    if is_inactive_cancel_noop(&current_status) {
+        cancel_frontend_completion_if_pending(
+            active_sessions,
+            app_handle,
+            &session_id,
+            "workflow-cancel-noop-inactive",
+        )
+        .await;
+        log::info!(
+            "Cancel requested for session {} while {:?} — no running workflow to stop",
+            session_id,
+            current_status
+        );
+        return Ok(());
+    }
+
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(true, Ordering::SeqCst);
+        }
+    }
 
     if classify_cancel_strategy(has_pending_execution) == CancelStrategy::DeferToMessageBoundary {
         log::info!(

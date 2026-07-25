@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => ({
   setInput: vi.fn(),
   onTokenInputChange: vi.fn(),
   handleSubmit: vi.fn((e?: Event) => e?.preventDefault?.()),
+  workflowStatus: 'idle' as 'idle' | 'busy' | 'paused' | 'queued' | 'error',
+  isSubmitting: false,
+  isSessionLoading: false,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -57,8 +60,8 @@ vi.mock('@/context/AgentSessionContext', () => ({
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
     submit: mocks.submit,
-    isSessionLoading: false,
-    workflowStatus: 'idle',
+    isSessionLoading: mocks.isSessionLoading,
+    workflowStatus: mocks.workflowStatus,
     cancel: mocks.cancel,
     resume: mocks.resume,
   }),
@@ -133,7 +136,7 @@ vi.mock('@/features/agent/hooks/useChatSubmit', () => ({
   useChatSubmit: () => ({
     input: '',
     setInput: mocks.setInput,
-    isSubmitting: false,
+    isSubmitting: mocks.isSubmitting,
     handleSubmit: mocks.handleSubmit,
   }),
 }));
@@ -169,6 +172,41 @@ describe('AgentChatInput', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fileAttachmentProps.current = null;
+    mocks.workflowStatus = 'idle';
+    mocks.isSubmitting = false;
+    mocks.isSessionLoading = false;
+  });
+
+  it('does not show Cancel while idle even if a slash command is submitting', () => {
+    mocks.workflowStatus = 'idle';
+    mocks.isSubmitting = true;
+    mocks.isSessionLoading = true;
+
+    render(<AgentChatInput />);
+
+    expect(
+      screen.queryByLabelText('agent.input.cancelAriaLabel'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows Cancel when the workflow is busy', () => {
+    mocks.workflowStatus = 'busy';
+
+    render(<AgentChatInput />);
+
+    expect(
+      screen.getByLabelText('agent.input.cancelAriaLabel'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows Cancel when the workflow is queued', () => {
+    mocks.workflowStatus = 'queued';
+
+    render(<AgentChatInput />);
+
+    expect(
+      screen.getByLabelText('agent.input.cancelAriaLabel'),
+    ).toBeInTheDocument();
   });
 
   it('passes the explicit agent attachment accept policy to the picker', () => {
