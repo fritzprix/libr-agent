@@ -60,6 +60,7 @@ pub mod migration_compatibility_tests;
 pub mod org_create_teamwork_workspace_guard_tests;
 pub mod org_session_metadata_tests;
 pub mod path_env_recovery_tests;
+pub mod pending_queue_tests;
 pub mod persistent_shell_isolation;
 pub mod persistent_shell_tests;
 pub mod planning_context_visibility_tests;

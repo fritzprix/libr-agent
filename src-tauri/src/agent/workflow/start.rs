@@ -90,6 +90,7 @@ pub async fn start_workflow(
         // This prevents polluting the active context window mid-tool-execution
         crate::services::MessageService::queue_user_message(
             active_sessions,
+            app_handle,
             &session_id,
             &user_message,
         )

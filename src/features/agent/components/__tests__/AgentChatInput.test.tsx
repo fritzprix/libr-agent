@@ -64,6 +64,8 @@ vi.mock('@/context/AgentChatContext', () => ({
     workflowStatus: mocks.workflowStatus,
     cancel: mocks.cancel,
     resume: mocks.resume,
+    pendingQueue: [],
+    cancelPendingPrompt: vi.fn(),
   }),
 }));
 

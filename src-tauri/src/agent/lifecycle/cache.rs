@@ -19,8 +19,6 @@ pub async fn init_session_with_messages(
         .await
         .map_err(|e| format!("Failed to load messages for session {}: {}", session_id, e))?;
 
-    let loaded_count = recent_slice.items.len();
-
     // Load compact context if exists (SP17)
     let compact_context =
         crate::agent::lifecycle::load_compact_context_record(session_id, "cache init").await?;
@@ -29,7 +27,16 @@ pub async fn init_session_with_messages(
     let sessions = active_sessions.read().await;
     if let Some(session) = sessions.get(session_id) {
         let mut messages = session.messages.write().await;
-        *messages = recent_slice.items.clone(); // Clone so we can inspect the loaded window below
+        *messages = recent_slice.items; // move so we can strip pending-queue rows
+
+        crate::agent::pending_queue::hydrate_pending_queue_into_session(
+            session,
+            session_id,
+            &mut messages,
+        )
+        .await?;
+
+        let loaded_count = messages.len();
 
         let mut synced_at = session.last_synced_at.write().await;
         *synced_at = Some(SystemTime::now());
@@ -40,8 +47,7 @@ pub async fn init_session_with_messages(
 
         // Detect incomplete user turn: last non-recovery message is `user` with no assistant response.
         // This happens after a crash.
-        let has_incomplete_turn = recent_slice
-            .items
+        let has_incomplete_turn = messages
             .iter()
             .rfind(|m| !m.is_recovery_message())
             .map(|m| m.role == "user")

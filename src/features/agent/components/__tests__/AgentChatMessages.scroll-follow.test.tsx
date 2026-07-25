@@ -49,6 +49,7 @@ vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
     messages: chatState.messages,
     pendingMessages: [],
+    pendingQueue: [],
     error: undefined,
     llmError: undefined,
     retryMessage: vi.fn(),

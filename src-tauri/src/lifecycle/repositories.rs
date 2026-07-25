@@ -3,16 +3,16 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SettingsRepository, SqliteAssistantRepository, SqliteAttachmentsRepository,
     SqliteCompactContextRepository, SqliteKnowledgeRepository, SqliteKnowledgeV2Repository,
-    SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
-    SqlitePlaybookRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
-    SqliteSettingsRepository,
+    SqliteMCPServerRepository, SqliteMessageRepository, SqlitePendingQueueRepository,
+    SqlitePlanningRepository, SqlitePlaybookRepository, SqliteScheduledTaskRepository,
+    SqliteSessionRepository, SqliteSettingsRepository,
 };
 use crate::state::{
     set_assistant_repository, set_attachments_repository, set_compact_context_repository,
     set_database_connection, set_knowledge_repository, set_knowledge_v2_repository,
     set_mcp_server_repository, set_mcp_service_proxy_manager, set_message_repository,
-    set_planning_repository, set_playbook_repository, set_scheduled_task_repository,
-    set_session_repository, set_settings_repository,
+    set_pending_queue_repository, set_planning_repository, set_playbook_repository,
+    set_scheduled_task_repository, set_session_repository, set_settings_repository,
 };
 use log::info;
 use sea_orm::DatabaseConnection;
@@ -51,6 +51,7 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
 
     // Set the global repository instances
     set_message_repository(message_repo);
+    set_pending_queue_repository(SqlitePendingQueueRepository::new(db.clone()));
     set_attachments_repository(attachments_repo);
     set_session_repository(session_repo);
     set_mcp_server_repository(mcp_server_repo);

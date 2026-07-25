@@ -401,8 +401,13 @@ async fn drain_and_start_pending_workflows(
                 emit_drain_workflow_failure(deps, session_id, error).await;
                 return Ok(());
             }
-        } else if let Err(error) =
-            MessageService::queue_user_message(&deps.active_sessions, session_id, &message).await
+        } else if let Err(error) = MessageService::queue_user_message(
+            &deps.active_sessions,
+            &deps.app_handle,
+            session_id,
+            &message,
+        )
+        .await
         {
             emit_drain_workflow_failure(deps, session_id, error).await;
             return Ok(());

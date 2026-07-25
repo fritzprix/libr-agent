@@ -160,6 +160,27 @@ export async function getAgentSessionMetadata(
   });
 }
 
+export async function getAgentPendingQueue(
+  sessionId: string,
+): Promise<RustMessage[]> {
+  const response = await safeInvoke<AgentResponse<RustMessage[]>>(
+    'agent_get_pending_queue',
+    { sessionId },
+  );
+  return response.data ?? [];
+}
+
+export async function cancelAgentPendingPrompt(
+  sessionId: string,
+  messageId: string,
+): Promise<boolean> {
+  const response = await safeInvoke<AgentResponse<{ removed: boolean }>>(
+    'agent_cancel_pending_prompt',
+    { sessionId, messageId },
+  );
+  return response.data?.removed ?? false;
+}
+
 export type { CompletionCancelRequest };
 
 /**

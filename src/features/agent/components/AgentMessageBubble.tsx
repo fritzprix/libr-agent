@@ -15,7 +15,6 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
-  isPending?: boolean;
   followChatScroll?: boolean;
   /**
    * When true, this bubble represents a group of failed tool results.
@@ -52,7 +51,6 @@ function AgentMessageBubbleImpl({
   toolResultsMap,
   groupedToolCalls,
   groupedMessages,
-  isPending = false,
   followChatScroll = true,
   toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
@@ -97,9 +95,7 @@ function AgentMessageBubbleImpl({
             isChannelMessage
               ? 'border border-amber-500/30 bg-amber-500/10 text-secondary-foreground'
               : msg.role === 'user'
-                ? isPending
-                  ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
-                  : 'bg-primary text-primary-foreground'
+                ? 'bg-primary text-primary-foreground'
                 : toolErrorGroup
                   ? 'bg-destructive/5 text-secondary-foreground border border-destructive/20'
                   : 'bg-secondary text-secondary-foreground',
@@ -130,9 +126,7 @@ function AgentMessageBubbleImpl({
                 {msg.role === 'assistant'
                   ? assistantName || t('agent.bubble.assistant')
                   : msg.role === 'user'
-                    ? isPending
-                      ? t('agent.bubble.youQueued')
-                      : t('agent.bubble.you')
+                    ? t('agent.bubble.you')
                     : msg.role.toUpperCase()}
               </>
             )}
@@ -229,7 +223,6 @@ const arePropsEqual = (
   if (
     prev.message !== next.message ||
     prev.assistantName !== next.assistantName ||
-    prev.isPending !== next.isPending ||
     prev.followChatScroll !== next.followChatScroll ||
     prev.toolErrorGroup !== next.toolErrorGroup ||
     prev.groupedMessages !== next.groupedMessages ||

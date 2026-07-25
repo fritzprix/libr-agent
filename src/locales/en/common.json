@@ -1085,6 +1085,12 @@
         "cancelAria": "Cancel {{name}}"
       }
     },
+    "pendingQueue": {
+      "next": "Next",
+      "queued": "Queued",
+      "cancel": "Cancel queued prompt",
+      "more": "+{{count}} more"
+    },
     "bubble": {
       "notification": "Notification",
       "channel": "CHANNEL",

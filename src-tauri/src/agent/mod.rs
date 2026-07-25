@@ -9,6 +9,7 @@ pub mod context;
 pub mod events;
 pub mod lifecycle;
 pub mod llm;
+pub mod pending_queue;
 pub mod references;
 pub mod runtime_state;
 pub mod session_bus;

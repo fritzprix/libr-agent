@@ -11,8 +11,9 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SqliteAssistantRepository, SqliteAttachmentsRepository, SqliteCompactContextRepository,
     SqliteKnowledgeRepository, SqliteKnowledgeV2Repository, SqliteMCPServerRepository,
-    SqliteMessageRepository, SqlitePlanningRepository, SqlitePlaybookRepository,
-    SqliteScheduledTaskRepository, SqliteSessionRepository, SqliteSettingsRepository,
+    SqliteMessageRepository, SqlitePendingQueueRepository, SqlitePlanningRepository,
+    SqlitePlaybookRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
+    SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
@@ -33,6 +34,9 @@ static DATABASE_CONNECTION: OnceLock<DatabaseConnection> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized message repository.
 static MESSAGE_REPOSITORY: OnceLock<SqliteMessageRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized pending queue repository.
+static PENDING_QUEUE_REPOSITORY: OnceLock<SqlitePendingQueueRepository> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized attachments repository.
 static ATTACHMENTS_REPOSITORY: OnceLock<SqliteAttachmentsRepository> = OnceLock::new();
@@ -223,6 +227,20 @@ pub fn get_message_repository() -> &'static SqliteMessageRepository {
     MESSAGE_REPOSITORY
         .get()
         .expect("Message repository not initialized. Call set_message_repository() first.")
+}
+
+/// Sets the global pending queue repository instance.
+pub fn set_pending_queue_repository(repo: SqlitePendingQueueRepository) {
+    unsafe {
+        force_set(&PENDING_QUEUE_REPOSITORY, repo);
+    }
+}
+
+/// Gets a reference to the global pending queue repository.
+pub fn get_pending_queue_repository() -> &'static SqlitePendingQueueRepository {
+    PENDING_QUEUE_REPOSITORY.get().expect(
+        "Pending queue repository not initialized. Call set_pending_queue_repository() first.",
+    )
 }
 
 /// Sets the global attachments repository instance.

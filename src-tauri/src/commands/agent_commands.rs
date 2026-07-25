@@ -31,8 +31,9 @@ pub use session_commands::{
 };
 pub use ui_actions::agent_execute_ui_tauri_action;
 pub use workflow_commands::{
-    agent_cancel_workflow, agent_handle_llm_error, agent_handle_llm_response,
-    agent_handle_tool_result, agent_inject_messages, agent_pause_workflow,
-    agent_report_llm_streaming_issue, agent_respond_tool_approval, agent_resume_workflow,
-    agent_send_message, agent_terminate_workflow,
+    agent_cancel_pending_prompt, agent_cancel_workflow, agent_get_pending_queue,
+    agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
+    agent_inject_messages, agent_pause_workflow, agent_report_llm_streaming_issue,
+    agent_respond_tool_approval, agent_resume_workflow, agent_send_message,
+    agent_terminate_workflow,
 };

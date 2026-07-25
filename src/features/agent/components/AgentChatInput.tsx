@@ -33,6 +33,7 @@ import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from '../lib/attachment-picker';
 import { useClipboardImage } from '../hooks/useClipboardImage';
+import { LayeredPendingQueue } from './LayeredPendingQueue';
 
 const logger = getLogger('AgentChatInput');
 
@@ -49,8 +50,15 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
   const { session, messages, executionMode } = useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
-  const { submit, isSessionLoading, workflowStatus, cancel, resume } =
-    useAgentChat();
+  const {
+    submit,
+    isSessionLoading,
+    workflowStatus,
+    cancel,
+    resume,
+    pendingQueue,
+    cancelPendingPrompt,
+  } = useAgentChat();
   const { isCompacting } = useLLMService();
   const [pendingCancel, setPendingCancel] = useState(false);
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
@@ -405,6 +413,11 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
             onDismiss={onDismiss}
           />
         )}
+      <LayeredPendingQueue
+        items={pendingQueue}
+        onCancel={cancelPendingPrompt}
+        disabled={isSessionLoading}
+      />
       <form
         ref={chatInputRef}
         onSubmit={handleSubmit}

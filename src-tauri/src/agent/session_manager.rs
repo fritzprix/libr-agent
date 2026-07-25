@@ -426,6 +426,26 @@ impl AgentSessionManager {
         message_injection::inject_messages(self, session_id, messages).await
     }
 
+    pub async fn get_pending_queue(&self, session_id: &str) -> Result<Vec<Message>, String> {
+        self.ensure_session_active(session_id).await?;
+        crate::agent::pending_queue::list_pending_messages(&self.active_sessions, session_id).await
+    }
+
+    pub async fn cancel_pending_prompt(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<bool, String> {
+        self.ensure_session_active(session_id).await?;
+        crate::agent::pending_queue::cancel_pending_message(
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+            message_id,
+        )
+        .await
+    }
+
     pub async fn ensure_session_active(&self, session_id: &str) -> Result<(), String> {
         let is_active = {
             let active = self.active_sessions.read().await;
