@@ -223,9 +223,9 @@ echo "Using Harbor model (-m)=$HARBOR_MODEL"
 if [[ "$SKIP_HEALTH" -eq 0 ]]; then
   echo "==> Checking $API_URL/health"
   curl -fsS "$API_URL/health" >/dev/null
-  echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify mode → await idle → terminate)"
+  echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify mode → await idle → delete)"
   # Start a real turn so we verify the session can run, but wait for idle before
-  # cleanup — terminating ~0.5s into an LLM turn aborts the reply mid-flight.
+  # cleanup — deleting ~0.5s into an LLM turn aborts the reply mid-flight.
   CREATE=$(curl -fsS -X POST "$API_URL/sessions" \
     -H 'Content-Type: application/json' \
     -d "$("$PYTHON" - <<PY
@@ -241,8 +241,8 @@ PY
 )")
   SID=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$CREATE")
   cleanup_smoke() {
-    curl -fsS -X POST "$API_URL/sessions/$SID/terminate" >/dev/null 2>&1 || true
-    echo "  smoke session terminated ($SID)"
+    curl -fsS -X DELETE "$API_URL/sessions/$SID" >/dev/null 2>&1 || true
+    echo "  smoke session deleted ($SID)"
   }
   trap cleanup_smoke EXIT
   SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")

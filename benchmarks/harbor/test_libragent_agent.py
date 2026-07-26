@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from benchmarks.harbor.libragent_agent import (
     DEFAULT_EXECUTION_MODE,
     LibrAgentHarborAdapter,
+    build_atif_trajectory,
     extract_model_name_from_assistant_payload,
     extract_model_name_from_session_payload,
     extract_trajectory_error,
     format_harbor_model_name,
     is_workflow_complete,
+    normalize_session_messages,
     resolve_container_workdir,
     resolve_execution_mode,
     resolve_poll_timeout_sec,
     sanitize_docker_compose_project_name,
     split_harbor_model_name,
     summarize_trajectory,
+    write_atif_trajectory,
 )
 
 
@@ -296,6 +301,29 @@ def test_summarize_trajectory_without_usage_leaves_tokens_none() -> None:
     assert telemetry.tool_calls_count == 0
 
 
+def test_normalize_session_messages_reverses_api_causal_order() -> None:
+    newest_first = [
+        {"id": "tool", "createdAt": 1_000},
+        {"id": "assistant", "createdAt": 2_000},
+        {"id": "user", "createdAt": 3_000},
+    ]
+
+    normalized = normalize_session_messages(newest_first)
+
+    assert [message["id"] for message in normalized] == [
+        "user",
+        "assistant",
+        "tool",
+    ]
+    # Ordering follows API row order, not potentially skewed timestamps.
+    assert [message["createdAt"] for message in normalized] == [3_000, 2_000, 1_000]
+
+
+def test_normalize_session_messages_rejects_non_list_payload() -> None:
+    assert normalize_session_messages(None) == []
+    assert normalize_session_messages({"messages": []}) == []
+
+
 def test_extract_trajectory_error_prefers_latest_assistant_error() -> None:
     messages = [
         {"role": "user", "error": "ignored user error"},
@@ -313,3 +341,167 @@ def test_extract_trajectory_error_prefers_latest_assistant_error() -> None:
         )
         == "model overloaded"
     )
+
+
+def test_build_atif_trajectory_maps_assistant_tools_and_observations() -> None:
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "Extract the ELF"}]},
+        {
+            "role": "assistant",
+            "thinking": "Plan the extractor",
+            "content": [
+                {"type": "thinking", "thinking": "Plan the extractor"},
+                {"type": "text", "text": "I will run a shell command."},
+            ],
+            "toolCalls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "shell__execute",
+                        "arguments": '{"command":"ls /app"}',
+                    },
+                }
+            ],
+            "usage": {
+                "promptTokens": 100,
+                "completionTokens": 20,
+                "cachedPromptTokens": 40,
+            },
+        },
+        {
+            "role": "tool",
+            "toolCallId": "call_1",
+            "content": [{"type": "text", "text": "a.out\nextract.js"}],
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Done."}],
+            "usage": {"promptTokens": 50, "completionTokens": 5},
+        },
+    ]
+
+    trajectory = build_atif_trajectory(
+        messages,
+        agent_name="LibrAgent",
+        agent_version="0.8.33",
+        model_name="openai/Qwen3.6-35B",
+        session_id="sess-1",
+    )
+
+    assert trajectory.schema_version == "ATIF-v1.7"
+    assert trajectory.agent.name == "LibrAgent"
+    assert trajectory.agent.model_name == "openai/Qwen3.6-35B"
+    assert trajectory.session_id == "sess-1"
+    assert len(trajectory.steps) == 3  # user + assistant(tool) + assistant(final)
+    assert trajectory.steps[0].source == "user"
+    assert trajectory.steps[1].source == "agent"
+    assert trajectory.steps[1].reasoning_content == "Plan the extractor"
+    assert trajectory.steps[1].tool_calls is not None
+    assert trajectory.steps[1].tool_calls[0].function_name == "shell__execute"
+    assert trajectory.steps[1].tool_calls[0].arguments == {"command": "ls /app"}
+    assert trajectory.steps[1].observation is not None
+    assert trajectory.steps[1].observation.results[0].source_call_id == "call_1"
+    assert "extract.js" in str(trajectory.steps[1].observation.results[0].content)
+    assert trajectory.steps[1].metrics is not None
+    assert trajectory.steps[1].metrics.prompt_tokens == 100
+    assert trajectory.final_metrics is not None
+    assert trajectory.final_metrics.total_prompt_tokens == 150
+    assert trajectory.final_metrics.total_completion_tokens == 25
+    assert trajectory.final_metrics.total_cached_tokens == 40
+    assert trajectory.final_metrics.total_steps == 3
+
+
+def test_build_atif_trajectory_buffers_tool_result_before_assistant() -> None:
+    """LibrAgent often emits tool results before the assistant toolCalls message."""
+    messages = [
+        {
+            "role": "tool",
+            "toolCallId": "call_early",
+            "content": [{"type": "text", "text": "tool output first"}],
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "ran tool"}],
+            "toolCalls": [
+                {
+                    "id": "call_early",
+                    "type": "function",
+                    "function": {"name": "shell__execute", "arguments": "{}"},
+                }
+            ],
+        },
+    ]
+    trajectory = build_atif_trajectory(
+        messages,
+        agent_name="LibrAgent",
+        agent_version="0.8.33",
+        model_name="openai/gpt-5.4",
+    )
+    assert len(trajectory.steps) == 1
+    assert trajectory.steps[0].observation is not None
+    assert trajectory.steps[0].observation.results[0].source_call_id == "call_early"
+    assert "tool output first" in str(trajectory.steps[0].observation.results[0].content)
+
+
+def test_build_atif_trajectory_empty_messages_still_valid() -> None:
+    trajectory = build_atif_trajectory(
+        [],
+        agent_name="LibrAgent",
+        agent_version="0.8.33",
+        model_name=None,
+    )
+    assert len(trajectory.steps) == 1
+    assert trajectory.steps[0].source == "agent"
+
+
+def test_write_atif_trajectory_creates_agent_logs_file(tmp_path) -> None:
+    trajectory = build_atif_trajectory(
+        [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
+        agent_name="LibrAgent",
+        agent_version="0.8.33",
+        model_name="openai/gpt-5.4",
+        session_id="s1",
+    )
+    path = tmp_path / "agent" / "trajectory.json"
+    write_atif_trajectory(path, trajectory)
+
+    assert path.is_file()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "ATIF-v1.7"
+    assert payload["agent"]["name"] == "LibrAgent"
+    assert payload["steps"][0]["source"] == "user"
+    assert payload["steps"][0]["message"] == "hi"
+
+
+def test_adapter_write_atif_trajectory_best_effort(tmp_path) -> None:
+    adapter = LibrAgentHarborAdapter(
+        logs_dir=tmp_path / "agent",
+        model_name="openai/gpt-5.4",
+    )
+    adapter._write_atif_trajectory(
+        messages=[
+            {"role": "user", "content": [{"type": "text", "text": "task"}]},
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "ok"}],
+                "usage": {"promptTokens": 10, "completionTokens": 2},
+            },
+        ],
+        session_id="sess-xyz",
+        telemetry=summarize_trajectory(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "task"}]},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "ok"}],
+                    "usage": {"promptTokens": 10, "completionTokens": 2},
+                },
+            ]
+        ),
+    )
+    written = (tmp_path / "agent" / "trajectory.json").read_text(encoding="utf-8")
+    payload = json.loads(written)
+    assert payload["session_id"] == "sess-xyz"
+    assert payload["final_metrics"]["total_prompt_tokens"] == 10
+

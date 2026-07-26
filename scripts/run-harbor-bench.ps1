@@ -208,9 +208,9 @@ function Test-LibrAgentApi {
     throw "Unexpected health response: $($health | ConvertTo-Json -Compress)"
   }
 
-  Write-Step "Smoke-checking executionMode=$ExecutionMode (create → verify mode → await idle → terminate)"
+  Write-Step "Smoke-checking executionMode=$ExecutionMode (create → verify mode → await idle → delete)"
   # Start a real turn so we verify the session can run, but wait for idle before
-  # cleanup — terminating ~500ms into an LLM turn aborts the reply mid-flight.
+  # cleanup — deleting ~500ms into an LLM turn aborts the reply mid-flight.
   $bodyObj = @{
     assistantId         = $script:ResolvedAssistantId
     name                = "harbor-bench-smoke"
@@ -246,11 +246,11 @@ function Test-LibrAgentApi {
   }
   finally {
     try {
-      Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId/terminate" -Method POST -TimeoutSec 30 | Out-Null
-      Write-Host "  smoke session terminated ($sessionId)"
+      Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId" -Method DELETE -TimeoutSec 30 | Out-Null
+      Write-Host "  smoke session deleted ($sessionId)"
     }
     catch {
-      Write-Warning "Failed to terminate smoke session ${sessionId}: $_"
+      Write-Warning "Failed to delete smoke session ${sessionId}: $_"
     }
   }
 }

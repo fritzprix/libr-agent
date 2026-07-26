@@ -187,12 +187,13 @@ were scoring unfinished runs as finished.
 
 - Wait for session status `idle` or `error` only (`paused`/`busy` are not done).
 - On Harbor cancel (`CancelledError`), the adapter re-raises and skips harvest.
-- On every terminal path (success after harvest, poll-budget/agent timeout,
-  cancel, or error) the adapter calls `POST /sessions/{id}/terminate` so the
-  LibrAgent session is torn down instead of running on as an orphan. On success
-  it terminates only **after** harvesting messages; on abort it terminates
-  before re-raising. The terminate request is shielded so a Harbor cancel still
-  completes the teardown.
+- On every terminal path (success after harvest + ATIF dump, poll-budget/agent
+  timeout, cancel, or error) the adapter calls `DELETE /sessions/{id}` so the
+  LibrAgent session is removed instead of lingering as an orphan. DELETE also
+  terminates any still-running workflow. On success it deletes only **after**
+  harvesting messages and writing `trajectory.json`; on abort it deletes before
+  re-raising. The delete request is shielded so a Harbor cancel still completes
+  the teardown.
 - For **local** debugging of long tasks only, you may raise the agent budget:
 
 ```sh
@@ -225,7 +226,7 @@ harbor run \
 
 - Script health check creates a short smoke session (`Reply with exactly: ok`),
   verifies `executionMode=unsafe` (or your override), **waits until idle**, then
-  **terminates** it before `harbor run` starts (so smoke does not abort an in-flight
+  **deletes** it before `harbor run` starts (so smoke does not abort an in-flight
   LLM turn or leave a busy session while Docker builds the task environment)
 - Harbor’s progress bar timer includes **environment build**, not only agent
   runtime; agent timeout starts when the adapter runs
