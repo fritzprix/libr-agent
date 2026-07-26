@@ -160,6 +160,13 @@ pub async fn agent_report_llm_streaming_issue(
                 "failed",
             )
         }
+        crate::agent::llm::StreamingIssueOutcome::FallThrough => (
+            format!(
+                "Recovery budget exhausted for session {}; continuing with original completion",
+                report.session_id
+            ),
+            "fall_through",
+        ),
     };
 
     Ok(AgentResponse {

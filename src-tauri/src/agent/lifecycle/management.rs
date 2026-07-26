@@ -149,6 +149,8 @@ pub async fn resume_session(
                 last_synced_at: Arc::new(RwLock::new(None)),
                 repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
                 repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+                bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
+                bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
                 pending_events: Arc::new(RwLock::new(
                     crate::agent::state::PendingEventManager::new(),
                 )),

@@ -182,6 +182,11 @@ function truncateToolArgumentPreview(rawArguments: string): string {
 function inspectToolCallArguments(
   rawArguments: string,
 ): { valid: true } | { valid: false; reason: string } {
+  // Providers often emit "" for zero-parameter calls — not truncation.
+  if (!rawArguments.trim()) {
+    return { valid: true };
+  }
+
   try {
     const parsed = JSON.parse(rawArguments);
     if (
@@ -209,25 +214,26 @@ function buildMalformedToolCallRepairContent(
 ): MCPContent[] {
   const lines = issues.map(
     ({ toolCallId, toolName, reason, argumentsPreview }) =>
-      `- Tool call "${toolName}" (id: ${toolCallId}) was omitted because its arguments were invalid (${reason}). Original arguments preview: ${argumentsPreview}`,
+      `- Tool call "${toolName}" (id: ${toolCallId}) had invalid arguments (${reason}). Original arguments preview: ${argumentsPreview}. Arguments were replaced with {} so the paired tool result (if any) can still reach the model.`,
   );
 
   return [
     {
       type: 'text',
       text: [
-        '[Sanitizer note: invalid tool call arguments were removed from conversation history to prevent repeated 400 Bad Request failures.]',
+        '[Sanitizer note: invalid tool call arguments were neutralized to {} to prevent provider 400s while preserving tool-call / tool-result pairing.]',
         ...lines,
-        'Treat each omitted tool call as a failed attempt. If you retry, emit a valid JSON object for function.arguments and double-check quotes, commas, braces, and nesting before sending the next tool call.',
+        'Treat each neutralized tool call as a failed attempt. If a tool result is present for that id, follow its recovery guidance. When retrying, emit a valid JSON object for function.arguments.',
       ].join('\n'),
     },
   ];
 }
 
 /**
- * Removes assistant tool calls whose `function.arguments` would poison future
- * provider requests, then replaces them with explicit assistant text so the
- * model can recover instead of resending the same malformed payload forever.
+ * Neutralizes assistant tool calls whose `function.arguments` would poison
+ * future provider requests by replacing args with `{}`, and appends a short
+ * repair note. Keeping the tool_call id preserves pairing with any guided
+ * tool-result already stored in history (so recovery guidance reaches the model).
  */
 export function repairMalformedToolCalls(messages: Message[]): Message[] {
   return messages.map((message) => {
@@ -235,13 +241,13 @@ export function repairMalformedToolCalls(messages: Message[]): Message[] {
       return message;
     }
 
-    const validToolCalls = [];
+    const repairedToolCalls = [];
     const malformedIssues: MalformedToolCallIssue[] = [];
 
     for (const toolCall of message.tool_calls) {
       const inspection = inspectToolCallArguments(toolCall.function.arguments);
       if (inspection.valid) {
-        validToolCalls.push(toolCall);
+        repairedToolCalls.push(toolCall);
         continue;
       }
 
@@ -253,33 +259,34 @@ export function repairMalformedToolCalls(messages: Message[]): Message[] {
           toolCall.function.arguments,
         ),
       });
+
+      repairedToolCalls.push({
+        ...toolCall,
+        function: {
+          ...toolCall.function,
+          arguments: '{}',
+        },
+      });
     }
 
     if (malformedIssues.length === 0) {
       return message;
     }
 
-    logger.warn('Repairing malformed tool call arguments in message history', {
+    logger.warn('Neutralizing malformed tool call arguments in message history', {
       messageId: message.id,
       malformedToolCallIds: malformedIssues.map((issue) => issue.toolCallId),
       malformedToolCallNames: malformedIssues.map((issue) => issue.toolName),
     });
 
-    const repairedMessage: Message = {
+    return {
       ...message,
+      tool_calls: repairedToolCalls,
       content: [
         ...(message.content ?? []),
         ...buildMalformedToolCallRepairContent(malformedIssues),
       ],
     };
-
-    if (validToolCalls.length > 0) {
-      repairedMessage.tool_calls = validToolCalls;
-    } else {
-      delete repairedMessage.tool_calls;
-    }
-
-    return repairedMessage;
   });
 }
 

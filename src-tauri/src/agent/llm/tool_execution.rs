@@ -58,6 +58,22 @@ impl ToolExecutionContext<'_> {
             .unwrap_or(false)
     }
 
+    /// Best-effort lookup of the session's configured output-token budget.
+    ///
+    /// Used to phrase argument-size guidance relative to what the model can
+    /// actually emit in one turn, instead of a hardcoded character count.
+    async fn configured_max_output_tokens(&self) -> Option<u32> {
+        let metadata = {
+            let active = self.active_sessions.read().await;
+            active.get(self.session_id).map(|s| s.metadata.clone())
+        }?;
+
+        crate::agent::resolve_agent_config(&metadata)
+            .await
+            .ok()
+            .and_then(|config| config.max_tokens)
+    }
+
     async fn continue_after_tool(
         &self,
         tool_call_id: &str,
@@ -274,14 +290,122 @@ impl ToolExecutionContext<'_> {
     }
 }
 
-fn args_parse_error_result(error: &serde_json::Error) -> ToolExecutionResult {
+use crate::agent::llm::tool_args_validation::{
+    args_preview, inspect_tool_call_arguments, ArgsParseFailureKind,
+};
+
+fn is_think_tool(tool_name: &str) -> bool {
+    tool_name == "think"
+        || tool_name.ends_with("__think")
+        || tool_name.eq_ignore_ascii_case("scratchpad__think")
+}
+
+/// Build a guided tool-result for malformed / truncated tool-call arguments so the
+/// agent can recover on the next turn instead of retrying the same broken payload.
+///
+/// This intentionally closes the tool call with an error result (via
+/// `continue_after_tool`). The existing loop-prevention circuit then treats
+/// repeated identical (tool, args) + error outcomes as a streak (default soft
+/// block at 3). Early bad-response retry lives in `stream_recovery`; this path
+/// is the fallthrough after that budget is exhausted (or if validation was skipped).
+fn args_parse_error_result(
+    tool_name: &str,
+    args_str: &str,
+    kind: ArgsParseFailureKind,
+    parse_error: &str,
+    max_output_tokens: Option<u32>,
+) -> ToolExecutionResult {
+    let args_bytes = args_str.len();
+    let budget_hint = max_output_tokens.map(|n| {
+        format!(
+            "This session's max output tokens is ~{n}; keep the whole tool-call JSON well under that budget (JSON overhead + other fields count too)."
+        )
+    });
+
+    let (headline, mut guidance) = match kind {
+        ArgsParseFailureKind::TruncatedString => (
+            format!(
+                "Failed to parse args for `{tool_name}`: JSON was truncated mid-string ({parse_error}). A string field was likely oversized and cut off before the closing quote."
+            ),
+            vec![
+                "Do NOT retry the identical oversized payload — it will truncate again".to_string(),
+                "Re-issue the tool call with complete, valid JSON and a much shorter string field"
+                    .to_string(),
+            ],
+        ),
+        ArgsParseFailureKind::TruncatedJson => (
+            format!(
+                "Failed to parse args for `{tool_name}`: JSON was truncated ({parse_error}). The argument blob was cut off before it was complete."
+            ),
+            vec![
+                "Do NOT retry the identical payload — it will truncate again".to_string(),
+                "Re-issue the tool call with a smaller, complete JSON object".to_string(),
+            ],
+        ),
+        ArgsParseFailureKind::MalformedJson => (
+            format!(
+                "Failed to parse args for `{tool_name}`: invalid JSON ({parse_error}). The tool was not executed."
+            ),
+            vec![
+                "Fix the JSON syntax (quotes, commas, braces, escapes) and call the same tool again"
+                    .to_string(),
+                "If a string field was huge, shrink it — oversized args often corrupt JSON encoding"
+                    .to_string(),
+            ],
+        ),
+    };
+
+    if let Some(hint) = budget_hint {
+        guidance.push(hint);
+    }
+
+    if is_think_tool(tool_name) {
+        guidance.insert(
+            0,
+            "Call scratchpad__think again with a concise thought (decision + next step only) — do not paste full context"
+                .to_string(),
+        );
+        guidance.push(
+            "Then execute that next step with the appropriate domain tool — do not keep thinking in a loop"
+                .to_string(),
+        );
+    }
+
+    guidance.push(
+        "Repeating the same broken arguments will eventually be blocked by loop prevention"
+            .to_string(),
+    );
+
+    let guidance_text = guidance
+        .iter()
+        .enumerate()
+        .map(|(i, step)| format!("{}. {}", i + 1, step))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let message = format!("✗ {headline}\n\n💡 Next Steps:\n{guidance_text}");
+
+    let structured = serde_json::json!({
+        "errorKind": kind.as_error_kind(),
+        "toolName": tool_name,
+        "parseError": parse_error,
+        "argsByteLength": args_bytes,
+        "likelyTruncated": kind.is_truncated(),
+        "maxOutputTokens": max_output_tokens,
+        "argsPreview": args_preview(args_str, 240),
+        "nextActions": guidance,
+        "recoverable": true,
+    });
+
     ToolExecutionResult {
         success: false,
-        content: String::new(),
-        structured_content: None,
-        error: Some(format!("Failed to parse args: {}", error)),
+        content: message.clone(),
+        mcp_content: Some(vec![crate::mcp::types::MCPContent::Text {
+            text: message.clone(),
+            is_error: Some(true),
+        }]),
+        structured_content: Some(structured),
+        error: Some(message),
         is_error: true,
-        mcp_content: None,
     }
 }
 
@@ -339,14 +463,26 @@ pub async fn execute_tool_calls(
             continue;
         }
 
-        let args = match serde_json::from_str::<serde_json::Value>(&args_str) {
-            Ok(args) => args,
-            Err(error) => {
-                log::error!("Failed to parse tool arguments: {}", error);
+        let args = match inspect_tool_call_arguments(&args_str) {
+            Ok(map) => serde_json::Value::Object(map),
+            Err((kind, parse_error)) => {
+                log::error!(
+                    "Failed to parse tool arguments for {}: {} ({})",
+                    tool_name,
+                    parse_error,
+                    kind.as_error_kind()
+                );
+                let max_output_tokens = context.configured_max_output_tokens().await;
                 context
                     .continue_after_tool(
                         &tool_call_id,
-                        args_parse_error_result(&error),
+                        args_parse_error_result(
+                            &tool_name,
+                            &args_str,
+                            kind,
+                            &parse_error,
+                            max_output_tokens,
+                        ),
                         "failed tool parse",
                     )
                     .await;
