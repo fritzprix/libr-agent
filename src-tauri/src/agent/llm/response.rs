@@ -320,9 +320,11 @@ pub async fn handle_llm_response(
                     proxy_manager,
                     app_handle,
                     session_id.clone(),
-                    assistant_message.id.clone(),
-                    tool_names,
-                    parse_kind,
+                    crate::agent::llm::stream_recovery::MalformedToolArgsIncident {
+                        assistant_message_id: assistant_message.id.clone(),
+                        tool_names,
+                        parse_kind,
+                    },
                 )
                 .await
                 {

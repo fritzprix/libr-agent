@@ -645,6 +645,13 @@ pub async fn handle_thinking_only_completion(
     .await
 }
 
+/// Payload for a malformed/truncated tool-call-arguments recovery attempt.
+pub struct MalformedToolArgsIncident {
+    pub assistant_message_id: String,
+    pub tool_names: Vec<String>,
+    pub parse_kind: String,
+}
+
 /// Retry (or fall through after budget) when a completion contains tool calls
 /// whose `function.arguments` are not valid JSON objects.
 ///
@@ -657,9 +664,7 @@ pub async fn handle_malformed_tool_args_completion(
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: String,
-    assistant_message_id: String,
-    tool_names: Vec<String>,
-    parse_kind: String,
+    incident: MalformedToolArgsIncident,
 ) -> Result<StreamingIssueOutcome, String> {
     let counter = StreamingRecoveryCounter::BadToolArgs;
 
@@ -694,9 +699,9 @@ pub async fn handle_malformed_tool_args_completion(
         counter,
         action,
         NonProductiveCompletionReason::MalformedToolCallArguments {
-            assistant_message_id,
-            tool_names,
-            parse_kind,
+            assistant_message_id: incident.assistant_message_id,
+            tool_names: incident.tool_names,
+            parse_kind: incident.parse_kind,
         },
     )
     .await
