@@ -902,6 +902,190 @@ async fn write_file_create_increments_suffix_when_prior_alternates_exist() {
 }
 
 #[tokio::test]
+async fn write_file_overwrite_returns_structured_changes_and_skips_content_echo_by_default() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-overwrite-changes";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    let original = "line1\nline2\nline3\n";
+    std::fs::write(workspace_dir.join("config.txt"), original).expect("seed file");
+
+    let result = server
+        .handle_write_file(
+            json!({
+                "path": "config.txt",
+                "content": "line1\nline2_changed\nline3\nline4\n",
+                "mode": "overwrite",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("overwrite should succeed");
+
+    let text = extract_text_content(&result);
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+
+    assert_eq!(structured["action"], json!("overwritten"));
+    assert_eq!(structured["mode"], json!("overwrite"));
+    assert_eq!(structured["changes"]["previous_lines"], json!(3));
+    assert_eq!(
+        structured["changes"]["previous_bytes"],
+        json!(original.len())
+    );
+    assert_eq!(structured["changes"]["new_lines"], json!(4));
+    assert_eq!(
+        structured["changes"]["new_bytes"],
+        json!("line1\nline2_changed\nline3\nline4\n".len())
+    );
+    assert_eq!(structured["changes"]["lines_added"], json!(2));
+    assert_eq!(structured["changes"]["lines_removed"], json!(1));
+
+    assert!(
+        text.contains("**Changes:**"),
+        "overwrite text channel should include a diff summary: {text}"
+    );
+    assert!(
+        text.contains("- line2") && text.contains("+ line2_changed"),
+        "overwrite text channel should include a truncated diff body: {text}"
+    );
+
+    #[cfg(feature = "workspace-str-replace")]
+    {
+        assert!(
+            !text.contains("line2_changed\nline3\nline4"),
+            "default strReplace build should not echo the full new content after overwrite: {text}"
+        );
+        assert!(
+            !text.contains("Current content preview"),
+            "strReplace overwrite should not attach a content-preview block: {text}"
+        );
+    }
+
+    #[cfg(all(
+        feature = "workspace-edit-file",
+        not(feature = "workspace-str-replace")
+    ))]
+    assert!(
+        text.contains("1:") && text.contains("4:"),
+        "editFile builds should still return post-write anchors after overwrite: {text}"
+    );
+}
+
+#[tokio::test]
+async fn write_file_create_skips_content_echo_without_line_anchors() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-create-lean-preview";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let unique_body = "unique-create-body-xyz-991\nsecond-line\n";
+    let result = server
+        .handle_write_file(
+            json!({
+                "path": "notes.md",
+                "content": unique_body,
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("create should succeed");
+
+    let text = extract_text_content(&result);
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+
+    assert_eq!(structured["action"], json!("created"));
+    assert_eq!(structured["lines"], json!(2));
+    assert!(
+        text.contains("**✅ New File Created Successfully**"),
+        "create should keep the success header: {text}"
+    );
+
+    #[cfg(feature = "workspace-str-replace")]
+    assert!(
+        !text.contains("unique-create-body-xyz-991"),
+        "strReplace create should not echo the written content: {text}"
+    );
+
+    #[cfg(all(
+        feature = "workspace-edit-file",
+        not(feature = "workspace-str-replace")
+    ))]
+    assert!(
+        text.contains("unique-create-body-xyz-991"),
+        "editFile create should include anchored preview for follow-up edits: {text}"
+    );
+}
+
+#[tokio::test]
+async fn write_file_overwrite_soft_guard_hint_for_large_files() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-overwrite-soft-guard";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    let original = (1..=45)
+        .map(|index| format!("line-{index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(workspace_dir.join("big.txt"), format!("{original}\n")).expect("seed file");
+
+    let result = server
+        .handle_write_file(
+            json!({
+                "path": "big.txt",
+                "content": format!("{original}\nextra\n"),
+                "mode": "overwrite",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("overwrite should succeed");
+
+    let text = extract_text_content(&result);
+    assert_ne!(
+        result.is_error,
+        Some(true),
+        "soft-guard must not fail the write: {text}"
+    );
+    assert!(
+        text.contains("full-file replacement")
+            && text.contains(
+                tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL
+            ),
+        "large overwrite should soft-hint toward the primary edit tool: {text}"
+    );
+}
+
+#[test]
+fn write_file_schema_describes_overwrite_as_full_file_replacement_only() {
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::tools::file_tools::create_write_file_tool;
+
+    let tool = create_write_file_tool();
+    assert!(
+        tool.description.contains("full-file replacement")
+            || tool.description.contains("entire file"),
+        "writeFile description should steer overwrite toward full-file replacement: {}",
+        tool.description
+    );
+
+    let serialized = serde_json::to_value(&tool.input_schema).expect("serialize schema");
+    let mode_desc = serialized["properties"]["mode"]["description"]
+        .as_str()
+        .expect("mode description");
+    assert!(
+        mode_desc.contains("entire-file replacement") || mode_desc.contains("few-line"),
+        "mode description should discourage overwrite for small edits: {mode_desc}"
+    );
+}
+
+#[tokio::test]
 async fn write_file_append_returns_updated_anchors_without_forcing_followup_read() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "write-file-append-anchors";

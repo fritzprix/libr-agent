@@ -42,7 +42,7 @@ async fn read_file_returns_empty_content_for_empty_file() {
     assert_eq!(result.is_error, Some(false));
     let text = extract_text_content(&result);
     assert!(
-        text.contains("no lines shown"),
+        text.contains("complete (0 lines)"),
         "empty file reads should succeed with an empty-file summary: {text}"
     );
 }
@@ -70,7 +70,7 @@ async fn read_file_allows_explicit_offset_one_for_empty_file() {
     assert_eq!(result.is_error, Some(false));
     let text = extract_text_content(&result);
     assert!(
-        text.contains("no lines shown"),
+        text.contains("complete (0 lines)"),
         "offset=1 should still succeed for empty files: {text}"
     );
 }

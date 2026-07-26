@@ -353,8 +353,27 @@ fn emit_diff_preview(
     }
 }
 
+/// Line-change counts from a full-file overwrite diff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileDiffStats {
+    pub lines_added: usize,
+    pub lines_removed: usize,
+}
+
+/// Full-file diff text plus the same add/remove counts used in structured responses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileDiffResult {
+    pub text: String,
+    pub stats: FileDiffStats,
+}
+
 /// Format full file diff output (Git-style unified diff)
-pub fn format_file_diff(old_content: &str, new_content: &str, _file_path: &str) -> String {
+pub fn format_file_diff(old_content: &str, new_content: &str, file_path: &str) -> String {
+    compute_file_diff(old_content, new_content, file_path).text
+}
+
+/// Compute full-file diff text and add/remove line counts.
+pub fn compute_file_diff(old_content: &str, new_content: &str, _file_path: &str) -> FileDiffResult {
     let old_lines: Vec<&str> = old_content.lines().collect();
     let new_lines: Vec<&str> = new_content.lines().collect();
     let mut diff_lines = Vec::new();
@@ -429,7 +448,13 @@ pub fn format_file_diff(old_content: &str, new_content: &str, _file_path: &str) 
 
     diff_lines.push("```".to_string());
 
-    diff_lines.join("\n")
+    FileDiffResult {
+        text: diff_lines.join("\n"),
+        stats: FileDiffStats {
+            lines_added: added,
+            lines_removed: removed,
+        },
+    }
 }
 
 /// Format diff output for string replacements (Git-style)

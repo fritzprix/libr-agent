@@ -16,7 +16,7 @@ pub fn create_write_file_tool() -> MCPTool {
         ),
     );
     let mode_description = format!(
-        "Write mode. 'create' (default) writes a new file; if the path already exists it keeps that file and writes to a sibling path with a numeric suffix (e.g. report-1.md) instead of failing. 'overwrite' replaces the entire existing file. 'append' adds content verbatim to the end (no automatic newline). Use overwrite/append/{PRIMARY_EDIT_TOOL} when you intend to change an existing file."
+        "Write mode. 'create' (default) writes a new file; if the path already exists it keeps that file and writes to a sibling path with a numeric suffix (e.g. report-1.md) instead of failing. 'overwrite' is for entire-file replacement only—do not use it for a few-line change (use {PRIMARY_EDIT_TOOL}). 'append' adds content verbatim to the end (no automatic newline)."
     );
     props.insert(
         "mode".to_string(),
@@ -31,7 +31,7 @@ pub fn create_write_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("File content to write. Empty string creates an empty file. In append mode, content is written verbatim—prefix with \\n when adding after an existing line."),
+            Some("File content to write. Empty string creates an empty file. In append mode, content is written verbatim—prefix with \\n when adding after an existing line. For overwrite, pass the complete new file contents."),
         ),
     );
 
@@ -39,7 +39,7 @@ pub fn create_write_file_tool() -> MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
         description: format!(
-            "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Default mode='create': if the target already exists, content is saved to a new sibling path (stem-N.ext) and the response clearly reports the alternate path—existing files are never overwritten unless mode='overwrite'. Append writes content verbatim—include \\n in content when starting a new line. Use {PRIMARY_EDIT_TOOL} for targeted in-place edits. mode='overwrite' returns a diff of the changes."
+            "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Default mode='create': if the target already exists, content is saved to a new sibling path (stem-N.ext) and the response clearly reports the alternate path—existing files are never overwritten unless mode='overwrite'. mode='overwrite' replaces the entire file and returns a change summary/diff—use it only for full-file replacement (codegen, scaffold, formatter output); for ≤ a few hunks use {PRIMARY_EDIT_TOOL}. Append writes content verbatim—include \\n in content when starting a new line."
         ),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
