@@ -84,20 +84,26 @@ function AgentMessageBubbleImpl({
       <div
         className={cn(
           'flex',
-          isStandardUserMessage ? 'justify-end' : 'justify-start',
-          hasUIResource && 'w-full',
+          isStandardUserMessage ? 'justify-end' : 'w-full justify-start',
         )}
       >
         <div
           className={cn(
-            'relative p-3 rounded-lg flex flex-col',
-            hasUIResource ? 'w-full max-w-full' : 'max-w-[85%] md:max-w-2xl',
+            'relative flex min-w-0 flex-col',
+            // Assistant / channel / tool groups: lock width from first paint so
+            // streaming only grows vertically (no horizontal re-wrap jitter).
+            // User bubbles stay content-sized with a small floor for short replies.
+            hasUIResource
+              ? 'w-full max-w-full rounded-lg p-3'
+              : isStandardUserMessage
+                ? 'min-w-[64px] max-w-[85%] rounded-2xl rounded-tr-md px-4 py-2.5 md:max-w-2xl'
+                : 'w-full max-w-3xl rounded-lg p-3',
             isChannelMessage
               ? 'border border-amber-500/30 bg-amber-500/10 text-secondary-foreground'
               : msg.role === 'user'
                 ? 'bg-primary text-primary-foreground'
                 : toolErrorGroup
-                  ? 'bg-destructive/5 text-secondary-foreground border border-destructive/20'
+                  ? 'border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5 text-secondary-foreground'
                   : 'bg-secondary text-secondary-foreground',
             // Add custom utility to ensure links inside are visible
             isStandardUserMessage

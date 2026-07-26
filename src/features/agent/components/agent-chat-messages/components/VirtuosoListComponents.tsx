@@ -90,7 +90,7 @@ export function AgentChatMessagesFooter({
 
       {showAnalysisLoader && (
         <div className="flex justify-start mb-8 mt-3">
-          <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
+          <div className="w-full max-w-3xl rounded-lg bg-secondary/30 px-6 py-5">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
                 <Bot size={16} className="text-primary-foreground" />

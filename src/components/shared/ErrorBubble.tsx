@@ -14,6 +14,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
+import { cn } from '@/lib/utils';
 
 const logger = getLogger('ErrorBubble');
 
@@ -78,50 +79,55 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
     const getErrorColor = (errorType: string) => {
       switch (errorType) {
         case 'NETWORK_ERROR':
-          return 'border-warning/20 bg-warning/5';
+          return 'border-warning/30 border-l-4 border-l-warning bg-warning/5';
         case 'MALFORMED_FUNCTION_CALL':
-          return 'border-primary/20 bg-primary/5';
+          return 'border-primary/30 border-l-4 border-l-primary bg-primary/5';
         case 'JSON_PARSING_ERROR':
-          return 'border-destructive/20 bg-destructive/5';
+          return 'border-destructive/30 border-l-4 border-l-destructive bg-destructive/5';
         case 'AUTHENTICATION_ERROR':
-          return 'border-destructive/20 bg-destructive/5';
+          return 'border-destructive/30 border-l-4 border-l-destructive bg-destructive/5';
         case 'RATE_LIMIT_ERROR':
-          return 'border-warning/20 bg-warning/5';
+          return 'border-warning/30 border-l-4 border-l-warning bg-warning/5';
         default:
-          return 'border-destructive/20 bg-destructive/5';
+          return 'border-destructive/30 border-l-4 border-l-destructive bg-destructive/5';
       }
     };
 
     const getErrorBadgeColor = (errorType: string) => {
       switch (errorType) {
         case 'NETWORK_ERROR':
-          return 'bg-warning text-warning-foreground';
+          return 'border border-warning/30 bg-warning/15 text-warning';
         case 'MALFORMED_FUNCTION_CALL':
-          return 'bg-primary text-primary-foreground';
+          return 'border border-primary/30 bg-primary/15 text-primary';
         case 'JSON_PARSING_ERROR':
-          return 'bg-destructive text-destructive-foreground';
+          return 'border border-destructive/30 bg-destructive/15 text-destructive';
         case 'AUTHENTICATION_ERROR':
-          return 'bg-destructive text-destructive-foreground';
+          return 'border border-destructive/30 bg-destructive/15 text-destructive';
         case 'RATE_LIMIT_ERROR':
-          return 'bg-warning text-warning-foreground';
+          return 'border border-warning/30 bg-warning/15 text-warning';
         default:
-          return 'bg-destructive text-destructive-foreground';
+          return 'border border-destructive/30 bg-destructive/15 text-destructive';
       }
     };
+
+    const errorType = error?.type || 'UNKNOWN_ERROR';
 
     return (
       <BaseBubble
         title={t('errorBubble.title', 'Error')}
         defaultExpanded={true}
-        icon={getErrorIcon(error?.type || 'UNKNOWN_ERROR')}
+        icon={getErrorIcon(errorType)}
         badge={
           <span
-            className={`px-2 py-1 text-xs rounded-full ${getErrorBadgeColor(error?.type || 'UNKNOWN_ERROR')}`}
+            className={cn(
+              'rounded-md px-2 py-0.5 text-xs font-medium',
+              getErrorBadgeColor(errorType),
+            )}
           >
             {error?.type}
           </span>
         }
-        className={getErrorColor(error?.type || 'UNKNOWN_ERROR')}
+        className={getErrorColor(errorType)}
       >
         <div className="space-y-3">
           <p className="text-muted-foreground break-words whitespace-pre-wrap">
