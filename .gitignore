@@ -92,6 +92,7 @@ test_results_*.txt
 
 # LibrAgent workspace-generated artifacts
 /.libragent/
+.teamwork/
 
 # Harbor / Terminal-Bench local run outputs (never commit)
 /jobs/
