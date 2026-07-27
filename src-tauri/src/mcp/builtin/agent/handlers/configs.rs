@@ -256,9 +256,7 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
 
     // Omit / null builtinCapabilities → persist an explicit empty optional list so
     // runtime enables CORE only (not every optional builtin). Explicit [] is the same.
-    let builtin_aliases = request
-        .allowed_builtin_service_aliases
-        .unwrap_or_default();
+    let builtin_aliases = request.allowed_builtin_service_aliases.unwrap_or_default();
 
     let config = merge_config_from_request(ConfigMergeParams {
         base_config: None,
