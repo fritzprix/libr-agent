@@ -89,7 +89,7 @@ describe('AIModelsTab', () => {
     mockAgentModelPicker.mockClear();
   });
 
-  it('passes the pending provider config to the model picker refresh controls', () => {
+  it('does not pass draft service config into the model picker', () => {
     const serviceConfigs: Record<AIServiceProvider, ServiceConfig> = {
       [AIServiceProvider.Groq]: {},
       [AIServiceProvider.OpenAI]: {
@@ -123,8 +123,14 @@ describe('AIModelsTab', () => {
     );
 
     expect(mockAgentModelPicker).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        serviceConfigOverride: expect.anything(),
+      }),
+    );
+    expect(mockAgentModelPicker).toHaveBeenCalledWith(
       expect.objectContaining({
-        serviceConfigOverride: serviceConfigs[AIServiceProvider.OpenAI],
+        currentModel: 'gpt-4o',
+        currentProvider: AIServiceProvider.OpenAI,
       }),
     );
   });

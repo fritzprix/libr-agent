@@ -135,7 +135,10 @@ export function AgentChatMessages() {
   useFileRefetcher({ messages, refetchSessionFiles });
 
   // Group messages for display
-  const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
+  const { groupedMessages, toolResultsMap } = useMessageGrouping(
+    messages,
+    compactedRange?.toId,
+  );
 
   const latestMessage = messages[messages.length - 1];
 

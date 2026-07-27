@@ -273,11 +273,14 @@ export function repairMalformedToolCalls(messages: Message[]): Message[] {
       return message;
     }
 
-    logger.warn('Neutralizing malformed tool call arguments in message history', {
-      messageId: message.id,
-      malformedToolCallIds: malformedIssues.map((issue) => issue.toolCallId),
-      malformedToolCallNames: malformedIssues.map((issue) => issue.toolName),
-    });
+    logger.warn(
+      'Neutralizing malformed tool call arguments in message history',
+      {
+        messageId: message.id,
+        malformedToolCallIds: malformedIssues.map((issue) => issue.toolCallId),
+        malformedToolCallNames: malformedIssues.map((issue) => issue.toolName),
+      },
+    );
 
     return {
       ...message,

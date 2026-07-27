@@ -16,6 +16,7 @@
  */
 
 import { getLogger } from '../logger';
+import { createLlmFetch } from './desktop-fetch';
 
 const logger = getLogger('OpenRouterMetadata');
 
@@ -73,7 +74,7 @@ export async function fetchOpenRouterModels(): Promise<
 
   try {
     logger.info('Fetching model metadata from OpenRouter API');
-    const response = await fetch(OPENROUTER_MODELS_ENDPOINT, {
+    const response = await createLlmFetch()(OPENROUTER_MODELS_ENDPOINT, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

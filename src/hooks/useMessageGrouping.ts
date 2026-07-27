@@ -75,7 +75,10 @@ function areMapsEqual(
   return true;
 }
 
-export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
+export function useMessageGrouping(
+  messages: Message[],
+  boundaryId?: string,
+): MessageGroupingResult {
   const visibleMessages = useMemo(() => {
     return messages.filter(
       (msg) =>
@@ -294,6 +297,8 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           allToolCalls.push(...currentMsg.tool_calls);
           currentMsg.tool_calls.forEach((tc) => groupToolCallIds.add(tc.id));
 
+          let hitBoundary = boundaryId ? currentMsg.id === boundaryId : false;
+
           // Skip past associated tool results
           j++;
           while (
@@ -305,7 +310,14 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
             // Capture skipped tool result in map.
             captureToolResult(currentMessages[j], j);
             coveredMessageIds.push(currentMessages[j].id);
+            if (boundaryId && currentMessages[j].id === boundaryId) {
+              hitBoundary = true;
+            }
             j++;
+          }
+
+          if (hitBoundary) {
+            break;
           }
         }
 
@@ -373,7 +385,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         lastToolResultIndex: newLastToolResultIndex,
       },
     };
-  }, [visibleMessages]);
+  }, [visibleMessages, boundaryId]);
 
   useLayoutEffect(() => {
     cache.current = calculation.newCache;

@@ -17,6 +17,7 @@ import {
 } from '../lib/llm-config-manager';
 import { useSettings } from '../hooks/use-settings';
 import { getLogger } from '@/lib/logger';
+import { reportListModelsFallback } from '@/lib/ai-service/list-models-errors';
 
 const DEFAULT_MODEL_INFO: ModelInfo = {
   contextWindow: 0,
@@ -135,6 +136,12 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         return modelsRecord;
       } catch (error) {
         logger.error('Failed to fetch models:', error);
+        reportListModelsFallback({
+          provider,
+          baseUrl: serviceConfigs[provider as AIServiceProvider]?.baseUrl,
+          reason: 'api_error',
+          error,
+        });
         return {};
       }
     },
