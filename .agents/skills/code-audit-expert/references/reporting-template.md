@@ -13,8 +13,8 @@ Write the report to `.libragent/work/code_audit_report.md` (or another `.librage
 
 ## 2. Claims vs code
 
-| Claim (from summary/PR) | Evidence (path:line or “not found”) | Result |
-| ----------------------- | ----------------------------------- | ------ |
+| Claim (from summary/PR) | Evidence (path:line or “not found”) | Result                        |
+| ----------------------- | ----------------------------------- | ----------------------------- |
 |                         |                                     | match / mismatch / unverified |
 
 If nothing to contradict: one row “No material mismatches found” with the files you opened.
@@ -33,13 +33,13 @@ Repeat per distinct change. Skip fluff.
 
 Score **1–5 only for relevant axes**. Use `N/A` + reason otherwise. Never invent a high score to fill the table.
 
-| Axis | Score | Feedback (cite path:line) |
-| ---- | :---: | ------------------------- |
-| Modularity | | |
-| Interface design (ISP) | | |
-| DRY | | |
-| Cost (tokens / caching) | | |
-| Reliability | | |
+| Axis                    | Score | Feedback (cite path:line) |
+| ----------------------- | :---: | ------------------------- |
+| Modularity              |       |                           |
+| Interface design (ISP)  |       |                           |
+| DRY                     |       |                           |
+| Cost (tokens / caching) |       |                           |
+| Reliability             |       |                           |
 
 Add a custom row if the change is about something else (e.g. pagination UX, schema clarity). Drop unused rows.
 
