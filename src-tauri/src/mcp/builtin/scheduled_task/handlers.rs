@@ -2,8 +2,8 @@ use super::formatting::{format_timestamp, render_task_detail, render_task_line, 
 use super::ScheduledTaskServer;
 use crate::agent::ExecutionMode;
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, not_found_error, operation_failed_error, permission_denied_error,
-    SuccessHint, ToolGroup,
+    hint_headers, invalid_input_error, not_found_error, operation_failed_error,
+    permission_denied_error, SuccessHint, ToolGroup,
 };
 use crate::repositories::{AssistantRepository, SessionRepository, UpdateScheduledTaskParams};
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
@@ -127,24 +127,20 @@ pub async fn handle_create_scheduled_task(
     };
 
     let text = format!(
-        "Scheduled task created (ID: {}).\n\n{}\n\n💡 Next steps:\n1. Use getScheduledTask(\"{}\") to inspect the full task.\n2. Use toggleScheduledTask(\"{}\", enabled=false) to pause it.\n3. Use updateScheduledTask(\"{}\", ...) to revise schedule or message.",
+        "Scheduled task created (ID: {}).\n\n{}\n\n{}\n- getScheduledTask(\"{}\") — inspect full task\n- toggleScheduledTask(\"{}\", enabled=false) — pause\n- updateScheduledTask(\"{}\", ...) — revise schedule or message",
         created.id,
         render_task_detail(&created),
+        hint_headers::AVAILABLE_OPERATIONS,
         created.id,
         created.id,
         created.id
     );
 
-    Ok(SuccessHint::new(
-        text,
-        vec![format!(
-            "Use getScheduledTask(\"{}\") to inspect the full task before creating related schedules",
-            created.id
-        )],
+    Ok(
+        SuccessHint::new(text, vec![]).to_mcp_result_with_data(Some(json!({
+            "task": task_to_json(&created)
+        }))),
     )
-    .to_mcp_result_with_data(Some(json!({
-        "task": task_to_json(&created)
-    }))))
 }
 
 pub async fn handle_list_scheduled_tasks(
@@ -217,9 +213,10 @@ pub async fn handle_list_scheduled_tasks(
 
     Ok(SuccessHint::new(
         format!(
-            "{header}\n\n{body}\n\n💡 Use getScheduledTask(\"...\") for full detail before updating or deleting."
+            "{header}\n\n{body}\n\n{} getScheduledTask(\"...\") can show full detail before updating or deleting.",
+            hint_headers::TIP
         ),
-        vec!["Use getScheduledTask(\"...\") to inspect one task in detail".to_string()],
+        vec!["getScheduledTask(\"...\") can show one task in full detail".to_string()],
     )
     .to_mcp_result_with_data(Some(json!({
         "tasks": tasks.iter().map(task_to_json).collect::<Vec<_>>(),
@@ -262,31 +259,36 @@ pub async fn handle_get_scheduled_task(
     let (guidance, success_hints) = match task.task_category.as_str() {
         TASK_CATEGORY_GLOBAL => {
             let guidance = format!(
-                "💡 Use updateScheduledTask(\"{}\", ...) to modify, or toggleScheduledTask(\"{}\", enabled=false) to pause.",
-                task.id, task.id
+                "{}\n- updateScheduledTask(\"{}\", ...) — modify schedule or message\n- toggleScheduledTask(\"{}\", enabled=false) — pause",
+                hint_headers::AVAILABLE_OPERATIONS,
+                task.id,
+                task.id
             );
             let hints = vec![format!(
-                "Use updateScheduledTask(\"{}\", ...) to change schedule or message",
+                "updateScheduledTask(\"{}\", ...) can change schedule or message",
                 task.id
             )];
             (guidance, hints)
         }
         TASK_CATEGORY_SESSION => {
             let guidance = format!(
-                "💡 Use toggleScheduledTask(\"{}\", enabled=false) to pause, or deleteScheduledTask(\"{}\") to cancel.",
-                task.id, task.id
+                "{}\n- toggleScheduledTask(\"{}\", enabled=false) — pause\n- deleteScheduledTask(\"{}\") — cancel",
+                hint_headers::AVAILABLE_OPERATIONS,
+                task.id,
+                task.id
             );
             let hints = vec![format!(
-                "Use toggleScheduledTask(\"{}\", enabled=false) to pause the session callback, or deleteScheduledTask(\"{}\") to cancel it",
+                "toggleScheduledTask(\"{}\", enabled=false) can pause the session callback, or deleteScheduledTask(\"{}\") can cancel it",
                 task.id, task.id
             )];
             (guidance, hints)
         }
         _ => {
-            let guidance =
-                "💡 Use getScheduledTask(\"...\") to inspect the task details.".to_string();
-            let hints =
-                vec!["Use getScheduledTask(\"...\") to inspect the task details".to_string()];
+            let guidance = format!(
+                "{} getScheduledTask(\"...\") can show full task details.",
+                hint_headers::TIP
+            );
+            let hints = vec!["getScheduledTask(\"...\") can show full task details".to_string()];
             (guidance, hints)
         }
     };
@@ -438,15 +440,16 @@ pub async fn handle_update_scheduled_task(
     let changed_summary = changed_fields.join(", ");
     Ok(SuccessHint::new(
         format!(
-            "Scheduled task updated (ID: {}).\n\nChanged fields: {}\nNext run: {}\nEnabled: {}\n\n💡 Use getScheduledTask(\"{}\") to confirm the persisted state.",
+            "Scheduled task updated (ID: {}).\n\nChanged fields: {}\nNext run: {}\nEnabled: {}\n\n{} getScheduledTask(\"{}\") can confirm the persisted state.",
             updated.id,
             changed_summary,
             format_timestamp(updated.next_run_at),
             updated.enabled,
+            hint_headers::TIP,
             updated.id
         ),
         vec![format!(
-            "Use getScheduledTask(\"{}\") to confirm the persisted schedule",
+            "getScheduledTask(\"{}\") can confirm the persisted schedule",
             updated.id
         )],
     )
@@ -514,15 +517,16 @@ pub async fn handle_toggle_scheduled_task(
     };
     Ok(SuccessHint::new(
         format!(
-            "Scheduled task {} (ID: {}) is now {}.\nNext run: {}\n\n💡 Use getScheduledTask(\"{}\") to inspect the full schedule state.",
+            "Scheduled task {} (ID: {}) is now {}.\nNext run: {}\n\n{} getScheduledTask(\"{}\") can show the full schedule state.",
             updated.name,
             updated.id,
             state_text,
             format_timestamp(updated.next_run_at),
+            hint_headers::TIP,
             updated.id
         ),
         vec![format!(
-            "Use getScheduledTask(\"{}\") to inspect the full task state",
+            "getScheduledTask(\"{}\") can show the full task state",
             updated.id
         )],
     )
@@ -613,14 +617,15 @@ pub async fn handle_schedule_callback(
 
     Ok(SuccessHint::new(
         format!(
-            "Session callback scheduled (ID: {}).\n\n{}\n\n💡 Use getScheduledTask(\"{}\") to inspect it or toggleScheduledTask(\"{}\", enabled=false) to cancel.",
+            "Session callback scheduled (ID: {}).\n\n{}\n\n{} getScheduledTask(\"{}\") can show details; toggleScheduledTask(\"{}\", enabled=false) can cancel.",
             created.id,
             render_task_detail(&created),
+            hint_headers::TIP,
             created.id,
             created.id
         ),
         vec![format!(
-            "Use getScheduledTask(\"{}\") to inspect the callback before scheduling another",
+            "getScheduledTask(\"{}\") can show the callback before scheduling another",
             created.id
         )],
     )
@@ -669,11 +674,12 @@ pub async fn handle_delete_scheduled_task(
 
     Ok(SuccessHint::new(
         format!(
-            "Scheduled task deleted (ID: {}).\n\nDeleted task summary:\n{}\n\n💡 Use listScheduledTasks() to verify the remaining schedule set.",
+            "Scheduled task deleted (ID: {}).\n\nDeleted task summary:\n{}\n\n{} listScheduledTasks() can verify the remaining schedule set.",
             existing.id,
-            render_task_line(&existing)
+            render_task_line(&existing),
+            hint_headers::TIP
         ),
-        vec!["Use listScheduledTasks() to verify the remaining schedule set".to_string()],
+        vec!["listScheduledTasks() can verify the remaining schedule set".to_string()],
     )
     .to_mcp_result_with_data(Some(json!({
         "deletedTask": task_to_json(&existing)

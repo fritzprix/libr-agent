@@ -109,7 +109,8 @@ pub async fn add(
                 .unwrap_or(0);
             let guidance = if count >= 10 {
                 vec![
-                    "💡 Scratchpad is now full (10/10 items). Clear obsolete notes using scratchpad__clearNote or update notes in-place using scratchpad__updateNote.".to_string()
+                    "Scratchpad is now full (10/10 items). Obsolete notes may be cleared with scratchpad__clearNote or updated in-place with scratchpad__updateNote."
+                        .to_string()
                 ]
             } else {
                 vec![]

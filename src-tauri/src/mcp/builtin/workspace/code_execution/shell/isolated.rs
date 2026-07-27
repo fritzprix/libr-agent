@@ -365,38 +365,11 @@ impl WorkspaceServer {
                         "No error output captured".to_string()
                     };
 
-                    let guidance = match actual_exit_code {
-                        1 => vec![
-                            "General command failure - review error output above".to_string(),
-                            "Verify command syntax and required files exist".to_string(),
-                            "Use listDirectory to check file paths".to_string(),
-                        ],
-                        2 => vec![
-                            "Misuse of shell command or invalid arguments".to_string(),
-                            "Check command syntax in tool documentation".to_string(),
-                            "Verify all required parameters are provided".to_string(),
-                        ],
-                        127 => vec![
-                            "Command not found - program is not installed or not in PATH"
-                                .to_string(),
-                            "Verify the program is installed on the system".to_string(),
-                            "Check for typos in the command name".to_string(),
-                        ],
-                        126 => vec![
-                            "Command found but not executable".to_string(),
-                            "Check file permissions".to_string(),
-                            "Verify the file is a valid executable".to_string(),
-                        ],
-                        130 => vec![
-                            "Command terminated by Ctrl+C (SIGINT)".to_string(),
-                            "Process was interrupted by user or system".to_string(),
-                        ],
-                        _ => vec![
-                            format!("Command failed with exit code: {}", actual_exit_code),
-                            "Review error output above for specific failure reasons".to_string(),
-                            "Verify command syntax and required dependencies".to_string(),
-                        ],
-                    };
+                    let guidance = validation::shell_command_failure_guidance(
+                        Some(actual_exit_code),
+                        &stdout,
+                        &stderr,
+                    );
 
                     return Ok(guided_error(
                         ErrorCategory::OperationFailed,

@@ -180,6 +180,54 @@ async fn run_shell_success_hint_no_longer_mentions_stop_process() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn run_shell_quote_parse_failure_points_to_write_file() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "run-shell-quote-parse-guidance";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    // Force English bash diagnostics, and nest quotes so LibrAgent's quote
+    // normalizer cannot silently "repair" the command into a success.
+    let result = server
+        .handle_run_shell(
+            json!({
+                "command": "LANG=C LC_ALL=C bash -c \"echo 'unterminated\""
+            }),
+            session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
+        )
+        .await
+        .expect("runShell should return a guided MCP result");
+
+    assert_eq!(
+        result.is_error,
+        Some(true),
+        "unterminated nested quote should fail the shell command"
+    );
+    let text = extract_text_content(&result);
+    assert!(
+        text.to_ascii_lowercase()
+            .contains("unexpected eof while looking for matching")
+            || text.contains("예상치 못한 파일의 끝"),
+        "stderr/text should include a quote-parse signal: {text}"
+    );
+    assert!(
+        text.contains("writeFile"),
+        "quote-parse failure must escalate to writeFile guidance: {text}"
+    );
+    assert!(
+        text.contains(tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL),
+        "guidance must name the platform shell tool: {text}"
+    );
+    assert!(
+        !text.contains("Check command syntax in tool documentation"),
+        "generic exit-2 docs hint must not override quote-parse guidance: {text}"
+    );
+}
+
 #[tokio::test]
 async fn persistent_shell_at_workspace_root_does_not_suggest_file_tools() {
     ensure_settings_repository().await;

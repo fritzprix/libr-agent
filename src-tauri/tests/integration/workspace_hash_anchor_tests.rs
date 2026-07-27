@@ -524,8 +524,7 @@ async fn edit_files_allows_replace_without_explicit_op() {
     assert_eq!(result.is_error, Some(false));
     let text = extract_text_content(&result);
     assert!(
-        text.contains("Anchors above are current for the edited ranges")
-            && text.contains("reuse them directly with editFile"),
+        text.contains("Anchors above reflect the edited ranges"),
         "success response should explain anchor reuse without rereading: {text}"
     );
     let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");

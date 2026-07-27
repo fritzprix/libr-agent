@@ -35,7 +35,7 @@ param(
 
   [string]$Dataset = "terminal-bench/terminal-bench-2-1",
 
-  [string]$Include,
+  [string[]]$Include,
 
   [int]$NTasks = 0,
 
@@ -422,7 +422,11 @@ switch ($Preset) {
     Write-Step "Preset: Terminal-Bench dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
     if ($Include) {
-      $harborArgs += @("-i", $Include)
+      foreach ($pattern in $Include) {
+        if ($pattern) {
+          $harborArgs += @("-i", $pattern)
+        }
+      }
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")
@@ -435,7 +439,11 @@ switch ($Preset) {
     Write-Step "Preset: Harbor Index dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
     if ($Include) {
-      $harborArgs += @("-i", $Include)
+      foreach ($pattern in $Include) {
+        if ($pattern) {
+          $harborArgs += @("-i", $pattern)
+        }
+      }
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")
@@ -449,7 +457,11 @@ switch ($Preset) {
     Write-Step "Preset: local path ($resolvedPath)"
     $harborArgs += @("-p", $resolvedPath)
     if ($Include) {
-      $harborArgs += @("-i", $Include)
+      foreach ($pattern in $Include) {
+        if ($pattern) {
+          $harborArgs += @("-i", $pattern)
+        }
+      }
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")
@@ -464,7 +476,11 @@ switch ($Preset) {
     Write-Step "Preset: dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
     if ($Include) {
-      $harborArgs += @("-i", $Include)
+      foreach ($pattern in $Include) {
+        if ($pattern) {
+          $harborArgs += @("-i", $pattern)
+        }
+      }
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")

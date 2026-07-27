@@ -569,23 +569,19 @@ impl WorkspaceServer {
                 let mut next_steps = Vec::new();
                 if path_adjusted {
                     next_steps.push(format!(
-                        "IMPORTANT: Continue with \"{}\" — do NOT assume content was written to \"{}\".",
-                        write_display_path, requested_path_str
+                        "Written path: \"{}\" — requested \"{}\" was not modified. Continue with \"{}\" for subsequent operations.",
+                        write_display_path, requested_path_str, write_display_path
                     ));
                     next_steps.push(format!(
-                        "If you meant to replace \"{}\", call writeFile again with \"mode\": \"overwrite\" (and delete \"{}\" if the alternate file was unintended).",
-                        requested_path_str, write_display_path
-                    ));
-                    next_steps.push(format!(
-                        "If you meant to modify \"{}\" in place, use {} or writeFile mode=\"append\" / mode=\"overwrite\" — not another default create.",
-                        requested_path_str, PRIMARY_EDIT_TOOL,
+                        "To replace \"{}\", call writeFile with \"mode\": \"overwrite\". To edit in place, use {} or mode=\"append\".",
+                        requested_path_str, PRIMARY_EDIT_TOOL
                     ));
                 }
 
                 if preview_was_truncated {
                     next_steps.push(format!(
-                        "Use readFile(\"{}\") to inspect lines omitted from this preview",
-                        write_display_path
+                        "Preview truncated; full file has {} line(s) at \"{}\".",
+                        total_lines, write_display_path
                     ));
                 }
 
@@ -594,17 +590,8 @@ impl WorkspaceServer {
                     && previous_lines >= OVERWRITE_SOFT_GUARD_MIN_LINES
                 {
                     next_steps.push(format!(
-                        "Prefer {} for partial edits to \"{}\"; mode=\"overwrite\" is for full-file replacement only.",
-                        PRIMARY_EDIT_TOOL, write_display_path
-                    ));
-                } else if write_display_path.ends_with(".rs")
-                    || write_display_path.ends_with(".py")
-                    || write_display_path.ends_with(".js")
-                    || write_display_path.ends_with(".ts")
-                {
-                    next_steps.push(format!(
-                        "Use {} for targeted edits to \"{}\"",
-                        PRIMARY_EDIT_TOOL, write_display_path
+                        "mode=\"overwrite\" replaced the entire file ({}+ lines); partial line edits are handled by {}, not overwrite.",
+                        OVERWRITE_SOFT_GUARD_MIN_LINES, PRIMARY_EDIT_TOOL
                     ));
                 }
 

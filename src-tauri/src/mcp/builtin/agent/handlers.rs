@@ -293,9 +293,9 @@ pub async fn prepare_teamwork_workspace(
     let hint = SuccessHint::new(
         message.clone(),
         vec![
-            "Required next: scaffold the full org teamwork set. Prefer the teamwork skill + scripts/init_task_force.py with --output set to this response's artifactPath field. Or write under @teamwork/ (agents.md, MISSION.md, ROLES.md, coordination/*, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and orgLineage.intended=true)."
+            "Recommended follow-up: scaffold the full org teamwork set. Prefer the teamwork skill + scripts/init_task_force.py with --output set to this response's artifactPath field, or write under @teamwork/ (agents.md, MISSION.md, ROLES.md, coordination/*, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and orgLineage.intended=true)."
                 .to_string(),
-            "After that scaffold is complete, call createOrg(name=\"...\") from this root session, then startSession for org members so they inherit the shared workspace. Spawning children before createOrg leaves each spoke in an isolated workspace."
+            "After that scaffold is complete, createOrg(name=\"...\") from this root session, then startSession for org members so they inherit the shared workspace. Spawning children before createOrg leaves each spoke in an isolated workspace."
                 .to_string(),
         ],
     );

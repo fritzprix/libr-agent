@@ -179,7 +179,7 @@ fn timeout_guided_error_is_informational() {
     assert_eq!(r.is_error, Some(false));
     assert_eq!(extract_text_error_flag(&r), None);
     assert!(text.contains("Notice:"));
-    assert!(text.contains("Next Steps") || text.contains("Recovery"));
+    assert!(text.contains("Next Steps") || text.contains("Recovery") || text.contains("Guidance"));
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn internal_guided_error_is_informational() {
     assert_eq!(r.is_error, Some(false));
     assert_eq!(extract_text_error_flag(&r), None);
     assert!(text.contains("Notice:"));
-    assert!(text.contains("Next Steps") || text.contains("Recovery"));
+    assert!(text.contains("Next Steps") || text.contains("Recovery") || text.contains("Guidance"));
 }
 
 #[test]

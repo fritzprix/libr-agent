@@ -1024,6 +1024,39 @@ async fn write_file_create_skips_content_echo_without_line_anchors() {
 }
 
 #[tokio::test]
+async fn write_file_create_success_omits_routine_edit_tool_promotion() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-create-no-edit-promotion";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .handle_write_file(
+            json!({
+                "path": "main.py",
+                "content": "print('hello')\n",
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("create should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        !text.contains("💡 Next:"),
+        "routine create success should not use legacy Next hint format: {text}"
+    );
+    assert!(
+        !text.contains("targeted edits"),
+        "routine create success should not promote the primary edit tool: {text}"
+    );
+    assert!(
+        !text.contains("Suggested Follow-ups"),
+        "routine create without collision/truncation should omit follow-up bullets: {text}"
+    );
+}
+
+#[tokio::test]
 async fn write_file_overwrite_soft_guard_hint_for_large_files() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "write-file-overwrite-soft-guard";
@@ -1055,11 +1088,11 @@ async fn write_file_overwrite_soft_guard_hint_for_large_files() {
         "soft-guard must not fail the write: {text}"
     );
     assert!(
-        text.contains("full-file replacement")
+        text.contains("partial line edits are handled by")
             && text.contains(
                 tauri_mcp_agent_lib::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL
             ),
-        "large overwrite should soft-hint toward the primary edit tool: {text}"
+        "large overwrite should note overwrite vs partial-edit boundary: {text}"
     );
 }
 

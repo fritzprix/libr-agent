@@ -222,9 +222,7 @@ export function createLlmFetch(
   } = {},
 ): LlmFetch {
   const useTauri =
-    options.isTauri !== undefined
-      ? options.isTauri
-      : isTauriLlmFetchRuntime();
+    options.isTauri !== undefined ? options.isTauri : isTauriLlmFetchRuntime();
 
   if (!useTauri) {
     return globalThis.fetch.bind(globalThis);

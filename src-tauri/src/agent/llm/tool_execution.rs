@@ -382,7 +382,10 @@ fn args_parse_error_result(
         .map(|(i, step)| format!("{}. {}", i + 1, step))
         .collect::<Vec<_>>()
         .join("\n");
-    let message = format!("✗ {headline}\n\n💡 Next Steps:\n{guidance_text}");
+    let message = format!(
+        "✗ {headline}\n\n{}\n{guidance_text}",
+        crate::mcp::builtin::error_guidance::hint_headers::ERROR_RECOVERY
+    );
 
     let structured = serde_json::json!({
         "errorKind": kind.as_error_kind(),
