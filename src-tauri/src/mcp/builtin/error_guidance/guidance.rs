@@ -1,6 +1,34 @@
 use super::categories::{ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 
+/// Shared section headers for agent-facing hints (success, failure recovery, static tool docs).
+pub mod hint_headers {
+    pub const SUCCESS_FOLLOW_UPS: &str = "💡 Suggested Follow-ups:";
+    pub const ERROR_RECOVERY: &str = "💡 Suggested Recovery:";
+    pub const NOTICE_GUIDANCE: &str = "💡 Optional Guidance:";
+    pub const TOOL_RELATED_ACTIONS: &str = "💡 Related Actions:";
+    pub const TOOL_EXAMPLE_WORKFLOW: &str = "💡 Example workflow:";
+    pub const TIP: &str = "💡 Tip:";
+    pub const AVAILABLE_OPERATIONS: &str = "💡 Available operations:";
+}
+
+fn format_numbered_guidance(steps: &[String]) -> String {
+    steps
+        .iter()
+        .enumerate()
+        .map(|(index, step)| format!("{}. {}", index + 1, step))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_bullet_guidance(lines: &[String]) -> String {
+    lines
+        .iter()
+        .map(|line| format!("• {}", line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Structured error with guidance
 pub struct ErrorGuidance {
     pub category: ErrorCategory,
@@ -40,20 +68,21 @@ impl ErrorGuidance {
 
     /// Convert to MCPResult
     pub fn to_mcp_result(&self) -> MCPResult {
-        let guidance_text = self
-            .guidance
-            .iter()
-            .enumerate()
-            .map(|(i, step)| format!("{}. {}", i + 1, step))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let guidance_text = format_numbered_guidance(&self.guidance);
 
         let formatted_message = if self.category.uses_error_semantics() {
-            format!("✗ {}\n\n💡 Next Steps:\n{}", self.message, guidance_text)
+            format!(
+                "✗ {}\n\n{}\n{}",
+                self.message,
+                hint_headers::ERROR_RECOVERY,
+                guidance_text
+            )
         } else {
             format!(
-                "Notice: {}\n\n💡 Next Steps:\n{}",
-                self.message, guidance_text
+                "Notice: {}\n\n{}\n{}",
+                self.message,
+                hint_headers::NOTICE_GUIDANCE,
+                guidance_text
             )
         };
 
@@ -329,7 +358,11 @@ impl SuccessHint {
         let hint_text = if self.next_actions.is_empty() {
             String::new()
         } else {
-            format!("\n\n💡 Next: {}", self.next_actions.join(" or "))
+            format!(
+                "\n\n{}\n{}",
+                hint_headers::SUCCESS_FOLLOW_UPS,
+                format_bullet_guidance(&self.next_actions)
+            )
         };
 
         let formatted_message = format!("✓ {}{}", self.message, hint_text);

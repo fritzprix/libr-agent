@@ -1,6 +1,5 @@
 import { useCallback, useMemo } from 'react';
 import useSWR from 'swr';
-import { toast } from 'sonner';
 
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
@@ -9,16 +8,18 @@ import type { AIModelLookupService } from '@/lib/ai-service/types';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
-import type { ServiceConfig } from '@/context/SettingsContext';
+import { reportListModelsFallback } from '@/lib/ai-service/list-models-errors';
 
 const logger = getLogger('useAgentModels');
 type DynamicModelMap = Record<string, ModelInfo>;
 type ModelSWRKey = readonly [string, string, string, string, string, string];
 
-export const useAgentModels = (
-  provider?: string,
-  serviceConfigOverride?: Partial<ServiceConfig>,
-) => {
+/**
+ * Loads models for a provider using **persisted** settings only.
+ * Draft/unsaved API edits must not change the SWR key — refresh happens
+ * after Settings save (via SettingsContext update + cache invalidation).
+ */
+export const useAgentModels = (provider?: string) => {
   const {
     value: { serviceConfigs },
   } = useSettings();
@@ -28,11 +29,8 @@ export const useAgentModels = (
       return {};
     }
 
-    return {
-      ...(serviceConfigs[provider as AIServiceProvider] || {}),
-      ...serviceConfigOverride,
-    };
-  }, [provider, serviceConfigOverride, serviceConfigs]);
+    return serviceConfigs[provider as AIServiceProvider] || {};
+  }, [provider, serviceConfigs]);
 
   // Get API key and baseUrl for the selected provider
   const apiKey = useMemo(() => {
@@ -104,7 +102,12 @@ export const useAgentModels = (
         );
       } catch (error) {
         logger.error('Failed to fetch models locally:', error);
-        toast.error(`Failed to fetch models for ${p}`);
+        reportListModelsFallback({
+          provider: p,
+          baseUrl: providerConfig.baseUrl,
+          reason: 'api_error',
+          error,
+        });
         return {};
       }
     },

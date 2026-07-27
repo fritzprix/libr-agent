@@ -1,5 +1,5 @@
 use tauri_mcp_agent_lib::mcp::builtin::workspace::file_operations::utils::{
-    format_file_diff, is_not_found_io_error, normalize_workspace_path_input,
+    compute_file_diff, format_file_diff, is_not_found_io_error, normalize_workspace_path_input,
 };
 
 #[test]
@@ -58,6 +58,21 @@ fn format_file_diff_counts_replacements_as_removed_and_added_lines() {
         !diff.contains("- line1"),
         "unchanged lines should not be mislabeled as removals: {diff}"
     );
+}
+
+#[test]
+fn compute_file_diff_exposes_matching_line_change_stats() {
+    let result = compute_file_diff(
+        "line1\nline2\nline3\n",
+        "line1\nline2_changed\nline3\nline4\n",
+        "demo.txt",
+    );
+
+    assert_eq!(result.stats.lines_added, 2);
+    assert_eq!(result.stats.lines_removed, 1);
+    assert!(result
+        .text
+        .contains("**Changes:** 2 line(s) added, 1 line(s) removed"));
 }
 
 #[test]

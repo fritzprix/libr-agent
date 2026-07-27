@@ -164,6 +164,20 @@ async fn reset_streaming_recovery_retry_counts(
     if let Some(session) = active.get(session_id) {
         *session.repeated_thinking_retry_count.write().await = 0;
         *session.repeated_text_loop_retry_count.write().await = 0;
+        // bad_tool_args_* counters are intentionally NOT reset here — they only
+        // clear on workflow start or when a fully valid tool-call batch is admitted
+        // (see reset_bad_tool_args_recovery_counts).
+    }
+}
+
+async fn reset_bad_tool_args_recovery_counts(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let active = active_sessions.read().await;
+    if let Some(session) = active.get(session_id) {
+        *session.bad_tool_args_retry_count.write().await = 0;
+        *session.bad_tool_args_incident_count.write().await = 0;
     }
 }
 
@@ -290,6 +304,62 @@ pub async fn handle_llm_response(
         .await?;
     }
 
+    // [Bad tool-args] Validate BEFORE circuit-breaker preprocess so a retry
+    // does not discard CB decisions / emit ghost CB events for a discarded turn.
+    let assistant_shape_early = inspect_assistant_message_shape(&assistant_message);
+    if assistant_shape_early.has_tool_calls {
+        if let Some(tool_calls) = assistant_message.tool_calls.as_ref() {
+            let invalid =
+                crate::agent::llm::tool_args_validation::find_invalid_tool_call_args(tool_calls);
+            if !invalid.is_empty() {
+                let tool_names: Vec<String> = invalid.iter().map(|i| i.tool_name.clone()).collect();
+                let parse_kind = invalid[0].kind.as_error_kind().to_string();
+                match crate::agent::llm::stream_recovery::handle_malformed_tool_args_completion(
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                    session_id.clone(),
+                    crate::agent::llm::stream_recovery::MalformedToolArgsIncident {
+                        assistant_message_id: assistant_message.id.clone(),
+                        tool_names,
+                        parse_kind,
+                    },
+                )
+                .await
+                {
+                    Ok(crate::agent::llm::stream_recovery::StreamingIssueOutcome::Retried {
+                        ..
+                    }) => {
+                        // Bad completion discarded; a fresh LLM turn was requested.
+                        return Ok(());
+                    }
+                    Ok(crate::agent::llm::stream_recovery::StreamingIssueOutcome::Failed) => {
+                        // Workflow already finalized with an error.
+                        return Ok(());
+                    }
+                    Ok(
+                        crate::agent::llm::stream_recovery::StreamingIssueOutcome::FallThrough
+                        | crate::agent::llm::stream_recovery::StreamingIssueOutcome::Ignored,
+                    ) => {
+                        // Fall through: cache + execute so guided parse-error closes each tool call.
+                    }
+                    Err(error) => {
+                        // Defensive: if recovery plumbing fails, still close tools.
+                        log::warn!(
+                            "Malformed tool-args recovery returned error for session {}: {}. Falling through to guided close.",
+                            session_id,
+                            error
+                        );
+                    }
+                }
+            } else {
+                // Clean valid batch — clear the per-workflow malformed budget.
+                reset_bad_tool_args_recovery_counts(active_sessions, &session_id).await;
+            }
+        }
+    }
+
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
     let circuit_breaker_preprocess = response_circuit_breaker::preprocess_assistant_tool_calls(
         active_sessions,
@@ -383,6 +453,7 @@ pub async fn handle_llm_response(
 
     if tool_calls.is_empty() {
         reset_streaming_recovery_retry_counts(active_sessions, &session_id).await;
+        reset_bad_tool_args_recovery_counts(active_sessions, &session_id).await;
 
         if crate::agent::workflow::session_has_pending_events(active_sessions, &session_id).await {
             persist_assistant_message_to_db(&msg_for_db).await?;

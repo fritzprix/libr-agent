@@ -8,6 +8,7 @@ import { type useAgentSession } from '@/context/AgentSessionContext';
 import {
   INITIAL_FIRST_ITEM_INDEX,
   BOTTOM_FOLLOW_RELEASE_SCROLL_DISTANCE,
+  NEAR_TOP_SCROLL_THRESHOLD,
   SELF_SCROLL_IGNORE_WINDOW_MS,
   type BottomAlignmentPhase,
 } from '../types';
@@ -21,6 +22,7 @@ import {
   scrollVirtuosoToBottom,
   getScrollContentElement,
   findGroupedMessageIndexByBoundary,
+  isLayoutNeutralLatestMessageUpdate,
   isThinkingOnlyLatestMessageUpdate,
 } from '../utils';
 
@@ -60,6 +62,7 @@ export function useAgentChatScroll({
   const autoScrollFrameRef = useRef<number | null>(null);
   const selfScrollIgnoreUntilRef = useRef(0);
   const previousScrollTopRef = useRef<number | null>(null);
+  const scrollTopRef = useRef(0);
   const upwardReleaseDistanceRef = useRef(0);
   const groupedMessageCountRef = useRef(groupedMessages.length);
   const previousLatestMessageRef = useRef<Message | undefined>(latestMessage);
@@ -369,8 +372,13 @@ export function useAgentChatScroll({
   const executeScrollToBottom = useCallback(
     (reason: string): boolean => {
       const itemCount = groupedMessageCountRef.current;
-      selfScrollIgnoreUntilRef.current =
-        performance.now() + SELF_SCROLL_IGNORE_WINDOW_MS;
+      // Only force/manual bottom snaps should suppress upward unpin detection.
+      // Streaming follow (reactive/resize/height) must not refresh this window,
+      // or Non-Thinking token streams permanently block scroll-to-top.
+      if (forceBottomScrollReasons.has(reason)) {
+        selfScrollIgnoreUntilRef.current =
+          performance.now() + SELF_SCROLL_IGNORE_WINDOW_MS;
+      }
       logScrollState('executeScrollToBottom:start', {
         itemCount,
         reason,
@@ -407,7 +415,7 @@ export function useAgentChatScroll({
       });
       return false;
     },
-    [logScrollState],
+    [forceBottomScrollReasons, logScrollState],
   );
 
   useEffect(() => {
@@ -455,23 +463,35 @@ export function useAgentChatScroll({
 
   const scheduleScrollToBottom = useCallback(
     (reason: string) => {
+      const isForceReason = forceBottomScrollReasons.has(reason);
+      const isNearTop = scrollTopRef.current <= NEAR_TOP_SCROLL_THRESHOLD;
+      // Near-top history reading must win over sticky follow. Short sessions
+      // (especially Non-Thinking token streams) can reach scrollTop≈0 before
+      // the upward-release distance threshold fires.
       const shouldForce =
-        forceBottomScrollReasons.has(reason) || shouldFollowLatestRef.current;
+        isForceReason || (shouldFollowLatestRef.current && !isNearTop);
       const shouldSuppressForPrepend =
-        isPreservingPrependPositionRef.current &&
-        !forceBottomScrollReasons.has(reason);
+        isPreservingPrependPositionRef.current && !isForceReason;
 
       const shouldSuppressForUserScroll =
         !isBottomAlignmentActive(bottomAlignmentPhaseRef.current) &&
         !visualBottomRef.current &&
         !shouldForce;
 
-      if (shouldSuppressForPrepend || shouldSuppressForUserScroll) {
+      const shouldSuppressForNearTop =
+        isNearTop && !visualBottomRef.current && !isForceReason;
+
+      if (
+        shouldSuppressForPrepend ||
+        shouldSuppressForUserScroll ||
+        shouldSuppressForNearTop
+      ) {
         clearScheduledAutoScroll();
         logScrollState('scheduleScrollToBottom:suppressed', {
           reason,
           shouldSuppressForPrepend,
           shouldSuppressForUserScroll,
+          shouldSuppressForNearTop,
           shouldForce,
         });
         return;
@@ -606,6 +626,7 @@ export function useAgentChatScroll({
       prependStabilizeTimeoutRef.current = null;
     }
     previousScrollTopRef.current = null;
+    scrollTopRef.current = 0;
     logScrollState('sessionEffect:reset-bottom-alignment');
     requestBottomAlignment('session-changed');
     scheduleScrollToBottom('session-changed');
@@ -642,6 +663,7 @@ export function useAgentChatScroll({
       const scrollDelta =
         previousScrollTop === null ? 0 : currentScrollTop - previousScrollTop;
       previousScrollTopRef.current = currentScrollTop;
+      scrollTopRef.current = currentScrollTop;
       const distanceFromBottom =
         scrollerElement.scrollHeight -
         currentScrollTop -
@@ -675,6 +697,19 @@ export function useAgentChatScroll({
             clearScheduledAutoScroll();
             pauseBottomFollow('explicit-scroll-up');
           }
+        }
+
+        // True list top is enough intent to stop follow even on a single
+        // short upward gesture (common when the older-messages Header is idle).
+        if (
+          shouldFollowLatestRef.current &&
+          !isPreservingPrependPositionRef.current &&
+          !isSelfScroll &&
+          currentScrollTop <= NEAR_TOP_SCROLL_THRESHOLD
+        ) {
+          abortBottomAlignment('reached-top');
+          clearScheduledAutoScroll();
+          pauseBottomFollow('reached-top');
         }
       }
 
@@ -826,11 +861,16 @@ export function useAgentChatScroll({
     }
 
     if (
-      isThinkingOnlyLatestMessageUpdate(previousLatestMessage, latestMessage)
+      isLayoutNeutralLatestMessageUpdate(previousLatestMessage, latestMessage)
     ) {
-      logScrollState('reactive-state-change:thinking-only-skip', {
-        messageId: latestMessage?.id,
-      });
+      logScrollState(
+        isThinkingOnlyLatestMessageUpdate(previousLatestMessage, latestMessage)
+          ? 'reactive-state-change:thinking-only-skip'
+          : 'reactive-state-change:layout-neutral-skip',
+        {
+          messageId: latestMessage?.id,
+        },
+      );
       return;
     }
 

@@ -383,6 +383,112 @@ impl UiServer {
             Some(summary.as_str()),
         ))
     }
+
+    fn report_result(&self, args: Value) -> Result<MCPResult, String> {
+        let result = match args.get("result").and_then(|v| v.as_str()) {
+            Some(v) if !v.trim().is_empty() => v,
+            Some(_) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "result must be a non-empty string",
+                    ToolGroup::UI,
+                )
+                .with_guidance(vec![
+                    "Put the full user-facing outcome in `result`".to_string(),
+                    "Include key outputs, paths, and any caveats".to_string(),
+                ])
+                .to_mcp_result());
+            }
+            None => return Ok(missing_param_error("result", ToolGroup::UI)),
+        };
+
+        let format = args
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto");
+        let title = args.get("title").and_then(|v| v.as_str());
+        let status = args
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("success");
+
+        if !["success", "partial", "blocked"].contains(&status) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Invalid status '{}'. Supported: success, partial, blocked",
+                    status
+                ),
+                ToolGroup::UI,
+            )
+            .with_guidance(vec![
+                "Use success when the task is fully complete".to_string(),
+                "Use partial when delivering best-effort results with known gaps".to_string(),
+                "Use blocked when you cannot finish without external help".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
+        let is_markdown = !matches!(format, "html");
+        let render_content = if is_markdown {
+            result.to_string()
+        } else {
+            sanitize_html_fragment(result)
+        };
+        let content_json = serde_json::to_string(&render_content)
+            .unwrap_or_else(|_| "\"\"".to_string())
+            .replace("</", "<\\/");
+
+        let message_id = uuid::Uuid::new_v4().to_string();
+        let display_title = title.unwrap_or(match status {
+            "partial" => "Partial result",
+            "blocked" => "Blocked",
+            _ => "Result",
+        });
+
+        let mut data = json!({
+            "isMarkdown": is_markdown,
+            "contentJson": content_json,
+            "messageId": message_id,
+            "title": display_title,
+        });
+
+        if !is_markdown {
+            data.as_object_mut()
+                .unwrap()
+                .insert("content".to_string(), json!(render_content));
+        }
+
+        let handlebars = self.handlebars.lock().unwrap();
+        let html = match handlebars.render("present-interactive", &data) {
+            Ok(h) => h,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    format!("Failed to render final result: {}", e),
+                    ToolGroup::UI,
+                )
+                .to_mcp_result());
+            }
+        };
+
+        let summary = format!(
+            "Final result reported (status={status}).\n\
+             Title: {display_title}\n\
+             Result:\n{result}\n\n\
+             STOP: Do not call any more tools. The task outcome is already delivered. \
+             End your turn now with at most a one-sentence confirmation."
+        );
+
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            &format!("ui://result/{}", message_id),
+            "text/html",
+            &html,
+            "ui",
+            "reportResult",
+            Some(summary.as_str()),
+        ))
+    }
 }
 
 fn sanitize_html_fragment(content: &str) -> String {
@@ -479,7 +585,7 @@ impl BuiltinMCPServer for UiServer {
     }
 
     fn description(&self) -> &str {
-        "UI Tools for user interaction"
+        "UI tools: presentInteractive for mid-task display/questions; reportResult for the final deliverable when nothing remains to do."
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
@@ -501,6 +607,7 @@ impl BuiltinMCPServer for UiServer {
             "circuitBreak" => self.circuit_break(args),
             "resumeCircuitBreak" => self.resume_circuit_break(args),
             "presentInteractive" => self.present_interactive(args),
+            "reportResult" => self.report_result(args),
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

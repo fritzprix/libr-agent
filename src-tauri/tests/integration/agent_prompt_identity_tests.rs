@@ -10,11 +10,12 @@ async fn system_prompt_exposes_agent_runtime_identity() {
         ..AgentConfig::default()
     };
 
-    let prompt = build_system_prompt(&config, None, None, None, None, Vec::new())
+    let prompt = build_system_prompt(&config, None, None, None, Vec::new())
         .await
         .expect("prompt should build");
 
     assert!(prompt.contains("## Agent Runtime Identity"));
     assert!(prompt.contains("Agent Name: Ops Bot"));
     assert!(prompt.contains("Agent ID: agent-123"));
+    assert!(prompt.contains("Session ID: (unknown-session)"));
 }

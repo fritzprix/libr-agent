@@ -10,10 +10,29 @@ use super::session::PersistentShell;
 impl PersistentShell {
     /// Source conda/nvm integration scripts when the opt-in setting is enabled.
     pub async fn apply_runtime_bootstrap(&mut self) {
-        #[cfg(unix)]
-        let command = build_unix_bootstrap_command();
+        // Docker attach on Windows hosts uses bash/sh inside the container. Host
+        // PowerShell conda/nvm bootstrap must not run there (and unix host scripts
+        // are irrelevant inside the image).
+        if !self.uses_host_powershell_protocol() {
+            #[cfg(unix)]
+            let command = build_unix_bootstrap_command();
+            #[cfg(windows)]
+            let command: Option<String> = None;
+            let Some(command) = command else {
+                debug!(
+                    "Skipping shell runtime bootstrap for session {}: no conda/nvm integration found (or container shell)",
+                    self.session_id()
+                );
+                return;
+            };
+            self.run_bootstrap_command(&command).await;
+            return;
+        }
+
         #[cfg(windows)]
         let command = build_windows_bootstrap_command();
+        #[cfg(unix)]
+        let command: Option<String> = None;
 
         let Some(command) = command else {
             debug!(
@@ -23,7 +42,11 @@ impl PersistentShell {
             return;
         };
 
-        match self.execute(&command).await {
+        self.run_bootstrap_command(&command).await;
+    }
+
+    async fn run_bootstrap_command(&mut self, command: &str) {
+        match self.execute(command).await {
             Ok((stdout, stderr, 0, _cwd)) => {
                 debug!(
                     "Shell runtime bootstrap completed for session {} (stdout: {} bytes, stderr: {} bytes)",

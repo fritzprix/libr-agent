@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.8.33",
+  "version": "0.8.35",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
@@ -76,6 +76,9 @@
     "bench:hello": "node scripts/run-harbor-bench.cjs --preset hello",
     "bench:terminal": "node scripts/run-harbor-bench.cjs --preset terminal-bench --n-tasks 1",
     "bench:terminal:all": "node scripts/run-harbor-bench.cjs --preset terminal-bench",
+    "bench:harbor": "node scripts/run-harbor-bench.cjs --preset harbor-index --n-tasks 1",
+    "bench:harbor:all": "node scripts/run-harbor-bench.cjs --preset harbor-index",
+    "bench:registry": "node scripts/run-harbor-bench.cjs --preset dataset",
     "bench:termial": "pnpm bench:terminal",
     "bench:termial:all": "pnpm bench:terminal:all"
   },
@@ -108,6 +111,7 @@
     "@remote-dom/core": "^1.9.0",
     "@tauri-apps/api": "^2.10.0",
     "@tauri-apps/plugin-dialog": "^2.5.0",
+    "@tauri-apps/plugin-http": "^2.5.0",
     "@tauri-apps/plugin-log": "^2.8.0",
     "@tauri-apps/plugin-updater": "^2.10.0",
     "class-variance-authority": "^0.7.1",

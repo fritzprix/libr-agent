@@ -42,6 +42,41 @@ pub async fn agent_inject_messages(
     })
 }
 
+/// List durable waiting prompts for a session (FIFO).
+#[command]
+pub async fn agent_get_pending_queue(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    let messages = manager.get_pending_queue(&session_id).await?;
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Pending queue for session: {}", session_id),
+        data: Some(serde_json::to_value(messages).map_err(|e| e.to_string())?),
+    })
+}
+
+/// Cancel a single waiting prompt without aborting the active turn.
+#[command]
+pub async fn agent_cancel_pending_prompt(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    message_id: String,
+) -> Result<AgentResponse, String> {
+    let removed = manager
+        .cancel_pending_prompt(&session_id, &message_id)
+        .await?;
+    Ok(AgentResponse {
+        success: true,
+        message: if removed {
+            format!("Cancelled pending prompt {}", message_id)
+        } else {
+            format!("Pending prompt {} not found", message_id)
+        },
+        data: Some(serde_json::json!({ "removed": removed })),
+    })
+}
+
 /// Handle LLM response from frontend (called by LLMServiceProvider in TS)
 #[command]
 pub async fn agent_handle_llm_response(
@@ -125,6 +160,13 @@ pub async fn agent_report_llm_streaming_issue(
                 "failed",
             )
         }
+        crate::agent::llm::StreamingIssueOutcome::FallThrough => (
+            format!(
+                "Recovery budget exhausted for session {}; continuing with original completion",
+                report.session_id
+            ),
+            "fall_through",
+        ),
     };
 
     Ok(AgentResponse {

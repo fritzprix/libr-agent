@@ -128,6 +128,38 @@ pub async fn terminate_session(
     }
 }
 
+/// DELETE /api/sessions/:id — remove the session (and cascade children) entirely.
+pub async fn delete_session(
+    id: String,
+    manager: Arc<AgentSessionManager>,
+) -> Result<impl Reply, Rejection> {
+    match manager.delete_session(id.clone()).await {
+        Ok(deleted_ids) => {
+            for deleted_id in &deleted_ids {
+                crate::services::agent_service::remove_lineage(deleted_id).await;
+            }
+            Ok(warp::reply::with_status(
+                warp::reply::json(&serde_json::json!({
+                    "success": true,
+                    "deletedIds": deleted_ids,
+                })),
+                StatusCode::OK,
+            ))
+        }
+        Err(e) => {
+            let status = if e.contains("not found") || e.contains("Not found") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse { error: e }),
+                status,
+            ))
+        }
+    }
+}
+
 pub async fn get_child_sessions(id: String) -> Result<impl Reply, Rejection> {
     let session_repo = crate::state::get_session_repository();
     use crate::repositories::session_repository::SessionRepository;

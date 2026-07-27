@@ -271,39 +271,20 @@ impl MessageService {
     }
 
     /// Queues a user message for a busy session.
-    /// It adds the message to `pending_events` and persists it to the database,
-    /// but explicitly does NOT touch `session.messages` to preserve the active LLM context window.
+    /// Persists to DB + durable pending_queue index without touching `session.messages`.
     pub async fn queue_user_message(
         active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+        app_handle: &AppHandle,
         session_id: &str,
         user_message: &Message,
     ) -> Result<(), String> {
-        // 1. Add to pending events only
-        {
-            let sessions = active_sessions.read().await;
-            if let Some(session) = sessions.get(session_id) {
-                let mut pending = session.pending_events.write().await;
-                pending.add(crate::agent::state::PendingEvent::Message(
-                    user_message.id.clone(),
-                ));
-            } else {
-                return Err(format!("Session not found: {}", session_id));
-            }
-        }
-
-        // 2. Persist to DB synchronously
-        let repo = get_message_repository();
-        if let Err(e) = repo.insert(user_message).await {
-            log::error!(
-                "Failed to save queued user message to DB: session={}, msg_id={}, error={}",
-                session_id,
-                user_message.id,
-                e
-            );
-            return Err(format!("Failed to persist queued message: {}", e));
-        }
-
-        Ok(())
+        crate::agent::pending_queue::enqueue_pending_user_message(
+            active_sessions,
+            app_handle,
+            session_id,
+            user_message,
+        )
+        .await
     }
 
     /// Appends a user message to the session cache and persists it to the database.
@@ -383,6 +364,20 @@ impl MessageService {
         emit_events_immediately: bool,
     ) -> Result<(), String> {
         crate::agent::lifecycle::ensure_cache_initialized(active_sessions, session_id).await?;
+
+        // Busy/queued path: durable FIFO waiting prompts only (no active-context pollution).
+        if !emit_events_immediately {
+            for msg in messages {
+                crate::agent::pending_queue::enqueue_pending_user_message(
+                    active_sessions,
+                    app_handle,
+                    session_id,
+                    &msg,
+                )
+                .await?;
+            }
+            return Ok(());
+        }
 
         let sessions = active_sessions.read().await;
         let session = sessions
@@ -479,28 +474,16 @@ impl MessageService {
         }
 
         // ── Phase 3: Emit UI events ─────────────────────────────────────────
-        if emit_events_immediately {
-            drop(sessions);
-            for msg in &messages {
-                let event = crate::agent::events::AgentEvent::MessageAdded {
-                    session_id: session_id.to_string(),
-                    message: Box::new(msg.clone()),
-                };
-                crate::agent::tauri_events::emit_agent_event(app_handle, event)
-                    .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
+        drop(sessions);
+        for msg in &messages {
+            let event = crate::agent::events::AgentEvent::MessageAdded {
+                session_id: session_id.to_string(),
+                message: Box::new(msg.clone()),
+            };
+            if let Err(e) = crate::agent::tauri_events::emit_agent_event(app_handle, event) {
+                // Headless / mock app contexts may not have a live event loop.
+                log::warn!("Failed to emit MessageAdded event: {e}");
             }
-        } else {
-            let mut pending_events = session.pending_events.write().await;
-            for msg in &messages {
-                pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
-            }
-            log::info!(
-                "Marked {} messages as pending for session: {} (IDs: {:?})",
-                messages.len(),
-                session_id,
-                messages.iter().map(|m| &m.id).collect::<Vec<_>>()
-            );
-            drop(pending_events);
         }
 
         Ok(())

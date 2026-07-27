@@ -38,16 +38,13 @@ const SettingsPage: FC = function SettingsPage() {
     dangerZoneProps,
     handleClose,
     handleContextStrategyChange,
-    handleDefaultMaxOutputTokensChange,
     handleDiscard,
     handleDiscardAndLeave,
     handleFallbackModelChange,
     handleLanguageChange,
     handleMaxInputContextChange,
-    handleMaxRetriesChange,
     handlePendingChange,
     handlePreferredModelChange,
-    handleRetryDelayChange,
     handleSave,
     handleSaveAndLeave,
     handleTabChange,
@@ -176,19 +173,9 @@ const SettingsPage: FC = function SettingsPage() {
                 providerEntries={PROVIDER_ENTRIES}
                 localPreferredModel={formState.preferredModel}
                 localFallbackModel={formState.fallbackModel}
-                localMaxRetries={formState.advanced.maxRetries}
-                localRetryDelay={formState.advanced.retryDelay}
-                localDefaultMaxOutputTokens={
-                  formState.advanced.defaultMaxOutputTokens
-                }
                 onPendingChange={handlePendingChange}
                 onPreferredModelChange={handlePreferredModelChange}
                 onFallbackModelChange={handleFallbackModelChange}
-                onMaxRetriesChange={handleMaxRetriesChange}
-                onRetryDelayChange={handleRetryDelayChange}
-                onDefaultMaxOutputTokensChange={
-                  handleDefaultMaxOutputTokensChange
-                }
               />
             </TabsContent>
 

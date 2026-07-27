@@ -1,7 +1,5 @@
 use crate::agent::state::AgentSession;
-use crate::agent::workflow::cancel::{
-    discard_pending_events, should_consume_cancel_at_message_boundary,
-};
+use crate::agent::workflow::cancel::should_consume_cancel_at_message_boundary;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::{SessionAttentionReason, SessionRepository};
 use crate::repositories::SessionStatus;
@@ -114,7 +112,7 @@ pub async fn continue_workflow_after_tool(
                     }
                 }
 
-                discard_pending_events(active_sessions, &session_id).await;
+                // Soft cancel preserves the durable waiting prompt queue.
 
                 let _ = crate::agent::lifecycle::update_session_status(
                     session_repo,

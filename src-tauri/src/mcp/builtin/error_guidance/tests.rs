@@ -16,7 +16,7 @@ fn test_error_guidance_formatting() {
     if let Some(content) = result.content {
         if let Some(MCPContent::Text { text, .. }) = content.first() {
             assert!(text.contains("✗"));
-            assert!(text.contains("💡 Next Steps:"));
+            assert!(text.contains("💡 Suggested Recovery:"));
             assert!(text.contains("Session 'abc123' not found"));
             assert!(text.contains("1. "));
         }
@@ -39,7 +39,7 @@ fn test_internal_error_guidance_is_informational() {
         if let Some(MCPContent::Text { text, is_error }) = content.first() {
             assert_eq!(*is_error, None);
             assert!(text.contains("Notice:"));
-            assert!(text.contains("💡 Next Steps:"));
+            assert!(text.contains("💡 Optional Guidance:"));
         }
     }
 }
@@ -61,7 +61,7 @@ fn test_success_hint_formatting() {
     if let Some(content) = result.content {
         if let Some(MCPContent::Text { text, .. }) = content.first() {
             assert!(text.contains("✓"));
-            assert!(text.contains("💡 Next:"));
+            assert!(text.contains("💡 Suggested Follow-ups:"));
             assert!(text.contains("Todo created successfully"));
         }
     }
@@ -116,7 +116,7 @@ fn test_guided_error_builder_uses_default_guidance() {
     // Default guidance for (ResourceNotFound, Browser) includes createSession.
     assert!(text.contains("createSession"));
     assert!(text.contains("✗"));
-    assert!(text.contains("💡 Next Steps:"));
+    assert!(text.contains("💡 Suggested Recovery:"));
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn test_timeout_guided_error_builder_is_informational() {
 
     assert_eq!(is_error, None);
     assert!(text.contains("Notice:"));
-    assert!(text.contains("💡 Next Steps:"));
+    assert!(text.contains("💡 Optional Guidance:"));
 }
 
 #[test]

@@ -19,14 +19,36 @@ pub fn is_linux() -> bool {
     cfg!(target_os = "linux")
 }
 
+/// Windows creation flag that prevents a console window from appearing for GUI hosts.
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+/// Suppress console window flashing when spawning a child process (Windows only).
+pub fn suppress_console_window(cmd: &mut std::process::Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let _ = cmd;
+}
+
+/// Async variant of [`suppress_console_window`] for `tokio::process::Command`.
+pub fn suppress_console_window_async(cmd: &mut tokio::process::Command) {
+    #[cfg(windows)]
+    {
+        // tokio::process::Command exposes creation_flags on Windows without CommandExt.
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let _ = cmd;
+}
+
 /// Check if a command exists in PATH (cross-platform).
 pub fn command_exists(cmd: &str) -> bool {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut command = std::process::Command::new("where");
-        command.creation_flags(CREATE_NO_WINDOW);
+        suppress_console_window(&mut command);
         command.arg(cmd);
 
         command.env_clear();

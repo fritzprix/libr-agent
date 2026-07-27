@@ -102,6 +102,15 @@ pub fn get_routes(
         .and(agent_manager.clone())
         .and_then(handlers::terminate_session);
 
+    // DELETE /api/sessions/:id
+    let delete_session = warp::delete()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and_then(handlers::delete_session);
+
     // GET /api/sessions/:id/children
     let get_child_sessions = warp::get()
         .and(warp::path("api"))
@@ -132,6 +141,14 @@ pub fn get_routes(
         .and(warp::path("health"))
         .and(warp::path::end())
         .and_then(handlers::health);
+
+    // GET /api/settings/preferredModel — global preferred model (same source session create uses)
+    let preferred_model = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("settings"))
+        .and(warp::path("preferredModel"))
+        .and(warp::path::end())
+        .and_then(handlers::get_preferred_model);
 
     let cors = warp::cors()
         .allow_any_origin()
@@ -165,10 +182,12 @@ pub fn get_routes(
         .or(respond_channel_permission)
         .or(resume_session)
         .or(terminate_session)
+        .or(delete_session)
         .or(get_child_sessions)
         .or(list_assistants)
         .or(get_assistant)
         .or(health)
+        .or(preferred_model)
         .or(mcp_auto_route)
         .or(mcp_route)
         .with(cors)

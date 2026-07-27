@@ -35,6 +35,8 @@ import {
   serializeToolCallArgumentDeltas,
 } from './stream-events';
 import { ensureSchemaTypeField } from './utils';
+import { createLlmFetch } from './desktop-fetch';
+import { reportListModelsFallback } from './list-models-errors';
 
 const logger = getLogger('AnthropicService');
 
@@ -63,6 +65,7 @@ export class AnthropicService extends BaseAIService<
     this.anthropic = new Anthropic({
       apiKey: this.apiKey,
       dangerouslyAllowBrowser: true,
+      fetch: createLlmFetch(),
     });
     // Validate that fallback model exists in config
     validateAnthropicFallbackModel(this.logger);
@@ -122,7 +125,16 @@ export class AnthropicService extends BaseAIService<
       const response = await this.anthropic.models.list();
 
       if (!response?.data || !Array.isArray(response.data)) {
-        logger.warn('Invalid response structure from models API', { response });
+        const failure = reportListModelsFallback({
+          provider: AIServiceProvider.Anthropic,
+          reason: 'invalid_response',
+          error: new Error('Invalid response structure from models API'),
+        });
+        logger.warn(
+          'Invalid response structure from models API, falling back to static config',
+          failure,
+          { response },
+        );
         return this.fallbackToStaticModels();
       }
 
@@ -161,8 +173,14 @@ export class AnthropicService extends BaseAIService<
       logger.info(`Loaded ${models.length} models from Anthropic API`);
       return models;
     } catch (error) {
+      const failure = reportListModelsFallback({
+        provider: AIServiceProvider.Anthropic,
+        reason: 'api_error',
+        error,
+      });
       logger.warn(
         'Failed to fetch models from Anthropic API, falling back to static config',
+        failure,
         error,
       );
       return this.fallbackToStaticModels();

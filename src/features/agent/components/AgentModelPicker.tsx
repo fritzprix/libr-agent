@@ -19,14 +19,12 @@ import { AIServiceProvider } from '@/lib/ai-service';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import { cn } from '@/lib/utils';
 import { useAgentModels } from '../hooks/useAgentModels';
-import type { ServiceConfig } from '@/context/SettingsContext';
 
 interface AgentModelPickerProps {
   currentModel?: string;
   currentProvider?: string;
   className?: string;
   disabled?: boolean;
-  serviceConfigOverride?: Partial<ServiceConfig>;
   onConfigUpdate?: (model: string, provider: string) => void;
 }
 
@@ -35,7 +33,6 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   currentProvider = '',
   className,
   disabled = false,
-  serviceConfigOverride,
   onConfigUpdate,
 }) => {
   const { t } = useTranslation('common');
@@ -45,7 +42,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
     refreshModels,
     canRefresh,
     refreshBlockedReason,
-  } = useAgentModels(currentProvider, serviceConfigOverride);
+  } = useAgentModels(currentProvider);
 
   const modelOptions = useMemo(() => {
     return Object.entries(availableModels).map(([key, value]) => ({
@@ -220,14 +217,6 @@ export const AgentModelPicker = React.memo(
       prev.currentProvider === next.currentProvider &&
       prev.className === next.className &&
       prev.disabled === next.disabled &&
-      prev.serviceConfigOverride?.apiKey ===
-        next.serviceConfigOverride?.apiKey &&
-      prev.serviceConfigOverride?.baseUrl ===
-        next.serviceConfigOverride?.baseUrl &&
-      prev.serviceConfigOverride?.use3rdParty ===
-        next.serviceConfigOverride?.use3rdParty &&
-      prev.serviceConfigOverride?.customModelId ===
-        next.serviceConfigOverride?.customModelId &&
       prev.onConfigUpdate === next.onConfigUpdate
     );
   },

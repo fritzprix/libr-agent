@@ -56,9 +56,9 @@ Behavior:
 - 404: Page not found - check URL or search homepage
 - Timeout: Page too complex or blocking - try different URL
 
-💡 Next Steps:
-- Use browser__getPageContent({}) or browser__listInteractable before another browser__navigateToUrl
-- Use browser__listInteractable to inspect actionable elements"
+💡 Suggested follow-ups:
+- browser__getPageContent({}) or browser__listInteractable before another browser__navigateToUrl
+- browser__listInteractable to inspect actionable elements"
             .to_string(),
         input_schema: object_prop(
             vec![(

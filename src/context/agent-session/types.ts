@@ -99,6 +99,11 @@ export type AgentEventPayload =
         | 'repeatedBatch'
         | 'duplicateInBatch'
         | string;
+    }
+  | {
+      type: 'pendingQueueUpdated';
+      sessionId: string;
+      messages: RustMessage[];
     };
 
 export interface PendingInteractiveShellPrompt {

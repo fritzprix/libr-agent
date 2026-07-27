@@ -92,6 +92,7 @@ test_results_*.txt
 
 # LibrAgent workspace-generated artifacts
 /.libragent/
+.teamwork/
 
 # Harbor / Terminal-Bench local run outputs (never commit)
 /jobs/
@@ -115,3 +116,9 @@ docs/proposals/
 .ai-cache/
 .analysis-cache/
 /tmp/
+
+# Local/temporary run artifacts and state
+kilo.json
+.tmp_*
+.slibragent/
+

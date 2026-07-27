@@ -290,9 +290,10 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
     let prompt = context.context_prompt;
 
     // 5. Assert it contains both child and org details
-    assert!(prompt.contains("### Sub-Agent Sessions (Reuse via messageToSession)"));
+    // Header includes total count; session IDs are truncated to 8 chars for prompt compactness.
+    assert!(prompt.contains("### Sub-Agent Sessions (1 total, reuse via messageToSession)"));
     assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
-    assert!(prompt.contains("  - `child-org-session` (name: \"Child Analyst\")"));
+    assert!(prompt.contains("  - `child-or` (name: \"Child Analyst\")"));
     assert!(prompt.contains("### Explicit Org Layer"));
     assert!(prompt.contains("- Org: Beta Org (ID: org-beta)"));
     assert!(prompt.contains("## Agent Delegation"));
@@ -434,25 +435,26 @@ async fn agent_server_get_service_context_includes_active_sessions_notice() {
     assert!(!prompt.contains("## Child Sessions"));
 
     // 6. Assert active sessions notice is correctly built with status groupings
-    assert!(prompt.contains("### Sub-Agent Sessions (Reuse via messageToSession)"));
+    // Header includes total count; session IDs are truncated to 8 chars for prompt compactness.
+    assert!(prompt.contains("### Sub-Agent Sessions (3 total, reuse via messageToSession)"));
     assert!(prompt.contains("⚠️ **Reuse Existing Sessions First**:"));
 
     // Group: Ready to Reuse (Idle)
     assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
     assert!(prompt.contains("  These sessions are idle and ready for new instructions."));
-    assert!(prompt.contains("  - `child-idle` (name: \"Active Child 1\")"));
+    assert!(prompt.contains("  - `child-id` (name: \"Active Child 1\")"));
 
     // Group: Suspended (Paused)
     assert!(prompt.contains("- **Suspended (Paused):**"));
     assert!(
         prompt.contains("  These sessions were suspended (e.g. waiting for input or approval).")
     );
-    assert!(prompt.contains("  - `child-paused` (name: \"Active Child 2\")"));
+    assert!(prompt.contains("  - `child-pa` (name: \"Active Child 2\")"));
 
     // Group: Failed (Error)
     assert!(prompt.contains("- **Failed (Error):**"));
     assert!(prompt.contains(
         "  These sessions encountered an error. Send a message to retry or recover them."
     ));
-    assert!(prompt.contains("  - `child-error` (name: \"Error Child\")"));
+    assert!(prompt.contains("  - `child-er` (name: \"Error Child\")"));
 }

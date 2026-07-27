@@ -2,9 +2,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MCPTool } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
+import { AIServiceProvider } from '../types';
 
 const chatMock = vi.fn();
 const listMock = vi.fn();
+const reportListModelsFallback = vi.fn((context: {
+  provider: string;
+  baseUrl?: string;
+  reason: string;
+  error: unknown;
+}) => ({
+  reason: context.reason,
+  provider: context.provider,
+  baseUrl: context.baseUrl,
+  message:
+    context.error instanceof Error ? context.error.message : String(context.error),
+  usedStaticFallback: true as const,
+}));
 
 vi.mock('ollama/browser', () => ({
   Ollama: vi.fn().mockImplementation(() => ({
@@ -12,6 +26,19 @@ vi.mock('ollama/browser', () => ({
     list: listMock,
     abort: vi.fn(),
   })),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn() },
+}));
+
+vi.mock('../list-models-errors', () => ({
+  reportListModelsFallback: (context: {
+    provider: string;
+    baseUrl?: string;
+    reason: string;
+    error: unknown;
+  }) => reportListModelsFallback(context),
 }));
 
 vi.mock('../../logger', () => ({
@@ -112,7 +139,7 @@ describe('OllamaService prompt layout', () => {
         [
           createUserMessage('hello'),
           createSessionContextMessage(
-            '<!-- session context: background reference only -->\n\n# Current Context Information\nvolatile bits\n\n<!-- end of session context -->',
+            '<session-context>\n\n# Current Context Information\nvolatile bits\n\n</session-context>',
           ),
         ],
         {
@@ -136,7 +163,7 @@ describe('OllamaService prompt layout', () => {
       {
         role: 'user',
         content:
-          '<!-- session context: background reference only -->\n\n# Current Context Information\nvolatile bits\n\n<!-- end of session context -->',
+          '<session-context>\n\n# Current Context Information\nvolatile bits\n\n</session-context>',
       },
     ]);
     expect(request.tools?.map((tool) => tool.function?.name)).toEqual([
@@ -154,7 +181,7 @@ describe('OllamaService prompt layout', () => {
         [
           createUserMessage('summarize this'),
           createSessionContextMessage(
-            '<!-- session context: background reference only -->\n\n# Current Context Information\nvolatile bits\n\n<!-- end of session context -->',
+            '<session-context>\n\n# Current Context Information\nvolatile bits\n\n</session-context>',
           ),
         ],
         {
@@ -210,5 +237,25 @@ describe('OllamaService prompt layout', () => {
       expect.any(Function),
     );
     expect(abortSpy).not.toHaveBeenCalled();
+  });
+
+  it('reports listModels failure via reportListModelsFallback', async () => {
+    reportListModelsFallback.mockClear();
+    listMock.mockRejectedValue(new Error('connection refused'));
+
+    const { OllamaService } = await import('../ollama');
+    const service = new OllamaService('ollama-local', {
+      baseUrl: 'http://127.0.0.1:11434',
+    });
+    const models = await service.listModels();
+
+    expect(models).toEqual([]);
+    expect(reportListModelsFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: AIServiceProvider.Ollama,
+        baseUrl: 'http://127.0.0.1:11434',
+        reason: 'api_error',
+      }),
+    );
   });
 });

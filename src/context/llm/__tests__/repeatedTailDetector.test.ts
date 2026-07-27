@@ -55,11 +55,11 @@ describe('detectRepeatedTextLoop', () => {
     });
   });
 
-  it('uses the same repetition threshold as thinking detection', () => {
-    expect(REPEATED_THINKING_MIN_REPETITIONS).toBe(
+  it('uses relaxed thresholds for thinking detection compared to text loop detection', () => {
+    expect(REPEATED_THINKING_MIN_REPETITIONS).toBeGreaterThan(
       REPEATED_TEXT_MIN_REPETITIONS,
     );
-    expect(REPEATED_THINKING_MIN_PATTERN_LENGTH).toBe(
+    expect(REPEATED_THINKING_MIN_PATTERN_LENGTH).toBeGreaterThan(
       REPEATED_TEXT_MIN_PATTERN_LENGTH,
     );
   });

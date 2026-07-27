@@ -49,3 +49,26 @@ fn create_session_request_rejects_invalid_execution_mode() {
         "serde rename_all=lowercase should reject PascalCase Yolo"
     );
 }
+
+#[test]
+fn create_session_request_allows_omitted_request_for_idle_create() {
+    let request: CreateSessionRequest = serde_json::from_value(serde_json::json!({
+        "assistantId": "assistant-1",
+        "executionMode": "unsafe"
+    }))
+    .expect("request should be optional");
+
+    assert_eq!(request.request, None);
+    assert_eq!(request.execution_mode, Some(ExecutionMode::Unsafe));
+}
+
+#[test]
+fn create_session_request_treats_blank_request_as_present_string() {
+    let request: CreateSessionRequest = serde_json::from_value(serde_json::json!({
+        "assistantId": "assistant-1",
+        "request": "   "
+    }))
+    .expect("blank request should deserialize");
+
+    assert_eq!(request.request.as_deref(), Some("   "));
+}

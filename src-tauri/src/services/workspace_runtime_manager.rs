@@ -763,6 +763,9 @@ fn format_docker_failure(output: &std::process::Output) -> WorkspaceRuntimeError
 }
 
 fn apply_docker_cli_env(cmd: &mut AsyncCommand) {
+    // On Windows GUI hosts, docker.exe is a console subsystem binary; without this
+    // flag every runShell/docker exec flashes a terminal window.
+    crate::utils::platform::suppress_console_window_async(cmd);
     crate::utils::env::apply_isolated_env_async(cmd);
 }
 

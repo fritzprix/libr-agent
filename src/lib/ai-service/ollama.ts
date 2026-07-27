@@ -26,6 +26,8 @@ import {
   createSerializableDirectToolCall,
   serializeDirectToolCalls,
 } from './stream-events';
+import { createLlmFetch } from './desktop-fetch';
+import { reportListModelsFallback } from './list-models-errors';
 
 const logger = getLogger('OllamaService');
 
@@ -107,8 +109,11 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
     });
     this.host = config?.baseUrl || 'http://127.0.0.1:11434';
 
-    // Use native fetch for all modes - simpler and faster
-    this.ollamaClient = new Ollama({ host: this.host });
+    // Prefer Tauri plugin-http in desktop so remote Ollama hosts without CORS work.
+    this.ollamaClient = new Ollama({
+      host: this.host,
+      fetch: createLlmFetch(),
+    });
     logger.info('Ollama service initialized', {
       host: this.host,
     });
@@ -198,10 +203,17 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
       logger.error('Failed to fetch models from Ollama server:', error);
 
       // Return an empty array on error (e.g., server is off or connection fails)
+      const failure = reportListModelsFallback({
+        provider: AIServiceProvider.Ollama,
+        baseUrl: this.host,
+        reason: 'api_error',
+        error,
+      });
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
       logger.warn(
         `Ollama server not available (${errorMessage}), returning empty model list`,
+        failure,
       );
       return [];
     }
@@ -471,7 +483,8 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
     const response = await this.withRetry(async () => {
-      const ollamaResponse = await fetch(new URL('/api/chat', this.host), {
+      const llmFetch = createLlmFetch();
+      const ollamaResponse = await llmFetch(new URL('/api/chat', this.host), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

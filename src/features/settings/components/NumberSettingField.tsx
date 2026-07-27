@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Input } from '@/components/ui';
+import { isIntegerInRange } from '@/features/settings/components/settings-number-utils';
 
 interface NumberSettingFieldProps {
   label: string;
@@ -30,6 +31,15 @@ export function NumberSettingField({
   containerClassName = 'min-w-0 rounded-xl border border-border/70 p-4',
   inputClassName = 'bg-background border text-foreground w-full max-w-xs',
 }: NumberSettingFieldProps) {
+  const [draft, setDraft] = useState(() => String(value));
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setDraft(String(value));
+    }
+  }, [value]);
+
   return (
     <div className={containerClassName}>
       <div className="mb-2 flex items-center gap-2">
@@ -44,9 +54,27 @@ export function NumberSettingField({
         min={min}
         max={max}
         step={step}
-        value={value}
+        value={draft}
+        onFocus={() => {
+          isFocusedRef.current = true;
+        }}
         onChange={(event) => {
-          onValueChange(parseValue(event.target.value));
+          const rawValue = event.target.value;
+          setDraft(rawValue);
+
+          // Keep incomplete / out-of-range drafts local so typing "256" with
+          // min=32 is not rewritten to "32" on the first digit.
+          if (!isIntegerInRange(rawValue, { min, max })) {
+            return;
+          }
+
+          onValueChange(parseValue(rawValue));
+        }}
+        onBlur={() => {
+          const committed = parseValue(draft);
+          isFocusedRef.current = false;
+          setDraft(String(committed));
+          onValueChange(committed);
         }}
         className={inputClassName}
       />

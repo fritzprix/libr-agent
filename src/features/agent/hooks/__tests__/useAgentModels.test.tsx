@@ -118,24 +118,24 @@ describe('useAgentModels', () => {
     );
   });
 
-  it('uses the settings draft override for refresh keys and invalidation', async () => {
-    const serviceConfigOverride = {
-      apiKey: 'draft-key',
-      baseUrl: 'https://draft.example.com/v1',
-      use3rdParty: true,
-      customModelId: '',
+  it('uses persisted settings for SWR keys, not draft overrides', async () => {
+    mockState.serviceConfigs = {
+      [AIServiceProvider.OpenAI]: {
+        apiKey: 'saved-key',
+        baseUrl: 'https://saved.example.com/v1',
+      },
     };
 
     const { result } = renderHook(() =>
-      useAgentModels(AIServiceProvider.OpenAI, serviceConfigOverride),
+      useAgentModels(AIServiceProvider.OpenAI),
     );
 
     expect(mockState.swrKey).toEqual([
       'local-models',
       'openai',
-      'draft-key',
-      'https://draft.example.com/v1',
-      'use-3rd-party',
+      'saved-key',
+      'https://saved.example.com/v1',
+      'first-party',
       '',
     ]);
 
@@ -145,8 +145,8 @@ describe('useAgentModels', () => {
 
     expect(mockedFactory.invalidateService).toHaveBeenCalledWith(
       AIServiceProvider.OpenAI,
-      'draft-key',
-      serviceConfigOverride,
+      'saved-key',
+      mockState.serviceConfigs[AIServiceProvider.OpenAI],
     );
   });
 });

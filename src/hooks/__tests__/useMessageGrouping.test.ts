@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { useMessageGrouping } from '../useMessageGrouping';
-import type { Message } from '@/models/chat';
+import type { Message, MessageSource } from '@/models/chat';
 import { describe, it, expect } from 'vitest';
 import { StrictMode, createElement } from 'react';
 import { createMessage } from './helpers';
@@ -490,5 +490,76 @@ describe('useMessageGrouping', () => {
 
     expect(result.current.groupedMessages).toEqual(first.groupedMessages);
     expect(result.current.toolResultsMap).toBe(first.toolResultsMap);
+  });
+
+  it('filters out internal scaffolding messages (session-context, compaction-instruction, recovery)', () => {
+    const messages: Message[] = [
+      { ...createMessage('1', 'user', 'Normal message'), source: 'ui' as MessageSource },
+      { ...createMessage('2', 'user', 'Session context background info'), source: 'session-context' as MessageSource },
+      { ...createMessage('3', 'user', 'Compaction request'), source: 'compaction-instruction' as MessageSource },
+      { ...createMessage('4', 'user', 'Recovery checkpoint'), source: 'recovery' as MessageSource },
+      { ...createMessage('5', 'assistant', 'Response message'), source: 'api' as MessageSource },
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+    expect(result.current.groupedMessages.length).toBe(2);
+    expect(result.current.groupedMessages[0].message.id).toBe('1');
+    expect(result.current.groupedMessages[1].message.id).toBe('5');
+  });
+
+  it('splits tool_group into separate groups at the specified boundaryId (compaction boundary)', () => {
+    const messages: Message[] = [
+      {
+        ...createMessage('1', 'assistant', ''),
+        tool_calls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'tool_1', arguments: '{}' },
+          },
+        ],
+      },
+      {
+        ...createMessage('2', 'tool', 'Result 1'),
+        tool_call_id: 'call_1',
+      },
+      {
+        ...createMessage('3', 'assistant', ''),
+        tool_calls: [
+          {
+            id: 'call_2',
+            type: 'function',
+            function: { name: 'tool_2', arguments: '{}' },
+          },
+        ],
+      },
+      {
+        ...createMessage('4', 'tool', 'Result 2'),
+        tool_call_id: 'call_2',
+      },
+    ];
+
+    // Without boundaryId, consecutive tool calls are grouped into 1 tool_group
+    const { result: withoutBoundary } = renderHook(() =>
+      useMessageGrouping(messages),
+    );
+    expect(withoutBoundary.current.groupedMessages.length).toBe(1);
+
+    // With boundaryId set to '2' (tool result 1), tool_group should be split after message 2
+    const { result: withBoundary } = renderHook(() =>
+      useMessageGrouping(messages, '2'),
+    );
+    expect(withBoundary.current.groupedMessages.length).toBe(2);
+    const group0 = withBoundary.current.groupedMessages[0];
+    const group1 = withBoundary.current.groupedMessages[1];
+    expect(group0.type).toBe('tool_group');
+    if (group0.type === 'tool_group') {
+      expect(group0.coveredMessageIds).toEqual(['1', '2']);
+    }
+    expect(group1.type).toBe('tool_group');
+    if (group1.type === 'tool_group') {
+      expect(group1.coveredMessageIds).toEqual(['3', '4']);
+    }
   });
 });

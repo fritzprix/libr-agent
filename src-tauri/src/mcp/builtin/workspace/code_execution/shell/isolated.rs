@@ -365,38 +365,11 @@ impl WorkspaceServer {
                         "No error output captured".to_string()
                     };
 
-                    let guidance = match actual_exit_code {
-                        1 => vec![
-                            "General command failure - review error output above".to_string(),
-                            "Verify command syntax and required files exist".to_string(),
-                            "Use listDirectory to check file paths".to_string(),
-                        ],
-                        2 => vec![
-                            "Misuse of shell command or invalid arguments".to_string(),
-                            "Check command syntax in tool documentation".to_string(),
-                            "Verify all required parameters are provided".to_string(),
-                        ],
-                        127 => vec![
-                            "Command not found - program is not installed or not in PATH"
-                                .to_string(),
-                            "Verify the program is installed on the system".to_string(),
-                            "Check for typos in the command name".to_string(),
-                        ],
-                        126 => vec![
-                            "Command found but not executable".to_string(),
-                            "Check file permissions".to_string(),
-                            "Verify the file is a valid executable".to_string(),
-                        ],
-                        130 => vec![
-                            "Command terminated by Ctrl+C (SIGINT)".to_string(),
-                            "Process was interrupted by user or system".to_string(),
-                        ],
-                        _ => vec![
-                            format!("Command failed with exit code: {}", actual_exit_code),
-                            "Review error output above for specific failure reasons".to_string(),
-                            "Verify command syntax and required dependencies".to_string(),
-                        ],
-                    };
+                    let guidance = validation::shell_command_failure_guidance(
+                        Some(actual_exit_code),
+                        &stdout,
+                        &stderr,
+                    );
 
                     return Ok(guided_error(
                         ErrorCategory::OperationFailed,
@@ -417,58 +390,21 @@ impl WorkspaceServer {
                 let text_message =
                     format_command_io_message(&header, "Output", &stdout, "Stderr", &stderr);
 
-                let output_lower = (stdout.clone() + &stderr).to_lowercase();
-                let cancellation_indicators = [
-                    "operation cancelled",
-                    "operation canceled",
-                    "aborted",
-                    "user cancelled",
-                    "user canceled",
-                    "no changes made",
-                    "skipping",
-                ];
-                let prompt_indicators = ["overwrite", "? ", "[y/n]", "[yes/no]", "confirm"];
-
-                let detected_cancellation = cancellation_indicators
-                    .iter()
-                    .any(|indicator| output_lower.contains(indicator));
-                let detected_prompt = prompt_indicators
-                    .iter()
-                    .any(|indicator| output_lower.contains(indicator));
-
-                if detected_cancellation || detected_prompt {
-                    let indicator_type = if detected_cancellation {
-                        "operation was cancelled"
-                    } else {
-                        "interactive prompt detected"
-                    };
-
+                // Only escalate when the output *tail* looks like a waiting stdin prompt.
+                // Whole-buffer scans (e.g. "? ", "confirm") false-positive on diffs/logs.
+                if validation::looks_like_waiting_prompt(&stdout, &stderr) {
                     let enhanced_message = format!(
-                        "{}\n\n⚠️ NOTICE: Output indicates {} in non-interactive mode.\n\n\
-                        If this command requires user input:\n\
-                        1. Use {} with requireUserInput: true\n\
-                        2. That keeps a single synchronous tool call: the backend pauses, UI collects the input, then the same call resumes with the final result\n\
-                        3. Or add non-interactive flags: --yes, --force, -y\n\
-                        4. Or pipe input: echo y | command\n\n\
-                        Detected indicator: {}",
-                        text_message, indicator_type, PERSISTENT_SHELL_TOOL, indicator_type
+                        "{}\n\nNote: Last output looks like an input prompt; isolated shells cannot answer it.",
+                        text_message
                     );
-
-                    let hint = SuccessHint::new(
+                    return Ok(SuccessHint::new(
                         enhanced_message,
-                        vec![
-                            format!(
-                                "For interactive commands, use {} with requireUserInput: true",
-                                PERSISTENT_SHELL_TOOL
-                            ),
-                            "The agent still sees one synchronous call with a prompt-resume flow"
-                                .to_string(),
-                            format!("Add non-interactive flags: {} --yes", command),
-                            "Or use echo/stdin redirection for automated input".to_string(),
-                        ],
-                    );
-
-                    return Ok(hint.to_mcp_result_with_data(Some(response)));
+                        vec![format!(
+                            "Rerun with {}(requireUserInput: true)",
+                            PERSISTENT_SHELL_TOOL
+                        )],
+                    )
+                    .to_mcp_result_with_data(Some(response)));
                 }
 
                 // Omit generic next-action hints (e.g. listDirectory/readFile) — they are

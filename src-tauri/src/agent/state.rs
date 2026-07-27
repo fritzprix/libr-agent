@@ -48,9 +48,50 @@ impl PendingEventManager {
         self.events.push(event);
     }
 
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.events.clear();
+    }
+
+    /// Drain the next pending message id (FIFO), leaving the rest queued.
+    pub fn drain_one_message(&mut self) -> Option<String> {
+        let index = self
+            .events
+            .iter()
+            .position(|event| matches!(event, PendingEvent::Message(_)))?;
+        match self.events.remove(index) {
+            PendingEvent::Message(id) => Some(id),
+        }
+    }
+
+    /// Re-insert a message at the FIFO front after a failed durable claim/cancel.
+    pub fn restore_front_message(&mut self, message_id: String) {
+        self.events.insert(0, PendingEvent::Message(message_id));
+    }
+
+    /// Whether a specific message id is currently waiting.
+    pub fn contains_message(&self, message_id: &str) -> bool {
+        self.events.iter().any(|event| match event {
+            PendingEvent::Message(id) => id == message_id,
+        })
+    }
+
+    /// Remove a specific pending message id. Returns true when found.
+    pub fn remove_message(&mut self, message_id: &str) -> bool {
+        let before = self.events.len();
+        self.events.retain(|event| match event {
+            PendingEvent::Message(id) => id != message_id,
+        });
+        self.events.len() != before
+    }
+
+    /// Snapshot of pending message ids in FIFO order.
+    pub fn message_ids(&self) -> Vec<String> {
+        self.events
+            .iter()
+            .map(|event| match event {
+                PendingEvent::Message(id) => id.clone(),
+            })
+            .collect()
     }
 
     /// Drain all pending messages and return their IDs
@@ -440,6 +481,15 @@ pub struct AgentSession {
     /// Independent from `repeated_thinking_retry_count`.
     pub repeated_text_loop_retry_count: Arc<RwLock<u32>>,
 
+    /// Counts Rust-owned recovery retries after malformed/truncated tool-call
+    /// argument JSON in a completion. Independent from thinking/text counters.
+    /// Not reset on FallThrough — only on workflow start or a clean valid batch.
+    pub bad_tool_args_retry_count: Arc<RwLock<u32>>,
+
+    /// Counts FallThrough incidents for malformed tool args in the current
+    /// workflow. Hard-stops after a fixed cap to bound unbounded truncated loops.
+    pub bad_tool_args_incident_count: Arc<RwLock<u32>>,
+
     /// Pending events (messages, approvals, etc.) waiting for workflow processing
     pub pending_events: Arc<RwLock<PendingEventManager>>,
 
@@ -505,10 +555,13 @@ mod tests {
         manager.add(PendingEvent::Message("msg2".into()));
         assert!(manager.has_pending());
         assert_eq!(manager.count(), 2);
+        assert_eq!(manager.message_ids(), vec!["msg1", "msg2"]);
 
-        let messages = manager.drain_messages();
-        assert_eq!(messages, vec!["msg1", "msg2"]);
+        let first = manager.drain_one_message();
+        assert_eq!(first.as_deref(), Some("msg1"));
+        assert_eq!(manager.count(), 1);
 
+        assert!(manager.remove_message("msg2"));
         assert!(!manager.has_pending());
         assert_eq!(manager.count(), 0);
     }
@@ -576,6 +629,8 @@ mod tests {
             last_synced_at: Arc::new(RwLock::new(None)),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
+            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),

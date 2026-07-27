@@ -60,8 +60,9 @@ pub fn format_active_sessions_notice(children: &[SessionMetadata]) -> Option<Str
         }
     }
 
+    let total_count = children.len();
     let mut parts = vec![
-        "### Sub-Agent Sessions (Reuse via messageToSession)".to_string(),
+        format!("### Sub-Agent Sessions ({} total, reuse via messageToSession)", total_count),
         String::new(),
         "⚠️ **Reuse Existing Sessions First**: Avoid `startSession` — reuse idle/paused/failed sessions via `messageToSession(sessionId)` to preserve context.".to_string(),
         String::new(),
@@ -123,12 +124,18 @@ fn format_group_notice(
     parts.push(format!("- **{}**", title));
     parts.push(format!("  {}", description));
     for child in sessions.iter().take(limit) {
+        let short_id: String = child.id.chars().take(8).collect();
         let name_str = child.name.as_deref().unwrap_or("");
-        parts.push(format!("  - `{}` (name: \"{}\")", child.id, name_str));
+        let short_name = if name_str.chars().count() > 35 {
+            format!("{}...", name_str.chars().take(32).collect::<String>())
+        } else {
+            name_str.to_string()
+        };
+        parts.push(format!("  - `{}` (name: \"{}\")", short_id, short_name));
     }
     if sessions.len() > limit {
         parts.push(format!(
-            "  - ... and {} more sessions",
+            "  - ... {} more sessions in this group",
             sessions.len() - limit,
         ));
     }

@@ -165,11 +165,11 @@ impl WorkspaceServer {
                         error_message,
                         ToolGroup::Workspace,
                     )
-                    .guidance(vec![
-                        "Review the error message in stderr for details".to_string(),
-                        "Check command syntax and file paths".to_string(),
-                        "Use listDirectory to verify paths exist".to_string(),
-                    ])
+                    .guidance(super::super::validation::shell_command_failure_guidance(
+                        Some(exit_code),
+                        &stdout,
+                        &stderr,
+                    ))
                     .to_mcp_result())
                 }
             }

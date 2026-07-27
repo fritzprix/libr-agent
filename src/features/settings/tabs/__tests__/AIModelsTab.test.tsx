@@ -89,7 +89,7 @@ describe('AIModelsTab', () => {
     mockAgentModelPicker.mockClear();
   });
 
-  it('passes the pending provider config to the model picker refresh controls', () => {
+  it('does not pass draft service config into the model picker', () => {
     const serviceConfigs: Record<AIServiceProvider, ServiceConfig> = {
       [AIServiceProvider.Groq]: {},
       [AIServiceProvider.OpenAI]: {
@@ -116,21 +116,21 @@ describe('AIModelsTab', () => {
           model: 'gpt-4o',
         }}
         localFallbackModel={undefined}
-        localMaxRetries={1}
-        localRetryDelay={5000}
-        localDefaultMaxOutputTokens={8192}
         onPendingChange={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
-        onMaxRetriesChange={vi.fn()}
-        onRetryDelayChange={vi.fn()}
-        onDefaultMaxOutputTokensChange={vi.fn()}
       />,
     );
 
     expect(mockAgentModelPicker).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        serviceConfigOverride: expect.anything(),
+      }),
+    );
+    expect(mockAgentModelPicker).toHaveBeenCalledWith(
       expect.objectContaining({
-        serviceConfigOverride: serviceConfigs[AIServiceProvider.OpenAI],
+        currentModel: 'gpt-4o',
+        currentProvider: AIServiceProvider.OpenAI,
       }),
     );
   });
@@ -158,17 +158,9 @@ describe('AIModelsTab', () => {
         model: 'llama3.1',
       },
       localFallbackModel: undefined,
-      localAgentHubUrl: '',
-      localMaxRetries: 1,
-      localRetryDelay: 5000,
-      localDefaultMaxOutputTokens: 8192,
       onPendingChange,
       onPreferredModelChange: vi.fn(),
       onFallbackModelChange: vi.fn(),
-      onAgentHubUrlChange: vi.fn(),
-      onMaxRetriesChange: vi.fn(),
-      onRetryDelayChange: vi.fn(),
-      onDefaultMaxOutputTokensChange: vi.fn(),
     };
 
     const { rerender } = render(

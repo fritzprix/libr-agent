@@ -3,6 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { NumberSettingField } from '@/features/settings/components/NumberSettingField';
 import { parseIntegerInput } from '@/features/settings/components/settings-number-utils';
 import type { AdvancedSettingsSectionProps } from './types';
+import {
+  REPEATED_THINKING_MIN_PATTERN_LENGTH,
+  REPEATED_THINKING_MIN_REPETITIONS,
+} from '@/context/llm/repeatedTailDetector';
 
 function AdvancedRuntimeControlsSectionComponent({
   localAdvancedSettings,
@@ -66,6 +70,68 @@ function AdvancedRuntimeControlsSectionComponent({
         onValueChange={(value) =>
           onChange('loopPreventionHardBreakOffset', value)
         }
+      />
+
+      <NumberSettingField
+        label={t(
+          'settings.advanced.thinkingLoopMinPatternLength',
+          'Thinking Loop Min Pattern Length',
+        )}
+        description={t(
+          'settings.advanced.thinkingLoopMinPatternLengthDescription',
+          'Minimum repeating string length required to trigger a thinking loop detection. Larger values avoid false positives during long reasoning paths.',
+        )}
+        placeholder={t(
+          'settings.advanced.thinkingLoopMinPatternLengthPlaceholder',
+          'e.g., 256',
+        )}
+        min={32}
+        max={1024}
+        step={1}
+        value={
+          localAdvancedSettings.thinkingLoopMinPatternLength ??
+          REPEATED_THINKING_MIN_PATTERN_LENGTH
+        }
+        parseValue={(rawValue) =>
+          parseIntegerInput(rawValue, {
+            fallback: REPEATED_THINKING_MIN_PATTERN_LENGTH,
+            min: 32,
+            max: 1024,
+          })
+        }
+        onValueChange={(value) =>
+          onChange('thinkingLoopMinPatternLength', value)
+        }
+      />
+
+      <NumberSettingField
+        label={t(
+          'settings.advanced.thinkingLoopMinRepetitions',
+          'Thinking Loop Min Repetitions',
+        )}
+        description={t(
+          'settings.advanced.thinkingLoopMinRepetitionsDescription',
+          'Minimum number of times a repeating pattern must occur in the thinking block stream to trigger a thinking loop detection.',
+        )}
+        placeholder={t(
+          'settings.advanced.thinkingLoopMinRepetitionsPlaceholder',
+          'e.g., 4',
+        )}
+        min={2}
+        max={10}
+        step={1}
+        value={
+          localAdvancedSettings.thinkingLoopMinRepetitions ??
+          REPEATED_THINKING_MIN_REPETITIONS
+        }
+        parseValue={(rawValue) =>
+          parseIntegerInput(rawValue, {
+            fallback: REPEATED_THINKING_MIN_REPETITIONS,
+            min: 2,
+            max: 10,
+          })
+        }
+        onValueChange={(value) => onChange('thinkingLoopMinRepetitions', value)}
       />
 
       <NumberSettingField

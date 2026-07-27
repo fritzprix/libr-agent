@@ -1,45 +1,54 @@
-# 기술 분석 및 코드 오딧 보고서 템플릿
+# Code audit report template
 
-이 템플릿은 리팩토링이나 대규모 기능 추가 후의 결과물을 분석하고 보고할 때 사용합니다.
+Write the report to `.libragent/work/code_audit_report.md` (or another `.libragent/work/*` path). Match the user’s language for prose.
 
 ---
 
-## 1. 개요 (Executive Summary)
+## 1. Executive summary
 
-- **분석 대상**: (예: BaseAIService 리팩토링 및 Gemini SDK 수정)
-- **핵심 목표**: (예: 아키텍처 모듈화 및 도구 설정 오류 해결)
-- **최종 판정**: (예: ★★★★☆ - 우수, 운영 안정성 대폭 향상)
+- **Subject**: (what was audited)
+- **Stated goal**: (from PR / agent summary)
+- **Verdict**: (pass / pass-with-risks / fail) — one sentence why
+- **Overall score**: only if ≥2 axes were scored; else omit
 
-## 2. 주요 작업 분석 (Detailed Analysis)
+## 2. Claims vs code
 
-### [작업 A: 명칭]
+| Claim (from summary/PR) | Evidence (path:line or “not found”) | Result |
+| ----------------------- | ----------------------------------- | ------ |
+|                         |                                     | match / mismatch / unverified |
 
-- **변경 사항**:
-- **설계적 의의**: (예: Monolith 제거, ISP 준수 등)
-- **효과**: (예: 코드 가독성 향상, 의존성 감소)
+If nothing to contradict: one row “No material mismatches found” with the files you opened.
 
-### [작업 B: 명칭]
+## 3. Work analysis
 
-- **변경 사항**:
-- **설계적 의의**:
-- **효과**:
+### [Change A: short name]
 
-## 3. 아키텍처 및 품질 평가
+- **What changed**:
+- **Design intent**:
+- **Effect** (observed, not speculated):
 
-| 항목                          | 평가 (1-5) | 상세 피드백 |
-| :---------------------------- | :--------: | :---------- |
-| **모듈화 (Modularity)**       |            |             |
-| **인터페이스 설계 (ISP)**     |            |             |
-| **중복 제거 (DRY)**           |            |             |
-| **성능/비용 (Caching/Token)** |            |             |
-| **안정성 (Reliability)**      |            |             |
+Repeat per distinct change. Skip fluff.
 
-## 4. 리스크 및 향후 제언
+## 4. Quality axes
 
-- **잠재적 부작용**: (현재 수정으로 인해 발생할 수 있는 문제)
-- **기술 부채**: (남아있는 과제나 임시 방편)
-- **다음 액션**: (추천하는 후속 리팩토링이나 검증 작업)
+Score **1–5 only for relevant axes**. Use `N/A` + reason otherwise. Never invent a high score to fill the table.
 
-## 5. 결론 (Conclusion)
+| Axis | Score | Feedback (cite path:line) |
+| ---- | :---: | ------------------------- |
+| Modularity | | |
+| Interface design (ISP) | | |
+| DRY | | |
+| Cost (tokens / caching) | | |
+| Reliability | | |
 
-(최종적인 기술적 소회 및 권장 사항 요약)
+Add a custom row if the change is about something else (e.g. pagination UX, schema clarity). Drop unused rows.
+
+## 5. Risks and follow-ups
+
+- **Side effects**:
+- **Tech debt left behind**:
+- **Next actions** (ordered, concrete):
+
+## 6. Conclusion
+
+2–4 sentences. No restating the whole matrix. End with the single most important next step if any.

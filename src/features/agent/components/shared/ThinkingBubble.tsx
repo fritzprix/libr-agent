@@ -81,7 +81,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
 
   return (
     <div
-      className={`flex flex-col gap-2 p-3 bg-popover rounded-lg border border-border ${className}`}
+      className={`flex w-full min-w-0 flex-col gap-2 rounded-lg border border-border bg-popover p-3 ${className}`}
     >
       <div className="flex items-center gap-2 text-xs font-medium opacity-70">
         {isStreaming && <LoadingIndicator size="sm" />}

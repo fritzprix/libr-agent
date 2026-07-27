@@ -8,30 +8,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::mcp::builtin::workspace::terminal_manager;
-
-#[cfg(windows)]
-use windows_sys::Win32::Globalization::{GetACP, MultiByteToWideChar};
-
-#[cfg(windows)]
-fn looks_like_utf16le(bytes: &[u8]) -> bool {
-    if bytes.len() < 4 || !bytes.len().is_multiple_of(2) {
-        return false;
-    }
-
-    // Heuristic: many NUL bytes in odd indices.
-    let sample_len = bytes.len().min(200);
-    let mut nul_count = 0;
-    let mut checked = 0;
-
-    for i in (1..sample_len).step_by(2) {
-        checked += 1;
-        if bytes[i] == 0 {
-            nul_count += 1;
-        }
-    }
-
-    checked > 0 && (nul_count * 4 >= checked * 3)
-}
+use crate::mcp::builtin::workspace::text_encoding::{decode_text_bytes, DecodedText};
 
 fn strip_ansi_escapes(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -76,77 +53,12 @@ fn strip_ansi_escapes(input: &str) -> String {
     out
 }
 
-#[cfg(windows)]
 fn decode_process_output(bytes: &[u8]) -> String {
-    if bytes.is_empty() {
-        return String::new();
+    // Process output should never be rejected as "binary"; prefer best-effort text.
+    match decode_text_bytes(bytes) {
+        DecodedText::Text { text, .. } => text,
+        DecodedText::Binary => String::from_utf8_lossy(bytes).into_owned(),
     }
-
-    // UTF-8 BOM
-    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        return String::from_utf8_lossy(&bytes[3..]).to_string();
-    }
-
-    // UTF-16LE (common for some Windows tools)
-    if looks_like_utf16le(bytes) {
-        let start = if bytes.starts_with(&[0xFF, 0xFE]) {
-            2
-        } else {
-            0
-        };
-        let u16_len = (bytes.len() - start) / 2;
-        let mut wide = Vec::with_capacity(u16_len);
-        for chunk in bytes[start..].chunks_exact(2) {
-            wide.push(u16::from_le_bytes([chunk[0], chunk[1]]));
-        }
-        return String::from_utf16_lossy(&wide);
-    }
-
-    // UTF-8 fast path
-    if let Ok(text) = std::str::from_utf8(bytes) {
-        return text.to_string();
-    }
-
-    // Fallback: decode using the system ANSI code page (e.g., CP949 on Korean Windows)
-    let code_page = unsafe { GetACP() };
-    let required = unsafe {
-        MultiByteToWideChar(
-            code_page,
-            0,
-            bytes.as_ptr(),
-            bytes.len() as i32,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-
-    if required <= 0 {
-        return String::from_utf8_lossy(bytes).to_string();
-    }
-
-    let mut wide: Vec<u16> = vec![0; required as usize];
-    let converted = unsafe {
-        MultiByteToWideChar(
-            code_page,
-            0,
-            bytes.as_ptr(),
-            bytes.len() as i32,
-            wide.as_mut_ptr(),
-            required,
-        )
-    };
-
-    if converted <= 0 {
-        return String::from_utf8_lossy(bytes).to_string();
-    }
-
-    wide.truncate(converted as usize);
-    String::from_utf16_lossy(&wide)
-}
-
-#[cfg(not(windows))]
-fn decode_process_output(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).to_string()
 }
 
 pub async fn read_output_file(file_path: &PathBuf) -> Result<String, String> {

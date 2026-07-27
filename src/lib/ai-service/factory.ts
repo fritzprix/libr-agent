@@ -36,11 +36,14 @@ function buildConfigCacheKey(config?: AIServiceConfig): string {
   }
 
   // Only include constructor-time options that materially change which backend
-  // endpoint/client instance this service should talk to.
+  // endpoint/client instance this service should talk to, plus retry policy so
+  // settings.advanced.maxRetries / retryDelay recreate the service.
   return JSON.stringify({
     baseUrl: config.baseUrl ?? '',
     use3rdParty: Boolean(config.use3rdParty),
     customModelId: config.customModelId ?? '',
+    maxRetries: config.maxRetries ?? null,
+    retryDelay: config.retryDelay ?? null,
   });
 }
 

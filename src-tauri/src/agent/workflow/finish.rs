@@ -702,6 +702,8 @@ mod tests {
             last_synced_at: Arc::new(RwLock::new(Some(SystemTime::now()))),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
+            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),

@@ -8,6 +8,7 @@ use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::message_repository::MessageRepository;
+use crate::repositories::pending_queue_repository::PendingQueueRepository;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{SessionMetadata, SessionStatus};
 use crate::services::message_service::MessageService;
@@ -372,6 +373,24 @@ async fn drain_and_start_pending_workflows(
         return Ok(());
     }
 
+    // Clear durable pending_queue index IMMEDIATELY after memory drain and
+    // BEFORE any longer await (get_by_ids / start_workflow). Leaving index rows
+    // across that gap lets terminate → discard_all_pending_messages observe
+    // stale index_ids and delete the first Session-API user message from DB
+    // (Harbor Docker path). Message bodies stay in `messages`; only the waiting
+    // index is dropped.
+    let queue_repo = crate::state::get_pending_queue_repository();
+    for message_id in &pending_ids {
+        if let Err(error) = queue_repo.remove(message_id).await {
+            log::error!(
+                "Failed to clear pending_queue index for promoted message {} (session {}): {}",
+                message_id,
+                session_id,
+                error
+            );
+        }
+    }
+
     let repo = crate::state::get_message_repository();
     let messages = match repo.get_by_ids(pending_ids).await {
         Ok(messages) => messages,
@@ -401,8 +420,13 @@ async fn drain_and_start_pending_workflows(
                 emit_drain_workflow_failure(deps, session_id, error).await;
                 return Ok(());
             }
-        } else if let Err(error) =
-            MessageService::queue_user_message(&deps.active_sessions, session_id, &message).await
+        } else if let Err(error) = MessageService::queue_user_message(
+            &deps.active_sessions,
+            &deps.app_handle,
+            session_id,
+            &message,
+        )
+        .await
         {
             emit_drain_workflow_failure(deps, session_id, error).await;
             return Ok(());

@@ -136,7 +136,7 @@ describe('OpenAIService prompt cache extensions', () => {
     });
   });
 
-  it('sends cache_prompt at the top level for custom OpenAI-compatible streaming endpoints', async () => {
+  it('does not send cache_prompt for custom OpenAI-compatible streaming endpoints', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test', {
       baseUrl: 'http://127.0.0.1:8080/v1',
@@ -152,13 +152,13 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(chunks.length).toBeGreaterThan(0);
 
     const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
-    expect(request.cache_prompt).toBe(true);
+    expect(request.cache_prompt).toBeUndefined();
     expect(request.prompt_cache_key).toBeUndefined();
     expect(request.stream).toBe(true);
     expect(request).not.toHaveProperty('extra_body');
   });
 
-  it('uses official OpenAI prompt cache routing fields instead of cache_prompt for the default endpoint', async () => {
+  it('uses official OpenAI prompt cache routing fields for the default endpoint', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test');
 
@@ -292,7 +292,7 @@ describe('OpenAIService prompt cache extensions', () => {
         message,
         createSessionContextMessage(
           'openai-session-context-m1',
-          '<!-- session context: background reference only -->\n\n# Current Context Information\nfirst state\n\n<!-- end of session context -->',
+          '<session-context>\n\n# Current Context Information\nfirst state\n\n</session-context>',
         ),
       ],
       {
@@ -313,7 +313,7 @@ describe('OpenAIService prompt cache extensions', () => {
         message,
         createSessionContextMessage(
           'openai-session-context-m1',
-          '<!-- session context: background reference only -->\n\n# Current Context Information\nsecond state\n\n<!-- end of session context -->',
+          '<session-context>\n\n# Current Context Information\nsecond state\n\n</session-context>',
         ),
       ],
       {
@@ -515,29 +515,16 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(firstRequest.prompt_cache_key).toBe(secondRequest.prompt_cache_key);
   });
 
-  it('does not send cache_prompt to the default OpenAI endpoint even when explicitly enabled', async () => {
-    const { OpenAIService } = await import('../openai');
-    const service = new OpenAIService('sk-test', {
-      enablePromptCache: true,
-    });
-
-    await service.sampleText('hello', { modelName: 'gpt-4o' });
-
-    const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
-    expect(request.cache_prompt).toBeUndefined();
-  });
-
-  it('supports explicit prompt cache enablement for non-streaming compatible endpoints', async () => {
+  it('does not send cache_prompt on non-streaming compatible endpoints', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test', {
       baseUrl: 'https://llama.example.com/v1',
-      enablePromptCache: true,
     });
 
     await service.sampleText('hello', { modelName: 'local-model' });
 
     const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
-    expect(request.cache_prompt).toBe(true);
+    expect(request.cache_prompt).toBeUndefined();
     expect(request.stream).toBe(false);
     expect(request).not.toHaveProperty('extra_body');
   });

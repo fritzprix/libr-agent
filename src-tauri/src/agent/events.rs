@@ -20,7 +20,10 @@ pub enum InitializationStatus {
 pub enum WorkflowCompletionReason {
     Natural,
     RecurringStop,
+    /// Soft cancel: leave the session paused so the user can resume.
     Cancelled,
+    /// Hard stop / terminate: session returns to idle (no resume stack).
+    Terminated,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -184,6 +187,13 @@ pub enum AgentEvent {
         /// `hardBreak` | `softRecovery` | `errorEscalate` | `repeatedBatch` | `duplicateInBatch`
         action: String,
     },
+
+    /// Waiting user prompts that are not yet part of the active turn.
+    #[serde(rename_all = "camelCase")]
+    PendingQueueUpdated {
+        session_id: String,
+        messages: Vec<Message>,
+    },
 }
 
 pub trait AgentEventDispatcher: Send + Sync {
@@ -309,6 +319,13 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             action,
         } => format!(
             "CircuitBreakerTriggered(session={session_id}, tool={tool_name}, count={count}, action={action})"
+        ),
+        AgentEvent::PendingQueueUpdated {
+            session_id,
+            messages,
+        } => format!(
+            "PendingQueueUpdated(session={session_id}, count={})",
+            messages.len()
         ),
     }
 }

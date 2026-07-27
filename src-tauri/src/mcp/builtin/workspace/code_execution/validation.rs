@@ -248,6 +248,162 @@ pub fn resolve_stdin_delivery(command: &str, args: &Value) -> StdinDelivery {
     StdinDelivery::Host
 }
 
+/// Last few non-empty lines from stdout/stderr (joined).
+fn output_tail(stdout: &str, stderr: &str, max_lines: usize) -> String {
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{stdout}\n{stderr}"),
+        (false, true) => stdout.to_string(),
+        (true, false) => stderr.to_string(),
+        (true, true) => String::new(),
+    };
+
+    let lines: Vec<&str> = combined
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..].join("\n")
+}
+
+/// True when the *tail* of output looks like a process waiting for stdin.
+///
+/// Intentionally narrow: whole-buffer substrings like `"? "`, `confirm`, or
+/// `skipping` false-positive on diffs and logs (e.g. `git diff`).
+pub fn looks_like_waiting_prompt(stdout: &str, stderr: &str) -> bool {
+    let tail = output_tail(stdout, stderr, 3).to_lowercase();
+    if tail.is_empty() {
+        return false;
+    }
+
+    const STRONG_TAIL_PROMPTS: &[&str] = &[
+        "[y/n]",
+        "[yes/no]",
+        "(y/n)",
+        "(yes/no)",
+        "enter password:",
+        "password:",
+    ];
+    if STRONG_TAIL_PROMPTS
+        .iter()
+        .any(|prompt| tail.contains(prompt))
+    {
+        return true;
+    }
+
+    let last = tail.lines().next_back().unwrap_or("").trim();
+    last.ends_with('?')
+        && (last.contains("overwrite")
+            || last.contains("(y/n)")
+            || last.contains("[y/n]")
+            || last.contains("yes/no")
+            || last.contains("y/n"))
+}
+
+/// True when shell stderr/stdout indicates a quote or heredoc parse failure.
+///
+/// Harbor trajectories show agents retrying nested quotes/`cat <<EOF` one-liners
+/// after `unexpected EOF while looking for matching` — escalate to writeFile.
+/// Bash localizes this message (e.g. Korean), so match English and common locales.
+pub fn looks_like_shell_quote_parse_error(stdout: &str, stderr: &str) -> bool {
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{stdout}\n{stderr}"),
+        (false, true) => stdout.to_string(),
+        (true, false) => stderr.to_string(),
+        (true, true) => return false,
+    };
+    let lower = combined.to_ascii_lowercase();
+
+    const ENGLISH_SIGNALS: &[&str] = &[
+        "unexpected eof while looking for matching",
+        "syntax error: unexpected end of file",
+        "syntax error near unexpected token",
+        "here-document at line",
+        "delimited by end-of-file",
+        "missing terminating",
+        "unmatched '",
+        "unmatched \"",
+    ];
+    if ENGLISH_SIGNALS.iter().any(|signal| lower.contains(signal)) {
+        return true;
+    }
+
+    // Localized bash (ko_KR): "`''을(를) 찾는 도중 예상치 못한 파일의 끝"
+    // and heredoc: "here-document가 ... 파일의 끝으로 구분함"
+    const LOCALIZED_SIGNALS: &[&str] = &[
+        "예상치 못한 파일의 끝",
+        "파일의 끝으로 구분",
+        "찾는 도중 예상치 못한",
+    ];
+    LOCALIZED_SIGNALS
+        .iter()
+        .any(|signal| combined.contains(signal))
+}
+
+fn write_file_then_shell_guidance() -> Vec<String> {
+    use crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL;
+
+    vec![
+        "Shell could not parse nested quotes or a heredoc in this one-liner.".to_string(),
+        format!(
+            "Use writeFile to save the script, then {} with a short command (e.g. `bash script.sh` or `python3 script.py`).",
+            RUN_SHELL_TOOL
+        ),
+        "Do not embed multi-line scripts with nested quotes inside a single shell call.".to_string(),
+    ]
+}
+
+/// Outcome-conditioned next-step hints for failed one-shot / persistent shell runs.
+pub fn shell_command_failure_guidance(
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+) -> Vec<String> {
+    if looks_like_shell_quote_parse_error(stdout, stderr) {
+        return write_file_then_shell_guidance();
+    }
+
+    match exit_code {
+        Some(1) => vec![
+            "General command failure - review error output above".to_string(),
+            "Verify command syntax and required files exist".to_string(),
+            "Use listDirectory to check file paths".to_string(),
+        ],
+        Some(2) => vec![
+            "Misuse of shell command or invalid arguments".to_string(),
+            format!(
+                "For multi-line or quote-heavy scripts, use writeFile then {} with a short command.",
+                crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL
+            ),
+            "Verify required files exist with listDirectory.".to_string(),
+        ],
+        Some(127) => vec![
+            "Command not found - program is not installed or not in PATH".to_string(),
+            "Verify the program is installed on the system".to_string(),
+            "Check for typos in the command name".to_string(),
+        ],
+        Some(126) => vec![
+            "Command found but not executable".to_string(),
+            "Check file permissions".to_string(),
+            "Verify the file is a valid executable".to_string(),
+        ],
+        Some(130) => vec![
+            "Command terminated by Ctrl+C (SIGINT)".to_string(),
+            "Process was interrupted by user or system".to_string(),
+        ],
+        Some(code) => vec![
+            format!("Command failed with exit code: {code}"),
+            "Review error output above for specific failure reasons".to_string(),
+            "Verify command syntax and required dependencies".to_string(),
+        ],
+        None => vec![
+            "Command failed without an exit code".to_string(),
+            "Review error output above for specific failure reasons".to_string(),
+            "Verify command syntax and required dependencies".to_string(),
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,11 +487,108 @@ mod tests {
     }
 
     #[test]
+    fn test_looks_like_waiting_prompt_ignores_git_diff_noise() {
+        let diff = r#"
+diff --git a/src/lib/ai-service/factory.ts b/src/lib/ai-service/factory.ts
+index 111..222 100644
+--- a/src/lib/ai-service/factory.ts
++++ b/src/lib/ai-service/factory.ts
+@@ -10,6 +10,7 @@ export function create() {
+   const options?: Options;
+   // confirm strategy selection
+   return factory;
+ }
+"#;
+        assert!(!looks_like_waiting_prompt(diff, ""));
+        assert!(!looks_like_waiting_prompt("? foo.ts\n M bar.ts", ""));
+        assert!(!looks_like_waiting_prompt(
+            "no changes made\nskipping file",
+            ""
+        ));
+    }
+
+    #[test]
+    fn test_looks_like_waiting_prompt_matches_strong_tail_only() {
+        assert!(looks_like_waiting_prompt(
+            "Package name: (demo)\nOverwrite? (y/n)",
+            ""
+        ));
+        assert!(looks_like_waiting_prompt("", "Enter password:"));
+        assert!(looks_like_waiting_prompt(
+            "lots of log\nmore log\nContinue [y/n]",
+            ""
+        ));
+        assert!(!looks_like_waiting_prompt("Overwrite complete", ""));
+    }
+
+    #[test]
     fn test_resolve_stdin_delivery_honors_explicit_override() {
         let args = serde_json::json!({ "stdinDelivery": "child" });
         assert_eq!(
             resolve_stdin_delivery("$env:LIBRAGENT_TELEGRAM_CODE = Read-Host", &args),
             StdinDelivery::Child
+        );
+    }
+
+    #[test]
+    fn test_looks_like_shell_quote_parse_error_detects_bash_eof_quote() {
+        assert!(looks_like_shell_quote_parse_error(
+            "",
+            "bash: -c: line 23: unexpected EOF while looking for matching `''"
+        ));
+        assert!(looks_like_shell_quote_parse_error(
+            "",
+            "bash: -c: line 6: unexpected EOF while looking for matching `\"'"
+        ));
+        assert!(looks_like_shell_quote_parse_error(
+            "",
+            "syntax error: unexpected end of file"
+        ));
+        assert!(looks_like_shell_quote_parse_error(
+            "",
+            "./script.sh: line 10: warning: here-document at line 3 delimited by end-of-file (wanted `EOF')"
+        ));
+        assert!(looks_like_shell_quote_parse_error(
+            "",
+            "bash: -c: 줄 1: `''을(를) 찾는 도중 예상치 못한 파일의 끝"
+        ));
+        assert!(!looks_like_shell_quote_parse_error(
+            "",
+            "Error: file not found"
+        ));
+        assert!(!looks_like_shell_quote_parse_error("ok output", ""));
+    }
+
+    #[test]
+    fn test_shell_command_failure_guidance_escalates_quote_parse() {
+        let guidance = shell_command_failure_guidance(
+            Some(2),
+            "",
+            "bash: -c: line 20: unexpected EOF while looking for matching `''",
+        );
+        let joined = guidance.join("\n");
+        assert!(
+            joined.contains("writeFile"),
+            "quote-parse failures must point at writeFile: {joined}"
+        );
+        assert!(
+            joined.contains(crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL),
+            "guidance must name the platform shell tool: {joined}"
+        );
+        assert!(
+            !joined.contains("Misuse of shell command"),
+            "generic exit-2 text must not override quote-parse guidance: {joined}"
+        );
+    }
+
+    #[test]
+    fn test_shell_command_failure_guidance_exit_2_without_quote_signal() {
+        let guidance = shell_command_failure_guidance(Some(2), "", "usage: foo [-a]");
+        let joined = guidance.join("\n");
+        assert!(joined.contains("Misuse of shell command"));
+        assert!(
+            joined.contains("writeFile"),
+            "plain exit 2 should still offer writeFile alternative: {joined}"
         );
     }
 }

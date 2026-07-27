@@ -75,6 +75,14 @@ fn present_interactive_schema_property_order_is_format_title_interaction_content
 }
 
 #[test]
+fn report_result_schema_property_order_puts_result_last() {
+    use tauri_mcp_agent_lib::mcp::builtin::ui::tools::report_result_tool;
+
+    let tool = report_result_tool();
+    assert_property_order(&tool, &["status", "format", "title", "result"]);
+}
+
+#[test]
 fn record_knowledge_schema_property_order_puts_content_last() {
     use tauri_mcp_agent_lib::mcp::builtin::knowledge::tools::record_knowledge_tool;
 

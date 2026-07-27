@@ -15,7 +15,6 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
-  isPending?: boolean;
   followChatScroll?: boolean;
   /**
    * When true, this bubble represents a group of failed tool results.
@@ -52,7 +51,6 @@ function AgentMessageBubbleImpl({
   toolResultsMap,
   groupedToolCalls,
   groupedMessages,
-  isPending = false,
   followChatScroll = true,
   toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
@@ -86,22 +84,26 @@ function AgentMessageBubbleImpl({
       <div
         className={cn(
           'flex',
-          isStandardUserMessage ? 'justify-end' : 'justify-start',
-          hasUIResource && 'w-full',
+          isStandardUserMessage ? 'justify-end' : 'w-full justify-start',
         )}
       >
         <div
           className={cn(
-            'relative p-3 rounded-lg flex flex-col',
-            hasUIResource ? 'w-full max-w-full' : 'max-w-[85%] md:max-w-2xl',
+            'relative flex min-w-0 flex-col',
+            // Assistant / channel / tool groups: lock width from first paint so
+            // streaming only grows vertically (no horizontal re-wrap jitter).
+            // User bubbles stay content-sized with a small floor for short replies.
+            hasUIResource
+              ? 'w-full max-w-full rounded-lg p-3'
+              : isStandardUserMessage
+                ? 'min-w-[64px] max-w-[85%] rounded-2xl rounded-tr-md px-4 py-2.5 md:max-w-2xl'
+                : 'w-full max-w-3xl rounded-lg p-3',
             isChannelMessage
               ? 'border border-amber-500/30 bg-amber-500/10 text-secondary-foreground'
               : msg.role === 'user'
-                ? isPending
-                  ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
-                  : 'bg-primary text-primary-foreground'
+                ? 'bg-primary text-primary-foreground'
                 : toolErrorGroup
-                  ? 'bg-destructive/5 text-secondary-foreground border border-destructive/20'
+                  ? 'border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5 text-secondary-foreground'
                   : 'bg-secondary text-secondary-foreground',
             // Add custom utility to ensure links inside are visible
             isStandardUserMessage
@@ -130,9 +132,7 @@ function AgentMessageBubbleImpl({
                 {msg.role === 'assistant'
                   ? assistantName || t('agent.bubble.assistant')
                   : msg.role === 'user'
-                    ? isPending
-                      ? t('agent.bubble.youQueued')
-                      : t('agent.bubble.you')
+                    ? t('agent.bubble.you')
                     : msg.role.toUpperCase()}
               </>
             )}
@@ -229,7 +229,6 @@ const arePropsEqual = (
   if (
     prev.message !== next.message ||
     prev.assistantName !== next.assistantName ||
-    prev.isPending !== next.isPending ||
     prev.followChatScroll !== next.followChatScroll ||
     prev.toolErrorGroup !== next.toolErrorGroup ||
     prev.groupedMessages !== next.groupedMessages ||

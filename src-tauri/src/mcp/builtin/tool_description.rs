@@ -19,14 +19,16 @@ pub fn tool_description(
     }
 
     if !workflow.is_empty() {
-        out.push_str("\n\n⚠️ CRITICAL WORKFLOW:");
+        out.push_str("\n\n");
+        out.push_str(crate::mcp::builtin::error_guidance::hint_headers::TOOL_EXAMPLE_WORKFLOW);
         for (index, step) in workflow.iter().enumerate() {
             out.push_str(&format!("\n{}. {}", index + 1, step));
         }
     }
 
     if !next_steps.is_empty() {
-        out.push_str("\n\n💡 Next Steps:");
+        out.push_str("\n\n");
+        out.push_str(crate::mcp::builtin::error_guidance::hint_headers::TOOL_RELATED_ACTIONS);
         for step in next_steps {
             out.push_str("\n- ");
             out.push_str(step);
@@ -55,7 +57,7 @@ mod tests {
             &["Try foo__bar"],
         );
         assert!(desc.contains("Prerequisites:\n- Need X"));
-        assert!(desc.contains("⚠️ CRITICAL WORKFLOW:\n1. Do A\n2. Do B"));
-        assert!(desc.contains("💡 Next Steps:\n- Try foo__bar"));
+        assert!(desc.contains("💡 Example workflow:\n1. Do A\n2. Do B"));
+        assert!(desc.contains("💡 Related Actions:\n- Try foo__bar"));
     }
 }

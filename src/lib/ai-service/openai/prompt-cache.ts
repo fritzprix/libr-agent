@@ -58,48 +58,6 @@ export function isOfficialOpenAIEndpoint(
   }
 }
 
-export function shouldEnableCompatiblePromptCacheExtension(
-  provider: AIServiceProvider,
-  config: AIServiceConfig,
-): boolean {
-  if (config.enablePromptCache !== undefined) {
-    return (
-      config.enablePromptCache && !isOfficialOpenAIEndpoint(provider, config)
-    );
-  }
-
-  if (provider !== AIServiceProvider.OpenAI) {
-    return false;
-  }
-
-  const baseUrl = config.baseUrl?.trim();
-  if (!baseUrl) {
-    return false;
-  }
-
-  try {
-    const { hostname } = new URL(baseUrl);
-    return hostname !== 'api.openai.com';
-  } catch {
-    return false;
-  }
-}
-
-export function withCompatiblePromptCache<T extends { cache_prompt?: boolean }>(
-  request: T,
-  provider: AIServiceProvider,
-  config: AIServiceConfig,
-): T {
-  if (!shouldEnableCompatiblePromptCacheExtension(provider, config)) {
-    return request;
-  }
-
-  return {
-    ...request,
-    cache_prompt: true,
-  };
-}
-
 export function buildAutomaticPromptCacheKey(args: {
   model: string;
   systemPrompt?: string;
@@ -167,11 +125,13 @@ export function withPromptCaching<
   config: AIServiceConfig,
   automaticPromptCacheKey?: string,
 ): T {
-  const officialCachingRequest = withOfficialPromptCaching(
+  // Do not send llama.cpp's non-standard `cache_prompt` field. That extension
+  // defaults to true server-side, and strict OpenAI-compatible hosts (e.g.
+  // NVIDIA Integrate) reject unknown parameters with HTTP 400.
+  return withOfficialPromptCaching(
     request,
     provider,
     config,
     automaticPromptCacheKey,
   );
-  return withCompatiblePromptCache(officialCachingRequest, provider, config);
 }

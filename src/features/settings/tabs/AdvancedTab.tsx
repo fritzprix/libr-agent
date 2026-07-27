@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { DangerZoneSettings } from '../components/DangerZoneSettings';
 import { AboutSection } from '../components/AboutSection';
 import { AdvancedPerformanceSection } from './advanced/AdvancedPerformanceSection';
+import { AdvancedRequestReliabilitySection } from './advanced/AdvancedRequestReliabilitySection';
 import { AdvancedRuntimeControlsSection } from './advanced/AdvancedRuntimeControlsSection';
 import { AdvancedShellIsolationSection } from './advanced/AdvancedShellIsolationSection';
 import type { AdvancedTabProps } from './advanced/types';
@@ -29,6 +30,10 @@ function AdvancedTabComponent({
         </p>
       </div>
 
+      <AdvancedRequestReliabilitySection
+        localAdvancedSettings={localAdvancedSettings}
+        onChange={onChange}
+      />
       <AdvancedRuntimeControlsSection
         localAdvancedSettings={localAdvancedSettings}
         onChange={onChange}

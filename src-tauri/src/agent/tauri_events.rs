@@ -28,6 +28,17 @@ impl AgentEventDispatcher for TauriEventDispatcher {
 
 /// Emit an agent event to the frontend
 pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(), String> {
+    // Integration tests pass a `tauri::test::mock_app()` handle with no webview
+    // event loop; `emit` / `emit_to` on that handle can hang the async runtime.
+    // Production always registers the real handle during startup.
+    if crate::state::get_app_handle().is_none() {
+        log::debug!(
+            "Skipping agent event emit (AppHandle not registered): {}",
+            summarize_agent_event(&event)
+        );
+        return Ok(());
+    }
+
     // Use emit_to() to broadcast to all windows (Tauri 2.x requirement)
     // EventTarget::app() sends to all webviews
     info!("Emitting agent event: {}", summarize_agent_event(&event));

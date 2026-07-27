@@ -75,7 +75,19 @@ function areMapsEqual(
   return true;
 }
 
-export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
+export function useMessageGrouping(
+  messages: Message[],
+  boundaryId?: string,
+): MessageGroupingResult {
+  const visibleMessages = useMemo(() => {
+    return messages.filter(
+      (msg) =>
+        msg.source !== 'session-context' &&
+        msg.source !== 'compaction-instruction' &&
+        msg.source !== 'recovery',
+    );
+  }, [messages]);
+
   // Cache the previous result and metadata to enable differential updates
   const cache = useRef<{
     messages: Message[];
@@ -97,13 +109,14 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
 
   const calculation = useMemo(() => {
     const prevCache = cache.current;
+    const currentMessages = visibleMessages;
 
     // 1. Find the divergence point (where messages differ from previous render)
     let divergenceIndex = 0;
     while (
       divergenceIndex < prevCache.messages.length &&
-      divergenceIndex < messages.length &&
-      prevCache.messages[divergenceIndex] === messages[divergenceIndex]
+      divergenceIndex < currentMessages.length &&
+      prevCache.messages[divergenceIndex] === currentMessages[divergenceIndex]
     ) {
       divergenceIndex++;
     }
@@ -164,7 +177,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
       // startIndex is the end index of the last reused group (or 0 if none were reused), i.e. the start of "new/changed" processing.
       const startIndex = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
       for (let prefixIndex = 0; prefixIndex < startIndex; prefixIndex++) {
-        const msg = messages[prefixIndex];
+        const msg = currentMessages[prefixIndex];
         if (msg.role === 'tool' && msg.tool_call_id) {
           toolResultsMap.set(msg.tool_call_id, msg);
           newLastToolResultIndex = Math.max(
@@ -201,16 +214,19 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     // Start index is the end index of the last reused group (or 0)
     let i = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
 
-    while (i < messages.length) {
-      const msg = messages[i];
+    while (i < currentMessages.length) {
+      const msg = currentMessages[i];
 
       // Group consecutive failed tool results into a dedicated error group.
       // This must happen BEFORE the generic "skip standalone tool results" behavior.
       if (isToolErrorMessage(msg)) {
         const errorMessages: Message[] = [];
         let j = i;
-        while (j < messages.length && isToolErrorMessage(messages[j])) {
-          const toolMsg = messages[j];
+        while (
+          j < currentMessages.length &&
+          isToolErrorMessage(currentMessages[j])
+        ) {
+          const toolMsg = currentMessages[j];
           // Ensure tool error results are still captured in the toolResultsMap.
           captureToolResult(toolMsg, j);
           errorMessages.push(toolMsg);
@@ -229,7 +245,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
 
       // Capture tool result in map (even if skipped later)
       if (msg.role === 'tool' && msg.tool_call_id) {
-        const previous = i > 0 ? messages[i - 1] : undefined;
+        const previous = i > 0 ? currentMessages[i - 1] : undefined;
         const isImmediatelyAfterAssistantToolCall =
           previous?.role === 'assistant' &&
           Array.isArray(previous.tool_calls) &&
@@ -259,8 +275,8 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         let j = i;
 
         // Collect consecutive assistant messages with tool calls
-        while (j < messages.length) {
-          const currentMsg = messages[j];
+        while (j < currentMessages.length) {
+          const currentMsg = currentMessages[j];
 
           // Stop if not an assistant message with tool calls
           if (
@@ -281,18 +297,27 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           allToolCalls.push(...currentMsg.tool_calls);
           currentMsg.tool_calls.forEach((tc) => groupToolCallIds.add(tc.id));
 
+          let hitBoundary = boundaryId ? currentMsg.id === boundaryId : false;
+
           // Skip past associated tool results
           j++;
           while (
-            j < messages.length &&
-            messages[j].role === 'tool' &&
-            messages[j].tool_call_id &&
-            groupToolCallIds.has(messages[j].tool_call_id!)
+            j < currentMessages.length &&
+            currentMessages[j].role === 'tool' &&
+            currentMessages[j].tool_call_id &&
+            groupToolCallIds.has(currentMessages[j].tool_call_id!)
           ) {
             // Capture skipped tool result in map.
-            captureToolResult(messages[j], j);
-            coveredMessageIds.push(messages[j].id);
+            captureToolResult(currentMessages[j], j);
+            coveredMessageIds.push(currentMessages[j].id);
+            if (boundaryId && currentMessages[j].id === boundaryId) {
+              hitBoundary = true;
+            }
             j++;
+          }
+
+          if (hitBoundary) {
+            break;
           }
         }
 
@@ -353,14 +378,14 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     return {
       result: { groupedMessages, toolResultsMap: finalToolResultsMap },
       newCache: {
-        messages,
+        messages: currentMessages,
         groupedMessages,
         groupEndIndices,
         toolResultsMap: finalToolResultsMap,
         lastToolResultIndex: newLastToolResultIndex,
       },
     };
-  }, [messages]);
+  }, [visibleMessages, boundaryId]);
 
   useLayoutEffect(() => {
     cache.current = calculation.newCache;

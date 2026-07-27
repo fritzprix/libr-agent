@@ -102,6 +102,9 @@ async fn connect_sqlite_database(
         .map_err(|e| DatabaseError::ConnectionFailed(format!("Invalid SQLite path: {e}")))?
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(Duration::from_secs(5))
+        // Enforce ON DELETE CASCADE / FK checks declared in migrations.
+        // SQLite defaults to OFF; sqlx may enable this, but we set it explicitly.
+        .foreign_keys(true)
         .create_if_missing(create_if_missing);
 
     let sqlx_pool = sea_orm::sqlx::sqlite::SqlitePoolOptions::new()

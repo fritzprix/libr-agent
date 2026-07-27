@@ -109,7 +109,8 @@ pub async fn add(
                 .unwrap_or(0);
             let guidance = if count >= 10 {
                 vec![
-                    "💡 Scratchpad is now full (10/10 items). Clear obsolete notes using scratchpad__clearNote or update notes in-place using scratchpad__updateNote.".to_string()
+                    "Scratchpad is now full (10/10 items). Obsolete notes may be cleared with scratchpad__clearNote or updated in-place with scratchpad__updateNote."
+                        .to_string()
                 ]
             } else {
                 vec![]
@@ -490,17 +491,29 @@ pub async fn clear(
 }
 
 pub async fn think(args: Value) -> Result<MCPResult, String> {
-    let thought = args.get("thought").and_then(|v| v.as_str()).unwrap_or("");
-    let next_action = args.get("nextAction").and_then(|v| v.as_str());
+    // Thought text is already in the assistant tool-call arguments that the LLM
+    // re-reads on every turn. Echoing it in the tool result doubles token cost.
+    // Keep a short ACK in content; preserve the full payload in structured_content
+    // for UI / trace consumers that do not parse tool-call args.
+    let thought = args
+        .get("thought")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+
+    let thought = match thought {
+        Some(t) => t,
+        None => return Ok(missing_param_error("thought", ToolGroup::Scratchpad)),
+    };
+
+    let next_action = args
+        .get("nextAction")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
 
     let response_id = cuid2::create_id();
-
-    let mut message = format!("## Thinking Process\n\n**Thought:**\n{}\n", thought);
-    if let Some(action) = next_action {
-        message.push_str(&format!("\n**Next Action:**\n{}", action));
-    }
-
-    let hint = SuccessHint::new(message, vec![]);
+    let hint = SuccessHint::new("Thought noted.", vec![]);
 
     Ok(hint.to_mcp_result_with_data(Some(json!({
         "id": response_id,

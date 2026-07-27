@@ -33,6 +33,7 @@ import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from '../lib/attachment-picker';
 import { useClipboardImage } from '../hooks/useClipboardImage';
+import { LayeredPendingQueue } from './LayeredPendingQueue';
 
 const logger = getLogger('AgentChatInput');
 
@@ -49,8 +50,15 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
   const { session, messages, executionMode } = useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
-  const { submit, isSessionLoading, workflowStatus, cancel, resume } =
-    useAgentChat();
+  const {
+    submit,
+    isSessionLoading,
+    workflowStatus,
+    cancel,
+    resume,
+    pendingQueue,
+    cancelPendingPrompt,
+  } = useAgentChat();
   const { isCompacting } = useLLMService();
   const [pendingCancel, setPendingCancel] = useState(false);
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
@@ -111,7 +119,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     await refreshSkills();
   }, [refreshSkills]);
 
-  const { input, setInput, isSubmitting, handleSubmit } = useChatSubmit({
+  const { input, setInput, handleSubmit } = useChatSubmit({
     session,
     submit,
     pendingFiles,
@@ -132,21 +140,16 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     [pendingFiles],
   );
 
-  // Agent busy state (shown as Cancel button)
+  // Cancel is only for an active agent turn. Do NOT map slash-command
+  // `isSubmitting` (e.g. hung `/clear`) or session hydrate onto Cancel —
+  // that falsely enables Cancel while workflowStatus is still idle.
   const isBusy = useMemo(() => {
     return (
-      isSessionLoading ||
-      isSubmitting ||
       workflowStatus === 'busy' ||
+      workflowStatus === 'queued' ||
       (session?.id ? isCompacting(session.id) : false)
     );
-  }, [
-    isSessionLoading,
-    isSubmitting,
-    workflowStatus,
-    session?.id,
-    isCompacting,
-  ]);
+  }, [workflowStatus, session?.id, isCompacting]);
 
   const isPaused = workflowStatus === 'paused' && !isBusy;
 
@@ -410,6 +413,11 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
             onDismiss={onDismiss}
           />
         )}
+      <LayeredPendingQueue
+        items={pendingQueue}
+        onCancel={cancelPendingPrompt}
+        disabled={isSessionLoading}
+      />
       <form
         ref={chatInputRef}
         onSubmit={handleSubmit}

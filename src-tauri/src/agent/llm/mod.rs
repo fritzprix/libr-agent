@@ -10,6 +10,7 @@ pub(crate) mod response_admission;
 pub(crate) mod response_circuit_breaker;
 pub mod stream_recovery;
 pub mod token_utils;
+pub(crate) mod tool_args_validation;
 pub(crate) mod tool_execution;
 pub mod types;
 

@@ -1,8 +1,10 @@
+use crate::agent::llm::types::CompletionCancelRequest;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::emit_completion_cancel;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
-use crate::repositories::{MessageRepository, SessionStatus};
-use std::collections::{HashMap, HashSet};
+use crate::repositories::SessionStatus;
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -26,6 +28,54 @@ pub fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
 pub fn should_consume_cancel_at_message_boundary(cancel_pending: bool) -> bool {
     cancel_pending
 }
+
+/// Cancel is a no-op when the session is already inactive — no workflow to stop.
+pub fn is_inactive_cancel_noop(status: &SessionStatus) -> bool {
+    matches!(
+        status,
+        SessionStatus::Idle | SessionStatus::Paused | SessionStatus::Error
+    )
+}
+
+/// Abort any in-flight frontend LLM completion for this session.
+///
+/// Status transitions alone must not cancel from the React side — that races with
+/// legitimate turns. Cancel/terminate own the abort via `llm:completion-cancel`.
+async fn cancel_frontend_completion_if_pending(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    reason: &str,
+) {
+    let response_message_id = {
+        let active = active_sessions.read().await;
+        let Some(session) = active.get(session_id) else {
+            return;
+        };
+        let mut expected = session.expected_response_id.write().await;
+        expected.take()
+    };
+
+    let Some(response_message_id) = response_message_id else {
+        return;
+    };
+
+    if let Err(error) = emit_completion_cancel(
+        app_handle,
+        CompletionCancelRequest {
+            session_id: session_id.to_string(),
+            response_message_id,
+            reason: reason.to_string(),
+        },
+    ) {
+        log::warn!(
+            "Failed to emit llm:completion-cancel for session {}: {}",
+            session_id,
+            error
+        );
+    }
+}
+
 /// This triggers the cancellation token to abort any running operations
 pub async fn terminate_session(
     session_repo: &Arc<dyn SessionRepository>,
@@ -35,6 +85,16 @@ pub async fn terminate_session(
     session_id: String,
 ) -> Result<(), String> {
     log::info!("Terminating workflow for session: {}", session_id);
+
+    // Abort frontend LLM first so late chunks cannot keep ThinkingBubble alive
+    // after we flip the session to idle.
+    cancel_frontend_completion_if_pending(
+        active_sessions,
+        app_handle,
+        &session_id,
+        "workflow-terminated",
+    )
+    .await;
 
     // 1. Trigger cancellation token if the session is active in memory
     let session_active = {
@@ -69,15 +129,20 @@ pub async fn terminate_session(
     if session_active {
         let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(&session_id) {
-            // Reset cancellation token for potential future workflows
+            // Reset cancellation state so a later inject/start_workflow on this
+            // session is not treated as still cancelled.
+            session.cancel_pending.store(false, Ordering::SeqCst);
             session.cancellation_token = CancellationToken::new();
         }
     }
 
+    // Hard terminate drops waiting prompts; soft cancel preserves them.
+    discard_pending_events(active_sessions, &session_id).await;
+
     // 5. Emit workflow stopped event
     let event = crate::agent::events::AgentEvent::WorkflowCompleted {
         session_id: session_id.clone(),
-        reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
+        reason: crate::agent::events::WorkflowCompletionReason::Terminated,
     };
     crate::agent::tauri_events::emit_agent_event(app_handle, event)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
@@ -107,25 +172,51 @@ pub async fn cancel_workflow(
     // Determine whether to stop immediately or defer to message boundary.
     // If a tool-call batch is in progress, we only set cancel_pending and let
     // continue_workflow_after_tool consume it after the full message completes.
-    let has_pending_execution = {
+    let (has_pending_execution, current_status) = {
         let active = active_sessions.read().await;
         let session = active
             .get(&session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        session.cancel_pending.store(true, Ordering::SeqCst);
-        session.pending_execution.is_some()
+        (
+            session.pending_execution.is_some(),
+            session.metadata.status.clone(),
+        )
     };
+
+    // Idle/Paused/Error: nothing to cancel. Still abort a stale frontend LLM
+    // completion if one is registered, but do not force a Paused transition or
+    // contend on status locks — that races with `/clear` (reset_session) and
+    // falsely leaves Cancel UI armed while the session is already inactive.
+    if is_inactive_cancel_noop(&current_status) {
+        cancel_frontend_completion_if_pending(
+            active_sessions,
+            app_handle,
+            &session_id,
+            "workflow-cancel-noop-inactive",
+        )
+        .await;
+        log::info!(
+            "Cancel requested for session {} while {:?} — no running workflow to stop",
+            session_id,
+            current_status
+        );
+        return Ok(());
+    }
+
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(true, Ordering::SeqCst);
+        }
+    }
 
     if classify_cancel_strategy(has_pending_execution) == CancelStrategy::DeferToMessageBoundary {
         log::info!(
             "Cancel requested for session {} (deferred to message boundary)",
             session_id
         );
-        // Discard any user messages that arrived while the agent was busy and
-        // are waiting in the pending_events queue. They must not be processed
-        // after the agent stops, regardless of when the active tool batch
-        // completes. The tool batch itself is still allowed to finish cleanly.
-        discard_pending_events(active_sessions, &session_id).await;
+        // Waiting prompts stay in the durable FIFO queue so the user can
+        // cancel them individually or resume later.
         // SP6: Wake any awaitAgent/pollProcess waiter that is suspended inside
         // a tool call for THIS session. The deferred cancel only sets
         // cancel_pending; without this notification the waiter would sleep up
@@ -136,6 +227,14 @@ pub async fn cancel_workflow(
 
     // No in-flight tool-call batch: stop immediately and leave the workflow paused
     // so the user can explicitly resume from the current stack.
+    cancel_frontend_completion_if_pending(
+        active_sessions,
+        app_handle,
+        &session_id,
+        "workflow-cancelled",
+    )
+    .await;
+
     crate::agent::lifecycle::update_session_status(
         session_repo,
         active_sessions,
@@ -156,8 +255,6 @@ pub async fn cancel_workflow(
     }
     drop(active);
 
-    discard_pending_events(active_sessions, &session_id).await;
-
     let event = crate::agent::events::AgentEvent::WorkflowCompleted {
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
@@ -173,42 +270,14 @@ pub(crate) async fn discard_pending_events(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) {
-    let mut messages_to_delete = Vec::new();
-
-    // 1. Drain from pending events queue and remove from in-memory cache
+    if let Err(e) =
+        crate::agent::pending_queue::discard_all_pending_messages(active_sessions, None, session_id)
+            .await
     {
-        let sessions = active_sessions.read().await;
-        if let Some(session) = sessions.get(session_id) {
-            let mut pending_events = session.pending_events.write().await;
-            messages_to_delete = pending_events.drain_messages();
-
-            if !messages_to_delete.is_empty() {
-                let mut messages = session.messages.write().await;
-                // SP2: Convert to HashSet for O(1) lookups during retain (was O(n*m))
-                let delete_set: HashSet<String> = messages_to_delete.iter().cloned().collect();
-                // Remove these messages from the cache
-                messages.retain(|m| !delete_set.contains(&m.id));
-
-                log::info!(
-                    "Cleared {} pending events from queue and cache for session {}",
-                    messages_to_delete.len(),
-                    session_id
-                );
-            }
-        }
-    }
-
-    // 2. Delete from database
-    if !messages_to_delete.is_empty() {
-        let repo = crate::state::get_message_repository();
-        for msg_id in messages_to_delete {
-            if let Err(e) = repo.delete_by_id(&msg_id).await {
-                log::error!(
-                    "Failed to delete cancelled pending message {} from DB: {}",
-                    msg_id,
-                    e
-                );
-            }
-        }
+        log::error!(
+            "Failed to discard pending messages for session {}: {}",
+            session_id,
+            e
+        );
     }
 }

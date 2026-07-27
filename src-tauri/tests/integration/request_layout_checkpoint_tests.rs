@@ -73,3 +73,46 @@ fn checkpoint_selection_skips_all_internal_synthetic_tail_messages() {
         Some("real-user")
     );
 }
+
+#[test]
+fn non_synthetic_provider_merges_context_into_last_user_message() {
+    let layout = build_request_layout(
+        "together",
+        "session-1",
+        Some("system prompt".to_string()),
+        Some("volatile context".to_string()),
+        vec![make_user_message("real-user", Some(MessageSource::Ui))],
+    );
+
+    // System prompt should remain unchanged
+    assert_eq!(layout.system_prompt.as_deref(), Some("system prompt"));
+
+    // The user message's content should now contain the volatile context
+    assert_eq!(layout.messages.len(), 1);
+    let content = &layout.messages[0].content;
+    assert!(content.len() > 1); // contains merged context + original text
+    if let MCPContent::Text { text, .. } = &content[0] {
+        assert!(text.contains("<session-context>"));
+        assert!(text.contains("volatile context"));
+    } else {
+        panic!("First content item should be text containing the volatile context");
+    }
+}
+
+#[test]
+fn non_synthetic_provider_falls_back_to_system_prompt_when_no_user_message() {
+    let layout = build_request_layout(
+        "together",
+        "session-1",
+        Some("system prompt".to_string()),
+        Some("volatile context".to_string()),
+        vec![],
+    );
+
+    // Since there was no user message, volatile context is appended to system prompt
+    assert_eq!(
+        layout.system_prompt.as_deref(),
+        Some("system prompt\n\nvolatile context")
+    );
+    assert_eq!(layout.messages.len(), 0);
+}

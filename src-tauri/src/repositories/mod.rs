@@ -7,6 +7,7 @@ pub mod knowledge_repository;
 pub mod knowledge_v2_repository;
 pub mod mcp_server_repository;
 pub mod message_repository;
+pub mod pending_queue_repository;
 pub mod planning_repository;
 pub mod playbook_repository;
 pub mod scheduled_task_repository;
@@ -32,6 +33,9 @@ pub use knowledge_v2_repository::{
 };
 pub use mcp_server_repository::{MCPServerRepository, SqliteMCPServerRepository};
 pub use message_repository::{MessageRepository, SqliteMessageRepository};
+pub use pending_queue_repository::{
+    PendingQueueEntry, PendingQueueRepository, SqlitePendingQueueRepository,
+};
 pub use planning_repository::{PlanningRepository, SqlitePlanningRepository};
 pub use playbook_repository::{PlaybookRepository, SqlitePlaybookRepository};
 pub use scheduled_task_repository::{

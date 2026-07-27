@@ -32,6 +32,8 @@ fn parse_show_line_anchors(args: &Value) -> bool {
 #[derive(Debug)]
 struct ReadFileChunk {
     content: String,
+    /// Total lines in the file (not just the displayed window).
+    total_lines: usize,
     displayed_start_line: usize,
     displayed_end_line: usize,
     displayed_line_count: usize,
@@ -211,7 +213,7 @@ impl WorkspaceServer {
         .await;
 
         match chunk {
-            Ok(chunk) => {
+            Ok(mut chunk) => {
                 info!("Successfully read file: {}", path_str);
 
                 // Get file metadata for stats
@@ -220,30 +222,46 @@ impl WorkspaceServer {
                     .map(|m| m.len())
                     .unwrap_or(chunk.content.len() as u64);
                 let size_str = format_file_size(total_size);
-                let line_label = if chunk.displayed_line_count == 0 {
-                    "no lines".to_string()
-                } else if chunk.displayed_start_line == chunk.displayed_end_line {
-                    format!("line {}", chunk.displayed_start_line)
-                } else {
-                    format!(
-                        "lines {}-{}",
-                        chunk.displayed_start_line, chunk.displayed_end_line
-                    )
-                };
-                let chunk_summary = if chunk.truncated {
-                    format!(
-                        "{} shown (truncated to stay under the inline limit)",
-                        line_label
-                    )
-                } else {
-                    format!("{} shown", line_label)
-                };
+
+                let complete = !chunk.truncated
+                    && !chunk.next_line_too_large
+                    && (chunk.total_lines == 0
+                        || (chunk.displayed_start_line == 1
+                            && chunk.displayed_end_line == chunk.total_lines));
+                let range_limited = chunk.total_lines > 0
+                    && chunk.displayed_end_line < chunk.total_lines
+                    && !chunk.truncated
+                    && !chunk.next_line_too_large;
+
+                // Request-range remainder: same next-chunk contract as inline truncation.
+                if range_limited && chunk.next_start_line.is_none() {
+                    let next_start = chunk.displayed_end_line + 1;
+                    let next_size = size_opt
+                        .filter(|size| *size > 0)
+                        .map(|size| size as usize)
+                        .unwrap_or(chunk.displayed_line_count)
+                        .max(1);
+                    chunk.next_start_line = Some(next_start);
+                    chunk.suggested_end_line =
+                        Some((next_start + next_size - 1).min(chunk.total_lines));
+                }
+
+                let chunk_summary = format_read_chunk_summary(&chunk, complete, range_limited);
                 let mut summary_notes = Vec::new();
-                if chunk.truncated {
+                if (chunk.truncated || range_limited) && !chunk.next_line_too_large {
                     if let Some(next_start_line) = chunk.next_start_line {
+                        let next_size = if range_limited {
+                            size_opt
+                                .filter(|size| *size > 0)
+                                .map(|size| size as usize)
+                                .unwrap_or(chunk.displayed_line_count)
+                                .max(1)
+                        } else {
+                            chunk.displayed_line_count.max(1)
+                        };
                         summary_notes.push(format!(
                             "Next chunk: readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": {}}})",
-                            path_str, next_start_line, chunk.displayed_line_count
+                            path_str, next_start_line, next_size
                         ));
                     }
                 }
@@ -291,9 +309,12 @@ impl WorkspaceServer {
                     "content": chunk.content,
                     "path": path_str,
                     "size": total_size,
+                    "totalLines": chunk.total_lines,
                     "lines": chunk.displayed_line_count,
                     "startLine": chunk.displayed_start_line,
                     "endLine": chunk.displayed_end_line,
+                    "complete": complete,
+                    "rangeLimited": range_limited,
                     "truncated": chunk.truncated,
                     "nextStartLine": chunk.next_start_line,
                     "suggestedEndLine": chunk.suggested_end_line,
@@ -344,6 +365,47 @@ impl WorkspaceServer {
 }
 
 // Helper functions
+
+fn format_read_chunk_summary(chunk: &ReadFileChunk, complete: bool, range_limited: bool) -> String {
+    if complete {
+        return format!("complete ({} lines)", chunk.total_lines);
+    }
+
+    let line_label = if chunk.displayed_line_count == 0 {
+        "no lines".to_string()
+    } else if chunk.displayed_start_line == chunk.displayed_end_line {
+        format!("line {}", chunk.displayed_start_line)
+    } else {
+        format!(
+            "lines {}-{}",
+            chunk.displayed_start_line, chunk.displayed_end_line
+        )
+    };
+
+    if chunk.next_line_too_large {
+        return format!("{} of {} shown", line_label, chunk.total_lines);
+    }
+
+    if chunk.truncated {
+        return format!(
+            "{} of {} (truncated to stay under the inline limit)",
+            line_label, chunk.total_lines
+        );
+    }
+
+    if range_limited {
+        return format!(
+            "{} of {} (requested range; more remains)",
+            line_label, chunk.total_lines
+        );
+    }
+
+    // Mid-file through end: reached EOF but not a complete-file read.
+    format!(
+        "{} of {} (reached end; not complete file)",
+        line_label, chunk.total_lines
+    )
+}
 
 fn parse_offset_parameter(args: &Value) -> Result<Option<isize>, MCPResult> {
     let Some(value) = args.get("offset") else {
@@ -501,80 +563,71 @@ async fn read_file_lines_range(
     show_line_anchors: bool,
     visible_content_limit_bytes: usize,
 ) -> Result<ReadFileChunk, String> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
-
-    // ✅ ENHANCED: Use spawn_blocking for large files to prevent async runtime blocking
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let path_buf = path.to_path_buf();
 
-    if file_size > LARGE_FILE_THRESHOLD {
-        // Offload to blocking thread for large files
-        let path = path.to_path_buf();
-
-        let result = tokio::task::spawn_blocking(move || {
-            // Blocking file I/O for CPU-intensive line enumeration
-            use std::io::BufRead;
-            let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-            let reader = std::io::BufReader::new(file);
-            let total_lines = reader.lines().count();
-
-            let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
-
-            let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-            let reader = std::io::BufReader::new(file);
-            let chunk = read_chunk_from_lines(
-                reader.lines(),
-                start,
-                end,
-                show_line_anchors,
-                visible_content_limit_bytes,
-            )?;
-            Ok::<_, String>(chunk)
+    let (collected_lines, decode_note) = if file_size > LARGE_FILE_THRESHOLD {
+        tokio::task::spawn_blocking(move || {
+            let bytes = std::fs::read(&path_buf).map_err(|e| e.to_string())?;
+            decode_file_bytes_to_lines(&bytes)
         })
         .await
-        .map_err(|e| format!("Task join error: {}", e))??;
-
-        return Ok(result);
-    }
-
-    // Small files: use async path (original implementation)
-    let file = tokio::fs::File::open(path)
-        .await
-        .map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
-    let mut collected_lines = Vec::new();
-
-    loop {
-        match lines.next_line().await {
-            Ok(Some(line)) => collected_lines.push(line),
-            Ok(None) => break,
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::InvalidData {
-                    return Err("Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string());
-                }
-                return Err(format!("Failed to read file: {}", e));
-            }
-        }
-    }
+        .map_err(|e| format!("Task join error: {}", e))??
+    } else {
+        let bytes = tokio::fs::read(path)
+            .await
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+        decode_file_bytes_to_lines(&bytes)?
+    };
 
     let total_lines = collected_lines.len();
     let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
 
-    read_chunk_from_lines(
+    let mut chunk = read_chunk_from_lines(
         collected_lines
             .into_iter()
             .map(Ok::<String, std::io::Error>),
         start,
         end,
+        total_lines,
         show_line_anchors,
         visible_content_limit_bytes,
-    )
+    )?;
+
+    if let Some(note) = decode_note {
+        if !chunk.content.is_empty() {
+            chunk.content = format!("[encoding: {note}]\n{}", chunk.content);
+        } else {
+            chunk.content = format!("[encoding: {note}]");
+        }
+    }
+
+    Ok(chunk)
+}
+
+fn decode_file_bytes_to_lines(bytes: &[u8]) -> Result<(Vec<String>, Option<&'static str>), String> {
+    use crate::mcp::builtin::workspace::text_encoding::{decode_text_bytes, DecodedText};
+
+    match decode_text_bytes(bytes) {
+        DecodedText::Binary => Err(
+            "Failed to read file: content appears to be binary (embedded null bytes). \
+             Use a specialized tool or shell commands for binary files."
+                .to_string(),
+        ),
+        DecodedText::Text { text, note } => {
+            // Normalize newlines then split without discarding a trailing empty line oddly:
+            // split_inclusive-style via lines() is fine for agent display.
+            let lines: Vec<String> = text.lines().map(|line| line.to_string()).collect();
+            Ok((lines, note))
+        }
+    }
 }
 
 fn read_chunk_from_lines<I>(
     lines: I,
     start: usize,
     end: usize,
+    total_lines: usize,
     show_line_anchors: bool,
     visible_content_limit_bytes: usize,
 ) -> Result<ReadFileChunk, String>
@@ -582,7 +635,6 @@ where
     I: IntoIterator<Item = Result<String, std::io::Error>>,
 {
     let mut result_lines = Vec::new();
-    let mut total_lines = 0usize;
     let mut prefix_state = initial_prefix_hash_state();
     let mut content_bytes = 0usize;
     let mut truncated = false;
@@ -597,7 +649,6 @@ where
                 format!("Failed to read file: {}", e)
             }
         })?;
-        total_lines += 1;
 
         if current_line >= start && current_line <= end {
             let rendered_line = if show_line_anchors {
@@ -640,6 +691,7 @@ where
 
         return Ok(ReadFileChunk {
             content: String::new(),
+            total_lines: 0,
             displayed_start_line: start,
             displayed_end_line: start,
             displayed_line_count: 0,
@@ -667,11 +719,14 @@ where
     let suggested_end_line = if displayed_line_count == 0 {
         next_start_line
     } else {
-        next_start_line.map(|next_start| next_start + displayed_line_count.saturating_sub(1))
+        next_start_line.map(|next_start| {
+            (next_start + displayed_line_count.saturating_sub(1)).min(total_lines)
+        })
     };
 
     Ok(ReadFileChunk {
         content: result_lines.join("\n"),
+        total_lines,
         displayed_start_line,
         displayed_end_line,
         displayed_line_count,

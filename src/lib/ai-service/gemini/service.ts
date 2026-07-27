@@ -25,6 +25,7 @@ import {
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
 import { isCompactSummaryMessage } from '../base-service-context';
+import { reportListModelsFallback } from '../list-models-errors';
 import type { MCPContent } from '@/lib/mcp';
 
 function summarizeLibrAgentMessages(messages: Message[]): {
@@ -210,8 +211,14 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       return models;
     } catch (error) {
+      const failure = reportListModelsFallback({
+        provider: AIServiceProvider.Gemini,
+        reason: 'api_error',
+        error,
+      });
       logger.warn(
         'Failed to fetch models from Gemini API, falling back to static config',
+        failure,
         error,
       );
       return this.fallbackToStaticModels();

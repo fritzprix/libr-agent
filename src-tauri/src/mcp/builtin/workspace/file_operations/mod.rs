@@ -5,6 +5,7 @@
 pub mod edit_line;
 pub mod import;
 pub mod list_dir;
+mod list_dir_format;
 pub mod read;
 pub mod search;
 #[cfg(feature = "workspace-str-replace")]

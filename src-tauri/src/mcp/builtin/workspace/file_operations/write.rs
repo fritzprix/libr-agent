@@ -7,7 +7,8 @@ use crate::mcp::builtin::error_guidance::{
     ToolGroup,
 };
 use crate::mcp::builtin::workspace::edit_mode::{
-    write_file_anchor_preview_note, write_file_post_write_anchor_heading,
+    write_file_anchor_preview_note, write_file_post_write_anchor_heading, LINE_ANCHORS_ENABLED,
+    PRIMARY_EDIT_TOOL,
 };
 use crate::mcp::types::MCPResult;
 use crate::services::SecureFileManager;
@@ -19,6 +20,9 @@ use tracing::error;
 
 /// Maximum numeric suffix attempts when `mode=create` hits an existing path.
 const MAX_CREATE_PATH_SUFFIX: u32 = 99;
+
+/// Soft-guard: prefer targeted edits when overwriting a file at least this many lines.
+const OVERWRITE_SOFT_GUARD_MIN_LINES: usize = 40;
 
 /// Append `-{n}` before the extension (or at the end for extensionless / bare dotfiles).
 ///
@@ -282,7 +286,7 @@ impl WorkspaceServer {
                         ),
                         format!(
                             "Use {} for targeted edits to \"{}\" instead of rewriting the whole file.",
-                            crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
+                            PRIMARY_EDIT_TOOL,
                             path_str
                         ),
                     ])
@@ -430,30 +434,52 @@ impl WorkspaceServer {
                 } else {
                     None
                 };
-                let current_content = if mode == "append" {
-                    None
+
+                let new_lines = content.lines().count();
+                let new_bytes = content.len();
+                let previous_lines = if file_exists_at_write_path && mode == "overwrite" {
+                    old_content.lines().count()
                 } else {
-                    Some(content.to_string())
+                    0
+                };
+                let previous_bytes = if file_exists_at_write_path && mode == "overwrite" {
+                    old_content.len()
+                } else {
+                    0
                 };
 
                 let total_lines = append_preview
                     .as_ref()
                     .map(|preview| preview.total_lines)
-                    .unwrap_or_else(|| {
-                        current_content
-                            .as_ref()
-                            .map_or(0, |text| text.lines().count())
-                    });
+                    .unwrap_or(new_lines);
                 let total_size_str = format_file_size(
                     append_preview
                         .as_ref()
                         .map(|preview| preview.total_size_bytes)
-                        .unwrap_or_else(|| {
-                            current_content.as_ref().map_or(0, |text| text.len() as u64)
-                        }),
+                        .unwrap_or(new_bytes as u64),
                 );
-                let appended_lines = content.lines().count();
-                let appended_size_str = format_file_size(content.len() as u64);
+                let appended_lines = new_lines;
+                let appended_size_str = format_file_size(new_bytes as u64);
+
+                let overwrite_diff = if file_exists_at_write_path && mode == "overwrite" {
+                    Some(super::utils::compute_file_diff(
+                        &old_content,
+                        content,
+                        &write_display_path,
+                    ))
+                } else {
+                    None
+                };
+
+                let action = if path_adjusted {
+                    "created_alternate_path"
+                } else if mode == "append" {
+                    "appended"
+                } else if file_exists_at_write_path && mode == "overwrite" {
+                    "overwritten"
+                } else {
+                    "created"
+                };
 
                 let message_header = if path_adjusted {
                     "**⚠️ New File Created at Alternate Path (requested path already existed)**"
@@ -486,7 +512,7 @@ impl WorkspaceServer {
                         write_display_path,
                         total_size_str,
                         total_lines,
-                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
+                        PRIMARY_EDIT_TOOL,
                     ));
                 } else {
                     message.push_str(&format!(
@@ -502,124 +528,100 @@ impl WorkspaceServer {
                     ));
                 }
 
-                if file_exists_at_write_path && mode == "overwrite" {
-                    use super::utils::format_file_diff;
-                    let diff_output = format_file_diff(&old_content, content, &write_display_path);
-                    message.push_str(&diff_output);
-                    message.push_str(&format!(
-                        "{}{}```\n{}\n```\n",
-                        write_file_post_write_anchor_heading(),
-                        write_file_anchor_preview_note(),
-                        format_file_content_preview(content)
-                    ));
-                } else {
-                    let display_lines = if let Some(preview) = append_preview.as_ref() {
-                        if preview.preview_was_truncated {
-                            format!(
-                                "{}\n\n... (truncated: showing last {} of {} lines, including the appended tail)",
-                                preview.display_lines,
-                                preview.shown_lines,
-                                preview.total_lines,
-                            )
-                        } else {
-                            preview.display_lines.clone()
-                        }
+                let mut preview_was_truncated = false;
+                if let Some(diff) = overwrite_diff.as_ref() {
+                    message.push_str(&diff.text);
+                    if LINE_ANCHORS_ENABLED {
+                        let (preview_body, truncated) = truncated_content_preview(
+                            content,
+                            max_display_lines,
+                            max_display_bytes,
+                        );
+                        preview_was_truncated = truncated;
+                        message.push_str(&format!(
+                            "{}{}```\n{}\n```\n",
+                            write_file_post_write_anchor_heading(),
+                            write_file_anchor_preview_note(),
+                            preview_body
+                        ));
+                    }
+                } else if let Some(preview) = append_preview.as_ref() {
+                    preview_was_truncated = preview.preview_was_truncated;
+                    let display_lines = if preview.preview_was_truncated {
+                        format!(
+                            "{}\n\n... (truncated: showing last {} of {} lines, including the appended tail)",
+                            preview.display_lines, preview.shown_lines, preview.total_lines,
+                        )
                     } else {
-                        let current_content = current_content
-                            .as_ref()
-                            .expect("create/overwrite preview requires in-memory content");
-                        let content_lines: Vec<&str> = current_content.lines().collect();
-                        let is_truncated = content_lines.len() > max_display_lines
-                            || current_content.len() > max_display_bytes;
-
-                        if is_truncated {
-                            let truncated: Vec<&str> = if current_content.len() > max_display_bytes
-                            {
-                                let truncated_bytes = &current_content
-                                    [..max_display_bytes.min(current_content.len())];
-                                truncated_bytes.lines().take(max_display_lines).collect()
-                            } else {
-                                content_lines
-                                    .iter()
-                                    .take(max_display_lines)
-                                    .copied()
-                                    .collect()
-                            };
-                            let partial = truncated.join("\n");
-                            format!(
-                                "{}\n\n... (truncated: showing first {} of {} lines)",
-                                format_file_content_preview(&partial),
-                                truncated.len(),
-                                content_lines.len(),
-                            )
-                        } else {
-                            format_file_content_preview(current_content)
-                        }
+                        preview.display_lines.clone()
                     };
-
                     message.push_str(write_file_anchor_preview_note());
                     message.push_str(&format!("```\n{}\n```\n", display_lines));
+                } else if LINE_ANCHORS_ENABLED {
+                    // create (and overwrite-of-missing): anchor preview only when needed for editFile
+                    let (preview_body, truncated) =
+                        truncated_content_preview(content, max_display_lines, max_display_bytes);
+                    preview_was_truncated = truncated;
+                    message.push_str(write_file_anchor_preview_note());
+                    message.push_str(&format!("```\n{}\n```\n", preview_body));
                 }
 
                 let mut next_steps = Vec::new();
                 if path_adjusted {
                     next_steps.push(format!(
-                        "IMPORTANT: Continue with \"{}\" — do NOT assume content was written to \"{}\".",
-                        write_display_path, requested_path_str
+                        "Written path: \"{}\" — requested \"{}\" was not modified. Continue with \"{}\" for subsequent operations.",
+                        write_display_path, requested_path_str, write_display_path
                     ));
                     next_steps.push(format!(
-                        "If you meant to replace \"{}\", call writeFile again with \"mode\": \"overwrite\" (and delete \"{}\" if the alternate file was unintended).",
-                        requested_path_str, write_display_path
-                    ));
-                    next_steps.push(format!(
-                        "If you meant to modify \"{}\" in place, use {} or writeFile mode=\"append\" / mode=\"overwrite\" — not another default create.",
-                        requested_path_str,
-                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
+                        "To replace \"{}\", call writeFile with \"mode\": \"overwrite\". To edit in place, use {} or mode=\"append\".",
+                        requested_path_str, PRIMARY_EDIT_TOOL
                     ));
                 }
-
-                let preview_was_truncated = append_preview
-                    .as_ref()
-                    .map(|preview| preview.preview_was_truncated)
-                    .unwrap_or_else(|| {
-                        current_content.as_ref().is_some_and(|text| {
-                            text.lines().count() > max_display_lines
-                                || text.len() > max_display_bytes
-                        })
-                    });
 
                 if preview_was_truncated {
                     next_steps.push(format!(
-                        "Use readFile(\"{}\") to inspect lines omitted from this preview",
-                        write_display_path
+                        "Preview truncated; full file has {} line(s) at \"{}\".",
+                        total_lines, write_display_path
                     ));
                 }
 
-                if write_display_path.ends_with(".rs")
-                    || write_display_path.ends_with(".py")
-                    || write_display_path.ends_with(".js")
-                    || write_display_path.ends_with(".ts")
+                if file_exists_at_write_path
+                    && mode == "overwrite"
+                    && previous_lines >= OVERWRITE_SOFT_GUARD_MIN_LINES
                 {
                     next_steps.push(format!(
-                        "Use {} for targeted edits to \"{}\"",
-                        crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL,
-                        write_display_path
+                        "mode=\"overwrite\" replaced the entire file ({}+ lines); partial line edits are handled by {}, not overwrite.",
+                        OVERWRITE_SOFT_GUARD_MIN_LINES, PRIMARY_EDIT_TOOL
                     ));
                 }
 
                 let hint = SuccessHint::new(message, next_steps);
 
-                Ok(hint.to_mcp_result_with_data(Some(json!({
+                let mut structured = json!({
                     "path": write_display_path,
                     "requested_path": requested_path_str,
                     "path_adjusted": path_adjusted,
                     "suffix": create_suffix,
                     "mode": mode,
-                    "bytes_written": content.len(),
+                    "action": action,
+                    "bytes_written": new_bytes,
                     "lines": total_lines,
                     "file_exists_before": file_exists_at_write_path,
                     "requested_path_existed": requested_path_existed
-                }))))
+                });
+
+                if let Some(diff) = overwrite_diff.as_ref() {
+                    structured["changes"] = json!({
+                        "previous_lines": previous_lines,
+                        "previous_bytes": previous_bytes,
+                        "new_lines": new_lines,
+                        "new_bytes": new_bytes,
+                        "lines_added": diff.stats.lines_added,
+                        "lines_removed": diff.stats.lines_removed,
+                    });
+                }
+
+                Ok(hint.to_mcp_result_with_data(Some(structured)))
             }
             Err(e) => {
                 error!("Failed to write file {}: {}", write_display_path, e);
@@ -646,4 +648,39 @@ impl WorkspaceServer {
             }
         }
     }
+}
+
+/// Truncate in-memory content for post-write previews; returns (body, was_truncated).
+fn truncated_content_preview(
+    content: &str,
+    max_display_lines: usize,
+    max_display_bytes: usize,
+) -> (String, bool) {
+    let content_lines: Vec<&str> = content.lines().collect();
+    let is_truncated = content_lines.len() > max_display_lines || content.len() > max_display_bytes;
+
+    if !is_truncated {
+        return (format_file_content_preview(content), false);
+    }
+
+    let truncated: Vec<&str> = if content.len() > max_display_bytes {
+        let truncated_bytes = &content[..max_display_bytes.min(content.len())];
+        truncated_bytes.lines().take(max_display_lines).collect()
+    } else {
+        content_lines
+            .iter()
+            .take(max_display_lines)
+            .copied()
+            .collect()
+    };
+    let partial = truncated.join("\n");
+    (
+        format!(
+            "{}\n\n... (truncated: showing first {} of {} lines)",
+            format_file_content_preview(&partial),
+            truncated.len(),
+            content_lines.len(),
+        ),
+        true,
+    )
 }

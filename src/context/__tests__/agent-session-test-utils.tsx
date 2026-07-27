@@ -13,6 +13,8 @@ export const mockMarkSessionViewed = vi.fn();
 export const mockClearPendingApproval = vi.fn();
 export const mockRenameSession = vi.fn();
 export const mockRefreshCompactedRange = vi.fn();
+export const mockClearStreamingMessage = vi.fn();
+export const mockCancelCompletionRequest = vi.fn();
 export const listenMock = listen as ReturnType<typeof vi.fn>;
 export const safeInvokeMock = safeInvoke as ReturnType<typeof vi.fn>;
 export const openAgentSessionMock =
@@ -52,6 +54,8 @@ vi.mock('../AgentSessionListContext', () => ({
 vi.mock('../LLMServiceContext', () => ({
   useLLMService: () => ({
     refreshCompactedRange: mockRefreshCompactedRange,
+    clearStreamingMessage: mockClearStreamingMessage,
+    cancelCompletionRequest: mockCancelCompletionRequest,
   }),
 }));
 

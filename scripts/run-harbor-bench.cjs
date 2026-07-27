@@ -21,12 +21,16 @@ const FLAG_TO_PS = {
   '--path': '-Path',
   '--include': '-Include',
   '--n-tasks': '-NTasks',
+  '--n-attempts': '-NAttempts',
   '--concurrent': '-Concurrent',
   '--api-url': '-ApiUrl',
   '--assistant-id': '-AssistantId',
+  '--model': '-Model',
   '--execution-mode': '-ExecutionMode',
   '--timeout-multiplier': '-TimeoutMultiplier',
   '--agent-timeout-multiplier': '-AgentTimeoutMultiplier',
+  '--verifier-env': '-VerifierEnv',
+  '--ve': '-VerifierEnv',
 };
 
 /** @type {Record<string, string>} */
@@ -43,6 +47,9 @@ const SWITCH_TO_PS = {
 function toPowerShellArgs(argv) {
   /** @type {string[]} */
   const out = [];
+  /** @type {Record<string, string[]>} */
+  const accum = {};
+
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '-h' || arg === '--help') {
@@ -59,13 +66,30 @@ function toPowerShellArgs(argv) {
         console.error(`Missing value for ${arg}`);
         process.exit(1);
       }
-      out.push(FLAG_TO_PS[arg], value);
+      const psFlag = FLAG_TO_PS[arg];
+      if (!accum[psFlag]) {
+        accum[psFlag] = [];
+      }
+      accum[psFlag].push(value);
       i += 1;
       continue;
     }
     console.error(`Unknown arg: ${arg}`);
     process.exit(1);
   }
+
+  for (const [flag, vals] of Object.entries(accum)) {
+    if (flag === '-VerifierEnv') {
+      out.push(flag, vals.join(','));
+    } else if (flag === '-Include') {
+      for (const v of vals) {
+        out.push(flag, v);
+      }
+    } else {
+      out.push(flag, vals[vals.length - 1]);
+    }
+  }
+
   return out;
 }
 

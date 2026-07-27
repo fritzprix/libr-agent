@@ -5,6 +5,8 @@ import { fetchOpenRouterModels } from './openrouter-metadata';
 import type { ModelInfo } from '../llm-config-manager';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
+import { createLlmFetch } from './desktop-fetch';
+import { reportListModelsFallback } from './list-models-errors';
 
 const logger = getLogger('OpenRouterService');
 
@@ -27,6 +29,7 @@ export class OpenRouterService extends OpenAIService {
       apiKey: this.apiKey,
       baseURL: 'https://openrouter.ai/api/v1',
       dangerouslyAllowBrowser: true,
+      fetch: createLlmFetch(),
       defaultHeaders: {
         // OpenRouter recommends these headers for request attribution
         'HTTP-Referer': 'https://github.com/fritzprix/libr-agent',
@@ -123,8 +126,15 @@ export class OpenRouterService extends OpenAIService {
       logger.info(`OpenRouter: ${result.length} models available`);
       return result;
     } catch (error) {
+      const failure = reportListModelsFallback({
+        provider: AIServiceProvider.OpenRouter,
+        baseUrl: 'https://openrouter.ai/api/v1',
+        reason: 'api_error',
+        error,
+      });
       logger.error(
         'Failed to fetch OpenRouter model list, falling back to static config',
+        failure,
         error,
       );
       return super.listModels();

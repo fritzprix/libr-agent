@@ -104,12 +104,10 @@ export interface OpenAIPromptSnapshot {
   messageFingerprints: OpenAIMessageFingerprint[];
   promptCacheKey?: string;
   promptCacheRetention?: 'in_memory' | '24h';
-  compatibleCachePrompt: boolean;
 }
 
 export type OpenAIStreamingRequest =
   OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & {
-    cache_prompt?: boolean;
     prompt_cache_key?: string;
     prompt_cache_retention?: 'in_memory' | '24h';
     extra_body?: Record<string, unknown>;
@@ -117,7 +115,6 @@ export type OpenAIStreamingRequest =
 
 export type OpenAINonStreamingRequest =
   OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
-    cache_prompt?: boolean;
     prompt_cache_key?: string;
     prompt_cache_retention?: 'in_memory' | '24h';
     extra_body?: Record<string, unknown>;

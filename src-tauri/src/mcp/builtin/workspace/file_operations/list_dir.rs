@@ -1,4 +1,5 @@
 use super::super::WorkspaceServer;
+use super::list_dir_format::{build_listing_message, listing_item, sort_listing_items};
 use super::utils::{is_not_found_io_error, normalize_workspace_path_input};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path;
@@ -77,57 +78,46 @@ impl WorkspaceServer {
             .await
             {
                 Ok(Some(entries)) => {
-                    let total = entries.len();
-                    let page: Vec<_> = entries
+                    let mut items: Vec<Value> = entries
                         .into_iter()
-                        .skip(offset)
-                        .take(limit)
-                        .map(|entry| {
-                            json!({
-                                "name": entry.name,
-                                "type": entry.entry_type,
-                                "size": null,
-                            })
-                        })
+                        .map(|entry| listing_item(entry.name, entry.entry_type, entry.size))
                         .collect();
-                    let shown = page.len();
-                    let message = if total == 0 {
-                        format!("Directory listing for '{path_str}':\n\n(This directory is empty)")
+                    sort_listing_items(&mut items);
+
+                    let total_items = items.len();
+                    let paginated_items: Vec<_> =
+                        items.into_iter().skip(offset).take(limit).collect();
+                    let header_suffix = if total_items == 0 {
+                        None
                     } else {
-                        format!(
-                            "Directory listing for '{path_str}' (attached container, showing {shown} of {total}):\n\n{}",
-                            page.iter()
-                                .map(|item| {
-                                    let name =
-                                        item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-                                    let kind =
-                                        item.get("type").and_then(|v| v.as_str()).unwrap_or("file");
-                                    if kind == "directory" {
-                                        format!("- {name}/")
-                                    } else {
-                                        format!("- {name}")
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                        )
+                        Some(format!(
+                            "(attached container, showing {} of {})",
+                            paginated_items.len(),
+                            total_items
+                        ))
                     };
-                    return Ok(SuccessHint::new(
-                        message,
-                        vec![
-                            "Use readFile on files (not directories) to inspect contents"
-                                .to_string(),
-                            "Use listDirectory on subdirectory names ending with '/'".to_string(),
-                        ],
-                    )
-                    .to_mcp_result_with_data(Some(json!({
-                        "path": path_str,
-                        "entries": page,
-                        "total": total,
-                        "offset": offset,
-                        "limit": limit,
-                        "source": "attach-container",
-                    }))));
+                    let message = build_listing_message(
+                        &path_str,
+                        &paginated_items,
+                        total_items,
+                        offset,
+                        limit,
+                        header_suffix.as_deref(),
+                    );
+                    let page_count = paginated_items.len();
+
+                    // Omit generic next-action hints — match host listing policy.
+                    return Ok(
+                        SuccessHint::new(message, vec![]).to_mcp_result_with_data(Some(json!({
+                            "items": paginated_items,
+                            "path": path_str,
+                            "count": page_count,
+                            "total_count": total_items,
+                            "offset": offset,
+                            "limit": limit,
+                            "source": "attach-container",
+                        }))),
+                    );
                 }
                 Ok(None) => {
                     // Not attach, or path is host-only (skills/teamwork) — fall through.
@@ -197,124 +187,42 @@ impl WorkspaceServer {
                             None
                         };
 
-                        items.push(json!({
-                            "name": name,
-                            "type": file_type,
-                            "size": size
-                        }));
+                        items.push(listing_item(name, file_type, size));
                     }
                 }
 
-                items.sort_by(|a, b| {
-                    let a_type = a.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                    let b_type = b.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                    let a_name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    let b_name = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                sort_listing_items(&mut items);
 
-                    match (a_type, b_type) {
-                        ("directory", "file") => std::cmp::Ordering::Less,
-                        ("file", "directory") => std::cmp::Ordering::Greater,
-                        _ => a_name.cmp(b_name),
-                    }
-                });
-
-                // ✅ ENHANCED: Format listing with emojis, types, and sizes for AI visibility
                 let total_items = items.len();
                 let paginated_items: Vec<_> = items.into_iter().skip(offset).take(limit).collect();
-                let has_more = offset + paginated_items.len() < total_items;
-
-                let mut table_lines = vec![
-                    "| Type | Name | Size |".to_string(),
-                    "|---|---|---|".to_string(),
-                ];
-
-                let item_lines: Vec<String> = paginated_items
-                    .iter()
-                    .map(|item| {
-                        let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-                        let type_ = item.get("type").and_then(|v| v.as_str()).unwrap_or("?");
-                        let size = item.get("size").and_then(|v| v.as_u64());
-
-                        // Use emoji icons for visual clarity
-                        let icon = match type_ {
-                            "directory" => "📁 dir",
-                            "file" => "📄 file",
-                            _ => "❓ other",
-                        };
-
-                        // Format size in human-readable way
-                        let size_str = if let Some(s) = size {
-                            if s < 1024 {
-                                format!("{}B", s)
-                            } else if s < 1024 * 1024 {
-                                format!("{:.1}KB", s as f64 / 1024.0)
-                            } else {
-                                format!("{:.1}MB", s as f64 / 1024.0 / 1024.0)
-                            }
-                        } else {
-                            "-".to_string()
-                        };
-
-                        format!("| {} | `{}` | {} |", icon, name, size_str)
-                    })
-                    .collect();
-                table_lines.extend(item_lines);
-
-                let listing_str = table_lines.join("\n");
-
-                // Add truncation note if needed
-                let truncation_note = if has_more {
-                    format!(
-                        "\n\n*(Showing {} to {} of {} items. Call listDirectory with offset: {} to see more)*",
-                        offset + 1,
-                        offset + paginated_items.len(),
-                        total_items,
-                        offset + limit
-                    )
-                } else if offset > 0 {
-                    format!(
-                        "\n\n*(Showing {} to {} of {} items)*",
-                        offset + 1,
-                        offset + paginated_items.len(),
-                        total_items
-                    )
-                } else {
-                    String::new()
-                };
 
                 info!(
                     "Successfully listed directory: {:?} ({} items, offset: {}, limit: {})",
                     safe_path, total_items, offset, limit
                 );
 
+                let message = build_listing_message(
+                    &path_str,
+                    &paginated_items,
+                    total_items,
+                    offset,
+                    limit,
+                    None,
+                );
+                let page_count = paginated_items.len();
+
                 // Omit generic next-action hints — listing is read-only and
                 // pagination/empty status is already clear in the message body.
-                let hint = if total_items == 0 {
-                    SuccessHint::new(
-                        format!(
-                            "Directory listing for '{}':\n\n(This directory is empty)\n\nThis is a valid empty directory.",
-                            path_str
-                        ),
-                        vec![],
-                    )
-                } else {
-                    SuccessHint::new(
-                        format!(
-                            "Directory listing for '{}':\n\n{}{}",
-                            path_str, listing_str, truncation_note
-                        ),
-                        vec![],
-                    )
-                };
-
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "items": paginated_items,
-                    "path": path_str,
-                    "count": paginated_items.len(),
-                    "total_count": total_items,
-                    "offset": offset,
-                    "limit": limit
-                }))))
+                Ok(
+                    SuccessHint::new(message, vec![]).to_mcp_result_with_data(Some(json!({
+                        "items": paginated_items,
+                        "path": path_str,
+                        "count": page_count,
+                        "total_count": total_items,
+                        "offset": offset,
+                        "limit": limit
+                    }))),
+                )
             }
             Err(e) => {
                 error!("Failed to list directory {:?}: {}", safe_path, e);

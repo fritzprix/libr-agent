@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatBytesAsKilobytes,
+  isIntegerInRange,
   parseIntegerInput,
   parseKilobytesInputToBytes,
 } from '../settings-number-utils';
@@ -13,6 +14,15 @@ describe('settings-number-utils', () => {
 
   it('falls back for invalid integer input', () => {
     expect(parseIntegerInput('', { fallback: 7, min: 1, max: 10 })).toBe(7);
+  });
+
+  it('detects in-range integers without clamping mid-edit values', () => {
+    expect(isIntegerInRange('2', { min: 32, max: 1024 })).toBe(false);
+    expect(isIntegerInRange('25', { min: 32, max: 1024 })).toBe(false);
+    expect(isIntegerInRange('256', { min: 32, max: 1024 })).toBe(true);
+    expect(isIntegerInRange('', { min: 32, max: 1024 })).toBe(false);
+    expect(isIntegerInRange('2000', { min: 32, max: 1024 })).toBe(false);
+    expect(isIntegerInRange('12abc', { min: 1, max: 100 })).toBe(false);
   });
 
   it('converts kilobytes input to clamped bytes', () => {
