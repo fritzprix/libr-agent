@@ -177,6 +177,7 @@ describe('AgentChatContext', () => {
       expect(result.current).toBeDefined();
       expect(typeof result.current.submit).toBe('function');
       expect(typeof result.current.cancel).toBe('function');
+      expect(typeof result.current.cancelPendingPrompt).toBe('function');
       expect(typeof result.current.retryMessage).toBe('function');
     });
 
@@ -391,9 +392,16 @@ describe('AgentChatContext', () => {
       });
     });
 
-    it('should render pending message before backend send resolves', async () => {
+    it('should not optimistically append submitted messages to the chat list', async () => {
       const deferred = createDeferred<{ success: boolean }>();
-      (safeInvoke as ReturnType<typeof vi.fn>).mockReturnValue(deferred.promise);
+      (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
+        (command: string) => {
+          if (command === 'agent_inject_messages') {
+            return deferred.promise;
+          }
+          return Promise.resolve({ success: true, data: [] });
+        },
+      );
 
       const { result } = renderHook(() => useAgentChat(), {
         wrapper: TestWrapper,
@@ -415,60 +423,14 @@ describe('AgentChatContext', () => {
       });
 
       await waitFor(() => {
-        expect(result.current.messages).toEqual([...mockMessages, newMessage]);
+        expect(safeInvoke).toHaveBeenCalledWith(
+          'agent_inject_messages',
+          expect.anything(),
+        );
       });
 
-      deferred.resolve({ success: true });
-      await act(async () => {
-        await submitPromise;
-      });
-    });
-
-    it('should dedupe pending and persisted messages with the same id', async () => {
-      const duplicatedMessage: Message = {
-        id: 'msg-duplicate',
-        sessionId: 'test-session',
-        threadId: 'test-session',
-        role: 'user',
-        content: [{ type: 'text', text: 'Duplicate message' }],
-        createdAt: new Date(),
-      };
-
-      const deferred = createDeferred<{ success: boolean }>();
-      (safeInvoke as ReturnType<typeof vi.fn>).mockReturnValue(deferred.promise);
-
-      const { result, rerender } = renderHook(() => useAgentChat(), {
-        wrapper: TestWrapper,
-      });
-
-      let submitPromise: Promise<void> | undefined;
-
-      await act(async () => {
-        submitPromise = result.current.submit(duplicatedMessage);
-      });
-
-      await waitFor(() => {
-        expect(
-          result.current.messages.filter((message) => message.id === duplicatedMessage.id),
-        ).toHaveLength(1);
-      });
-
-      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-        session: { id: 'test-session', name: 'Test Session' },
-        messages: [...mockMessages, duplicatedMessage],
-        isSessionLoading: false,
-        error: null,
-        llmError: null,
-        workflowStatus: 'idle',
-      });
-
-      rerender();
-
-      await waitFor(() => {
-        expect(
-          result.current.messages.filter((message) => message.id === duplicatedMessage.id),
-        ).toHaveLength(1);
-      });
+      expect(result.current.messages).toEqual(mockMessages);
+      expect(result.current.pendingQueue).toEqual([]);
 
       deferred.resolve({ success: true });
       await act(async () => {
@@ -483,7 +445,7 @@ describe('AgentChatContext', () => {
           if (command === 'agent_inject_messages') {
             return deferred.promise;
           }
-          return Promise.resolve({ success: true });
+          return Promise.resolve({ success: true, data: [] });
         },
       );
 
@@ -512,20 +474,19 @@ describe('AgentChatContext', () => {
       });
 
       await waitFor(() => {
-        expect(result.current.pendingMessages).toEqual([pendingMessage]);
+        expect(safeInvoke).toHaveBeenCalledWith('agent_inject_messages', {
+          request: expect.objectContaining({
+            sessionId: 'test-session',
+            messages: [
+              expect.objectContaining({
+                id: pendingMessage.id,
+              }),
+            ],
+          }),
+        });
       });
 
-      expect(safeInvoke).toHaveBeenCalledWith('agent_inject_messages', {
-        request: expect.objectContaining({
-          sessionId: 'test-session',
-          messages: [
-            expect.objectContaining({
-              id: pendingMessage.id,
-            }),
-          ],
-        }),
-      });
-
+      expect(result.current.pendingQueue).toEqual([]);
       expect(mockResumeSession).not.toHaveBeenCalled();
 
       deferred.resolve({ success: true });
@@ -534,8 +495,20 @@ describe('AgentChatContext', () => {
       });
     });
 
-    it('clears pending messages when the active session changes', async () => {
-      const deferred = createDeferred<{ success: boolean }>();
+    it('updates pending queue from backend events and clears on session change', async () => {
+      const eventHandlers: Array<
+        (event: { payload: Record<string, unknown> }) => void
+      > = [];
+      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+        (
+          _event: string,
+          handler: (event: { payload: Record<string, unknown> }) => void,
+        ) => {
+          eventHandlers.push(handler);
+          return Promise.resolve(mockUnlisten);
+        },
+      );
+
       let sessionState = {
         session: { id: 'test-session', name: 'Test Session' },
         messages: mockMessages,
@@ -548,34 +521,43 @@ describe('AgentChatContext', () => {
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockImplementation(
         () => sessionState,
       );
-      (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
-        (command: string) => {
-          if (command === 'agent_inject_messages') {
-            return deferred.promise;
-          }
-          return Promise.resolve({ success: true });
-        },
-      );
+      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: true,
+        data: [],
+      });
 
-      const pendingMessage: Message = {
+      const queuedRustMessage = {
         id: 'msg-pending-switch',
         sessionId: 'test-session',
-        threadId: 'test-session',
-        role: 'user',
+        role: 'user' as const,
         content: [{ type: 'text', text: 'Carry me only in this session' }],
-        createdAt: new Date(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       };
 
       const { result, rerender } = renderHook(() => useAgentChat(), {
         wrapper: TestWrapper,
       });
 
+      await waitFor(() => {
+        expect(eventHandlers.length).toBeGreaterThan(0);
+      });
+
       await act(async () => {
-        void result.current.submit(pendingMessage);
+        for (const handler of eventHandlers) {
+          handler({
+            payload: {
+              type: 'pendingQueueUpdated',
+              sessionId: 'test-session',
+              messages: [queuedRustMessage],
+            },
+          });
+        }
       });
 
       await waitFor(() => {
-        expect(result.current.pendingMessages).toEqual([pendingMessage]);
+        expect(result.current.pendingQueue).toHaveLength(1);
+        expect(result.current.pendingQueue[0]?.id).toBe('msg-pending-switch');
       });
 
       sessionState = {
@@ -586,12 +568,27 @@ describe('AgentChatContext', () => {
       rerender();
 
       await waitFor(() => {
-        expect(result.current.pendingMessages).toEqual([]);
+        expect(result.current.pendingQueue).toEqual([]);
+      });
+    });
+
+    it('should cancel a single pending prompt via IPC', async () => {
+      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: true,
+        data: { removed: true },
       });
 
-      deferred.resolve({ success: true });
+      const { result } = renderHook(() => useAgentChat(), {
+        wrapper: TestWrapper,
+      });
+
       await act(async () => {
-        await deferred.promise;
+        await result.current.cancelPendingPrompt('msg-queued');
+      });
+
+      expect(safeInvoke).toHaveBeenCalledWith('agent_cancel_pending_prompt', {
+        sessionId: 'test-session',
+        messageId: 'msg-queued',
       });
     });
 

@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { OpenAIService } from './openai';
 import { Message } from '@/models/chat';
+import { createLlmFetch } from './desktop-fetch';
 
 /**
  * An AI service implementation for the Fireworks AI provider.
@@ -21,6 +22,7 @@ export class FireworksService extends OpenAIService {
       apiKey: this.apiKey,
       baseURL: 'https://api.fireworks.ai/inference/v1',
       dangerouslyAllowBrowser: true,
+      fetch: createLlmFetch(),
     });
   }
 

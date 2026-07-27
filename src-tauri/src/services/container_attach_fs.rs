@@ -243,15 +243,33 @@ pub async fn list_container_directory(
         return Ok(None);
     }
     let container_path = info.container_path_for_host_file(host_dir)?;
-    let output =
+
+    // Prefer `ls -lA` for type + size. Fall back to name-only `ls -1ApF` when long
+    // listing fails or yields no parseable entries (BusyBox quirks, empty dirs still OK).
+    match run_docker_stdout(&["exec", info.container, "ls", "-lA", &container_path]).await {
+        Ok(output) => {
+            let entries = parse_ls_la_output(&output);
+            if !entries.is_empty() || output_looks_like_empty_directory(&output) {
+                return Ok(Some(entries));
+            }
+            // Unparseable long listing — try name-only fallback below.
+        }
+        Err(err) => {
+            // Hard path errors should not silently fall through to name-only when the
+            // directory truly does not exist; still attempt APF fallback for ls-flag
+            // incompatibilities, then surface the original error if that also fails.
+            if let Ok(apf_output) =
+                run_docker_stdout(&["exec", info.container, "ls", "-1ApF", &container_path]).await
+            {
+                return Ok(Some(parse_ls_apf_output(&apf_output)));
+            }
+            return Err(err);
+        }
+    }
+
+    let apf_output =
         run_docker_stdout(&["exec", info.container, "ls", "-1ApF", &container_path]).await?;
-    let entries = output
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(parse_ls_apf_entry)
-        .collect();
-    Ok(Some(entries))
+    Ok(Some(parse_ls_apf_output(&apf_output)))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,6 +277,87 @@ pub struct ContainerDirEntry {
     pub name: String,
     /// `"file"` or `"directory"` for agent tool consumers.
     pub entry_type: &'static str,
+    /// File size in bytes; `None` for directories or when size could not be parsed.
+    pub size: Option<u64>,
+}
+
+fn parse_ls_apf_output(output: &str) -> Vec<ContainerDirEntry> {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(parse_ls_apf_entry)
+        .collect()
+}
+
+fn parse_ls_la_output(output: &str) -> Vec<ContainerDirEntry> {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter_map(parse_ls_la_entry)
+        .collect()
+}
+
+fn output_looks_like_empty_directory(output: &str) -> bool {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .all(|line| line.starts_with("total ") || line.starts_with("total\t"))
+}
+
+/// Parse one `ls -lA` line (GNU or BusyBox). Returns `None` for `total N` / unparseable.
+fn parse_ls_la_entry(raw: &str) -> Option<ContainerDirEntry> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.starts_with("total ") || trimmed.starts_with("total\t") {
+        return None;
+    }
+
+    let mut parts = trimmed.split_whitespace();
+    let perms = parts.next()?;
+    let first = perms.chars().next()?;
+    // Require a permission-style first field (e.g. drwxr-xr-x, -rw-r--r--, lrwxrwxrwx).
+    if !matches!(first, 'd' | '-' | 'l' | 'c' | 'b' | 'p' | 's') || perms.len() < 10 {
+        return None;
+    }
+
+    let _links = parts.next()?;
+    let _owner = parts.next()?;
+    let _group = parts.next()?;
+    let size_str = parts.next()?;
+    let _month_or_date = parts.next()?;
+    let _day_or_time = parts.next()?;
+    let _time_or_year = parts.next()?;
+
+    let name_with_link: String = parts.collect::<Vec<_>>().join(" ");
+    if name_with_link.is_empty() {
+        return None;
+    }
+
+    // Symlinks: `name -> target`
+    let name = name_with_link
+        .split_once(" -> ")
+        .map(|(name, _)| name)
+        .unwrap_or(&name_with_link)
+        .to_string();
+
+    if name == "." || name == ".." {
+        return None;
+    }
+
+    let is_dir = first == 'd';
+    let size = if is_dir {
+        None
+    } else {
+        size_str.parse::<u64>().ok()
+    };
+
+    Some(ContainerDirEntry {
+        name,
+        entry_type: if is_dir { "directory" } else { "file" },
+        size,
+    })
 }
 
 /// Parse `ls -1ApF` output: directories end with `/`; strip other `-F` indicators.
@@ -267,6 +366,7 @@ fn parse_ls_apf_entry(raw: &str) -> ContainerDirEntry {
         return ContainerDirEntry {
             name: name.to_string(),
             entry_type: "directory",
+            size: None,
         };
     }
     let name = raw
@@ -279,6 +379,7 @@ fn parse_ls_apf_entry(raw: &str) -> ContainerDirEntry {
     ContainerDirEntry {
         name: name.to_string(),
         entry_type: "file",
+        size: None,
     }
 }
 
@@ -365,6 +466,7 @@ mod tests {
             ContainerDirEntry {
                 name: "src".to_string(),
                 entry_type: "directory",
+                size: None,
             }
         );
         assert_eq!(
@@ -372,6 +474,7 @@ mod tests {
             ContainerDirEntry {
                 name: "gpt2.c".to_string(),
                 entry_type: "file",
+                size: None,
             }
         );
         assert_eq!(
@@ -379,6 +482,7 @@ mod tests {
             ContainerDirEntry {
                 name: "run".to_string(),
                 entry_type: "file",
+                size: None,
             }
         );
         assert_eq!(
@@ -386,8 +490,79 @@ mod tests {
             ContainerDirEntry {
                 name: "link".to_string(),
                 entry_type: "file",
+                size: None,
             }
         );
+    }
+
+    #[test]
+    fn parse_ls_la_entry_gnu_style_file_and_directory() {
+        assert_eq!(
+            parse_ls_la_entry("-rw-r--r-- 1 root root 123 Jan  1 00:00 gpt2.c"),
+            Some(ContainerDirEntry {
+                name: "gpt2.c".to_string(),
+                entry_type: "file",
+                size: Some(123),
+            })
+        );
+        assert_eq!(
+            parse_ls_la_entry("drwxr-xr-x 2 root root 4096 Jan  1 00:00 src"),
+            Some(ContainerDirEntry {
+                name: "src".to_string(),
+                entry_type: "directory",
+                size: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_ls_la_entry_busybox_style_and_symlink() {
+        assert_eq!(
+            parse_ls_la_entry("-rw-r--r--    1 root     root           512 Jan  1  1970 main.db"),
+            Some(ContainerDirEntry {
+                name: "main.db".to_string(),
+                entry_type: "file",
+                size: Some(512),
+            })
+        );
+        assert_eq!(
+            parse_ls_la_entry("lrwxrwxrwx 1 root root 11 Jan  1 00:00 link -> target.txt"),
+            Some(ContainerDirEntry {
+                name: "link".to_string(),
+                entry_type: "file",
+                size: Some(11),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_ls_la_entry_handles_names_with_spaces_and_skips_total() {
+        assert_eq!(
+            parse_ls_la_entry("-rw-r--r-- 1 root root 42 Jul 26 12:00 my file.txt"),
+            Some(ContainerDirEntry {
+                name: "my file.txt".to_string(),
+                entry_type: "file",
+                size: Some(42),
+            })
+        );
+        assert!(parse_ls_la_entry("total 16").is_none());
+        assert!(parse_ls_la_entry("total 0").is_none());
+    }
+
+    #[test]
+    fn parse_ls_la_output_collects_entries_and_empty_total_only() {
+        let output = "\
+total 20
+drwxr-xr-x 2 root root 4096 Jan  1 00:00 src
+-rw-r--r-- 1 root root  123 Jan  1 00:00 gpt2.c
+";
+        let entries = parse_ls_la_output(output);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "src");
+        assert_eq!(entries[1].size, Some(123));
+
+        assert!(output_looks_like_empty_directory("total 0\n"));
+        assert!(!output_looks_like_empty_directory(output));
     }
 
     #[test]

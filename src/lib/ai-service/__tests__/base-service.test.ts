@@ -90,7 +90,7 @@ describe('BaseAIService.shouldRetry', () => {
 describe('BaseAIService.sanitizeMessages', () => {
   const service = new TestBaseAIService('test-key');
 
-  it('replaces malformed tool calls with repair guidance instead of resending them', () => {
+  it('neutralizes malformed tool calls to {} and keeps pairing ids', () => {
     const sanitized = service.sanitizeMessages([
       {
         id: 'assistant-1',
@@ -109,26 +109,46 @@ describe('BaseAIService.sanitizeMessages', () => {
           },
         ],
       },
+      {
+        id: 'tool-bad',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'call-bad',
+        content: [
+          {
+            type: 'text',
+            text: '✗ Failed to parse args\n\n💡 Next Steps:\n1. Fix the JSON',
+          },
+        ],
+      },
     ]);
 
-    expect(sanitized).toHaveLength(1);
-    expect(sanitized[0].tool_calls).toBeUndefined();
+    expect(sanitized).toHaveLength(2);
+    expect(sanitized[0].tool_calls).toHaveLength(1);
+    expect(sanitized[0].tool_calls?.[0].id).toBe('call-bad');
+    expect(sanitized[0].tool_calls?.[0].function.arguments).toBe('{}');
     expect(sanitized[0].content).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: 'text',
           text: expect.stringContaining(
-            'invalid tool call arguments were removed',
+            'invalid tool call arguments were neutralized',
           ),
         }),
       ]),
     );
     expect(
-      (sanitized[0].content[0] as { type: 'text'; text: string }).text,
+      (sanitized[0].content.find((p) => p.type === 'text') as { text: string })
+        .text,
     ).toContain('readFile');
+    expect(sanitized[1].tool_call_id).toBe('call-bad');
+    expect(
+      (sanitized[1].content[0] as { type: 'text'; text: string }).text,
+    ).toContain('Next Steps');
   });
 
-  it('keeps valid tool calls while repairing malformed siblings', () => {
+  it('keeps valid tool calls while neutralizing malformed siblings', () => {
     const sanitized = service.sanitizeMessages([
       {
         id: 'assistant-2',
@@ -163,19 +183,31 @@ describe('BaseAIService.sanitizeMessages', () => {
         tool_call_id: 'call-good',
         content: [{ type: 'text', text: 'ok' }],
       },
+      {
+        id: 'tool-bad',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'call-bad',
+        content: [{ type: 'text', text: 'guided error' }],
+      },
     ]);
 
-    expect(sanitized).toHaveLength(2);
-    expect(sanitized[0].tool_calls).toHaveLength(1);
+    expect(sanitized).toHaveLength(3);
+    expect(sanitized[0].tool_calls).toHaveLength(2);
     expect(sanitized[0].tool_calls?.[0].id).toBe('call-good');
+    expect(sanitized[0].tool_calls?.[1].id).toBe('call-bad');
+    expect(sanitized[0].tool_calls?.[1].function.arguments).toBe('{}');
     expect(
       sanitized[0].content.some(
         (part) =>
           part.type === 'text' &&
-          part.text.includes('Treat each omitted tool call as a failed attempt'),
+          part.text.includes('neutralized to {}') &&
+          part.text.includes('preserving tool-call / tool-result pairing'),
       ),
     ).toBe(true);
     expect(sanitized[1].tool_call_id).toBe('call-good');
+    expect(sanitized[2].tool_call_id).toBe('call-bad');
   });
 });
 

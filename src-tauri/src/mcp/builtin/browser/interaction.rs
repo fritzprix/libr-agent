@@ -539,7 +539,7 @@ fn format_interactive_elements(
     }
 
     // Footer with usage hint
-    output.push_str("💡 Use the selector to interact with these elements.");
+    output.push_str("💡 Tip: Selectors can be used to interact with these elements.");
 
     Ok(output)
 }

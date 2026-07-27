@@ -207,6 +207,7 @@ export function createAgentChatContextMock(
     useAgentChat: () => ({
       messages: chatState.messages,
       pendingMessages: [],
+      pendingQueue: [],
       error: undefined,
       llmError: undefined,
       retryMessage: noop,

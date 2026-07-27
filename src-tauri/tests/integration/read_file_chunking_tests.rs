@@ -95,6 +95,13 @@ async fn read_file_truncates_large_output_and_guides_next_chunk() {
         .expect("structured content expected");
     assert_eq!(structured["path"], json!(path));
     assert_eq!(structured["truncated"], json!(true));
+    assert_eq!(structured["complete"], json!(false));
+    assert_eq!(structured["rangeLimited"], json!(false));
+    assert_eq!(structured["totalLines"], json!(2_000));
+    assert!(
+        text.contains("of 2000"),
+        "truncated summary should include totalLines: {text}"
+    );
 
     let end_line = structured["endLine"]
         .as_u64()
@@ -185,8 +192,8 @@ async fn read_file_empty_file_preserves_standard_success_shape() {
         "empty-file response should still use the standard readFile success wrapper: {text}"
     );
     assert!(
-        text.contains("no lines shown"),
-        "empty-file response should explain that the file has no readable lines: {text}"
+        text.contains("complete (0 lines)"),
+        "empty-file response should report a complete zero-line read: {text}"
     );
     assert!(
         !text.contains("Next chunk: readFile("),
@@ -200,9 +207,12 @@ async fn read_file_empty_file_preserves_standard_success_shape() {
     assert_eq!(structured["path"], json!(path));
     assert_eq!(structured["content"], json!(""));
     assert_eq!(structured["size"], json!(0));
+    assert_eq!(structured["totalLines"], json!(0));
     assert_eq!(structured["lines"], json!(0));
     assert_eq!(structured["startLine"], json!(1));
     assert_eq!(structured["endLine"], json!(1));
+    assert_eq!(structured["complete"], json!(true));
+    assert_eq!(structured["rangeLimited"], json!(false));
     assert_eq!(structured["truncated"], json!(false));
     assert_eq!(structured["nextStartLine"], serde_json::Value::Null);
     assert_eq!(structured["suggestedEndLine"], serde_json::Value::Null);
@@ -336,6 +346,105 @@ async fn read_file_supports_offset_and_size_forward() {
     assert!(text.contains("line 4"));
     assert!(!text.contains("line 1"));
     assert!(!text.contains("line 5"));
+    assert!(
+        text.contains("lines 2-4 of 5 (requested range; more remains)"),
+        "range-limited reads should report remainder against totalLines: {text}"
+    );
+    assert!(
+        text.contains("Next chunk: readFile({\"path\": \"test.txt\", \"offset\": 5, \"size\": 3})"),
+        "range-limited reads should include a copy-pasteable next chunk: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["totalLines"], json!(5));
+    assert_eq!(structured["startLine"], json!(2));
+    assert_eq!(structured["endLine"], json!(4));
+    assert_eq!(structured["complete"], json!(false));
+    assert_eq!(structured["rangeLimited"], json!(true));
+    assert_eq!(structured["truncated"], json!(false));
+    assert_eq!(structured["nextStartLine"], json!(5));
+    assert_eq!(structured["suggestedEndLine"], json!(5));
+}
+
+#[tokio::test]
+async fn read_file_complete_reports_total_lines_without_next_chunk() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-file-complete";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let path = "small.txt";
+    std::fs::write(workspace_dir.join(path), "alpha\nbeta\ngamma\n").expect("write file");
+
+    let result = server
+        .handle_read_file(json!({ "path": path }), Some(session_id.to_string()))
+        .await
+        .expect("readFile should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("complete (3 lines)"),
+        "full-file reads should say complete with totalLines: {text}"
+    );
+    assert!(
+        !text.contains("Next chunk: readFile("),
+        "complete reads should not suggest another chunk: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["totalLines"], json!(3));
+    assert_eq!(structured["startLine"], json!(1));
+    assert_eq!(structured["endLine"], json!(3));
+    assert_eq!(structured["complete"], json!(true));
+    assert_eq!(structured["rangeLimited"], json!(false));
+    assert_eq!(structured["truncated"], json!(false));
+    assert_eq!(structured["nextStartLine"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn read_file_reached_end_from_mid_file_is_not_complete() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-file-reached-end";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let path = "mid.txt";
+    std::fs::write(
+        workspace_dir.join(path),
+        "line 1\nline 2\nline 3\nline 4\nline 5\n",
+    )
+    .expect("write file");
+
+    let result = server
+        .handle_read_file(
+            json!({ "path": path, "offset": 4, "size": 10 }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readFile should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("lines 4-5 of 5 (reached end; not complete file)"),
+        "mid-to-end reads should distinguish EOF from complete-file: {text}"
+    );
+    assert!(
+        !text.contains("Next chunk: readFile("),
+        "EOF without remaining lines should not suggest a next chunk: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["totalLines"], json!(5));
+    assert_eq!(structured["complete"], json!(false));
+    assert_eq!(structured["rangeLimited"], json!(false));
+    assert_eq!(structured["nextStartLine"], serde_json::Value::Null);
 }
 
 #[tokio::test]

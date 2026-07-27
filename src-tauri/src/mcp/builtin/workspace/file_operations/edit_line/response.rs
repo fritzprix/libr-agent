@@ -291,16 +291,11 @@ pub(super) fn build_edit_file_success(prepared_batches: &[PreparedFileEdit]) -> 
 
     let next_actions = if has_new_anchors {
         vec![
-            "Anchors above are current for the edited ranges — reuse them directly with editFile for follow-up edits in those same ranges".to_string(),
-            "Use readFile only when you need broader context, untouched lines, or fresh anchors outside the ranges shown above".to_string(),
+            "Anchors above reflect the edited ranges shown in this response.".to_string(),
+            "Lines outside those ranges are not included here.".to_string(),
         ]
     } else {
-        vec![
-            "No new anchors were generated because these edits only removed existing lines"
-                .to_string(),
-            "Use readFile when you need fresh anchors after the deletion or broader context"
-                .to_string(),
-        ]
+        vec!["These edits removed lines only; no new anchor lines were produced.".to_string()]
     };
 
     let hint = SuccessHint::new(

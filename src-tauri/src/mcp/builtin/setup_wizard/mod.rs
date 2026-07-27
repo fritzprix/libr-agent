@@ -133,7 +133,7 @@ impl SetupWizardServer {
 
         let mut next_steps = vec![];
         if !missing.is_empty() {
-            next_steps.push("Use getSetupGuide(tool) to install missing tools".to_string());
+            next_steps.push("getSetupGuide(tool) can install missing tools".to_string());
         }
         next_steps.push("Available guides: node, python, uv, docker, git".to_string());
 
@@ -470,8 +470,8 @@ mod tests {
         assert!(text.contains("OS:"));
         assert!(text.contains("Architecture:"));
         assert!(text.contains("Shell:"));
-        // Verify guidance marker
-        assert!(text.contains("💡 Next"));
+        // Verify optional follow-up section when present
+        assert!(text.contains("💡 Suggested Follow-ups:"));
     }
 
     #[tokio::test]
@@ -584,8 +584,8 @@ mod tests {
 
         // Validate next steps guidance exists
         assert!(
-            text.contains("💡 Next") || text.contains("Available guides"),
-            "Should provide next steps guidance"
+            text.contains("💡 Suggested Follow-ups:") || text.contains("Available guides"),
+            "Should provide optional follow-up guidance"
         );
 
         // Validate structured_content exists for UI rendering

@@ -73,16 +73,6 @@ export interface AIServiceConfig {
   use3rdParty?: boolean;
   /** Optional custom model identifier for OpenAI-compatible 3rd party endpoints. */
   customModelId?: string;
-  /**
-   * Explicitly enables the non-standard `cache_prompt` extension used by some
-   * OpenAI-compatible backends such as llama.cpp.
-   *
-   * This does not control OpenAI's official prompt caching, which is automatic
-   * on supported models and surfaces via usage.prompt_tokens_details.cached_tokens.
-   * When undefined, compatible extensions may still auto-enable for clearly
-   * non-OpenAI endpoints configured under the OpenAI provider.
-   */
-  enablePromptCache?: boolean;
 
   /**
    * Optional OpenAI prompt cache routing key for official OpenAI endpoints.

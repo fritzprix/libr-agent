@@ -28,14 +28,14 @@
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet("hello", "terminal-bench", "harbor-index", "path")]
+  [ValidateSet("hello", "terminal-bench", "harbor-index", "path", "dataset")]
   [string]$Preset = "hello",
 
   [string]$Path,
 
   [string]$Dataset = "terminal-bench/terminal-bench-2-1",
 
-  [string]$Include,
+  [string[]]$Include,
 
   [int]$NTasks = 0,
 
@@ -47,6 +47,13 @@ param(
   [string]$ApiUrl = $(if ($env:LIBRAGENT_API_URL) { $env:LIBRAGENT_API_URL } else { "http://localhost:3030/api" }),
 
   [string]$AssistantId = $env:LIBRAGENT_ASSISTANT_ID,
+
+  # Harbor -m. Prefer this / LIBRAGENT_MODEL; else GET /api/settings/preferredModel.
+  [string]$Model = $(
+    if ($env:LIBRAGENT_MODEL) { $env:LIBRAGENT_MODEL }
+    elseif ($env:LIBRAGENT_HARBOR_MODEL) { $env:LIBRAGENT_HARBOR_MODEL }
+    else { $null }
+  ),
 
   [ValidateSet("yolo", "unsafe", "normal")]
   [string]$ExecutionMode = $(if ($env:LIBRAGENT_EXECUTION_MODE) { $env:LIBRAGENT_EXECUTION_MODE } else { "unsafe" }),
@@ -74,6 +81,11 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
+
+# Convenience: if --dataset was explicitly supplied without --preset, treat as dataset preset.
+if (-not $PSBoundParameters.ContainsKey('Preset') -and $PSBoundParameters.ContainsKey('Dataset')) {
+  $Preset = "dataset"
+}
 
 # Avoid Windows cp949 crashes on Harbor's emoji progress UI.
 $env:PYTHONUTF8 = "1"
@@ -149,6 +161,44 @@ function Resolve-AssistantId {
   return [string]$match.id
 }
 
+function Resolve-HarborModel {
+  param(
+    [string]$ApiBase,
+    [string]$PreferredModel
+  )
+
+  if ($PreferredModel -and $PreferredModel.Trim().Length -gt 0) {
+    return $PreferredModel.Trim()
+  }
+
+  Write-Step "Resolving Harbor -m from LibrAgent global preferredModel"
+  $url = "$ApiBase/settings/preferredModel"
+  try {
+    $payload = Invoke-RestMethod -Uri $url -Method GET -TimeoutSec 15
+  } catch {
+    throw @"
+Failed to read preferredModel from $url : $_
+Restart LibrAgent (pnpm tauri dev) so GET /api/settings/preferredModel is available, or pass -Model provider/model.
+"@
+  }
+
+  $harborModel = [string]$payload.harborModel
+  if (-not $harborModel -or $harborModel.Trim().Length -eq 0) {
+    $model = [string]$payload.model
+    $provider = [string]$payload.provider
+    if ($model -and $provider -and ($model -notmatch '/')) {
+      $harborModel = "$provider/$model"
+    } else {
+      $harborModel = $model
+    }
+  }
+  if (-not $harborModel -or $harborModel.Trim().Length -eq 0) {
+    throw "preferredModel is empty. Set a preferred model in LibrAgent settings, or pass -Model provider/model."
+  }
+  Write-Host ("  preferredModel provider={0} model={1}" -f $payload.provider, $payload.model)
+  return $harborModel.Trim()
+}
+
 function Test-LibrAgentApi {
   param([string]$ApiBase)
 
@@ -158,9 +208,9 @@ function Test-LibrAgentApi {
     throw "Unexpected health response: $($health | ConvertTo-Json -Compress)"
   }
 
-  Write-Step "Smoke-checking executionMode=$ExecutionMode (create → verify mode → await idle → terminate)"
+  Write-Step "Smoke-checking executionMode=$ExecutionMode (create → verify mode → await idle → delete)"
   # Start a real turn so we verify the session can run, but wait for idle before
-  # cleanup — terminating ~500ms into an LLM turn aborts the reply mid-flight.
+  # cleanup — deleting ~500ms into an LLM turn aborts the reply mid-flight.
   $bodyObj = @{
     assistantId         = $script:ResolvedAssistantId
     name                = "harbor-bench-smoke"
@@ -196,11 +246,11 @@ function Test-LibrAgentApi {
   }
   finally {
     try {
-      Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId/terminate" -Method POST -TimeoutSec 30 | Out-Null
-      Write-Host "  smoke session terminated ($sessionId)"
+      Invoke-RestMethod -Uri "$ApiBase/sessions/$sessionId" -Method DELETE -TimeoutSec 30 | Out-Null
+      Write-Host "  smoke session deleted ($sessionId)"
     }
     catch {
-      Write-Warning "Failed to terminate smoke session ${sessionId}: $_"
+      Write-Warning "Failed to delete smoke session ${sessionId}: $_"
     }
   }
 }
@@ -313,6 +363,9 @@ Assert-Command "harbor"
 $script:ResolvedAssistantId = Resolve-AssistantId -ApiBase $ApiUrl -PreferredId $AssistantId -NameHint $AssistantName
 Write-Host "Using assistantId=$($script:ResolvedAssistantId)"
 
+$script:ResolvedHarborModel = Resolve-HarborModel -ApiBase $ApiUrl -PreferredModel $Model
+Write-Host "Using Harbor model (-m)=$($script:ResolvedHarborModel)"
+
 if (-not $SkipHealthCheck) {
   Test-LibrAgentApi -ApiBase $ApiUrl
 }
@@ -320,6 +373,7 @@ if (-not $SkipHealthCheck) {
 $harborArgs = @(
   "run",
   "-a", "benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter",
+  "-m", "$($script:ResolvedHarborModel)",
   "--ak", "api_url=$ApiUrl",
   "--ak", "assistant_id=$($script:ResolvedAssistantId)",
   "--ak", "execution_mode=$ExecutionMode",
@@ -368,7 +422,11 @@ switch ($Preset) {
     Write-Step "Preset: Terminal-Bench dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
     if ($Include) {
-      $harborArgs += @("-i", $Include)
+      foreach ($pattern in $Include) {
+        if ($pattern) {
+          $harborArgs += @("-i", $pattern)
+        }
+      }
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")
@@ -381,7 +439,11 @@ switch ($Preset) {
     Write-Step "Preset: Harbor Index dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
     if ($Include) {
-      $harborArgs += @("-i", $Include)
+      foreach ($pattern in $Include) {
+        if ($pattern) {
+          $harborArgs += @("-i", $pattern)
+        }
+      }
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")
@@ -395,7 +457,30 @@ switch ($Preset) {
     Write-Step "Preset: local path ($resolvedPath)"
     $harborArgs += @("-p", $resolvedPath)
     if ($Include) {
-      $harborArgs += @("-i", $Include)
+      foreach ($pattern in $Include) {
+        if ($pattern) {
+          $harborArgs += @("-i", $pattern)
+        }
+      }
+    }
+    if ($NTasks -gt 0) {
+      $harborArgs += @("-l", "$NTasks")
+    }
+  }
+  "dataset" {
+    # Default -Dataset is terminal-bench; require an explicit value so bare
+    # -Preset dataset does not silently run the wrong registry entry.
+    if (-not $PSBoundParameters.ContainsKey('Dataset')) {
+      throw "Preset 'dataset' requires -Dataset <org/name-version> (e.g. swe-bench/swe-bench-verified-1.0)"
+    }
+    Write-Step "Preset: dataset ($Dataset)"
+    $harborArgs += @("-d", $Dataset)
+    if ($Include) {
+      foreach ($pattern in $Include) {
+        if ($pattern) {
+          $harborArgs += @("-i", $pattern)
+        }
+      }
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")

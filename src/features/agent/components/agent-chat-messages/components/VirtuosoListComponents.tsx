@@ -7,6 +7,7 @@ import { PendingApprovalWidget } from '@/features/agent/components/PendingApprov
 import { shouldShowAnalysisLoader } from '../utils';
 import {
   CHAT_COMPOSER_CLEARANCE,
+  CHAT_LIST_HEADER_MIN_HEIGHT_PX,
   type AgentChatVirtuosoContextProps,
 } from '../types';
 
@@ -22,6 +23,8 @@ export const AgentChatMessagesList = forwardRef<
       {...domProps}
       ref={ref}
       style={{
+        // Preserve Virtuoso's paddingTop/paddingBottom — they are the
+        // virtualization offsets for off-screen items, not visual chrome.
         ...style,
         paddingLeft: '16px',
         paddingRight: '16px',
@@ -35,17 +38,23 @@ export const AgentChatMessagesList = forwardRef<
 export function AgentChatMessagesHeader({
   context,
 }: AgentChatVirtuosoContextProps) {
-  if (!context.hasOlderMessages && !context.isLoadingOlderMessages) {
-    return null;
-  }
+  const showOlderMessagesHint =
+    context.hasOlderMessages || context.isLoadingOlderMessages;
 
   return (
-    <div className="flex justify-center px-4">
-      <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm">
-        {context.isLoadingOlderMessages
-          ? context.loadingOlderLabel
-          : context.scrollToLoadOlderLabel}
-      </div>
+    <div
+      className="box-border flex shrink-0 items-center justify-center px-4"
+      style={{ minHeight: CHAT_LIST_HEADER_MIN_HEIGHT_PX }}
+      aria-hidden={!showOlderMessagesHint}
+      data-testid="agent-chat-messages-header"
+    >
+      {showOlderMessagesHint ? (
+        <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+          {context.isLoadingOlderMessages
+            ? context.loadingOlderLabel
+            : context.scrollToLoadOlderLabel}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -81,7 +90,7 @@ export function AgentChatMessagesFooter({
 
       {showAnalysisLoader && (
         <div className="flex justify-start mb-8 mt-3">
-          <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
+          <div className="w-full max-w-3xl rounded-lg bg-secondary/30 px-6 py-5">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
                 <Bot size={16} className="text-primary-foreground" />

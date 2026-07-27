@@ -103,14 +103,8 @@ export {
 
 export function AgentChatMessages() {
   const { t } = useTranslation();
-  const {
-    messages,
-    pendingMessages,
-    error,
-    llmError,
-    retryMessage,
-    workflowStatus,
-  } = useAgentChat();
+  const { messages, error, llmError, retryMessage, workflowStatus } =
+    useAgentChat();
   const {
     session,
     pendingApprovals,
@@ -141,12 +135,9 @@ export function AgentChatMessages() {
   useFileRefetcher({ messages, refetchSessionFiles });
 
   // Group messages for display
-  const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
-
-  // Convert pendingMessages to a Set of IDs for O(1) lookups
-  const pendingMessageIds = useMemo(
-    () => new Set(pendingMessages.map((msg) => msg.id)),
-    [pendingMessages],
+  const { groupedMessages, toolResultsMap } = useMessageGrouping(
+    messages,
+    compactedRange?.toId,
   );
 
   const latestMessage = messages[messages.length - 1];
@@ -268,7 +259,6 @@ export function AgentChatMessages() {
               toolResultsMap={toolResultsMap}
               groupedToolCalls={groupedMessage.toolGroup.calls}
               groupedMessages={groupedMessage.messages}
-              isPending={pendingMessageIds.has(groupedMessage.message.id)}
               followChatScroll={followChatScroll}
             />
             {compactDivider}
@@ -283,7 +273,6 @@ export function AgentChatMessages() {
               message={groupedMessage.message}
               assistantName={assistantName}
               groupedMessages={groupedMessage.messages}
-              isPending={pendingMessageIds.has(groupedMessage.message.id)}
               followChatScroll={followChatScroll}
               toolErrorGroup={true}
             />
@@ -326,7 +315,6 @@ export function AgentChatMessages() {
           <AgentMessageBubble
             message={msg}
             assistantName={assistantName}
-            isPending={pendingMessageIds.has(msg.id)}
             followChatScroll={followChatScroll}
           />
           {compactDivider}
@@ -339,7 +327,6 @@ export function AgentChatMessages() {
       compactedRange?.toId,
       isPinned,
       latestMessage?.id,
-      pendingMessageIds,
       retryMessage,
       toolResultsMap,
       workflowStatus,

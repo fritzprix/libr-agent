@@ -97,6 +97,8 @@ fn build_agent_session(session_id: &str) -> AgentSession {
         last_synced_at: Arc::new(RwLock::new(None)),
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
+        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
         context_registry: Arc::new(ContextRegistry::new()),
@@ -116,6 +118,9 @@ async fn test_content_dedup_same_text() {
     let session_repo = SqliteSessionRepository::new(db.clone());
 
     tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
     tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
 
     let session_id = "test-session-dedup-1";
@@ -144,7 +149,7 @@ async fn test_content_dedup_same_text() {
         app_handle,
         session_id,
         vec![msg1.clone()],
-        false,
+        true,
     )
     .await
     .expect("inject 1 succeeds");
@@ -156,7 +161,7 @@ async fn test_content_dedup_same_text() {
         app_handle,
         session_id,
         vec![msg2.clone()],
-        false,
+        true,
     )
     .await
     .expect("inject 2 succeeds");
@@ -184,6 +189,9 @@ async fn test_content_dedup_different_text() {
     let session_repo = SqliteSessionRepository::new(db.clone());
 
     tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
     tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
 
     let session_id = "test-session-dedup-2";
@@ -210,7 +218,7 @@ async fn test_content_dedup_different_text() {
         app_handle,
         session_id,
         vec![msg1],
-        false,
+        true,
     )
     .await
     .expect("inject 1 succeeds");
@@ -221,7 +229,7 @@ async fn test_content_dedup_different_text() {
         app_handle,
         session_id,
         vec![msg2],
-        false,
+        true,
     )
     .await
     .expect("inject 2 succeeds");
@@ -249,6 +257,9 @@ async fn test_content_dedup_rich_content_different() {
     let session_repo = SqliteSessionRepository::new(db.clone());
 
     tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
     tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
 
     let session_id = "test-session-dedup-3";
@@ -278,7 +289,7 @@ async fn test_content_dedup_rich_content_different() {
         app_handle,
         session_id,
         vec![msg1],
-        false,
+        true,
     )
     .await
     .expect("inject 1 succeeds");
@@ -289,7 +300,7 @@ async fn test_content_dedup_rich_content_different() {
         app_handle,
         session_id,
         vec![msg2],
-        false,
+        true,
     )
     .await
     .expect("inject 2 succeeds");
@@ -338,6 +349,9 @@ async fn test_tool_message_deduplication() {
     let session_repo = SqliteSessionRepository::new(db.clone());
 
     tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
     tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
 
     let session_id = "test-session-tool-dedup";
@@ -365,7 +379,7 @@ async fn test_tool_message_deduplication() {
         app_handle,
         session_id,
         vec![tool_msg1.clone()],
-        false,
+        true,
     )
     .await
     .expect("inject tool_msg1 succeeds");
@@ -377,7 +391,7 @@ async fn test_tool_message_deduplication() {
         app_handle,
         session_id,
         vec![tool_msg2.clone()],
-        false,
+        true,
     )
     .await
     .expect("inject tool_msg2 succeeds");
@@ -398,7 +412,7 @@ async fn test_tool_message_deduplication() {
         app_handle,
         session_id,
         vec![tool_msg3.clone()],
-        false,
+        true,
     )
     .await
     .expect("inject tool_msg3 succeeds");
@@ -419,7 +433,7 @@ async fn test_tool_message_deduplication() {
         app_handle,
         session_id,
         vec![tool_msg4.clone()],
-        false,
+        true,
     )
     .await
     .expect("inject tool_msg4 succeeds");
@@ -502,6 +516,9 @@ async fn test_assistant_message_deduplication() {
     let session_repo = SqliteSessionRepository::new(db.clone());
 
     tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
     tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
 
     let session_id = "test-session-assistant-dedup";
@@ -536,7 +553,7 @@ async fn test_assistant_message_deduplication() {
         app_handle,
         session_id,
         vec![msg1],
-        false,
+        true,
     )
     .await
     .expect("inject ast-1 succeeds");
@@ -553,7 +570,7 @@ async fn test_assistant_message_deduplication() {
         app_handle,
         session_id,
         vec![msg2],
-        false,
+        true,
     )
     .await
     .expect("inject ast-2 succeeds");
@@ -578,7 +595,7 @@ async fn test_assistant_message_deduplication() {
         app_handle,
         session_id,
         vec![msg3],
-        false,
+        true,
     )
     .await
     .expect("inject ast-3 succeeds");
@@ -606,7 +623,7 @@ async fn test_assistant_message_deduplication() {
         app_handle,
         session_id,
         vec![msg4],
-        false,
+        true,
     )
     .await
     .expect("inject ast-4 succeeds");
@@ -626,7 +643,7 @@ async fn test_assistant_message_deduplication() {
         app_handle,
         session_id,
         vec![msg5],
-        false,
+        true,
     )
     .await
     .expect("inject ast-5 succeeds");
@@ -655,7 +672,7 @@ async fn test_assistant_message_deduplication() {
         app_handle,
         session_id,
         vec![msg6],
-        false,
+        true,
     )
     .await
     .expect("inject ast-6 succeeds");
@@ -676,6 +693,9 @@ async fn test_batch_message_deduplication() {
     let session_repo = SqliteSessionRepository::new(db.clone());
 
     tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
     tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
 
     let session_id = "test-session-batch-dedup";
@@ -708,7 +728,7 @@ async fn test_batch_message_deduplication() {
         app_handle,
         session_id,
         vec![tool_msg1, tool_msg1_dup, tool_msg2, tool_msg3],
-        false,
+        true,
     )
     .await
     .expect("batch injection succeeds");
@@ -731,6 +751,9 @@ async fn test_handle_llm_response_duplicate_prevention() {
     let session_repo_arc = Arc::new(session_repo.clone()) as Arc<dyn SessionRepository>;
 
     tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
     tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
 
     let session_id = "test-session-llm-dedup";

@@ -137,9 +137,6 @@ function AIModelsTabComponent({
           <AgentModelPicker
             currentModel={localPreferredModel.model}
             currentProvider={localPreferredModel.provider}
-            serviceConfigOverride={
-              serviceConfigs[localPreferredModel.provider] || {}
-            }
             onConfigUpdate={onPreferredModelChange}
             className="w-full max-w-sm"
           />
@@ -153,11 +150,6 @@ function AIModelsTabComponent({
             currentModel={localFallbackModel?.model ?? ''}
             currentProvider={
               localFallbackModel?.provider ?? localPreferredModel.provider
-            }
-            serviceConfigOverride={
-              serviceConfigs[
-                localFallbackModel?.provider ?? localPreferredModel.provider
-              ] || {}
             }
             onConfigUpdate={onFallbackModelChange}
             className="w-full max-w-sm"

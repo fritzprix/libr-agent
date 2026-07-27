@@ -1,3 +1,26 @@
+## [0.8.35] - 2026-07-27
+
+### 🚀 Features
+
+- **Durable Pending Queue**: Added a durable FIFO pending input queue above the chat input to manage queued prompt messages.
+- **Structured Workspace IO**: Optimized workspace file read and write tool responses with structured formatting for token-efficient agent operation.
+- **Harbor Benchmark & ATIF Trajectory**: Enhanced Harbor benchmark integration with ATIF `trajectory.json` export, token/turn metrics in `result.json`, auto model resolution from `preferredModel`, dataset presets, and automatic session cleanup.
+
+### 🐛 Fixes
+
+- **Session Concurrency & Lifecycle**: Fixed concurrency gate deadlock when canceling or clearing sessions, and fixed session termination deleting initial promoted prompts.
+- **Agent Core Capabilities**: Defaulted `createAgent` capabilities to core builtins only.
+- **Malformed Tool Recovery**: Added robust recovery for malformed tool call arguments and aligned `listDirectory` in attach modes.
+- **Desktop Fetch Fallback**: Capped native fetch probe timeouts and added automatic browser fetch fallback.
+- **UI & Chat Virtualization**: Resolved virtual message list hiding initial chat messages, stabilized message bubble widths, and softened error styling.
+- **Token Efficiency**: Removed thought echoing from `scratchpad__think` tool responses.
+- **Hint Guidance**: Replaced imperative "Next steps" tool hints with optional follow-up suggestions.
+
+### 🔧 Internal
+
+- **Code Audit & Skills**: Updated skill definitions including evidence-based `code-audit-expert`.
+- **Ignore Local Artifacts**: Added local `.teamwork` artifacts to gitignore.
+
 ## [0.8.34] - 2026-07-22
 
 ### 🚀 Features

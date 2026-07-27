@@ -25,6 +25,7 @@ const FLAG_TO_PS = {
   '--concurrent': '-Concurrent',
   '--api-url': '-ApiUrl',
   '--assistant-id': '-AssistantId',
+  '--model': '-Model',
   '--execution-mode': '-ExecutionMode',
   '--timeout-multiplier': '-TimeoutMultiplier',
   '--agent-timeout-multiplier': '-AgentTimeoutMultiplier',
@@ -80,6 +81,10 @@ function toPowerShellArgs(argv) {
   for (const [flag, vals] of Object.entries(accum)) {
     if (flag === '-VerifierEnv') {
       out.push(flag, vals.join(','));
+    } else if (flag === '-Include') {
+      for (const v of vals) {
+        out.push(flag, v);
+      }
     } else {
       out.push(flag, vals[vals.length - 1]);
     }

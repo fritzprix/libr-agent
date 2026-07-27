@@ -6,6 +6,7 @@
 pub mod compact_context;
 pub mod message;
 pub mod message_index_meta;
+pub mod pending_queue;
 pub mod session;
 
 // Planning module entities
@@ -33,6 +34,7 @@ pub mod prelude {
     pub use super::compact_context::Entity as CompactContext;
     pub use super::message::Entity as Message;
     pub use super::message_index_meta::Entity as MessageIndexMeta;
+    pub use super::pending_queue::Entity as PendingQueue;
     pub use super::session::Entity as Session;
 
     // Planning entities

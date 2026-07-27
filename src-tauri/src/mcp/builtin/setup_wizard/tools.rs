@@ -28,9 +28,9 @@ Returns:
 • Missing tools that can be installed
 • Home and temp directory paths
 
-💡 Next Steps:
-• Review installed tools - no need to reinstall what you already have
-• Use getSetupGuide(tool) only for missing tools
+💡 Suggested operations:
+• Review installed tools — no need to reinstall what you already have
+• getSetupGuide(tool) applies only to missing tools
 • Available guides: node, python, uv, docker, git"
                 .to_string(),
         input_schema: object_schema(SchemaProperties::new(), vec![]),
@@ -78,7 +78,7 @@ The guide includes:
 • Verification commands to test installation
 • Post-installation notes and configuration tips
 
-💡 Workflow:
+💡 Example workflow:
 1. (Optional) Call detectPlatform to identify your system
 2. Call getSetupGuide(tool, platform) to get instructions
 3. Follow the numbered steps in the response

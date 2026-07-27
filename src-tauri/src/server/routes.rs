@@ -142,6 +142,14 @@ pub fn get_routes(
         .and(warp::path::end())
         .and_then(handlers::health);
 
+    // GET /api/settings/preferredModel — global preferred model (same source session create uses)
+    let preferred_model = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("settings"))
+        .and(warp::path("preferredModel"))
+        .and(warp::path::end())
+        .and_then(handlers::get_preferred_model);
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_headers(vec!["content-type"])
@@ -179,6 +187,7 @@ pub fn get_routes(
         .or(list_assistants)
         .or(get_assistant)
         .or(health)
+        .or(preferred_model)
         .or(mcp_auto_route)
         .or(mcp_route)
         .with(cors)

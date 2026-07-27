@@ -1,4 +1,8 @@
 import { safeInvoke } from '@/lib/backend/core';
+import {
+  cancelAgentPendingPrompt,
+  getAgentPendingQueue,
+} from '@/lib/backend/agent-commands';
 import React, {
   createContext,
   useCallback,
@@ -17,6 +21,7 @@ import {
 import type { AgentEventPayload } from '@/context/agent-session/types';
 import type { AgentResponse, InjectMessagesRequest } from '@/models/agent-ipc';
 import type { Message, MessageError, RustMessage } from '@/models/chat';
+import { rustMessageToMessage } from '@/models/chat';
 import type { ServiceContext } from '@/models/service-context';
 import { isValidMessage } from '@/models/validation';
 import { isAssistantStreamingMessageSuperseded } from '@/lib/message-streaming-supersession';
@@ -44,20 +49,12 @@ const findLastPersistedAssistantMessage = (
 
 export { isAssistantStreamingMessageSuperseded } from '@/lib/message-streaming-supersession';
 
-/**
- * Agent event from Rust backend (currently using Record<string, unknown> in listeners)
- */
-// interface AgentEvent {
-//   session_id: string;
-//   status?: SessionStatus;
-//   error?: string;
-// }
-
 // --- STATE CONTEXT ---
 interface AgentChatStateContextValue {
   isSessionLoading: boolean;
   messages: Message[];
-  pendingMessages: Message[]; // NEW: Export pending queue for set-based detection
+  /** Waiting prompts (FIFO) shown above the input — not in the message list. */
+  pendingQueue: Message[];
   error: MessageError | null;
   llmError: MessageError | null;
   workflowStatus:
@@ -86,6 +83,11 @@ interface AgentChatActionsContextValue {
    * Cancel the current workflow
    */
   cancel: () => Promise<void>;
+
+  /**
+   * Cancel a single waiting prompt without aborting the active turn.
+   */
+  cancelPendingPrompt: (messageId: string) => Promise<void>;
 
   /**
    * Retry the last failed message
@@ -117,6 +119,10 @@ interface AgentChatProviderProps {
   children: React.ReactNode;
 }
 
+function mapPendingQueue(messages: RustMessage[]): Message[] {
+  return messages.map(rustMessageToMessage);
+}
+
 /**
  * AgentChatProvider
  *
@@ -124,10 +130,9 @@ interface AgentChatProviderProps {
  * Now purely reactive, with all message/status state residing in AgentSessionContext.
  */
 export function AgentChatProvider({ children }: AgentChatProviderProps) {
-  // Consume state from AgentSessionContext (Single Source of Truth)
   const {
     session,
-    messages: sessionMessages, // Messages now come directly from session context
+    messages: sessionMessages,
     isSessionLoading,
     workflowStatus,
     error,
@@ -138,13 +143,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   const { cancelCompletionRequest, clearStreamingMessage } = useLLMService();
 
-  // Service contexts state (still local to Chat view as it's UI context)
   const [serviceContexts, setServiceContexts] = useState<
     Record<string, ServiceContext>
   >({});
 
-  // Pending messages queue for busy state
-  const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
+  const [pendingQueue, setPendingQueue] = useState<Message[]>([]);
   const [prevSessionId, setPrevSessionId] = useState<string | null>(
     session?.id ?? null,
   );
@@ -154,30 +157,35 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   if (nextSessionId !== prevSessionId) {
     setPrevSessionId(nextSessionId);
-    setPendingMessages([]);
+    setPendingQueue([]);
     setServiceContexts({});
+    activeSessionIdRef.current = nextSessionId;
   }
 
   useEffect(() => {
     activeSessionIdRef.current = nextSessionId;
   }, [nextSessionId]);
 
-  const enqueuePendingMessage = useCallback((message: Message) => {
-    setPendingMessages((prev) => {
-      if (prev.some((pending) => pending.id === message.id)) {
-        return prev;
+  const loadPendingQueue = useCallback(async (sessionId: string) => {
+    try {
+      const items = await getAgentPendingQueue(sessionId);
+      if (activeSessionIdRef.current !== sessionId) {
+        return;
       }
-      return [...prev, message];
-    });
+      setPendingQueue(mapPendingQueue(items));
+    } catch (err) {
+      logger.error('Failed to load pending queue', err);
+    }
   }, []);
 
-  const removePendingMessage = useCallback((messageId: string) => {
-    setPendingMessages((prev) => {
-      return prev.filter((message) => message.id !== messageId);
-    });
-  }, []);
+  useEffect(() => {
+    if (!session?.id) {
+      setPendingQueue([]);
+      return;
+    }
+    void loadPendingQueue(session.id);
+  }, [session?.id, loadPendingQueue]);
 
-  // Fetch service contexts from backend
   const updateServiceContexts = useCallback(async () => {
     const sessionId = session?.id;
     if (!sessionId) return;
@@ -199,7 +207,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
   }, [session?.id]);
 
-  // Initial fetch when session changes
   useEffect(() => {
     if (session?.id) {
       updateServiceContexts();
@@ -208,9 +215,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
   }, [session?.id, updateServiceContexts]);
 
-  // Keep serviceContexts in sync with backend clear events:
-  // - session clear (/clear): wipe UI immediately, then refetch
-  // - planning clear (scheduled reset_planning_state): refetch only
   useEffect(() => {
     const sessionId = session?.id;
     if (!sessionId) {
@@ -224,6 +228,14 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       if (!isMounted) return;
 
       const payload = event.payload;
+      if (payload.type === 'pendingQueueUpdated') {
+        if (payload.sessionId !== sessionId) {
+          return;
+        }
+        setPendingQueue(mapPendingQueue(payload.messages));
+        return;
+      }
+
       if (payload.type !== 'resourceUpdated' || payload.action !== 'clear') {
         return;
       }
@@ -233,6 +245,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
       if (payload.resourceType === 'session') {
         setServiceContexts({});
+        setPendingQueue([]);
         void updateServiceContexts().catch((err: unknown) =>
           logger.error(
             'Failed to refresh service contexts after session clear',
@@ -264,8 +277,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     };
   }, [session?.id, updateServiceContexts]);
 
-  // Reactive Service Context Update:
-  // When messages change, if the last message is from assistant, update service contexts.
   useDebounce(
     () => {
       if (sessionMessages.length > 0) {
@@ -284,48 +295,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     [sessionMessages, updateServiceContexts],
   );
 
-  /**
-   * Clean up pending messages when they appear in sessionMessages
-   * This happens after Rust workflow processes them and emits MessageAdded events
-   */
-  useEffect(() => {
-    if (pendingMessages.length === 0 || sessionMessages.length === 0) return;
-
-    // Early exit: check if ANY pending message exists in sessionMessages
-    const sessionMessageIds = new Set(sessionMessages.map((m) => m.id));
-    const hasOverlap = pendingMessages.some((p) => sessionMessageIds.has(p.id));
-
-    if (!hasOverlap) return; // No cleanup needed
-
-    // Only log and process if we actually need to clean up
-    logger.debug('Pending messages cleanup triggered', {
-      pendingCount: pendingMessages.length,
-      sessionMessagesCount: sessionMessages.length,
-    });
-
-    setPendingMessages((prev) => {
-      const removed = prev.filter((pending) =>
-        sessionMessageIds.has(pending.id),
-      );
-      const filtered = prev.filter(
-        (pending) => !sessionMessageIds.has(pending.id),
-      );
-
-      if (filtered.length !== prev.length) {
-        logger.info('Removed messages from pending queue', {
-          removedCount: prev.length - filtered.length,
-          removedIds: removed.map((p) => p.id),
-        });
-      }
-
-      return filtered;
-    });
-  }, [sessionMessages, pendingMessages]);
-
-  /**
-   * Extract streaming message for current session
-   * Memoized to prevent unnecessary effect re-runs
-   */
   const currentStreamingMessage = useStreamingMessage(session?.id);
 
   useEffect(() => {
@@ -360,9 +329,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     sessionMessages,
   ]);
 
-  /**
-   * Merge persisted messages with streaming messages AND pending messages
-   */
   const displayMessages = useMemo(() => {
     if (!session?.id) return [];
 
@@ -371,21 +337,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     const lastPersistedAssistantMessage =
       findLastPersistedAssistantMessage(sessionMessages);
 
-    // Append pending messages (optimistic UI)
-    if (pendingMessages.length > 0) {
-      pendingMessages.forEach((message) => {
-        if (displayedIds.has(message.id)) {
-          return;
-        }
-
-        displayed.push(message);
-        displayedIds.add(message.id);
-      });
-    }
-
-    // If there's a streaming message that's not yet in persisted messages.
-    // Skip when the workflow is already inactive — late LLM chunks must not
-    // resurrect ThinkingBubble after idle/paused/error cleanup.
     if (
       !isInactiveWorkflowStatus(workflowStatus) &&
       isValidMessage(currentStreamingMessage)
@@ -401,23 +352,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         !displayedIds.has(currentStreamingMessage.id) &&
         !isSupersededByPersistedAssistant
       ) {
-        // Show streaming message alongside persisted messages
         displayed.push(currentStreamingMessage);
       }
     }
 
     return displayed;
-  }, [
-    sessionMessages,
-    pendingMessages,
-    currentStreamingMessage,
-    session?.id,
-    workflowStatus,
-  ]);
+  }, [sessionMessages, currentStreamingMessage, session?.id, workflowStatus]);
 
-  /**
-   * Inject messages into the session
-   */
   const injectMessages = useCallback(
     async (messages: Message[]) => {
       if (!session?.id) {
@@ -440,7 +381,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         };
 
         await safeInvoke<AgentResponse>('agent_inject_messages', { request });
-        // Events will update the UI
       } catch (err) {
         logger.error('Failed to inject messages', err);
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -451,9 +391,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     [session?.id, setError, workflowStatus],
   );
 
-  /**
-   * Submit a user message to the agent workflow
-   */
   const submit = useCallback(
     async (message: Message) => {
       if (!session?.id) {
@@ -477,29 +414,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         status: workflowStatus,
       });
 
-      enqueuePendingMessage(message);
-
-      try {
-        await injectMessages([message]);
-      } catch (err) {
-        removePendingMessage(message.id);
-        throw err;
-      }
+      await injectMessages([message]);
     },
-    [
-      enqueuePendingMessage,
-      injectMessages,
-      isSessionLoading,
-      removePendingMessage,
-      session?.id,
-      setError,
-      workflowStatus,
-    ],
+    [injectMessages, isSessionLoading, session?.id, setError, workflowStatus],
   );
 
-  /**
-   * Cancel the current workflow
-   */
   const cancel = useCallback(async () => {
     if (!session?.id) {
       logger.error('Cannot cancel: no active session');
@@ -508,19 +427,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     logger.info('Cancelling workflow', { sessionId: session.id });
 
-    // 1. Immediately cancel any local streaming LLM requests
     cancelCompletionRequest(session.id);
     clearStreamingMessage(session.id);
 
-    // 2. Clear pending messages to remove them optimistically from UI
-    setPendingMessages([]);
-
-    // 3. Inform Rust backend to cancel the workflow loop
     try {
       await safeInvoke<AgentResponse>('agent_cancel_workflow', {
         sessionId: session.id,
       });
-      // Status update will come via event
     } catch (err) {
       logger.error('Failed to cancel workflow', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -528,16 +441,25 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
   }, [session?.id, cancelCompletionRequest, clearStreamingMessage, setError]);
 
-  /**
-   * Retry the last failed message
-   *
-   * Error-state retry reuses the paused-session resume path:
-   * - Frontend calls `resumeSession()`, which invokes `agent_resume_workflow`
-   * - Rust rebuilds the request from the current stack, merging user turns and
-   *   dropping incomplete tool chains before reevaluating preflight compaction
-   * - No persisted messages are deleted; recovery happens by replaying from the
-   *   sanitized in-memory/database context
-   */
+  const cancelPendingPrompt = useCallback(
+    async (messageId: string) => {
+      if (!session?.id) {
+        logger.error('Cannot cancel pending prompt: no active session');
+        return;
+      }
+
+      try {
+        await cancelAgentPendingPrompt(session.id, messageId);
+      } catch (err) {
+        logger.error('Failed to cancel pending prompt', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(errorMessage);
+        throw err;
+      }
+    },
+    [session?.id, setError],
+  );
+
   const retryMessage = useCallback(async () => {
     if (!session?.id) {
       logger.error('Cannot retry: no active session');
@@ -548,8 +470,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       sessionId: session.id,
     });
 
-    // Use the same mechanism as resume (Paused state)
-    // This preserves the complete message stack
     try {
       await resumeSession();
     } catch (err) {
@@ -558,12 +478,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
   }, [session?.id, resumeSession]);
 
-  // Combine state values
   const stateValue: AgentChatStateContextValue = useMemo(
     () => ({
       isSessionLoading,
       messages: displayMessages,
-      pendingMessages, // NEW: Expose pending queue for set-based detection
+      pendingQueue,
       error,
       llmError,
       workflowStatus,
@@ -572,7 +491,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     [
       isSessionLoading,
       displayMessages,
-      pendingMessages, // NEW: Add to dependencies
+      pendingQueue,
       error,
       llmError,
       workflowStatus,
@@ -580,11 +499,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     ],
   );
 
-  // Combine action values
   const actionsValue: AgentChatActionsContextValue = useMemo(
     () => ({
       submit,
       cancel,
+      cancelPendingPrompt,
       retryMessage,
       updateServiceContexts,
       injectMessages,
@@ -593,6 +512,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     [
       submit,
       cancel,
+      cancelPendingPrompt,
       retryMessage,
       updateServiceContexts,
       injectMessages,
@@ -609,9 +529,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   );
 }
 
-/**
- * Hook to access agent chat state
- */
 export function useAgentChatState(): AgentChatStateContextValue {
   const context = useContext(AgentChatStateContext);
   if (!context) {
@@ -620,9 +537,6 @@ export function useAgentChatState(): AgentChatStateContextValue {
   return context;
 }
 
-/**
- * Hook to access agent chat actions
- */
 export function useAgentChatActions(): AgentChatActionsContextValue {
   const context = useContext(AgentChatActionsContext);
   if (!context) {
@@ -633,9 +547,6 @@ export function useAgentChatActions(): AgentChatActionsContextValue {
   return context;
 }
 
-/**
- * Convenience hook to access both state and actions
- */
 export function useAgentChat() {
   const state = useAgentChatState();
   const actions = useAgentChatActions();

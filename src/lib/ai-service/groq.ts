@@ -16,6 +16,8 @@ import {
   serializeToolCallArgumentDeltas,
 } from './stream-events';
 import { ensureSchemaTypeField, formatToolResultForLlm } from './utils';
+import { createLlmFetch } from './desktop-fetch';
+
 const logger = getLogger('GroqService');
 
 /**
@@ -37,6 +39,7 @@ export class GroqService extends BaseAIService<
     this.groq = new Groq({
       apiKey: this.apiKey,
       dangerouslyAllowBrowser: true,
+      fetch: createLlmFetch(),
     });
   }
 
@@ -47,6 +50,9 @@ export class GroqService extends BaseAIService<
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Groq;
   }
+
+  // listModels: inherit BaseAIService (static llm-config). Groq has no models.list API;
+  // wrapping super.listModels() never surfaces a real fetch failure.
 
   /**
    * @inheritdoc

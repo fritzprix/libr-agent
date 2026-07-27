@@ -2,7 +2,6 @@ use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::compact_context_repository::CompactContextRepository;
-use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::SessionStatus;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -227,52 +226,34 @@ async fn process_pending_messages(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<(), AgentRuntimeError> {
-    let pending_messages: Vec<Message> = {
-        let sessions = active_sessions.read().await;
-        if let Some(session) = sessions.get(session_id) {
-            let mut pending_events = session.pending_events.write().await;
-            let pending_ids = pending_events.drain_messages();
-
-            if pending_ids.is_empty() {
-                Vec::new()
-            } else {
-                let repo = crate::state::get_message_repository();
-                match repo.get_by_ids(pending_ids).await {
-                    Ok(msgs) => {
-                        log::info!(
-                            "Drained {} pending messages from queue for session {}",
-                            msgs.len(),
-                            session_id
-                        );
-                        let mut messages_lock = session.messages.write().await;
-                        for msg in &msgs {
-                            messages_lock.push(msg.clone());
-                            if messages_lock.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                                messages_lock.remove(0);
-                            }
-                        }
-                        msgs
-                    }
-                    Err(e) => {
-                        log::error!("Failed to fetch pending messages from DB: {}", e);
-                        Vec::new()
-                    }
-                }
-            }
-        } else {
-            Vec::new()
+    match crate::agent::pending_queue::claim_next_pending_message(
+        active_sessions,
+        app_handle,
+        session_id,
+    )
+    .await
+    {
+        Ok(Some(msg)) => {
+            log::info!(
+                "Claimed next pending message {} for session {}",
+                msg.id,
+                session_id
+            );
+            Ok(())
         }
-    };
-
-    for msg in pending_messages {
-        let event = crate::agent::events::AgentEvent::MessageAdded {
-            session_id: session_id.to_string(),
-            message: Box::new(msg.clone()),
-        };
-        let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
+        Ok(None) => Ok(()),
+        Err(e) => {
+            log::error!(
+                "Failed to claim pending message for session {}: {}",
+                session_id,
+                e
+            );
+            Err(
+                AgentRuntimeError::new(AgentRuntimeErrorType::AiServiceError, e)
+                    .with_code("CLAIM_PENDING_MESSAGE_FAILED"),
+            )
+        }
     }
-
-    Ok(())
 }
 
 async fn validate_session_status(

@@ -3,16 +3,17 @@ import {
   type IndexLocationWithAlign,
   type VirtuosoHandle,
 } from 'react-virtuoso';
-import type { MCPTextContent } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import type { useAgentChat } from '@/context/AgentChatContext';
 import { VISUAL_BOTTOM_THRESHOLD, type BottomAlignmentPhase } from './types';
 
 /**
- * Fingerprint of latest-message fields that can change chat list layout.
- * Thinking text is intentionally excluded so thinking-only stream updates can
- * rely on ResizeObserver instead of redundant Virtuoso scroll calls.
+ * Fingerprint of latest-message fields that can change chat list *structure*.
+ * Streaming text length and thinking body are intentionally excluded so token
+ * growth can rely on ResizeObserver instead of redundant reactive scroll calls.
+ * Structural changes (new content types, tools, attachments, errors) still bump
+ * the fingerprint and trigger an immediate bottom-follow pass.
  */
 export function getLatestMessageScrollFingerprint(
   message: Message | undefined,
@@ -23,12 +24,7 @@ export function getLatestMessageScrollFingerprint(
 
   const contentSummary = (message.content ?? [])
     .filter((item) => item.type !== 'thinking')
-    .map((item) => {
-      if (item.type === 'text') {
-        return `text:${(item as MCPTextContent).text?.length ?? 0}`;
-      }
-      return item.type;
-    })
+    .map((item) => item.type)
     .join(',');
 
   return [
@@ -41,6 +37,24 @@ export function getLatestMessageScrollFingerprint(
   ].join('|');
 }
 
+/**
+ * True when the latest-message update does not change list structure.
+ * Height may still change (thinking/text growth); ResizeObserver owns that path.
+ */
+export function isLayoutNeutralLatestMessageUpdate(
+  previous: Message | undefined,
+  next: Message | undefined,
+): boolean {
+  if (!previous || !next) {
+    return false;
+  }
+
+  return (
+    getLatestMessageScrollFingerprint(previous) ===
+    getLatestMessageScrollFingerprint(next)
+  );
+}
+
 export function isThinkingOnlyLatestMessageUpdate(
   previous: Message | undefined,
   next: Message | undefined,
@@ -49,9 +63,7 @@ export function isThinkingOnlyLatestMessageUpdate(
     return false;
   }
 
-  const layoutUnchanged =
-    getLatestMessageScrollFingerprint(previous) ===
-    getLatestMessageScrollFingerprint(next);
+  const layoutUnchanged = isLayoutNeutralLatestMessageUpdate(previous, next);
   const thinkingChanged =
     previous.thinking !== next.thinking ||
     previous.thinkingTime !== next.thinkingTime;

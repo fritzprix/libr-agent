@@ -26,6 +26,8 @@ import {
   createSerializableToolCallArgumentDelta,
   serializeToolCallArgumentDeltas,
 } from './stream-events';
+import { createLlmFetch } from './desktop-fetch';
+import { reportListModelsFallback } from './list-models-errors';
 import type {
   OpenAINonStreamingRequest,
   OpenAIResponseUsageDetails,
@@ -105,6 +107,7 @@ export class OpenAIService extends BaseAIService<
       apiKey: this.apiKey,
       baseURL: config?.baseUrl || undefined,
       dangerouslyAllowBrowser: true,
+      fetch: createLlmFetch(),
     });
     this.promptDiagnostics = new OpenAIPromptDiagnosticsTracker(this.logger);
   }
@@ -160,6 +163,9 @@ export class OpenAIService extends BaseAIService<
    */
   async listModels(): Promise<ModelInfo[]> {
     const logger = getLogger('OpenAIService.listModels');
+    // Fireworks (and other OpenAI-compatible subclasses) inherit this method;
+    // always report under the concrete provider, not hardcoded OpenAI.
+    const provider = this.getProvider();
 
     // Return cached models if still valid
     if (this.modelCache && this.isCacheValid()) {
@@ -170,7 +176,7 @@ export class OpenAIService extends BaseAIService<
     try {
       const models = await fetchOpenAIModels({
         openai: this.openai,
-        provider: AIServiceProvider.OpenAI,
+        provider,
         withRetry: (fn) => this.withRetry(fn),
         logger,
       });
@@ -181,8 +187,15 @@ export class OpenAIService extends BaseAIService<
 
       return models;
     } catch (error) {
+      const failure = reportListModelsFallback({
+        provider,
+        baseUrl: this.config?.baseUrl ?? this.openai.baseURL,
+        reason: 'api_error',
+        error,
+      });
       logger.warn(
-        'Failed to fetch models from OpenAI API, falling back to static config',
+        `Failed to fetch models from ${provider} API, falling back to static config`,
+        failure,
         error,
       );
       return this.fallbackToStaticModels();

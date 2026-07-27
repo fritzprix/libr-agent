@@ -128,31 +128,32 @@ Examples:
     log_path = Path(args.log_path) if args.log_path else get_log_path()
     
     if not log_path.exists():
-        print(f"❌ Log file not found: {log_path}", file=sys.stderr)
+        # Avoid emoji in prints — Windows cp949 consoles raise UnicodeEncodeError.
+        print(f"[ERROR] Log file not found: {log_path}", file=sys.stderr)
         print("\nExpected location:", file=sys.stderr)
         print(f"  {log_path}", file=sys.stderr)
         return 1
     
-    print(f"📂 Reading logs from: {log_path}")
+    print(f"[INFO] Reading logs from: {log_path}")
     
     # Read log file
     try:
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
     except Exception as e:
-        print(f"❌ Failed to read log file: {e}", file=sys.stderr)
+        print(f"[ERROR] Failed to read log file: {e}", file=sys.stderr)
         return 1
     
     # Extract lines
     if args.lines:
         lines = lines[-args.lines:]
-        print(f"📊 Extracted last {args.lines} lines")
+        print(f"[INFO] Extracted last {args.lines} lines")
     else:
-        print(f"📊 Processing {len(lines)} lines")
+        print(f"[INFO] Processing {len(lines)} lines")
     
     # Apply pattern filter if specified
     if args.pattern:
-        print(f"🔍 Searching for pattern: {args.pattern}")
+        print(f"[INFO] Searching for pattern: {args.pattern}")
         output_lines = extract_by_pattern(lines, args.pattern, args.context)
     else:
         output_lines = [line.rstrip() for line in lines]
@@ -162,10 +163,10 @@ Examples:
     try:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(output_lines))
-        print(f"✅ Output saved to: {output_path}")
+        print(f"[OK] Output saved to: {output_path}")
         print(f"   ({len(output_lines)} lines)")
     except Exception as e:
-        print(f"❌ Failed to write output: {e}", file=sys.stderr)
+        print(f"[ERROR] Failed to write output: {e}", file=sys.stderr)
         return 1
     
     return 0

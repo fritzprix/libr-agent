@@ -101,7 +101,6 @@ function buildPromptSnapshot(args: {
   request: {
     prompt_cache_key?: string;
     prompt_cache_retention?: 'in_memory' | '24h';
-    cache_prompt?: boolean;
   };
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   tools?: OpenAIChatCompletionTool[];
@@ -123,7 +122,6 @@ function buildPromptSnapshot(args: {
     messageFingerprints,
     promptCacheKey: args.request.prompt_cache_key,
     promptCacheRetention: args.request.prompt_cache_retention,
-    compatibleCachePrompt: args.request.cache_prompt ?? false,
   };
 }
 
@@ -146,7 +144,6 @@ export class OpenAIPromptDiagnosticsTracker {
       model: string;
       prompt_cache_key?: string;
       prompt_cache_retention?: 'in_memory' | '24h';
-      cache_prompt?: boolean;
     };
     usage: OpenAIResponseUsageDetails & {
       prompt_tokens?: number;
@@ -163,7 +160,6 @@ export class OpenAIPromptDiagnosticsTracker {
       model: args.model,
       promptCacheKey: args.request.prompt_cache_key,
       promptCacheRetention: args.request.prompt_cache_retention,
-      compatibleCachePrompt: args.request.cache_prompt ?? false,
       promptTokens: args.usage.prompt_tokens,
       completionTokens: args.usage.completion_tokens,
       totalTokens: args.usage.total_tokens,
@@ -181,7 +177,6 @@ export class OpenAIPromptDiagnosticsTracker {
     request: {
       prompt_cache_key?: string;
       prompt_cache_retention?: 'in_memory' | '24h';
-      cache_prompt?: boolean;
     };
     messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
     tools?: OpenAIChatCompletionTool[];
@@ -193,7 +188,6 @@ export class OpenAIPromptDiagnosticsTracker {
       model: args.model,
       promptCacheKey: args.request.prompt_cache_key,
       promptCacheRetention: args.request.prompt_cache_retention,
-      compatibleCachePrompt: args.request.cache_prompt ?? false,
       systemPromptLength: snapshot.systemPromptLength,
       systemPromptHash: snapshot.systemPromptHash,
       toolCount: snapshot.toolCount,
@@ -213,7 +207,6 @@ export class OpenAIPromptDiagnosticsTracker {
       model: string;
       prompt_cache_key?: string;
       prompt_cache_retention?: 'in_memory' | '24h';
-      cache_prompt?: boolean;
       tool_choice?: unknown;
       max_completion_tokens?: number | null;
       max_tokens?: number | null;
@@ -234,7 +227,6 @@ export class OpenAIPromptDiagnosticsTracker {
         max_tokens: args.request.max_tokens,
         prompt_cache_key: args.request.prompt_cache_key,
         prompt_cache_retention: args.request.prompt_cache_retention,
-        cache_prompt: args.request.cache_prompt,
         reasoning_effort: args.request.reasoning_effort,
       }),
     );
@@ -245,7 +237,6 @@ export class OpenAIPromptDiagnosticsTracker {
       model: args.model,
       promptCacheKey: args.request.prompt_cache_key,
       promptCacheRetention: args.request.prompt_cache_retention,
-      compatibleCachePrompt: args.request.cache_prompt ?? false,
       bodyFingerprint,
       messageCount: args.request.messages.length,
       toolCount: args.request.tools?.length ?? 0,

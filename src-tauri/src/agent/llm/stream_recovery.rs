@@ -15,6 +15,11 @@ use tokio::sync::RwLock;
 
 pub const REPEATED_THINKING_MAX_RETRIES: u32 = 2;
 pub const REPEATED_TEXT_LOOP_MAX_RETRIES: u32 = 2;
+pub const BAD_TOOL_ARGS_MAX_RETRIES: u32 = 2;
+/// Max FallThrough incidents per workflow before hard-stopping. Bounds
+/// truncated-args loops where raw args (and thus loop-prevention signatures)
+/// change every attempt.
+pub const BAD_TOOL_ARGS_MAX_INCIDENTS: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamingIssueAction {
@@ -26,7 +31,12 @@ pub enum StreamingIssueAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamingIssueOutcome {
     Ignored,
-    Retried { retry_count: u32 },
+    Retried {
+        retry_count: u32,
+    },
+    /// Budget exhausted for a recoverable bad response; caller should continue
+    /// with the original completion (e.g. guided tool-error close).
+    FallThrough,
     Failed,
 }
 
@@ -53,12 +63,19 @@ pub enum NonProductiveCompletionReason {
     ThinkingOnlyCompletion {
         assistant_message_id: String,
     },
+    MalformedToolCallArguments {
+        assistant_message_id: String,
+        tool_names: Vec<String>,
+        /// Primary failure kind from the first invalid tool call (for logging).
+        parse_kind: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StreamingRecoveryCounter {
     Thinking,
     Text,
+    BadToolArgs,
 }
 
 impl StreamingRecoveryCounter {
@@ -66,6 +83,7 @@ impl StreamingRecoveryCounter {
         match self {
             Self::Thinking => REPEATED_THINKING_MAX_RETRIES,
             Self::Text => REPEATED_TEXT_LOOP_MAX_RETRIES,
+            Self::BadToolArgs => BAD_TOOL_ARGS_MAX_RETRIES,
         }
     }
 
@@ -73,6 +91,7 @@ impl StreamingRecoveryCounter {
         match self {
             Self::Thinking => *session.repeated_thinking_retry_count.read().await,
             Self::Text => *session.repeated_text_loop_retry_count.read().await,
+            Self::BadToolArgs => *session.bad_tool_args_retry_count.read().await,
         }
     }
 
@@ -83,6 +102,9 @@ impl StreamingRecoveryCounter {
             }
             Self::Text => {
                 *session.repeated_text_loop_retry_count.write().await = value;
+            }
+            Self::BadToolArgs => {
+                *session.bad_tool_args_retry_count.write().await = value;
             }
         }
     }
@@ -191,22 +213,76 @@ async fn handle_non_productive_completion(
                         max_retries
                     );
                 }
+                NonProductiveCompletionReason::MalformedToolCallArguments {
+                    assistant_message_id,
+                    tool_names,
+                    parse_kind,
+                } => {
+                    log::warn!(
+                        "Malformed/truncated tool-call arguments detected for session {} message {} (tools={:?}, kind={}). Retrying LLM turn ({}/{}).",
+                        session_id,
+                        assistant_message_id,
+                        tool_names,
+                        parse_kind,
+                        next_retry_count,
+                        max_retries
+                    );
+                }
             }
 
-            request_llm_completion_with_recovery(
+            let recovery_result = request_llm_completion_with_recovery(
                 context.session_repo,
                 context.active_sessions,
                 context.proxy_manager,
                 context.app_handle,
-                session_id,
+                session_id.clone(),
             )
-            .await?;
+            .await;
+
+            if let Err(error) = recovery_result {
+                // Malformed-args retries must still close tool calls if the
+                // replacement completion cannot start — fall through instead of
+                // aborting handle_llm_response with `?`.
+                if matches!(
+                    reason,
+                    NonProductiveCompletionReason::MalformedToolCallArguments { .. }
+                ) {
+                    log::warn!(
+                        "Bad-tool-args retry failed to start replacement completion for session {}: {}. Falling through to guided tool-error close.",
+                        session_id,
+                        error
+                    );
+                    return fallthrough_or_hard_fail_malformed_tool_args(
+                        &context,
+                        &session_id,
+                        &session_name,
+                        &reason,
+                        max_retries,
+                    )
+                    .await;
+                }
+                return Err(error);
+            }
 
             Ok(StreamingIssueOutcome::Retried {
                 retry_count: next_retry_count,
             })
         }
         NonProductiveCompletionAction::Fail => {
+            if matches!(
+                reason,
+                NonProductiveCompletionReason::MalformedToolCallArguments { .. }
+            ) {
+                return fallthrough_or_hard_fail_malformed_tool_args(
+                    &context,
+                    &session_id,
+                    &session_name,
+                    &reason,
+                    max_retries,
+                )
+                .await;
+            }
+
             {
                 let active = context.active_sessions.read().await;
                 if let Some(session) = active.get(&session_id) {
@@ -266,6 +342,9 @@ async fn handle_non_productive_completion(
                         "maxRetries": max_retries,
                     }),
                 ),
+                NonProductiveCompletionReason::MalformedToolCallArguments { .. } => {
+                    unreachable!("MalformedToolCallArguments Fail handled above")
+                }
             };
 
             finalize_workflow_error_with_dispatcher(
@@ -282,6 +361,81 @@ async fn handle_non_productive_completion(
             Ok(StreamingIssueOutcome::Failed)
         }
     }
+}
+
+/// Fall through to guided tool-error close, or hard-fail after too many incidents.
+///
+/// Does **not** reset `bad_tool_args_retry_count` — leaving it at the budget max
+/// prevents another 2 automatic retries on every subsequent truncated attempt.
+async fn fallthrough_or_hard_fail_malformed_tool_args(
+    context: &RecoveryContext<'_>,
+    session_id: &str,
+    session_name: &str,
+    reason: &NonProductiveCompletionReason,
+    max_retries: u32,
+) -> Result<StreamingIssueOutcome, String> {
+    let NonProductiveCompletionReason::MalformedToolCallArguments {
+        assistant_message_id,
+        tool_names,
+        parse_kind,
+    } = reason
+    else {
+        return Ok(StreamingIssueOutcome::FallThrough);
+    };
+
+    let incident_count = {
+        let active = context.active_sessions.read().await;
+        let Some(session) = active.get(session_id) else {
+            return Ok(StreamingIssueOutcome::FallThrough);
+        };
+        let mut incidents = session.bad_tool_args_incident_count.write().await;
+        *incidents = incidents.saturating_add(1);
+        *incidents
+    };
+
+    if incident_count > BAD_TOOL_ARGS_MAX_INCIDENTS {
+        log::warn!(
+            "Malformed/truncated tool-call arguments for session {} exceeded incident cap ({}/{}). Stopping workflow.",
+            session_id,
+            incident_count,
+            BAD_TOOL_ARGS_MAX_INCIDENTS
+        );
+        finalize_workflow_error_with_dispatcher(
+            context.session_repo,
+            context.active_sessions,
+            context.app_handle,
+            session_id.to_string(),
+            AgentRuntimeError::new(
+                AgentRuntimeErrorType::AiServiceError,
+                format!(
+                    "The model repeatedly produced invalid tool-call arguments in session '{}' and exceeded the automatic recovery limit. Workflow stopped to prevent an infinite loop.",
+                    session_name
+                ),
+            )
+            .with_code("MALFORMED_TOOL_ARGS_LOOP")
+            .with_original_error(serde_json::json!({
+                "assistantMessageId": assistant_message_id,
+                "toolNames": tool_names,
+                "parseKind": parse_kind,
+                "incidentCount": incident_count,
+                "maxIncidents": BAD_TOOL_ARGS_MAX_INCIDENTS,
+                "maxRetries": max_retries,
+            })),
+        )
+        .await?;
+        return Ok(StreamingIssueOutcome::Failed);
+    }
+
+    log::warn!(
+        "Malformed/truncated tool-call arguments for session {} message {} (tools={:?}, kind={}, incident {}/{}). Falling through to guided tool-error close.",
+        session_id,
+        assistant_message_id,
+        tool_names,
+        parse_kind,
+        incident_count,
+        BAD_TOOL_ARGS_MAX_INCIDENTS
+    );
+    Ok(StreamingIssueOutcome::FallThrough)
 }
 
 fn repeated_loop_reason_from_report(
@@ -489,4 +643,97 @@ pub async fn handle_thinking_only_completion(
         },
     )
     .await
+}
+
+/// Payload for a malformed/truncated tool-call-arguments recovery attempt.
+pub struct MalformedToolArgsIncident {
+    pub assistant_message_id: String,
+    pub tool_names: Vec<String>,
+    pub parse_kind: String,
+}
+
+/// Retry (or fall through after budget) when a completion contains tool calls
+/// whose `function.arguments` are not valid JSON objects.
+///
+/// On `Retried`, the bad assistant message must **not** be cached — the caller
+/// invokes this before `cache_assistant_message`. On `FallThrough`, the caller
+/// continues with cache + guided tool-error close.
+pub async fn handle_malformed_tool_args_completion(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: String,
+    incident: MalformedToolArgsIncident,
+) -> Result<StreamingIssueOutcome, String> {
+    let counter = StreamingRecoveryCounter::BadToolArgs;
+
+    let (action, session_name) = {
+        let active = active_sessions.read().await;
+        let Some(session) = active.get(&session_id) else {
+            return Ok(StreamingIssueOutcome::Ignored);
+        };
+
+        let retry_count = counter.read_count(session).await;
+        let session_name = session
+            .metadata
+            .name
+            .clone()
+            .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
+
+        (
+            evaluate_non_productive_completion_action(retry_count, counter.max_retries()),
+            session_name,
+        )
+    };
+
+    handle_non_productive_completion(
+        RecoveryContext {
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+        },
+        session_id,
+        session_name,
+        counter,
+        action,
+        NonProductiveCompletionReason::MalformedToolCallArguments {
+            assistant_message_id: incident.assistant_message_id,
+            tool_names: incident.tool_names,
+            parse_kind: incident.parse_kind,
+        },
+    )
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bad_tool_args_retries_until_budget() {
+        assert_eq!(
+            evaluate_non_productive_completion_action(0, BAD_TOOL_ARGS_MAX_RETRIES),
+            NonProductiveCompletionAction::Retry {
+                next_retry_count: 1
+            }
+        );
+        assert_eq!(
+            evaluate_non_productive_completion_action(1, BAD_TOOL_ARGS_MAX_RETRIES),
+            NonProductiveCompletionAction::Retry {
+                next_retry_count: 2
+            }
+        );
+        assert_eq!(
+            evaluate_non_productive_completion_action(2, BAD_TOOL_ARGS_MAX_RETRIES),
+            NonProductiveCompletionAction::Fail
+        );
+    }
+
+    #[test]
+    fn bad_tool_args_incident_cap_is_positive() {
+        assert!(BAD_TOOL_ARGS_MAX_INCIDENTS >= 1);
+        assert!(BAD_TOOL_ARGS_MAX_RETRIES >= 1);
+    }
 }

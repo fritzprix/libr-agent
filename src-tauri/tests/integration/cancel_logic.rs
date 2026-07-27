@@ -9,8 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri_mcp_agent_lib::agent::state::{PendingEvent, PendingEventManager};
 use tauri_mcp_agent_lib::agent::workflow::{
-    classify_cancel_strategy, should_consume_cancel_at_message_boundary, CancelStrategy,
+    classify_cancel_strategy, is_inactive_cancel_noop, should_consume_cancel_at_message_boundary,
+    CancelStrategy,
 };
+use tauri_mcp_agent_lib::repositories::SessionStatus;
 use tokio_util::sync::CancellationToken;
 
 // -----------------------------------------------------------------------
@@ -33,6 +35,16 @@ fn test_classify_cancel_strategy_stops_immediately_without_pending_execution() {
 fn test_should_consume_cancel_at_message_boundary_only_when_pending_flag_set() {
     assert!(should_consume_cancel_at_message_boundary(true));
     assert!(!should_consume_cancel_at_message_boundary(false));
+}
+
+#[test]
+fn test_inactive_statuses_are_cancel_noops() {
+    assert!(is_inactive_cancel_noop(&SessionStatus::Idle));
+    assert!(is_inactive_cancel_noop(&SessionStatus::Paused));
+    assert!(is_inactive_cancel_noop(&SessionStatus::Error));
+    assert!(!is_inactive_cancel_noop(&SessionStatus::Busy));
+    assert!(!is_inactive_cancel_noop(&SessionStatus::Queued));
+    assert!(!is_inactive_cancel_noop(&SessionStatus::Provisioning));
 }
 
 // -----------------------------------------------------------------------

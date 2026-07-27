@@ -4,6 +4,7 @@ mod health;
 mod helpers;
 mod messages;
 mod sessions;
+mod settings;
 mod types;
 
 // Re-export endpoints so existing routes.rs does not break
@@ -17,3 +18,4 @@ pub use sessions::{
     create_session, delete_session, get_child_sessions, get_session, resume_session_workflow,
     terminate_session,
 };
+pub use settings::get_preferred_model;

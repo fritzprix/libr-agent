@@ -3,6 +3,7 @@
 set -euo pipefail
 
 PRESET="hello"
+PRESET_EXPLICIT=0
 DATASET="terminal-bench/terminal-bench-2-1"
 DATASET_EXPLICIT=0
 HARBOR_INDEX_DATASET="harbor-index/harbor-index-1.0"
@@ -13,6 +14,8 @@ N_ATTEMPTS="${LIBRAGENT_N_ATTEMPTS:-1}"
 CONCURRENT=1
 API_URL="${LIBRAGENT_API_URL:-http://localhost:3030/api}"
 ASSISTANT_ID="${LIBRAGENT_ASSISTANT_ID:-}"
+# Harbor -m. Prefer explicit CLI/env; otherwise read global preferredModel from LibrAgent.
+HARBOR_MODEL="${LIBRAGENT_MODEL:-${LIBRAGENT_HARBOR_MODEL:-}}"
 EXECUTION_MODE="${LIBRAGENT_EXECUTION_MODE:-unsafe}"
 # Omitted by default (official submissions must not modify timeouts/resources).
 # Set LIBRAGENT_* or pass CLI flags for local debugging only.
@@ -29,11 +32,13 @@ usage() {
 Usage: scripts/run-harbor-bench.sh [options]
 
 Options:
-  --preset hello|terminal-bench|harbor-index|path
+  --preset hello|terminal-bench|harbor-index|path|dataset
                                        Default: hello
   --dataset NAME                       Default depends on preset
                                        (terminal-bench/terminal-bench-2-1 or
-                                       harbor-index/harbor-index-1.0)
+                                       harbor-index/harbor-index-1.0).
+                                       Required for preset=dataset; omitting
+                                       --preset with --dataset selects dataset.
   --path DIR                           Local task/dataset path (preset=path)
   --include GLOB                       Include task name pattern (-i)
   --n-tasks N                          Max tasks (-l)
@@ -41,6 +46,9 @@ Options:
   --concurrent N                       Concurrent trials (-n), default 1
   --api-url URL                        Default: http://localhost:3030/api
   --assistant-id UUID                  Or set LIBRAGENT_ASSISTANT_ID
+  --model NAME                         Harbor -m (provider/model). Default: LibrAgent
+                                       global preferredModel via GET /api/settings/preferredModel
+                                       (or LIBRAGENT_MODEL / LIBRAGENT_HARBOR_MODEL)
   --execution-mode yolo|unsafe|normal  Default: unsafe (or LIBRAGENT_EXECUTION_MODE)
   --timeout-multiplier N               Local debug only (omitted by default; submissions must not set this)
   --agent-timeout-multiplier N         Local debug only (omitted by default; submissions must not set this)
@@ -54,7 +62,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --preset) PRESET="$2"; shift 2 ;;
+    --preset) PRESET="$2"; PRESET_EXPLICIT=1; shift 2 ;;
     --dataset) DATASET="$2"; DATASET_EXPLICIT=1; shift 2 ;;
     --path) PATH_ARG="$2"; shift 2 ;;
     --include) INCLUDE="$2"; shift 2 ;;
@@ -63,6 +71,7 @@ while [[ $# -gt 0 ]]; do
     --concurrent) CONCURRENT="$2"; shift 2 ;;
     --api-url) API_URL="$2"; shift 2 ;;
     --assistant-id) ASSISTANT_ID="$2"; shift 2 ;;
+    --model) HARBOR_MODEL="$2"; shift 2 ;;
     --execution-mode) EXECUTION_MODE="$2"; shift 2 ;;
     --timeout-multiplier) TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
     --agent-timeout-multiplier) AGENT_TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
@@ -74,6 +83,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+# Convenience: if --dataset is set without an explicit --preset, treat as dataset preset.
+if [[ "$PRESET_EXPLICIT" -eq 0 && "$DATASET_EXPLICIT" -eq 1 ]]; then
+  PRESET="dataset"
+fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -155,12 +169,63 @@ PY
 ASSISTANT_ID="$(resolve_assistant_id)"
 echo "Using assistantId=$ASSISTANT_ID"
 
+resolve_harbor_model() {
+  if [[ -n "$HARBOR_MODEL" ]]; then
+    echo "$HARBOR_MODEL"
+    return
+  fi
+  echo "==> Resolving Harbor -m from LibrAgent global preferredModel" >&2
+  "$PYTHON" - "$API_URL" <<'PY'
+import json, sys, urllib.error, urllib.request
+
+api = sys.argv[1].rstrip("/")
+url = f"{api}/settings/preferredModel"
+try:
+    with urllib.request.urlopen(url, timeout=15) as resp:
+        payload = json.load(resp)
+except urllib.error.HTTPError as e:
+    body = e.read().decode("utf-8", errors="replace")
+    raise SystemExit(
+        f"Failed to read preferredModel from {url} (HTTP {e.code}): {body}\n"
+        "Restart LibrAgent (pnpm tauri dev) so GET /api/settings/preferredModel is available, "
+        "or pass --model provider/model."
+    ) from e
+except Exception as e:
+    raise SystemExit(
+        f"Failed to read preferredModel from {url}: {e}\n"
+        "Is LibrAgent running? Or pass --model provider/model."
+    ) from e
+
+harbor_model = (payload.get("harborModel") or "").strip()
+if not harbor_model:
+    model = (payload.get("model") or "").strip()
+    provider = (payload.get("provider") or "").strip()
+    if model and provider and "/" not in model:
+        harbor_model = f"{provider}/{model}"
+    else:
+        harbor_model = model
+if not harbor_model:
+    raise SystemExit(
+        "preferredModel is empty. Set a preferred model in LibrAgent settings, "
+        "or pass --model provider/model."
+    )
+print(harbor_model)
+print(
+    f"  preferredModel provider={payload.get('provider')!r} model={payload.get('model')!r}",
+    file=sys.stderr,
+)
+PY
+}
+
+HARBOR_MODEL="$(resolve_harbor_model)"
+echo "Using Harbor model (-m)=$HARBOR_MODEL"
+
 if [[ "$SKIP_HEALTH" -eq 0 ]]; then
   echo "==> Checking $API_URL/health"
   curl -fsS "$API_URL/health" >/dev/null
-  echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify mode → await idle → terminate)"
+  echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify mode → await idle → delete)"
   # Start a real turn so we verify the session can run, but wait for idle before
-  # cleanup — terminating ~0.5s into an LLM turn aborts the reply mid-flight.
+  # cleanup — deleting ~0.5s into an LLM turn aborts the reply mid-flight.
   CREATE=$(curl -fsS -X POST "$API_URL/sessions" \
     -H 'Content-Type: application/json' \
     -d "$("$PYTHON" - <<PY
@@ -176,8 +241,8 @@ PY
 )")
   SID=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$CREATE")
   cleanup_smoke() {
-    curl -fsS -X POST "$API_URL/sessions/$SID/terminate" >/dev/null 2>&1 || true
-    echo "  smoke session terminated ($SID)"
+    curl -fsS -X DELETE "$API_URL/sessions/$SID" >/dev/null 2>&1 || true
+    echo "  smoke session deleted ($SID)"
   }
   trap cleanup_smoke EXIT
   SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")
@@ -213,6 +278,7 @@ fi
 ARGS=(
   run
   -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter
+  -m "$HARBOR_MODEL"
   --ak "api_url=$API_URL"
   --ak "assistant_id=$ASSISTANT_ID"
   --ak "execution_mode=$EXECUTION_MODE"
@@ -257,6 +323,16 @@ case "$PRESET" in
   path)
     [[ -n "$PATH_ARG" ]] || { echo "--path required for preset=path" >&2; exit 1; }
     ARGS+=(-p "$PATH_ARG")
+    [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
+    [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
+    ;;
+  dataset)
+    [[ "$DATASET_EXPLICIT" -eq 1 ]] || {
+      echo "--dataset required for preset=dataset (e.g. --dataset swe-bench/swe-bench-verified-1.0)" >&2
+      exit 1
+    }
+    echo "==> Preset: dataset ($DATASET)"
+    ARGS+=(-d "$DATASET")
     [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;

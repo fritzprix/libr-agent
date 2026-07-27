@@ -1,4 +1,4 @@
-mod handlers;
+pub mod handlers;
 mod tools;
 
 use crate::mcp::builtin::BuiltinMCPServer;
