@@ -182,12 +182,17 @@ async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
     .expect("claim all should succeed");
 
     assert_eq!(
-        claimed
-            .iter()
-            .map(|msg| msg.id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["msg-a", "msg-b", "msg-c"]
+        claimed.len(),
+        1,
+        "multiple pending messages should merge into 1 single user message"
     );
+    assert_eq!(claimed[0].id, "msg-a");
+
+    let merged_text = match &claimed[0].content[0] {
+        tauri_mcp_agent_lib::mcp::types::MCPContent::Text { text, .. } => text.as_str(),
+        _ => panic!("Expected text content"),
+    };
+    assert_eq!(merged_text, "first\n\n---\n\nsecond\n\n---\n\nthird");
 
     let pending_after = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
         &active_sessions,
@@ -208,7 +213,7 @@ async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
         .iter()
         .map(|msg| msg.id.clone())
         .collect();
-    assert_eq!(cached_ids, vec!["msg-a", "msg-b", "msg-c"]);
+    assert_eq!(cached_ids, vec!["msg-a"]);
 
     let index_after = queue_repo
         .list_by_session(&session_id)
@@ -216,13 +221,112 @@ async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
         .expect("index list after claim");
     assert!(index_after.is_empty());
 
-    for msg_id in ["msg-a", "msg-b", "msg-c"] {
+    let msg_a_rows = message_repo
+        .get_by_ids(vec!["msg-a".to_string()])
+        .await
+        .expect("merged message msg-a should exist in DB");
+    assert_eq!(msg_a_rows.len(), 1);
+
+    for msg_id in ["msg-b", "msg-c"] {
         let rows = message_repo
             .get_by_ids(vec![msg_id.to_string()])
             .await
-            .expect("message should still exist in DB");
-        assert_eq!(rows.len(), 1, "promoted message {msg_id} must remain in DB");
+            .expect("query DB for deleted message");
+        assert!(
+            rows.is_empty(),
+            "absorbed message {msg_id} should be deleted from DB"
+        );
     }
+}
+
+#[tokio::test]
+async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("claim-cap-pending-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let batch_cap = tauri_mcp_agent_lib::agent::pending_queue::MAX_PENDING_CLAIM_BATCH;
+    let total = batch_cap + 2;
+    for i in 0..total {
+        let msg = build_user_message_with_text(
+            &session_id,
+            &format!("cap-msg-{i}"),
+            1_000 + i as i64,
+            &format!("text-{i}"),
+        );
+        tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+            &active_sessions,
+            app_handle,
+            &session_id,
+            &msg,
+        )
+        .await
+        .expect("enqueue should succeed");
+    }
+
+    let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
+        &active_sessions,
+        app_handle,
+        &session_id,
+    )
+    .await
+    .expect("claim all should succeed");
+
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].id, "cap-msg-0");
+
+    let pending_after = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending after capped claim");
+    assert_eq!(pending_after.len(), 2);
+    assert_eq!(pending_after[0].id, format!("cap-msg-{batch_cap}"));
+    assert_eq!(pending_after[1].id, format!("cap-msg-{}", batch_cap + 1));
+
+    let index_after = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("index after capped claim");
+    assert_eq!(index_after.len(), 2);
+
+    // Absorbed batch messages deleted; keeper retained.
+    let keeper = message_repo
+        .get_by_ids(vec!["cap-msg-0".to_string()])
+        .await
+        .expect("keeper lookup");
+    assert_eq!(keeper.len(), 1);
+    let absorbed = message_repo
+        .get_by_ids(vec!["cap-msg-1".to_string()])
+        .await
+        .expect("absorbed lookup");
+    assert!(absorbed.is_empty());
 }
 
 #[tokio::test]
@@ -516,4 +620,22 @@ fn pending_event_manager_restore_front_pending_messages_preserves_batch_order() 
             "third".to_string()
         ]
     );
+}
+
+#[test]
+fn merge_user_message_contents_uses_shared_separator() {
+    use tauri_mcp_agent_lib::agent::message_merge::{
+        merge_user_message_contents, USER_MESSAGE_MERGE_SEPARATOR,
+    };
+
+    let session_id = "merge-sep";
+    let a = build_user_message_with_text(session_id, "a", 1, "one");
+    let b = build_user_message_with_text(session_id, "b", 2, "two");
+    let merged = merge_user_message_contents(&[a, b]);
+    match &merged[0] {
+        MCPContent::Text { text, .. } => {
+            assert_eq!(text, &format!("one{USER_MESSAGE_MERGE_SEPARATOR}two"));
+        }
+        _ => panic!("expected text"),
+    }
 }

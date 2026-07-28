@@ -51,6 +51,14 @@ pub trait PendingQueueRepository: Send + Sync {
         message_id: &str,
     ) -> Result<Option<PendingQueueEntry>, DbError>;
 
+    /// Atomically upsert the merged keeper message, delete absorbed message rows
+    /// (cascade-clears their pending_queue rows), and remove the keeper index row.
+    async fn commit_merged_claim(
+        &self,
+        keeper: &crate::models::chat::Message,
+        absorbed_message_ids: &[String],
+    ) -> Result<(), DbError>;
+
     async fn remove_all_for_session(&self, session_id: &str) -> Result<Vec<String>, DbError>;
 
     /// Drop index rows whose message no longer exists.
@@ -186,6 +194,54 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
             .await?;
         txn.commit().await?;
         Ok(Some(entry))
+    }
+
+    async fn commit_merged_claim(
+        &self,
+        keeper: &crate::models::chat::Message,
+        absorbed_message_ids: &[String],
+    ) -> Result<(), DbError> {
+        use crate::entity::message::{self as message_entity, Entity as MessageEntity};
+        use crate::repositories::message_repository::SqliteMessageRepository;
+        use sea_orm::EntityTrait;
+
+        let txn = self.db.begin().await?;
+
+        let model = SqliteMessageRepository::message_to_active_model(keeper)?;
+        MessageEntity::insert(model)
+            .on_conflict(SqliteMessageRepository::get_upsert_on_conflict())
+            .exec(&txn)
+            .await?;
+
+        SqliteMessageRepository::update_session_last_message_at(
+            &txn,
+            &keeper.session_id,
+            keeper.created_at,
+        )
+        .await?;
+
+        if !absorbed_message_ids.is_empty() {
+            MessageEntity::delete_many()
+                .filter(message_entity::Column::Id.is_in(absorbed_message_ids.to_vec()))
+                .exec(&txn)
+                .await?;
+        }
+
+        // Absorbed index rows cascade-delete with their messages; always clear keeper index.
+        pending_queue::Entity::delete_by_id(keeper.id.clone())
+            .exec(&txn)
+            .await?;
+
+        // Defensive: clear any leftover absorbed index rows if cascade did not fire.
+        if !absorbed_message_ids.is_empty() {
+            pending_queue::Entity::delete_many()
+                .filter(pending_queue::Column::MessageId.is_in(absorbed_message_ids.to_vec()))
+                .exec(&txn)
+                .await?;
+        }
+
+        txn.commit().await?;
+        Ok(())
     }
 
     async fn remove_all_for_session(&self, session_id: &str) -> Result<Vec<String>, DbError> {
