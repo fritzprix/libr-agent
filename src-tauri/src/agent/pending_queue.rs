@@ -119,36 +119,31 @@ pub async fn enqueue_pending_user_message(
     Ok(())
 }
 
-/// Promote the next waiting prompt into the active message cache (FIFO).
-///
-/// Memory is drained first, then the durable index row is removed and returned
-/// so failure recovery can restore the original `queue_seq` / `created_at`.
-pub async fn claim_next_pending_message(
+enum PromotePendingOutcome {
+    Promoted(Box<Message>),
+    Skipped,
+}
+
+struct PromotePendingFailure {
+    error: String,
+    index_entry: Option<PendingQueueEntry>,
+}
+
+async fn promote_pending_message_id(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
     session_id: &str,
-) -> Result<Option<Message>, String> {
-    let message_id = {
-        let sessions = active_sessions.read().await;
-        let Some(session) = sessions.get(session_id) else {
-            return Ok(None);
-        };
-        let claimed = session.pending_events.write().await.drain_one_message();
-        claimed
-    };
-
-    let Some(message_id) = message_id else {
-        return Ok(None);
-    };
-
+    message_id: String,
+) -> Result<PromotePendingOutcome, PromotePendingFailure> {
     let index_entry = match get_pending_queue_repository()
         .remove_returning(&message_id)
         .await
     {
         Ok(entry) => entry,
         Err(e) => {
-            restore_front_pending_message(active_sessions, session_id, message_id).await;
-            return Err(e.to_string());
+            return Err(PromotePendingFailure {
+                error: e.to_string(),
+                index_entry: None,
+            });
         }
     };
 
@@ -156,25 +151,24 @@ pub async fn claim_next_pending_message(
         log::warn!(
             "Pending index missing for claimed message {message_id} in session {session_id}; skipping"
         );
-        let _ = emit_pending_queue_updated(active_sessions, app_handle, session_id).await;
-        return Ok(None);
+        return Ok(PromotePendingOutcome::Skipped);
     };
 
     let repo = get_message_repository();
     let messages = match repo.get_by_ids(vec![message_id.clone()]).await {
         Ok(messages) => messages,
         Err(e) => {
-            restore_index_entry(&index_entry).await;
-            restore_front_pending_message(active_sessions, session_id, message_id).await;
-            return Err(e.to_string());
+            return Err(PromotePendingFailure {
+                error: e.to_string(),
+                index_entry: Some(index_entry),
+            });
         }
     };
     let Some(message) = messages.into_iter().next() else {
         log::warn!(
             "Pending message {message_id} missing from DB for session {session_id}; skipping"
         );
-        let _ = emit_pending_queue_updated(active_sessions, app_handle, session_id).await;
-        return Ok(None);
+        return Ok(PromotePendingOutcome::Skipped);
     };
 
     {
@@ -190,15 +184,107 @@ pub async fn claim_next_pending_message(
         }
     }
 
+    Ok(PromotePendingOutcome::Promoted(Box::new(message)))
+}
+
+async fn emit_message_added(
+    app_handle: &AppHandle,
+    session_id: &str,
+    message: &Message,
+) -> Result<(), String> {
     let event = AgentEvent::MessageAdded {
         session_id: session_id.to_string(),
         message: Box::new(message.clone()),
     };
     crate::agent::tauri_events::emit_agent_event(app_handle, event)
-        .map_err(|e| format!("Failed to emit MessageAdded: {e}"))?;
+        .map_err(|e| format!("Failed to emit MessageAdded: {e}"))
+}
+
+/// Promote the next waiting prompt into the active message cache (FIFO).
+///
+/// Memory is drained first, then the durable index row is removed and returned
+/// so failure recovery can restore the original `queue_seq` / `created_at`.
+pub async fn claim_next_pending_message(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<Option<Message>, String> {
+    let message_id = {
+        let sessions = active_sessions.read().await;
+        let Some(session) = sessions.get(session_id) else {
+            return Ok(None);
+        };
+        let drained = session.pending_events.write().await.drain_one_message();
+        drained
+    };
+
+    let Some(message_id) = message_id else {
+        return Ok(None);
+    };
+
+    let promoted =
+        match promote_pending_message_id(active_sessions, session_id, message_id.clone()).await {
+            Ok(outcome) => outcome,
+            Err(failure) => {
+                if let Some(index_entry) = failure.index_entry {
+                    restore_index_entry(&index_entry).await;
+                }
+                restore_front_pending_message(active_sessions, session_id, message_id).await;
+                return Err(failure.error);
+            }
+        };
+
+    let PromotePendingOutcome::Promoted(message) = promoted else {
+        let _ = emit_pending_queue_updated(active_sessions, app_handle, session_id).await;
+        return Ok(None);
+    };
+
+    emit_message_added(app_handle, session_id, &message).await?;
+    emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
+    Ok(Some(*message))
+}
+
+/// Promote every waiting prompt into the active message cache in one LLM turn (FIFO).
+pub async fn claim_all_pending_messages(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<Vec<Message>, String> {
+    let message_ids = {
+        let sessions = active_sessions.read().await;
+        let Some(session) = sessions.get(session_id) else {
+            return Ok(Vec::new());
+        };
+        let drained = session.pending_events.write().await.drain_messages();
+        drained
+    };
+
+    if message_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut promoted_messages = Vec::new();
+
+    for (index, message_id) in message_ids.iter().enumerate() {
+        match promote_pending_message_id(active_sessions, session_id, message_id.clone()).await {
+            Ok(PromotePendingOutcome::Promoted(message)) => {
+                emit_message_added(app_handle, session_id, &message).await?;
+                promoted_messages.push(*message);
+            }
+            Ok(PromotePendingOutcome::Skipped) => {}
+            Err(failure) => {
+                if let Some(index_entry) = failure.index_entry {
+                    restore_index_entry(&index_entry).await;
+                }
+                restore_front_pending_messages(active_sessions, session_id, &message_ids[index..])
+                    .await;
+                return Err(failure.error);
+            }
+        }
+    }
 
     emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
-    Ok(Some(message))
+    Ok(promoted_messages)
 }
 
 /// Cancel a waiting prompt.
@@ -275,12 +361,27 @@ async fn restore_front_pending_message(
     session_id: &str,
     message_id: String,
 ) {
+    restore_front_pending_messages(active_sessions, session_id, &[message_id]).await;
+}
+
+async fn restore_front_pending_messages(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    message_ids: &[String],
+) {
+    if message_ids.is_empty() {
+        return;
+    }
+
     let sessions = active_sessions.read().await;
     if let Some(session) = sessions.get(session_id) {
         let mut pending = session.pending_events.write().await;
-        if !pending.contains_message(&message_id) {
-            pending.restore_front_message(message_id);
-        }
+        let missing_ids: Vec<String> = message_ids
+            .iter()
+            .filter(|id| !pending.contains_message(id))
+            .cloned()
+            .collect();
+        pending.restore_front_pending_messages(&missing_ids);
     }
 }
 

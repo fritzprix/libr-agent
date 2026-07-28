@@ -1,12 +1,17 @@
 use crate::common;
 
-use tauri_mcp_agent_lib::agent::state::{PendingEvent, PendingEventManager};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tauri::test::MockRuntime;
+use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEvent, PendingEventManager};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
+use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{
     MessageRepository, PendingQueueRepository, SessionMetadata, SessionRepository, SessionStatus,
     SqliteMessageRepository, SqlitePendingQueueRepository, SqliteSessionRepository,
 };
+use tokio::sync::RwLock;
 
 fn build_session_metadata(session_id: &str) -> SessionMetadata {
     let now = chrono::Utc::now().timestamp_millis();
@@ -43,11 +48,23 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
 }
 
 fn build_user_message(session_id: &str, id: &str, created_at: i64) -> Message {
+    build_user_message_with_text(session_id, id, created_at, &format!("text-{id}"))
+}
+
+fn build_user_message_with_text(
+    session_id: &str,
+    id: &str,
+    created_at: i64,
+    text: &str,
+) -> Message {
     Message {
         id: id.to_string(),
         session_id: session_id.to_string(),
         role: "user".to_string(),
-        content: vec![],
+        content: vec![MCPContent::Text {
+            text: text.to_string(),
+            is_error: None,
+        }],
         tool_calls: None,
         tool_call_id: None,
         is_streaming: Some(false),
@@ -63,6 +80,148 @@ fn build_user_message(session_id: &str, id: &str, created_at: i64) -> Message {
         source: None,
         error: None,
         metadata: None,
+    }
+}
+
+fn build_agent_session(session_id: &str) -> AgentSession {
+    use std::sync::atomic::AtomicBool;
+    use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
+    use tauri_mcp_agent_lib::agent::state::CompactionRuntimeState;
+    use tokio_util::sync::CancellationToken;
+
+    AgentSession {
+        metadata: build_session_metadata(session_id),
+        is_running: false,
+        active_permit: None,
+        status_transition: Arc::new(tokio::sync::RwLock::new(None)),
+        transition_lock: Arc::new(tokio::sync::Mutex::new(())),
+        cancellation_token: CancellationToken::new(),
+        yolo_mode: Arc::new(AtomicBool::new(false)),
+        unsafe_mode: Arc::new(AtomicBool::new(false)),
+        cancel_pending: Arc::new(AtomicBool::new(false)),
+        pending_execution: None,
+        messages: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+        cache_initialized: Arc::new(AtomicBool::new(true)),
+        last_synced_at: Arc::new(RwLock::new(None)),
+        repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
+        repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
+        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
+        pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
+        pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+        context_registry: Arc::new(ContextRegistry::new()),
+        compact_context: Arc::new(RwLock::new(None)),
+        compaction: CompactionRuntimeState::new(),
+        expected_response_id: Arc::new(RwLock::new(None)),
+        cached_stable_prompt: Arc::new(RwLock::new(None)),
+        last_completion_request: Arc::new(RwLock::new(None)),
+        last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+    }
+}
+
+#[tokio::test]
+async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("claim-all-pending-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let msg_a = build_user_message_with_text(&session_id, "msg-a", 1_000, "first");
+    let msg_b = build_user_message_with_text(&session_id, "msg-b", 2_000, "second");
+    let msg_c = build_user_message_with_text(&session_id, "msg-c", 3_000, "third");
+
+    for msg in [&msg_a, &msg_b, &msg_c] {
+        tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+            &active_sessions,
+            app_handle,
+            &session_id,
+            msg,
+        )
+        .await
+        .expect("enqueue should succeed");
+    }
+
+    let pending_before = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending before claim");
+    assert_eq!(pending_before.len(), 3);
+
+    let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
+        &active_sessions,
+        app_handle,
+        &session_id,
+    )
+    .await
+    .expect("claim all should succeed");
+
+    assert_eq!(
+        claimed
+            .iter()
+            .map(|msg| msg.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["msg-a", "msg-b", "msg-c"]
+    );
+
+    let pending_after = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending after claim");
+    assert!(pending_after.is_empty());
+
+    let cached_ids: Vec<String> = active_sessions
+        .read()
+        .await
+        .get(&session_id)
+        .expect("session should exist")
+        .messages
+        .read()
+        .await
+        .iter()
+        .map(|msg| msg.id.clone())
+        .collect();
+    assert_eq!(cached_ids, vec!["msg-a", "msg-b", "msg-c"]);
+
+    let index_after = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("index list after claim");
+    assert!(index_after.is_empty());
+
+    for msg_id in ["msg-a", "msg-b", "msg-c"] {
+        let rows = message_repo
+            .get_by_ids(vec![msg_id.to_string()])
+            .await
+            .expect("message should still exist in DB");
+        assert_eq!(rows.len(), 1, "promoted message {msg_id} must remain in DB");
     }
 }
 
@@ -322,4 +481,39 @@ fn pending_event_manager_restore_front_preserves_fifo_after_failed_claim() {
         vec!["first".to_string(), "second".to_string()]
     );
     assert!(manager.contains_message("first"));
+}
+
+#[test]
+fn pending_event_manager_drain_messages_drains_all_in_fifo_order() {
+    let mut manager = PendingEventManager::new();
+    manager.add(PendingEvent::Message("first".to_string()));
+    manager.add(PendingEvent::Message("second".to_string()));
+    manager.add(PendingEvent::Message("third".to_string()));
+
+    assert_eq!(
+        manager.drain_messages(),
+        vec![
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string()
+        ]
+    );
+    assert!(manager.message_ids().is_empty());
+}
+
+#[test]
+fn pending_event_manager_restore_front_pending_messages_preserves_batch_order() {
+    let mut manager = PendingEventManager::new();
+    manager.add(PendingEvent::Message("third".to_string()));
+
+    manager.restore_front_pending_messages(&["first".to_string(), "second".to_string()]);
+
+    assert_eq!(
+        manager.message_ids(),
+        vec![
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string()
+        ]
+    );
 }

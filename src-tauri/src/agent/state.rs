@@ -68,6 +68,14 @@ impl PendingEventManager {
         self.events.insert(0, PendingEvent::Message(message_id));
     }
 
+    /// Re-insert multiple messages at the FIFO front, preserving order.
+    pub fn restore_front_pending_messages(&mut self, message_ids: &[String]) {
+        for message_id in message_ids.iter().rev() {
+            self.events
+                .insert(0, PendingEvent::Message(message_id.clone()));
+        }
+    }
+
     /// Whether a specific message id is currently waiting.
     pub fn contains_message(&self, message_id: &str) -> bool {
         self.events.iter().any(|event| match event {

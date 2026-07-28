@@ -94,6 +94,8 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   const handleUIAction = useUIActionHandler(contentRef);
   const resourceRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const followChatScrollRef = useRef(followChatScroll);
+  followChatScrollRef.current = followChatScroll;
 
   useEffect(() => {
     if (!expandResources) {
@@ -110,9 +112,12 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
           const height = entry.contentRect.height;
-          if (height > lastHeight) {
+          // Skip when the chat list is not following — nested smooth
+          // scrollIntoView fights the parent Virtuoso stick-to-bottom engine
+          // and yanks the viewport while the user is reading history.
+          if (height > lastHeight && followChatScrollRef.current) {
             try {
-              element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              element.scrollIntoView({ behavior: 'auto', block: 'nearest' });
             } catch {
               // ignore
             }

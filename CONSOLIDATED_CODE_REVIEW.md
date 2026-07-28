@@ -10,6 +10,7 @@
 ## Executive Summary
 
 This PR contains a **cohesive, cross-cutting refactor of the agent-facing hint/error guidance system** ("Next Steps" → "Suggested Follow-ups/Recovery") plus targeted improvements in:
+
 - Shell command validation & error guidance (security hardening)
 - Scheduled task UX (hint headers, cleaner messaging)
 - File operation diff preview/anchors
@@ -26,21 +27,24 @@ This PR contains a **cohesive, cross-cutting refactor of the agent-facing hint/e
 **Files**: `guidance.rs` (+55/-20), `mod.rs`, `tests.rs` (+10), `tool_description.rs` (+10 net)
 
 ### Changes
-| Component | Old | New |
-|-----------|-----|-----|
-| Success hints | `💡 Next: A or B or C` | `💡 Suggested Follow-ups:\n• A\n• B\n• C` |
-| Error recovery | `💡 Next Steps:\n1. A\n2. B` | `💡 Suggested Recovery:\n1. A\n2. B` |
-| Informational | `💡 Next Steps:` | `💡 Optional Guidance:` |
-| Tool schema | `💡 Next Steps:` | `💡 Related Actions:` / `💡 Example workflow:` |
-| Footer tips | `💡 Use X...` | `💡 Tip: X...` |
+
+| Component      | Old                          | New                                            |
+| -------------- | ---------------------------- | ---------------------------------------------- |
+| Success hints  | `💡 Next: A or B or C`       | `💡 Suggested Follow-ups:\n• A\n• B\n• C`      |
+| Error recovery | `💡 Next Steps:\n1. A\n2. B` | `💡 Suggested Recovery:\n1. A\n2. B`           |
+| Informational  | `💡 Next Steps:`             | `💡 Optional Guidance:`                        |
+| Tool schema    | `💡 Next Steps:`             | `💡 Related Actions:` / `💡 Example workflow:` |
+| Footer tips    | `💡 Use X...`                | `💡 Tip: X...`                                 |
 
 ### Quality
+
 - **Centralized**: New `hint_headers` module with 7 constants — single source of truth
 - **Helper functions**: `format_numbered_guidance()`, `format_bullet_guidance()` reduce duplication
 - **All 8 unit tests pass** — validates formatting, error semantics, tool-group isolation
-- **Integration tests updated** — `workspace_hint_assertions.rs` now asserts *absence* of legacy patterns (`💡 Next:`, `writeFile for full file replacement`, `strReplace.old_string`)
+- **Integration tests updated** — `workspace_hint_assertions.rs` now asserts _absence_ of legacy patterns (`💡 Next:`, `writeFile for full file replacement`, `strReplace.old_string`)
 
 ### Impact
+
 - Resolves the semantic confusion identified in the audit (agents treating "Next:" as mandatory command)
 - Bullet format for success hints reduces "do this OR that" ambiguity
 - Numbered format preserved for actual recovery procedures (correct UX)
@@ -52,6 +56,7 @@ This PR contains a **cohesive, cross-cutting refactor of the agent-facing hint/e
 **Files**: `validation.rs` (+166 lines, new functionality), `isolated.rs` (-38/+11), `persistent.rs` (-11/+11)
 
 ### New Validation Logic (`validation.rs`)
+
 ```rust
 // NEW: Detects quote/heredoc parse failures in shell stderr/stdout
 pub fn looks_like_shell_quote_parse_error(stdout, stderr) -> bool {
@@ -69,12 +74,14 @@ pub fn shell_command_failure_guidance(exit_code, stdout, stderr) -> Vec<String> 
 ```
 
 ### Security Value
+
 - **Prevents agent retry loops** on malformed one-liners (nested quotes, heredocs)
 - **Escalates to `writeFile`** — the correct fix for complex scripts
 - **Locale-aware** — handles Korean bash error messages (critical for global users)
 - **3 new tests** cover detection + escalation logic
 
 ### Refactoring
+
 - `isolated.rs` & `persistent.rs` now delegate to `validation::shell_command_failure_guidance()`
 - Removed ~50 lines of duplicated match-arm guidance logic
 - Single source of truth for shell failure hints
@@ -86,6 +93,7 @@ pub fn shell_command_failure_guidance(exit_code, stdout, stderr) -> Vec<String> 
 **File**: `scheduled_task/handlers.rs` (+72 lines)
 
 ### Changes
+
 - Uses `hint_headers::AVAILABLE_OPERATIONS`, `hint_headers::TIP` consistently
 - Replaced numbered "Next steps" with bullet list under `💡 Available operations:`
 - Message text softened: `"Use getScheduledTask(...)"` → `"getScheduledTask(...) can show..."`
@@ -96,11 +104,13 @@ pub fn shell_command_failure_guidance(exit_code, stdout, stderr) -> Vec<String> 
 ## 4. File Operations — ✅ QUALITY IMPROVEMENTS
 
 ### `edit_line/response.rs` (+11 lines)
+
 - Added diff preview with `MAX_DIFF_PREVIEW_LINES = 50`, `DIFF_CONTEXT_LINES = 1`
 - Git-style diff (context/added/removed) with smart range collapsing
 - Anchor refresh messaging in success hints
 
 ### `write.rs` (+29 lines)
+
 - Improved path-conflict guidance with concrete examples
 - Better diff preview integration
 - No functional changes to write modes (create/overwrite/append)
@@ -111,10 +121,10 @@ pub fn shell_command_failure_guidance(exit_code, stdout, stderr) -> Vec<String> 
 
 **Files**: `interaction.rs` (1 line), `tools.rs` (6 lines)
 
-| File | Change |
-|------|--------|
+| File                 | Change                                                        |
+| -------------------- | ------------------------------------------------------------- |
 | `interaction.rs:542` | `💡 Use the selector...` → `💡 Tip: Selectors can be used...` |
-| `tools.rs:59-61` | `💡 Next Steps:` → `💡 Suggested follow-ups:` (bullet format) |
+| `tools.rs:59-61`     | `💡 Next Steps:` → `💡 Suggested follow-ups:` (bullet format) |
 
 ---
 
@@ -149,14 +159,16 @@ pub fn shell_command_failure_guidance(exit_code, stdout, stderr) -> Vec<String> 
 ## 9. Test Coverage — ✅ COMPREHENSIVE
 
 ### New/Updated Test Files
-| File | Lines | Focus |
-|------|-------|-------|
-| `workspace_hint_assertions.rs` | 25 | **New** — shared assertions against legacy hint patterns |
-| `error_contract_guards.rs` | 347 | Error semantics, guidance presence, actionable next steps |
-| `workspace_guidance_tests.rs` | +48 | Empty dir hints, search guidance, no edit promotion on read-only |
-| `workspace_search_tests.rs` | +37 | Pagination, regex, binary/gitignore skip metadata |
+
+| File                           | Lines | Focus                                                            |
+| ------------------------------ | ----- | ---------------------------------------------------------------- |
+| `workspace_hint_assertions.rs` | 25    | **New** — shared assertions against legacy hint patterns         |
+| `error_contract_guards.rs`     | 347   | Error semantics, guidance presence, actionable next steps        |
+| `workspace_guidance_tests.rs`  | +48   | Empty dir hints, search guidance, no edit promotion on read-only |
+| `workspace_search_tests.rs`    | +37   | Pagination, regex, binary/gitignore skip metadata                |
 
 ### Key Assertions
+
 - **No legacy leakage**: `!text.contains("💡 Next:")`, `!text.contains("writeFile")` on success
 - **Error contract**: All errors have `is_error: true`, `✗` marker, recovery section
 - **Tool-group isolation**: Browser errors suggest browser tools, not planning tools
@@ -165,12 +177,12 @@ pub fn shell_command_failure_guidance(exit_code, stdout, stderr) -> Vec<String> 
 
 ## Risk Assessment
 
-| Area | Risk | Mitigation |
-|------|------|------------|
-| Hint system | Low — all call sites updated, tests pass | `cargo test` + integration tests verify |
-| Shell validation | Low — additive, backward compatible | 3 new unit tests + existing test suite |
-| Generated TS types | Low — synced from Rust SSOT | CI runs `sync-*.cjs` on build |
-| Core agent loop | None — no logic changes | Only hint text / token budget lookup |
+| Area               | Risk                                     | Mitigation                              |
+| ------------------ | ---------------------------------------- | --------------------------------------- |
+| Hint system        | Low — all call sites updated, tests pass | `cargo test` + integration tests verify |
+| Shell validation   | Low — additive, backward compatible      | 3 new unit tests + existing test suite  |
+| Generated TS types | Low — synced from Rust SSOT              | CI runs `sync-*.cjs` on build           |
+| Core agent loop    | None — no logic changes                  | Only hint text / token budget lookup    |
 
 ---
 
@@ -195,6 +207,7 @@ pnpm refactor:validate
 **✅ APPROVE FOR MERGE**
 
 This is a well-scoped, high-impact refactor that:
+
 1. Fixes a documented agent-confusion issue (semantic "Next:" problem)
 2. Adds security hardening for shell command execution
 3. Maintains full backward compatibility (no API breaks)
