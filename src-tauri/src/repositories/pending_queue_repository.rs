@@ -201,17 +201,10 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
         keeper: &crate::models::chat::Message,
         absorbed_message_ids: &[String],
     ) -> Result<(), DbError> {
-        use crate::entity::message::{self as message_entity, Entity as MessageEntity};
         use crate::repositories::message_repository::SqliteMessageRepository;
         use sea_orm::EntityTrait;
 
         let txn = self.db.begin().await?;
-
-        let model = SqliteMessageRepository::message_to_active_model(keeper)?;
-        MessageEntity::insert(model)
-            .on_conflict(SqliteMessageRepository::get_upsert_on_conflict())
-            .exec(&txn)
-            .await?;
 
         SqliteMessageRepository::update_session_last_message_at(
             &txn,
@@ -220,25 +213,13 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
         )
         .await?;
 
-        if !absorbed_message_ids.is_empty() {
-            MessageEntity::delete_many()
-                .filter(message_entity::Column::Id.is_in(absorbed_message_ids.to_vec()))
-                .exec(&txn)
-                .await?;
-        }
+        let mut all_claimed_ids = vec![keeper.id.clone()];
+        all_claimed_ids.extend(absorbed_message_ids.iter().cloned());
 
-        // Absorbed index rows cascade-delete with their messages; always clear keeper index.
-        pending_queue::Entity::delete_by_id(keeper.id.clone())
+        pending_queue::Entity::delete_many()
+            .filter(pending_queue::Column::MessageId.is_in(all_claimed_ids))
             .exec(&txn)
             .await?;
-
-        // Defensive: clear any leftover absorbed index rows if cascade did not fire.
-        if !absorbed_message_ids.is_empty() {
-            pending_queue::Entity::delete_many()
-                .filter(pending_queue::Column::MessageId.is_in(absorbed_message_ids.to_vec()))
-                .exec(&txn)
-                .await?;
-        }
 
         txn.commit().await?;
         Ok(())

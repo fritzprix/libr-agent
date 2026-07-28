@@ -26,7 +26,7 @@ type LlmTransport = 'native' | 'browser';
  * Must stay well under listModels `withTimeout` (20s) so auto-load and
  * manual refresh behave consistently.
  */
-export const DEFAULT_NATIVE_TRANSPORT_PROBE_MS = 8_000;
+export const DEFAULT_NATIVE_TRANSPORT_PROBE_MS = 2_000;
 
 /** Successful transport preference keyed by request origin. */
 const transportByOrigin = new Map<string, LlmTransport>();

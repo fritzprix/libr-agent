@@ -316,7 +316,7 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
         .expect("index after capped claim");
     assert_eq!(index_after.len(), 2);
 
-    // Absorbed batch messages deleted; keeper retained.
+    // All original prompt messages preserved in DB (non-destructive claim).
     let keeper = message_repo
         .get_by_ids(vec!["cap-msg-0".to_string()])
         .await
@@ -326,7 +326,7 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
         .get_by_ids(vec!["cap-msg-1".to_string()])
         .await
         .expect("absorbed lookup");
-    assert!(absorbed.is_empty());
+    assert_eq!(absorbed.len(), 1);
 }
 
 #[tokio::test]
@@ -548,6 +548,219 @@ async fn stale_pending_index_after_promote_lets_terminate_delete_first_user_mess
     assert!(
         surviving.is_empty(),
         "documents pre-fix failure: stale pending_queue index deletes first user message"
+    );
+}
+
+#[tokio::test]
+async fn strip_pending_queue_protects_active_stack_and_purges_stale_index() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+
+    let session_id = format!("protect-stack-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let promoted =
+        build_user_message_with_text(&session_id, "msg-promoted", 1_000, "already active");
+    let waiting = build_user_message_with_text(&session_id, "msg-waiting", 2_000, "still queued");
+
+    message_repo
+        .insert(&promoted)
+        .await
+        .expect("promoted message should persist");
+    message_repo
+        .insert(&waiting)
+        .await
+        .expect("waiting message should persist");
+    queue_repo
+        .enqueue(&session_id, &promoted.id, promoted.created_at)
+        .await
+        .expect("stale linger index for promoted");
+    queue_repo
+        .enqueue(&session_id, &waiting.id, waiting.created_at)
+        .await
+        .expect("true waiter index");
+
+    let mut slice = message_repo
+        .get_recent_slice(&session_id, 40)
+        .await
+        .expect("recent slice should load");
+
+    let mut protect_ids = std::collections::HashSet::new();
+    protect_ids.insert(promoted.id.clone());
+
+    let waiting_ids =
+        tauri_mcp_agent_lib::agent::pending_queue::strip_pending_queue_messages_with_protect(
+            &session_id,
+            &mut slice.items,
+            &protect_ids,
+        )
+        .await
+        .expect("strip with protect should succeed");
+
+    assert_eq!(waiting_ids, vec!["msg-waiting".to_string()]);
+    let filtered_ids: Vec<&str> = slice.items.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(
+        filtered_ids,
+        vec!["msg-promoted"],
+        "active-stack / promoted message must remain on transcript"
+    );
+
+    let queue_after = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("pending queue after stale purge");
+    assert_eq!(
+        queue_after
+            .iter()
+            .map(|e| e.message_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["msg-waiting"],
+        "stale linger row for promoted message must be purged"
+    );
+}
+
+#[tokio::test]
+async fn strip_pending_queue_keeps_answered_promoted_prompt_and_purges_index() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+
+    let session_id = format!("answered-stale-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let user = build_user_message_with_text(&session_id, "msg-user", 1_000, "answered");
+    let mut assistant = build_user_message(&session_id, "msg-assistant", 2_000);
+    assistant.role = "assistant".to_string();
+    assistant.content = vec![MCPContent::Text {
+        text: "done".to_string(),
+        is_error: None,
+    }];
+
+    message_repo
+        .insert(&user)
+        .await
+        .expect("user message should persist");
+    message_repo
+        .insert(&assistant)
+        .await
+        .expect("assistant message should persist");
+    queue_repo
+        .enqueue(&session_id, &user.id, user.created_at)
+        .await
+        .expect("stale linger index should persist");
+
+    let mut slice = message_repo
+        .get_recent_slice(&session_id, 40)
+        .await
+        .expect("recent slice should load");
+
+    let waiting_ids = tauri_mcp_agent_lib::agent::pending_queue::strip_pending_queue_messages(
+        &session_id,
+        &mut slice.items,
+    )
+    .await
+    .expect("strip should succeed");
+
+    assert!(
+        waiting_ids.is_empty(),
+        "answered prompt must not become a waiter: {waiting_ids:?}"
+    );
+    let filtered_ids: Vec<&str> = slice.items.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(filtered_ids, vec!["msg-user", "msg-assistant"]);
+
+    let queue_after = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("pending queue after answered stale purge");
+    assert!(
+        queue_after.is_empty(),
+        "answered linger row must be purged: {queue_after:?}"
+    );
+}
+
+#[tokio::test]
+async fn strip_pending_queue_keeps_idle_incomplete_tip_via_protect() {
+    // Idle session-start request with a stale pending_queue row must stay on the
+    // message stack (never re-enter pending / LayeredPendingQueue only).
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+
+    let session_id = format!("idle-tip-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let tip = build_user_message_with_text(&session_id, "msg-tip", 1_000, "session start");
+    message_repo.insert(&tip).await.expect("tip should persist");
+    queue_repo
+        .enqueue(&session_id, &tip.id, tip.created_at)
+        .await
+        .expect("stale linger index");
+
+    let mut slice = message_repo
+        .get_recent_slice(&session_id, 40)
+        .await
+        .expect("recent slice should load");
+
+    let mut protect_ids = std::collections::HashSet::new();
+    if let Some(id) =
+        tauri_mcp_agent_lib::agent::pending_queue::incomplete_turn_user_id(&slice.items)
+    {
+        protect_ids.insert(id.to_string());
+    }
+
+    let waiting_ids =
+        tauri_mcp_agent_lib::agent::pending_queue::strip_pending_queue_messages_with_protect(
+            &session_id,
+            &mut slice.items,
+            &protect_ids,
+        )
+        .await
+        .expect("strip should succeed");
+
+    assert!(waiting_ids.is_empty(), "idle tip must not become waiter");
+    assert_eq!(
+        slice
+            .items
+            .iter()
+            .map(|m| m.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["msg-tip"]
+    );
+    assert!(
+        queue_repo
+            .list_by_session(&session_id)
+            .await
+            .expect("queue")
+            .is_empty(),
+        "stale tip index must be purged"
     );
 }
 

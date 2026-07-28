@@ -144,6 +144,29 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   }
 
   /**
+   * Executes model listing calls with a relaxed retry policy (max 1 retry, short delay)
+   * to avoid breaching outer UI timeouts (e.g. withTimeout 20s).
+   * @protected
+   */
+  protected async withListModelsRetry<T>(
+    fn: () => Promise<T>,
+    abortSignal?: AbortSignal,
+  ): Promise<T> {
+    return withRetryPolicy({
+      fn,
+      config: {
+        ...this.defaultConfig,
+        maxRetries: 1,
+        retryDelay: 500,
+      },
+      abortSignal,
+      logger: this.logger,
+      provider: this.getProvider(),
+      shouldRetry: (error) => this.shouldRetry(error),
+    });
+  }
+
+  /**
    * Determines whether an error should trigger a retry.
    * @param error The error to check.
    * @returns `true` if the request should be retried, `false` otherwise.

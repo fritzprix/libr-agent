@@ -94,44 +94,6 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   const handleUIAction = useUIActionHandler(contentRef);
   const resourceRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const followChatScrollRef = useRef(followChatScroll);
-  followChatScrollRef.current = followChatScroll;
-
-  useEffect(() => {
-    if (!expandResources) {
-      return;
-    }
-
-    const observers: ResizeObserver[] = [];
-    Object.values(resourceRefs.current).forEach((element) => {
-      if (!element) {
-        return;
-      }
-
-      let lastHeight = element.getBoundingClientRect().height;
-      const observer = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          const height = entry.contentRect.height;
-          // Skip when the chat list is not following — nested smooth
-          // scrollIntoView fights the parent Virtuoso stick-to-bottom engine
-          // and yanks the viewport while the user is reading history.
-          if (height > lastHeight && followChatScrollRef.current) {
-            try {
-              element.scrollIntoView({ behavior: 'auto', block: 'nearest' });
-            } catch {
-              // ignore
-            }
-          }
-          lastHeight = height;
-        }
-      });
-
-      observer.observe(element);
-      observers.push(observer);
-    });
-
-    return () => observers.forEach((observer) => observer.disconnect());
-  }, [expandResources, renderItems]);
 
   const remoteDomProps = useMemo(
     () => ({

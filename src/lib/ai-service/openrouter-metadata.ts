@@ -53,6 +53,7 @@ interface ModelMetadataCache {
 }
 
 let metadataCache: ModelMetadataCache | null = null;
+let pendingFetchPromise: Promise<Map<string, OpenRouterModel>> | null = null;
 
 /**
  * Fetch all model metadata from OpenRouter.
@@ -72,51 +73,64 @@ export async function fetchOpenRouterModels(): Promise<
     return metadataCache.models;
   }
 
-  try {
-    logger.info('Fetching model metadata from OpenRouter API');
-    const response = await createLlmFetch()(OPENROUTER_MODELS_ENDPOINT, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        // No API key needed for public models endpoint
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `OpenRouter API error: ${response.status} ${response.statusText}`,
-      );
-    }
-
-    const data: OpenRouterResponse = await response.json();
-    const modelsMap = new Map<string, OpenRouterModel>();
-
-    for (const model of data.data) {
-      modelsMap.set(model.id, model);
-    }
-
-    // Update cache
-    metadataCache = {
-      models: modelsMap,
-      fetchedAt: Date.now(),
-    };
-
-    logger.info('OpenRouter metadata cached', {
-      modelCount: modelsMap.size,
-    });
-
-    return modelsMap;
-  } catch (error) {
-    logger.error('Failed to fetch OpenRouter metadata', error);
-
-    // Return stale cache if available
-    if (metadataCache) {
-      logger.warn('Using stale OpenRouter cache due to fetch error');
-      return metadataCache.models;
-    }
-
-    return new Map();
+  // Deduplicate concurrent in-flight requests (e.g. 100+ parallel model lookup queries)
+  if (pendingFetchPromise) {
+    return pendingFetchPromise;
   }
+
+  pendingFetchPromise = (async () => {
+    try {
+      logger.info('Fetching model metadata from OpenRouter API');
+      const fetchFn = createLlmFetch({ nativeProbeTimeoutMs: 3000 });
+      const response = await fetchFn(OPENROUTER_MODELS_ENDPOINT, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          // No API key needed for public models endpoint
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `OpenRouter API error: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      const data: OpenRouterResponse = await response.json();
+      const modelsMap = new Map<string, OpenRouterModel>();
+
+      for (const model of data.data) {
+        modelsMap.set(model.id, model);
+      }
+
+      // Update cache
+      metadataCache = {
+        models: modelsMap,
+        fetchedAt: Date.now(),
+      };
+
+      logger.info('OpenRouter metadata cached', {
+        modelCount: modelsMap.size,
+      });
+
+      return modelsMap;
+    } catch (error) {
+      logger.error('Failed to fetch OpenRouter metadata', error);
+
+      // Return stale cache if available
+      if (metadataCache) {
+        logger.warn('Using stale OpenRouter cache due to fetch error');
+        return metadataCache.models;
+      }
+
+      return new Map();
+    } finally {
+      pendingFetchPromise = null;
+    }
+  })();
+
+  return pendingFetchPromise;
 }
 
 /**
@@ -235,5 +249,6 @@ export async function getReasoningTokenCost(
  */
 export function clearMetadataCache(): void {
   metadataCache = null;
+  pendingFetchPromise = null;
   logger.info('OpenRouter metadata cache cleared');
 }
