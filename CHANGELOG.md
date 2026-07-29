@@ -1,3 +1,20 @@
+## [0.8.36] - 2026-07-30
+
+### 🚀 Features
+
+- **Batch Pending Queue Claims**: Batch claims and merges multiple pending user messages into a single prompt for smoother multi-message processing.
+- **Instruction Hot-Reload**: Automatically hot-reloads workspace instruction files (`agents.md`, etc.) via content fingerprinting without requiring session restarts.
+
+### 🐛 Fixes
+
+- **Queue Claim State**: Ensured merged keeper messages persist correctly in the database and absorbed messages are cleaned up upon batch claim.
+- **Character Count Offset Preview**: Corrected hard-cut file preview handling to operate on character counts instead of byte offsets.
+- **Model Caching & Metadata Fetch**: Added persistent model caching and single-flight metadata fetching for AI service calls.
+
+### 🔧 Internal
+
+- **Dependency Updates**: Updated Rust backend dependencies (`serde`, `tokio`, `futures`, `base64`, `glob`, `ignore`, `async-trait`, `jsonschema`, and Tauri plugins).
+
 ## [0.8.35] - 2026-07-27
 
 ### 🚀 Features
