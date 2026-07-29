@@ -33,17 +33,17 @@ See [README.md](README.md) for detailed setup instructions.
 
 ### Development Scripts & Workflow
 
-| Command | Purpose |
-|---------|---------|
-| `pnpm dev` | Start Vite dev server (frontend only) |
-| `pnpm tauri dev` | Start full Tauri desktop app with hot reload |
-| `pnpm build` | Build frontend for production |
-| `pnpm tauri build` | Create production desktop app bundle |
-| `pnpm lint` | Run ESLint on TypeScript/React code |
-| `pnpm format` | Format code with Prettier |
-| `pnpm rust:fmt` | Check Rust formatting with rustfmt |
-| `pnpm rust:clippy` | Run Rust linter (clippy) |
-| `pnpm dead-code` | Find unused code with unimported |
+| Command                  | Purpose                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `pnpm dev`               | Start Vite dev server (frontend only)                                              |
+| `pnpm tauri dev`         | Start full Tauri desktop app with hot reload                                       |
+| `pnpm build`             | Build frontend for production                                                      |
+| `pnpm tauri build`       | Create production desktop app bundle                                               |
+| `pnpm lint`              | Run ESLint on TypeScript/React code                                                |
+| `pnpm format`            | Format code with Prettier                                                          |
+| `pnpm rust:fmt`          | Check Rust formatting with rustfmt                                                 |
+| `pnpm rust:clippy`       | Run Rust linter (clippy)                                                           |
+| `pnpm dead-code`         | Find unused code with unimported                                                   |
 | `pnpm refactor:validate` | **Complete validation pipeline** (lint, format, Rust validation, build, dead-code) |
 
 **Workflow Recommendation:** Always run `pnpm refactor:validate` after any code changes to ensure quality and build integrity.
@@ -51,22 +51,26 @@ See [README.md](README.md) for detailed setup instructions.
 ### Key Architecture Patterns
 
 **Agent V2 Architecture (Session-Isolated):**
+
 - Per-Session Tool Instances: Each agent session gets isolated `MCPServiceProxy` with dedicated builtin server instances
 - Session-Specific MCP Managers: Separate `HttpSessionManager` and `SessionMCPManager` per session
 - Context Registry System: Dynamic context providers (time/location, skills) inject state into system prompts
 - Rust-Orchestrated Workflows: Think-Act-Observe loop managed entirely in Rust backend (`AgentSessionManager`)
 
 **MCP Integration Architecture:**
+
 - External MCP Servers: Stdio/HTTP protocol via `rmcp` library, managed by session-isolated managers
 - Builtin MCP Servers: Native Rust implementations via `BuiltinMCPServer` trait (Planning, Knowledge, Browser, Workspace, Content Store, etc.)
 - Unified Tool Discovery: `MCPServiceProxy` routes calls to builtin or external servers transparently
 
 **Feature-Based Organization:**
+
 - Each feature in `src/features/` typically contains components, hooks, and logic specific to that feature
 - Compound component patterns (e.g., `Chat.Header`, `Chat.Messages`, `Chat.Input`)
 - React Context providers for state sharing (`ChatProvider`, `AgentSessionProvider`, `AgentChatProvider`)
 
 **Service Layer Pattern:**
+
 - `src/lib/backend/` contains Tauri command wrappers with centralized `safeInvoke()` utility
 - Centralized logging via `getLogger('ComponentName')` instead of console methods
 - All API communication through typed service modules with error handling
@@ -74,12 +78,14 @@ See [README.md](README.md) for detailed setup instructions.
 ### Coding Style
 
 **General:**
+
 - 2 spaces indentation across all files
 - Descriptive variable names in both Rust and TypeScript
 - Consistent naming conventions for files and directories
 - All comments in English
 
 **Rust Backend (`src-tauri/`):**
+
 - Follow [Rust Style Guide](https://doc.rust-lang.org/1.0.0/style/) and use `rustfmt`
 - snake_case for functions, variables, module names
 - PascalCase for types, structs, enums
@@ -87,6 +93,7 @@ See [README.md](README.md) for detailed setup instructions.
 - Explicit error handling with `Result<T, E>` types
 
 **Frontend (`src/`):**
+
 - Follow Prettier and ESLint configurations
 - camelCase for variables and functions
 - PascalCase for React components and TypeScript interfaces
@@ -95,6 +102,7 @@ See [README.md](README.md) for detailed setup instructions.
 - **Never use `any`** — use precise types, `unknown` with type guards, or Zod schemas for validation
 
 **CSS/Styling:**
+
 - Use `shadcn/ui` components as primary building blocks
 - Tailwind CSS utility classes (avoid arbitrary class names)
 - Custom classes in CSS files or safelist in `tailwind.config.js` if needed
@@ -118,6 +126,7 @@ See [Type Safety Refactoring Plan](../docs/refactoring/type-safety-refactoring-p
 ### File Organization
 
 **Frontend (`src/`):**
+
 ```
 src/
 ├── app/              # App entry, root layout, global providers
@@ -134,6 +143,7 @@ src/
 ```
 
 **Backend (`src-tauri/src/`):**
+
 ```
 src-tauri/src/
 ├── agent/            # Agent orchestration (session lifecycle, LLM interaction, tool execution)

@@ -10,6 +10,7 @@
 //!    rather than going Idle with an orphaned queue. Cancel may discard instead.
 
 use crate::agent::events::AgentEvent;
+use crate::agent::message_merge::{merge_user_message_attachments, merge_user_message_contents};
 use crate::agent::state::AgentSession;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
@@ -359,6 +360,11 @@ pub async fn claim_all_pending_messages(
         .await;
     }
 
+    let mut merged_message = fetched_messages[0].clone();
+    merged_message.content = merge_user_message_contents(&fetched_messages);
+    merged_message.attachments = merge_user_message_attachments(&fetched_messages);
+    merged_message.updated_at = chrono::Utc::now().timestamp_millis();
+
     let absorbed_ids: Vec<String> = fetched_messages
         .iter()
         .skip(1)
@@ -366,20 +372,18 @@ pub async fn claim_all_pending_messages(
         .collect();
 
     if let Err(e) = get_pending_queue_repository()
-        .commit_merged_claim(&fetched_messages[0], &absorbed_ids)
+        .commit_merged_claim(&merged_message, &absorbed_ids)
         .await
     {
         restore_front_pending_messages(active_sessions, session_id, &claim_ids).await;
         return Err(e.to_string());
     }
 
-    for message in &fetched_messages {
-        push_message_to_session_cache(active_sessions, session_id, message).await;
-        emit_message_added(app_handle, session_id, message).await?;
-    }
+    push_message_to_session_cache(active_sessions, session_id, &merged_message).await;
+    emit_message_added(app_handle, session_id, &merged_message).await?;
     emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
 
-    Ok(fetched_messages)
+    Ok(vec![merged_message])
 }
 
 async fn claim_single_pending_message(

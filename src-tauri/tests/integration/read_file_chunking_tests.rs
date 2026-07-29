@@ -294,19 +294,12 @@ async fn read_file_guides_single_line_retry_when_next_line_is_too_large() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains(
-            "Inspect that line directly with readFile({\"path\": \"huge-line.txt\", \"offset\": 1, \"size\": 1})"
-        ),
-        "response should include an exact single-line retry command: {text}"
+        text.contains("Line 1 is too large to fit in one response"),
+        "response should report single-line size limit: {text}"
     );
     assert!(
-        text.contains("Do not rerun readFile on a broader range"),
-        "response should warn against repeating a too-broad read: {text}"
-    );
-    #[cfg(feature = "workspace-edit-file")]
-    assert!(
-        text.contains("rerun the same 1-line range without showLineAnchors"),
-        "anchored retry guidance should mention dropping anchors if needed: {text}"
+        text.contains("run a shell command to extract a character slice"),
+        "response should guide shell character slice extraction: {text}"
     );
 
     let structured = result
