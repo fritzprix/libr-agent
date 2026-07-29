@@ -201,6 +201,8 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
         keeper: &crate::models::chat::Message,
         absorbed_message_ids: &[String],
     ) -> Result<(), DbError> {
+        use crate::entity::message;
+        use crate::entity::prelude::Message as MessageEntity;
         use crate::repositories::message_repository::SqliteMessageRepository;
         use sea_orm::EntityTrait;
 
@@ -212,6 +214,19 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
             keeper.created_at,
         )
         .await?;
+
+        let keeper_model = SqliteMessageRepository::message_to_active_model(keeper)?;
+        MessageEntity::insert(keeper_model)
+            .on_conflict(SqliteMessageRepository::get_upsert_on_conflict())
+            .exec(&txn)
+            .await?;
+
+        if !absorbed_message_ids.is_empty() {
+            MessageEntity::delete_many()
+                .filter(message::Column::Id.is_in(absorbed_message_ids.iter().cloned()))
+                .exec(&txn)
+                .await?;
+        }
 
         let mut all_claimed_ids = vec![keeper.id.clone()];
         all_claimed_ids.extend(absorbed_message_ids.iter().cloned());
