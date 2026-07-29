@@ -316,7 +316,7 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
         .expect("index after capped claim");
     assert_eq!(index_after.len(), 2);
 
-    // Keeper message preserved in DB; absorbed messages deleted from DB on merged claim.
+    // Merged keeper preserved in DB; absorbed messages deleted; remainder preserved.
     let keeper = message_repo
         .get_by_ids(vec!["cap-msg-0".to_string()])
         .await
@@ -329,6 +329,15 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
     assert!(
         absorbed.is_empty(),
         "absorbed message cap-msg-1 should be deleted from DB"
+    );
+    let remainder = message_repo
+        .get_by_ids(vec![format!("cap-msg-{batch_cap}")])
+        .await
+        .expect("remainder lookup");
+    assert_eq!(
+        remainder.len(),
+        1,
+        "unclaimed remainder message should remain in DB"
     );
 }
 

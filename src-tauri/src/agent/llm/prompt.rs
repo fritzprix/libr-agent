@@ -51,6 +51,44 @@ async fn load_first_instruction_file(
     None
 }
 
+/// Compute a lightweight FNV-1a fingerprint of all candidate instruction files
+/// that exist and are non-empty in the session workspace.
+///
+/// The fingerprint is embedded in the stable prompt cache key so that any
+/// on-disk change (edit/save of agents.md, SOUL.md, etc.) causes an automatic
+/// cache miss on the next LLM call — no file watcher required.
+async fn instruction_files_fingerprint(session_id: &str) -> u64 {
+    let Some(workspace) = get_session_workspace_dir(session_id) else {
+        return 0;
+    };
+
+    // FNV-1a 64-bit constants.
+    const FNV_OFFSET: u64 = 14695981039346656037;
+    const FNV_PRIME: u64 = 1099511628211;
+
+    let mut hash = FNV_OFFSET;
+    let all_candidates = WORKSPACE_INSTRUCTION_FILES
+        .iter()
+        .chain(SOUL_INSTRUCTION_FILES.iter());
+
+    for &filename in all_candidates {
+        let path = workspace.join(filename);
+        if let Ok(content) = tokio::fs::read_to_string(&path).await {
+            // Mix filename into hash so renames also cause invalidation.
+            for byte in filename.bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+            for byte in content.bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+        }
+    }
+
+    hash
+}
+
 /// Reads the first workspace behavior instruction file that exists for the session.
 async fn load_workspace_agent_instructions(session_id: &str) -> Vec<(String, String)> {
     let Some(workspace) = get_session_workspace_dir(session_id) else {
@@ -100,7 +138,12 @@ pub(crate) async fn build_session_system_prompt_split(
     };
 
     let agent_config = crate::agent::resolve_agent_config(&session_metadata).await?;
-    let source_key = crate::agent::stable_prompt_source_key(&agent_config);
+    let file_fingerprint = instruction_files_fingerprint(session_id).await;
+    let source_key = format!(
+        "{}:{:016x}",
+        crate::agent::stable_prompt_source_key(&agent_config),
+        file_fingerprint
+    );
 
     // --- Build (or reuse) stable prefix ---
     let stable_prefix = {

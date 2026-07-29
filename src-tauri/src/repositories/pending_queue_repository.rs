@@ -208,6 +208,21 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
 
         let txn = self.db.begin().await?;
 
+        let active_model = SqliteMessageRepository::message_to_active_model(keeper)?;
+        crate::entity::message::Entity::insert(active_model)
+            .on_conflict(SqliteMessageRepository::get_upsert_on_conflict())
+            .exec(&txn)
+            .await?;
+
+        if !absorbed_message_ids.is_empty() {
+            crate::entity::message::Entity::delete_many()
+                .filter(
+                    crate::entity::message::Column::Id.is_in(absorbed_message_ids.iter().cloned()),
+                )
+                .exec(&txn)
+                .await?;
+        }
+
         SqliteMessageRepository::update_session_last_message_at(
             &txn,
             &keeper.session_id,
