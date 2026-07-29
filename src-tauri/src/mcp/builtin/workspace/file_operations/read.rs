@@ -40,7 +40,15 @@ struct ReadFileChunk {
     truncated: bool,
     next_start_line: Option<usize>,
     suggested_end_line: Option<usize>,
+    /// True when the first line in the requested range was wider than the
+    /// inline limit. The `content` field will still contain a hard byte-cut
+    /// preview of that line rather than being empty.
     next_line_too_large: bool,
+    /// When `next_line_too_large` is true, this holds the number of Unicode
+    /// scalar values (chars) already shown in the hard-cut preview so the
+    /// agent can continue reading from the correct character offset within
+    /// the same line.
+    hard_cut_chars_shown: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -267,18 +275,38 @@ impl WorkspaceServer {
                 }
                 if chunk.next_line_too_large {
                     let target_line = chunk.next_start_line.unwrap_or(chunk.displayed_start_line);
-                    let mut message = format!(
-                        "The next unread line is too large to show safely as a complete line. Inspect that line directly with readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 1}}).",
-                        path_str, target_line
-                    );
+                    let already_shown = chunk.hard_cut_chars_shown;
+                    let mut message = if already_shown > 0 {
+                        // A hard-cut preview was shown; guide character-range continuation.
+                        format!(
+                            "Line {} is too large to fit in one response ({} characters already shown as a hard-cut preview). \
+                             To read more of that line, run a shell command to extract a character slice, e.g.: \
+                             `(Get-Content -Path \"{}\" -Raw -Encoding UTF8).Substring({})` on Windows (char offset), \
+                             or `cut -c{}-{} \"{}\"` on Unix (char offset).",
+                            target_line,
+                            already_shown,
+                            path_str,
+                            already_shown,
+                            already_shown + 1,
+                            already_shown + visible_content_limit_bytes / 3,
+                            path_str
+                        )
+                    } else {
+                        format!(
+                            "The next unread line is too large to show safely as a complete line. Inspect that line directly with readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 1}}).",
+                            path_str, target_line
+                        )
+                    };
                     if show_line_anchors {
                         message.push_str(
                             " If that still truncates, rerun the same 1-line range without showLineAnchors.",
                         );
                     }
-                    message.push_str(
-                        " Do not rerun readFile on a broader range until you have narrowed the line range.",
-                    );
+                    if already_shown == 0 {
+                        message.push_str(
+                            " Do not rerun readFile on a broader range until you have narrowed the line range.",
+                        );
+                    }
                     summary_notes.push(message);
                 }
                 let summary_suffix = if summary_notes.is_empty() {
@@ -318,7 +346,8 @@ impl WorkspaceServer {
                     "truncated": chunk.truncated,
                     "nextStartLine": chunk.next_start_line,
                     "suggestedEndLine": chunk.suggested_end_line,
-                    "nextLineTooLarge": chunk.next_line_too_large
+                    "nextLineTooLarge": chunk.next_line_too_large,
+                    "hardCutCharsShown": if chunk.hard_cut_chars_shown > 0 { Some(chunk.hard_cut_chars_shown) } else { None }
                 }))))
             }
             Err(e) => {
@@ -640,6 +669,7 @@ where
     let mut truncated = false;
     let mut next_start_line = None;
     let mut next_line_too_large = false;
+    let mut hard_cut_chars_shown: usize = 0;
 
     for (current_line, line_result) in (1usize..).zip(lines) {
         let line = line_result.map_err(|e| {
@@ -664,6 +694,25 @@ where
                 content_bytes = candidate_len;
                 result_lines.push(rendered_line);
             } else if result_lines.is_empty() {
+                // This single line is wider than the limit.  Rather than
+                // returning an empty preview (which forces the agent into a
+                // dead-end "size:1 also shows nothing" loop), hard-cut the
+                // line at the byte limit and emit the partial content.
+                // `next_line_too_large` stays true so callers know the full
+                // line was not delivered, but `hard_cut_chars_shown` lets the
+                // agent continue reading from the correct character offset.
+                let cut_limit = visible_content_limit_bytes;
+                let mut cut_at = cut_limit.min(rendered_line.len());
+                while cut_at > 0 && !rendered_line.is_char_boundary(cut_at) {
+                    cut_at -= 1;
+                }
+                let preview = &rendered_line[..cut_at];
+                let chars_shown = preview.chars().count();
+                hard_cut_chars_shown = chars_shown;
+                result_lines.push(format!(
+                    "{} …[hard-cut at {} chars, line continues]",
+                    preview, chars_shown
+                ));
                 truncated = true;
                 next_line_too_large = true;
                 next_start_line = Some(current_line);
@@ -699,6 +748,7 @@ where
             next_start_line: None,
             suggested_end_line: None,
             next_line_too_large: false,
+            hard_cut_chars_shown: 0,
         });
     }
 
@@ -734,6 +784,7 @@ where
         next_start_line,
         suggested_end_line,
         next_line_too_large,
+        hard_cut_chars_shown,
     })
 }
 
