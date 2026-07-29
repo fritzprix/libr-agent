@@ -177,7 +177,7 @@ export class OpenAIService extends BaseAIService<
       const models = await fetchOpenAIModels({
         openai: this.openai,
         provider,
-        withRetry: (fn) => this.withRetry(fn),
+        withRetry: (fn) => this.withListModelsRetry(fn),
         logger,
       });
 

@@ -322,7 +322,9 @@ impl SqliteMessageRepository {
     }
 
     /// Convert Message type to SeaORM ActiveModel
-    fn message_to_active_model(message: &Message) -> Result<message::ActiveModel, DbError> {
+    pub(crate) fn message_to_active_model(
+        message: &Message,
+    ) -> Result<message::ActiveModel, DbError> {
         // Serialize structured types to JSON strings for DB storage
         let content_json = serde_json::to_string(&message.content).map_err(|e| {
             DbError::SerializationError(format!("Failed to serialize content: {}", e))
@@ -374,7 +376,7 @@ impl SqliteMessageRepository {
     }
 
     /// Helper to get the OnConflict strategy for upserting messages
-    fn get_upsert_on_conflict() -> sea_orm::sea_query::OnConflict {
+    pub(crate) fn get_upsert_on_conflict() -> sea_orm::sea_query::OnConflict {
         use sea_orm::sea_query::OnConflict;
         OnConflict::column(message::Column::Id)
             .update_columns([
@@ -398,7 +400,7 @@ impl SqliteMessageRepository {
             .to_owned()
     }
 
-    async fn update_session_last_message_at<C>(
+    pub(crate) async fn update_session_last_message_at<C>(
         db: &C,
         session_id: &str,
         last_message_at: i64,

@@ -9,6 +9,10 @@ import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
 import { reportListModelsFallback } from '@/lib/ai-service/list-models-errors';
+import {
+  getStoredModelCache,
+  setStoredModelCache,
+} from '@/lib/ai-service/model-cache-storage';
 
 const logger = getLogger('useAgentModels');
 type DynamicModelMap = Record<string, ModelInfo>;
@@ -92,7 +96,7 @@ export const useAgentModels = (provider?: string) => {
         );
         const modelList = await withTimeout(service.listModels(), 20000);
 
-        return modelList.reduce(
+        const modelsRecord = modelList.reduce(
           (acc, modelInfo) => {
             const k = modelInfo.id || modelInfo.name;
             acc[k] = modelInfo;
@@ -100,15 +104,26 @@ export const useAgentModels = (provider?: string) => {
           },
           {} as Record<string, ModelInfo>,
         );
+
+        if (Object.keys(modelsRecord).length > 0) {
+          setStoredModelCache(p, modelsRecord);
+        }
+
+        return modelsRecord;
       } catch (error) {
         logger.error('Failed to fetch models locally:', error);
+        const storedModels = getStoredModelCache(p);
+        const hasCachedModels = !!(
+          storedModels && Object.keys(storedModels).length > 0
+        );
         reportListModelsFallback({
           provider: p,
           baseUrl: providerConfig.baseUrl,
           reason: 'api_error',
           error,
+          hasCachedModels,
         });
-        return {};
+        return storedModels || {};
       }
     },
     [providerConfig],
@@ -120,6 +135,7 @@ export const useAgentModels = (provider?: string) => {
     isValidating: isRefreshing,
   } = useSWR<DynamicModelMap>(swrKey, fetchDynamicModels, {
     revalidateOnFocus: false,
+    keepPreviousData: true,
     dedupingInterval: 30000,
   });
 
@@ -175,12 +191,21 @@ export const useAgentModels = (provider?: string) => {
       };
     }
 
-    // Otherwise, show static or dynamic models
+    // Otherwise, show dynamic models, stored persistent models, or static fallback
     const staticModels =
       llmConfigManager.getModelsForProvider(provider as AIServiceProvider) ||
       {};
+    const storedModels = getStoredModelCache(provider);
 
-    return Object.keys(dynamicModels).length > 0 ? dynamicModels : staticModels;
+    if (Object.keys(dynamicModels).length > 0) {
+      return dynamicModels;
+    }
+
+    if (storedModels && Object.keys(storedModels).length > 0) {
+      return storedModels;
+    }
+
+    return staticModels;
   }, [provider, dynamicModels, providerConfig]);
 
   return {

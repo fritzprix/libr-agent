@@ -18,6 +18,10 @@ import {
 import { useSettings } from '../hooks/use-settings';
 import { getLogger } from '@/lib/logger';
 import { reportListModelsFallback } from '@/lib/ai-service/list-models-errors';
+import {
+  getStoredModelCache,
+  setStoredModelCache,
+} from '@/lib/ai-service/model-cache-storage';
 
 const DEFAULT_MODEL_INFO: ModelInfo = {
   contextWindow: 0,
@@ -132,17 +136,26 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
           modelsRecord[key] = modelInfo;
         }
 
+        if (Object.keys(modelsRecord).length > 0) {
+          setStoredModelCache(provider, modelsRecord);
+        }
+
         logger.info(`Fetched ${modelList.length} models from ${provider}`);
         return modelsRecord;
       } catch (error) {
         logger.error('Failed to fetch models:', error);
+        const storedModels = getStoredModelCache(provider);
+        const hasCachedModels = !!(
+          storedModels && Object.keys(storedModels).length > 0
+        );
         reportListModelsFallback({
           provider,
           baseUrl: serviceConfigs[provider as AIServiceProvider]?.baseUrl,
           reason: 'api_error',
           error,
+          hasCachedModels,
         });
-        return {};
+        return storedModels || {};
       }
     },
     [serviceConfigs],
@@ -156,16 +169,23 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   } = useSWR(swrCacheKey, fetchDynamicModels, {
     revalidateOnFocus: false,
     staleWhileRevalidate: true,
+    keepPreviousData: true,
     dedupingInterval: 30000, // 30 seconds
   });
 
   // 현재 프로바이더의 모델 목록 계산
   const models = useMemo(() => {
     const staticModels = llmConfigManager.getModelsForProvider(provider) || {};
+    const storedModels = getStoredModelCache(provider);
 
     // 동적 목록이 provider별로 있으면 우선 사용
     if (Object.keys(dynamicModels).length > 0) {
       return dynamicModels;
+    }
+
+    // 이전에 성공한 영속 캐시 목록이 있으면 즉시 활용 (0ms)
+    if (storedModels && Object.keys(storedModels).length > 0) {
+      return storedModels;
     }
 
     return staticModels;

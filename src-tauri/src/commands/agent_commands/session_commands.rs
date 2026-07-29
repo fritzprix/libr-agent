@@ -53,19 +53,28 @@ pub async fn agent_open_session(
         .await?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let repo = crate::state::get_message_repository();
-    let message_slice = repo
+    let mut message_slice = repo
         .get_recent_slice(
             &session_id,
             initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT),
         )
         .await
         .map_err(|e| format!("Failed to load recent session messages: {}", e))?;
-    let pending_approvals = {
-        let active = manager.active_sessions_arc();
+
+    // Pending prompts are stored in `messages` plus a `pending_queue` index.
+    // Strip only true waiters (LayeredPendingQueue). Never strip:
+    // - IDs already on the live active message stack (promoted / Idle path)
+    // - Idle/Paused incomplete-turn tip (session-start request must stay on stack)
+    let active = manager.active_sessions_arc();
+    let (mut protect_ids, pending_approvals) = {
         let sessions = active.read().await;
         if let Some(active_session) = sessions.get(&session_id) {
+            let protect_ids = {
+                let messages = active_session.messages.read().await;
+                messages.iter().map(|m| m.id.clone()).collect()
+            };
             let approvals = active_session.pending_approvals.read().await;
-            approvals
+            let pending_approvals = approvals
                 .iter()
                 .map(|(tool_call_id, data)| PendingApprovalSnapshot {
                     tool_call_id: tool_call_id.clone(),
@@ -76,11 +85,30 @@ pub async fn agent_open_session(
                     description: data.description.clone(),
                     input_preview: data.input_preview.clone(),
                 })
-                .collect()
+                .collect();
+            (protect_ids, pending_approvals)
         } else {
-            Vec::new()
+            (std::collections::HashSet::new(), Vec::new())
         }
     };
+
+    if matches!(
+        session.status,
+        crate::repositories::SessionStatus::Idle | crate::repositories::SessionStatus::Paused
+    ) {
+        if let Some(tip_id) =
+            crate::agent::pending_queue::incomplete_turn_user_id(&message_slice.items)
+        {
+            protect_ids.insert(tip_id.to_string());
+        }
+    }
+
+    crate::agent::pending_queue::strip_pending_queue_messages_with_protect(
+        &session_id,
+        &mut message_slice.items,
+        &protect_ids,
+    )
+    .await?;
     let runtime_state = manager.get_runtime_state(&session_id).await;
 
     Ok(AgentOpenSessionResponse {

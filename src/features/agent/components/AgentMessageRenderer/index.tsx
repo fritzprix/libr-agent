@@ -95,39 +95,6 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   const handleUIAction = useUIActionHandler(contentRef);
   const resourceRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  useEffect(() => {
-    if (!expandResources) {
-      return;
-    }
-
-    const observers: ResizeObserver[] = [];
-    Object.values(resourceRefs.current).forEach((element) => {
-      if (!element) {
-        return;
-      }
-
-      let lastHeight = element.getBoundingClientRect().height;
-      const observer = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          const height = entry.contentRect.height;
-          if (height > lastHeight) {
-            try {
-              element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            } catch {
-              // ignore
-            }
-          }
-          lastHeight = height;
-        }
-      });
-
-      observer.observe(element);
-      observers.push(observer);
-    });
-
-    return () => observers.forEach((observer) => observer.disconnect());
-  }, [expandResources, renderItems]);
-
   const remoteDomProps = useMemo(
     () => ({
       library: basicComponentLibrary,

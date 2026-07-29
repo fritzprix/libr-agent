@@ -1,4 +1,4 @@
-use crate::agent::references::build_default_registry;
+use crate::agent::message_merge::{merge_user_message_attachments, merge_user_message_contents};
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 
@@ -15,7 +15,7 @@ pub(crate) async fn resolve_message_references(
     session_id: &str,
     assistant_id: Option<&str>,
 ) -> Vec<Message> {
-    let registry = build_default_registry(session_id, assistant_id).await;
+    let registry = crate::agent::references::build_default_registry(session_id, assistant_id).await;
     let mut result = Vec::with_capacity(messages.len());
 
     for mut msg in messages {
@@ -49,9 +49,9 @@ pub(crate) async fn resolve_message_references(
 /// This is only expected after a crash-recovery scenario where an unanswered
 /// user message sits at the tail of history and the user sends another message
 /// before the agent can respond. The content of subsequent user messages is
-/// appended to the first with a separator. IDs and metadata from the first
-/// message are preserved. This operates on the CompletionRequest payload only —
-/// stored messages are never mutated.
+/// merged into the first (same separator as durable pending-queue claim).
+/// IDs and metadata from the first message are preserved. This operates on the
+/// CompletionRequest payload only — stored messages are never mutated.
 pub fn merge_consecutive_user_messages(messages: Vec<Message>) -> Vec<Message> {
     if messages.len() < 2 {
         return messages;
@@ -74,13 +74,9 @@ pub fn merge_consecutive_user_messages(messages: Vec<Message>) -> Vec<Message> {
 
     let mut result: Vec<Message> = head.to_vec();
     let mut merged = trailing_users[0].clone();
-
+    merged.content = merge_user_message_contents(trailing_users);
+    merged.attachments = merge_user_message_attachments(trailing_users);
     for msg in trailing_users.iter().skip(1) {
-        merged.content.push(MCPContent::Text {
-            text: "\n\n---\n\n".to_string(),
-            is_error: None,
-        });
-        merged.content.extend(msg.content.clone());
         log::info!(
             "Merged trailing consecutive user messages: base={}, appended={}",
             merged.id,

@@ -104,9 +104,11 @@ pub async fn create_basic_isolated_command(
     let script_path = tmp_dir.join(format!("cmd_{}_{}.ps1", config.session_id, seq));
 
     // Plain readable script — no obfuscation, AV-friendly
+    // Set UTF-8 console encoding to prevent UnicodeEncodeError on cp949/other non-UTF8 locales
     let script_content = format!(
         "$ErrorActionPreference = 'Stop'\n\
          [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
+         [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n\
          try {{\n\
              {}\n\
          }} catch {{\n\
