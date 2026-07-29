@@ -847,11 +847,14 @@ export function useAgentChatScroll({
     const previousLatestMessage = previousLatestMessageRef.current;
     previousLatestMessageRef.current = latestMessage;
 
+    // Only re-arm follow when the viewport is actually at the visual bottom.
+    // Using alignment-active here re-enabled follow after the user scrolled up
+    // during session hydrate / bottom snap, which fought their scroll intent
+    // and caused stick-to-bottom yank/glitch on the next content resize.
     if (
       groupedMessages.length > 0 &&
       hasHydratedMessagesRef.current.hasMessages &&
-      (visualBottomRef.current ||
-        isBottomAlignmentActive(bottomAlignmentPhaseRef.current))
+      visualBottomRef.current
     ) {
       resumeBottomFollow('bottom-context-restored');
     }

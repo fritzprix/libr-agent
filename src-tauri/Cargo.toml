@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.8.35"
+version = "0.8.36"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -72,7 +72,7 @@ chromiumoxide = { version = "0.9.1", features = ["fetcher", "rustls", "zip8"] }
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 handlebars = "6.4"
 ammonia = "4.0"
-jsonschema = "0.46"
+jsonschema = "0.49"
 
 # Windows-only: decode process output captured from stdio pipes using the system ANSI code page
 windows-sys = { version = "0.59", features = ["Win32_Globalization"] }
@@ -84,7 +84,7 @@ lopdf = "0.31"            # PDF parsing
 pdf-extract = "0.12"       # Better PDF text extraction
 # tantivy = "0.21"       # BM25 text search - temporarily disabled due to zstd conflicts
 bm25 = { version = "2.3.2", features = ["parallelism"] }  # BM25 search with parallel indexing
-base64 = "0.22.1"
+base64 = "0.23.0"
 once_cell = "1.21"        # Lazy static initialization
 bincode = "1.3"           # Binary serialization for index persistence
 dotenvy = "0.15"

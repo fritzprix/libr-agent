@@ -1,12 +1,17 @@
 use crate::common;
 
-use tauri_mcp_agent_lib::agent::state::{PendingEvent, PendingEventManager};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tauri::test::MockRuntime;
+use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEvent, PendingEventManager};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
+use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{
     MessageRepository, PendingQueueRepository, SessionMetadata, SessionRepository, SessionStatus,
     SqliteMessageRepository, SqlitePendingQueueRepository, SqliteSessionRepository,
 };
+use tokio::sync::RwLock;
 
 fn build_session_metadata(session_id: &str) -> SessionMetadata {
     let now = chrono::Utc::now().timestamp_millis();
@@ -43,11 +48,23 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
 }
 
 fn build_user_message(session_id: &str, id: &str, created_at: i64) -> Message {
+    build_user_message_with_text(session_id, id, created_at, &format!("text-{id}"))
+}
+
+fn build_user_message_with_text(
+    session_id: &str,
+    id: &str,
+    created_at: i64,
+    text: &str,
+) -> Message {
     Message {
         id: id.to_string(),
         session_id: session_id.to_string(),
         role: "user".to_string(),
-        content: vec![],
+        content: vec![MCPContent::Text {
+            text: text.to_string(),
+            is_error: None,
+        }],
         tool_calls: None,
         tool_call_id: None,
         is_streaming: Some(false),
@@ -64,6 +81,264 @@ fn build_user_message(session_id: &str, id: &str, created_at: i64) -> Message {
         error: None,
         metadata: None,
     }
+}
+
+fn build_agent_session(session_id: &str) -> AgentSession {
+    use std::sync::atomic::AtomicBool;
+    use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
+    use tauri_mcp_agent_lib::agent::state::CompactionRuntimeState;
+    use tokio_util::sync::CancellationToken;
+
+    AgentSession {
+        metadata: build_session_metadata(session_id),
+        is_running: false,
+        active_permit: None,
+        status_transition: Arc::new(tokio::sync::RwLock::new(None)),
+        transition_lock: Arc::new(tokio::sync::Mutex::new(())),
+        cancellation_token: CancellationToken::new(),
+        yolo_mode: Arc::new(AtomicBool::new(false)),
+        unsafe_mode: Arc::new(AtomicBool::new(false)),
+        cancel_pending: Arc::new(AtomicBool::new(false)),
+        pending_execution: None,
+        messages: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+        cache_initialized: Arc::new(AtomicBool::new(true)),
+        last_synced_at: Arc::new(RwLock::new(None)),
+        repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
+        repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
+        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
+        pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
+        pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+        context_registry: Arc::new(ContextRegistry::new()),
+        compact_context: Arc::new(RwLock::new(None)),
+        compaction: CompactionRuntimeState::new(),
+        expected_response_id: Arc::new(RwLock::new(None)),
+        cached_stable_prompt: Arc::new(RwLock::new(None)),
+        last_completion_request: Arc::new(RwLock::new(None)),
+        last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+    }
+}
+
+#[tokio::test]
+async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("claim-all-pending-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let msg_a = build_user_message_with_text(&session_id, "msg-a", 1_000, "first");
+    let msg_b = build_user_message_with_text(&session_id, "msg-b", 2_000, "second");
+    let msg_c = build_user_message_with_text(&session_id, "msg-c", 3_000, "third");
+
+    for msg in [&msg_a, &msg_b, &msg_c] {
+        tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+            &active_sessions,
+            app_handle,
+            &session_id,
+            msg,
+        )
+        .await
+        .expect("enqueue should succeed");
+    }
+
+    let pending_before = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending before claim");
+    assert_eq!(pending_before.len(), 3);
+
+    let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
+        &active_sessions,
+        app_handle,
+        &session_id,
+    )
+    .await
+    .expect("claim all should succeed");
+
+    assert_eq!(
+        claimed.len(),
+        1,
+        "multiple pending messages should merge into 1 single user message"
+    );
+    assert_eq!(claimed[0].id, "msg-a");
+
+    let merged_text = match &claimed[0].content[0] {
+        tauri_mcp_agent_lib::mcp::types::MCPContent::Text { text, .. } => text.as_str(),
+        _ => panic!("Expected text content"),
+    };
+    assert_eq!(merged_text, "first\n\n---\n\nsecond\n\n---\n\nthird");
+
+    let pending_after = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending after claim");
+    assert!(pending_after.is_empty());
+
+    let cached_ids: Vec<String> = active_sessions
+        .read()
+        .await
+        .get(&session_id)
+        .expect("session should exist")
+        .messages
+        .read()
+        .await
+        .iter()
+        .map(|msg| msg.id.clone())
+        .collect();
+    assert_eq!(cached_ids, vec!["msg-a"]);
+
+    let index_after = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("index list after claim");
+    assert!(index_after.is_empty());
+
+    let msg_a_rows = message_repo
+        .get_by_ids(vec!["msg-a".to_string()])
+        .await
+        .expect("merged message msg-a should exist in DB");
+    assert_eq!(msg_a_rows.len(), 1);
+
+    for msg_id in ["msg-b", "msg-c"] {
+        let rows = message_repo
+            .get_by_ids(vec![msg_id.to_string()])
+            .await
+            .expect("query DB for deleted message");
+        assert!(
+            rows.is_empty(),
+            "absorbed message {msg_id} should be deleted from DB"
+        );
+    }
+}
+
+#[tokio::test]
+async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("claim-cap-pending-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let batch_cap = tauri_mcp_agent_lib::agent::pending_queue::MAX_PENDING_CLAIM_BATCH;
+    let total = batch_cap + 2;
+    for i in 0..total {
+        let msg = build_user_message_with_text(
+            &session_id,
+            &format!("cap-msg-{i}"),
+            1_000 + i as i64,
+            &format!("text-{i}"),
+        );
+        tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+            &active_sessions,
+            app_handle,
+            &session_id,
+            &msg,
+        )
+        .await
+        .expect("enqueue should succeed");
+    }
+
+    let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
+        &active_sessions,
+        app_handle,
+        &session_id,
+    )
+    .await
+    .expect("claim all should succeed");
+
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].id, "cap-msg-0");
+
+    let pending_after = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending after capped claim");
+    assert_eq!(pending_after.len(), 2);
+    assert_eq!(pending_after[0].id, format!("cap-msg-{batch_cap}"));
+    assert_eq!(pending_after[1].id, format!("cap-msg-{}", batch_cap + 1));
+
+    let index_after = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("index after capped claim");
+    assert_eq!(index_after.len(), 2);
+
+    // Merged keeper preserved in DB; absorbed messages deleted; remainder preserved.
+    let keeper = message_repo
+        .get_by_ids(vec!["cap-msg-0".to_string()])
+        .await
+        .expect("keeper lookup");
+    assert_eq!(keeper.len(), 1);
+    let absorbed = message_repo
+        .get_by_ids(vec!["cap-msg-1".to_string()])
+        .await
+        .expect("absorbed lookup");
+    assert!(
+        absorbed.is_empty(),
+        "absorbed message cap-msg-1 should be deleted from DB"
+    );
+    let remainder = message_repo
+        .get_by_ids(vec![format!("cap-msg-{batch_cap}")])
+        .await
+        .expect("remainder lookup");
+    assert_eq!(
+        remainder.len(),
+        1,
+        "unclaimed remainder message should remain in DB"
+    );
 }
 
 #[tokio::test]
@@ -288,6 +563,219 @@ async fn stale_pending_index_after_promote_lets_terminate_delete_first_user_mess
     );
 }
 
+#[tokio::test]
+async fn strip_pending_queue_protects_active_stack_and_purges_stale_index() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+
+    let session_id = format!("protect-stack-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let promoted =
+        build_user_message_with_text(&session_id, "msg-promoted", 1_000, "already active");
+    let waiting = build_user_message_with_text(&session_id, "msg-waiting", 2_000, "still queued");
+
+    message_repo
+        .insert(&promoted)
+        .await
+        .expect("promoted message should persist");
+    message_repo
+        .insert(&waiting)
+        .await
+        .expect("waiting message should persist");
+    queue_repo
+        .enqueue(&session_id, &promoted.id, promoted.created_at)
+        .await
+        .expect("stale linger index for promoted");
+    queue_repo
+        .enqueue(&session_id, &waiting.id, waiting.created_at)
+        .await
+        .expect("true waiter index");
+
+    let mut slice = message_repo
+        .get_recent_slice(&session_id, 40)
+        .await
+        .expect("recent slice should load");
+
+    let mut protect_ids = std::collections::HashSet::new();
+    protect_ids.insert(promoted.id.clone());
+
+    let waiting_ids =
+        tauri_mcp_agent_lib::agent::pending_queue::strip_pending_queue_messages_with_protect(
+            &session_id,
+            &mut slice.items,
+            &protect_ids,
+        )
+        .await
+        .expect("strip with protect should succeed");
+
+    assert_eq!(waiting_ids, vec!["msg-waiting".to_string()]);
+    let filtered_ids: Vec<&str> = slice.items.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(
+        filtered_ids,
+        vec!["msg-promoted"],
+        "active-stack / promoted message must remain on transcript"
+    );
+
+    let queue_after = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("pending queue after stale purge");
+    assert_eq!(
+        queue_after
+            .iter()
+            .map(|e| e.message_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["msg-waiting"],
+        "stale linger row for promoted message must be purged"
+    );
+}
+
+#[tokio::test]
+async fn strip_pending_queue_keeps_answered_promoted_prompt_and_purges_index() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+
+    let session_id = format!("answered-stale-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let user = build_user_message_with_text(&session_id, "msg-user", 1_000, "answered");
+    let mut assistant = build_user_message(&session_id, "msg-assistant", 2_000);
+    assistant.role = "assistant".to_string();
+    assistant.content = vec![MCPContent::Text {
+        text: "done".to_string(),
+        is_error: None,
+    }];
+
+    message_repo
+        .insert(&user)
+        .await
+        .expect("user message should persist");
+    message_repo
+        .insert(&assistant)
+        .await
+        .expect("assistant message should persist");
+    queue_repo
+        .enqueue(&session_id, &user.id, user.created_at)
+        .await
+        .expect("stale linger index should persist");
+
+    let mut slice = message_repo
+        .get_recent_slice(&session_id, 40)
+        .await
+        .expect("recent slice should load");
+
+    let waiting_ids = tauri_mcp_agent_lib::agent::pending_queue::strip_pending_queue_messages(
+        &session_id,
+        &mut slice.items,
+    )
+    .await
+    .expect("strip should succeed");
+
+    assert!(
+        waiting_ids.is_empty(),
+        "answered prompt must not become a waiter: {waiting_ids:?}"
+    );
+    let filtered_ids: Vec<&str> = slice.items.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(filtered_ids, vec!["msg-user", "msg-assistant"]);
+
+    let queue_after = queue_repo
+        .list_by_session(&session_id)
+        .await
+        .expect("pending queue after answered stale purge");
+    assert!(
+        queue_after.is_empty(),
+        "answered linger row must be purged: {queue_after:?}"
+    );
+}
+
+#[tokio::test]
+async fn strip_pending_queue_keeps_idle_incomplete_tip_via_protect() {
+    // Idle session-start request with a stale pending_queue row must stay on the
+    // message stack (never re-enter pending / LayeredPendingQueue only).
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let queue_repo = SqlitePendingQueueRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+
+    let session_id = format!("idle-tip-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let tip = build_user_message_with_text(&session_id, "msg-tip", 1_000, "session start");
+    message_repo.insert(&tip).await.expect("tip should persist");
+    queue_repo
+        .enqueue(&session_id, &tip.id, tip.created_at)
+        .await
+        .expect("stale linger index");
+
+    let mut slice = message_repo
+        .get_recent_slice(&session_id, 40)
+        .await
+        .expect("recent slice should load");
+
+    let mut protect_ids = std::collections::HashSet::new();
+    if let Some(id) =
+        tauri_mcp_agent_lib::agent::pending_queue::incomplete_turn_user_id(&slice.items)
+    {
+        protect_ids.insert(id.to_string());
+    }
+
+    let waiting_ids =
+        tauri_mcp_agent_lib::agent::pending_queue::strip_pending_queue_messages_with_protect(
+            &session_id,
+            &mut slice.items,
+            &protect_ids,
+        )
+        .await
+        .expect("strip should succeed");
+
+    assert!(waiting_ids.is_empty(), "idle tip must not become waiter");
+    assert_eq!(
+        slice
+            .items
+            .iter()
+            .map(|m| m.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["msg-tip"]
+    );
+    assert!(
+        queue_repo
+            .list_by_session(&session_id)
+            .await
+            .expect("queue")
+            .is_empty(),
+        "stale tip index must be purged"
+    );
+}
+
 #[test]
 fn pending_event_manager_drains_one_message_in_fifo_order() {
     let mut manager = PendingEventManager::new();
@@ -322,4 +810,57 @@ fn pending_event_manager_restore_front_preserves_fifo_after_failed_claim() {
         vec!["first".to_string(), "second".to_string()]
     );
     assert!(manager.contains_message("first"));
+}
+
+#[test]
+fn pending_event_manager_drain_messages_drains_all_in_fifo_order() {
+    let mut manager = PendingEventManager::new();
+    manager.add(PendingEvent::Message("first".to_string()));
+    manager.add(PendingEvent::Message("second".to_string()));
+    manager.add(PendingEvent::Message("third".to_string()));
+
+    assert_eq!(
+        manager.drain_messages(),
+        vec![
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string()
+        ]
+    );
+    assert!(manager.message_ids().is_empty());
+}
+
+#[test]
+fn pending_event_manager_restore_front_pending_messages_preserves_batch_order() {
+    let mut manager = PendingEventManager::new();
+    manager.add(PendingEvent::Message("third".to_string()));
+
+    manager.restore_front_pending_messages(&["first".to_string(), "second".to_string()]);
+
+    assert_eq!(
+        manager.message_ids(),
+        vec![
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string()
+        ]
+    );
+}
+
+#[test]
+fn merge_user_message_contents_uses_shared_separator() {
+    use tauri_mcp_agent_lib::agent::message_merge::{
+        merge_user_message_contents, USER_MESSAGE_MERGE_SEPARATOR,
+    };
+
+    let session_id = "merge-sep";
+    let a = build_user_message_with_text(session_id, "a", 1, "one");
+    let b = build_user_message_with_text(session_id, "b", 2, "two");
+    let merged = merge_user_message_contents(&[a, b]);
+    match &merged[0] {
+        MCPContent::Text { text, .. } => {
+            assert_eq!(text, &format!("one{USER_MESSAGE_MERGE_SEPARATOR}two"));
+        }
+        _ => panic!("expected text"),
+    }
 }

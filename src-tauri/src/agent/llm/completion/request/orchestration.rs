@@ -226,22 +226,24 @@ async fn process_pending_messages(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<(), AgentRuntimeError> {
-    match crate::agent::pending_queue::claim_next_pending_message(
+    match crate::agent::pending_queue::claim_all_pending_messages(
         active_sessions,
         app_handle,
         session_id,
     )
     .await
     {
-        Ok(Some(msg)) => {
+        Ok(messages) if !messages.is_empty() => {
+            let claimed_ids: Vec<&str> = messages.iter().map(|msg| msg.id.as_str()).collect();
             log::info!(
-                "Claimed next pending message {} for session {}",
-                msg.id,
-                session_id
+                "Claimed {} pending message(s) for session {}: {:?}",
+                messages.len(),
+                session_id,
+                claimed_ids
             );
             Ok(())
         }
-        Ok(None) => Ok(()),
+        Ok(_) => Ok(()),
         Err(e) => {
             log::error!(
                 "Failed to claim pending message for session {}: {}",

@@ -381,19 +381,35 @@ pub async fn tool_result_inline_limit_bytes() -> usize {
     }
 }
 
+/// Truncate `text` to at most `limit` bytes for inline preview.
+///
+/// Normally we cut at the last newline boundary so we don't expose a partial
+/// line. However, if the output is a single giant line (e.g. compact JSON),
+/// `rfind('\n')` only finds the tiny header before the payload, yielding an
+/// almost-empty preview. In that case we fall back to a **hard byte cut** so
+/// the agent sees real content instead of nothing.
+///
+/// Returns `(preview_slice, was_truncated)`.
 fn truncate_to_complete_lines(text: &str, limit: usize) -> (&str, bool) {
     if text.len() <= limit {
         return (text, false);
     }
 
     let mut boundary = limit.min(text.len());
+    // Walk back to a valid UTF-8 char boundary.
     while boundary > 0 && !text.is_char_boundary(boundary) {
         boundary -= 1;
     }
 
     let truncated = &text[..boundary];
+
+    // Only snap to the last newline if it gives us a meaningful amount of
+    // content (at least 5 % of the limit). Otherwise fall back to the hard
+    // byte cut so single-line payloads still show real content.
+    let min_useful = (limit / 20).max(1);
     match truncated.rfind('\n') {
-        Some(pos) if pos > 0 => (&truncated[..pos], true),
+        Some(pos) if pos >= min_useful => (&truncated[..pos], true),
+        // No newline, or newline is too close to the start → hard cut.
         _ => (truncated, true),
     }
 }
@@ -419,8 +435,13 @@ fn build_tool_result_spillover_notice(
             relative_path, next_start_line
         ));
     } else {
+        // preview_line_count == 0 means the output was a single giant line and
+        // the preview is a hard byte cut (no newlines found within the limit).
+        // Guide the agent to read by byte offset rather than line offset.
         notice.push_str(&format!(
-            "\nStart with a narrow range such as `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 50}})` and keep narrowing if needed.",
+            "\nThe inline preview above is a raw byte cut (single-line output). \
+ Read the full file by byte ranges: `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})` \
+ and increment offset by size each time.",
             relative_path
         ));
     }

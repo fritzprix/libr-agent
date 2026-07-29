@@ -310,12 +310,16 @@ export function mergeConsecutiveUserMessages(messages: Message[]): Message[] {
     const last = merged[merged.length - 1];
 
     if (last && last.role === 'user' && msg.role === 'user') {
-      const lastContent = Array.isArray(last.content)
+      const lastContent: MCPContent[] = Array.isArray(last.content)
         ? (last.content as MCPContent[])
-        : ([{ type: 'text', text: String(last.content) }] as MCPContent[]);
-      const nextContent = Array.isArray(msg.content)
+        : typeof last.content === 'string'
+          ? [{ type: 'text', text: last.content }]
+          : [];
+      const nextContent: MCPContent[] = Array.isArray(msg.content)
         ? (msg.content as MCPContent[])
-        : ([{ type: 'text', text: String(msg.content) }] as MCPContent[]);
+        : typeof msg.content === 'string'
+          ? [{ type: 'text', text: msg.content }]
+          : [];
 
       last.content = [
         ...lastContent,

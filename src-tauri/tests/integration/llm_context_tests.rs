@@ -2139,7 +2139,7 @@ fn test_merge_consecutive_user_messages_preserves_first_id_and_appends_content()
     assert_eq!(merged[3].id, "m4");
     assert_eq!(
         text_content_parts(&merged[3]),
-        vec!["Latest user A", "\n\n---\n\n", "Latest user B"]
+        vec!["Latest user A\n\n---\n\nLatest user B"]
     );
 }
 
