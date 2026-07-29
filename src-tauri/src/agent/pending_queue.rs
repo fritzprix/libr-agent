@@ -359,6 +359,19 @@ pub async fn claim_all_pending_messages(
         .await;
     }
 
+    let merged_contents =
+        crate::agent::message_merge::merge_user_message_contents(&fetched_messages);
+    let merged_attachments =
+        crate::agent::message_merge::merge_user_message_attachments(&fetched_messages);
+
+    let mut keeper = fetched_messages[0].clone();
+    keeper.content = merged_contents;
+    keeper.attachments = merged_attachments;
+    keeper.updated_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(keeper.created_at);
+
     let absorbed_ids: Vec<String> = fetched_messages
         .iter()
         .skip(1)
@@ -366,20 +379,18 @@ pub async fn claim_all_pending_messages(
         .collect();
 
     if let Err(e) = get_pending_queue_repository()
-        .commit_merged_claim(&fetched_messages[0], &absorbed_ids)
+        .commit_merged_claim(&keeper, &absorbed_ids)
         .await
     {
         restore_front_pending_messages(active_sessions, session_id, &claim_ids).await;
         return Err(e.to_string());
     }
 
-    for message in &fetched_messages {
-        push_message_to_session_cache(active_sessions, session_id, message).await;
-        emit_message_added(app_handle, session_id, message).await?;
-    }
+    push_message_to_session_cache(active_sessions, session_id, &keeper).await;
+    emit_message_added(app_handle, session_id, &keeper).await?;
     emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
 
-    Ok(fetched_messages)
+    Ok(vec![keeper])
 }
 
 async fn claim_single_pending_message(
