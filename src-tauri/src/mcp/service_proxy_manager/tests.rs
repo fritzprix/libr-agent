@@ -46,6 +46,7 @@ fn test_session_active_model(id: impl Into<String>) -> session::ActiveModel {
         model: Set("gpt-4".to_string()),
         provider: Set("openai".to_string()),
         execution_mode: Set("normal".to_string()),
+        workspace_isolation: Set("host".to_string()),
         is_bookmarked: Set(false),
         ..Default::default()
     }
@@ -169,14 +170,9 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let assistant_result = manager
         .call_tool(
             &session1,
-            "agent__createAssistant",
+            "agent__createAgent",
             json!({
-                "id": "assistant1",
-                "name": "Test Assistant",
-                "config": json!({
-                    "model": "gpt-4",
-                    "temperature": 0.7
-                })
+                "name": "Test Assistant"
             }),
         )
         .await
@@ -184,9 +180,10 @@ async fn test_phase3_playbook_and_assistant_integration() {
 
     assert!(
         assistant_result.error.is_none(),
-        "Assistant create should succeed"
+        "Assistant create should succeed: {:?}",
+        assistant_result.error
     );
-    let created_assistant_id = assistant_result
+    let _created_assistant_id = assistant_result
         .result
         .as_ref()
         .and_then(|result| match result {
@@ -198,7 +195,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
                 .map(str::to_string),
             _ => None,
         })
-        .expect("createAssistant should return structured assistant id");
+        .expect("createAgent should return structured assistant id");
 
     // Create session 2 with same tools
     let session2 = "test-session-2".to_string();
@@ -246,9 +243,9 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let get_assistant_result = manager
         .call_tool(
             &session2,
-            "agent__getAssistant",
+            "agent__listAgents",
             json!({
-                "id": created_assistant_id
+                "type": "configs"
             }),
         )
         .await
@@ -549,11 +546,9 @@ async fn test_phase3_all_servers_integration() {
     let assistant_result = manager
         .call_tool(
             &session_id,
-            "agent__createAssistant",
+            "agent__createAgent",
             json!({
-                "id": "integration-assistant",
-                "name": "Integration Test Assistant",
-                "config": json!({ "model": "test" })
+                "name": "Integration Test Assistant"
             }),
         )
         .await
@@ -798,5 +793,38 @@ async fn test_wait_times_out_if_never_signaled() {
     assert!(
         result.unwrap_err().contains("timed out"),
         "Error message must mention timeout"
+    );
+}
+
+/// Verify that lazy builtin proxies set `is_builtin_only() == true`
+/// and full proxies set `is_builtin_only() == false`.
+#[tokio::test]
+async fn test_builtin_only_proxy_flag_and_upgrade() {
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "builtin-only-flag-test";
+
+    insert_test_session(&manager, session_id).await;
+
+    // 1. Lazy builtin proxy must have is_builtin_only == true
+    let lazy_proxy = manager.ensure_builtin_proxy(session_id).await.unwrap();
+    assert!(
+        lazy_proxy.is_builtin_only(),
+        "Lazy builtin proxy must be marked as is_builtin_only"
+    );
+
+    // 2. Fully configured proxy must have is_builtin_only == false
+    let configured_proxy = manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["playbook".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(
+        !configured_proxy.is_builtin_only(),
+        "Fully configured proxy must NOT be marked as is_builtin_only"
     );
 }

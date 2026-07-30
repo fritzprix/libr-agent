@@ -233,6 +233,26 @@ impl MCPServiceProxyManager {
             .unwrap_or(false);
 
         let proxy = match self.get_proxy(session_id).await {
+            Some(proxy) if !is_builtin && proxy.is_builtin_only() => {
+                log::debug!(
+                    "Upgrading lazy builtin-only proxy for session {} before external tool '{}'",
+                    session_id,
+                    tool_name
+                );
+                let active_sessions = self.list_sessions().await;
+                self.ensure_configured_proxy(session_id, None)
+                    .await
+                    .map_err(|error| {
+                        log::error!(
+                            "Failed to ensure configured proxy for session {} before external tool '{}': {}. Active sessions: {:?}",
+                            session_id,
+                            tool_name,
+                            error,
+                            active_sessions
+                        );
+                        error
+                    })?
+            }
             Some(proxy) => proxy,
             None => {
                 let active_sessions = self.list_sessions().await;

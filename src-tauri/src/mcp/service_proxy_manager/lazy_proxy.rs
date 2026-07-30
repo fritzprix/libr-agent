@@ -104,6 +104,7 @@ impl MCPServiceProxyManager {
             Arc::new(empty_stdio.clone()),
         )
         .with_tool_ids(tool_ids.clone())
+        .with_builtin_only(true)
         .build()
         .await?;
 
