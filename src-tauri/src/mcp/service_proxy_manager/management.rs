@@ -20,16 +20,36 @@ pub enum ProxyReadinessState {
 pub fn decide_proxy_readiness_state(
     proxy_exists: bool,
     has_readiness_signal: bool,
-    runtime_ready: bool,
 ) -> ProxyReadinessState {
     if !proxy_exists {
         ProxyReadinessState::MissingProxy
-    } else if !has_readiness_signal || runtime_ready {
-        // A runtime-ready proxy must not block on a stale readiness entry left behind
-        // by an earlier background discovery cycle.
-        ProxyReadinessState::Ready
-    } else {
+    } else if has_readiness_signal {
         ProxyReadinessState::AwaitSignal
+    } else {
+        ProxyReadinessState::Ready
+    }
+}
+
+pub(super) async fn shutdown_stdio_manager_with_timeout(
+    stdio_mgr: super::super::session_isolation::SessionMCPManager,
+    session_id: &str,
+    context: &str,
+) {
+    match tokio::time::timeout(std::time::Duration::from_secs(3), stdio_mgr.shutdown_all()).await {
+        Ok(_) => {
+            log::debug!(
+                "Successfully shut down stdio processes for session: {} ({})",
+                session_id,
+                context
+            );
+        }
+        Err(_) => {
+            log::warn!(
+                "Timeout waiting for stdio processes shutdown in {} for session: {}; continuing",
+                context,
+                session_id
+            );
+        }
     }
 }
 
@@ -98,9 +118,7 @@ impl MCPServiceProxyManager {
 
         // 3. Shutdown stdio processes
         if let Some(stdio_mgr) = self.session_stdio_managers.write().await.remove(session_id) {
-            tokio::spawn(async move {
-                stdio_mgr.shutdown_all().await;
-            });
+            shutdown_stdio_manager_with_timeout(stdio_mgr, session_id, "destroy_proxy").await;
         }
 
         // 4. Remove HTTP session manager (HTTP connections are shared, just remove the manager)
@@ -137,7 +155,6 @@ impl MCPServiceProxyManager {
         session_id: &str,
         timeout_secs: u64,
     ) -> Result<(), String> {
-        let runtime_state = self.get_runtime_state(session_id).await;
         let readiness_signal = {
             let map = self.proxy_readiness.read().await;
             map.get(session_id).cloned()
@@ -146,7 +163,6 @@ impl MCPServiceProxyManager {
         match decide_proxy_readiness_state(
             self.get_proxy(session_id).await.is_some(),
             readiness_signal.is_some(),
-            runtime_state.proxy.ready,
         ) {
             ProxyReadinessState::MissingProxy => {
                 return Err(format!("No MCP proxy exists for session: {}", session_id));
@@ -215,11 +231,12 @@ impl MCPServiceProxyManager {
             .split_once("__")
             .map(|(server, _)| BuiltinServiceId::from_alias(server).is_some())
             .unwrap_or(false);
-        let active_sessions = self.list_sessions().await;
-        let proxy = if is_builtin {
-            match self.get_proxy(session_id).await {
-                Some(proxy) => proxy,
-                None => {
+
+        let proxy = match self.get_proxy(session_id).await {
+            Some(proxy) => proxy,
+            None => {
+                let active_sessions = self.list_sessions().await;
+                if is_builtin {
                     log::debug!(
                         "No proxy for session {}, attempting lazy builtin proxy init",
                         session_id
@@ -233,27 +250,33 @@ impl MCPServiceProxyManager {
                         );
                         format!("Session context not found or expired (ID: {})", session_id)
                     })?
+                } else {
+                    log::debug!(
+                        "Ensuring config-aware proxy for session {} before external tool '{}'",
+                        session_id,
+                        tool_name
+                    );
+                    self.ensure_configured_proxy(session_id, None)
+                        .await
+                        .map_err(|error| {
+                            log::error!(
+                                "Failed to ensure configured proxy for session {} before external tool '{}': {}. Active sessions: {:?}",
+                                session_id,
+                                tool_name,
+                                error,
+                                active_sessions
+                            );
+                            error
+                        })?
                 }
             }
-        } else {
-            log::debug!(
-                "Ensuring config-aware proxy for session {} before external tool '{}'",
-                session_id,
-                tool_name
-            );
-            self.ensure_configured_proxy(session_id, None)
-                .await
-                .map_err(|error| {
-                    log::error!(
-                        "Failed to ensure configured proxy for session {} before external tool '{}': {}. Active sessions: {:?}",
-                        session_id,
-                        tool_name,
-                        error,
-                        active_sessions
-                    );
-                    error
-                })?
         };
+
+        if !is_builtin {
+            self.wait_until_proxy_ready(session_id, 30)
+                .await
+                .map_err(|e| format!("Proxy not ready for external tool '{}': {}", tool_name, e))?;
+        }
 
         proxy.call_tool(tool_name, args).await
     }

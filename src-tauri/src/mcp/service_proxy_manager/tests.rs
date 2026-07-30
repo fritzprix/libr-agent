@@ -7,6 +7,31 @@ use sea_orm::{ConnectionTrait, Database, EntityTrait, Schema, Set};
 use serde_json::json;
 use std::sync::Arc;
 
+#[test]
+fn test_decide_proxy_readiness_state_truth_table() {
+    // Missing Proxy
+    assert_eq!(
+        decide_proxy_readiness_state(false, false),
+        ProxyReadinessState::MissingProxy
+    );
+    assert_eq!(
+        decide_proxy_readiness_state(false, true),
+        ProxyReadinessState::MissingProxy
+    );
+
+    // Proxy exists, no readiness signal -> Immediately Ready
+    assert_eq!(
+        decide_proxy_readiness_state(true, false),
+        ProxyReadinessState::Ready
+    );
+
+    // Proxy exists, has readiness signal -> Must await signal
+    assert_eq!(
+        decide_proxy_readiness_state(true, true),
+        ProxyReadinessState::AwaitSignal
+    );
+}
+
 struct TestHarness {
     _guard: tokio::sync::MutexGuard<'static, ()>,
     manager: Arc<MCPServiceProxyManager>,

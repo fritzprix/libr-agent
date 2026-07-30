@@ -82,9 +82,12 @@ async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id:
         .await
         .remove(session_id)
     {
-        tokio::spawn(async move {
-            old_mgr.shutdown_all().await;
-        });
+        super::management::shutdown_stdio_manager_with_timeout(
+            old_mgr,
+            session_id,
+            "cleanup_session_resources",
+        )
+        .await;
     }
     manager
         .session_http_managers

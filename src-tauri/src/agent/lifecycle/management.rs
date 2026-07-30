@@ -98,6 +98,15 @@ pub async fn resume_session(
         )
         .await?;
 
+    // Ensure tool discovery completes (or reaches 15s UX timeout) before completing session activation
+    if let Err(e) = proxy_manager.wait_until_proxy_ready(session_id, 15).await {
+        log::warn!(
+            "Session activation proxy readiness wait timed out or failed for session '{}': {}",
+            session_id,
+            e
+        );
+    }
+
     log::info!(
         "Created MCP proxy for resumed session: {} with builtin tools",
         session_id
