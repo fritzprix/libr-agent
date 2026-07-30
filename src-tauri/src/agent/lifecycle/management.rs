@@ -88,7 +88,7 @@ pub async fn resume_session(
     let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
     let mcp_server_ids = agent_config.mcp_server_ids.clone();
 
-    // Create proxy for this session
+    // Create proxy for this session (tool discovery runs asynchronously in background)
     proxy_manager
         .create_proxy(
             session_id.to_string(),
@@ -97,15 +97,6 @@ pub async fn resume_session(
             Some(app_handle.clone()),
         )
         .await?;
-
-    // Ensure tool discovery completes (or reaches 15s UX timeout) before completing session activation
-    if let Err(e) = proxy_manager.wait_until_proxy_ready(session_id, 15).await {
-        log::warn!(
-            "Session activation proxy readiness wait timed out or failed for session '{}': {}",
-            session_id,
-            e
-        );
-    }
 
     log::info!(
         "Created MCP proxy for resumed session: {} with builtin tools",

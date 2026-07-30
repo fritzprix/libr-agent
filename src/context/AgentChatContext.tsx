@@ -52,6 +52,7 @@ export { isAssistantStreamingMessageSuperseded } from '@/lib/message-streaming-s
 // --- STATE CONTEXT ---
 interface AgentChatStateContextValue {
   isSessionLoading: boolean;
+  isProxyReady: boolean;
   messages: Message[];
   /** Waiting prompts (FIFO) shown above the input — not in the message list. */
   pendingQueue: Message[];
@@ -134,6 +135,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     session,
     messages: sessionMessages,
     isSessionLoading,
+    isProxyReady,
     workflowStatus,
     error,
     llmError,
@@ -481,6 +483,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   const stateValue: AgentChatStateContextValue = useMemo(
     () => ({
       isSessionLoading,
+      isProxyReady,
       messages: displayMessages,
       pendingQueue,
       error,
@@ -490,6 +493,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }),
     [
       isSessionLoading,
+      isProxyReady,
       displayMessages,
       pendingQueue,
       error,

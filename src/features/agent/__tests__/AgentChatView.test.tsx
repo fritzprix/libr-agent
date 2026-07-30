@@ -36,6 +36,7 @@ function createBaseSessionState(): AgentSessionStateContextValue {
     session: null,
     messages: [],
     isSessionLoading: false,
+    isProxyReady: true,
     isLoadingOlderMessages: false,
     hasOlderMessages: false,
     error: null,
@@ -54,9 +55,16 @@ function createBaseSessionState(): AgentSessionStateContextValue {
 function createSessionState(
   overrides: Partial<AgentSessionStateContextValue> = {},
 ): AgentSessionStateContextValue {
-  return {
-    ...createBaseSessionState(),
+  const base = createBaseSessionState();
+  const merged = {
+    ...base,
     ...overrides,
+  };
+  const isProxyReady =
+    overrides.isProxyReady ?? merged.runtimeState.proxy.ready;
+  return {
+    ...merged,
+    isProxyReady,
   };
 }
 
@@ -260,6 +268,7 @@ describe('AgentChatView', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
       isSessionLoading: true,
+      isProxyReady: false,
       runtimeState: {
         ...createBaseRuntimeState(),
         phase: 'hydrating',
@@ -274,8 +283,29 @@ describe('AgentChatView', () => {
 
     expect(screen.getByText('mock-messages')).toBeInTheDocument();
     expect(screen.getByText('mock-header')).toBeInTheDocument();
-    expect(screen.getAllByText('Loading session...')).not.toHaveLength(0);
+    expect(screen.getAllByText('Opening session')).not.toHaveLength(0);
     expect(screen.getByTestId('chat-provider')).toBeInTheDocument();
+  });
+
+  it('renders top banner during proxy initialization when session is present', () => {
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+      isSessionLoading: true,
+      isProxyReady: false,
+      runtimeState: {
+        ...createBaseRuntimeState(),
+        phase: 'initializing',
+      },
+      initializationStep: {
+        step: 'Connecting to MCP server',
+        status: 'running' as const,
+      },
+    });
+
+    render(<AgentChatView />);
+
+    expect(screen.getByText('mock-messages')).toBeInTheDocument();
+    expect(screen.getByText('Connecting to MCP server')).toBeInTheDocument();
   });
 
   it('renders both desktop side panels at the same time', () => {

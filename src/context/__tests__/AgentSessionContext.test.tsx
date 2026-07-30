@@ -1,4 +1,4 @@
-import { TEST_SESSION_ID, SessionWrapper, mockMarkSessionViewed, mockRefreshCompactedRange, listenMock, openAgentSessionMock, safeInvokeMock, createOpenSessionResponse, AgentSessionStateObserver, AgentSessionStateSnapshot, OpenAgentSessionResponse } from "./agent-session-test-utils";
+import { TEST_SESSION_ID, SessionWrapper, mockMarkSessionViewed, mockRefreshCompactedRange, listenMock, openAgentSessionMock, safeInvokeMock, createOpenSessionResponse, createReadyRuntimeState, AgentSessionStateObserver, AgentSessionStateSnapshot, OpenAgentSessionResponse } from "./agent-session-test-utils";
 import { render, renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
@@ -331,6 +331,50 @@ describe('AgentSessionContext (Local)', () => {
         expect(currentState().pendingApprovals).toEqual([]);
         expect(currentState().workflowStatus).toBe('error');
         expect(currentState().error?.displayMessage).toContain('Session open failed');
+    });
+
+    it('correctly sets isProxyReady strictly from runtimeState.proxy.ready', async () => {
+        openAgentSessionMock.mockResolvedValue(
+            createOpenSessionResponse(TEST_SESSION_ID, {
+                runtimeState: createReadyRuntimeState({
+                    phase: 'degraded',
+                    proxy: { exists: true, mode: 'configured', ready: true },
+                }),
+            }),
+        );
+
+        const { result } = renderHook(() => useAgentSessionState(), {
+            wrapper: defaultWrapper,
+        });
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+        });
+
+        expect(result.current.isProxyReady).toBe(true);
+        expect(result.current.runtimeState.phase).toBe('degraded');
+    });
+
+    it('sets isProxyReady to false when proxy.ready is false during initialization', async () => {
+        openAgentSessionMock.mockResolvedValue(
+            createOpenSessionResponse(TEST_SESSION_ID, {
+                runtimeState: createReadyRuntimeState({
+                    phase: 'initializing',
+                    proxy: { exists: true, mode: 'configured', ready: false },
+                }),
+            }),
+        );
+
+        const { result } = renderHook(() => useAgentSessionState(), {
+            wrapper: defaultWrapper,
+        });
+
+        // During initialization phase, isSessionLoading should be true
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(true);
+        });
+
+        expect(result.current.isProxyReady).toBe(false);
     });
 
 });

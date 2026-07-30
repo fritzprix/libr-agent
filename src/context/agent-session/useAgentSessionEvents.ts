@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { openAgentSession } from '@/lib/backend/agent-commands';
+import { toast } from 'sonner';
 import { getAssistant } from '@/lib/backend/assistants';
 import { getLogger } from '@/lib/logger';
 import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
@@ -16,6 +17,42 @@ import {
 } from './workflow-inactive-cleanup';
 
 const logger = getLogger('AgentSessionEvents');
+
+function notifyRuntimeStateErrors(
+  prevState: SessionRuntimeState,
+  nextState: SessionRuntimeState,
+): void {
+  if (nextState.phase === 'failed' || nextState.phase === 'degraded') {
+    const failedServers = nextState.servers.filter(
+      (s) => s.status === 'failed',
+    );
+    if (failedServers.length > 0) {
+      failedServers.forEach((server) => {
+        const prevServerState = prevState.servers.find(
+          (s) => s.name === server.name,
+        );
+        if (!prevServerState || prevServerState.status !== 'failed') {
+          toast.error(`MCP Server '${server.name}' failed to load`, {
+            description:
+              server.error ??
+              nextState.initialization.error ??
+              'Initialization failed',
+            duration: 8000,
+          });
+        }
+      });
+    } else if (
+      prevState.phase !== 'failed' &&
+      nextState.phase === 'failed' &&
+      nextState.initialization.error
+    ) {
+      toast.error('MCP Server initialization failed', {
+        description: nextState.initialization.error,
+        duration: 8000,
+      });
+    }
+  }
+}
 
 const HYDRATING_RUNTIME_STATE: SessionRuntimeState = {
   sequence: 0,
@@ -100,11 +137,15 @@ export function useAgentSessionEvents(
 
           switch (payload.type) {
             case 'sessionRuntimeStateUpdated': {
-              setters.setRuntimeState((currentState) =>
-                shouldApplyRuntimeState(currentState, payload.runtimeState)
-                  ? payload.runtimeState
-                  : currentState,
-              );
+              setters.setRuntimeState((currentState) => {
+                if (
+                  !shouldApplyRuntimeState(currentState, payload.runtimeState)
+                ) {
+                  return currentState;
+                }
+                notifyRuntimeStateErrors(currentState, payload.runtimeState);
+                return payload.runtimeState;
+              });
               break;
             }
 
@@ -361,11 +402,14 @@ export function useAgentSessionEvents(
         setters.setHasOlderMessages(response.messages.hasMoreBefore);
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
         setters.setPendingApprovals(response.pendingApprovals ?? []);
+        // Use runtimeState from response as initial state; sequence check ensures we don't overwrite newer events
         setters.setRuntimeState((currentState) => {
           const nextState = response.runtimeState ?? HYDRATING_RUNTIME_STATE;
-          return shouldApplyRuntimeState(currentState, nextState)
-            ? nextState
-            : currentState;
+          if (shouldApplyRuntimeState(currentState, nextState)) {
+            notifyRuntimeStateErrors(currentState, nextState);
+            return nextState;
+          }
+          return currentState;
         });
         void actions.persistViewedAt().catch((err) => {
           logger.error(

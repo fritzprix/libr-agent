@@ -12,7 +12,8 @@ INCLUDE=""
 N_TASKS=0
 N_ATTEMPTS="${LIBRAGENT_N_ATTEMPTS:-1}"
 CONCURRENT=1
-API_URL="${LIBRAGENT_API_URL:-http://localhost:3030/api}"
+ACTIVE_HTTP_PORT="$(cat "$HOME/.libragent/http_port" 2>/dev/null || echo "3030")"
+API_URL="${LIBRAGENT_API_URL:-http://localhost:${ACTIVE_HTTP_PORT}/api}"
 ASSISTANT_ID="${LIBRAGENT_ASSISTANT_ID:-}"
 # Harbor -m. Prefer explicit CLI/env; otherwise read global preferredModel from LibrAgent.
 HARBOR_MODEL="${LIBRAGENT_MODEL:-${LIBRAGENT_HARBOR_MODEL:-}}"
