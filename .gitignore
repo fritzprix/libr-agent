@@ -122,4 +122,4 @@ kilo.json
 .tmp_*
 .slibragent/
 
-attachments
+./attachments
