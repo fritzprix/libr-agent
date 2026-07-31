@@ -7,19 +7,16 @@ use crate::services::agent_service::remove_lineage;
 use tauri::{command, State};
 
 /// Send a user message to start an agent workflow
+///
+/// MCP external-server discovery must not block session start. The workflow
+/// queues the message immediately and waits for proxy readiness in the
+/// background (`ensure_proxy_ready`). Partial/failed MCP servers surface via
+/// runtime-state events (Sonner toasts) instead of rejecting this command.
 #[command]
 pub async fn agent_send_message(
     manager: State<'_, AgentSessionManager>,
     request: SendUserMessageRequest,
 ) -> Result<AgentResponse, String> {
-    // Check proxy readiness before allowing tool calls
-    let runtime_state = manager.get_runtime_state(&request.session_id).await;
-    if !runtime_state.proxy.ready {
-        return Err(
-            "MCP proxy not ready. Please wait for tool initialization to complete.".to_string(),
-        );
-    }
-
     manager
         .start_workflow(request.session_id, request.message)
         .await

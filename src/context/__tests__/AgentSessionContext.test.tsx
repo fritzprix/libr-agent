@@ -377,4 +377,40 @@ describe('AgentSessionContext (Local)', () => {
         expect(result.current.isProxyReady).toBe(false);
     });
 
+    it('keeps isProxyReady true when all external MCP failed but proxy exists', async () => {
+        openAgentSessionMock.mockResolvedValue(
+            createOpenSessionResponse(TEST_SESSION_ID, {
+                runtimeState: createReadyRuntimeState({
+                    phase: 'failed',
+                    proxy: { exists: true, mode: 'configured', ready: true },
+                    initialization: {
+                        result: 'failed',
+                        error: 'All external servers failed during initialization',
+                        currentStep: 'Tool loading complete',
+                    },
+                    servers: [
+                        {
+                            name: 'harbor-mcp',
+                            transport: 'stdio',
+                            status: 'failed',
+                            toolCount: 0,
+                            error: 'No such file or directory',
+                        },
+                    ],
+                }),
+            }),
+        );
+
+        const { result } = renderHook(() => useAgentSessionState(), {
+            wrapper: defaultWrapper,
+        });
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+        });
+
+        expect(result.current.isProxyReady).toBe(true);
+        expect(result.current.runtimeState.phase).toBe('failed');
+    });
+
 });

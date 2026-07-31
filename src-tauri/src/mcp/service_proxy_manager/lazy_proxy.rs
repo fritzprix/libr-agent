@@ -19,7 +19,6 @@ impl MCPServiceProxyManager {
         session_id: &str,
         app_handle: Option<tauri::AppHandle>,
     ) -> Result<Arc<MCPServiceProxy>, String> {
-        use crate::agent::tools::extract_builtin_tool_ids;
         use crate::repositories::session_repository::SessionRepository;
 
         let session_repo = crate::state::get_session_repository();
@@ -28,16 +27,11 @@ impl MCPServiceProxyManager {
             .await
             .map_err(|e| format!("Failed to load session {}: {}", session_id, e))?
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        let agent_config = crate::agent::resolve_agent_config(&session).await?;
-        let tool_ids = extract_builtin_tool_ids(&agent_config);
+        let (tool_ids, mcp_server_ids) =
+            crate::agent::resolve_session_mcp_bindings(&session).await?;
 
-        self.create_proxy(
-            session_id.to_string(),
-            tool_ids,
-            agent_config.mcp_server_ids,
-            app_handle,
-        )
-        .await
+        self.create_proxy(session_id.to_string(), tool_ids, mcp_server_ids, app_handle)
+            .await
     }
 
     /// Lazily initialise a builtin-only proxy for a session that has no active proxy.

@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { openAgentSession } from '@/lib/backend/agent-commands';
-import { toast } from 'sonner';
 import { getAssistant } from '@/lib/backend/assistants';
 import { getLogger } from '@/lib/logger';
 import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
@@ -10,6 +9,7 @@ import type { AgentEventPayload } from './types';
 import { buildMessageError, syncSessionMetadataFromBackend } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
 import type { SessionRuntimeState } from '@/models/agent-ipc';
+import { notifyRuntimeStateErrors } from './notifyRuntimeStateErrors';
 import {
   applyWorkflowInactiveCleanup,
   isInactiveWorkflowStatus,
@@ -17,42 +17,6 @@ import {
 } from './workflow-inactive-cleanup';
 
 const logger = getLogger('AgentSessionEvents');
-
-function notifyRuntimeStateErrors(
-  prevState: SessionRuntimeState,
-  nextState: SessionRuntimeState,
-): void {
-  if (nextState.phase === 'failed' || nextState.phase === 'degraded') {
-    const failedServers = nextState.servers.filter(
-      (s) => s.status === 'failed',
-    );
-    if (failedServers.length > 0) {
-      failedServers.forEach((server) => {
-        const prevServerState = prevState.servers.find(
-          (s) => s.name === server.name,
-        );
-        if (!prevServerState || prevServerState.status !== 'failed') {
-          toast.error(`MCP Server '${server.name}' failed to load`, {
-            description:
-              server.error ??
-              nextState.initialization.error ??
-              'Initialization failed',
-            duration: 8000,
-          });
-        }
-      });
-    } else if (
-      prevState.phase !== 'failed' &&
-      nextState.phase === 'failed' &&
-      nextState.initialization.error
-    ) {
-      toast.error('MCP Server initialization failed', {
-        description: nextState.initialization.error,
-        duration: 8000,
-      });
-    }
-  }
-}
 
 const HYDRATING_RUNTIME_STATE: SessionRuntimeState = {
   sequence: 0,
@@ -137,15 +101,20 @@ export function useAgentSessionEvents(
 
           switch (payload.type) {
             case 'sessionRuntimeStateUpdated': {
+              const nextState = payload.runtimeState;
+              let applied = false;
+              let previousState: SessionRuntimeState | null = null;
               setters.setRuntimeState((currentState) => {
-                if (
-                  !shouldApplyRuntimeState(currentState, payload.runtimeState)
-                ) {
+                if (!shouldApplyRuntimeState(currentState, nextState)) {
                   return currentState;
                 }
-                notifyRuntimeStateErrors(currentState, payload.runtimeState);
-                return payload.runtimeState;
+                previousState = currentState;
+                applied = true;
+                return nextState;
               });
+              if (applied && previousState) {
+                notifyRuntimeStateErrors(previousState, nextState);
+              }
               break;
             }
 
@@ -403,14 +372,19 @@ export function useAgentSessionEvents(
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
         setters.setPendingApprovals(response.pendingApprovals ?? []);
         // Use runtimeState from response as initial state; sequence check ensures we don't overwrite newer events
+        const nextRuntimeState =
+          response.runtimeState ?? HYDRATING_RUNTIME_STATE;
+        let previousRuntimeState: SessionRuntimeState | null = null;
         setters.setRuntimeState((currentState) => {
-          const nextState = response.runtimeState ?? HYDRATING_RUNTIME_STATE;
-          if (shouldApplyRuntimeState(currentState, nextState)) {
-            notifyRuntimeStateErrors(currentState, nextState);
-            return nextState;
+          if (shouldApplyRuntimeState(currentState, nextRuntimeState)) {
+            previousRuntimeState = currentState;
+            return nextRuntimeState;
           }
           return currentState;
         });
+        if (previousRuntimeState) {
+          notifyRuntimeStateErrors(previousRuntimeState, nextRuntimeState);
+        }
         void actions.persistViewedAt().catch((err) => {
           logger.error(
             'Failed to mark session viewed during initialization',

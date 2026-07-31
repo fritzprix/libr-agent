@@ -91,6 +91,7 @@ pub mod service_context_noise_tests;
 pub mod session_and_workspace_timeout_regression_tests;
 pub mod session_attention_repository_tests;
 pub mod session_directory_service_tests;
+pub mod session_mcp_ssot_tests;
 pub mod session_mcp_workspace_cwd_tests;
 pub mod session_pagination_repository_tests;
 pub mod session_recovery_tests;

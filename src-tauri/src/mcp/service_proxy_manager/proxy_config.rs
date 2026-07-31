@@ -96,7 +96,7 @@ pub(super) async fn load_requested_server_configs(
                 for model in models {
                     if !mcp_server_ids.contains(&model.id) {
                         log::debug!(
-                            "Skipping MCP server '{}' (ID: {}) - not in assistant's mcp_server_ids",
+                            "Skipping MCP server '{}' (ID: {}) - not in session assistant mcp_server_ids (SSOT)",
                             model.name,
                             model.id
                         );
