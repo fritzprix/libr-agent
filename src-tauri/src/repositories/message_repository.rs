@@ -283,6 +283,30 @@ impl SqliteMessageRepository {
         })
     }
 
+    /// Rebuild UI-facing metadata from persisted content.
+    ///
+    /// `messages.metadata` is not a DB column; `Message.metadata.toolError` is derived at
+    /// write time (see `create_tool_result_message_with_content`) from `MCPContent::Text.is_error`.
+    /// Re-derive on read so cold session loads / crash-recovery tombstones still group as errors.
+    fn metadata_from_persisted_content(
+        content: &[crate::mcp::types::MCPContent],
+    ) -> Option<serde_json::Value> {
+        let tool_error = content.iter().any(|c| {
+            matches!(
+                c,
+                crate::mcp::types::MCPContent::Text {
+                    is_error: Some(true),
+                    ..
+                }
+            )
+        });
+        if tool_error {
+            Some(serde_json::json!({ "toolError": true }))
+        } else {
+            None
+        }
+    }
+
     /// Convert SeaORM message model to Message type
     fn model_to_message(model: message::Model) -> Message {
         let content: Vec<crate::mcp::types::MCPContent> = from_json_or_default(&model.content);
@@ -297,6 +321,8 @@ impl SqliteMessageRepository {
         let error: Option<serde_json::Value> = from_json_option(&model.error);
 
         let usage: Option<serde_json::Value> = from_json_option(&model.usage);
+
+        let metadata = Self::metadata_from_persisted_content(&content);
 
         Message {
             id: model.id,
@@ -317,7 +343,7 @@ impl SqliteMessageRepository {
             error,
             usage,
             prompt_tokens: model.prompt_tokens,
-            metadata: None,
+            metadata,
         }
     }
 
@@ -825,6 +851,40 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].id, "msg1");
+    }
+
+    #[tokio::test]
+    async fn test_reload_derives_tool_error_metadata_from_content_is_error() {
+        let repo = setup_test_db().await;
+        create_test_session(&repo.db, "session1").await;
+
+        let mut message = create_dummy_message("tool-err", "session1");
+        message.role = "tool".to_string();
+        message.tool_call_id = Some("call-1".to_string());
+        message.content = vec![MCPContent::Text {
+            text: "tool failed".to_string(),
+            is_error: Some(true),
+        }];
+        // metadata is not a DB column; callers may set it in memory, but reload must re-derive.
+        message.metadata = Some(serde_json::json!({ "toolError": true }));
+
+        repo.insert(&message).await.expect("Failed to insert");
+
+        let loaded = repo
+            .get_by_id("tool-err")
+            .await
+            .expect("Failed to get message")
+            .expect("message should exist");
+
+        assert_eq!(
+            loaded
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("toolError"))
+                .and_then(|value| value.as_bool()),
+            Some(true),
+            "toolError must be reconstructed from persisted content.is_error"
+        );
     }
 
     #[tokio::test]
