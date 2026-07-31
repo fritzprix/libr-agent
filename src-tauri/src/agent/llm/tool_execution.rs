@@ -496,6 +496,9 @@ pub async fn execute_tool_calls(
         session_id: &session_id,
     };
 
+    // Index-based loop (not `for tool_calls`) so a mid-batch cancel can
+    // tombstone `tool_calls[index..]` and break without consuming the iterator.
+    // Every continue/success path must bump `index` before the next check.
     let mut index = 0;
     while index < tool_calls.len() {
         if session_cancel_requested(&active_sessions, &session_id, &cancellation_token).await {

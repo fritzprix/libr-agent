@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 #[test]
 fn test_classify_cancel_strategy_keeps_boundary_pause_when_pending_execution_exists() {
     let strategy = classify_cancel_strategy(true);
-    assert_eq!(strategy, CancelStrategy::CancelToolsThenPauseAtBoundary);
+    assert_eq!(strategy, CancelStrategy::CancelToolsThenPause);
 }
 
 #[test]

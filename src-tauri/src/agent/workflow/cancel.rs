@@ -16,14 +16,14 @@ pub enum CancelStrategy {
     /// Tool batch is in flight: cancel the token immediately and keep
     /// `cancel_pending` set so awaitAgent / tool loop can short-circuit, then
     /// pause at the message boundary once remaining tools are tombstoned.
-    CancelToolsThenPauseAtBoundary,
+    CancelToolsThenPause,
     /// No tool batch: pause the session immediately.
     StopImmediately,
 }
 
 pub fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
     if has_pending_execution {
-        CancelStrategy::CancelToolsThenPauseAtBoundary
+        CancelStrategy::CancelToolsThenPause
     } else {
         CancelStrategy::StopImmediately
     }
@@ -253,9 +253,8 @@ pub async fn cancel_workflow(
     )
     .await;
 
-    if classify_cancel_strategy(has_pending_execution)
-        == CancelStrategy::CancelToolsThenPauseAtBoundary
-    {
+    if classify_cancel_strategy(has_pending_execution) == CancelStrategy::CancelToolsThenPause {
+
         log::info!(
             "Cancel requested for session {} during tool batch — token cancelled; remaining tools will be tombstoned",
             session_id
