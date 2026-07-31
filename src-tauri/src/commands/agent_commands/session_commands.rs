@@ -48,10 +48,7 @@ pub async fn agent_open_session(
     crate::session::hydrate_persisted_workspace_override_from_global(session_manager, &session_id)
         .await?;
 
-    let session = manager
-        .get_session(&session_id)
-        .await?
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let session = manager.resume_session(&session_id).await?;
     let repo = crate::state::get_message_repository();
     let mut message_slice = repo
         .get_recent_slice(

@@ -9,6 +9,7 @@ import type { AgentEventPayload } from './types';
 import { buildMessageError, syncSessionMetadataFromBackend } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
 import type { SessionRuntimeState } from '@/models/agent-ipc';
+import { notifyRuntimeStateErrors } from './notifyRuntimeStateErrors';
 import {
   applyWorkflowInactiveCleanup,
   isInactiveWorkflowStatus,
@@ -100,11 +101,20 @@ export function useAgentSessionEvents(
 
           switch (payload.type) {
             case 'sessionRuntimeStateUpdated': {
-              setters.setRuntimeState((currentState) =>
-                shouldApplyRuntimeState(currentState, payload.runtimeState)
-                  ? payload.runtimeState
-                  : currentState,
-              );
+              const nextState = payload.runtimeState;
+              let applied = false;
+              let previousState: SessionRuntimeState | null = null;
+              setters.setRuntimeState((currentState) => {
+                if (!shouldApplyRuntimeState(currentState, nextState)) {
+                  return currentState;
+                }
+                previousState = currentState;
+                applied = true;
+                return nextState;
+              });
+              if (applied && previousState) {
+                notifyRuntimeStateErrors(previousState, nextState);
+              }
               break;
             }
 
@@ -361,12 +371,20 @@ export function useAgentSessionEvents(
         setters.setHasOlderMessages(response.messages.hasMoreBefore);
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
         setters.setPendingApprovals(response.pendingApprovals ?? []);
+        // Use runtimeState from response as initial state; sequence check ensures we don't overwrite newer events
+        const nextRuntimeState =
+          response.runtimeState ?? HYDRATING_RUNTIME_STATE;
+        let previousRuntimeState: SessionRuntimeState | null = null;
         setters.setRuntimeState((currentState) => {
-          const nextState = response.runtimeState ?? HYDRATING_RUNTIME_STATE;
-          return shouldApplyRuntimeState(currentState, nextState)
-            ? nextState
-            : currentState;
+          if (shouldApplyRuntimeState(currentState, nextRuntimeState)) {
+            previousRuntimeState = currentState;
+            return nextRuntimeState;
+          }
+          return currentState;
         });
+        if (previousRuntimeState) {
+          notifyRuntimeStateErrors(previousRuntimeState, nextRuntimeState);
+        }
         void actions.persistViewedAt().catch((err) => {
           logger.error(
             'Failed to mark session viewed during initialization',

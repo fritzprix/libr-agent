@@ -53,6 +53,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const {
     submit,
     isSessionLoading,
+    isProxyReady,
     workflowStatus,
     cancel,
     resume,
@@ -158,9 +159,16 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       !hasContent ||
       isAttachmentLoading ||
       hasProcessingFiles ||
-      isSessionLoading
+      isSessionLoading ||
+      !isProxyReady
     );
-  }, [hasContent, isAttachmentLoading, hasProcessingFiles, isSessionLoading]);
+  }, [
+    hasContent,
+    isAttachmentLoading,
+    hasProcessingFiles,
+    isSessionLoading,
+    isProxyReady,
+  ]);
 
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {
@@ -416,7 +424,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       <LayeredPendingQueue
         items={pendingQueue}
         onCancel={cancelPendingPrompt}
-        disabled={isSessionLoading}
+        disabled={isSessionLoading || !isProxyReady}
       />
       <form
         ref={chatInputRef}

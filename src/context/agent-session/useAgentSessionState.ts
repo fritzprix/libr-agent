@@ -179,6 +179,8 @@ export function useAgentSessionState() {
       }
     : null;
 
+  const isProxyReady = runtimeState.proxy.ready;
+
   return {
     state: {
       session,
@@ -187,6 +189,7 @@ export function useAgentSessionState() {
         runtimeState.phase === 'hydrating' ||
         runtimeState.phase === 'initializing' ||
         session?.status === 'provisioning',
+      isProxyReady,
       isLoadingOlderMessages,
       hasOlderMessages,
       oldestMessageCursor,

@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   workflowStatus: 'idle' as 'idle' | 'busy' | 'paused' | 'queued' | 'error',
   isSubmitting: false,
   isSessionLoading: false,
+  isProxyReady: true,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -61,6 +62,7 @@ vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
     submit: mocks.submit,
     isSessionLoading: mocks.isSessionLoading,
+    isProxyReady: mocks.isProxyReady,
     workflowStatus: mocks.workflowStatus,
     cancel: mocks.cancel,
     resume: mocks.resume,

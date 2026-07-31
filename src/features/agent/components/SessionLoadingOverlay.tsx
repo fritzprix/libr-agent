@@ -4,7 +4,7 @@ interface SessionLoadingOverlayProps {
   label: string;
   initializationStep?: string | null;
   initializationError?: string | null;
-  variant: 'blocking' | 'overlay';
+  variant: 'blocking' | 'overlay' | 'banner';
 }
 
 export function SessionLoadingOverlay({
@@ -14,6 +14,29 @@ export function SessionLoadingOverlay({
   variant,
 }: SessionLoadingOverlayProps) {
   const isFailed = Boolean(initializationError);
+
+  if (variant === 'banner') {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between border-b border-amber-200/50 bg-amber-50/90 px-4 py-2 text-xs text-amber-800 backdrop-blur-sm dark:border-amber-900/40 dark:bg-amber-950/80 dark:text-amber-200 animate-in fade-in slide-in-from-top-1 duration-200"
+      >
+        <div className="flex items-center gap-2">
+          {!isFailed ? (
+            <LoadingSpinner
+              size="sm"
+              className="border-2 text-amber-600 dark:text-amber-400 shrink-0"
+              label={label}
+            />
+          ) : null}
+          <span className="font-medium">
+            {initializationError ?? initializationStep ?? label}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   const content = (
     <>

@@ -111,5 +111,3 @@ export function clearStoredModelCache(provider?: string): void {
     // Ignore storage errors
   }
 }
-
-

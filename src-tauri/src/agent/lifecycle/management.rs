@@ -82,13 +82,10 @@ pub async fn resume_session(
     }
 
     // Deserialize agent config (live assistant settings + session lineage)
-    let agent_config = crate::agent::resolve_agent_config(&session).await?;
+    // SSOT: MCP activation is session → assistant → mcpServerIds.
+    let (tool_ids, mcp_server_ids) = crate::agent::resolve_session_mcp_bindings(&session).await?;
 
-    // Extract builtin tool IDs from agent config
-    let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
-    let mcp_server_ids = agent_config.mcp_server_ids.clone();
-
-    // Create proxy for this session
+    // Create proxy for this session (tool discovery runs asynchronously in background)
     proxy_manager
         .create_proxy(
             session_id.to_string(),
