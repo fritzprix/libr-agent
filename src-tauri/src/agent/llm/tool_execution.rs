@@ -9,9 +9,11 @@ use crate::commands::agent_commands::ToolExecutionResult;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::SessionRepository;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::{oneshot, RwLock};
+use tokio_util::sync::CancellationToken;
 
 struct ToolExecutionContext<'a> {
     session_repo: &'a Arc<dyn SessionRepository>,
@@ -424,6 +426,45 @@ fn error_result(message: impl Into<String>) -> ToolExecutionResult {
     }
 }
 
+fn cancelled_tool_result() -> ToolExecutionResult {
+    error_result("Tool call cancelled by user.")
+}
+
+async fn session_cancel_requested(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    cancellation_token: &CancellationToken,
+) -> bool {
+    if cancellation_token.is_cancelled() {
+        return true;
+    }
+    let active = active_sessions.read().await;
+    active
+        .get(session_id)
+        .map(|session| session.cancel_pending.load(Ordering::SeqCst))
+        .unwrap_or(false)
+}
+
+async fn inject_cancel_tombstones_for_remaining(
+    context: &ToolExecutionContext<'_>,
+    remaining: &[ToolCall],
+) {
+    for tool_call in remaining {
+        log::info!(
+            "Injecting cancel tombstone for tool call {} in session {}",
+            tool_call.id,
+            context.session_id
+        );
+        context
+            .continue_after_tool(
+                &tool_call.id,
+                cancelled_tool_result(),
+                "cancelled tool call",
+            )
+            .await;
+    }
+}
+
 pub async fn execute_tool_calls(
     session_repo: Arc<dyn SessionRepository>,
     active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -433,6 +474,20 @@ pub async fn execute_tool_calls(
     tool_calls: Vec<ToolCall>,
     loop_prevention_short_circuits: HashMap<String, LoopPreventionShortCircuit>,
 ) {
+    let cancellation_token = {
+        let active = active_sessions.read().await;
+        match active.get(&session_id) {
+            Some(session) => session.cancellation_token.clone(),
+            None => {
+                log::warn!(
+                    "execute_tool_calls: session {} not found; skipping tool batch",
+                    session_id
+                );
+                return;
+            }
+        }
+    };
+
     let context = ToolExecutionContext {
         session_repo: &session_repo,
         active_sessions: &active_sessions,
@@ -441,32 +496,39 @@ pub async fn execute_tool_calls(
         session_id: &session_id,
     };
 
-    for ToolCall {
-        id: tool_call_id,
-        function,
-        ..
-    } in tool_calls
-    {
+    let mut index = 0;
+    while index < tool_calls.len() {
+        if session_cancel_requested(&active_sessions, &session_id, &cancellation_token).await {
+            inject_cancel_tombstones_for_remaining(&context, &tool_calls[index..]).await;
+            break;
+        }
+
+        let ToolCall {
+            id: tool_call_id,
+            function,
+            ..
+        } = &tool_calls[index];
         let ToolCallFunction {
             name: tool_name,
             arguments: args_str,
         } = function;
 
-        context.emit_tool_execution_started(&tool_name);
+        context.emit_tool_execution_started(tool_name);
 
-        if let Some(short_circuit) = loop_prevention_short_circuits.get(&tool_call_id) {
+        if let Some(short_circuit) = loop_prevention_short_circuits.get(tool_call_id) {
             let guidance = build_loop_prevention_guidance(short_circuit);
             context
                 .continue_after_tool(
-                    &tool_call_id,
+                    tool_call_id,
                     loop_prevention_tool_result(&guidance),
                     "loop prevention short-circuit",
                 )
                 .await;
+            index += 1;
             continue;
         }
 
-        let args = match inspect_tool_call_arguments(&args_str) {
+        let args = match inspect_tool_call_arguments(args_str) {
             Ok(map) => serde_json::Value::Object(map),
             Err((kind, parse_error)) => {
                 log::error!(
@@ -478,10 +540,10 @@ pub async fn execute_tool_calls(
                 let max_output_tokens = context.configured_max_output_tokens().await;
                 context
                     .continue_after_tool(
-                        &tool_call_id,
+                        tool_call_id,
                         args_parse_error_result(
-                            &tool_name,
-                            &args_str,
+                            tool_name,
+                            args_str,
                             kind,
                             &parse_error,
                             max_output_tokens,
@@ -489,12 +551,13 @@ pub async fn execute_tool_calls(
                         "failed tool parse",
                     )
                     .await;
+                index += 1;
                 continue;
             }
         };
 
         let policy_decision =
-            crate::agent::tool_approvals::evaluate_tool_execution_policy(&tool_name, &args).await;
+            crate::agent::tool_approvals::evaluate_tool_execution_policy(tool_name, &args).await;
 
         let unsafe_enabled = context.current_unsafe_mode().await;
         if let Some(blocked) = crate::agent::tool_approvals::blocked_execution_for_runtime(
@@ -503,11 +566,12 @@ pub async fn execute_tool_calls(
         ) {
             context
                 .continue_after_tool(
-                    &tool_call_id,
+                    tool_call_id,
                     error_result(blocked.message.clone()),
                     "policy-blocked tool execution",
                 )
                 .await;
+            index += 1;
             continue;
         }
 
@@ -524,9 +588,9 @@ pub async fn execute_tool_calls(
             };
             match context
                 .request_approval(
-                    &tool_call_id,
-                    &tool_name,
-                    &args_str,
+                    tool_call_id,
+                    tool_name,
+                    args_str,
                     approval_request,
                     approval_kind,
                 )
@@ -536,20 +600,36 @@ pub async fn execute_tool_calls(
                 ApprovalOutcome::Rejected => {
                     context
                         .continue_after_tool(
-                            &tool_call_id,
+                            tool_call_id,
                             error_result("User rejected the tool execution."),
                             "tool rejection",
                         )
                         .await;
-                    return;
+                    // User rejected this tool — cancel remaining calls in the batch too.
+                    inject_cancel_tombstones_for_remaining(&context, &tool_calls[index + 1..])
+                        .await;
+                    break;
                 }
-                ApprovalOutcome::ChannelClosed => continue,
+                ApprovalOutcome::ChannelClosed => {
+                    // Cancel/terminate dropped the approval waiter. Close this call
+                    // and let the cancel check at the top tombstone any remainder.
+                    context
+                        .continue_after_tool(
+                            tool_call_id,
+                            cancelled_tool_result(),
+                            "approval cancelled",
+                        )
+                        .await;
+                    index += 1;
+                    continue;
+                }
             }
         }
 
-        let result = context.execute_tool(&tool_name, args).await;
+        let result = context.execute_tool(tool_name, args).await;
         context
-            .continue_after_tool(&tool_call_id, result, "tool execution")
+            .continue_after_tool(tool_call_id, result, "tool execution")
             .await;
+        index += 1;
     }
 }

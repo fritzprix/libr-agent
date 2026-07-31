@@ -13,13 +13,17 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancelStrategy {
-    DeferToMessageBoundary,
+    /// Tool batch is in flight: cancel the token immediately and keep
+    /// `cancel_pending` set so awaitAgent / tool loop can short-circuit, then
+    /// pause at the message boundary once remaining tools are tombstoned.
+    CancelToolsThenPauseAtBoundary,
+    /// No tool batch: pause the session immediately.
     StopImmediately,
 }
 
 pub fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
     if has_pending_execution {
-        CancelStrategy::DeferToMessageBoundary
+        CancelStrategy::CancelToolsThenPauseAtBoundary
     } else {
         CancelStrategy::StopImmediately
     }
@@ -27,6 +31,29 @@ pub fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
 
 pub fn should_consume_cancel_at_message_boundary(cancel_pending: bool) -> bool {
     cancel_pending
+}
+
+/// Drop every pending approval waiter so `request_approval` unblocks on cancel.
+async fn abort_pending_tool_approvals(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let active = active_sessions.read().await;
+    let Some(session) = active.get(session_id) else {
+        return;
+    };
+    let mut approvals = session.pending_approvals.write().await;
+    if approvals.is_empty() {
+        return;
+    }
+    log::info!(
+        "Aborting {} pending tool approval(s) for cancelled session {}",
+        approvals.len(),
+        session_id
+    );
+    // Dropping senders yields ChannelClosed in execute_tool_calls, which injects
+    // cancel tombstones for the waiting tool call.
+    approvals.clear();
 }
 
 /// Cancel is a no-op when the session is already inactive — no workflow to stop.
@@ -169,9 +196,8 @@ pub async fn cancel_workflow(
 ) -> Result<(), String> {
     log::info!("Cancelling workflow for session: {}", session_id);
 
-    // Determine whether to stop immediately or defer to message boundary.
-    // If a tool-call batch is in progress, we only set cancel_pending and let
-    // continue_workflow_after_tool consume it after the full message completes.
+    // Determine whether tools are mid-batch (pause after tombstones) or idle
+    // (pause immediately). Cancellation is always signaled up front.
     let (has_pending_execution, current_status) = {
         let active = active_sessions.read().await;
         let session = active
@@ -203,30 +229,22 @@ pub async fn cancel_workflow(
         return Ok(());
     }
 
+    // Always signal cancel immediately — including mid tool-batch.
+    // Previously the "defer" path only set cancel_pending and left the token
+    // live, so execute_tool_calls kept running every remaining tool.
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             session.cancel_pending.store(true, Ordering::SeqCst);
+            session.cancellation_token.cancel();
         }
     }
 
-    if classify_cancel_strategy(has_pending_execution) == CancelStrategy::DeferToMessageBoundary {
-        log::info!(
-            "Cancel requested for session {} (deferred to message boundary)",
-            session_id
-        );
-        // Waiting prompts stay in the durable FIFO queue so the user can
-        // cancel them individually or resume later.
-        // SP6: Wake any awaitAgent/pollProcess waiter that is suspended inside
-        // a tool call for THIS session. The deferred cancel only sets
-        // cancel_pending; without this notification the waiter would sleep up
-        // to 30 s before re-checking the flag.
-        crate::state::get_session_bus().notify_status_change(&session_id);
-        return Ok(());
-    }
+    abort_pending_tool_approvals(active_sessions, &session_id).await;
 
-    // No in-flight tool-call batch: stop immediately and leave the workflow paused
-    // so the user can explicitly resume from the current stack.
+    // SP6: wake awaitAgent/pollProcess waiters suspended in this session's tools.
+    crate::state::get_session_bus().notify_status_change(&session_id);
+
     cancel_frontend_completion_if_pending(
         active_sessions,
         app_handle,
@@ -235,6 +253,22 @@ pub async fn cancel_workflow(
     )
     .await;
 
+    if classify_cancel_strategy(has_pending_execution)
+        == CancelStrategy::CancelToolsThenPauseAtBoundary
+    {
+        log::info!(
+            "Cancel requested for session {} during tool batch — token cancelled; remaining tools will be tombstoned",
+            session_id
+        );
+        // Keep cancel_pending=true so awaitAgent short-circuits and
+        // continue_workflow_after_tool can pause at the message boundary after
+        // execute_tool_calls injects cancel tombstones for unfinished calls.
+        // Waiting prompts stay in the durable FIFO queue.
+        return Ok(());
+    }
+
+    // No in-flight tool-call batch: stop immediately and leave the workflow paused
+    // so the user can explicitly resume from the current stack.
     crate::agent::lifecycle::update_session_status(
         session_repo,
         active_sessions,
@@ -247,11 +281,8 @@ pub async fn cancel_workflow(
     let mut active = active_sessions.write().await;
     if let Some(session) = active.get_mut(&session_id) {
         session.cancel_pending.store(false, Ordering::SeqCst);
-        // Cancel the token (do NOT replace with a fresh one yet).
+        // Token already cancelled above; do NOT replace with a fresh one yet.
         // The cancelled state persists until start_workflow explicitly resets it.
-        // This prevents stale in-flight LLM responses carrying tool_calls from
-        // re-entering the workflow via the Idle+allow_idle_tool_entry path after cancel.
-        session.cancellation_token.cancel();
     }
     drop(active);
 
