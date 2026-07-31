@@ -15,7 +15,9 @@ pub async fn agent_send_message(
     // Check proxy readiness before allowing tool calls
     let runtime_state = manager.get_runtime_state(&request.session_id).await;
     if !runtime_state.proxy.ready {
-        return Err("MCP proxy not ready. Please wait for tool initialization to complete.".to_string());
+        return Err(
+            "MCP proxy not ready. Please wait for tool initialization to complete.".to_string(),
+        );
     }
 
     manager
