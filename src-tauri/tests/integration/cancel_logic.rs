@@ -20,9 +20,9 @@ use tokio_util::sync::CancellationToken;
 // -----------------------------------------------------------------------
 
 #[test]
-fn test_classify_cancel_strategy_defers_when_pending_execution_exists() {
+fn test_classify_cancel_strategy_keeps_boundary_pause_when_pending_execution_exists() {
     let strategy = classify_cancel_strategy(true);
-    assert_eq!(strategy, CancelStrategy::DeferToMessageBoundary);
+    assert_eq!(strategy, CancelStrategy::CancelToolsThenPause);
 }
 
 #[test]
@@ -147,24 +147,31 @@ fn test_cancelled_token_clone_is_also_cancelled() {
 // cancel_pending AtomicBool
 // -----------------------------------------------------------------------
 
-/// DeferToBoundary path: cancel_pending is set to true by cancel_workflow
-/// and must remain true until continue_workflow_after_tool consumes it.
+/// Mid-tool-batch cancel: cancel_pending stays true (for awaitAgent) and the
+/// token is cancelled immediately so execute_tool_calls can break + tombstone.
 #[test]
-fn test_cancel_pending_transitions_for_defer_to_boundary() {
+fn test_cancel_pending_stays_set_during_tool_batch_cancel() {
     let cancel_pending = Arc::new(AtomicBool::new(false));
+    let token = CancellationToken::new();
 
-    // cancel_workflow: set the flag
+    // cancel_workflow during tool batch
     cancel_pending.store(true, Ordering::SeqCst);
-    assert!(cancel_pending.load(Ordering::SeqCst));
+    token.cancel();
 
-    // continue_workflow_after_tool: reads and consumes the flag
+    assert!(cancel_pending.load(Ordering::SeqCst));
+    assert!(
+        token.is_cancelled(),
+        "token must cancel immediately even while tools are still draining"
+    );
+
+    // continue_workflow_after_tool: reads and consumes the flag at message boundary
     let should_stop = cancel_pending.load(Ordering::SeqCst);
     assert!(should_stop);
 
     cancel_pending.store(false, Ordering::SeqCst);
     assert!(
         !cancel_pending.load(Ordering::SeqCst),
-        "cancel_pending must be cleared after consumption"
+        "cancel_pending must be cleared after message-boundary consumption"
     );
 }
 
@@ -188,17 +195,16 @@ fn test_cancel_pending_cleared_immediately_on_stop_immediately() {
 // discard_pending_events semantics (via PendingEventManager)
 // -----------------------------------------------------------------------
 
-/// Bug 4 regression: DeferToBoundary cancel must drain the pending queue
-/// immediately so no buffered user messages are processed after the agent
-/// stops, even though the current tool batch is still completing.
+/// Soft cancel preserves the durable waiting-prompt queue in production, but
+/// in-memory PendingEventManager drains used by hard-terminate paths must stay
+/// idempotent.
 #[test]
-fn test_pending_events_drained_on_cancel() {
+fn test_pending_events_drain_is_complete() {
     let mut manager = PendingEventManager::new();
     manager.add(PendingEvent::Message("msg1".into()));
     manager.add(PendingEvent::Message("msg2".into()));
     assert_eq!(manager.count(), 2);
 
-    // Simulates discard_pending_events: drain all messages
     let drained = manager.drain_messages();
 
     assert_eq!(drained.len(), 2, "both pending messages must be discarded");
@@ -214,11 +220,9 @@ fn test_pending_events_drained_on_cancel() {
 fn test_discard_pending_events_is_idempotent() {
     let mut manager = PendingEventManager::new();
 
-    // First discard (DeferToBoundary)
     let first = manager.drain_messages();
     assert!(first.is_empty());
 
-    // Second discard (continue_workflow_after_tool message-boundary handler)
     let second = manager.drain_messages();
     assert!(
         second.is_empty(),
@@ -252,8 +256,6 @@ fn test_stop_immediately_full_lifecycle() {
     assert_eq!(manager.count(), 0);
 
     // --- start_workflow ---
-    // Regression: old code blocked here because is_cancelled() was checked BEFORE reset.
-    // Now start_workflow does the reset unconditionally.
     let token = CancellationToken::new(); // reset
     cancel_pending.store(false, Ordering::SeqCst);
 
@@ -264,28 +266,29 @@ fn test_stop_immediately_full_lifecycle() {
     assert!(!cancel_pending.load(Ordering::SeqCst));
 }
 
-/// Full DeferToBoundary scenario:
-///   cancel_workflow → flag set, queue drained (tool batch still running)
-///   continue_workflow_after_tool → flag consumed, token reset, status→Idle
-///   start_workflow → token already fresh, workflow starts normally
+/// Full mid-tool-batch cancel scenario (#1638):
+///   cancel_workflow → flag set AND token cancelled (tools still may finish current call)
+///   execute_tool_calls → sees cancel, injects tombstones for remaining, breaks
+///   continue_workflow_after_tool → flag consumed, status→Paused
+///   start_workflow → token reset, workflow starts normally
 #[test]
-fn test_defer_to_boundary_full_lifecycle() {
+fn test_tool_batch_cancel_cancels_token_immediately() {
     let token = CancellationToken::new();
     let cancel_pending = Arc::new(AtomicBool::new(false));
-    let mut manager = PendingEventManager::new();
 
-    manager.add(PendingEvent::Message("pending-msg".into()));
-
-    // --- cancel_workflow (DeferToBoundary) ---
+    // --- cancel_workflow during tool batch ---
     cancel_pending.store(true, Ordering::SeqCst);
-    let _drained = manager.drain_messages(); // discard immediately
+    token.cancel();
 
     assert!(cancel_pending.load(Ordering::SeqCst));
-    assert_eq!(manager.count(), 0, "queue cleared before tool batch ends");
     assert!(
-        !token.is_cancelled(),
-        "token NOT cancelled in DeferToBoundary"
+        token.is_cancelled(),
+        "token MUST be cancelled immediately so execute_tool_calls can stop remaining tools"
     );
+
+    // --- execute_tool_calls cancel check ---
+    let should_tombstone_remaining = token.is_cancelled() || cancel_pending.load(Ordering::SeqCst);
+    assert!(should_tombstone_remaining);
 
     // --- continue_workflow_after_tool (message boundary) ---
     let should_stop = cancel_pending.load(Ordering::SeqCst);
@@ -300,6 +303,6 @@ fn test_defer_to_boundary_full_lifecycle() {
     // --- start_workflow (user sends new message) ---
     assert!(
         !token.is_cancelled(),
-        "workflow must be startable after deferred cancel"
+        "workflow must be startable after tool-batch cancel"
     );
 }

@@ -88,8 +88,10 @@ pub async fn continue_workflow_after_tool(
             }
 
             // Message-boundary cancel handling:
-            // If cancel was requested while tools were running, consume it now
-            // after this message's full tool-call batch has completed.
+            // Cancel during a tool batch keeps cancel_pending=true and cancels the
+            // token immediately; remaining tools get cancel tombstones in
+            // execute_tool_calls. Once the batch is complete, consume the flag here
+            // and pause so we do not start another LLM turn.
             let should_stop_after_message = {
                 let sessions = active_sessions.read().await;
                 sessions
