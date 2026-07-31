@@ -254,7 +254,6 @@ pub async fn cancel_workflow(
     .await;
 
     if classify_cancel_strategy(has_pending_execution) == CancelStrategy::CancelToolsThenPause {
-
         log::info!(
             "Cancel requested for session {} during tool batch — token cancelled; remaining tools will be tombstoned",
             session_id
