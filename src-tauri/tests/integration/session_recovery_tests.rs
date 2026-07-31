@@ -20,7 +20,7 @@ use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::entity::session;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
-use tauri_mcp_agent_lib::models::chat::Message;
+use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 use tauri_mcp_agent_lib::repositories::compact_context_repository::CompactContextRepository;
 use tauri_mcp_agent_lib::repositories::{
     CompactContextRecord, InMemorySessionRepository, MessageRepository as _, SessionMetadata,
@@ -410,11 +410,62 @@ async fn recover_sessions_closes_recent_orphaned_tool_calls_outside_oldest_page(
         .find(|message| message.tool_call_id.as_deref() == Some(tool_call_id))
         .expect("recovery should inject a tombstone for the recent orphaned tool call");
     assert_eq!(orphan_tombstone.role, "tool");
+    // Frontend contract: useMessageGrouping keeps source=recovery tool results visible
+    // so orphaned tool calls resolve (see useMessageGrouping.test.ts "no stuck spinner").
+    assert_eq!(
+        orphan_tombstone.source,
+        Some(MessageSource::Recovery),
+        "tombstone source must stay Recovery; filtering it in the UI recreates stuck spinners"
+    );
     assert!(
         orphan_tombstone
             .content
             .iter()
             .any(|content| matches!(content, MCPContent::Text { text, .. } if text.contains("did not complete"))),
         "tombstone text should explain the crash recovery"
+    );
+    assert_eq!(
+        orphan_tombstone
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("toolError"))
+            .and_then(|value| value.as_bool()),
+        Some(true),
+        "tombstone metadata must set toolError so the UI groups it as a tool failure"
+    );
+
+    let message_added_events: Vec<_> = dispatcher
+        .agent_events()
+        .into_iter()
+        .filter_map(|event| match event {
+            AgentEvent::MessageAdded {
+                session_id: event_session_id,
+                message,
+            } if event_session_id == session_id
+                && message.tool_call_id.as_deref() == Some(tool_call_id) =>
+            {
+                Some(message)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        message_added_events.len(),
+        1,
+        "recovery should emit MessageAdded for each injected tombstone"
+    );
+    assert_eq!(
+        message_added_events[0].source,
+        Some(MessageSource::Recovery),
+        "emitted MessageAdded tombstone must keep source=Recovery for UI visibility"
+    );
+    assert_eq!(
+        message_added_events[0]
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("toolError"))
+            .and_then(|value| value.as_bool()),
+        Some(true),
+        "emitted MessageAdded tombstone must include toolError metadata"
     );
 }
