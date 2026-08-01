@@ -7,12 +7,10 @@ use crate::repositories::message_repository::MessageRepository as MessageReposit
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 use super::management::update_session_status_with_dispatcher;
 
@@ -121,35 +119,7 @@ fn build_recovered_session(
     session: &crate::repositories::SessionMetadata,
     context_registry: Arc<ContextRegistry>,
 ) -> AgentSession {
-    let (yolo_enabled, unsafe_enabled) = session.execution_mode.runtime_flags();
-    AgentSession {
-        metadata: session.clone(),
-        is_running: false,
-        active_permit: None,
-        status_transition: Arc::new(RwLock::new(None)),
-        transition_lock: Arc::new(tokio::sync::Mutex::new(())),
-        cancellation_token: CancellationToken::new(),
-        yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
-        unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
-        cancel_pending: Arc::new(AtomicBool::new(false)),
-        pending_execution: None,
-        messages: Arc::new(RwLock::new(Vec::new())),
-        cache_initialized: Arc::new(AtomicBool::new(false)),
-        last_synced_at: Arc::new(RwLock::new(None)),
-        repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
-        repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
-        pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
-        pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
-        context_registry,
-        compact_context: Arc::new(RwLock::new(None)),
-        compaction: crate::agent::state::CompactionRuntimeState::new(),
-        expected_response_id: Arc::new(RwLock::new(None)),
-        cached_stable_prompt: Arc::new(RwLock::new(None)),
-        last_completion_request: Arc::new(RwLock::new(None)),
-        last_submitted_input_message_id: Arc::new(RwLock::new(None)),
-    }
+    AgentSession::new(session.clone(), context_registry, None)
 }
 
 /// Recover sessions stuck in BUSY state after app crash/restart
