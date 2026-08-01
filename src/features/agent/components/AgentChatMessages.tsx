@@ -234,8 +234,11 @@ export function AgentChatMessages() {
 
   const renderMessageGroup = useCallback(
     (_index: number, groupedMessage: GroupedMessage) => {
-      const isLatestMessage = groupedMessage.message.id === latestMessage?.id;
-      const followChatScroll = !isLatestMessage || isPinned;
+      // Only pin nested auto-scroll (thinking / resources) while the list itself
+      // is stick-to-bottom. The old `!isLatest || isPinned` kept followChatScroll
+      // true for every historical bubble, so load-older mounts could briefly
+      // yank a user bubble into view then release it.
+      const followChatScroll = isPinned;
       const isCompactBoundary = groupedMessageContainsBoundary(
         groupedMessage,
         compactedRange?.toId,
@@ -252,7 +255,10 @@ export function AgentChatMessages() {
 
       if (groupedMessage.type === 'tool_group') {
         return (
-          <div className="mb-6">
+          // Use padding (not margin) for inter-item gap — Virtuoso's size
+          // observer ignores vertical margins and mis-corrects scrollTop on
+          // upward scroll, flashing above-viewport bubbles into view.
+          <div className="pb-6">
             <AgentMessageBubble
               message={groupedMessage.message}
               assistantName={assistantName}
@@ -268,7 +274,7 @@ export function AgentChatMessages() {
 
       if (groupedMessage.type === 'tool_error_group') {
         return (
-          <div className="mb-6">
+          <div className="pb-6">
             <AgentMessageBubble
               message={groupedMessage.message}
               assistantName={assistantName}
@@ -283,8 +289,8 @@ export function AgentChatMessages() {
 
       if (groupedMessage.message.error) {
         return (
-          <div className="mb-6">
-            <div className="self-start my-2">
+          <div className="pb-6">
+            <div className="self-start py-2">
               <ErrorBubble
                 error={groupedMessage.message.error}
                 onRetry={retryMessage}
@@ -311,7 +317,7 @@ export function AgentChatMessages() {
       }
 
       return (
-        <div className="mb-6">
+        <div className="pb-6">
           <AgentMessageBubble
             message={msg}
             assistantName={assistantName}
@@ -326,7 +332,6 @@ export function AgentChatMessages() {
       compactedEvent,
       compactedRange?.toId,
       isPinned,
-      latestMessage?.id,
       retryMessage,
       toolResultsMap,
       workflowStatus,
@@ -352,6 +357,10 @@ export function AgentChatMessages() {
           atBottomThreshold={bottomThreshold}
           atBottomStateChange={handleVirtuosoAtBottomStateChange}
           followOutput={false}
+          // Chat starts at LAST via initialTopMostItemIndex. Without this,
+          // scrolling up into never-measured variable-height rows briefly
+          // paints those above-viewport bubbles then corrects (virtuoso#1096).
+          skipAnimationFrameInResizeObserver
           increaseViewportBy={{ top: 640, bottom: 960 }}
           startReached={handleReachTop}
           totalListHeightChanged={handleTotalListHeightChanged}

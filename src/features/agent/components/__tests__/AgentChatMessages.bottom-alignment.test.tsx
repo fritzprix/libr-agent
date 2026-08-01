@@ -166,7 +166,29 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       });
 
       expect(scrollToIndexMock).toHaveBeenCalled();
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      // #1647: Virtuoso LAST-item scroll does not include Footer spacer —
+      // sentinel must still align so content clears the composer.
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      restoreAnimationFrame();
+      restoreScrollIntoView();
+    }
+  });
+
+  it('aligns the footer sentinel even when Virtuoso scrollToIndex succeeds (#1647)', () => {
+    const scrollIntoView = vi.fn();
+    const restoreAnimationFrame = installImmediateAnimationFrameMock();
+    const restoreScrollIntoView = installScrollIntoViewMock(scrollIntoView);
+
+    try {
+      render(<AgentChatMessages />);
+
+      expect(scrollToIndexMock).toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        block: 'end',
+        inline: 'nearest',
+        behavior: 'auto',
+      });
     } finally {
       restoreAnimationFrame();
       restoreScrollIntoView();
@@ -216,7 +238,7 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       });
 
       expect(scrollToIndexMock).toHaveBeenCalled();
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       restoreAnimationFrame();
       restoreScrollIntoView();
@@ -247,7 +269,9 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       });
 
       expect(scrollToIndexMock.mock.calls.length).toBe(2);
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalled();
+
+      scrollIntoView.mockClear();
 
       act(() => {
         virtuosoProps.atBottomStateChange?.(true);
@@ -255,7 +279,7 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       });
 
       expect(scrollToIndexMock.mock.calls.length).toBe(3);
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       restoreAnimationFrame();
       restoreScrollIntoView();
@@ -276,7 +300,7 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       rerender(<AgentChatMessages />);
 
       expect(scrollToIndexMock).toHaveBeenCalled();
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       restoreAnimationFrame();
       restoreScrollIntoView();
@@ -312,7 +336,7 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       });
 
       expect(scrollToIndexMock).toHaveBeenCalled();
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -489,7 +513,7 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       });
 
       expect(scrollToIndexMock).toHaveBeenCalled();
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -545,7 +569,7 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       rerender(<AgentChatMessages />);
 
       expect(scrollToIndexMock).toHaveBeenCalled();
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;

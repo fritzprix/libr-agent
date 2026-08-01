@@ -601,10 +601,12 @@ describe('AgentChatMessages – Virtuoso list configuration', () => {
     const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
       atBottomThreshold: number;
       followOutput: false;
+      skipAnimationFrameInResizeObserver?: boolean;
     };
 
     expect(virtuosoProps.atBottomThreshold).toBe(getVisualBottomThreshold());
     expect(virtuosoProps.followOutput).toBe(false);
+    expect(virtuosoProps.skipAnimationFrameInResizeObserver).toBe(true);
     expect(getVisualBottomThreshold()).toBe(4);
   });
 
