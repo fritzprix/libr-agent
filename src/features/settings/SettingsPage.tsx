@@ -38,6 +38,7 @@ const SettingsPage: FC = function SettingsPage() {
     dangerZoneProps,
     handleClose,
     handleContextStrategyChange,
+    handleCustomProvidersChange,
     handleDiscard,
     handleDiscardAndLeave,
     handleFallbackModelChange,
@@ -170,10 +171,12 @@ const SettingsPage: FC = function SettingsPage() {
             <TabsContent value="ai-models">
               <AIModelsTab
                 serviceConfigs={formState.serviceConfigs}
+                customProviders={formState.customProviders ?? []}
                 providerEntries={PROVIDER_ENTRIES}
                 localPreferredModel={formState.preferredModel}
                 localFallbackModel={formState.fallbackModel}
                 onPendingChange={handlePendingChange}
+                onCustomProvidersChange={handleCustomProvidersChange}
                 onPreferredModelChange={handlePreferredModelChange}
                 onFallbackModelChange={handleFallbackModelChange}
               />

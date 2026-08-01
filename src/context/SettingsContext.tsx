@@ -12,6 +12,7 @@ import {
   settingsService,
   Settings,
   ServiceConfig,
+  CustomOpenAIProvider,
   AdvancedSettings,
   DisplaySettings,
   SystemSettings,
@@ -28,6 +29,7 @@ const logger = getLogger('SettingsContext');
 export type {
   Settings,
   ServiceConfig,
+  CustomOpenAIProvider,
   AdvancedSettings,
   DisplaySettings,
   SystemSettings,

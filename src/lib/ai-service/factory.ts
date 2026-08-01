@@ -11,6 +11,7 @@ import { OpenRouterService } from './openrouter';
 import { EmptyAIService } from './empty';
 import { LLMConfigManager } from '../llm-config-manager';
 import { registerAIServiceFactory } from './model-capabilities';
+import { isCustomOpenAIProviderId } from './custom-providers';
 
 const logger = getLogger('AIService');
 const configManager = new LLMConfigManager();
@@ -56,32 +57,56 @@ export class AIServiceFactory {
   private static instances: Map<string, ServiceInstance> = new Map();
   private static readonly INSTANCE_TTL = 1000 * 60 * 60; // 1 hour
 
+  private static resolveFactoryProvider(
+    provider: AIServiceProvider | string,
+  ): AIServiceProvider {
+    if (isCustomOpenAIProviderId(provider)) {
+      return AIServiceProvider.OpenAI;
+    }
+    if (
+      Object.values(AIServiceProvider).includes(provider as AIServiceProvider)
+    ) {
+      return provider as AIServiceProvider;
+    }
+    return AIServiceProvider.Empty;
+  }
+
   private static computeEffectiveApiKey(
-    provider: AIServiceProvider,
+    provider: AIServiceProvider | string,
     apiKey: string,
   ): string {
+    const factoryProvider = this.resolveFactoryProvider(provider);
+    // Custom OpenAI-compatible endpoints often run locally without a key.
+    if (isCustomOpenAIProviderId(provider)) {
+      return !apiKey || apiKey.trim().length === 0
+        ? `${provider}-local`
+        : apiKey;
+    }
+
     const providers = configManager.getProviders();
-    const providerInfo = providers[provider];
+    const providerInfo = providers[factoryProvider];
     const requiresApiKey = providerInfo?.requiresApiKey ?? true;
 
     return !requiresApiKey && (!apiKey || apiKey.trim().length === 0)
-      ? `${provider}-local`
+      ? `${factoryProvider}-local`
       : apiKey;
   }
 
   private static buildInstanceKey(
-    provider: AIServiceProvider,
+    provider: AIServiceProvider | string,
     apiKey: string,
     config?: AIServiceConfig,
   ): string {
     const effectiveApiKey = this.computeEffectiveApiKey(provider, apiKey);
+    // Keep custom provider ids in the cache key so distinct endpoints do not collide.
     return `${provider}:${effectiveApiKey}:${buildConfigCacheKey(config)}`;
   }
 
   static getCapabilityDelegate(
-    provider: AIServiceProvider,
+    provider: AIServiceProvider | string,
   ): CapabilityDelegate {
-    switch (provider) {
+    const factoryProvider = this.resolveFactoryProvider(provider);
+    switch (factoryProvider) {
       case AIServiceProvider.Groq:
         return {
           supportsTools: GroqService.supportsToolsForModel,
@@ -143,12 +168,21 @@ export class AIServiceFactory {
    *          Returns an `EmptyAIService` instance if the provider is unknown or creation fails.
    */
   static getService(
-    provider: AIServiceProvider,
+    provider: AIServiceProvider | string,
     apiKey: string,
     config?: AIServiceConfig,
   ): IAIService {
+    const factoryProvider = this.resolveFactoryProvider(provider);
+    const effectiveConfig: AIServiceConfig | undefined =
+      isCustomOpenAIProviderId(provider)
+        ? { ...config, use3rdParty: true }
+        : config;
     const effectiveApiKey = this.computeEffectiveApiKey(provider, apiKey);
-    const instanceKey = this.buildInstanceKey(provider, apiKey, config);
+    const instanceKey = this.buildInstanceKey(
+      provider,
+      apiKey,
+      effectiveConfig,
+    );
     const now = Date.now();
 
     // Clean up expired instances
@@ -167,30 +201,30 @@ export class AIServiceFactory {
 
     let service: IAIService;
     try {
-      switch (provider) {
+      switch (factoryProvider) {
         case AIServiceProvider.Groq:
-          service = new GroqService(effectiveApiKey, config);
+          service = new GroqService(effectiveApiKey, effectiveConfig);
           break;
         case AIServiceProvider.OpenAI:
-          service = new OpenAIService(effectiveApiKey, config);
+          service = new OpenAIService(effectiveApiKey, effectiveConfig);
           break;
         case AIServiceProvider.Anthropic:
-          service = new AnthropicService(effectiveApiKey, config);
+          service = new AnthropicService(effectiveApiKey, effectiveConfig);
           break;
         case AIServiceProvider.Gemini:
-          service = new GeminiService(effectiveApiKey, config);
+          service = new GeminiService(effectiveApiKey, effectiveConfig);
           break;
         case AIServiceProvider.Fireworks:
-          service = new FireworksService(effectiveApiKey, config);
+          service = new FireworksService(effectiveApiKey, effectiveConfig);
           break;
         case AIServiceProvider.Cerebras:
-          service = new CerebrasService(effectiveApiKey, config);
+          service = new CerebrasService(effectiveApiKey, effectiveConfig);
           break;
         case AIServiceProvider.Ollama:
-          service = new OllamaService(effectiveApiKey, config);
+          service = new OllamaService(effectiveApiKey, effectiveConfig);
           break;
         case AIServiceProvider.OpenRouter:
-          service = new OpenRouterService(effectiveApiKey, config);
+          service = new OpenRouterService(effectiveApiKey, effectiveConfig);
           break;
         default:
           logger.warn(
@@ -226,11 +260,19 @@ export class AIServiceFactory {
   }
 
   static invalidateService(
-    provider: AIServiceProvider,
+    provider: AIServiceProvider | string,
     apiKey: string,
     config?: AIServiceConfig,
   ): void {
-    const instanceKey = this.buildInstanceKey(provider, apiKey, config);
+    const effectiveConfig: AIServiceConfig | undefined =
+      isCustomOpenAIProviderId(provider)
+        ? { ...config, use3rdParty: true }
+        : config;
+    const instanceKey = this.buildInstanceKey(
+      provider,
+      apiKey,
+      effectiveConfig,
+    );
     const existing = this.instances.get(instanceKey);
     if (!existing) {
       return;

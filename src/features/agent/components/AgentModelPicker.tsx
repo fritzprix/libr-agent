@@ -16,8 +16,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { AIServiceProvider } from '@/lib/ai-service';
+import {
+  isCustomOpenAIProviderId,
+  listCustomProviderPickerOptions,
+  resolveProviderRuntimeConfig,
+} from '@/lib/ai-service/custom-providers';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import { cn } from '@/lib/utils';
+import { useSettings } from '@/hooks/use-settings';
 import { useAgentModels } from '../hooks/useAgentModels';
 
 interface AgentModelPickerProps {
@@ -37,6 +43,9 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
 }) => {
   const { t } = useTranslation('common');
   const {
+    value: { customProviders, serviceConfigs },
+  } = useSettings();
+  const {
     availableModels,
     isRefreshing,
     refreshModels,
@@ -53,15 +62,18 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
 
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();
-    return Object.entries(providers).map(([key, value]) => ({
+    const builtin = Object.entries(providers).map(([key, value]) => ({
       label: value.name,
       value: key,
     }));
-  }, []);
+    return [...builtin, ...listCustomProviderPickerOptions(customProviders)];
+  }, [customProviders]);
 
   const showRefreshButton =
     Boolean(currentProvider) &&
-    (canRefresh || refreshBlockedReason === 'missing-api-key');
+    (canRefresh ||
+      refreshBlockedReason === 'missing-api-key' ||
+      refreshBlockedReason === 'missing-base-url');
 
   const refreshButtonLabel = useMemo(() => {
     if (canRefresh) {
@@ -74,23 +86,37 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       });
     }
 
+    if (refreshBlockedReason === 'missing-base-url') {
+      return t('agent.modelPicker.refreshRequiresBaseUrl', {
+        defaultValue: 'Add a base URL to enable model refresh',
+      });
+    }
+
     return '';
   }, [canRefresh, refreshBlockedReason, t]);
 
   const handleProviderChange = useCallback(
     (newProvider: string) => {
-      // Default model selection logic
-      const staticModels = llmConfigManager.getModelsForProvider(
-        newProvider as AIServiceProvider,
-      );
       let defaultModel = '';
-      if (staticModels && Object.keys(staticModels).length > 0) {
-        defaultModel = Object.keys(staticModels)[0];
+
+      if (isCustomOpenAIProviderId(newProvider)) {
+        const resolved = resolveProviderRuntimeConfig(newProvider, {
+          serviceConfigs,
+          customProviders,
+        });
+        defaultModel = resolved.manualModels?.[0] ?? '';
+      } else {
+        const staticModels = llmConfigManager.getModelsForProvider(
+          newProvider as AIServiceProvider,
+        );
+        if (staticModels && Object.keys(staticModels).length > 0) {
+          defaultModel = Object.keys(staticModels)[0];
+        }
       }
 
       onConfigUpdate?.(defaultModel, newProvider);
     },
-    [onConfigUpdate],
+    [customProviders, onConfigUpdate, serviceConfigs],
   );
 
   const handleModelChange = useCallback(

@@ -13,11 +13,19 @@ pub struct RequestLayout {
     pub messages: Vec<Message>,
 }
 
+/// OpenAI-compatible custom providers use the `custom:<id>` session provider id.
+pub fn is_custom_openai_compatible_provider(provider: &str) -> bool {
+    provider
+        .strip_prefix("custom:")
+        .is_some_and(|id| !id.is_empty())
+}
+
 pub fn provider_uses_synthetic_session_context(provider: &str) -> bool {
-    matches!(
-        provider,
-        "openai" | "openrouter" | "fireworks" | "anthropic" | "gemini" | "ollama"
-    )
+    is_custom_openai_compatible_provider(provider)
+        || matches!(
+            provider,
+            "openai" | "openrouter" | "fireworks" | "anthropic" | "gemini" | "ollama"
+        )
 }
 
 fn provider_uses_background_reference_wrapper(provider: &str) -> bool {
@@ -25,6 +33,9 @@ fn provider_uses_background_reference_wrapper(provider: &str) -> bool {
 }
 
 fn synthetic_session_context_id_prefix(provider: &str) -> &str {
+    if is_custom_openai_compatible_provider(provider) {
+        return "custom-openai-session-context";
+    }
     match provider {
         "openai" => "openai-session-context",
         "openrouter" => "openrouter-session-context",

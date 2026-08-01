@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 
-import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import {
+  AIServiceFactory,
+  resolveProviderRuntimeConfig,
+} from '@/lib/ai-service';
 import { reportLLMStreamingIssue } from '@/lib/backend/agent-commands';
 import type {
   AIServiceConfig,
@@ -193,16 +196,18 @@ export function useExecuteCompletion({
       // Create service instance via factory using the provider/apiKey from this request.
       // Pass runtimeConfig (includes settings.advanced maxRetries/retryDelay) so withRetry
       // uses the user's settings instead of BaseAIService defaults.
-      const providerConfig =
-        settingsRef.current.serviceConfigs?.[provider as AIServiceProvider] ||
-        {};
+      const resolved = resolveProviderRuntimeConfig(
+        provider,
+        settingsRef.current,
+      );
       const runtimeConfig = buildServiceRuntimeConfig(
         settingsRef.current,
-        providerConfig,
+        resolved.serviceConfig,
       );
       const service = AIServiceFactory.getService(
-        provider as AIServiceProvider,
-        apiKey ?? '',
+        provider,
+        // Empty string from the event payload should fall back to settings.
+        apiKey || resolved.apiKey || '',
         runtimeConfig,
       );
       activeServicesRef.current.set(sessionId, service);

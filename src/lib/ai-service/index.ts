@@ -24,3 +24,18 @@ export { OllamaService } from './ollama';
 
 // Re-export factory
 export { AIServiceFactory } from './factory';
+
+// Re-export custom OpenAI-compatible provider helpers
+export {
+  CUSTOM_PROVIDER_PREFIX,
+  isCustomOpenAIProviderId,
+  toCustomProviderId,
+  parseCustomProviderId,
+  createCustomOpenAIProvider,
+  normalizeCustomOpenAIProvider,
+  normalizeCustomOpenAIProviders,
+  resolveProviderRuntimeConfig,
+  listCustomProviderPickerOptions,
+  findCustomOpenAIProvider,
+} from './custom-providers';
+export type { ResolvedProviderRuntimeConfig } from './custom-providers';

@@ -320,7 +320,8 @@ pub fn inspect_compaction_payload(messages: &[Message]) -> CompactionPayloadDiag
 }
 
 fn provider_requires_compaction_tool_chain_cleanup(provider_id: &str) -> bool {
-    ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+    crate::agent::llm::request_layout::is_custom_openai_compatible_provider(provider_id)
+        || ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
 }
 
 pub fn fit_compaction_request_messages_to_limit(

@@ -1,5 +1,6 @@
 use tauri_mcp_agent_lib::agent::llm::{
-    build_request_layout, select_last_submitted_input_message_id,
+    build_request_layout, is_custom_openai_compatible_provider,
+    provider_uses_synthetic_session_context, select_last_submitted_input_message_id,
 };
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
@@ -29,6 +30,35 @@ fn make_user_message(id: &str, source: Option<MessageSource>) -> Message {
         error: None,
         metadata: None,
     }
+}
+
+#[test]
+fn custom_openai_compatible_provider_uses_synthetic_session_context() {
+    assert!(is_custom_openai_compatible_provider("custom:local-vllm"));
+    assert!(!is_custom_openai_compatible_provider("custom:"));
+    assert!(!is_custom_openai_compatible_provider("openai"));
+    assert!(provider_uses_synthetic_session_context("custom:local-vllm"));
+
+    let layout = build_request_layout(
+        "custom:local-vllm",
+        "session-1",
+        Some("system".to_string()),
+        Some("background context".to_string()),
+        vec![make_user_message("real-user", Some(MessageSource::Ui))],
+    );
+
+    assert_eq!(layout.messages.len(), 2);
+    assert!(layout
+        .messages
+        .last()
+        .expect("custom provider should inject synthetic session context")
+        .is_request_layout_scaffolding_message());
+    assert!(layout
+        .messages
+        .last()
+        .expect("synthetic message")
+        .id
+        .starts_with("custom-openai-session-context-"));
 }
 
 #[test]
