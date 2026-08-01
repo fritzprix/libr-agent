@@ -178,6 +178,14 @@ async fn spillover_pointer_is_what_gets_persisted_to_repository() {
         "rewritten message should contain a truncation notice"
     );
     assert!(
+        text.contains("total 1 lines /"),
+        "spillover notice should report total line count alongside byte size: {text}"
+    );
+    assert!(
+        text.contains("byte preview; not line-aligned"),
+        "space-separated single-line payloads should use hard byte-cut wording: {text}"
+    );
+    assert!(
         text.contains("readFile({\"path\":"),
         "spillover notice should tell the agent how to inspect the spillover file"
     );
@@ -186,8 +194,12 @@ async fn spillover_pointer_is_what_gets_persisted_to_repository() {
         "spillover notice should warn against rereading the saved file without a line range"
     );
     assert!(
-        text.contains("To continue after the inline preview"),
-        "spillover notice should give an explicit follow-up command after the preview"
+        text.contains("raw byte cut"),
+        "spillover notice should explain the preview is not line-aligned: {text}"
+    );
+    assert!(
+        text.contains("file has 1 lines /"),
+        "hard-cut notice should repeat total line count in the follow-up guidance: {text}"
     );
     assert!(
         text.contains(&original_text[..128]),
@@ -265,6 +277,10 @@ async fn tool_result_spillover_writes_large_tool_output_to_workspace_file() {
     assert!(text.contains(".libragent/tool-results/"));
     assert!(text.contains("readFile({\"path\":"));
     assert!(
+        text.contains("total 1 lines /"),
+        "spillover notice should include total line count: {text}"
+    );
+    assert!(
         text.contains(&original_text[..128]),
         "spillover output should preserve a visible preview"
     );
@@ -312,4 +328,83 @@ async fn tool_result_spillover_leaves_small_tool_output_inline() {
     };
 
     assert_eq!(text, original_text);
+}
+
+#[tokio::test]
+async fn tool_result_spillover_multiline_notice_includes_line_range_guidance() {
+    let session_id = format!("spillover-multiline-{}", uuid::Uuid::new_v4());
+    // Enough complete lines to exceed the default 16 KiB inline limit while
+    // remaining newline-aligned so truncation snaps to a line boundary.
+    let line = "abcdefghijklmnopqrstuvwxyz0123456789\n"; // 37 bytes
+    let line_count = (TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES / line.len()) + 400;
+    let original_text = line.repeat(line_count);
+    let total_lines = original_text.lines().count();
+    assert!(
+        total_lines > 400,
+        "fixture should produce hundreds of lines for range guidance"
+    );
+    assert!(
+        original_text.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+        "fixture must exceed spillover threshold"
+    );
+
+    let processed = spill_oversized_tool_result_messages(
+        &session_id,
+        vec![make_tool_message(
+            &session_id,
+            "tool_call_multiline",
+            &original_text,
+        )],
+    )
+    .await
+    .expect("multiline spillover should succeed");
+
+    let message = &processed[0];
+    let MCPContent::Text { text, .. } = &message.content[0] else {
+        panic!("expected text content");
+    };
+
+    assert!(
+        text.contains(&format!("total {total_lines} lines /")),
+        "notice should report exact total line count: {text}"
+    );
+    assert!(
+        text.contains("showing lines 1-"),
+        "notice should report the inline preview line range: {text}"
+    );
+    assert!(
+        text.contains("To read remaining lines ("),
+        "notice should guide the agent through remaining line ranges: {text}"
+    );
+    assert!(
+        text.contains(&format!("to {total_lines})")),
+        "remaining-range guidance should end at the last line: {text}"
+    );
+    assert!(
+        text.contains(", \"offset\":") && text.contains(", \"size\": 200}"),
+        "remaining-range guidance should include an explicit readFile offset/size: {text}"
+    );
+    assert!(
+        !text.contains("byte preview; not line-aligned"),
+        "newline-aligned payloads should not use hard byte-cut wording: {text}"
+    );
+    assert!(
+        text.len() < TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+        "spillover preview should stay below the inline threshold"
+    );
+
+    let start = text.find('`').expect("path opening backtick") + 1;
+    let end = text[start..]
+        .find('`')
+        .map(|offset| start + offset)
+        .expect("path closing backtick");
+    let relative_path = &text[start..end];
+
+    let session_manager = get_session_manager().expect("session manager");
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
+    let spilled_file = workspace_dir.join(relative_path);
+    let spilled_text = fs::read_to_string(&spilled_file).expect("spilled file should exist");
+    assert_eq!(spilled_text, original_text);
+
+    let _ = fs::remove_dir_all(workspace_dir);
 }
