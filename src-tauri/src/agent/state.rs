@@ -534,6 +534,47 @@ pub struct AgentSession {
 }
 
 impl AgentSession {
+    /// Construct a new idle in-memory session shell for create / resume / recover.
+    ///
+    /// Runtime flags (`yolo_mode` / `unsafe_mode`) are derived from
+    /// `metadata.execution_mode`. Field layout stays flat — do not wrap groups
+    /// in `Arc` (prior Arc-grouping attempt was reverted).
+    pub fn new(
+        metadata: SessionMetadata,
+        context_registry: Arc<ContextRegistry>,
+        compact_context: Option<CompactContextRecord>,
+    ) -> Self {
+        let (yolo_enabled, unsafe_enabled) = metadata.execution_mode.runtime_flags();
+        Self {
+            metadata,
+            is_running: false,
+            active_permit: None,
+            status_transition: Arc::new(RwLock::new(None)),
+            transition_lock: Arc::new(Mutex::new(())),
+            cancellation_token: CancellationToken::new(),
+            yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
+            unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
+            cancel_pending: Arc::new(AtomicBool::new(false)),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+            repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
+            repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
+            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
+            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
+            pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
+            pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+            context_registry,
+            compact_context: Arc::new(RwLock::new(compact_context)),
+            compaction: CompactionRuntimeState::new(),
+            expected_response_id: Arc::new(RwLock::new(None)),
+            cached_stable_prompt: Arc::new(RwLock::new(None)),
+            last_completion_request: Arc::new(RwLock::new(None)),
+            last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+        }
+    }
+
     /// Clears the in-memory message cache, invalidates the cached system prompt,
     /// and resets transient tool approval/execution states.
     pub async fn clear(&mut self) {
