@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PendingApprovalWidget } from '../PendingApprovalWidget';
+import type { PendingApproval } from '@/context/AgentSessionContext';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -10,21 +11,31 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+const standardApproval: PendingApproval = {
+  toolCallId: 'call-standard',
+  toolName: 'readFile',
+  arguments: '{"path":"README.md"}',
+  approvalKind: 'standard',
+  requestId: 'req-standard',
+  description: 'Standard approval',
+  inputPreview: 'README.md',
+};
+
+const hardApproval: PendingApproval = {
+  toolCallId: 'call-hard',
+  toolName: 'runShell',
+  arguments: '{"command":"rm -rf /important"}',
+  approvalKind: 'hard',
+  requestId: 'req-hard',
+  description: 'Hard approval',
+  inputPreview: 'rm -rf /important',
+};
+
 describe('PendingApprovalWidget', () => {
   it('surfaces hard approvals distinctly when YOLO mode is enabled', () => {
     render(
       <PendingApprovalWidget
-        approvals={[
-          {
-            toolCallId: 'call-hard',
-            toolName: 'runShell',
-            arguments: '{"command":"rm -rf /important"}',
-            approvalKind: 'hard',
-            requestId: 'req-hard',
-            description: 'Hard approval',
-            inputPreview: 'rm -rf /important',
-          },
-        ]}
+        approvals={[hardApproval]}
         executionMode="yolo"
         onRespond={vi.fn().mockResolvedValue(undefined)}
       />,
@@ -40,5 +51,62 @@ describe('PendingApprovalWidget', () => {
     expect(
       screen.getByRole('button', { name: 'Approve high-risk action' }),
     ).toBeInTheDocument();
+  });
+
+  it('approves the priority approval on Enter', async () => {
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <PendingApprovalWidget
+        approvals={[standardApproval, hardApproval]}
+        executionMode="normal"
+        onRespond={onRespond}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(onRespond).toHaveBeenCalledWith('call-hard', true);
+    });
+  });
+
+  it('rejects the priority approval on Escape', async () => {
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <PendingApprovalWidget
+        approvals={[standardApproval]}
+        executionMode="normal"
+        onRespond={onRespond}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(onRespond).toHaveBeenCalledWith('call-standard', false);
+    });
+  });
+
+  it('ignores Enter while typing in an input', async () => {
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <>
+        <input aria-label="chat-input" />
+        <PendingApprovalWidget
+          approvals={[standardApproval]}
+          executionMode="normal"
+          onRespond={onRespond}
+        />
+      </>,
+    );
+
+    const input = screen.getByLabelText('chat-input');
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onRespond).not.toHaveBeenCalled();
   });
 });

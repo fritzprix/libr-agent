@@ -1052,7 +1052,8 @@
       "noContent": "Sin contenido",
       "thinkingProcess": "Proceso de pensamiento",
       "thinkingProcessWithTime": "Proceso de pensamiento {{time}}",
-      "thinking": "Pensando..."
+      "thinking": "Pensando...",
+      "expandThinking": "Expandir"
     },
     "start": {
       "heroTitle": "¿Qué te gustaría hacer hoy?",

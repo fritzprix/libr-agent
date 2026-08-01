@@ -1107,7 +1107,8 @@
       "noContent": "No content",
       "thinkingProcess": "Thinking Process",
       "thinkingProcessWithTime": "Thinking Process {{time}}",
-      "thinking": "Thinking..."
+      "thinking": "Thinking...",
+      "expandThinking": "Expand"
     },
     "start": {
       "heroTitle": "What would you like to do today?",

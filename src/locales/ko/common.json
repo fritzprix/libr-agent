@@ -1107,7 +1107,8 @@
       "noContent": "내용 없음",
       "thinkingProcess": "생각 프로세스",
       "thinkingProcessWithTime": "생각 프로세스 {{time}}",
-      "thinking": "생각 중..."
+      "thinking": "생각 중...",
+      "expandThinking": "펼치기"
     },
     "start": {
       "heroTitle": "오늘 무엇을 하고 싶으신가요?",
