@@ -381,6 +381,15 @@ pub async fn tool_result_inline_limit_bytes() -> usize {
     }
 }
 
+/// How the inline spillover preview was produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviewTruncateKind {
+    /// Cut at a newline boundary (complete lines only).
+    LineBoundary,
+    /// Hard byte cut (single giant line, or newline too close to the start).
+    HardByteCut,
+}
+
 /// Truncate `text` to at most `limit` bytes for inline preview.
 ///
 /// Normally we cut at the last newline boundary so we don't expose a partial
@@ -389,10 +398,11 @@ pub async fn tool_result_inline_limit_bytes() -> usize {
 /// almost-empty preview. In that case we fall back to a **hard byte cut** so
 /// the agent sees real content instead of nothing.
 ///
-/// Returns `(preview_slice, was_truncated)`.
-fn truncate_to_complete_lines(text: &str, limit: usize) -> (&str, bool) {
+/// Returns `(preview_slice, truncate_kind)`.
+fn truncate_to_complete_lines(text: &str, limit: usize) -> (&str, PreviewTruncateKind) {
     if text.len() <= limit {
-        return (text, false);
+        // Caller only truncates when over the inline limit; treat as line-safe.
+        return (text, PreviewTruncateKind::LineBoundary);
     }
 
     let mut boundary = limit.min(text.len());
@@ -408,42 +418,75 @@ fn truncate_to_complete_lines(text: &str, limit: usize) -> (&str, bool) {
     // byte cut so single-line payloads still show real content.
     let min_useful = (limit / 20).max(1);
     match truncated.rfind('\n') {
-        Some(pos) if pos >= min_useful => (&truncated[..pos], true),
+        Some(pos) if pos >= min_useful => (&truncated[..pos], PreviewTruncateKind::LineBoundary),
         // No newline, or newline is too close to the start → hard cut.
-        _ => (truncated, true),
+        _ => (truncated, PreviewTruncateKind::HardByteCut),
     }
-}
-
-fn count_preview_lines(text: &str) -> usize {
-    text.lines().count()
 }
 
 fn build_tool_result_spillover_notice(
     relative_path: &str,
     original_size_bytes: usize,
+    total_line_count: usize,
     preview_line_count: usize,
+    truncate_kind: PreviewTruncateKind,
 ) -> String {
+    let truncation_summary = match truncate_kind {
+        PreviewTruncateKind::LineBoundary if preview_line_count > 0 => format!(
+            "total {} lines / {} bytes (showing lines 1-{})",
+            total_line_count, original_size_bytes, preview_line_count
+        ),
+        PreviewTruncateKind::LineBoundary => format!(
+            "total {} lines / {} bytes",
+            total_line_count, original_size_bytes
+        ),
+        PreviewTruncateKind::HardByteCut => format!(
+            "total {} lines / {} bytes (byte preview; not line-aligned)",
+            total_line_count, original_size_bytes
+        ),
+    };
+
     let mut notice = format!(
-        "\n\n... [output truncated: total size {} bytes] ...\n\nFull output saved to workspace file: `{}`\nRead it in chunks with `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})`.\nDo not call `readFile({{\"path\": \"{}\"}})` on the saved file without `offset` and `size`; that will just truncate again.",
-        original_size_bytes, relative_path, relative_path, relative_path
+        "\n\n... [output truncated: {}] ...\n\nFull output saved to workspace file: `{}`\nRead it in chunks with `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})`.\nDo not call `readFile({{\"path\": \"{}\"}})` on the saved file without `offset` and `size`; that will just truncate again.",
+        truncation_summary, relative_path, relative_path, relative_path
     );
 
-    if preview_line_count > 0 {
-        let next_start_line = preview_line_count + 1;
-        notice.push_str(&format!(
-            "\nTo continue after the inline preview, call `readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 200}})`.",
-            relative_path, next_start_line
-        ));
-    } else {
-        // preview_line_count == 0 means the output was a single giant line and
-        // the preview is a hard byte cut (no newlines found within the limit).
-        // Guide the agent to read by byte offset rather than line offset.
-        notice.push_str(&format!(
-            "\nThe inline preview above is a raw byte cut (single-line output). \
- Read the full file by byte ranges: `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})` \
- and increment offset by size each time.",
-            relative_path
-        ));
+    match truncate_kind {
+        PreviewTruncateKind::LineBoundary
+            if preview_line_count > 0 && preview_line_count < total_line_count =>
+        {
+            let next_start_line = preview_line_count + 1;
+            notice.push_str(&format!(
+                "\nTo read remaining lines ({} to {}), call `readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 200}})`.",
+                next_start_line, total_line_count, relative_path, next_start_line
+            ));
+        }
+        PreviewTruncateKind::LineBoundary if preview_line_count > 0 => {
+            // All counted lines appeared in the preview (e.g. trailing partial
+            // content was excluded at a newline). Still give an explicit
+            // follow-up offset past the preview.
+            notice.push_str(&format!(
+                "\nTo continue after the inline preview, call `readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 200}})`.",
+                relative_path,
+                preview_line_count + 1
+            ));
+        }
+        PreviewTruncateKind::HardByteCut => {
+            // Preview is a raw byte cut — line offsets for the truncated
+            // region are unreliable. Have the agent re-read from line 1.
+            notice.push_str(&format!(
+                "\nThe inline preview above is a raw byte cut (not line-aligned). \
+ Read the saved file from the start in chunks: `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})` \
+ and increment offset by size each time (file has {} lines / {} bytes).",
+                relative_path, total_line_count, original_size_bytes
+            ));
+        }
+        PreviewTruncateKind::LineBoundary => {
+            notice.push_str(&format!(
+                "\nRead the full file in chunks: `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})`.",
+                relative_path
+            ));
+        }
     }
 
     notice
@@ -497,8 +540,10 @@ pub async fn spill_oversized_tool_result_messages(
                         text.len()
                     );
 
-                    let (preview, _) = truncate_to_complete_lines(&text, preview_limit_bytes);
-                    let preview_line_count = count_preview_lines(preview);
+                    let (preview, truncate_kind) =
+                        truncate_to_complete_lines(&text, preview_limit_bytes);
+                    let total_line_count = text.lines().count();
+                    let preview_line_count = preview.lines().count();
 
                     next_content.push(MCPContent::Text {
                         text: format!(
@@ -507,7 +552,9 @@ pub async fn spill_oversized_tool_result_messages(
                             build_tool_result_spillover_notice(
                                 &relative_path,
                                 text.len(),
-                                preview_line_count
+                                total_line_count,
+                                preview_line_count,
+                                truncate_kind,
                             )
                         ),
                         is_error,
