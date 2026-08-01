@@ -339,6 +339,169 @@ fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> 
     })
 }
 
+/// Session context fields attached to every successful `checkSession` response.
+///
+/// Session `name` / task title is intentionally omitted: it often reflects a past
+/// request and can mislead a parent agent about the child's current work.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CheckSessionEnrichment {
+    pub assistant_id: Option<String>,
+    pub assistant_name: Option<String>,
+    pub workspace_path: Option<String>,
+    /// Present in structured content only; omitted from the text Metadata block
+    /// (low routing signal, adds noise for the parent agent).
+    pub created_at: Option<i64>,
+    pub org_id: Option<String>,
+}
+
+fn optional_nonempty(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+/// Build enrichment fields from session metadata (assistant name resolved separately).
+pub fn check_session_enrichment_from_metadata(
+    meta: &SessionMetadata,
+    assistant_name: Option<String>,
+) -> CheckSessionEnrichment {
+    let workspace_path = optional_nonempty(meta.workspace_override.as_deref())
+        .or_else(|| optional_nonempty(meta.docker_host_workspace_path.as_deref()));
+
+    CheckSessionEnrichment {
+        assistant_id: optional_nonempty(meta.assistant_id.as_deref()),
+        assistant_name: optional_nonempty(assistant_name.as_deref()),
+        workspace_path,
+        created_at: Some(meta.created_at),
+        org_id: optional_nonempty(meta.org_id.as_deref()),
+    }
+}
+
+/// Insert `checkSession` context metadata into structured response data (camelCase keys).
+pub fn apply_check_session_enrichment(
+    data: &mut serde_json::Map<String, Value>,
+    enrichment: &CheckSessionEnrichment,
+) {
+    if let Some(assistant_id) = enrichment.assistant_id.as_ref() {
+        data.insert(
+            "assistantId".to_string(),
+            Value::String(assistant_id.clone()),
+        );
+    }
+    if let Some(assistant_name) = enrichment.assistant_name.as_ref() {
+        data.insert(
+            "assistantName".to_string(),
+            Value::String(assistant_name.clone()),
+        );
+    }
+    if let Some(workspace_path) = enrichment.workspace_path.as_ref() {
+        data.insert(
+            "workspacePath".to_string(),
+            Value::String(workspace_path.clone()),
+        );
+    }
+    if let Some(created_at) = enrichment.created_at {
+        data.insert("createdAt".to_string(), json!(created_at));
+    }
+    if let Some(org_id) = enrichment.org_id.as_ref() {
+        data.insert("orgId".to_string(), Value::String(org_id.clone()));
+    }
+}
+
+/// Format a fenced identity/routing block for agent-visible text content.
+///
+/// Omits `createdAt` (kept in structured data only) and never includes session name.
+pub fn format_check_session_context_text(enrichment: &CheckSessionEnrichment) -> Option<String> {
+    let mut lines = Vec::new();
+
+    match (
+        enrichment.assistant_name.as_deref(),
+        enrichment.assistant_id.as_deref(),
+    ) {
+        (Some(name), Some(id)) => lines.push(format!("assistant: {} ({})", name, id)),
+        (Some(name), None) => lines.push(format!("assistant: {}", name)),
+        (None, Some(id)) => lines.push(format!("assistantId: {}", id)),
+        (None, None) => {}
+    }
+    if let Some(workspace_path) = enrichment.workspace_path.as_ref() {
+        lines.push(format!("workspace: {}", workspace_path));
+    }
+    if let Some(org_id) = enrichment.org_id.as_ref() {
+        lines.push(format!("orgId: {}", org_id));
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "---\n[Metadata — identity/routing only; not the child session's answer]\n{}",
+            lines.join("\n")
+        ))
+    }
+}
+
+fn inject_check_session_context_text(text: &str, context: &str) -> String {
+    const FOLLOW_UPS: &str = "💡 Suggested Follow-ups:";
+    if let Some(index) = text.find(FOLLOW_UPS) {
+        let (before, after) = text.split_at(index);
+        format!("{}{}\n\n{}", before.trim_end(), context, after)
+    } else {
+        format!("{}\n\n{}", text.trim_end(), context)
+    }
+}
+
+/// Attach enrichment fields onto an existing `checkSession` MCP result (structured + text).
+pub fn enrich_check_session_result(
+    mut result: MCPResult,
+    enrichment: &CheckSessionEnrichment,
+) -> MCPResult {
+    if let Some(Value::Object(ref mut data)) = result.structured_content {
+        apply_check_session_enrichment(data, enrichment);
+    }
+
+    if let Some(context) = format_check_session_context_text(enrichment) {
+        if let Some(content_items) = result.content.as_mut() {
+            for item in content_items.iter_mut() {
+                if let MCPContent::Text { text, .. } = item {
+                    *text = inject_check_session_context_text(text, &context);
+                    break;
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Resolve assistant display name and build enrichment for a delegated session.
+pub async fn resolve_check_session_enrichment(meta: &SessionMetadata) -> CheckSessionEnrichment {
+    use crate::repositories::AssistantRepository;
+
+    let assistant_name = match optional_nonempty(meta.assistant_id.as_deref()) {
+        Some(assistant_id) => {
+            match crate::state::get_assistant_repository()
+                .get_assistant(&assistant_id)
+                .await
+            {
+                Ok(Some(assistant)) => Some(assistant.name),
+                Ok(None) => None,
+                Err(error) => {
+                    log::warn!(
+                        "checkSession: failed to resolve assistantName for {}: {}",
+                        assistant_id,
+                        error
+                    );
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+
+    check_session_enrichment_from_metadata(meta, assistant_name)
+}
+
 pub fn build_paused_check_session_result_from_messages(
     session_id: &str,
     turn_count: usize,
