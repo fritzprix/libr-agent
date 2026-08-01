@@ -1052,7 +1052,8 @@
       "noContent": "Kein Inhalt",
       "thinkingProcess": "Denkprozess",
       "thinkingProcessWithTime": "Denkprozess {{time}}",
-      "thinking": "Denke..."
+      "thinking": "Denke...",
+      "expandThinking": "Erweitern"
     },
     "start": {
       "heroTitle": "Was möchten Sie heute tun?",

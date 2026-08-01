@@ -1052,7 +1052,8 @@
       "noContent": "无内容",
       "thinkingProcess": "思考过程",
       "thinkingProcessWithTime": "思考过程 {{time}}",
-      "thinking": "正在思考..."
+      "thinking": "正在思考...",
+      "expandThinking": "展开"
     },
     "start": {
       "heroTitle": "今天想做什么？",

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Card,
   CardHeader,
@@ -29,6 +29,30 @@ interface PendingApprovalWidgetProps {
   onRespond: (toolCallId: string, approved: boolean) => Promise<void>;
 }
 
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tag = target.tagName;
+  return (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    target.isContentEditable
+  );
+}
+
+/** Prefer hard approvals; otherwise use the first pending item. */
+function pickPriorityApproval(
+  approvals: PendingApproval[],
+): PendingApproval | undefined {
+  return (
+    approvals.find((approval) => approval.approvalKind === 'hard') ??
+    approvals[0]
+  );
+}
+
 export function PendingApprovalWidget({
   approvals,
   executionMode,
@@ -36,21 +60,84 @@ export function PendingApprovalWidget({
 }: PendingApprovalWidgetProps) {
   const { t } = useTranslation();
   const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const firstCardRef = useRef<HTMLDivElement | null>(null);
+  const submittingIdRef = useRef<string | null>(null);
+
+  submittingIdRef.current = submittingId;
+
+  const handleResponse = useCallback(
+    async (toolCallId: string, approved: boolean) => {
+      if (submittingIdRef.current !== null) {
+        return;
+      }
+      setSubmittingId(toolCallId);
+      try {
+        await onRespond(toolCallId, approved);
+      } finally {
+        setSubmittingId(null);
+      }
+    },
+    [onRespond],
+  );
+
+  const firstToolCallId = approvals[0]?.toolCallId;
+
+  useEffect(() => {
+    if (!firstToolCallId || !firstCardRef.current) {
+      return;
+    }
+
+    const active = document.activeElement;
+    // Don't steal focus from chat input or other interactive controls.
+    const canAutofocus =
+      !active ||
+      active === document.body ||
+      firstCardRef.current.contains(active);
+
+    if (canAutofocus) {
+      firstCardRef.current.focus();
+    }
+  }, [firstToolCallId]);
+
+  useEffect(() => {
+    if (!approvals || approvals.length === 0) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (submittingIdRef.current !== null) {
+        return;
+      }
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+
+      const target = pickPriorityApproval(approvals);
+      if (!target) {
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void handleResponse(target.toolCallId, true);
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        void handleResponse(target.toolCallId, false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [approvals, handleResponse]);
 
   if (!approvals || approvals.length === 0) return null;
 
-  const handleResponse = async (toolCallId: string, approved: boolean) => {
-    setSubmittingId(toolCallId);
-    try {
-      await onRespond(toolCallId, approved);
-    } finally {
-      setSubmittingId(null);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-4 w-full max-w-full">
-      {approvals.map((approval) => {
+      {approvals.map((approval, index) => {
         let argsParsed;
         try {
           argsParsed = JSON.parse(approval.arguments);
@@ -88,8 +175,8 @@ export function PendingApprovalWidget({
           ? t('agent.approval.hardBadge', 'Hard approval')
           : t('agent.approval.standardBadge', 'Standard approval');
 
-        return (
-          <Card key={approval.toolCallId} className={containerClass}>
+        const card = (
+          <Card className={containerClass}>
             <CardHeader className="pb-3 flex flex-row items-center gap-3">
               <div className={iconContainerClass}>
                 {isHardApproval ? (
@@ -105,15 +192,15 @@ export function PendingApprovalWidget({
                     variant="outline"
                     className={
                       isHardApproval
-                        ? 'text-[10px] border-destructive/30 bg-destructive/10 text-destructive'
-                        : 'text-[10px] bg-background/50'
+                        ? 'text-xs border-destructive/30 bg-destructive/10 text-destructive'
+                        : 'text-xs bg-background/50'
                     }
                   >
                     {approvalKindLabel}
                   </Badge>
                   <Badge
                     variant="outline"
-                    className="font-mono text-[10px] bg-background/50"
+                    className="font-mono text-xs bg-background/50"
                   >
                     {approval.toolName}
                   </Badge>
@@ -177,6 +264,21 @@ export function PendingApprovalWidget({
             </CardFooter>
           </Card>
         );
+
+        if (index === 0) {
+          return (
+            <div
+              key={approval.toolCallId}
+              ref={firstCardRef}
+              tabIndex={0}
+              className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl"
+            >
+              {card}
+            </div>
+          );
+        }
+
+        return <div key={approval.toolCallId}>{card}</div>;
       })}
     </div>
   );

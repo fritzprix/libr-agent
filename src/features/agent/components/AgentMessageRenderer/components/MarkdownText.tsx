@@ -5,6 +5,7 @@ import { useClipboard } from '@/hooks/useClipboard';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { REMARK_PLUGINS, REHYPE_PLUGINS } from '../config/markdown';
+import { useStreamMarkdownPreprocess } from '../hooks/useStreamMarkdownPreprocess';
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -14,15 +15,19 @@ export const MarkdownText = memo(
     content,
     components,
     hideCopyButton,
+    isStreaming = false,
   }: {
     content: string;
     components: React.ComponentProps<typeof ReactMarkdown>['components'];
     hideCopyButton?: boolean;
+    isStreaming?: boolean;
   }) => {
     const { copied, copyToClipboard } = useClipboard();
+    const displayContent = useStreamMarkdownPreprocess(content, isStreaming);
 
     const handleCopy = useCallback(async () => {
       try {
+        // Always copy the original (un-preprocessed) content
         await copyToClipboard(content);
       } catch (err) {
         logger.error('Failed to copy text content', err);
@@ -50,7 +55,7 @@ export const MarkdownText = memo(
           rehypePlugins={REHYPE_PLUGINS}
           components={components}
         >
-          {content}
+          {displayContent}
         </ReactMarkdown>
       </div>
     );

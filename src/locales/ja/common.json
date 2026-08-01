@@ -1026,7 +1026,8 @@
       "noContent": "内容なし",
       "thinkingProcess": "思考プロセス",
       "thinkingProcessWithTime": "思考プロセス {{time}}",
-      "thinking": "思考中..."
+      "thinking": "思考中...",
+      "expandThinking": "展開"
     },
     "chat": {
       "failedToStartPlaybookWorkflow": "プレイブックワークフローの開始に失敗しました",
