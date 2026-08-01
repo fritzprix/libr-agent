@@ -65,7 +65,14 @@ pub async fn read_output_file(file_path: &PathBuf) -> Result<String, String> {
     let bytes = tokio::fs::read(file_path)
         .await
         .map_err(|e| format!("Failed to read output file '{}': {e}", file_path.display()))?;
-    Ok(strip_ansi_escapes(&decode_process_output(&bytes)))
+    let decoded = strip_ansi_escapes(&decode_process_output(&bytes));
+    // Only stderr captures accumulate PowerShell wrapper chrome.
+    if file_path.file_name().and_then(|n| n.to_str()) == Some("stderr") {
+        return Ok(super::powershell_stderr::sanitize_powershell_stderr(
+            &decoded,
+        ));
+    }
+    Ok(decoded)
 }
 
 /// Spawn process and stream stdout/stderr to files (common logic for sync/async)
@@ -301,7 +308,9 @@ pub async fn spawn_and_stream_to_files(
     let stdout_content = strip_ansi_escapes(&decode_process_output(&stdout_bytes));
 
     let stderr_bytes = tokio::fs::read(&stderr_path).await.unwrap_or_default();
-    let stderr_content = strip_ansi_escapes(&decode_process_output(&stderr_bytes));
+    let stderr_content = super::powershell_stderr::sanitize_powershell_stderr(&strip_ansi_escapes(
+        &decode_process_output(&stderr_bytes),
+    ));
 
     info!(
         "Process {} completed with exit code {:?}",
