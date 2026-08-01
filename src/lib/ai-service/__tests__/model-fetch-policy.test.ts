@@ -96,4 +96,27 @@ describe('shouldFetchDynamicModels', () => {
       reason: 'allowed',
     });
   });
+
+  it('allows custom OpenAI-compatible providers with a base URL and no API key', () => {
+    expect(
+      shouldFetchDynamicModels({
+        provider: 'custom:local-vllm',
+        apiKey: '',
+        baseUrl: 'http://127.0.0.1:8000/v1',
+      }),
+    ).toBe(true);
+  });
+
+  it('requires a base URL for custom OpenAI-compatible providers', () => {
+    expect(
+      getDynamicModelFetchPolicy({
+        provider: 'custom:local-vllm',
+        apiKey: 'optional-key',
+        baseUrl: '',
+      }),
+    ).toEqual({
+      canFetch: false,
+      reason: 'missing-base-url',
+    });
+  });
 });

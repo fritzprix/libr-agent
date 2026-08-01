@@ -45,6 +45,21 @@ vi.mock('../../hooks/useAgentModels', () => ({
   useAgentModels: () => mockUseAgentModelsState,
 }));
 
+vi.mock('@/hooks/use-settings', () => ({
+  useSettings: () => ({
+    value: {
+      customProviders: [
+        {
+          id: 'local1',
+          name: 'Local vLLM',
+          baseUrl: 'http://127.0.0.1:8000/v1',
+        },
+      ],
+      serviceConfigs: {},
+    },
+  }),
+}));
+
 describe('AgentModelPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -8,7 +8,7 @@ import { listen } from '@tauri-apps/api/event';
 import { messageToRustMessage, type Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
-import type { AIServiceProvider } from '@/lib/ai-service';
+import { resolveProviderRuntimeConfig } from '@/lib/ai-service';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
@@ -123,8 +123,8 @@ export function useLLMListener({
 
           // Always get API key from Settings, ignore any apiKey from Rust backend
           const finalApiKey =
-            settingsRef.current.serviceConfigs?.[provider as AIServiceProvider]
-              ?.apiKey || '';
+            resolveProviderRuntimeConfig(provider, settingsRef.current)
+              .apiKey || '';
 
           logger.info('📥 Received LLM completion request from Rust', {
             sessionId,
@@ -263,9 +263,10 @@ export function useLLMListener({
               const fallbackModel = settingsRef.current.fallbackModel;
               if (fallbackModel) {
                 const fallbackApiKey =
-                  settingsRef.current.serviceConfigs?.[
-                    fallbackModel.provider as AIServiceProvider
-                  ]?.apiKey ?? '';
+                  resolveProviderRuntimeConfig(
+                    fallbackModel.provider,
+                    settingsRef.current,
+                  ).apiKey ?? '';
 
                 logger.warn(
                   `LLM Recovery: Primary model failed all retries, switching to fallback ${fallbackModel.provider}/${fallbackModel.model}`,

@@ -279,9 +279,62 @@ describe('useSettingsForm', () => {
       result.current.updateExperimental('inlineAudioAttachment', false);
     });
 
-    expect(result.current.formState.experimental.inlineAudioAttachment).toBe(false);
+    expect(result.current.formState.experimental.inlineAudioAttachment).toBe(
+      false,
+    );
     expect(result.current.isDirty).toBe(true);
     expect(result.current.dirtyState.experimental).toBe(true);
+  });
+
+  it('should save custom providers and clear dirty state', async () => {
+    mockUpdateGlobal.mockImplementation(async (nextSettings) => {
+      currentGlobalSettings = cloneSettings(nextSettings);
+    });
+
+    const { result, rerender } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.updateCustomProviders([
+        {
+          id: 'p1',
+          name: 'Local vLLM',
+          baseUrl: 'http://127.0.0.1:8000/v1',
+          apiKey: '',
+          models: [],
+        },
+      ]);
+    });
+
+    expect(result.current.isDirty).toBe(true);
+    expect(result.current.dirtyState['ai-models']).toBe(true);
+
+    await act(async () => {
+      await result.current.save();
+    });
+
+    act(() => {
+      rerender();
+    });
+
+    expect(mockUpdateGlobal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customProviders: [
+          {
+            id: 'p1',
+            name: 'Local vLLM',
+            baseUrl: 'http://127.0.0.1:8000/v1',
+          },
+        ],
+      }),
+    );
+    expect(result.current.isDirty).toBe(false);
+    expect(result.current.formState.customProviders).toEqual([
+      {
+        id: 'p1',
+        name: 'Local vLLM',
+        baseUrl: 'http://127.0.0.1:8000/v1',
+      },
+    ]);
   });
 });
 

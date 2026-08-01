@@ -48,6 +48,17 @@ vi.mock('@/components/ui', () => ({
       onChange={onChange}
     />
   ),
+  Textarea: ({
+    value,
+    onChange,
+    placeholder,
+  }: {
+    value?: string;
+    onChange?: (event: ChangeEvent<HTMLTextAreaElement>) => void;
+    placeholder?: string;
+  }) => (
+    <textarea value={value} placeholder={placeholder} onChange={onChange} />
+  ),
   Slider: () => <div data-testid="mock-slider" />,
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CardHeader: ({ children }: { children: ReactNode }) => (
@@ -110,6 +121,7 @@ describe('AIModelsTab', () => {
     render(
       <AIModelsTab
         serviceConfigs={serviceConfigs}
+        customProviders={[]}
         providerEntries={[AIServiceProvider.OpenAI]}
         localPreferredModel={{
           provider: AIServiceProvider.OpenAI,
@@ -117,6 +129,7 @@ describe('AIModelsTab', () => {
         }}
         localFallbackModel={undefined}
         onPendingChange={vi.fn()}
+        onCustomProvidersChange={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
       />,
@@ -152,6 +165,7 @@ describe('AIModelsTab', () => {
     };
 
     const baseProps = {
+      customProviders: [],
       providerEntries: [AIServiceProvider.Ollama],
       localPreferredModel: {
         provider: AIServiceProvider.Ollama,
@@ -159,6 +173,7 @@ describe('AIModelsTab', () => {
       },
       localFallbackModel: undefined,
       onPendingChange,
+      onCustomProvidersChange: vi.fn(),
       onPreferredModelChange: vi.fn(),
       onFallbackModelChange: vi.fn(),
     };
@@ -192,5 +207,54 @@ describe('AIModelsTab', () => {
     );
 
     expect(screen.getByDisplayValue('http://remote-host:11434')).toBeVisible();
+  });
+
+  it('adds a custom OpenAI provider entry', () => {
+    const onCustomProvidersChange = vi.fn();
+    const serviceConfigs: Record<AIServiceProvider, ServiceConfig> = {
+      [AIServiceProvider.Groq]: {},
+      [AIServiceProvider.OpenAI]: {},
+      [AIServiceProvider.Anthropic]: {},
+      [AIServiceProvider.Gemini]: {},
+      [AIServiceProvider.Fireworks]: {},
+      [AIServiceProvider.Cerebras]: {},
+      [AIServiceProvider.Ollama]: {},
+      [AIServiceProvider.OpenRouter]: {},
+      [AIServiceProvider.Empty]: {},
+    };
+
+    render(
+      <AIModelsTab
+        serviceConfigs={serviceConfigs}
+        customProviders={[]}
+        providerEntries={[AIServiceProvider.OpenAI]}
+        localPreferredModel={{
+          provider: AIServiceProvider.OpenAI,
+          model: 'gpt-4o',
+        }}
+        localFallbackModel={undefined}
+        onPendingChange={vi.fn()}
+        onCustomProvidersChange={onCustomProvidersChange}
+        onPreferredModelChange={vi.fn()}
+        onFallbackModelChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Add Custom OpenAI Provider',
+      }),
+    );
+
+    expect(onCustomProvidersChange).toHaveBeenCalledTimes(1);
+    const nextProviders = onCustomProvidersChange.mock.calls[0][0];
+    expect(nextProviders).toHaveLength(1);
+    expect(nextProviders[0]).toEqual(
+      expect.objectContaining({
+        name: '',
+        baseUrl: '',
+        id: expect.any(String),
+      }),
+    );
   });
 });

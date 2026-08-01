@@ -45,6 +45,7 @@ vi.mock('@/hooks/use-settings', () => ({
   useSettings: () => ({
     value: {
       serviceConfigs: mockState.serviceConfigs,
+      customProviders: [],
     },
   }),
 }));
@@ -146,7 +147,12 @@ describe('useAgentModels', () => {
     expect(mockedFactory.invalidateService).toHaveBeenCalledWith(
       AIServiceProvider.OpenAI,
       'saved-key',
-      mockState.serviceConfigs[AIServiceProvider.OpenAI],
+      {
+        baseUrl: 'https://saved.example.com/v1',
+        use3rdParty: undefined,
+        customModelId: undefined,
+        safetySettings: undefined,
+      },
     );
   });
 });

@@ -3,12 +3,14 @@ import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
   ServiceConfig,
+  CustomOpenAIProvider,
   AdvancedSettings,
   DisplaySettings,
   SystemSettings,
   Settings,
   ExperimentalSettings,
 } from '@/context/SettingsContext';
+import { normalizeCustomOpenAIProviders } from '@/lib/ai-service/custom-providers';
 import equal from 'fast-deep-equal';
 
 export type SettingsFormState = Settings;
@@ -38,6 +40,7 @@ function getEmptyDirtyState(): SettingsDirtyState {
 function getAiModelsComparableState(settings: SettingsFormState) {
   return {
     serviceConfigs: settings.serviceConfigs,
+    customProviders: normalizeCustomOpenAIProviders(settings.customProviders),
     preferredModel: settings.preferredModel,
     fallbackModel: settings.fallbackModel,
     agentHubUrl: settings.agentHubUrl,
@@ -192,6 +195,16 @@ export function useSettingsForm() {
     [updateFormStore],
   );
 
+  const updateCustomProviders = useCallback(
+    (customProviders: CustomOpenAIProvider[]) => {
+      updateFormStore((prev) => ({
+        ...prev,
+        customProviders: normalizeCustomOpenAIProviders(customProviders),
+      }));
+    },
+    [updateFormStore],
+  );
+
   const updateAdvanced = useCallback(
     <K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) => {
       updateFormStore((prev) => ({
@@ -253,7 +266,16 @@ export function useSettingsForm() {
 
   const save = useCallback(async () => {
     if (!draftState) return;
-    await updateGlobal(draftState);
+    const sanitized: SettingsFormState = {
+      ...draftState,
+      customProviders: normalizeCustomOpenAIProviders(
+        draftState.customProviders,
+      ),
+    };
+    // Keep a canonical draft visible until persisted globals catch up.
+    // Normalization ensures equality clears dirty once reload finishes.
+    setDraftState(sanitized);
+    await updateGlobal(sanitized);
   }, [draftState, updateGlobal]);
 
   return {
@@ -261,6 +283,7 @@ export function useSettingsForm() {
     dirtyState: activeDirtyState,
     update,
     updateServiceConfig,
+    updateCustomProviders,
     updateAdvanced,
     updateDisplay,
     updateSystem,

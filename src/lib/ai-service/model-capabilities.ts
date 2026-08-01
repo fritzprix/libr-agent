@@ -12,7 +12,7 @@ const logger = getLogger('ModelCapabilities');
  * This avoids a direct import and thus prevents circular dependencies.
  */
 interface FactoryInterface {
-  getCapabilityDelegate(provider: AIServiceProvider): ServiceInterface;
+  getCapabilityDelegate(provider: AIServiceProvider | string): ServiceInterface;
 }
 
 interface ServiceInterface {
@@ -252,7 +252,7 @@ export async function getContextWindow(
  */
 export function supportsTools(
   modelName: string,
-  provider: AIServiceProvider,
+  provider: AIServiceProvider | string,
 ): boolean {
   try {
     if (registeredFactory) {
@@ -263,6 +263,10 @@ export function supportsTools(
   } catch {
     // Fallback if factory or service logic fails
     const lowerName = modelName.toLowerCase();
+    if (typeof provider === 'string' && provider.startsWith('custom:')) {
+      // Custom OpenAI-compatible endpoints: assume tool support unless proven otherwise.
+      return true;
+    }
     if (provider === AIServiceProvider.OpenAI) {
       return (
         lowerName.includes('gpt-4') ||
@@ -283,7 +287,7 @@ export function supportsTools(
  */
 export function estimateContextWindow(
   modelName: string,
-  provider: AIServiceProvider,
+  provider: AIServiceProvider | string,
 ): number {
   try {
     if (registeredFactory) {
@@ -294,7 +298,12 @@ export function estimateContextWindow(
   } catch {
     // Basic heuristics if delegation fails
     if (provider === AIServiceProvider.Anthropic) return 200000;
-    if (provider === AIServiceProvider.OpenAI) return 128000;
+    if (
+      provider === AIServiceProvider.OpenAI ||
+      (typeof provider === 'string' && provider.startsWith('custom:'))
+    ) {
+      return 128000;
+    }
     return 4096;
   }
 }

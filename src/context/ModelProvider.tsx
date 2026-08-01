@@ -8,7 +8,13 @@ import {
 } from 'react';
 import useSWR from 'swr';
 import { withTimeout } from '../lib/retry-utils';
-import { AIServiceProvider, AIServiceFactory } from '../lib/ai-service';
+import {
+  AIServiceProvider,
+  AIServiceFactory,
+  isCustomOpenAIProviderId,
+  listCustomProviderPickerOptions,
+  resolveProviderRuntimeConfig,
+} from '../lib/ai-service';
 import { shouldFetchDynamicModels } from '../lib/ai-service/model-fetch-policy';
 import {
   llmConfigManager,
@@ -37,11 +43,12 @@ const logger = getLogger('ModelProvider');
 
 interface ModelOptionsContextType {
   modelId: string;
-  provider: AIServiceProvider;
+  /** Builtin provider id or `custom:<id>`. */
+  provider: string;
   models: Record<string, ModelInfo>;
   providers: Array<ProviderInfo>;
   currentProviderInfo: ProviderInfo | null;
-  setProvider: (provider: AIServiceProvider) => void;
+  setProvider: (provider: string) => void;
   setModel: (modelId: string) => void;
   isLoading: boolean;
   apiKeys: Record<AIServiceProvider, string>;
@@ -58,20 +65,28 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   const {
     value: {
       serviceConfigs,
+      customProviders,
       preferredModel: { model, provider },
     },
     update,
     isLoading,
   } = useSettings();
 
-  // 동적 모델 목록 상태 (provider별로 저장)
-  // const [isRefreshingModels, setIsRefreshingModels] = useState(false); // Removed, using SWR isValidating
+  const resolvedProvider = useMemo(
+    () =>
+      resolveProviderRuntimeConfig(provider, {
+        serviceConfigs,
+        customProviders,
+      }),
+    [provider, serviceConfigs, customProviders],
+  );
 
-  // Compute API keys from service configs for backward compatibility
+  // Builtin-provider API keys only. Custom (`custom:<id>`) keys are resolved via
+  // resolveProviderRuntimeConfig() — do not look up custom ids in this map.
   const apiKeys = useMemo(() => {
     return Object.entries(serviceConfigs).reduce(
-      (acc, [provider, config]) => {
-        acc[provider as AIServiceProvider] = config.apiKey || '';
+      (acc, [providerKey, config]) => {
+        acc[providerKey as AIServiceProvider] = config.apiKey || '';
         return acc;
       },
       {} as Record<AIServiceProvider, string>,
@@ -80,13 +95,13 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   // Generate stable cache key including baseUrl
   const swrCacheKey = useMemo(() => {
-    const config = serviceConfigs[provider] || {};
     if (
       !shouldFetchDynamicModels({
         provider,
-        apiKey: config.apiKey,
-        use3rdParty: config.use3rdParty,
-        customModelId: config.customModelId,
+        apiKey: resolvedProvider.apiKey,
+        baseUrl: resolvedProvider.baseUrl,
+        use3rdParty: resolvedProvider.use3rdParty,
+        customModelId: resolvedProvider.customModelId,
       })
     ) {
       return null;
@@ -95,41 +110,32 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     return [
       'models',
       provider,
-      config.apiKey || '', // API key for cache invalidation
-      config.baseUrl || '', // Include baseUrl
-      config.use3rdParty ? 'use-3rd-party' : 'first-party',
-      config.customModelId || '',
+      resolvedProvider.apiKey || '',
+      resolvedProvider.baseUrl || '',
+      resolvedProvider.use3rdParty ? 'use-3rd-party' : 'first-party',
+      resolvedProvider.customModelId || '',
     ];
-  }, [provider, serviceConfigs]);
+  }, [provider, resolvedProvider]);
 
   // Fetcher for models — always delegates to service.listModels(), which each
   // provider implements. Static-only providers return llmConfigManager data;
   // dynamic providers (Ollama, OpenAI, OpenRouter, …) fetch from their APIs.
-  // The "supports dynamic" decision lives in the service, not here.
   const fetchDynamicModels = useCallback(
-    async ([, provider, apiKey]: [string, string, string]) => {
-      // Use a non-empty placeholder when no real key is configured so that
-      // validateApiKey() (which rejects only empty strings) doesn't throw.
-      // Services whose listModels() needs a real key will fail gracefully and
-      // return an empty array; the models useMemo below then falls back to
-      // the static config from llmConfigManager.
+    async ([, providerId, apiKey]: [string, string, string]) => {
       const effectiveApiKey = apiKey || 'no-api-key';
+      const resolved = resolveProviderRuntimeConfig(providerId, {
+        serviceConfigs,
+        customProviders,
+      });
 
       try {
-        // Get provider config including baseUrl
-        const providerConfig =
-          serviceConfigs[provider as AIServiceProvider] || {};
-
         const service = AIServiceFactory.getService(
-          provider as AIServiceProvider,
+          providerId,
           effectiveApiKey,
-          providerConfig,
+          resolved.serviceConfig,
         );
-        // Use 20-second timeout for model loading to prevent UI hangs
         const modelList = await withTimeout(service.listModels(), 20000);
 
-        // Convert ModelInfo[] into Record<string, ModelInfo>
-        // ⚡ Bolt: Replaced .reduce() with a single-pass loop to reduce per-element callback overhead.
         const modelsRecord = Object.create(null) as Record<string, ModelInfo>;
         for (const modelInfo of modelList) {
           const key = modelInfo.id || modelInfo.name;
@@ -137,20 +143,20 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         }
 
         if (Object.keys(modelsRecord).length > 0) {
-          setStoredModelCache(provider, modelsRecord);
+          setStoredModelCache(providerId, modelsRecord);
         }
 
-        logger.info(`Fetched ${modelList.length} models from ${provider}`);
+        logger.info(`Fetched ${modelList.length} models from ${providerId}`);
         return modelsRecord;
       } catch (error) {
         logger.error('Failed to fetch models:', error);
-        const storedModels = getStoredModelCache(provider);
+        const storedModels = getStoredModelCache(providerId);
         const hasCachedModels = !!(
           storedModels && Object.keys(storedModels).length > 0
         );
         reportListModelsFallback({
-          provider,
-          baseUrl: serviceConfigs[provider as AIServiceProvider]?.baseUrl,
+          provider: providerId,
+          baseUrl: resolved.baseUrl,
           reason: 'api_error',
           error,
           hasCachedModels,
@@ -158,7 +164,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         return storedModels || {};
       }
     },
-    [serviceConfigs],
+    [serviceConfigs, customProviders],
   );
 
   // SWR for dynamic models
@@ -173,41 +179,62 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     dedupingInterval: 30000, // 30 seconds
   });
 
-  // 현재 프로바이더의 모델 목록 계산
+  // Prefer dynamic list, then persisted cache, then static config / manual models.
   const models = useMemo(() => {
-    const staticModels = llmConfigManager.getModelsForProvider(provider) || {};
+    const staticModels = isCustomOpenAIProviderId(provider)
+      ? {}
+      : llmConfigManager.getModelsForProvider(provider as AIServiceProvider) ||
+        {};
     const storedModels = getStoredModelCache(provider);
+    const manualModels = (resolvedProvider.manualModels ?? []).reduce<
+      Record<string, ModelInfo>
+    >((acc, modelId) => {
+      acc[modelId] = {
+        ...DEFAULT_MODEL_INFO,
+        id: modelId,
+        name: modelId,
+        contextWindow: 128000,
+        supportTools: true,
+        supportStreaming: true,
+        description: 'Custom OpenAI-compatible model',
+      };
+      return acc;
+    }, {});
 
-    // 동적 목록이 provider별로 있으면 우선 사용
     if (Object.keys(dynamicModels).length > 0) {
-      return dynamicModels;
+      return { ...manualModels, ...dynamicModels };
     }
 
-    // 이전에 성공한 영속 캐시 목록이 있으면 즉시 활용 (0ms)
+    if (Object.keys(manualModels).length > 0) {
+      return manualModels;
+    }
+
     if (storedModels && Object.keys(storedModels).length > 0) {
       return storedModels;
     }
 
     return staticModels;
-  }, [provider, dynamicModels]);
+  }, [provider, dynamicModels, resolvedProvider.manualModels]);
 
-  // 수동 모델 새로고침 함수 (새로고침 버튼용)
   const refreshModels = useCallback(async () => {
-    const config = serviceConfigs[provider] || {};
-    AIServiceFactory.invalidateService(provider, config.apiKey || '', config);
+    AIServiceFactory.invalidateService(
+      provider,
+      resolvedProvider.apiKey || '',
+      resolvedProvider.serviceConfig,
+    );
     await mutateModels(undefined, {
       revalidate: true,
     });
-  }, [mutateModels, provider, serviceConfigs]);
+  }, [mutateModels, provider, resolvedProvider]);
 
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();
-
-    return Object.entries(providers).map(([key, value]) => ({
+    const builtin = Object.entries(providers).map(([key, value]) => ({
       label: value.name,
       value: key,
     }));
-  }, []);
+    return [...builtin, ...listCustomProviderPickerOptions(customProviders)];
+  }, [customProviders]);
 
   const modelOptions = useMemo(() => {
     logger.info('🎯 Current provider:', provider);
@@ -227,18 +254,40 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   }, [models, model]);
 
   const currentProviderInfo = useMemo(() => {
+    if (isCustomOpenAIProviderId(provider)) {
+      return {
+        name: resolvedProvider.displayName,
+        apiKeyEnvVar: '',
+        baseUrl: resolvedProvider.baseUrl ?? '',
+        requiresApiKey: false,
+        models: {},
+      } satisfies ProviderInfo;
+    }
     const providers = llmConfigManager.getProviders();
     return providers[provider] || null;
-  }, [provider]);
+  }, [provider, resolvedProvider.baseUrl, resolvedProvider.displayName]);
 
   const setProvider = useCallback(
-    (newProvider: AIServiceProvider) => {
+    (newProvider: string) => {
+      if (isCustomOpenAIProviderId(newProvider)) {
+        const resolved = resolveProviderRuntimeConfig(newProvider, {
+          serviceConfigs,
+          customProviders,
+        });
+        const defaultModel = resolved.manualModels?.[0] ?? '';
+        update({
+          preferredModel: { provider: newProvider, model: defaultModel },
+        });
+        return;
+      }
+
       const availableModels =
-        llmConfigManager.getModelsForProvider(newProvider) || {};
+        llmConfigManager.getModelsForProvider(
+          newProvider as AIServiceProvider,
+        ) || {};
 
       if (Object.keys(availableModels).length === 0) {
         logger.warn(`No available models for ${newProvider}`);
-        // 모델이 없어도 프로바이더는 변경하고, 모델은 빈 문자열로 설정
         update({ preferredModel: { provider: newProvider, model: '' } });
         return;
       }
@@ -248,7 +297,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
       update({ preferredModel: { provider: newProvider, model: newModel } });
     },
-    [update],
+    [update, serviceConfigs, customProviders],
   );
 
   const setModel = useCallback(

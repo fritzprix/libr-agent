@@ -5,6 +5,7 @@ import {
   type ISettingsService,
   type Settings,
   type ServiceConfig,
+  type CustomOpenAIProvider,
   type ModelChoice,
   type AdvancedSettings,
   type DisplaySettings,
@@ -12,12 +13,14 @@ import {
   type ExperimentalSettings,
 } from './settings-service';
 import type { AIServiceProvider } from '@/lib/ai-service';
+import { normalizeCustomOpenAIProviders } from '@/lib/ai-service/custom-providers';
 
 const logger = getLogger('RustSettingsService');
 
 // Define specific types for each setting value
 type SettingValue =
   | Record<AIServiceProvider, ServiceConfig> // serviceConfigs
+  | CustomOpenAIProvider[] // customProviders
   | ModelChoice // preferredModel / fallbackModel
   | null // fallbackModel can be null (cleared)
   | number // windowSize, toolCallGroupVisibleCount
@@ -76,6 +79,31 @@ function isPartialAdvancedSettings(
   });
 }
 
+function isCustomOpenAIProviderArray(
+  val: unknown,
+): val is CustomOpenAIProvider[] {
+  if (!Array.isArray(val)) {
+    return false;
+  }
+  return val.every((entry) => {
+    if (typeof entry !== 'object' || entry === null) {
+      return false;
+    }
+    const obj = entry as Record<string, unknown>;
+    const apiKey = obj.apiKey;
+    const models = obj.models;
+    return (
+      typeof obj.id === 'string' &&
+      typeof obj.name === 'string' &&
+      typeof obj.baseUrl === 'string' &&
+      (apiKey === undefined || apiKey === null || typeof apiKey === 'string') &&
+      (models === undefined ||
+        models === null ||
+        (Array.isArray(models) && models.every((m) => typeof m === 'string')))
+    );
+  });
+}
+
 function mapDtosToSettings(dtos: SettingDto[]): Settings {
   const settingsMap = new Map<string, SettingValue>();
   dtos.forEach((dto) => {
@@ -109,6 +137,13 @@ function mapDtosToSettings(dtos: SettingDto[]): Settings {
       ...DEFAULT_SETTING.serviceConfigs,
       ...getTypedValue('serviceConfigs', DEFAULT_SETTING.serviceConfigs),
     },
+    customProviders: normalizeCustomOpenAIProviders(
+      getTypedValue(
+        'customProviders',
+        DEFAULT_SETTING.customProviders,
+        isCustomOpenAIProviderArray,
+      ),
+    ),
     preferredModel: getTypedValue(
       'preferredModel',
       DEFAULT_SETTING.preferredModel,
@@ -221,6 +256,12 @@ export class RustSettingsService implements ISettingsService {
           ...settings.serviceConfigs,
         };
         changes['serviceConfigs'] = newServiceConfigs;
+      }
+
+      if (settings.customProviders !== undefined) {
+        changes['customProviders'] = normalizeCustomOpenAIProviders(
+          settings.customProviders,
+        );
       }
 
       if (settings.preferredModel) {

@@ -18,8 +18,23 @@ export interface ServiceConfig {
   customModelId?: string;
 }
 
+/** User-defined OpenAI-compatible endpoint (vLLM, LM Studio, LocalAI, etc.). */
+export interface CustomOpenAIProvider {
+  /** Stable cuid used in session provider strings as `custom:<id>`. */
+  id: string;
+  /** Display name shown in Settings and the model picker. */
+  name: string;
+  /** OpenAI-compatible base URL (e.g. http://192.168.1.100:8000/v1). */
+  baseUrl: string;
+  /** Optional API key for authenticated endpoints. */
+  apiKey?: string;
+  /** Optional manual model IDs when /v1/models is unavailable. */
+  models?: string[];
+}
+
 export interface ModelChoice {
-  provider: AIServiceProvider;
+  /** Builtin AIServiceProvider id or `custom:<id>` for custom providers. */
+  provider: string;
   model: string;
 }
 
@@ -81,6 +96,8 @@ export interface ExperimentalSettings {
 
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
+  /** Additional OpenAI-compatible providers beyond the builtin openai slot. */
+  customProviders: CustomOpenAIProvider[];
   preferredModel: ModelChoice;
   fallbackModel?: ModelChoice;
   contextStrategy: ContextStrategy;
@@ -105,8 +122,9 @@ export const DEFAULT_SETTING: Settings = {
     },
     {} as Record<AIServiceProvider, ServiceConfig>,
   ),
+  customProviders: [],
   preferredModel: {
-    provider: (DEFAULT_MODEL?.providerId || 'openai') as AIServiceProvider,
+    provider: DEFAULT_MODEL?.providerId || 'openai',
     model: DEFAULT_MODEL?.modelId || '',
   },
   fallbackModel: undefined,
