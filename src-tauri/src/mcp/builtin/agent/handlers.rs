@@ -355,10 +355,18 @@ pub struct CheckSessionEnrichment {
 }
 
 fn optional_nonempty(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_string)
+    value.and_then(sanitize_check_session_metadata_field)
+}
+
+/// Keep Metadata fields on a single line so crafted values cannot break the fence layout.
+fn sanitize_check_session_metadata_field(value: &str) -> Option<String> {
+    let without_breaks: String = value.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    let trimmed = without_breaks.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 /// Build enrichment fields from session metadata (assistant name resolved separately).
@@ -441,37 +449,29 @@ pub fn format_check_session_context_text(enrichment: &CheckSessionEnrichment) ->
     }
 }
 
-fn inject_check_session_context_text(text: &str, context: &str) -> String {
-    const FOLLOW_UPS: &str = "💡 Suggested Follow-ups:";
-    if let Some(index) = text.find(FOLLOW_UPS) {
-        let (before, after) = text.split_at(index);
-        format!("{}{}\n\n{}", before.trim_end(), context, after)
-    } else {
-        format!("{}\n\n{}", text.trim_end(), context)
-    }
-}
-
-/// Attach enrichment fields onto an existing `checkSession` MCP result (structured + text).
-pub fn enrich_check_session_result(
-    mut result: MCPResult,
+/// Insert Metadata markdown into the checkSession body **before** SuccessHint wraps it.
+///
+/// Placement (so long Result bodies / tool-result truncation keep identity visible):
+/// status line → Metadata → `Result:` / `Last known output:` → optional Follow-ups.
+pub fn append_check_session_context_to_message(
+    message: &str,
     enrichment: &CheckSessionEnrichment,
-) -> MCPResult {
-    if let Some(Value::Object(ref mut data)) = result.structured_content {
-        apply_check_session_enrichment(data, enrichment);
-    }
+) -> String {
+    let Some(context) = format_check_session_context_text(enrichment) else {
+        return message.to_string();
+    };
 
-    if let Some(context) = format_check_session_context_text(enrichment) {
-        if let Some(content_items) = result.content.as_mut() {
-            for item in content_items.iter_mut() {
-                if let MCPContent::Text { text, .. } = item {
-                    *text = inject_check_session_context_text(text, &context);
-                    break;
-                }
-            }
+    // Prefer Metadata before large child bodies — truncation keeps the head of the text.
+    const BODY_MARKERS: &[&str] = &["\n\nResult:\n", "\n\nLast known output:\n"];
+    for marker in BODY_MARKERS {
+        if let Some(index) = message.find(marker) {
+            let before = message[..index].trim_end();
+            let after = &message[index..];
+            return format!("{}\n\n{}{}", before, context, after);
         }
     }
 
-    result
+    format!("{}\n\n{}", message.trim_end(), context)
 }
 
 /// Resolve assistant display name and build enrichment for a delegated session.
@@ -506,14 +506,18 @@ pub fn build_paused_check_session_result_from_messages(
     session_id: &str,
     turn_count: usize,
     messages_value: &[Value],
+    enrichment: Option<&CheckSessionEnrichment>,
 ) -> MCPResult {
     let latest_output = latest_session_output(messages_value);
     let recovery_reason =
         "Wake the paused child session so it can continue from the last stable step.";
-    let message = format!(
+    let mut message = format!(
         "Session {} is paused and will not make progress on its own.\n\nLast known output:\n{}\n\nRecovery: send a follow-up message with messageToSession(...) to restart the child workflow.",
         session_id, latest_output
     );
+    if let Some(enrichment) = enrichment {
+        message = append_check_session_context_to_message(&message, enrichment);
+    }
     let next_actions = vec![
         recovery_action_for_session(session_id, "paused", recovery_reason),
         json!({
@@ -546,6 +550,9 @@ pub fn build_paused_check_session_result_from_messages(
     );
     response_data.insert("abnormalTermination".to_string(), Value::Bool(false));
     response_data.insert("result".to_string(), Value::String(latest_output));
+    if let Some(enrichment) = enrichment {
+        apply_check_session_enrichment(&mut response_data, enrichment);
+    }
 
     hint.to_mcp_result_with_data(Some(Value::Object(response_data)))
 }
@@ -555,6 +562,7 @@ pub fn build_terminal_check_session_result_from_messages(
     status: &str,
     turn_count: usize,
     messages_value: &[Value],
+    enrichment: Option<&CheckSessionEnrichment>,
 ) -> MCPResult {
     let assistant_text = latest_session_output(messages_value);
     let normalized_status = status.to_ascii_lowercase();
@@ -589,7 +597,7 @@ pub fn build_terminal_check_session_result_from_messages(
             }
         })]
     };
-    let message = if is_abnormal {
+    let mut message = if is_abnormal {
         format!(
             "Session {} ended abnormally ({}).\n\nLast known output:\n{}\n\nRecovery: this child session will not continue on its own. Use messageToSession(...) to retry from the last stable step.",
             session_id, status, assistant_text
@@ -605,6 +613,9 @@ pub fn build_terminal_check_session_result_from_messages(
             session_id, status, assistant_text, session_id
         )
     };
+    if let Some(enrichment) = enrichment {
+        message = append_check_session_context_to_message(&message, enrichment);
+    }
     let hint = SuccessHint::new(message.clone(), vec![]);
     let mut response_data = build_agent_session_tool_data(
         "checkSession",
@@ -636,6 +647,9 @@ pub fn build_terminal_check_session_result_from_messages(
     }
     // Always include hasMoreDetail hint so UI can show a "view more" action
     response_data.insert("hasMoreDetail".to_string(), Value::Bool(true));
+    if let Some(enrichment) = enrichment {
+        apply_check_session_enrichment(&mut response_data, enrichment);
+    }
 
     hint.to_mcp_result_with_data(Some(Value::Object(response_data)))
 }
@@ -644,6 +658,7 @@ async fn build_terminal_check_session_result(
     session_id: &str,
     status: &str,
     turn_count: usize,
+    enrichment: &CheckSessionEnrichment,
 ) -> Result<MCPResult, String> {
     let messages_value =
         fetch_session_messages_for_result(session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT).await?;
@@ -653,12 +668,14 @@ async fn build_terminal_check_session_result(
         status,
         turn_count,
         &messages_value,
+        Some(enrichment),
     ))
 }
 
 async fn build_paused_check_session_result(
     session_id: &str,
     turn_count: usize,
+    enrichment: &CheckSessionEnrichment,
 ) -> Result<MCPResult, String> {
     let messages_value =
         fetch_session_messages_for_result(session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT).await?;
@@ -667,6 +684,7 @@ async fn build_paused_check_session_result(
         session_id,
         turn_count,
         &messages_value,
+        Some(enrichment),
     ))
 }
 mod check_session;

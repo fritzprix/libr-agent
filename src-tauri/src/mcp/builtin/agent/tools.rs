@@ -364,7 +364,7 @@ fn check_session_tool() -> MCPTool {
             &["Session ID from agent__startSession or agent__listAgents(type='sessions')."],
             &[
                 "Call with wait=false for a snapshot or wait=true to block until terminal state.",
-                "After the child status/result, a fenced Metadata block adds identity/routing only (assistant, workspace) — not the child's answer. Session title/name is omitted.",
+                "After the status line (before Result), a fenced Metadata block adds identity/routing only (assistant, workspace) — not the child's answer. Session title/name is omitted.",
                 "Paused or error sessions need recovery via agent__messageToSession.",
             ],
             &[

@@ -4,10 +4,11 @@
 use serde_json::json;
 use tauri_mcp_agent_lib::execution_mode::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
-    apply_check_session_enrichment, build_terminal_check_session_result_from_messages,
-    check_session_enrichment_from_metadata, enrich_check_session_result,
+    append_check_session_context_to_message, apply_check_session_enrichment,
+    build_terminal_check_session_result_from_messages, check_session_enrichment_from_metadata,
     format_check_session_context_text,
 };
+use tauri_mcp_agent_lib::mcp::builtin::error_guidance::SuccessHint;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
@@ -82,7 +83,7 @@ fn check_session_enrichment_omits_name_and_mirrors_fenced_context_into_text() {
     assert!(!context.contains("createdAt"));
     assert!(!context.contains("Draft release notes"));
 
-    let mut result = build_terminal_check_session_result_from_messages(
+    let result = build_terminal_check_session_result_from_messages(
         "child-1",
         "idle",
         1,
@@ -90,8 +91,8 @@ fn check_session_enrichment_omits_name_and_mirrors_fenced_context_into_text() {
             "role": "assistant",
             "content": [{"type": "text", "text": "done"}]
         })],
+        Some(&enrichment),
     );
-    result = enrich_check_session_result(result, &enrichment);
 
     let structured = result
         .structured_content
@@ -119,11 +120,15 @@ fn check_session_enrichment_omits_name_and_mirrors_fenced_context_into_text() {
     let text = extract_text(&result);
     assert!(text.contains("Session child-1 is terminal (idle)."));
     assert!(text.contains("Result:\ndone"));
-    let result_idx = text.find("Result:").expect("Result section expected");
+    let status_idx = text
+        .find("Session child-1 is terminal (idle).")
+        .expect("status line expected");
     let meta_idx = text
         .find(METADATA_FENCE_HEADER)
         .expect("metadata fence expected");
-    assert!(result_idx < meta_idx);
+    let result_idx = text.find("Result:").expect("Result section expected");
+    assert!(status_idx < meta_idx);
+    assert!(meta_idx < result_idx);
     assert!(text.contains("assistant: Researcher (asst-1)"));
     assert!(text.contains("workspace: /shared/workspace"));
     assert!(!text.contains("createdAt"));
@@ -145,17 +150,40 @@ fn check_session_enrichment_omits_name_and_mirrors_fenced_context_into_text() {
 }
 
 #[test]
-fn check_session_metadata_block_is_inserted_before_follow_ups() {
-    use tauri_mcp_agent_lib::mcp::types::MCPResult;
+fn check_session_metadata_fields_collapse_newlines() {
+    let mut meta = sample_meta();
+    meta.assistant_id = Some("asst\n-1".to_string());
+    meta.org_id = Some("org\r\n9".to_string());
+    meta.workspace_override = Some("/shared/\nworkspace".to_string());
 
     let enrichment =
+        check_session_enrichment_from_metadata(&meta, Some("Researcher\nName".to_string()));
+
+    assert_eq!(enrichment.assistant_id.as_deref(), Some("asst-1"));
+    assert_eq!(enrichment.assistant_name.as_deref(), Some("ResearcherName"));
+    assert_eq!(
+        enrichment.workspace_path.as_deref(),
+        Some("/shared/workspace")
+    );
+    assert_eq!(enrichment.org_id.as_deref(), Some("org9"));
+
+    let context = format_check_session_context_text(&enrichment).expect("context text");
+    assert!(!context.contains('\r'));
+    assert_eq!(context.matches('\n').count(), 4); // --- + header + 3 field lines
+    assert!(context.contains("assistant: ResearcherName (asst-1)"));
+    assert!(context.contains("workspace: /shared/workspace"));
+    assert!(context.contains("orgId: org9"));
+}
+
+#[test]
+fn check_session_metadata_block_is_before_follow_ups_from_success_hint() {
+    let enrichment =
         check_session_enrichment_from_metadata(&sample_meta(), Some("Researcher".to_string()));
-    let result = enrich_check_session_result(
-        MCPResult::success(
-            "✓ Session child-1 is currently busy (Turns elapsed: 2).\n\n💡 Suggested Follow-ups:\n- wait",
-        ),
+    let message = append_check_session_context_to_message(
+        "Session child-1 is currently busy (Turns elapsed: 2).",
         &enrichment,
     );
+    let result = SuccessHint::new(message, vec!["wait".to_string()]).to_mcp_result();
     let text = extract_text(&result);
     let meta_idx = text
         .find(METADATA_FENCE_HEADER)
@@ -164,4 +192,33 @@ fn check_session_metadata_block_is_inserted_before_follow_ups() {
         .find("💡 Suggested Follow-ups:")
         .expect("follow-ups expected");
     assert!(meta_idx < follow_up_idx);
+}
+
+#[test]
+fn check_session_metadata_stays_before_result_that_quotes_follow_ups_marker() {
+    let enrichment =
+        check_session_enrichment_from_metadata(&sample_meta(), Some("Researcher".to_string()));
+    // Child answers can quote the Follow-ups marker (e.g. code reviews). Metadata is
+    // inserted before Result, so quotes in the body cannot steal placement.
+    let body = "\
+Session child-1 is terminal (idle).\n\n\
+Result:\n\
+Review notes that mention inserting before the\n\n\
+💡 Suggested Follow-ups:\" marker in inject_check_session_context_text.\n\n\
+More analysis after the quoted marker.";
+    let message = append_check_session_context_to_message(body, &enrichment);
+    let result = SuccessHint::new(message, vec![]).to_mcp_result();
+    let text = extract_text(&result);
+
+    let meta_idx = text
+        .find(METADATA_FENCE_HEADER)
+        .expect("metadata fence expected");
+    let result_idx = text.find("Result:").expect("Result section");
+    let quoted_idx = text
+        .find("quoted marker")
+        .expect("quoted prose after fake marker");
+
+    assert!(meta_idx < result_idx);
+    assert!(result_idx < quoted_idx);
+    assert!(text.contains("orgId: org-9"));
 }
