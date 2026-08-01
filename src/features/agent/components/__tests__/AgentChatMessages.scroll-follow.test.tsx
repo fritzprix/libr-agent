@@ -929,4 +929,124 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     }
   });
+
+  it('does not yank to bottom with sentinel scroll when older messages prepend at the top', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const performanceNowSpy = vi.spyOn(performance, 'now');
+    const scrollIntoView = vi.fn();
+    let currentTime = 0;
+
+    chatState.messages = [makeStreamingMessage('visible head')];
+    chatState.workflowStatus = 'busy';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    performanceNowSpy.mockImplementation(() => currentTime);
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      const { container, rerender } = render(<AgentChatMessages />);
+      const scroller = container.querySelector(
+        '.agent-chat-scrollbar',
+      ) as HTMLDivElement | null;
+
+      expect(scroller).not.toBeNull();
+
+      // Two-step upward park (same pattern as other near-top tests).
+      currentTime = 50;
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 2_000,
+        clientHeight: 400,
+        scrollTop: 40,
+      });
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      currentTime = 300;
+      scroller!.scrollTop = 2;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+
+      scrollToIndexMock.mockClear();
+      scrollIntoView.mockClear();
+
+      groupedMessagesMock.splice(
+        0,
+        groupedMessagesMock.length,
+        {
+          type: 'single',
+          message: {
+            ...baseMessage,
+            id: 'older-user',
+            role: 'user',
+            content: [{ type: 'text', text: 'Older user message' }],
+          },
+          messages: [
+            {
+              ...baseMessage,
+              id: 'older-user',
+              role: 'user',
+              content: [{ type: 'text', text: 'Older user message' }],
+            },
+          ],
+          coveredMessageIds: ['older-user'],
+        } as GroupedMessage,
+        makeStreamingGroupEntry('visible head'),
+      );
+      chatState.messages = [
+        {
+          ...baseMessage,
+          id: 'older-user',
+          role: 'user',
+          content: [{ type: 'text', text: 'Older user message' }],
+        },
+        makeStreamingMessage('visible head'),
+      ];
+      rerender(<AgentChatMessages />);
+
+      // Prepend pins the previous head before paint (Virtuoso remount flash).
+      expect(scrollToIndexMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          align: 'start',
+          behavior: 'auto',
+        }),
+      );
+      scrollToIndexMock.mockClear();
+
+      const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+        totalListHeightChanged?: (height: number) => void;
+      };
+
+      act(() => {
+        virtuosoProps.totalListHeightChanged?.(2_400);
+        resizeObserverCallbacks.current.forEach((callback) =>
+          callback([], {} as ResizeObserver),
+        );
+      });
+
+      // Must not also yank to the footer sentinel / latest messages.
+      expect(scrollToIndexMock).not.toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+    } finally {
+      performanceNowSpy.mockRestore();
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
 });

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { type VirtuosoHandle } from 'react-virtuoso';
 import { getLogger } from '@/lib/logger';
 import { type GroupedMessage } from '@/hooks/useMessageGrouping';
@@ -131,6 +138,14 @@ export function useAgentChatScroll({
   const preservesPreviousVisibleHead = previousHeadIndexInCurrentList >= 0;
   const prependCount = candidatePrependCount;
 
+  // Arm prepend preservation during render (not only in useEffect) so
+  // same-frame ResizeObserver / totalListHeightChanged / reactive scroll
+  // cannot yank to bottom before the effect runs — that flash often looks
+  // like a brief user bubble appearing then vanishing after load-older.
+  if (prependCount > 0) {
+    isPreservingPrependPositionRef.current = true;
+  }
+
   const effectiveFirstItemIndex = didSessionChangeForListState
     ? INITIAL_FIRST_ITEM_INDEX
     : prependCount > 0
@@ -209,6 +224,35 @@ export function useAgentChatScroll({
     },
     [scrollerElement],
   );
+
+  // Virtuoso can remount the *start* of `data` for a frame when prepending
+  // (react-virtuoso#663), which briefly paints older user bubbles then swaps
+  // back. Pin the previous head before paint so that frame never shows.
+  useLayoutEffect(() => {
+    if (prependCount <= 0) {
+      return;
+    }
+
+    const virtuoso = virtuosoRef.current;
+    if (!virtuoso) {
+      return;
+    }
+
+    // Old head sits at data index `prependCount` → virtuoso index below.
+    const anchorVirtuosoIndex = effectiveFirstItemIndex + prependCount;
+    logScrollState('prepend-preservation:anchor-scroll', {
+      prependCount,
+      anchorVirtuosoIndex,
+      effectiveFirstItemIndex,
+    });
+    selfScrollIgnoreUntilRef.current =
+      performance.now() + SELF_SCROLL_IGNORE_WINDOW_MS;
+    virtuoso.scrollToIndex({
+      index: anchorVirtuosoIndex,
+      align: 'start',
+      behavior: 'auto',
+    });
+  }, [effectiveFirstItemIndex, logScrollState, prependCount]);
 
   groupedMessageCountRef.current = groupedMessages.length;
 
@@ -396,15 +440,30 @@ export function useAgentChatScroll({
           reason,
           scrolledWithVirtuoso: true,
         });
+      }
+
+      // Virtuoso scrollToIndex(LAST) only aligns the last *data* item. Footer
+      // (composer spacer + sentinel) sits after data items, so always finish
+      // with sentinel alignment or the last ~composer-overlap px stays hidden
+      // behind AgentChatInput (#1647).
+      if (footerEndRef.current) {
+        logScrollState('executeScrollToBottom:footer-sentinel-align', {
+          itemCount,
+          reason,
+          scrolledWithVirtuoso,
+        });
+        scrollFooterSentinelIntoView(footerEndRef.current);
         return true;
       }
 
-      if (footerEndRef.current) {
-        logScrollState('executeScrollToBottom:footer-sentinel-fallback', {
+      // Footer sentinel missing (unmounted / not yet attached). Virtuoso-only
+      // scroll is the best we can do; log so the rare path is visible in debug.
+      if (scrolledWithVirtuoso) {
+        logScrollState('executeScrollToBottom:virtuoso-scroll-no-footer', {
           itemCount,
           reason,
+          scrolledWithVirtuoso: true,
         });
-        scrollFooterSentinelIntoView(footerEndRef.current);
         return true;
       }
 
@@ -504,6 +563,39 @@ export function useAgentChatScroll({
 
       autoScrollFrameRef.current = requestAnimationFrame(() => {
         autoScrollFrameRef.current = null;
+        // Re-check intent inside the frame — a schedule from before scroll-up /
+        // prepend must not run sentinel scrollIntoView and flash bottom content.
+        // Keep these rules identical to the schedule-time suppress checks above.
+        const isForceReasonOnFire = forceBottomScrollReasons.has(reason);
+        const isNearTopOnFire =
+          scrollTopRef.current <= NEAR_TOP_SCROLL_THRESHOLD;
+        const shouldForceOnFire =
+          isForceReasonOnFire ||
+          (shouldFollowLatestRef.current && !isNearTopOnFire);
+        const shouldSuppressForPrependOnFire =
+          isPreservingPrependPositionRef.current && !isForceReasonOnFire;
+        const shouldSuppressForUserScrollOnFire =
+          !isBottomAlignmentActive(bottomAlignmentPhaseRef.current) &&
+          !visualBottomRef.current &&
+          !shouldForceOnFire;
+        const shouldSuppressForNearTopOnFire =
+          isNearTopOnFire && !visualBottomRef.current && !isForceReasonOnFire;
+
+        if (
+          shouldSuppressForPrependOnFire ||
+          shouldSuppressForUserScrollOnFire ||
+          shouldSuppressForNearTopOnFire
+        ) {
+          logScrollState('scheduleScrollToBottom:frame-suppressed', {
+            reason,
+            isPreservingPrepend: isPreservingPrependPositionRef.current,
+            isNearTop: isNearTopOnFire,
+            shouldFollowLatest: shouldFollowLatestRef.current,
+            visualBottom: visualBottomRef.current,
+          });
+          return;
+        }
+
         logScrollState('scheduleScrollToBottom:frame-fired', {
           reason,
         });
@@ -859,6 +951,14 @@ export function useAgentChatScroll({
       resumeBottomFollow('bottom-context-restored');
     }
 
+    if (prependCount > 0 || isPreservingPrependPositionRef.current) {
+      logScrollState('reactive-state-change:prepend-skip', {
+        prependCount,
+        messageId: latestMessage?.id,
+      });
+      return;
+    }
+
     if (!shouldFollowLatestRef.current && !isPinnedToBottomRef.current) {
       return;
     }
@@ -886,6 +986,7 @@ export function useAgentChatScroll({
     agentLlmError,
     groupedMessages.length,
     logScrollState,
+    prependCount,
     resumeBottomFollow,
     scheduleScrollToBottom,
   ]);
