@@ -50,11 +50,11 @@ gh pr list --head <current-branch> --json number,title,url,state,baseRefName
 
 ### 2. Decide branch / PR shape
 
-| Situation | Action |
-| --------- | ------ |
-| Open PR already exists for this head | Update it (`gh pr edit`) or push; do not open a duplicate |
+| Situation                                          | Action                                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Open PR already exists for this head               | Update it (`gh pr edit`) or push; do not open a duplicate                                            |
 | Head branch was merged earlier; new commits remain | New PR from same or cleaner branch is OK; confirm `origin/<base>..HEAD` is only the intended commits |
-| Mixed concerns on one branch | Prefer a clean branch from `origin/<base>` + cherry-pick (or ask) before opening |
+| Mixed concerns on one branch                       | Prefer a clean branch from `origin/<base>` + cherry-pick (or ask) before opening                     |
 
 ### 3. Push, then create
 

@@ -42,9 +42,9 @@ Do not rely on title-only `#123` for auto-close — put the keyword in the **bod
 
 ## Choosing the right issue
 
-| Signal | Use |
-| ------ | --- |
-| User says “for #1641” / “bind #1641” | That issue |
-| Branch `fix/1641-…` or commit `(#1641)` | Confirm with `gh issue view 1641` |
-| Several open bugs touched | Prefer one PR per issue when possible; otherwise list every closed issue |
-| Partial fix | `Related to #N` — do not `Fixes` |
+| Signal                                  | Use                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------ |
+| User says “for #1641” / “bind #1641”    | That issue                                                               |
+| Branch `fix/1641-…` or commit `(#1641)` | Confirm with `gh issue view 1641`                                        |
+| Several open bugs touched               | Prefer one PR per issue when possible; otherwise list every closed issue |
+| Partial fix                             | `Related to #N` — do not `Fixes`                                         |
