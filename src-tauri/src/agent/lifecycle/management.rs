@@ -8,11 +8,9 @@ use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{SessionMetadata, SessionStatus};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 /// Resume an existing session by loading it into active sessions
 #[allow(dead_code)]
@@ -82,13 +80,10 @@ pub async fn resume_session(
     }
 
     // Deserialize agent config (live assistant settings + session lineage)
-    let agent_config = crate::agent::resolve_agent_config(&session).await?;
+    // SSOT: MCP activation is session → assistant → mcpServerIds.
+    let (tool_ids, mcp_server_ids) = crate::agent::resolve_session_mcp_bindings(&session).await?;
 
-    // Extract builtin tool IDs from agent config
-    let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
-    let mcp_server_ids = agent_config.mcp_server_ids.clone();
-
-    // Create proxy for this session
+    // Create proxy for this session (tool discovery runs asynchronously in background)
     proxy_manager
         .create_proxy(
             session_id.to_string(),
@@ -130,39 +125,14 @@ pub async fn resume_session(
             "Session {} not in memory, initializing new active session state",
             session_id
         );
-        let (yolo_enabled, unsafe_enabled) = session.execution_mode.runtime_flags();
+        // Resume historically initializes an empty registry (caller arg unused).
         active.insert(
             session_id.to_string(),
-            AgentSession {
-                metadata: session.clone(),
-                is_running: false,
-                active_permit: None,
-                status_transition: Arc::new(RwLock::new(None)),
-                transition_lock: Arc::new(tokio::sync::Mutex::new(())),
-                cancellation_token: CancellationToken::new(),
-                yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
-                unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
-                cancel_pending: Arc::new(AtomicBool::new(false)),
-                pending_execution: None,
-                messages: Arc::new(RwLock::new(Vec::new())),
-                cache_initialized: Arc::new(AtomicBool::new(false)),
-                last_synced_at: Arc::new(RwLock::new(None)),
-                repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
-                repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-                bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-                bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
-                pending_events: Arc::new(RwLock::new(
-                    crate::agent::state::PendingEventManager::new(),
-                )),
-                pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
-                context_registry: Arc::new(crate::agent::context::registry::ContextRegistry::new()),
-                compact_context: Arc::new(RwLock::new(compact_context_record)),
-                compaction: crate::agent::state::CompactionRuntimeState::new(),
-                expected_response_id: Arc::new(RwLock::new(None)),
-                cached_stable_prompt: Arc::new(RwLock::new(None)),
-                last_completion_request: Arc::new(RwLock::new(None)),
-                last_submitted_input_message_id: Arc::new(RwLock::new(None)),
-            },
+            AgentSession::new(
+                session.clone(),
+                Arc::new(ContextRegistry::new()),
+                compact_context_record,
+            ),
         );
     }
 

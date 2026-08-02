@@ -1052,7 +1052,31 @@
       "noContent": "Aucun contenu",
       "thinkingProcess": "Processus de réflexion",
       "thinkingProcessWithTime": "Processus de réflexion {{time}}",
-      "thinking": "Réflexion..."
+      "thinking": "Réflexion...",
+      "expandThinking": "Développer",
+      "actionBar": {
+        "copyFullAria": "Copier le message complet",
+        "copyFullTooltip": "Copier le message complet (texte, réflexion, outils, pièces jointes)",
+        "copyTextAria": "Copier le texte uniquement",
+        "copyTextTooltip": "Copier uniquement le contenu texte",
+        "copyToolsAria": "Copier les appels d’outils",
+        "copyToolsTooltip": "Copier les appels d’outils en JSON",
+        "exportAria": "Exporter le message",
+        "exportTooltip": "Exporter le message",
+        "exportMarkdown": "Exporter en Markdown",
+        "exportPdf": "Exporter en PDF",
+        "copySuccess": "Message copié dans le presse-papiers",
+        "copyEmpty": "Rien à copier",
+        "copyDenied": "Accès au presse-papiers refusé. Vérifiez les autorisations du navigateur.",
+        "copyError": "Échec de la copie du message",
+        "exportMarkdownSuccess": "Fichier Markdown téléchargé",
+        "exportPdfSuccess": "Fichier PDF téléchargé",
+        "exportOpenFile": "Ouvrir",
+        "exportOpenFileError": "Impossible d’ouvrir le fichier",
+        "exportCancelled": "Téléchargement annulé",
+        "exportError": "Échec de l’exportation du message",
+        "exportPdfError": "Échec de l’exportation PDF"
+      }
     },
     "start": {
       "heroTitle": "Que voulez-vous faire aujourd'hui ?",

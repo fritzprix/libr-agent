@@ -80,11 +80,12 @@ export function useMessageGrouping(
   boundaryId?: string,
 ): MessageGroupingResult {
   const visibleMessages = useMemo(() => {
+    // Keep source=recovery tool tombstones visible — they close orphaned tool calls after
+    // crash recovery. Filtering them leaves results[undefined] and stuck spinners.
     return messages.filter(
       (msg) =>
         msg.source !== 'session-context' &&
-        msg.source !== 'compaction-instruction' &&
-        msg.source !== 'recovery',
+        msg.source !== 'compaction-instruction',
     );
   }, [messages]);
 

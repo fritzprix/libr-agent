@@ -6,6 +6,7 @@ import type { Message, ToolCall } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
 import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
+import { MessageActionBar } from './MessageActionBar';
 import { computeDisplayContent } from '@/features/agent/lib/chat-utils';
 import { formatMessageTime } from '@/lib/date-utils';
 
@@ -204,10 +205,44 @@ function AgentMessageBubbleImpl({
               </span>
             )}
           </div>
-          {msg.createdAt && (
+          {!msg.isStreaming &&
+          ((displayContent && displayContent.length > 0) ||
+            (msg.content && msg.content.length > 0) ||
+            msg.thinking ||
+            (msg.tool_calls && msg.tool_calls.length > 0) ||
+            (msg.attachments && msg.attachments.length > 0)) ? (
             <div
               className={cn(
-                'text-[10px] mt-1 select-none align-bottom self-end opacity-70',
+                'mt-2 flex items-center justify-between gap-1 border-t pt-2',
+                isStandardUserMessage
+                  ? 'border-primary-foreground/20'
+                  : 'border-border/60',
+              )}
+            >
+              <MessageActionBar
+                message={msg}
+                displayContent={displayContent}
+                toolResultsMap={toolResultsMap}
+                tone={isStandardUserMessage ? 'user' : 'assistant'}
+              />
+              {msg.createdAt && (
+                <span
+                  className={cn(
+                    'text-[10px] select-none opacity-70',
+                    isStandardUserMessage
+                      ? 'text-primary-foreground/80'
+                      : 'text-muted-foreground/80',
+                  )}
+                >
+                  {formatMessageTime(msg.createdAt, new Date(), i18n.language)}
+                </span>
+              )}
+            </div>
+          ) : null}
+          {msg.createdAt && msg.isStreaming && (
+            <div
+              className={cn(
+                'text-[10px] mt-1 select-none self-end opacity-70',
                 isStandardUserMessage
                   ? 'text-primary-foreground/80'
                   : 'text-muted-foreground/80',

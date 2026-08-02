@@ -78,26 +78,23 @@ impl SecurityValidator {
             self.base_dir
         );
 
-        // Normalize both Unix ('/') and Windows ('\\') style separators to '/' for consistent, cross-platform behavior.
-        let normalized_path = user_path.replace(['\\', '/'], "/");
-        let clean_path = PathBuf::from(normalized_path).clean();
+        let prepared_path = normalize_user_path(user_path);
+        let clean_path = PathBuf::from(&prepared_path).clean();
 
-        let absolute_path = if clean_path.is_absolute() {
+        // Intentionally not cfg!(windows)-gated: a drive-letter path must not be joined under
+        // base_dir on Unix either (otherwise `C:/...` becomes a relative workspace path).
+        let is_win_drive = prepared_path.len() >= 2
+            && prepared_path.as_bytes()[0].is_ascii_alphabetic()
+            && prepared_path.as_bytes()[1] == b':';
+
+        let absolute_path = if clean_path.is_absolute() || is_win_drive {
             clean_path
-        } else if cfg!(windows)
-            && user_path.len() >= 2
-            && user_path.as_bytes()[0].is_ascii_alphabetic()
-            && user_path.as_bytes()[1] == b':'
-        {
-            PathBuf::from(user_path)
         } else {
             self.base_dir.join(clean_path)
         };
 
         // Block parent-directory traversal before any filesystem access.
-        let traversal_check_path = user_path.replace(['\\', '/'], "/");
-
-        if Path::new(&traversal_check_path)
+        if Path::new(&prepared_path)
             .components()
             .any(|component| matches!(component, Component::ParentDir))
         {
@@ -111,7 +108,7 @@ impl SecurityValidator {
         // extensions enabled, single components > 255 chars are always invalid.
         // Reject them early to avoid triggering OS error 123 deep in the stack.
         const MAX_COMPONENT_LEN: usize = 255;
-        for component in Path::new(&traversal_check_path).components() {
+        for component in Path::new(&prepared_path).components() {
             if let Component::Normal(name) = component {
                 if name.len() > MAX_COMPONENT_LEN {
                     return Err(SecurityError::InvalidPath(format!(
@@ -125,13 +122,20 @@ impl SecurityValidator {
 
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
 
-        if enforce_base_containment && !path_starts_with(&absolute_path, &self.base_dir) {
+        // Prefer a canonical path for the early containment check. On macOS, tempfile and
+        // file:// URLs often use `/var/folders/...` while `base_dir` is stored as the
+        // canonical `/private/var/folders/...` form after construction.
+        let early_containment_path = absolute_path
+            .canonicalize()
+            .unwrap_or_else(|_| absolute_path.clone());
+
+        if enforce_base_containment && !path_starts_with(&early_containment_path, &self.base_dir) {
             return Err(SecurityError::PathTraversal(format!(
                 "Access denied: Path '{user_path}' is outside the allowed base directory"
             )));
         }
 
-        self.ensure_not_sensitive_path(&absolute_path, user_path)?;
+        self.ensure_not_sensitive_path(&early_containment_path, user_path)?;
 
         // SecurityValidator only validates paths. Directory creation is handled explicitly by callers.
 
@@ -237,7 +241,8 @@ impl SecurityValidator {
             "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
             "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
         ];
-        let path_for_check = PathBuf::from(user_path.replace(['\\', '/'], "/"));
+        let prepared = normalize_user_path(user_path);
+        let path_for_check = PathBuf::from(&prepared);
         for component in path_for_check.components() {
             if let Component::Normal(name) = component {
                 // Windows strips trailing spaces and dots from path components before resolving
@@ -288,6 +293,64 @@ impl SecurityValidator {
         let normalized = Self::normalize_path_separators(path);
         normalized.split('/').next_back().map(|s| s.to_string())
     }
+}
+
+/// Normalize user-provided path string before security and traversal checks.
+///
+/// Handles:
+/// - `file://` URLs via proper URL→path conversion (preserves Unix absolute paths)
+/// - Leading slashes/backslashes before Windows drive letters (e.g. `/C:/path`, `\C:\path`)
+/// - MSYS2/Git Bash POSIX-style paths on Windows only (e.g. `/c/Users/path` → `c:/Users/path`)
+pub fn normalize_user_path(user_path: &str) -> String {
+    let s = user_path.trim();
+
+    // Prefer proper file URL parsing so Unix `file:///home/...` keeps its leading `/`
+    // and Windows `file:///C:/...` / `file://localhost/C:/...` resolve correctly.
+    if s.len() >= 7
+        && s.get(..7)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file://"))
+    {
+        if let Ok(parsed) = url::Url::parse(s) {
+            if parsed.scheme().eq_ignore_ascii_case("file") {
+                if let Ok(path) = parsed.to_file_path() {
+                    let with_forward_slashes = path.to_string_lossy().replace('\\', "/");
+                    return normalize_os_path_string(&with_forward_slashes);
+                }
+            }
+        }
+    }
+
+    normalize_os_path_string(&s.replace('\\', "/"))
+}
+
+/// Apply OS-oriented path heuristics after separators are normalized to `/`.
+fn normalize_os_path_string(normalized: &str) -> String {
+    // Strip leading slashes when followed by a Windows drive letter
+    // (e.g. `/C:/foo`, `///C:/foo`, and backslash forms already converted to `/`).
+    let trimmed_leading = normalized.trim_start_matches('/');
+    if trimmed_leading.len() >= 2 {
+        let bytes = trimmed_leading.as_bytes();
+        if bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            let is_sep_or_end = trimmed_leading.len() == 2 || bytes[2] == b'/' || bytes[2] == b'.';
+            if is_sep_or_end {
+                return trimmed_leading.to_string();
+            }
+        }
+    }
+
+    // MSYS2 / Git Bash POSIX-style paths are Windows-only. On Unix, `/c/...` is a
+    // legitimate absolute path under `/c` and must not be rewritten.
+    #[cfg(windows)]
+    if normalized.len() >= 3 {
+        let bytes = normalized.as_bytes();
+        if bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b'/' {
+            let drive = bytes[1] as char;
+            let rest = &normalized[3..];
+            return format!("{drive}:/{rest}");
+        }
+    }
+
+    normalized.to_string()
 }
 
 /// Helper to check if a path starts with a base path, safely handling Windows UNC prefixes and case-insensitivity.

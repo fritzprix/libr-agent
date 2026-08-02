@@ -41,7 +41,8 @@ const CONTEXT_FIT_TRUNCATION_SCALES: [f64; 6] = [0.5, 0.35, 0.25, 0.15, 0.1, 0.0
 const MIN_CONTEXT_FIT_SIDE_CHARS: usize = 48;
 
 fn provider_requires_tool_chain_cleanup(provider_id: &str) -> bool {
-    ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+    crate::agent::llm::request_layout::is_custom_openai_compatible_provider(provider_id)
+        || ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
 }
 
 fn resolve_calibration_ratio(
@@ -322,8 +323,7 @@ pub fn select_recent_messages_fifo(
     let start_idx = batched_messages.len().saturating_sub(max_messages);
     let selected = batched_messages[start_idx..].to_vec();
 
-    let adjusted = if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
-    {
+    let adjusted = if provider_requires_tool_chain_cleanup(provider_id) {
         remove_incomplete_tool_chains(selected)
     } else {
         selected

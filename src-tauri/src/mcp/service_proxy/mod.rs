@@ -51,6 +51,9 @@ pub struct MCPServiceProxy {
 
     /// Tool execution timeout in seconds
     tool_timeout_seconds: u64,
+
+    /// Indicates whether this proxy was created lazily for built-in tools only.
+    is_builtin_only: bool,
 }
 
 impl MCPServiceProxy {
@@ -136,6 +139,7 @@ impl MCPServiceProxy {
         http_manager: Arc<HttpSessionManager>,
         stdio_manager: Arc<SessionMCPManager>,
         tool_timeout_seconds: u64,
+        is_builtin_only: bool,
     ) -> Result<Self, String> {
         let mut builtin_servers = HashMap::new();
 
@@ -177,6 +181,7 @@ impl MCPServiceProxy {
                 stdio: stdio_manager,
             },
             tool_timeout_seconds,
+            is_builtin_only,
         })
     }
 
@@ -336,6 +341,11 @@ impl MCPServiceProxy {
     /// Get the session ID this proxy is bound to
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    /// Returns true if this proxy was lazily initialized for built-in tools only.
+    pub fn is_builtin_only(&self) -> bool {
+        self.is_builtin_only
     }
 
     /// Get list of available builtin tool IDs

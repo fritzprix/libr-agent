@@ -103,19 +103,34 @@ pub async fn create_basic_isolated_command(
     let seq = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let script_path = tmp_dir.join(format!("cmd_{}_{}.ps1", config.session_id, seq));
 
-    // Plain readable script — no obfuscation, AV-friendly
-    // Set UTF-8 console encoding to prevent UnicodeEncodeError on cp949/other non-UTF8 locales
+    // Plain readable script — no obfuscation, AV-friendly.
+    //
+    // ErrorActionPreference must be Continue (not Stop):
+    // Under Stop, native stderr merged via `2>&1` becomes terminating ErrorRecords,
+    // aborting pipelines like `cargo … 2>&1 | Select-Object` mid-stream and routing
+    // into catch with fake failures.
+    //
+    // Exit code: prefer $LASTEXITCODE when set (including 0). Do not use bare `$?`
+    // alone after 2>&1 — NativeCommandError records set $? = false even on success.
+    // Catch writes Exception.Message only (never ScriptStackTrace) to avoid
+    // `at <ScriptBlock>, …cmd_*.ps1` noise in agent-visible stderr.
     let script_content = format!(
-        "$ErrorActionPreference = 'Stop'\n\
+        "$ErrorActionPreference = 'Continue'\n\
          [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
          [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n\
+         $__libr_exit = 0\n\
          try {{\n\
              {}\n\
+             if ($null -ne $LASTEXITCODE) {{\n\
+                 $__libr_exit = $LASTEXITCODE\n\
+             }} elseif (-not $?) {{\n\
+                 $__libr_exit = 1\n\
+             }}\n\
          }} catch {{\n\
              [Console]::Error.WriteLine($_.Exception.Message)\n\
-             [Console]::Error.WriteLine($_.ScriptStackTrace)\n\
-             exit 1\n\
-         }}\n",
+             $__libr_exit = 1\n\
+         }}\n\
+         exit $__libr_exit\n",
         full_command
     );
 
@@ -135,10 +150,14 @@ pub async fn create_basic_isolated_command(
         .ok_or_else(|| "Script path contains invalid UTF-8".to_string())?
         .to_string();
 
-    // Wrap with a cleanup script: run the target .ps1, then delete it regardless of outcome.
-    // This prevents accumulation of temp files in the workspace tmp/ directory.
+    // Run the target .ps1, capture its exit code, then delete it.
+    //
+    // IMPORTANT: Do not wrap `& script` in `try/finally` without re-exiting.
+    // `exit N` inside a script invoked via `&` sets $LASTEXITCODE but returns to
+    // the caller; an outer try/finally that ends normally made powershell.exe
+    // report exit 0 even after script failures (false success to the agent).
     let self_deleting_wrapper = format!(
-        "try {{ & '{}' }} finally {{ Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue }}",
+        "& '{}'; $__libr_code = $LASTEXITCODE; if ($null -eq $__libr_code) {{ $__libr_code = 0 }}; Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; exit $__libr_code",
         script_path_str.replace("'", "''"),
         script_path_str.replace("'", "''")
     );
@@ -241,15 +260,22 @@ mod tests {
     /// Mirrors the script content format used by `create_basic_isolated_command`.
     fn build_script_content(full_command: &str) -> String {
         format!(
-            "$ErrorActionPreference = 'Stop'\n\
+            "$ErrorActionPreference = 'Continue'\n\
              [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
+             [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n\
+             $__libr_exit = 0\n\
              try {{\n\
                  {}\n\
+                 if ($null -ne $LASTEXITCODE) {{\n\
+                     $__libr_exit = $LASTEXITCODE\n\
+                 }} elseif (-not $?) {{\n\
+                     $__libr_exit = 1\n\
+                 }}\n\
              }} catch {{\n\
                  [Console]::Error.WriteLine($_.Exception.Message)\n\
-                 [Console]::Error.WriteLine($_.ScriptStackTrace)\n\
-                 exit 1\n\
-             }}\n",
+                 $__libr_exit = 1\n\
+             }}\n\
+             exit $__libr_exit\n",
             full_command
         )
     }
@@ -258,7 +284,7 @@ mod tests {
     fn build_cleanup_wrapper(script_path: &str) -> String {
         let escaped = script_path.replace("'", "''");
         format!(
-            "try {{ & '{}' }} finally {{ Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue }}",
+            "& '{}'; $__libr_code = $LASTEXITCODE; if ($null -eq $__libr_code) {{ $__libr_code = 0 }}; Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; exit $__libr_code",
             escaped, escaped
         )
     }
@@ -267,13 +293,21 @@ mod tests {
 
     #[test]
     fn test_script_content_has_error_handling() {
-        // Script must stop on first error, report it to stderr, and exit non-zero.
+        // Script must capture exit codes, report terminating errors to stderr, and exit.
         let script = build_script_content("Remove-Item -Path 'C:\\test' -Recurse -Force");
-        assert!(script.contains("$ErrorActionPreference = 'Stop'"));
+        assert!(script.contains("$ErrorActionPreference = 'Continue'"));
         assert!(script.contains("try {"));
         assert!(script.contains("} catch {"));
         assert!(script.contains("[Console]::Error.WriteLine"));
-        assert!(script.contains("exit 1"));
+        assert!(script.contains("exit $__libr_exit"));
+        assert!(
+            !script.contains("ScriptStackTrace"),
+            "ScriptStackTrace produces at <ScriptBlock> noise in agent stderr"
+        );
+        assert!(
+            !script.contains("$ErrorActionPreference = 'Stop'"),
+            "Stop makes native 2>&1 stderr terminating and aborts pipelines"
+        );
     }
 
     #[test]
@@ -334,13 +368,16 @@ mod tests {
 
     #[test]
     fn test_cleanup_wrapper_calls_script_and_deletes() {
-        // Wrapper must invoke the script AND delete it in a finally block (runs on success/failure).
+        // Wrapper must invoke the script, preserve exit code, AND delete the temp file.
         let wrapper = build_cleanup_wrapper("C:\\workspace\\tmp\\cmd_abc_0.ps1");
         assert!(wrapper.contains("& 'C:\\workspace\\tmp\\cmd_abc_0.ps1'"));
         assert!(wrapper.contains("Remove-Item"));
         assert!(wrapper.contains("-LiteralPath"));
-        assert!(wrapper.contains("finally"));
-        assert!(wrapper.contains("-ErrorAction SilentlyContinue"));
+        assert!(wrapper.contains("exit $__libr_code"));
+        assert!(
+            !wrapper.contains("try {"),
+            "Outer try/finally without re-exit swallowed script exit codes"
+        );
     }
 
     #[test]

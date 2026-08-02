@@ -6,7 +6,11 @@ import { toast } from 'sonner';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import i18n from '@/lib/i18n';
-import type { ContextStrategy, ServiceConfig } from '@/context/SettingsContext';
+import type {
+  ContextStrategy,
+  CustomOpenAIProvider,
+  ServiceConfig,
+} from '@/context/SettingsContext';
 import { getLogger } from '@/lib/logger';
 import { dbUtils } from '@/lib/db/service';
 import { restartApp } from '@/lib/backend';
@@ -52,6 +56,7 @@ export function useSettingsPageController() {
     dirtyState,
     update,
     updateServiceConfig,
+    updateCustomProviders,
     updateAdvanced,
     updateDisplay,
     updateSystem,
@@ -303,7 +308,7 @@ export function useSettingsPageController() {
   const handlePreferredModelChange = useCallback(
     (model: string, provider: string) => {
       update('preferredModel', {
-        provider: provider as AIServiceProvider,
+        provider,
         model,
       });
     },
@@ -312,12 +317,22 @@ export function useSettingsPageController() {
 
   const handleFallbackModelChange = useCallback(
     (model: string, provider: string) => {
-      update(
-        'fallbackModel',
-        model ? { provider: provider as AIServiceProvider, model } : undefined,
-      );
+      // Keep provider selection even when model is temporarily empty (e.g. user
+      // just switched to a custom OpenAI-compatible provider before models load).
+      if (!provider) {
+        update('fallbackModel', undefined);
+        return;
+      }
+      update('fallbackModel', { provider, model });
     },
     [update],
+  );
+
+  const handleCustomProvidersChange = useCallback(
+    (providers: CustomOpenAIProvider[]) => {
+      updateCustomProviders(providers);
+    },
+    [updateCustomProviders],
   );
 
   const handleWindowSizeChange = useCallback(
@@ -418,6 +433,7 @@ export function useSettingsPageController() {
     formState,
     handleClose,
     handleContextStrategyChange,
+    handleCustomProvidersChange,
     handleDiscard,
     handleDiscardAndLeave,
     handleFallbackModelChange,

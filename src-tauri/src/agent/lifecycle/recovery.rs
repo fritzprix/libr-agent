@@ -1,5 +1,5 @@
 use crate::agent::context::registry::ContextRegistry;
-use crate::agent::events::AgentEventDispatcher;
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::models::chat::MessageSource;
@@ -7,18 +7,19 @@ use crate::repositories::message_repository::MessageRepository as MessageReposit
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 use super::management::update_session_status_with_dispatcher;
 
 /// Close orphaned tool calls for a recovered session by injecting synthetic error responses.
 /// Prevents the UI from showing stuck running spinners after a crash recovery.
-async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
+async fn close_orphaned_tool_calls(
+    session_id: &str,
+    dispatcher: &dyn AgentEventDispatcher,
+) -> Result<(), String> {
     let message_repo = crate::state::get_message_repository();
 
     // Only the most recent causal window matters for unresolved tool-call recovery.
@@ -40,6 +41,9 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
+
+    // Matches create_error_tool_result / frontend useMessageGrouping toolError contract.
+    let tool_error_metadata = Some(serde_json::json!({ "toolError": true }));
 
     let mut tombstones: Vec<crate::models::chat::Message> = Vec::new();
 
@@ -79,7 +83,7 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
                 updated_at: now,
                 source: Some(MessageSource::Recovery),
                 error: None,
-                metadata: None,
+                metadata: tool_error_metadata.clone(),
             });
         }
     }
@@ -95,9 +99,18 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
     );
 
     message_repo
-        .insert_many(tombstones)
+        .insert_many(tombstones.clone())
         .await
         .map_err(|e| format!("Failed to insert tombstone messages: {}", e))?;
+
+    for tombstone in &tombstones {
+        dispatcher
+            .emit_agent_event(AgentEvent::MessageAdded {
+                session_id: session_id.to_string(),
+                message: Box::new(tombstone.clone()),
+            })
+            .map_err(|e| format!("Failed to emit MessageAdded for recovery tombstone: {}", e))?;
+    }
 
     Ok(())
 }
@@ -106,35 +119,7 @@ fn build_recovered_session(
     session: &crate::repositories::SessionMetadata,
     context_registry: Arc<ContextRegistry>,
 ) -> AgentSession {
-    let (yolo_enabled, unsafe_enabled) = session.execution_mode.runtime_flags();
-    AgentSession {
-        metadata: session.clone(),
-        is_running: false,
-        active_permit: None,
-        status_transition: Arc::new(RwLock::new(None)),
-        transition_lock: Arc::new(tokio::sync::Mutex::new(())),
-        cancellation_token: CancellationToken::new(),
-        yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
-        unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
-        cancel_pending: Arc::new(AtomicBool::new(false)),
-        pending_execution: None,
-        messages: Arc::new(RwLock::new(Vec::new())),
-        cache_initialized: Arc::new(AtomicBool::new(false)),
-        last_synced_at: Arc::new(RwLock::new(None)),
-        repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
-        repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
-        pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
-        pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
-        context_registry,
-        compact_context: Arc::new(RwLock::new(None)),
-        compaction: crate::agent::state::CompactionRuntimeState::new(),
-        expected_response_id: Arc::new(RwLock::new(None)),
-        cached_stable_prompt: Arc::new(RwLock::new(None)),
-        last_completion_request: Arc::new(RwLock::new(None)),
-        last_submitted_input_message_id: Arc::new(RwLock::new(None)),
-    }
+    AgentSession::new(session.clone(), context_registry, None)
 }
 
 /// Recover sessions stuck in BUSY state after app crash/restart
@@ -217,7 +202,7 @@ pub async fn recover_sessions_with_dispatcher(
 
             if matches!(session.status, SessionStatus::Busy) {
                 // Close any orphaned tool calls that never got a result (crash tombstones)
-                if let Err(e) = close_orphaned_tool_calls(&session.id).await {
+                if let Err(e) = close_orphaned_tool_calls(&session.id, dispatcher).await {
                     log::warn!(
                         "Failed to close orphaned tool calls for session '{}': {}",
                         session.id,

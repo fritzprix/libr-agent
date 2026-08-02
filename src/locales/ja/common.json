@@ -1026,7 +1026,31 @@
       "noContent": "内容なし",
       "thinkingProcess": "思考プロセス",
       "thinkingProcessWithTime": "思考プロセス {{time}}",
-      "thinking": "思考中..."
+      "thinking": "思考中...",
+      "expandThinking": "展開",
+      "actionBar": {
+        "copyFullAria": "メッセージ全体をコピー",
+        "copyFullTooltip": "メッセージ全体をコピー（テキスト、思考、ツール、添付）",
+        "copyTextAria": "テキストのみコピー",
+        "copyTextTooltip": "テキスト内容のみをコピー",
+        "copyToolsAria": "ツール呼び出しをコピー",
+        "copyToolsTooltip": "ツール呼び出しを JSON でコピー",
+        "exportAria": "メッセージをエクスポート",
+        "exportTooltip": "メッセージをエクスポート",
+        "exportMarkdown": "Markdown でエクスポート",
+        "exportPdf": "PDF でエクスポート",
+        "copySuccess": "メッセージをクリップボードにコピーしました",
+        "copyEmpty": "コピーする内容がありません",
+        "copyDenied": "クリップボードへのアクセスが拒否されました。ブラウザの権限を確認してください。",
+        "copyError": "メッセージのコピーに失敗しました",
+        "exportMarkdownSuccess": "Markdown ファイルをダウンロードしました",
+        "exportPdfSuccess": "PDF ファイルをダウンロードしました",
+        "exportOpenFile": "開く",
+        "exportOpenFileError": "ファイルを開けませんでした",
+        "exportCancelled": "ダウンロードがキャンセルされました",
+        "exportError": "メッセージのエクスポートに失敗しました",
+        "exportPdfError": "PDF のエクスポートに失敗しました"
+      }
     },
     "chat": {
       "failedToStartPlaybookWorkflow": "プレイブックワークフローの開始に失敗しました",

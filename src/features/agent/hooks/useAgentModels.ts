@@ -2,7 +2,12 @@ import { useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 
 import { useSettings } from '@/hooks/use-settings';
-import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import {
+  AIServiceFactory,
+  AIServiceProvider,
+  isCustomOpenAIProviderId,
+  resolveProviderRuntimeConfig,
+} from '@/lib/ai-service';
 import { getDynamicModelFetchPolicy } from '@/lib/ai-service/model-fetch-policy';
 import type { AIModelLookupService } from '@/lib/ai-service/types';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
@@ -18,6 +23,25 @@ const logger = getLogger('useAgentModels');
 type DynamicModelMap = Record<string, ModelInfo>;
 type ModelSWRKey = readonly [string, string, string, string, string, string];
 
+function manualModelsToMap(modelIds: string[] | undefined): DynamicModelMap {
+  if (!modelIds || modelIds.length === 0) {
+    return {};
+  }
+  return modelIds.reduce<DynamicModelMap>((acc, modelId) => {
+    acc[modelId] = {
+      id: modelId,
+      name: modelId,
+      contextWindow: 128000,
+      supportReasoning: false,
+      supportTools: true,
+      supportStreaming: true,
+      cost: { input: 0, output: 0 },
+      description: 'Custom OpenAI-compatible model',
+    };
+    return acc;
+  }, {});
+}
+
 /**
  * Loads models for a provider using **persisted** settings only.
  * Draft/unsaved API edits must not change the SWR key — refresh happens
@@ -25,39 +49,36 @@ type ModelSWRKey = readonly [string, string, string, string, string, string];
  */
 export const useAgentModels = (provider?: string) => {
   const {
-    value: { serviceConfigs },
+    value: { serviceConfigs, customProviders },
   } = useSettings();
 
-  const providerConfig = useMemo(() => {
+  const resolved = useMemo(() => {
     if (!provider) {
-      return {};
+      return null;
     }
+    return resolveProviderRuntimeConfig(provider, {
+      serviceConfigs,
+      customProviders,
+    });
+  }, [provider, serviceConfigs, customProviders]);
 
-    return serviceConfigs[provider as AIServiceProvider] || {};
-  }, [provider, serviceConfigs]);
-
-  // Get API key and baseUrl for the selected provider
-  const apiKey = useMemo(() => {
-    return providerConfig.apiKey || '';
-  }, [providerConfig]);
-
-  const baseUrl = useMemo(() => {
-    return providerConfig.baseUrl || '';
-  }, [providerConfig]);
+  const apiKey = resolved?.apiKey ?? '';
+  const baseUrl = resolved?.baseUrl ?? '';
 
   const dynamicModelPolicy = useMemo(
     () =>
       getDynamicModelFetchPolicy({
         provider,
         apiKey,
-        use3rdParty: providerConfig.use3rdParty,
-        customModelId: providerConfig.customModelId,
+        baseUrl,
+        use3rdParty: resolved?.use3rdParty,
+        customModelId: resolved?.customModelId,
       }),
-    [apiKey, provider, providerConfig],
+    [apiKey, baseUrl, provider, resolved?.customModelId, resolved?.use3rdParty],
   );
 
   const swrKey = useMemo<ModelSWRKey | null>(() => {
-    if (!provider || !dynamicModelPolicy.canFetch) {
+    if (!provider || !dynamicModelPolicy.canFetch || !resolved) {
       return null;
     }
 
@@ -66,33 +87,25 @@ export const useAgentModels = (provider?: string) => {
       provider,
       apiKey,
       baseUrl,
-      providerConfig.use3rdParty ? 'use-3rd-party' : 'first-party',
-      providerConfig.customModelId || '',
+      resolved.use3rdParty ? 'use-3rd-party' : 'first-party',
+      resolved.customModelId || '',
     ] as const;
-  }, [
-    apiKey,
-    baseUrl,
-    dynamicModelPolicy.canFetch,
-    provider,
-    providerConfig.customModelId,
-    providerConfig.use3rdParty,
-  ]);
+  }, [apiKey, baseUrl, dynamicModelPolicy.canFetch, provider, resolved]);
 
-  // Fetcher for models — delegates entirely to service.listModels().
-  // Each provider's implementation decides static vs dynamic;
-  // no hardcoded allowlist needed here.
   const fetchDynamicModels = useCallback(
     async ([, p, key]: ModelSWRKey) => {
+      if (!resolved) {
+        return {};
+      }
+
       // Use a non-empty placeholder so validateApiKey() doesn't throw.
-      // Services that need a real key will fail gracefully in their API calls;
-      // services using public endpoints (OpenRouter) or no key (Ollama) work normally.
       const effectiveApiKey = key || 'no-api-key';
 
       try {
         const service: AIModelLookupService = AIServiceFactory.getService(
-          p as AIServiceProvider,
+          p,
           effectiveApiKey,
-          providerConfig,
+          resolved.serviceConfig,
         );
         const modelList = await withTimeout(service.listModels(), 20000);
 
@@ -118,7 +131,7 @@ export const useAgentModels = (provider?: string) => {
         );
         reportListModelsFallback({
           provider: p,
-          baseUrl: providerConfig.baseUrl,
+          baseUrl: resolved.baseUrl,
           reason: 'api_error',
           error,
           hasCachedModels,
@@ -126,7 +139,7 @@ export const useAgentModels = (provider?: string) => {
         return storedModels || {};
       }
     },
-    [providerConfig],
+    [resolved],
   );
 
   const {
@@ -140,14 +153,14 @@ export const useAgentModels = (provider?: string) => {
   });
 
   const refreshModels = useCallback(async () => {
-    if (!dynamicModelPolicy.canFetch) {
+    if (!dynamicModelPolicy.canFetch || !resolved || !provider) {
       return dynamicModels;
     }
 
     AIServiceFactory.invalidateService(
-      provider as AIServiceProvider,
+      provider,
       apiKey,
-      providerConfig,
+      resolved.serviceConfig,
     );
 
     return await mutateModels(undefined, {
@@ -159,22 +172,21 @@ export const useAgentModels = (provider?: string) => {
     dynamicModels,
     mutateModels,
     provider,
-    providerConfig,
+    resolved,
   ]);
 
-  // Combine static and dynamic models
   const availableModels = useMemo(() => {
-    if (!provider) return {};
+    if (!provider || !resolved) return {};
 
-    // If 3rd party is enabled for OpenAI, show only custom model ID
+    // Legacy openai 3rd-party single custom model id
     if (
       provider === AIServiceProvider.OpenAI &&
-      providerConfig.use3rdParty &&
-      providerConfig.customModelId
+      resolved.use3rdParty &&
+      resolved.customModelId
     ) {
       const customModel: ModelInfo = {
-        id: providerConfig.customModelId,
-        name: providerConfig.customModelId,
+        id: resolved.customModelId,
+        name: resolved.customModelId,
         contextWindow: 128000,
         supportReasoning: false,
         supportTools: true,
@@ -187,18 +199,23 @@ export const useAgentModels = (provider?: string) => {
       };
 
       return {
-        [providerConfig.customModelId]: customModel,
+        [resolved.customModelId]: customModel,
       };
     }
 
-    // Otherwise, show dynamic models, stored persistent models, or static fallback
-    const staticModels =
-      llmConfigManager.getModelsForProvider(provider as AIServiceProvider) ||
-      {};
+    const manualModels = manualModelsToMap(resolved.manualModels);
+    const staticModels = isCustomOpenAIProviderId(provider)
+      ? {}
+      : llmConfigManager.getModelsForProvider(provider as AIServiceProvider) ||
+        {};
     const storedModels = getStoredModelCache(provider);
 
     if (Object.keys(dynamicModels).length > 0) {
-      return dynamicModels;
+      return { ...manualModels, ...dynamicModels };
+    }
+
+    if (Object.keys(manualModels).length > 0) {
+      return manualModels;
     }
 
     if (storedModels && Object.keys(storedModels).length > 0) {
@@ -206,7 +223,7 @@ export const useAgentModels = (provider?: string) => {
     }
 
     return staticModels;
-  }, [provider, dynamicModels, providerConfig]);
+  }, [provider, dynamicModels, resolved]);
 
   return {
     availableModels,

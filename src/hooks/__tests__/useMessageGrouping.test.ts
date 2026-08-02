@@ -492,20 +492,72 @@ describe('useMessageGrouping', () => {
     expect(result.current.toolResultsMap).toBe(first.toolResultsMap);
   });
 
-  it('filters out internal scaffolding messages (session-context, compaction-instruction, recovery)', () => {
+  it('filters out internal scaffolding messages (session-context, compaction-instruction)', () => {
     const messages: Message[] = [
       { ...createMessage('1', 'user', 'Normal message'), source: 'ui' as MessageSource },
       { ...createMessage('2', 'user', 'Session context background info'), source: 'session-context' as MessageSource },
       { ...createMessage('3', 'user', 'Compaction request'), source: 'compaction-instruction' as MessageSource },
-      { ...createMessage('4', 'user', 'Recovery checkpoint'), source: 'recovery' as MessageSource },
+      {
+        ...createMessage(
+          '4',
+          'tool',
+          'Recovery tombstone',
+          undefined,
+          'tool_call_1',
+          { toolError: true },
+        ),
+        source: 'recovery' as MessageSource,
+      },
       { ...createMessage('5', 'assistant', 'Response message'), source: 'api' as MessageSource },
     ];
 
     const { result } = renderHook(() => useMessageGrouping(messages));
 
-    expect(result.current.groupedMessages.length).toBe(2);
+    // Recovery tombstones stay visible so orphaned tool calls can resolve.
+    // Standalone toolError results render as tool_error_group.
+    expect(result.current.groupedMessages.length).toBe(3);
     expect(result.current.groupedMessages[0].message.id).toBe('1');
-    expect(result.current.groupedMessages[1].message.id).toBe('5');
+    expect(result.current.groupedMessages[1].type).toBe('tool_error_group');
+    expect(result.current.groupedMessages[1].message.id).toBe('4');
+    expect(result.current.groupedMessages[2].message.id).toBe('5');
+  });
+
+  // Paired with session_recovery_tests.rs: backend tombstones use source=recovery + toolError.
+  // Filtering source=recovery here recreates stuck tool-call spinners after crash recovery.
+  it('matches recovery tombstones to orphaned tool calls (no stuck spinner)', () => {
+    const messages: Message[] = [
+      createMessage('1', 'assistant', '', [
+        {
+          id: 'call_orphan',
+          type: 'function',
+          function: { name: 'agent__messageToSession', arguments: '{}' },
+        },
+      ]),
+      {
+        ...createMessage(
+          '2',
+          'tool',
+          '[system] Tool call did not complete (session recovered after crash).',
+          undefined,
+          'call_orphan',
+          { toolError: true },
+        ),
+        source: 'recovery' as MessageSource,
+      },
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+    expect(result.current.groupedMessages).toHaveLength(1);
+    const group = result.current.groupedMessages[0];
+    expect(group.type).toBe('tool_group');
+    if (group.type === 'tool_group') {
+      expect(group.toolGroup.results).toHaveLength(1);
+      expect(group.toolGroup.results[0]).toBeDefined();
+      expect(group.toolGroup.results[0]?.id).toBe('2');
+      expect(group.toolGroup.results[0]?.metadata?.toolError).toBe(true);
+    }
+    expect(result.current.toolResultsMap.get('call_orphan')?.id).toBe('2');
   });
 
   it('splits tool_group into separate groups at the specified boundaryId (compaction boundary)', () => {

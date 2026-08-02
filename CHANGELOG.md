@@ -1,3 +1,28 @@
+## [0.8.37] - 2026-08-02
+
+### 🚀 Features
+
+- **Message Action Bar & Export**: Added a message action bar supporting Markdown and PDF file exports for chat messages.
+- **Recent Sessions Sidebar Expansion**: Enhanced Recent Sessions sidebar with infinite scrolling and tree expand controls.
+- **Multiple Custom OpenAI Providers**: Added support for configuring and managing multiple custom OpenAI-compatible AI providers.
+- **MCP Non-Blocking Loading & Port Fallback**: Implemented non-blocking proxy loading UX for MCP servers along with automatic port fallback and hot-path call optimization.
+- **Agent Identity & Session Checks**: Enriched `checkSession` tool output with agent identity metadata.
+- **New & Packaged Agent Skills**: Added `review-local-changes` skill and packaged `create-pr` skill with automatic dev base branch resolution.
+
+### 🐛 Fixes
+
+- **Windows Path Normalization & PDF Export**: Normalized leading-slash and `file://` URIs, canonicalized paths before early containment checks, and gated Windows font directory scanning behind `cfg(windows)` for cross-platform PDF export compatibility.
+- **AI Model Selection & Custom Provider State**: Preserved custom AI provider selections and properly restored last-selected models across sessions.
+- **Chat UX & Scroll Stability**: Fixed scroll-up flashing, prevented footer overlap, and improved scroll-follow behavior across chat interface components.
+- **Mid-Batch Cancellation & Crash Recovery**: Improved workflow cancellation to halt mid-tool-batch execution immediately, tombstone remaining unexecuted tool calls, and preserve crash tombstones with `toolError` metadata upon session reload.
+- **MCP Non-Blocking Session Start**: Prevented MCP proxy failures from blocking agent session startup.
+- **PowerShell Stderr Cleaning**: Stripped internal PowerShell wrapper noise from tool `stderr` output.
+
+### 🔧 Internal
+
+- **Agent Session Refactoring**: Consolidated `AgentSession` construction via `new()`, and modularized `AgentChatMessages` scroll-follow hooks and tests.
+- **MCP Proxy Hot-Path Optimization**: Optimized `call_tool` hot path to bypass unnecessary database queries for configured MCP proxies.
+
 ## [0.8.36] - 2026-07-30
 
 ### 🚀 Features

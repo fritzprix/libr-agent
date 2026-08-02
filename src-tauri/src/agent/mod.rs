@@ -25,6 +25,7 @@ pub mod workflow;
 pub use crate::execution_mode::ExecutionMode;
 pub use config::AgentConfig;
 pub use config_resolve::{
-    extract_assistant_id_from_session, resolve_agent_config, stable_prompt_source_key,
+    extract_assistant_id_from_session, resolve_agent_config, resolve_session_mcp_bindings,
+    stable_prompt_source_key,
 };
 pub use session_manager::AgentSessionManager;

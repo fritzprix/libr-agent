@@ -52,6 +52,7 @@
     "src/context/__tests__/agent-session-test-utils.tsx",
     "src/context/__tests__/llm-service-test-utils.tsx",
     "src/features/agent/components/__tests__/AgentChatMessages.compaction-setup.tsx",
+    "src/features/agent/components/__tests__/AgentChatMessages.scroll-follow.harness.ts",
     "src/hooks/__tests__/helpers.ts",
     "src/test/setup.ts"
   ],

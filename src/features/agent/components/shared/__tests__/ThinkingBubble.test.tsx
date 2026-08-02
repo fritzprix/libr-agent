@@ -1,7 +1,31 @@
 import '@testing-library/jest-dom';
-import { fireEvent, render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { ThinkingBubble } from '../ThinkingBubble';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, defaultValueOrOptions?: string | { time?: string }) => {
+      if (key === 'agent.bubble.thinkingProcessWithTime') {
+        const options = defaultValueOrOptions as { time?: string } | undefined;
+        return `Thinking Process ${options?.time ?? ''}`.trim();
+      }
+      if (typeof defaultValueOrOptions === 'string') {
+        return defaultValueOrOptions;
+      }
+      const defaults: Record<string, string> = {
+        'agent.bubble.thinkingProcess': 'Thinking Process',
+        'agent.bubble.thinking': 'Thinking…',
+        'agent.bubble.expandThinking': 'Expand',
+      };
+      return defaults[key] ?? key;
+    },
+  }),
+}));
+
+function expandThinking() {
+  fireEvent.click(screen.getByRole('button', { name: /Thinking Process/i }));
+}
 
 function getScrollContainer(container: HTMLElement): HTMLDivElement {
   const scrollContainer = container.querySelector(
@@ -31,10 +55,31 @@ function mockScrollMetrics(
 }
 
 describe('ThinkingBubble', () => {
+  it('is collapsed by default and shows a truncated preview', () => {
+    const longThinking = 'a'.repeat(120);
+    render(<ThinkingBubble thinking={longThinking} isStreaming={false} />);
+
+    expect(screen.getByText(/a{80}…/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand' })).toBeInTheDocument();
+    expect(screen.queryByText(longThinking)).not.toBeInTheDocument();
+  });
+
+  it('expands to show full thinking content', () => {
+    const longThinking = 'a'.repeat(120);
+    render(<ThinkingBubble thinking={longThinking} isStreaming={false} />);
+
+    expandThinking();
+
+    expect(screen.getByText(longThinking)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Expand' })).not.toBeInTheDocument();
+  });
+
   it('keeps its internal scroll pinned to the bottom while streaming', () => {
     const { container, rerender } = render(
       <ThinkingBubble thinking="first line" isStreaming={true} />,
     );
+
+    expandThinking();
 
     const scrollContainer = getScrollContainer(container);
     mockScrollMetrics(scrollContainer, {
@@ -57,6 +102,8 @@ describe('ThinkingBubble', () => {
     const { container, rerender } = render(
       <ThinkingBubble thinking="first line" isStreaming={true} />,
     );
+
+    expandThinking();
 
     const scrollContainer = getScrollContainer(container);
     mockScrollMetrics(scrollContainer, {
@@ -82,6 +129,8 @@ describe('ThinkingBubble', () => {
     const { container, rerender } = render(
       <ThinkingBubble thinking="first line" isStreaming={true} />,
     );
+
+    expandThinking();
 
     const scrollContainer = getScrollContainer(container);
     mockScrollMetrics(scrollContainer, {
@@ -115,6 +164,8 @@ describe('ThinkingBubble', () => {
       />,
     );
 
+    expandThinking();
+
     const scrollContainer = getScrollContainer(container);
     mockScrollMetrics(scrollContainer, {
       scrollHeight: 240,
@@ -131,5 +182,22 @@ describe('ThinkingBubble', () => {
     );
 
     expect(scrollContainer.scrollTop).toBe(0);
+  });
+
+  it('does not auto-pin while collapsed even when streaming', () => {
+    const { container, rerender } = render(
+      <ThinkingBubble thinking="first line" isStreaming={true} />,
+    );
+
+    expect(container.querySelector('.overflow-y-auto')).toBeNull();
+
+    rerender(
+      <ThinkingBubble
+        thinking={'first line\nsecond line\nthird line'}
+        isStreaming={true}
+      />,
+    );
+
+    expect(container.querySelector('.overflow-y-auto')).toBeNull();
   });
 });

@@ -573,8 +573,14 @@ export default function AgentChatView() {
         optionalSessionState.runtimeState.initialization.error ??
         null)
       : null;
-  const shouldShowBlockingLoader = isSessionLoading && !session;
-  const shouldShowOptimisticLoadingOverlay = isSessionLoading && !!session;
+  const isProxyReady = optionalSessionState.isProxyReady;
+  const shouldShowBlockingLoader =
+    (!session || optionalSessionState.runtimeState.phase === 'failed') &&
+    isSessionLoading;
+  const shouldShowProxyLoadingBanner =
+    !!session &&
+    !isProxyReady &&
+    optionalSessionState.runtimeState.phase !== 'failed';
 
   return (
     <AgentResourceAttachmentProvider sessionId={attachmentSessionId}>
@@ -601,12 +607,12 @@ export default function AgentChatView() {
             </AgentPlanningProvider>
           </AgentChatProvider>
 
-          {shouldShowOptimisticLoadingOverlay && (
+          {shouldShowProxyLoadingBanner && (
             <SessionLoadingOverlay
               label={sessionLoadingLabel}
               initializationStep={initializationStep}
               initializationError={initializationError}
-              variant="overlay"
+              variant="banner"
             />
           )}
         </div>

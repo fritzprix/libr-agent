@@ -15,6 +15,7 @@ pub struct MCPServiceProxyBuilder {
     app_handle: Option<AppHandle>,
     http_manager: Arc<HttpSessionManager>,
     stdio_manager: Arc<SessionMCPManager>,
+    is_builtin_only: bool,
 }
 
 impl MCPServiceProxyBuilder {
@@ -34,12 +35,19 @@ impl MCPServiceProxyBuilder {
             app_handle: None,
             http_manager,
             stdio_manager,
+            is_builtin_only: false,
         }
     }
 
     /// Set the tool IDs to initialize
     pub fn with_tool_ids(mut self, tool_ids: Vec<String>) -> Self {
         self.tool_ids = tool_ids;
+        self
+    }
+
+    /// Set whether this proxy is built-in only
+    pub fn with_builtin_only(mut self, is_builtin_only: bool) -> Self {
+        self.is_builtin_only = is_builtin_only;
         self
     }
 
@@ -66,6 +74,7 @@ impl MCPServiceProxyBuilder {
             self.http_manager,
             self.stdio_manager,
             timeout,
+            self.is_builtin_only,
         )
         .await
     }

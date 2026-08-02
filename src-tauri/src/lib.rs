@@ -55,7 +55,8 @@ use commands::attachments_commands::delete_attachments;
 use commands::browser_commands::*;
 use commands::dataset_commands::export_dataset;
 use commands::download_commands::{
-    download_media_file, download_workspace_file, export_and_download_zip,
+    download_binary_file, download_media_file, download_text_file, download_text_pdf,
+    download_workspace_file, export_and_download_zip,
 };
 use commands::file_commands::{
     check_dropped_path_type, read_dropped_file, register_dropped_files, workspace_write_file,
@@ -106,7 +107,7 @@ use commands::skill_management::{
     import_user_skills, install_github_skills, preview_github_skill_install,
     preview_user_skill_import, reset_assistant_skills, reset_user_skills,
 };
-use commands::url_commands::open_external_url;
+use commands::url_commands::{open_external_url, open_path_with_default_app};
 use commands::workspace_commands::{
     cancel_interactive_shell_input, cancel_workspace_override, check_docker_health,
     docker_desktop_launch_supported, get_app_data_dir, get_app_logs_dir,
@@ -190,6 +191,9 @@ pub fn run() {
                 list_available_builtin_server_definitions,
                 // Download commands
                 download_media_file,
+                download_text_file,
+                download_binary_file,
+                download_text_pdf,
                 download_workspace_file,
                 export_and_download_zip,
                 // Session management commands (still needed for workspace isolation)
@@ -218,6 +222,7 @@ pub fn run() {
                 get_global_knowledge_detail,
                 delete_global_knowledge,
                 open_external_url,
+                open_path_with_default_app,
                 open_workspace_file_with_default_app,
                 open_workspace_in_explorer,
                 open_workspace_in_terminal,

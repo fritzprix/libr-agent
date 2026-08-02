@@ -1,33 +1,52 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Plus } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
-import { ServiceConfig } from '@/context/SettingsContext';
+import {
+  createCustomOpenAIProvider,
+  normalizeCustomOpenAIProvider,
+  toCustomProviderId,
+} from '@/lib/ai-service/custom-providers';
+import type {
+  ServiceConfig,
+  CustomOpenAIProvider,
+  ModelChoice,
+} from '@/lib/services/settings-service';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
+import { Button } from '@/components/ui';
 import { ProviderCard } from '../components/ProviderCard';
+import { CustomProviderCard } from '../components/CustomProviderCard';
+
+const EMPTY_CUSTOM_PROVIDERS: CustomOpenAIProvider[] = [];
 
 interface AIModelsTabProps {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
+  customProviders: CustomOpenAIProvider[];
   providerEntries: AIServiceProvider[];
-  localPreferredModel: { provider: AIServiceProvider; model: string };
-  localFallbackModel?: { provider: AIServiceProvider; model: string } | null;
+  localPreferredModel: ModelChoice;
+  localFallbackModel?: ModelChoice | null;
   onPendingChange: (
     provider: AIServiceProvider,
     patch: Partial<ServiceConfig>,
   ) => void;
+  onCustomProvidersChange: (providers: CustomOpenAIProvider[]) => void;
   onPreferredModelChange: (model: string, provider: string) => void;
   onFallbackModelChange: (model: string, provider: string) => void;
 }
 
 function AIModelsTabComponent({
   serviceConfigs,
+  customProviders,
   providerEntries,
   localPreferredModel,
   localFallbackModel,
   onPendingChange,
+  onCustomProvidersChange,
   onPreferredModelChange,
   onFallbackModelChange,
 }: AIModelsTabProps) {
   const { t } = useTranslation('common');
+  const providers = customProviders ?? EMPTY_CUSTOM_PROVIDERS;
   const PROVIDER_META: Record<
     AIServiceProvider,
     { name: string; description: string }
@@ -124,6 +143,60 @@ function AIModelsTabComponent({
     },
   };
 
+  const handleAddCustomProvider = useCallback(() => {
+    const next = createCustomOpenAIProvider({
+      name: '',
+      baseUrl: '',
+    });
+    onCustomProvidersChange([...providers, next]);
+  }, [providers, onCustomProvidersChange]);
+
+  const handleCustomProviderChange = useCallback(
+    (id: string, patch: Partial<CustomOpenAIProvider>) => {
+      onCustomProvidersChange(
+        providers.map((entry) =>
+          entry.id === id
+            ? normalizeCustomOpenAIProvider({ ...entry, ...patch })
+            : entry,
+        ),
+      );
+    },
+    [providers, onCustomProvidersChange],
+  );
+
+  const handleRemoveCustomProvider = useCallback(
+    (id: string) => {
+      const providerId = toCustomProviderId(id);
+      const confirmed = window.confirm(
+        t(
+          'settings.customProviders.removeConfirm',
+          'Remove this custom provider? Sessions using it will need a new model selection.',
+        ),
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      onCustomProvidersChange(providers.filter((entry) => entry.id !== id));
+
+      if (localPreferredModel.provider === providerId) {
+        onPreferredModelChange('', AIServiceProvider.OpenAI);
+      }
+      if (localFallbackModel?.provider === providerId) {
+        onFallbackModelChange('', AIServiceProvider.OpenAI);
+      }
+    },
+    [
+      providers,
+      localFallbackModel?.provider,
+      localPreferredModel.provider,
+      onCustomProvidersChange,
+      onFallbackModelChange,
+      onPreferredModelChange,
+      t,
+    ],
+  );
+
   return (
     <div className="space-y-8">
       <div className="space-y-4">
@@ -137,6 +210,7 @@ function AIModelsTabComponent({
           <AgentModelPicker
             currentModel={localPreferredModel.model}
             currentProvider={localPreferredModel.provider}
+            customProviders={providers}
             onConfigUpdate={onPreferredModelChange}
             className="w-full max-w-sm"
           />
@@ -151,6 +225,7 @@ function AIModelsTabComponent({
             currentProvider={
               localFallbackModel?.provider ?? localPreferredModel.provider
             }
+            customProviders={providers}
             onConfigUpdate={onFallbackModelChange}
             className="w-full max-w-sm"
           />
@@ -186,6 +261,52 @@ function AIModelsTabComponent({
             );
           })}
         </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-medium text-foreground">
+              {t('settings.customProviders.title', 'Custom OpenAI Providers')}
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              {t(
+                'settings.customProviders.description',
+                'Register multiple OpenAI-compatible endpoints (vLLM, LM Studio, LocalAI, etc.) and select them in the model picker.',
+              )}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleAddCustomProvider}
+            className="gap-1.5"
+          >
+            <Plus className="h-4 w-4" />
+            {t('settings.customProviders.add', 'Add Custom OpenAI Provider')}
+          </Button>
+        </div>
+
+        {providers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {t(
+              'settings.customProviders.empty',
+              'No custom providers yet. Add one to connect an extra OpenAI-compatible server.',
+            )}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {providers.map((provider) => (
+              <CustomProviderCard
+                key={provider.id}
+                provider={provider}
+                onChange={handleCustomProviderChange}
+                onRemove={handleRemoveCustomProvider}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1052,7 +1052,31 @@
       "noContent": "Sin contenido",
       "thinkingProcess": "Proceso de pensamiento",
       "thinkingProcessWithTime": "Proceso de pensamiento {{time}}",
-      "thinking": "Pensando..."
+      "thinking": "Pensando...",
+      "expandThinking": "Expandir",
+      "actionBar": {
+        "copyFullAria": "Copiar mensaje completo",
+        "copyFullTooltip": "Copiar mensaje completo (texto, pensamiento, herramientas, adjuntos)",
+        "copyTextAria": "Copiar solo texto",
+        "copyTextTooltip": "Copiar solo el contenido de texto",
+        "copyToolsAria": "Copiar llamadas a herramientas",
+        "copyToolsTooltip": "Copiar llamadas a herramientas como JSON",
+        "exportAria": "Exportar mensaje",
+        "exportTooltip": "Exportar mensaje",
+        "exportMarkdown": "Exportar como Markdown",
+        "exportPdf": "Exportar como PDF",
+        "copySuccess": "Mensaje copiado al portapapeles",
+        "copyEmpty": "No hay nada que copiar",
+        "copyDenied": "Acceso al portapapeles denegado. Comprueba los permisos del navegador.",
+        "copyError": "Error al copiar el mensaje",
+        "exportMarkdownSuccess": "Archivo Markdown descargado",
+        "exportPdfSuccess": "Archivo PDF descargado",
+        "exportOpenFile": "Abrir",
+        "exportOpenFileError": "No se pudo abrir el archivo",
+        "exportCancelled": "Descarga cancelada",
+        "exportError": "Error al exportar el mensaje",
+        "exportPdfError": "Error al exportar el PDF"
+      }
     },
     "start": {
       "heroTitle": "¿Qué te gustaría hacer hoy?",

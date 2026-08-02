@@ -1,8 +1,10 @@
+import { isCustomOpenAIProviderId } from './custom-providers';
 import { AIServiceProvider } from './types';
 
 interface DynamicModelFetchPolicyArgs {
   provider?: string;
   apiKey?: string;
+  baseUrl?: string;
   use3rdParty?: boolean;
   customModelId?: string;
 }
@@ -10,6 +12,7 @@ interface DynamicModelFetchPolicyArgs {
 export type DynamicModelFetchPolicyReason =
   | 'missing-provider'
   | 'missing-api-key'
+  | 'missing-base-url'
   | 'custom-openai-model'
   | 'allowed';
 
@@ -21,6 +24,7 @@ export interface DynamicModelFetchPolicyDecision {
 export function getDynamicModelFetchPolicy({
   provider,
   apiKey,
+  baseUrl,
   use3rdParty,
   customModelId,
 }: DynamicModelFetchPolicyArgs): DynamicModelFetchPolicyDecision {
@@ -28,6 +32,21 @@ export function getDynamicModelFetchPolicy({
     return {
       canFetch: false,
       reason: 'missing-provider',
+    };
+  }
+
+  // Multi custom OpenAI-compatible providers: fetch /v1/models when baseUrl is set
+  // (API key optional for local servers).
+  if (isCustomOpenAIProviderId(provider)) {
+    if (!baseUrl?.trim()) {
+      return {
+        canFetch: false,
+        reason: 'missing-base-url',
+      };
+    }
+    return {
+      canFetch: true,
+      reason: 'allowed',
     };
   }
 
@@ -68,12 +87,14 @@ export function getDynamicModelFetchPolicy({
 export function shouldFetchDynamicModels({
   provider,
   apiKey,
+  baseUrl,
   use3rdParty,
   customModelId,
 }: DynamicModelFetchPolicyArgs): boolean {
   return getDynamicModelFetchPolicy({
     provider,
     apiKey,
+    baseUrl,
     use3rdParty,
     customModelId,
   }).canFetch;

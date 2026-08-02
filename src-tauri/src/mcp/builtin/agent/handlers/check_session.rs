@@ -10,8 +10,9 @@ use crate::mcp::types::MCPResult;
 
 use super::super::AgentServer;
 use super::{
+    append_check_session_context_to_message, apply_check_session_enrichment,
     build_paused_check_session_result, build_terminal_check_session_result,
-    load_accessible_delegated_session,
+    load_accessible_delegated_session, resolve_check_session_enrichment,
 };
 
 /// checkSession handler (from awaitAgent / getAgentStatus)
@@ -38,11 +39,13 @@ pub async fn check_session(
         Ok(session) => session,
         Err(result) => return Ok(result),
     };
+    let enrichment = resolve_check_session_enrichment(&current_session_meta).await;
     let current_status = format!("{:?}", current_session_meta.status).to_lowercase();
     let current_turn_count = count_session_turns(&session_id).await;
 
     if current_status == "paused" {
-        return build_paused_check_session_result(&session_id, current_turn_count).await;
+        return build_paused_check_session_result(&session_id, current_turn_count, &enrichment)
+            .await;
     }
 
     if wait {
@@ -101,37 +104,42 @@ pub async fn check_session(
         let status = extract_session_status(&session_data);
         let turn_count = count_session_turns(&session_id).await;
         if status == "paused" {
-            return build_paused_check_session_result(&session_id, turn_count).await;
+            return build_paused_check_session_result(&session_id, turn_count, &enrichment).await;
         }
-        return build_terminal_check_session_result(&session_id, &status, turn_count).await;
+        return build_terminal_check_session_result(&session_id, &status, turn_count, &enrichment)
+            .await;
     }
 
     let status = current_status;
     let turn_count = current_turn_count;
 
     if is_terminal_status(&status) {
-        return build_terminal_check_session_result(&session_id, &status, turn_count).await;
+        return build_terminal_check_session_result(&session_id, &status, turn_count, &enrichment)
+            .await;
     }
 
     let next_steps = vec![format!(
         "Use checkSession(\"{}\", wait=true) to wait for completion.",
         session_id
     )];
-    let message = format!(
-        "Session {} is currently {} (Turns elapsed: {}).",
-        session_id, status, turn_count
+    let message = append_check_session_context_to_message(
+        &format!(
+            "Session {} is currently {} (Turns elapsed: {}).",
+            session_id, status, turn_count
+        ),
+        &enrichment,
     );
     let hint = SuccessHint::new(message.clone(), next_steps);
+    let mut response_data = build_agent_session_tool_data(
+        "checkSession",
+        &session_id,
+        &message,
+        &status,
+        "pending",
+        turn_count,
+        check_session_next_actions(&session_id),
+    );
+    apply_check_session_enrichment(&mut response_data, &enrichment);
 
-    Ok(
-        hint.to_mcp_result_with_data(Some(Value::Object(build_agent_session_tool_data(
-            "checkSession",
-            &session_id,
-            &message,
-            &status,
-            "pending",
-            turn_count,
-            check_session_next_actions(&session_id),
-        )))),
-    )
+    Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

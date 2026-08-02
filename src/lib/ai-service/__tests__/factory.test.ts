@@ -110,6 +110,29 @@ describe('AIServiceFactory', () => {
       expect(service).toBeInstanceOf(EmptyAIService);
     });
 
+    it('should create OpenAIService for custom OpenAI-compatible provider ids', () => {
+      AIServiceFactory.getService('custom:local-vllm', 'local-key', {
+        baseUrl: 'http://127.0.0.1:8000/v1',
+      });
+      expect(OpenAIService).toHaveBeenCalledWith('local-key', {
+        baseUrl: 'http://127.0.0.1:8000/v1',
+        use3rdParty: true,
+      });
+    });
+
+    it('should cache custom providers separately even with the same API key', () => {
+      const sharedKey = 'same-local-key';
+      const serviceA = AIServiceFactory.getService('custom:server-a', sharedKey, {
+        baseUrl: 'http://127.0.0.1:8000/v1',
+      });
+      const serviceB = AIServiceFactory.getService('custom:server-b', sharedKey, {
+        baseUrl: 'http://127.0.0.1:8001/v1',
+      });
+
+      expect(serviceA).not.toBe(serviceB);
+      expect(OpenAIService).toHaveBeenCalledTimes(2);
+    });
+
     it('should return EmptyAIService if service constructor throws an error', () => {
       // Force GroqService constructor to throw an error
       vi.mocked(GroqService).mockImplementationOnce(() => {

@@ -64,6 +64,13 @@ export async function openExternalUrl(url: string): Promise<void> {
   return safeInvoke<void>('open_external_url', { url });
 }
 
+/**
+ * Opens a local absolute path with the system default application.
+ */
+export async function openPathWithDefaultApp(path: string): Promise<void> {
+  return safeInvoke<void>('open_path_with_default_app', { path });
+}
+
 // ========================================
 // File Download Operations
 // ========================================
@@ -96,6 +103,50 @@ export async function downloadMediaFile(
   args: DownloadMediaFileArgs,
 ): Promise<string> {
   return safeInvoke<string>('download_media_file', { ...args });
+}
+
+export interface DownloadTextFileArgs {
+  fileName: string;
+  content: string;
+}
+
+/**
+ * Saves UTF-8 text via the native Save File dialog.
+ */
+export async function downloadTextFile(
+  args: DownloadTextFileArgs,
+): Promise<string> {
+  return safeInvoke<string>('download_text_file', { ...args });
+}
+
+export interface DownloadBinaryFileArgs {
+  fileName: string;
+  dataBase64: string;
+}
+
+/**
+ * Saves arbitrary binary bytes via the native Save File dialog.
+ */
+export async function downloadBinaryFile(
+  args: DownloadBinaryFileArgs,
+): Promise<string> {
+  return safeInvoke<string>('download_binary_file', { ...args });
+}
+
+export interface DownloadTextPdfArgs {
+  fileName: string;
+  content: string;
+  title?: string;
+}
+
+/**
+ * Renders Markdown to a PDF via markdown2pdf (github theme) and saves it
+ * through the native Save File dialog.
+ */
+export async function downloadTextPdf(
+  args: DownloadTextPdfArgs,
+): Promise<string> {
+  return safeInvoke<string>('download_text_pdf', { ...args });
 }
 
 /**

@@ -255,7 +255,9 @@ impl SessionRuntimeState {
 
         if failed_servers == total_servers {
             self.phase = SessionRuntimePhase::Failed;
-            self.proxy.ready = false;
+            // Builtin tools remain usable when the proxy exists; external MCP
+            // failure must not permanently block chat/send.
+            self.proxy.ready = self.proxy.exists;
             self.initialization.result = SessionRuntimeInitResult::Failed;
             self.initialization.error = self
                 .servers

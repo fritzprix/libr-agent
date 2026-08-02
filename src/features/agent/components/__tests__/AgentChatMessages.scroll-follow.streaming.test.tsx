@@ -3,47 +3,25 @@ import { act, render, screen } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChatMessages } from '../AgentChatMessages';
-import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import {
-  installMockResizeObserver,
-  resetAgentChatMessagesHarness,
   setScrollerMetrics,
   baseMessage,
   makeStreamingGroupEntry,
   makeStreamingMessage,
-  type AgentChatMessagesTestHarness,
 } from './AgentChatMessages.compaction-setup';
+import { setupScrollFollowHarness } from './AgentChatMessages.scroll-follow.harness';
 
-// ---------------------------------------------------------------------------
-// Vitest hoisted shared state
-// ---------------------------------------------------------------------------
-
-const { virtuosoMock, scrollToIndexMock, sessionState, chatState, hasVirtuosoHandle } =
-  vi.hoisted(() => ({
-    virtuosoMock: vi.fn(),
-    scrollToIndexMock: vi.fn(),
-    sessionState: { session: { id: 'session-1', assistant: { name: 'Agent' } } },
-    chatState: { messages: [] as Message[], workflowStatus: 'idle' as 'idle' | 'busy' },
-    hasVirtuosoHandle: { current: true },
-  }));
-
-let groupedMessagesMock: GroupedMessage[] = [];
-const resizeObserverCallbacks = { current: [] as ResizeObserverCallback[] };
-
-installMockResizeObserver(resizeObserverCallbacks);
-
-// ---------------------------------------------------------------------------
-// Module mocks
-// ---------------------------------------------------------------------------
-
-const harness: AgentChatMessagesTestHarness = {
+const {
   virtuosoMock,
   scrollToIndexMock,
   sessionState,
   chatState,
   hasVirtuosoHandle,
-};
+  groupedMessagesMock,
+  resizeObserverCallbacks,
+  resetHarness,
+} = setupScrollFollowHarness();
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
@@ -132,78 +110,11 @@ vi.mock('react-virtuoso', () => ({
   }),
 }));
 
-// ---------------------------------------------------------------------------
-// Per-test reset
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
-  resetAgentChatMessagesHarness({
-    harness,
-    groupedMessagesMock,
-    resizeObserverCallbacks,
-  });
+  resetHarness();
 });
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe('AgentChatMessages – scroll-follow intent detection', () => {
-  it('pauses bottom follow via near-top threshold with a sub-36px upward delta', () => {
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const performanceNowSpy = vi.spyOn(performance, 'now');
-    let currentTime = 0;
-
-    chatState.messages = [makeStreamingMessage()];
-    chatState.workflowStatus = 'busy';
-    groupedMessagesMock.splice(0, groupedMessagesMock.length, makeStreamingGroupEntry());
-
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    performanceNowSpy.mockImplementation(() => currentTime);
-
-    try {
-      const { container } = render(<AgentChatMessages />);
-      const scroller = container.querySelector(
-        '.agent-chat-scrollbar',
-      ) as HTMLDivElement | null;
-
-      expect(scroller).not.toBeNull();
-
-      // Still inside the force-snap ignore window: park just above the near-top
-      // threshold without pausing follow (self-scroll ignores upward intent).
-      currentTime = 50;
-      setScrollerMetrics(scroller!, {
-        scrollHeight: 500,
-        clientHeight: 100,
-        scrollTop: 20,
-      });
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
-      // Ignore window expired. 20 → 4 is only 16px upward (< 36px release
-      // distance), so only the near-top rule can pause follow.
-      currentTime = 300;
-      scroller!.scrollTop = 4;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
-    } finally {
-      performanceNowSpy.mockRestore();
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
-    }
-  });
-
+describe('AgentChatMessages – streaming follow & prepend preservation', () => {
   it('keeps Non-Thinking stream height growth from yanking away from the top', () => {
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;
@@ -255,7 +166,6 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
       expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
       scrollToIndexMock.mockClear();
 
-      // Layout-neutral text growth must not schedule a reactive bottom snap.
       chatState.messages = [makeStreamingMessage('streaming output extended')];
       groupedMessagesMock.splice(
         0,
@@ -266,7 +176,6 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
 
       expect(scrollToIndexMock).not.toHaveBeenCalled();
 
-      // ResizeObserver follow must also stay suppressed while parked at top.
       act(() => {
         resizeObserverCallbacks.current.forEach((callback) =>
           callback([], {} as ResizeObserver),
@@ -280,70 +189,6 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
-    }
-  });
-
-  it('pauses bottom follow after three explicit upward scrolls', () => {
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const performanceNowSpy = vi.spyOn(performance, 'now');
-    let currentTime = 0;
-
-    chatState.messages = [makeStreamingMessage()];
-    chatState.workflowStatus = 'busy';
-    groupedMessagesMock.splice(0, groupedMessagesMock.length, makeStreamingGroupEntry());
-
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    performanceNowSpy.mockImplementation(() => currentTime);
-
-    try {
-      const { container } = render(<AgentChatMessages />);
-      const scroller = container.querySelector(
-        '.agent-chat-scrollbar',
-      ) as HTMLDivElement | null;
-
-      expect(scroller).not.toBeNull();
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
-      setScrollerMetrics(scroller!, {
-        scrollHeight: 500,
-        clientHeight: 100,
-        scrollTop: 400,
-      });
-
-      currentTime = 300;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      scroller!.scrollTop = 388;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
-      scroller!.scrollTop = 376;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
-      scroller!.scrollTop = 364;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
-    } finally {
-      performanceNowSpy.mockRestore();
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
     }
   });
 
@@ -382,7 +227,6 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
         scrollTop: 400,
       });
 
-      // Force snaps (session-changed) open the ignore window; streaming follows must not.
       currentTime = 50;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
@@ -456,13 +300,11 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
         scrollTop: 400,
       });
 
-      // Expire the force-snap ignore window from session hydration.
       currentTime = 300;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      // Growing text tokens are layout-neutral; follow continues via ResizeObserver.
       chatState.messages = [makeStreamingMessage('streaming output extended')];
       groupedMessagesMock.splice(
         0,
@@ -504,94 +346,6 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
       });
 
       expect(scrollToIndexMock).not.toHaveBeenCalled();
-    } finally {
-      performanceNowSpy.mockRestore();
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
-    }
-  });
-
-  it('resets upward release accumulation after a downward self-scroll returns toward bottom', () => {
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-    const performanceNowSpy = vi.spyOn(performance, 'now');
-    const scrollIntoView = vi.fn();
-    let currentTime = 0;
-
-    chatState.messages = [makeStreamingMessage()];
-    chatState.workflowStatus = 'busy';
-    groupedMessagesMock.splice(0, groupedMessagesMock.length, makeStreamingGroupEntry());
-
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
-    performanceNowSpy.mockImplementation(() => currentTime);
-
-    try {
-      const { container } = render(<AgentChatMessages />);
-      const scroller = container.querySelector(
-        '.agent-chat-scrollbar',
-      ) as HTMLDivElement | null;
-
-      expect(scroller).not.toBeNull();
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
-      setScrollerMetrics(scroller!, {
-        scrollHeight: 500,
-        clientHeight: 100,
-        scrollTop: 400,
-      });
-
-      currentTime = 50;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      currentTime = 250;
-      scroller!.scrollTop = 388;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      currentTime = 260;
-      act(() => {
-        resizeObserverCallbacks.current.forEach((callback) =>
-          callback([], {} as ResizeObserver),
-        );
-      });
-
-      currentTime = 300;
-      scroller!.scrollTop = 400;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      currentTime = 500;
-      scroller!.scrollTop = 388;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      currentTime = 700;
-      scroller!.scrollTop = 376;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
-      currentTime = 900;
-      scroller!.scrollTop = 364;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
     } finally {
       performanceNowSpy.mockRestore();
       global.requestAnimationFrame = originalRequestAnimationFrame;
@@ -802,70 +556,7 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
     }
   });
 
-  it('keeps bottom follow until three explicit upward scrolls leave the visual bottom', () => {
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const performanceNowSpy = vi.spyOn(performance, 'now');
-    let currentTime = 0;
-
-    chatState.messages = [makeStreamingMessage()];
-    chatState.workflowStatus = 'busy';
-    groupedMessagesMock.splice(0, groupedMessagesMock.length, makeStreamingGroupEntry());
-
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    performanceNowSpy.mockImplementation(() => currentTime);
-
-    try {
-      const { container } = render(<AgentChatMessages />);
-      const scroller = container.querySelector(
-        '.agent-chat-scrollbar',
-      ) as HTMLDivElement | null;
-
-      expect(scroller).not.toBeNull();
-
-      setScrollerMetrics(scroller!, {
-        scrollHeight: 500,
-        clientHeight: 100,
-        scrollTop: 400,
-      });
-
-      currentTime = 300;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      scroller!.scrollTop = 388;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
-      scroller!.scrollTop = 376;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
-      scroller!.scrollTop = 364;
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
-    } finally {
-      performanceNowSpy.mockRestore();
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
-    }
-  });
-
-  it('resumes bottom follow when the user manually returns to latest during busy streaming', () => {
+  it('does not yank to bottom with sentinel scroll when older messages prepend at the top', () => {
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
@@ -873,55 +564,107 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
     const scrollIntoView = vi.fn();
     let currentTime = 0;
 
-    chatState.messages = [makeStreamingMessage()];
+    chatState.messages = [makeStreamingMessage('visible head')];
     chatState.workflowStatus = 'busy';
-    groupedMessagesMock.splice(0, groupedMessagesMock.length, makeStreamingGroupEntry());
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
 
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    performanceNowSpy.mockImplementation(() => currentTime);
     global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
       callback(0);
       return 1;
     }) as typeof requestAnimationFrame;
     global.cancelAnimationFrame = vi.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
-    performanceNowSpy.mockImplementation(() => currentTime);
 
     try {
-      const { container } = render(<AgentChatMessages />);
+      const { container, rerender } = render(<AgentChatMessages />);
       const scroller = container.querySelector(
         '.agent-chat-scrollbar',
       ) as HTMLDivElement | null;
 
       expect(scroller).not.toBeNull();
 
+      currentTime = 50;
       setScrollerMetrics(scroller!, {
-        scrollHeight: 500,
-        clientHeight: 100,
-        scrollTop: 400,
+        scrollHeight: 2_000,
+        clientHeight: 400,
+        scrollTop: 40,
+      });
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
       });
 
       currentTime = 300;
+      scroller!.scrollTop = 2;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      scroller!.scrollTop = 360;
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
 
-      act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
-      });
-
-      const scrollToLatestButton = screen.getByLabelText('Scroll to latest');
-      expect(scrollToLatestButton).toBeInTheDocument();
-
+      scrollToIndexMock.mockClear();
       scrollIntoView.mockClear();
-      currentTime = 600;
+
+      groupedMessagesMock.splice(
+        0,
+        groupedMessagesMock.length,
+        {
+          type: 'single',
+          message: {
+            ...baseMessage,
+            id: 'older-user',
+            role: 'user',
+            content: [{ type: 'text', text: 'Older user message' }],
+          },
+          messages: [
+            {
+              ...baseMessage,
+              id: 'older-user',
+              role: 'user',
+              content: [{ type: 'text', text: 'Older user message' }],
+            },
+          ],
+          coveredMessageIds: ['older-user'],
+        } as GroupedMessage,
+        makeStreamingGroupEntry('visible head'),
+      );
+      chatState.messages = [
+        {
+          ...baseMessage,
+          id: 'older-user',
+          role: 'user',
+          content: [{ type: 'text', text: 'Older user message' }],
+        },
+        makeStreamingMessage('visible head'),
+      ];
+      rerender(<AgentChatMessages />);
+
+      expect(scrollToIndexMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          align: 'start',
+          behavior: 'auto',
+        }),
+      );
+      scrollToIndexMock.mockClear();
+
+      const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+        totalListHeightChanged?: (height: number) => void;
+      };
 
       act(() => {
-        scrollToLatestButton.click();
+        virtuosoProps.totalListHeightChanged?.(2_400);
+        resizeObserverCallbacks.current.forEach((callback) =>
+          callback([], {} as ResizeObserver),
+        );
       });
 
-      expect(scrollToIndexMock).toHaveBeenCalled();
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+      expect(scrollToIndexMock).not.toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
     } finally {
       performanceNowSpy.mockRestore();
       global.requestAnimationFrame = originalRequestAnimationFrame;

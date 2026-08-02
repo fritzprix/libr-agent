@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.8.36"
+version = "0.8.37"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -82,6 +82,7 @@ docx-rs = "0.4"           # DOCX parsing
 calamine = { version = "0.35", features = ["dates"] }  # XLSX parsing
 lopdf = "0.31"            # PDF parsing
 pdf-extract = "0.12"       # Better PDF text extraction
+markdown2pdf = "1.5"      # Proven Markdown → PDF (github theme) for message export
 # tantivy = "0.21"       # BM25 text search - temporarily disabled due to zstd conflicts
 bm25 = { version = "2.3.2", features = ["parallelism"] }  # BM25 search with parallel indexing
 base64 = "0.23.0"

@@ -76,6 +76,43 @@ pub async fn resolve_agent_config(session: &SessionMetadata) -> Result<AgentConf
     Ok(config)
 }
 
+/// Resolve builtin + external MCP bindings for a session from assistant SSOT.
+///
+/// External MCP activation must come only from
+/// `session.assistant_id → assistants.config.mcpServerIds`. Request payloads must
+/// not invent or override that list. Sessions without an assistant get no
+/// external MCP servers.
+pub async fn resolve_session_mcp_bindings(
+    session: &SessionMetadata,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    match extract_assistant_id_from_session(session) {
+        None => {
+            log::info!(
+                "Session {} has no assistant_id; external MCP servers disabled (SSOT)",
+                session.id
+            );
+            // Keep default builtin set; never invent external MCP from request payload.
+            let defaults = AgentConfig::default();
+            Ok((
+                crate::agent::tools::extract_builtin_tool_ids(&defaults),
+                Vec::new(),
+            ))
+        }
+        Some(assistant_id) => {
+            let config = resolve_agent_config(session).await?;
+            let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&config);
+            log::info!(
+                "Session {} MCP bindings from assistant {} (SSOT): mcp_server_ids={:?}, builtin_aliases={:?}",
+                session.id,
+                assistant_id,
+                config.mcp_server_ids,
+                config.allowed_built_in_service_aliases
+            );
+            Ok((tool_ids, config.mcp_server_ids))
+        }
+    }
+}
+
 /// Fingerprint assistant-derived stable prompt inputs for cache invalidation.
 pub fn stable_prompt_source_key(config: &AgentConfig) -> String {
     use std::collections::hash_map::DefaultHasher;
@@ -138,6 +175,12 @@ mod tests {
             extract_assistant_id_from_session(&session).as_deref(),
             Some("from-column")
         );
+    }
+
+    #[test]
+    fn extract_assistant_id_none_means_no_external_mcp_ssot() {
+        let session = sample_session_metadata(None);
+        assert!(extract_assistant_id_from_session(&session).is_none());
     }
 
     #[test]

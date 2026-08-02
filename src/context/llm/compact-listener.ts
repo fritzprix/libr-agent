@@ -3,12 +3,12 @@ import {
   handleCompactResponse,
   getAgentCompactContext,
 } from '@/lib/backend/agent-commands';
-import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import {
+  AIServiceFactory,
+  resolveProviderRuntimeConfig,
+} from '@/lib/ai-service';
 import { summarizeCompactionRequestSizes } from '@/lib/ai-service/request-ingredients';
-import type {
-  AIContextCompactionService,
-  AIServiceConfig,
-} from '@/lib/ai-service/types';
+import type { AIContextCompactionService } from '@/lib/ai-service/types';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import type { Settings } from '@/context/SettingsContext';
@@ -97,9 +97,10 @@ export async function setupCompactRequestListener({
         return;
       }
 
-      const provider = (parentRequest?.provider ??
-        settings.preferredModel.provider) as AIServiceProvider;
-      const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
+      const provider =
+        parentRequest?.provider ?? settings.preferredModel.provider;
+      const resolved = resolveProviderRuntimeConfig(provider, settings);
+      const apiKey = resolved.apiKey ?? '';
       const model = parentRequest?.model ?? settings.preferredModel.model;
       const systemPrompt = buildCompactionRetrySystemPrompt(
         parentRequest?.systemPrompt,
@@ -108,9 +109,10 @@ export async function setupCompactRequestListener({
       const availableTools = retryWithoutTools
         ? undefined
         : parentRequest?.availableTools;
-      const providerConfig: AIServiceConfig =
-        settings.serviceConfigs?.[provider] ?? {};
-      const runtimeConfig = buildServiceRuntimeConfig(settings, providerConfig);
+      const runtimeConfig = buildServiceRuntimeConfig(
+        settings,
+        resolved.serviceConfig,
+      );
       const requestComposition = summarizeCompactionRequestSizes({
         messages,
         systemPrompt,

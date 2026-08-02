@@ -137,6 +137,7 @@ export interface AgentSessionStateContextValue {
   session: AgentSession | null;
   messages: Message[];
   isSessionLoading: boolean;
+  isProxyReady: boolean;
   isLoadingOlderMessages: boolean;
   hasOlderMessages: boolean;
   error: MessageError | null;

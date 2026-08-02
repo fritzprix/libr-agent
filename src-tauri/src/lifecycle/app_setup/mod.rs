@@ -258,7 +258,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .inner()
         .clone_for_task();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = crate::server::init(
+        match crate::server::init(
             std::sync::Arc::new(server_manager),
             startup_settings.http_port,
             startup_settings.http_expose,
@@ -266,22 +266,26 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         )
         .await
         {
-            log::error!(
-                "Failed to start HTTP server on port {}: {}",
-                startup_settings.http_port,
-                e
-            );
+            Ok(actual_port) => {
+                info!(
+                    "✅ HTTP Server spawned on {}:{}",
+                    if startup_settings.http_expose {
+                        "0.0.0.0"
+                    } else {
+                        "127.0.0.1"
+                    },
+                    actual_port
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to start HTTP server on port range starting from {}: {}",
+                    startup_settings.http_port,
+                    e
+                );
+            }
         }
     });
-    info!(
-        "✅ HTTP Server spawned on {}:{}",
-        if startup_settings.http_expose {
-            "0.0.0.0"
-        } else {
-            "127.0.0.1"
-        },
-        startup_settings.http_port
-    );
 
     // Spawn session recovery in background
     let recovery_manager = app

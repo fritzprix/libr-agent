@@ -34,6 +34,7 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
                 }
             ]
         })],
+        None,
     );
 
     let text = extract_text(&result);
@@ -112,6 +113,7 @@ fn terminal_check_session_result_uses_last_text_block_in_assistant_content() {
                 {"type": "text", "text": "All subtasks completed successfully."}
             ]
         })],
+        None,
     );
 
     let structured = result
@@ -146,6 +148,7 @@ fn terminal_check_session_result_falls_back_to_tool_text_when_assistant_has_no_t
                 "content": []
             }),
         ],
+        None,
     );
 
     let text = extract_text(&result);
@@ -177,6 +180,7 @@ fn terminal_error_check_session_result_marks_session_as_recoverable() {
                 }
             ]
         })],
+        None,
     );
 
     let text = extract_text(&result);
@@ -221,6 +225,7 @@ fn paused_check_session_result_includes_recovery_guidance() {
                 }
             ]
         })],
+        None,
     );
 
     let text = extract_text(&result);

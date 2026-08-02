@@ -76,13 +76,13 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
             </DialogDescription>
 
             <div className="flex flex-wrap gap-2">
-              <div className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-[11px] text-muted-foreground">
+              <div className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground">
                 {totalCount} {t('agent.toolsModal.title')}
               </div>
-              <div className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-[11px] text-muted-foreground">
+              <div className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground">
                 {builtinCount} {t('agent.toolsModal.badgeBuiltin')}
               </div>
-              <div className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-[11px] text-muted-foreground">
+              <div className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground">
                 {mcpCount} {t('agent.toolsModal.badgeMcp')}
               </div>
             </div>
@@ -159,11 +159,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 
                             <Badge
                               variant="outline"
-                              className={
-                                isBuiltinTool(tool.name)
-                                  ? 'shrink-0 border-border/40 bg-background/80 text-[10px] uppercase tracking-wide text-muted-foreground'
-                                  : 'shrink-0 border-border/40 bg-background/80 text-[10px] uppercase tracking-wide text-muted-foreground'
-                              }
+                              className="shrink-0 border-border/40 bg-background/80 text-xs uppercase tracking-wide text-muted-foreground"
                               aria-hidden
                             >
                               {isBuiltinTool(tool.name)
