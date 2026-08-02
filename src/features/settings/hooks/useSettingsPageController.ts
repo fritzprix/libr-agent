@@ -317,7 +317,13 @@ export function useSettingsPageController() {
 
   const handleFallbackModelChange = useCallback(
     (model: string, provider: string) => {
-      update('fallbackModel', model ? { provider, model } : undefined);
+      // Keep provider selection even when model is temporarily empty (e.g. user
+      // just switched to a custom OpenAI-compatible provider before models load).
+      if (!provider) {
+        update('fallbackModel', undefined);
+        return;
+      }
+      update('fallbackModel', { provider, model });
     },
     [update],
   );

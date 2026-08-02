@@ -4,9 +4,14 @@ import {
   createCustomOpenAIProvider,
   isCustomOpenAIProviderId,
   parseCustomProviderId,
+  resolveDefaultModelForProviderChange,
   resolveProviderRuntimeConfig,
   toCustomProviderId,
 } from '../custom-providers';
+import {
+  clearLastSelectedModel,
+  setLastSelectedModel,
+} from '../last-selected-model-storage';
 import type { Settings } from '@/lib/services/settings-service';
 import { DEFAULT_SETTING } from '@/lib/services/settings-service';
 
@@ -128,5 +133,69 @@ describe('custom provider helpers', () => {
     expect(isCustomOpenAIProviderId(null)).toBe(false);
     expect(isCustomOpenAIProviderId(undefined)).toBe(false);
     expect(isCustomOpenAIProviderId('custom:')).toBe(false);
+  });
+
+  it('resolves default model only from the target provider on switch', () => {
+    clearLastSelectedModel();
+    const settings = settingsWithCustom();
+
+    expect(
+      resolveDefaultModelForProviderChange(
+        'custom:abc123',
+        settings,
+        'gpt-4o',
+      ),
+    ).toBe('llama-3.1-70b');
+
+    expect(
+      resolveDefaultModelForProviderChange(
+        'custom:missing-id',
+        settingsWithCustom({ customProviders: [] }),
+        'gpt-4o',
+      ),
+    ).toBe('');
+
+    expect(
+      resolveDefaultModelForProviderChange(
+        'custom:abc123',
+        settings,
+        'llama-3.1-70b',
+      ),
+    ).toBe('llama-3.1-70b');
+  });
+
+  it('prefers the last configured model for a provider when still valid', () => {
+    clearLastSelectedModel();
+    setLastSelectedModel('custom:abc123', 'llama-3.1-70b');
+
+    expect(
+      resolveDefaultModelForProviderChange(
+        'custom:abc123',
+        settingsWithCustom({
+          customProviders: [
+            {
+              id: 'abc123',
+              name: 'Local vLLM',
+              baseUrl: 'http://192.168.1.10:8000/v1',
+              models: ['other-model', 'llama-3.1-70b'],
+            },
+          ],
+        }),
+        'gpt-4o',
+      ),
+    ).toBe('llama-3.1-70b');
+  });
+
+  it('ignores a stale last-selected model that is no longer valid', () => {
+    clearLastSelectedModel();
+    setLastSelectedModel('custom:abc123', 'retired-model');
+
+    expect(
+      resolveDefaultModelForProviderChange(
+        'custom:abc123',
+        settingsWithCustom(),
+        'gpt-4o',
+      ),
+    ).toBe('llama-3.1-70b');
   });
 });

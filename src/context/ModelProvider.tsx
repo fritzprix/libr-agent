@@ -13,8 +13,10 @@ import {
   AIServiceFactory,
   isCustomOpenAIProviderId,
   listCustomProviderPickerOptions,
+  resolveDefaultModelForProviderChange,
   resolveProviderRuntimeConfig,
 } from '../lib/ai-service';
+import { setLastSelectedModel } from '../lib/ai-service/last-selected-model-storage';
 import { shouldFetchDynamicModels } from '../lib/ai-service/model-fetch-policy';
 import {
   llmConfigManager,
@@ -66,11 +68,13 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     value: {
       serviceConfigs,
       customProviders,
-      preferredModel: { model, provider },
+      preferredModel,
+      fallbackModel,
     },
     update,
     isLoading,
   } = useSettings();
+  const { model, provider } = preferredModel;
 
   const resolvedProvider = useMemo(
     () =>
@@ -269,39 +273,40 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const setProvider = useCallback(
     (newProvider: string) => {
-      if (isCustomOpenAIProviderId(newProvider)) {
-        const resolved = resolveProviderRuntimeConfig(newProvider, {
+      const defaultModel = resolveDefaultModelForProviderChange(
+        newProvider,
+        {
           serviceConfigs,
           customProviders,
-        });
-        const defaultModel = resolved.manualModels?.[0] ?? '';
-        update({
-          preferredModel: { provider: newProvider, model: defaultModel },
-        });
-        return;
-      }
-
-      const availableModels =
-        llmConfigManager.getModelsForProvider(
-          newProvider as AIServiceProvider,
-        ) || {};
-
-      if (Object.keys(availableModels).length === 0) {
+          preferredModel,
+          fallbackModel,
+        },
+        model,
+      );
+      if (!defaultModel) {
         logger.warn(`No available models for ${newProvider}`);
-        update({ preferredModel: { provider: newProvider, model: '' } });
-        return;
+      } else {
+        setLastSelectedModel(newProvider, defaultModel);
       }
-
-      const modelEntries = Object.entries(availableModels);
-      const newModel = modelEntries.length > 0 ? modelEntries[0][0] : '';
-
-      update({ preferredModel: { provider: newProvider, model: newModel } });
+      update({
+        preferredModel: { provider: newProvider, model: defaultModel },
+      });
     },
-    [update, serviceConfigs, customProviders],
+    [
+      update,
+      serviceConfigs,
+      customProviders,
+      preferredModel,
+      fallbackModel,
+      model,
+    ],
   );
 
   const setModel = useCallback(
     (newModel: string) => {
+      if (newModel) {
+        setLastSelectedModel(provider, newModel);
+      }
       update({ preferredModel: { provider, model: newModel } });
     },
     [provider, update],

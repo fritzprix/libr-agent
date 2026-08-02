@@ -5,6 +5,8 @@ import type {
   Settings,
 } from '@/lib/services/settings-service';
 import { AIServiceProvider, type AIServiceConfig } from './types';
+import { getLastSelectedModel } from './last-selected-model-storage';
+import { getStoredModelCache } from './model-cache-storage';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 
 export const CUSTOM_PROVIDER_PREFIX = 'custom:';
@@ -178,6 +180,102 @@ export function resolveProviderRuntimeConfig(
     customModelId: cfg.customModelId,
     serviceConfig,
   };
+}
+
+function collectKnownModelIds(
+  providerId: string,
+  settings: Pick<Settings, 'serviceConfigs' | 'customProviders'>,
+): Set<string> {
+  const ids = new Set<string>();
+
+  if (isCustomOpenAIProviderId(providerId)) {
+    const resolved = resolveProviderRuntimeConfig(providerId, settings);
+    for (const modelId of resolved.manualModels ?? []) {
+      ids.add(modelId);
+    }
+  } else {
+    const staticModels =
+      llmConfigManager.getModelsForProvider(providerId as AIServiceProvider) ||
+      {};
+    for (const modelId of Object.keys(staticModels)) {
+      ids.add(modelId);
+    }
+  }
+
+  const cached = getStoredModelCache(providerId);
+  if (cached) {
+    for (const modelId of Object.keys(cached)) {
+      ids.add(modelId);
+    }
+  }
+
+  return ids;
+}
+
+function firstKnownModelId(known: Set<string>): string {
+  for (const modelId of known) {
+    return modelId;
+  }
+  return '';
+}
+
+function configuredModelCandidates(
+  providerId: string,
+  settings: Partial<
+    Pick<Settings, 'preferredModel' | 'fallbackModel'>
+  >,
+): string[] {
+  const candidates: string[] = [];
+  const lastSelected = getLastSelectedModel(providerId);
+  if (lastSelected) {
+    candidates.push(lastSelected);
+  }
+  if (
+    settings.preferredModel?.provider === providerId &&
+    settings.preferredModel.model
+  ) {
+    candidates.push(settings.preferredModel.model);
+  }
+  if (
+    settings.fallbackModel?.provider === providerId &&
+    settings.fallbackModel.model
+  ) {
+    candidates.push(settings.fallbackModel.model);
+  }
+  return candidates;
+}
+
+/**
+ * Picks a model id for `providerId` after a provider switch.
+ *
+ * Preference order:
+ * 1. Last configured model for that provider (local memory / settings)
+ * 2. Current model when it belongs to the target provider
+ * 3. First known manual/static/cached model
+ * 4. Empty string
+ *
+ * A remembered model is kept when it is still in the known catalog, or when
+ * the catalog is empty (custom endpoints before /v1/models returns).
+ */
+export function resolveDefaultModelForProviderChange(
+  providerId: string,
+  settings: Pick<Settings, 'serviceConfigs' | 'customProviders'> &
+    Partial<Pick<Settings, 'preferredModel' | 'fallbackModel'>>,
+  currentModel = '',
+): string {
+  const known = collectKnownModelIds(providerId, settings);
+
+  for (const candidate of configuredModelCandidates(providerId, settings)) {
+    if (known.size === 0 || known.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  if (currentModel && known.has(currentModel)) {
+    return currentModel;
+  }
+
+  return firstKnownModelId(known);
 }
 
 export function listCustomProviderPickerOptions(

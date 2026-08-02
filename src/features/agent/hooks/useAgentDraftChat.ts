@@ -400,9 +400,9 @@ export function useAgentDraftChat() {
         request: {
           sessionId: newSessionId,
           name: shortName,
-          model: overrideModel || settings?.preferredModel?.model || 'gpt-4',
+          model: overrideModel ?? settings?.preferredModel?.model ?? 'gpt-4',
           provider:
-            overrideProvider || settings?.preferredModel?.provider || 'openai',
+            overrideProvider ?? settings?.preferredModel?.provider ?? 'openai',
           agentConfig,
           isEphemeral: false,
           workspacePath: workspaceOverride || undefined,

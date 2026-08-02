@@ -15,12 +15,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AIServiceProvider } from '@/lib/ai-service';
 import {
-  isCustomOpenAIProviderId,
   listCustomProviderPickerOptions,
-  resolveProviderRuntimeConfig,
+  resolveDefaultModelForProviderChange,
 } from '@/lib/ai-service/custom-providers';
+import { setLastSelectedModel } from '@/lib/ai-service/last-selected-model-storage';
+import type { CustomOpenAIProvider } from '@/lib/services/settings-service';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/hooks/use-settings';
@@ -32,6 +32,11 @@ interface AgentModelPickerProps {
   className?: string;
   disabled?: boolean;
   onConfigUpdate?: (model: string, provider: string) => void;
+  /**
+   * Optional override for custom providers (e.g. settings form draft).
+   * Falls back to persisted settings when omitted.
+   */
+  customProviders?: CustomOpenAIProvider[];
 }
 
 const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
@@ -40,11 +45,18 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   className,
   disabled = false,
   onConfigUpdate,
+  customProviders: customProvidersProp,
 }) => {
   const { t } = useTranslation('common');
   const {
-    value: { customProviders, serviceConfigs },
+    value: {
+      customProviders: settingsCustomProviders,
+      serviceConfigs,
+      preferredModel,
+      fallbackModel,
+    },
   } = useSettings();
+  const customProviders = customProvidersProp ?? settingsCustomProviders;
   const {
     availableModels,
     isRefreshing,
@@ -97,30 +109,44 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
 
   const handleProviderChange = useCallback(
     (newProvider: string) => {
-      let defaultModel = '';
+      // Radix can emit "" when clearing / syncing controlled values — ignore it
+      // so a custom:`id` selection is not immediately reverted.
+      if (!newProvider) {
+        return;
+      }
 
-      if (isCustomOpenAIProviderId(newProvider)) {
-        const resolved = resolveProviderRuntimeConfig(newProvider, {
+      const defaultModel = resolveDefaultModelForProviderChange(
+        newProvider,
+        {
           serviceConfigs,
           customProviders,
-        });
-        defaultModel = resolved.manualModels?.[0] ?? '';
-      } else {
-        const staticModels = llmConfigManager.getModelsForProvider(
-          newProvider as AIServiceProvider,
-        );
-        if (staticModels && Object.keys(staticModels).length > 0) {
-          defaultModel = Object.keys(staticModels)[0];
-        }
+          preferredModel,
+          fallbackModel,
+        },
+        currentModel,
+      );
+      if (defaultModel) {
+        setLastSelectedModel(newProvider, defaultModel);
       }
 
       onConfigUpdate?.(defaultModel, newProvider);
     },
-    [customProviders, onConfigUpdate, serviceConfigs],
+    [
+      currentModel,
+      customProviders,
+      fallbackModel,
+      onConfigUpdate,
+      preferredModel,
+      serviceConfigs,
+    ],
   );
 
   const handleModelChange = useCallback(
     (newModel: string) => {
+      if (!newModel || !currentProvider) {
+        return;
+      }
+      setLastSelectedModel(currentProvider, newModel);
       onConfigUpdate?.(newModel, currentProvider);
     },
     [currentProvider, onConfigUpdate],
@@ -160,7 +186,9 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
 
       {/* Model Selector */}
       <Select
-        value={currentModel}
+        // Empty string means "cleared" in Radix Select — use undefined so the
+        // placeholder shows without wiping sibling controlled selects.
+        value={currentModel || undefined}
         onValueChange={handleModelChange}
         disabled={disabled || isRefreshing || !currentProvider}
       >
@@ -243,7 +271,8 @@ export const AgentModelPicker = React.memo(
       prev.currentProvider === next.currentProvider &&
       prev.className === next.className &&
       prev.disabled === next.disabled &&
-      prev.onConfigUpdate === next.onConfigUpdate
+      prev.onConfigUpdate === next.onConfigUpdate &&
+      prev.customProviders === next.customProviders
     );
   },
 );
