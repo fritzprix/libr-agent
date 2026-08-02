@@ -129,8 +129,7 @@ impl SecurityValidator {
             .canonicalize()
             .unwrap_or_else(|_| absolute_path.clone());
 
-        if enforce_base_containment && !path_starts_with(&early_containment_path, &self.base_dir)
-        {
+        if enforce_base_containment && !path_starts_with(&early_containment_path, &self.base_dir) {
             return Err(SecurityError::PathTraversal(format!(
                 "Access denied: Path '{user_path}' is outside the allowed base directory"
             )));
@@ -307,7 +306,10 @@ pub fn normalize_user_path(user_path: &str) -> String {
 
     // Prefer proper file URL parsing so Unix `file:///home/...` keeps its leading `/`
     // and Windows `file:///C:/...` / `file://localhost/C:/...` resolve correctly.
-    if s.len() >= 7 && s.get(..7).is_some_and(|prefix| prefix.eq_ignore_ascii_case("file://")) {
+    if s.len() >= 7
+        && s.get(..7)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file://"))
+    {
         if let Ok(parsed) = url::Url::parse(s) {
             if parsed.scheme().eq_ignore_ascii_case("file") {
                 if let Ok(path) = parsed.to_file_path() {
