@@ -53,6 +53,7 @@ fn first_existing_font(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.is_file()).cloned()
 }
 
+#[cfg(windows)]
 fn windows_fonts_dir() -> Option<PathBuf> {
     std::env::var_os("WINDIR").map(|windir| PathBuf::from(windir).join("Fonts"))
 }
