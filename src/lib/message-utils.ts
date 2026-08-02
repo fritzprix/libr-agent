@@ -1,6 +1,7 @@
 import type { Message, RustMessage } from '@/models/chat';
 
 export {
+  messageToMarkdown,
   messagesToMarkdown,
   type MessagesToMarkdownOptions,
   type MessagesToMarkdownResult,

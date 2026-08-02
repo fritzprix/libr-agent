@@ -1053,7 +1053,30 @@
       "thinkingProcess": "Denkprozess",
       "thinkingProcessWithTime": "Denkprozess {{time}}",
       "thinking": "Denke...",
-      "expandThinking": "Erweitern"
+      "expandThinking": "Erweitern",
+      "actionBar": {
+        "copyFullAria": "Vollständige Nachricht kopieren",
+        "copyFullTooltip": "Vollständige Nachricht kopieren (Text, Denken, Tools, Anhänge)",
+        "copyTextAria": "Nur Text kopieren",
+        "copyTextTooltip": "Nur Textinhalt kopieren",
+        "copyToolsAria": "Tool-Aufrufe kopieren",
+        "copyToolsTooltip": "Tool-Aufrufe als JSON kopieren",
+        "exportAria": "Nachricht exportieren",
+        "exportTooltip": "Nachricht exportieren",
+        "exportMarkdown": "Als Markdown exportieren",
+        "exportPdf": "Als PDF exportieren",
+        "copySuccess": "Nachricht in die Zwischenablage kopiert",
+        "copyEmpty": "Nichts zum Kopieren",
+        "copyDenied": "Zugriff auf die Zwischenablage verweigert. Prüfen Sie die Browserberechtigungen.",
+        "copyError": "Nachricht konnte nicht kopiert werden",
+        "exportMarkdownSuccess": "Markdown-Datei heruntergeladen",
+        "exportPdfSuccess": "PDF-Datei heruntergeladen",
+        "exportOpenFile": "Öffnen",
+        "exportOpenFileError": "Datei konnte nicht geöffnet werden",
+        "exportCancelled": "Download abgebrochen",
+        "exportError": "Nachricht konnte nicht exportiert werden",
+        "exportPdfError": "PDF konnte nicht exportiert werden"
+      }
     },
     "start": {
       "heroTitle": "Was möchten Sie heute tun?",

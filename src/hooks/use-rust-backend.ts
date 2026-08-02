@@ -59,8 +59,9 @@ export interface RustBackendAPI {
   clearCurrentLog: () => Promise<void>;
   listLogFiles: () => Promise<string[]>;
 
-  // External URL handling
+  // External URL / path handling
   openExternalUrl: (url: string) => Promise<void>;
+  openPathWithDefaultApp: (path: string) => Promise<void>;
 
   // File Download Operations
   downloadWorkspaceFile: (
@@ -73,6 +74,19 @@ export interface RustBackendAPI {
     mimeType: string;
     dataBase64?: string;
     fileUrl?: string;
+  }) => Promise<string>;
+  downloadTextFile: (args: {
+    fileName: string;
+    content: string;
+  }) => Promise<string>;
+  downloadBinaryFile: (args: {
+    fileName: string;
+    dataBase64: string;
+  }) => Promise<string>;
+  downloadTextPdf: (args: {
+    fileName: string;
+    content: string;
+    title?: string;
   }) => Promise<string>;
   exportAndDownloadZip: (
     files: string[],
@@ -129,11 +143,15 @@ const backendAPI: RustBackendAPI = {
   clearCurrentLog: client.clearCurrentLog,
   listLogFiles: client.listLogFiles,
 
-  // External URL handling
+  // External URL / path handling
   openExternalUrl: client.openExternalUrl,
+  openPathWithDefaultApp: client.openPathWithDefaultApp,
 
   // File Download Operations
   downloadMediaFile: client.downloadMediaFile,
+  downloadTextFile: client.downloadTextFile,
+  downloadBinaryFile: client.downloadBinaryFile,
+  downloadTextPdf: client.downloadTextPdf,
   downloadWorkspaceFile: client.downloadWorkspaceFile,
   exportAndDownloadZip: client.exportAndDownloadZip,
 

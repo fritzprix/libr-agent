@@ -1053,7 +1053,30 @@
       "thinkingProcess": "思考过程",
       "thinkingProcessWithTime": "思考过程 {{time}}",
       "thinking": "正在思考...",
-      "expandThinking": "展开"
+      "expandThinking": "展开",
+      "actionBar": {
+        "copyFullAria": "复制完整消息",
+        "copyFullTooltip": "复制完整消息（文本、思考、工具、附件）",
+        "copyTextAria": "仅复制文本",
+        "copyTextTooltip": "仅复制文本内容",
+        "copyToolsAria": "复制工具调用",
+        "copyToolsTooltip": "将工具调用复制为 JSON",
+        "exportAria": "导出消息",
+        "exportTooltip": "导出消息",
+        "exportMarkdown": "导出为 Markdown",
+        "exportPdf": "导出为 PDF",
+        "copySuccess": "消息已复制到剪贴板",
+        "copyEmpty": "没有可复制的内容",
+        "copyDenied": "剪贴板访问被拒绝。请检查浏览器权限。",
+        "copyError": "复制消息失败",
+        "exportMarkdownSuccess": "已下载 Markdown 文件",
+        "exportPdfSuccess": "已下载 PDF 文件",
+        "exportOpenFile": "打开",
+        "exportOpenFileError": "无法打开文件",
+        "exportCancelled": "已取消下载",
+        "exportError": "导出消息失败",
+        "exportPdfError": "导出 PDF 失败"
+      }
     },
     "start": {
       "heroTitle": "今天想做什么？",

@@ -890,7 +890,6 @@
       "dockerImageRequired": "Docker 격리 세션을 시작하려면 Docker 이미지를 선택해 주세요.",
       "dockerCreating": "세션 생성 중 — Docker 이미지 {{image}} 준비 중…",
       "newSession": "새 세션",
-
       "workspaceOverrideActive": "워크스페이스 재정의 활성화",
       "workspaceOverrideDescription": "이 세션에서는 에이전트가 이 디렉토리를 기본 워크스페이스로 사용합니다.",
       "filesWillBeListedAfterStart": "세션 시작 후 파일이 표시됩니다",
@@ -1108,7 +1107,30 @@
       "thinkingProcess": "생각 프로세스",
       "thinkingProcessWithTime": "생각 프로세스 {{time}}",
       "thinking": "생각 중...",
-      "expandThinking": "펼치기"
+      "expandThinking": "펼치기",
+      "actionBar": {
+        "copyFullAria": "전체 메시지 복사",
+        "copyFullTooltip": "전체 메시지 복사 (텍스트, 생각, 도구, 첨부파일)",
+        "copyTextAria": "텍스트만 복사",
+        "copyTextTooltip": "텍스트 내용만 복사",
+        "copyToolsAria": "도구 호출 복사",
+        "copyToolsTooltip": "도구 호출을 JSON으로 복사",
+        "exportAria": "메시지 내보내기",
+        "exportTooltip": "메시지 내보내기",
+        "exportMarkdown": "Markdown으로 내보내기",
+        "exportPdf": "PDF로 내보내기",
+        "copySuccess": "메시지를 클립보드에 복사했습니다",
+        "copyEmpty": "복사할 내용이 없습니다",
+        "copyDenied": "클립보드 접근이 거부되었습니다. 브라우저 권한을 확인하세요.",
+        "copyError": "메시지 복사에 실패했습니다",
+        "exportMarkdownSuccess": "Markdown 파일을 다운로드했습니다",
+        "exportPdfSuccess": "PDF 파일을 다운로드했습니다",
+        "exportOpenFile": "열기",
+        "exportOpenFileError": "파일을 열지 못했습니다",
+        "exportCancelled": "다운로드가 취소되었습니다",
+        "exportError": "메시지 내보내기에 실패했습니다",
+        "exportPdfError": "PDF 내보내기에 실패했습니다"
+      }
     },
     "start": {
       "heroTitle": "오늘 무엇을 하고 싶으신가요?",

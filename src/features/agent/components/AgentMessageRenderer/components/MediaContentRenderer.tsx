@@ -5,6 +5,10 @@ import { useRustBackend } from '@/hooks/use-rust-backend';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui';
 import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
+import {
+  DOWNLOAD_CANCELLED,
+  notifyFileDownloadSuccess,
+} from '@/lib/notify-file-download';
 import { useResolvedMediaSource } from '../hooks/useResolvedMediaSource';
 
 const logger = getLogger('AgentMessageRenderer');
@@ -198,12 +202,17 @@ export function ImageContentRenderer({
         fileUrl,
       });
 
-      if (result === 'Download cancelled by user') {
+      if (result === DOWNLOAD_CANCELLED) {
         toast.info(t('agent.mediaRenderer.downloadCancelled'));
         return;
       }
 
-      toast.success(result);
+      notifyFileDownloadSuccess({
+        title: t('agent.mediaRenderer.downloadSuccess'),
+        filePath: result,
+        openLabel: t('agent.mediaRenderer.openFile'),
+        openErrorLabel: t('agent.mediaRenderer.openFileError'),
+      });
     } catch (error) {
       logger.error('Failed to download image', error);
       toast.error(t('agent.mediaRenderer.downloadError'));

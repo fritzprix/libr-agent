@@ -154,6 +154,19 @@ function formatTimestamp(createdAt: Date): string {
   return `*${createdAt.toISOString()}*`;
 }
 
+function resolveMarkdownOptions(
+  options: MessagesToMarkdownOptions = {},
+): ResolvedMarkdownOptions {
+  return {
+    maxMessages: options.maxMessages,
+    maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES,
+    includeThinking: options.includeThinking ?? false,
+    includeToolCalls: options.includeToolCalls ?? true,
+    includeTimestamps: options.includeTimestamps ?? false,
+    includeSystem: options.includeSystem ?? false,
+  };
+}
+
 function formatSingleMessage(
   message: Message,
   options: ResolvedMarkdownOptions,
@@ -202,18 +215,23 @@ function formatSingleMessage(
   return parts.join('\n\n');
 }
 
+/**
+ * Format a single message as Markdown.
+ * Unlike {@link messagesToMarkdown}, this does not skip streaming messages —
+ * useful for per-bubble clipboard/export actions.
+ */
+export function messageToMarkdown(
+  message: Message,
+  options: MessagesToMarkdownOptions = {},
+): string {
+  return formatSingleMessage(message, resolveMarkdownOptions(options));
+}
+
 export function messagesToMarkdown(
   messages: Message[],
   options: MessagesToMarkdownOptions = {},
 ): MessagesToMarkdownResult {
-  const resolvedOptions: ResolvedMarkdownOptions = {
-    maxMessages: options.maxMessages,
-    maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES,
-    includeThinking: options.includeThinking ?? false,
-    includeToolCalls: options.includeToolCalls ?? true,
-    includeTimestamps: options.includeTimestamps ?? false,
-    includeSystem: options.includeSystem ?? false,
-  };
+  const resolvedOptions = resolveMarkdownOptions(options);
 
   let eligible = messages.filter((message) =>
     shouldIncludeMessage(message, resolvedOptions),
