@@ -122,13 +122,21 @@ impl SecurityValidator {
 
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
 
-        if enforce_base_containment && !path_starts_with(&absolute_path, &self.base_dir) {
+        // Prefer a canonical path for the early containment check. On macOS, tempfile and
+        // file:// URLs often use `/var/folders/...` while `base_dir` is stored as the
+        // canonical `/private/var/folders/...` form after construction.
+        let early_containment_path = absolute_path
+            .canonicalize()
+            .unwrap_or_else(|_| absolute_path.clone());
+
+        if enforce_base_containment && !path_starts_with(&early_containment_path, &self.base_dir)
+        {
             return Err(SecurityError::PathTraversal(format!(
                 "Access denied: Path '{user_path}' is outside the allowed base directory"
             )));
         }
 
-        self.ensure_not_sensitive_path(&absolute_path, user_path)?;
+        self.ensure_not_sensitive_path(&early_containment_path, user_path)?;
 
         // SecurityValidator only validates paths. Directory creation is handled explicitly by callers.
 

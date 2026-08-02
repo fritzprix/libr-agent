@@ -93,6 +93,8 @@ fn test_scoped_validator_file_url_within_base() {
     let test_file = temp_dir.path().join("test.txt");
     std::fs::write(&test_file, "hello").expect("write test file");
 
+    // Use a non-canonical path in the file:// URL when the OS exposes one (macOS
+    // `/var` vs `/private/var`) so we cover the early containment canonicalize path.
     let file_url = url::Url::from_file_path(&test_file)
         .expect("file url")
         .to_string();
