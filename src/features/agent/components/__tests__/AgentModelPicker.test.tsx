@@ -32,9 +32,57 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/components/ui/select', () => ({
-  Select: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Select: ({
+    children,
+    value,
+    onValueChange,
+  }: {
+    children: ReactNode;
+    value?: string;
+    onValueChange?: (value: string) => void;
+  }) => (
+    <div data-testid="select" data-value={value ?? ''}>
+      <button
+        type="button"
+        data-testid="select-trigger"
+        onClick={() => undefined}
+      >
+        {value}
+      </button>
+      <div
+        data-testid="select-options"
+        data-on-change={onValueChange ? 'yes' : 'no'}
+      >
+        {children}
+      </div>
+      {onValueChange ? (
+        <button
+          type="button"
+          data-testid={`select-set-${value || 'empty'}`}
+          onClick={() => onValueChange('custom:local1')}
+        >
+          pick-custom
+        </button>
+      ) : null}
+      {onValueChange ? (
+        <button
+          type="button"
+          data-testid="select-emit-empty"
+          onClick={() => onValueChange('')}
+        >
+          emit-empty
+        </button>
+      ) : null}
+    </div>
+  ),
   SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SelectItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  SelectItem: ({
+    children,
+    value,
+  }: {
+    children: ReactNode;
+    value: string;
+  }) => <div data-value={value}>{children}</div>,
   SelectTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SelectValue: ({ placeholder }: { placeholder?: string }) => (
     <span>{placeholder}</span>
@@ -118,5 +166,27 @@ describe('AgentModelPicker', () => {
         name: /refresh/i,
       }),
     ).not.toBeInTheDocument();
+  });
+
+  it('clears foreign model ids when switching to a custom provider', () => {
+    const onConfigUpdate = vi.fn();
+
+    render(
+      <AgentModelPicker
+        currentModel="gpt-4o"
+        currentProvider="openai"
+        onConfigUpdate={onConfigUpdate}
+      />,
+    );
+
+    // First Select is the provider picker
+    const pickCustomButtons = screen.getAllByText('pick-custom');
+    fireEvent.click(pickCustomButtons[0]);
+
+    expect(onConfigUpdate).toHaveBeenCalledWith('', 'custom:local1');
+
+    onConfigUpdate.mockClear();
+    fireEvent.click(screen.getAllByTestId('select-emit-empty')[0]);
+    expect(onConfigUpdate).not.toHaveBeenCalled();
   });
 });

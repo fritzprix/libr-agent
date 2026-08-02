@@ -202,11 +202,11 @@ function DraftChatInner() {
               builtinServices={builtinServices}
               mcpServers={mcpServers}
               currentModel={
-                overrideModel || settings?.preferredModel?.model || 'gpt-4'
+                overrideModel ?? settings?.preferredModel?.model ?? 'gpt-4'
               }
               currentProvider={
-                overrideProvider ||
-                settings?.preferredModel?.provider ||
+                overrideProvider ??
+                settings?.preferredModel?.provider ??
                 'openai'
               }
               onConfigUpdate={(model, provider) => {

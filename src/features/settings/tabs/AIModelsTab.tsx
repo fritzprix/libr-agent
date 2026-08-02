@@ -210,6 +210,7 @@ function AIModelsTabComponent({
           <AgentModelPicker
             currentModel={localPreferredModel.model}
             currentProvider={localPreferredModel.provider}
+            customProviders={providers}
             onConfigUpdate={onPreferredModelChange}
             className="w-full max-w-sm"
           />
@@ -224,6 +225,7 @@ function AIModelsTabComponent({
             currentProvider={
               localFallbackModel?.provider ?? localPreferredModel.provider
             }
+            customProviders={providers}
             onConfigUpdate={onFallbackModelChange}
             className="w-full max-w-sm"
           />
