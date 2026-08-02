@@ -1,3 +1,8 @@
+/**
+ * Storage key format: `libragent:models:last-selected:<providerId>`
+ * Uses localStorage with an in-memory Map cache for environments where
+ * Storage is unavailable (private mode / SSR).
+ */
 const STORAGE_PREFIX = 'libragent:models:last-selected:';
 
 const memoryCache = new Map<string, string>();

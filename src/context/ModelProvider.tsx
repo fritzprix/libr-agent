@@ -65,12 +65,7 @@ const ModelOptionsContext = createContext<ModelOptionsContextType | null>(null);
 
 export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   const {
-    value: {
-      serviceConfigs,
-      customProviders,
-      preferredModel,
-      fallbackModel,
-    },
+    value: { serviceConfigs, customProviders, preferredModel, fallbackModel },
     update,
     isLoading,
   } = useSettings();
@@ -304,7 +299,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const setModel = useCallback(
     (newModel: string) => {
-      if (newModel) {
+      if (provider && newModel) {
         setLastSelectedModel(provider, newModel);
       }
       update({ preferredModel: { provider, model: newModel } });

@@ -182,6 +182,13 @@ export function resolveProviderRuntimeConfig(
   };
 }
 
+/**
+ * Builds the known model catalog for a provider.
+ *
+ * Insertion order (and therefore `firstKnownModelId` fallback order):
+ * 1. manual models (custom providers) or static config models (builtins)
+ * 2. persisted dynamic `/v1/models` cache
+ */
 function collectKnownModelIds(
   providerId: string,
   settings: Pick<Settings, 'serviceConfigs' | 'customProviders'>,
@@ -213,6 +220,7 @@ function collectKnownModelIds(
 }
 
 function firstKnownModelId(known: Set<string>): string {
+  // Set iterates in insertion order — see collectKnownModelIds priority.
   for (const modelId of known) {
     return modelId;
   }
@@ -221,9 +229,7 @@ function firstKnownModelId(known: Set<string>): string {
 
 function configuredModelCandidates(
   providerId: string,
-  settings: Partial<
-    Pick<Settings, 'preferredModel' | 'fallbackModel'>
-  >,
+  settings: Partial<Pick<Settings, 'preferredModel' | 'fallbackModel'>>,
 ): string[] {
   const candidates: string[] = [];
   const lastSelected = getLastSelectedModel(providerId);
