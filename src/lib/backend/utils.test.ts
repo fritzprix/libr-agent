@@ -6,6 +6,9 @@ import {
   listLogFiles,
   openExternalUrl,
   downloadMediaFile,
+  downloadTextFile,
+  downloadBinaryFile,
+  downloadTextPdf,
   downloadWorkspaceFile,
   exportAndDownloadZip,
   getServiceContext,
@@ -69,7 +72,7 @@ describe('backend/utils', () => {
     });
 
     it('should download media via download_media_file', async () => {
-      vi.mocked(safeInvoke).mockResolvedValueOnce('File downloaded successfully');
+      vi.mocked(safeInvoke).mockResolvedValueOnce('/tmp/image.png');
       const res = await downloadMediaFile({
         sessionId: 'session-123',
         fileName: 'image.png',
@@ -82,7 +85,7 @@ describe('backend/utils', () => {
         mimeType: 'image/png',
         dataBase64: 'Zm9v',
       });
-      expect(res).toBe('File downloaded successfully');
+      expect(res).toBe('/tmp/image.png');
     });
 
     it('should export and download zip via export_and_download_zip', async () => {
@@ -90,6 +93,47 @@ describe('backend/utils', () => {
       const res = await exportAndDownloadZip(['file1.txt', 'file2.txt'], 'my-package', 'session-123');
       expect(safeInvoke).toHaveBeenCalledWith('export_and_download_zip', { files: ['file1.txt', 'file2.txt'], packageName: 'my-package', sessionId: 'session-123' });
       expect(res).toBe('export started');
+    });
+
+    it('should download text via download_text_file', async () => {
+      vi.mocked(safeInvoke).mockResolvedValueOnce('/tmp/note.md');
+      const res = await downloadTextFile({
+        fileName: 'note.md',
+        content: '# Hello',
+      });
+      expect(safeInvoke).toHaveBeenCalledWith('download_text_file', {
+        fileName: 'note.md',
+        content: '# Hello',
+      });
+      expect(res).toBe('/tmp/note.md');
+    });
+
+    it('should download binary via download_binary_file', async () => {
+      vi.mocked(safeInvoke).mockResolvedValueOnce('/tmp/note.pdf');
+      const res = await downloadBinaryFile({
+        fileName: 'note.pdf',
+        dataBase64: 'cGRm',
+      });
+      expect(safeInvoke).toHaveBeenCalledWith('download_binary_file', {
+        fileName: 'note.pdf',
+        dataBase64: 'cGRm',
+      });
+      expect(res).toBe('/tmp/note.pdf');
+    });
+
+    it('should download pdf via download_text_pdf', async () => {
+      vi.mocked(safeInvoke).mockResolvedValueOnce('/tmp/note.pdf');
+      const res = await downloadTextPdf({
+        fileName: 'note.pdf',
+        content: 'Hello',
+        title: 'Note',
+      });
+      expect(safeInvoke).toHaveBeenCalledWith('download_text_pdf', {
+        fileName: 'note.pdf',
+        content: 'Hello',
+        title: 'Note',
+      });
+      expect(res).toBe('/tmp/note.pdf');
     });
   });
 

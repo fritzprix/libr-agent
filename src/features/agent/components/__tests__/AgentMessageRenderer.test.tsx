@@ -16,6 +16,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('@/lib/backend', () => ({
+  openPathWithDefaultApp: vi.fn(),
+}));
+
 vi.mock('@/lib/backend/workspace', () => ({
   readLocalFileAsBase64: vi.fn(),
 }));
@@ -283,7 +287,7 @@ describe('AgentMessageRenderer', () => {
 
   it('downloads file-backed images via the native media download command', async () => {
     vi.mocked(readLocalFileAsBase64).mockResolvedValue('dG9vbC1pbWFnZQ==');
-    downloadMediaFileMock.mockResolvedValue('File downloaded successfully');
+    downloadMediaFileMock.mockResolvedValue('/tmp/tool-output.png');
     const content: MCPContent[] = [
       {
         type: 'image',
@@ -308,12 +312,18 @@ describe('AgentMessageRenderer', () => {
       });
     });
     expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
-      'File downloaded successfully',
+      'agent.mediaRenderer.downloadSuccess',
+      expect.objectContaining({
+        description: 'tool-output.png',
+        action: expect.objectContaining({
+          label: 'agent.mediaRenderer.openFile',
+        }),
+      }),
     );
   });
 
   it('downloads inline data-url images through the native media download command', async () => {
-    downloadMediaFileMock.mockResolvedValue('File downloaded successfully');
+    downloadMediaFileMock.mockResolvedValue('/tmp/image.png');
     const content: MCPContent[] = [
       {
         type: 'image',

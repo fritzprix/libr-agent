@@ -137,7 +137,6 @@ export function ContentItemRenderer({
         <MarkdownText
           content={textItem.text}
           components={markdownComponents}
-          hideCopyButton={message?.role === 'tool'}
           isStreaming={Boolean(message?.isStreaming)}
         />
       );

@@ -2,10 +2,12 @@
 ///
 /// This module contains commands for downloading files and creating ZIP archives
 /// from the workspace.
+use crate::commands::markdown_pdf::build_markdown_pdf;
 use crate::commands::workspace_commands::resolve_workspace_scoped_file_path;
 use crate::services::FileExportService;
 use crate::session::get_session_manager;
 use base64::{engine::general_purpose, Engine as _};
+use std::path::Path;
 use tauri_plugin_dialog::DialogExt;
 
 fn infer_extension_from_mime_type(mime_type: &str) -> &str {
@@ -25,7 +27,6 @@ async fn save_bytes_via_dialog(
     app_handle: tauri::AppHandle,
     file_name: String,
     bytes: Vec<u8>,
-    success_message: String,
 ) -> Result<String, String> {
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
 
@@ -39,7 +40,7 @@ async fn save_bytes_via_dialog(
                     Ok(path_buf) => match std::fs::write(&path_buf, &bytes) {
                         Ok(_) => {
                             log::info!("File downloaded successfully to: {path_buf:?}");
-                            Ok(success_message.clone())
+                            Ok(path_buf.to_string_lossy().into_owned())
                         }
                         Err(e) => Err(format!("Failed to save file: {e}")),
                     },
@@ -52,7 +53,8 @@ async fn save_bytes_via_dialog(
             let _ = tx.send(save_result);
         });
 
-    match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+    // Save dialogs are user-paced; allow several minutes before timing out.
+    match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
         Ok(Ok(result)) => result,
         Ok(Err(_)) => Err("Internal communication error".to_string()),
         Err(_) => Err("Dialog timeout - please try again".to_string()),
@@ -60,13 +62,6 @@ async fn save_bytes_via_dialog(
 }
 
 /// Downloads a single file from the current session's workspace.
-///
-/// This command reads a specified file from the workspace, then opens a native
-/// "Save File" dialog for the user to choose a download location.
-///
-/// # Arguments
-/// * `app_handle` - The Tauri application handle.
-/// * `file_path` - The relative path of the file within the workspace to download.
 #[tauri::command]
 pub async fn download_workspace_file(
     app_handle: tauri::AppHandle,
@@ -74,26 +69,10 @@ pub async fn download_workspace_file(
     file_path: String,
 ) -> Result<String, String> {
     let exported_file = FileExportService::read_file_content(&session_id, &file_path).await?;
-    save_bytes_via_dialog(
-        app_handle,
-        exported_file.filename,
-        exported_file.content,
-        "File downloaded successfully".to_string(),
-    )
-    .await
+    save_bytes_via_dialog(app_handle, exported_file.filename, exported_file.content).await
 }
 
 /// Exports a selection of workspace files as a single ZIP archive and prompts for download.
-///
-/// This command creates a temporary ZIP file, adds the specified workspace files to it
-/// while preserving their directory structure, and then uses a "Save File" dialog to
-/// allow the user to download the archive.
-///
-/// # Arguments
-/// * `app_handle` - The Tauri application handle.
-/// * `session_id` - The ID of the session to export from.
-/// * `files` - A vector of relative file paths within the workspace to include in the ZIP.
-/// * `package_name` - A base name to use for the generated ZIP file.
 #[tauri::command]
 pub async fn export_and_download_zip(
     app_handle: tauri::AppHandle,
@@ -103,14 +82,7 @@ pub async fn export_and_download_zip(
 ) -> Result<String, String> {
     let exported_file =
         FileExportService::create_zip_export(&session_id, files, &package_name).await?;
-    let processed_files_count = exported_file.file_count.unwrap_or(0);
-    save_bytes_via_dialog(
-        app_handle,
-        exported_file.filename,
-        exported_file.content,
-        format!("ZIP file with {processed_files_count} files downloaded successfully"),
-    )
-    .await
+    save_bytes_via_dialog(app_handle, exported_file.filename, exported_file.content).await
 }
 
 #[tauri::command]
@@ -169,11 +141,69 @@ pub async fn download_media_file(
         )
     });
 
-    save_bytes_via_dialog(
-        app_handle,
-        resolved_file_name,
-        bytes,
-        "File downloaded successfully".to_string(),
-    )
-    .await
+    save_bytes_via_dialog(app_handle, resolved_file_name, bytes).await
+}
+
+/// Saves arbitrary binary bytes via the native Save File dialog.
+#[tauri::command]
+pub async fn download_binary_file(
+    app_handle: tauri::AppHandle,
+    file_name: String,
+    data_base64: String,
+) -> Result<String, String> {
+    if file_name.trim().is_empty() {
+        return Err("fileName is required".to_string());
+    }
+
+    let bytes = general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|e| format!("Invalid base64 payload: {e}"))?;
+
+    save_bytes_via_dialog(app_handle, file_name, bytes).await
+}
+
+/// Saves UTF-8 text content via the native Save File dialog.
+#[tauri::command]
+pub async fn download_text_file(
+    app_handle: tauri::AppHandle,
+    file_name: String,
+    content: String,
+) -> Result<String, String> {
+    if file_name.trim().is_empty() {
+        return Err("fileName is required".to_string());
+    }
+
+    save_bytes_via_dialog(app_handle, file_name, content.into_bytes()).await
+}
+
+/// Renders Markdown to PDF via `markdown2pdf` (github theme) and saves via dialog.
+#[tauri::command]
+pub async fn download_text_pdf(
+    app_handle: tauri::AppHandle,
+    file_name: String,
+    content: String,
+    title: Option<String>,
+) -> Result<String, String> {
+    if file_name.trim().is_empty() {
+        return Err("fileName is required".to_string());
+    }
+
+    // Title is unused — export is body-only Markdown (no role/document chrome).
+    let _ = title;
+
+    let bytes = tokio::task::spawn_blocking(move || build_markdown_pdf(&content))
+        .await
+        .map_err(|e| format!("PDF generation task failed: {e}"))??;
+
+    let resolved_name = if Path::new(&file_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+    {
+        file_name
+    } else {
+        format!("{file_name}.pdf")
+    };
+
+    save_bytes_via_dialog(app_handle, resolved_name, bytes).await
 }
