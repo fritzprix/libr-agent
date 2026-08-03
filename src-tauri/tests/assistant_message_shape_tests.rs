@@ -52,7 +52,6 @@ fn whitespace_text_with_thinking_is_still_thinking_only() {
             },
             MCPContent::Text {
                 text: "   \n".to_string(),
-                is_error: None,
             },
         ],
         Some("internal reasoning"),
@@ -71,7 +70,6 @@ fn text_output_with_thinking_is_not_thinking_only() {
             },
             MCPContent::Text {
                 text: "Here is the answer.".to_string(),
-                is_error: None,
             },
         ],
         Some("internal reasoning"),

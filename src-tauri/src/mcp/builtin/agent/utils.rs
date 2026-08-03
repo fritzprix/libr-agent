@@ -559,10 +559,7 @@ pub async fn handle_wait_timeout_result(
                 }
 
                 Err(Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text,
-                        is_error: Some(false),
-                    }]),
+                    content: Some(vec![MCPContent::Text { text }]),
                     structured_content: Some(Value::Object(data)),
                     is_error: Some(false),
                 }))

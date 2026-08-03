@@ -36,20 +36,28 @@ describe('tool-call-utils', () => {
       expect(hasToolCallError(message)).toBe(true);
     });
 
-    it('should return true if toolResult.content contains an item with isError: true', () => {
+    it('should return true if metadata.toolError is true', () => {
       const message = createTestMessage({
-        content: [
-          { type: 'text', text: 'Some text' },
-          { type: 'text', text: 'Error', isError: true },
-        ],
+        content: [{ type: 'text', text: 'failed' }],
+        metadata: { toolError: true },
       });
       expect(hasToolCallError(message)).toBe(true);
     });
 
-    it('should return false if neither error property nor error content exists', () => {
+    it('should return false if neither error property nor toolError metadata exists', () => {
       const message = createTestMessage({
         content: [{ type: 'text', text: 'Success' }],
       });
+      expect(hasToolCallError(message)).toBe(false);
+    });
+
+    it('should ignore legacy content-item isError without metadata.toolError', () => {
+      const message = createTestMessage({
+        content: [
+          { type: 'text', text: 'Error' },
+        ],
+      });
+      // Extra unknown props on content are not the SSOT anymore.
       expect(hasToolCallError(message)).toBe(false);
     });
 

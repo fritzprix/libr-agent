@@ -173,10 +173,7 @@ impl Message {
             id: uuid::Uuid::new_v4().to_string(),
             session_id,
             role: "user".to_string(),
-            content: vec![MCPContent::Text {
-                text,
-                is_error: None,
-            }],
+            content: vec![MCPContent::Text { text }],
             tool_calls: None,
             tool_call_id: None,
             is_streaming: None,
@@ -200,10 +197,7 @@ impl Message {
             id: format!("compact-summary-{}", session_id),
             session_id: session_id.to_string(),
             role: "assistant".to_string(),
-            content: vec![MCPContent::Text {
-                text,
-                is_error: None,
-            }],
+            content: vec![MCPContent::Text { text }],
             tool_calls: None,
             tool_call_id: None,
             is_streaming: None,

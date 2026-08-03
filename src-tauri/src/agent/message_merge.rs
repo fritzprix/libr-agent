@@ -40,7 +40,6 @@ fn flush_pending_text(merged_contents: &mut Vec<MCPContent>, pending_text_parts:
     let combined_text = pending_text_parts.join(USER_MESSAGE_MERGE_SEPARATOR);
     merged_contents.push(MCPContent::Text {
         text: combined_text,
-        is_error: None,
     });
     pending_text_parts.clear();
 }

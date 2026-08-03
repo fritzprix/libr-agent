@@ -271,7 +271,6 @@ pub fn batch_tool_calls_in_messages(
                             batch_index + 1,
                             total_batches
                         ),
-                        is_error: None,
                     }];
                     batch_msg.thinking_signature = None;
                 }
@@ -563,12 +562,11 @@ fn truncate_message_for_context_fit(message: &Message, keep_ratio: f64) -> Optio
         .content
         .iter()
         .map(|part| match part {
-            crate::mcp::types::MCPContent::Text { text, is_error } => {
+            crate::mcp::types::MCPContent::Text { text } => {
                 if let Some(truncated_text) = truncate_text_middle(text, keep_ratio) {
                     changed = true;
                     crate::mcp::types::MCPContent::Text {
                         text: truncated_text,
-                        is_error: *is_error,
                     }
                 } else {
                     part.clone()
@@ -640,7 +638,6 @@ fn prepend_pinned_message(pinned_msg: Message, mut selected_msgs: Vec<Message>) 
     if pinned_msg.role == "user" && selected_msgs[0].role == "user" {
         let separator = crate::mcp::types::MCPContent::Text {
             text: "\n\n---\n\n(Merging context...)\n\n".to_string(),
-            is_error: None,
         };
 
         let mut merged_msg = pinned_msg.clone();

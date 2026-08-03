@@ -17,13 +17,23 @@ fn test_message(
     text: &str,
     is_error: Option<bool>,
 ) -> Message {
+    let metadata = match (metadata, is_error) {
+        (Some(mut value), Some(true)) => {
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert("toolError".to_string(), serde_json::Value::Bool(true));
+            }
+            Some(value)
+        }
+        (None, Some(true)) => Some(serde_json::json!({ "toolError": true })),
+        (other, _) => other,
+    };
+
     Message {
         id: id.to_string(),
         session_id: "session-test".to_string(),
         role: role.to_string(),
         content: vec![MCPContent::Text {
             text: text.to_string(),
-            is_error,
         }],
         tool_calls,
         tool_call_id: tool_call_id.map(str::to_string),

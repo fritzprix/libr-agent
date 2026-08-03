@@ -149,7 +149,6 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
                     role: "user".to_string(),
                     content: vec![MCPContent::Text {
                         text: "Need batch knowledge extraction from the daily history.".to_string(),
-                        is_error: None,
                     }],
                     tool_calls: None,
                     tool_call_id: None,
@@ -178,7 +177,6 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
                     content: vec![MCPContent::Text {
                         text: "Knowledge extraction summary: user wants persistent history search."
                             .to_string(),
-                        is_error: None,
                     }],
                     tool_calls: None,
                     tool_call_id: None,
@@ -206,7 +204,6 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
                     role: "assistant".to_string(),
                     content: vec![MCPContent::Text {
                         text: "Unrelated beta session content.".to_string(),
-                        is_error: None,
                     }],
                     tool_calls: None,
                     tool_call_id: None,
@@ -235,7 +232,6 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
                     role: "assistant".to_string(),
                     content: vec![MCPContent::Text {
                         text: unicode_heavy_text,
-                        is_error: None,
                     }],
                     tool_calls: None,
                     tool_call_id: None,
@@ -264,7 +260,6 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
                     role: "tool".to_string(),
                     content: vec![MCPContent::Text {
                         text: large_text,
-                        is_error: None,
                     }],
                     tool_calls: None,
                     tool_call_id: None,

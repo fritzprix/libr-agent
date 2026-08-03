@@ -300,7 +300,6 @@ pub async fn handle_see_content(
         content: Some(vec![
             MCPContent::Text {
                 text: format!("✓ Image loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
-                is_error: None,
             },
             MCPContent::Image {
                 data: Some(data),
@@ -404,7 +403,6 @@ pub async fn handle_listen_content(
         content: Some(vec![
             MCPContent::Text {
                 text: format!("✓ Audio loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
-                is_error: None,
             },
             MCPContent::Audio {
                 data: Some(data),

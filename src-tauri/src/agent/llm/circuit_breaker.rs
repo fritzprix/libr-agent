@@ -58,15 +58,7 @@ fn is_tool_error_message(message: &Message) -> bool {
         return true;
     }
 
-    message.content.iter().any(|content| {
-        matches!(
-            content,
-            crate::mcp::types::MCPContent::Text {
-                is_error: Some(true),
-                ..
-            }
-        )
-    })
+    false
 }
 
 /// Canonicalize tool arguments so key-order differences do not evade signatures.

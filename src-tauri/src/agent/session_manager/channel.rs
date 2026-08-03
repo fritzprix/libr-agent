@@ -75,10 +75,7 @@ fn build_channel_message(
         id: uuid::Uuid::new_v4().to_string(),
         session_id: session_id.to_string(),
         role: "user".to_string(),
-        content: vec![crate::mcp::types::MCPContent::Text {
-            text,
-            is_error: None,
-        }],
+        content: vec![crate::mcp::types::MCPContent::Text { text }],
         tool_calls: None,
         tool_call_id: None,
         is_streaming: None,

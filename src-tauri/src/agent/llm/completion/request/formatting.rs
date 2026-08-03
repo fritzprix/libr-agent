@@ -26,10 +26,7 @@ pub(crate) async fn resolve_message_references(
                     // Only process parts that contain @ references
                     if text.contains('@') {
                         let resolved = registry.preprocess_message_text(text).await;
-                        new_content.push(MCPContent::Text {
-                            text: resolved,
-                            is_error: None,
-                        });
+                        new_content.push(MCPContent::Text { text: resolved });
                     } else {
                         new_content.push(part);
                     }

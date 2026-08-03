@@ -155,10 +155,7 @@ pub(super) fn build_compaction_instruction_message(
         id: format!("compaction-instruction-{}", created_at),
         session_id: session_id.to_string(),
         role: "user".to_string(),
-        content: vec![MCPContent::Text {
-            text: instruction,
-            is_error: None,
-        }],
+        content: vec![MCPContent::Text { text: instruction }],
         tool_calls: None,
         tool_call_id: None,
         is_streaming: None,

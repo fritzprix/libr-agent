@@ -14,7 +14,7 @@ fn test_error_guidance_formatting() {
     assert!(result.is_error == Some(true));
 
     if let Some(content) = result.content {
-        if let Some(MCPContent::Text { text, .. }) = content.first() {
+        if let Some(MCPContent::Text { text }) = content.first() {
             assert!(text.contains("✗"));
             assert!(text.contains("💡 Suggested Recovery:"));
             assert!(text.contains("Session 'abc123' not found"));
@@ -36,8 +36,7 @@ fn test_internal_error_guidance_is_informational() {
     assert_eq!(result.is_error, Some(false));
 
     if let Some(content) = result.content {
-        if let Some(MCPContent::Text { text, is_error }) = content.first() {
-            assert_eq!(*is_error, None);
+        if let Some(MCPContent::Text { text }) = content.first() {
             assert!(text.contains("Notice:"));
             assert!(text.contains("💡 Optional Guidance:"));
         }
@@ -131,7 +130,7 @@ fn test_timeout_guided_error_builder_is_informational() {
     assert_eq!(result.is_error, Some(false));
 
     let content = result.content.expect("Expected MCPResult.content");
-    let MCPContent::Text { text, is_error } = content
+    let MCPContent::Text { text } = content
         .first()
         .expect("Expected at least one content item")
         .clone()
@@ -139,7 +138,6 @@ fn test_timeout_guided_error_builder_is_informational() {
         panic!("Expected Text content");
     };
 
-    assert_eq!(is_error, None);
     assert!(text.contains("Notice:"));
     assert!(text.contains("💡 Optional Guidance:"));
 }

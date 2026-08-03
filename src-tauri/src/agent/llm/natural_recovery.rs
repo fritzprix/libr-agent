@@ -73,7 +73,6 @@ pub fn loop_prevention_tool_result(guidance: &str) -> ToolExecutionResult {
         is_error: true,
         mcp_content: Some(vec![MCPContent::Text {
             text: guidance.to_string(),
-            is_error: Some(true),
         }]),
     }
 }
