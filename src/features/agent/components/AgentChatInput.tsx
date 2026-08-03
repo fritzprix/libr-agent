@@ -28,7 +28,7 @@ import {
   type DragAndDropPayload,
 } from '@/context/DnDContext';
 import { useScopedSkills } from '../hooks/useScopedSkills';
-import { useAgentTools } from '@/hooks/use-agent-tools';
+import { useSessionAgentTools } from '../hooks/useSessionAgentTools';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from '../lib/attachment-picker';
@@ -48,12 +48,12 @@ interface AgentChatInputProps {
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
-  const { session, messages, executionMode } = useAgentSessionState();
+  const { session, messages, executionMode, isProxyReady } =
+    useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
   const {
     submit,
     isSessionLoading,
-    isProxyReady,
     workflowStatus,
     cancel,
     resume,
@@ -73,7 +73,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     assistantId: session?.assistant?.id,
     sessionId: session?.id,
   });
-  const { availableTools: tools } = useAgentTools(session?.id);
+  const { availableTools: tools } = useSessionAgentTools();
 
   const {
     stage,
@@ -128,6 +128,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     clearPendingFiles,
     refetchSessionFiles,
     hasPersistedMessages: messages.length > 0,
+    isProxyReady,
     onSubmitted: refreshScopedSkills,
     onClearSession: clearSessionHistory,
     onExecutionModeChange: applyExecutionMode,
@@ -178,11 +179,15 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     }
     if (isAttachmentLoading) return t('agent.input.placeholderUploading');
 
+    if (!isProxyReady) {
+      return t('agent.input.placeholderWaitingMcp');
+    }
+
     if (isBusy) {
       return t('agent.input.placeholderBusy');
     }
     return t('agent.input.placeholderDefault');
-  }, [dragState, isBusy, isAttachmentLoading, t]);
+  }, [dragState, isBusy, isAttachmentLoading, isProxyReady, t]);
 
   useTextareaAutosize({
     textareaRef,

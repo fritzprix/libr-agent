@@ -1,8 +1,9 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
+use super::proxy_config::resolve_startup_timeout_seconds;
 use super::runtime_updates::{
-    emit_runtime_state, replace_runtime_state_store, update_runtime_state_store,
-    RuntimeStateUpdateResult,
+    apply_discovery_timeout_finalize, emit_runtime_state, replace_runtime_state_store,
+    update_runtime_state_store, RuntimeStateUpdateResult,
 };
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeState;
@@ -15,6 +16,19 @@ pub enum ProxyReadinessState {
     MissingProxy,
     Ready,
     AwaitSignal,
+}
+
+/// Per-session readiness watch + optional app handle for timeout finalize emits.
+#[derive(Clone)]
+pub struct ProxyReadinessEntry {
+    pub ready_tx: Arc<tokio::sync::watch::Sender<bool>>,
+    pub app_handle: Option<AppHandle>,
+}
+
+enum WaitOutcome {
+    Ready,
+    WatchError(String),
+    TimedOut,
 }
 
 pub fn decide_proxy_readiness_state(
@@ -61,6 +75,11 @@ impl MCPServiceProxyManager {
             .get(session_id)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Effective MCP discovery / soft-wait timeout (settings or default 30s).
+    pub async fn startup_timeout_secs(&self) -> u64 {
+        resolve_startup_timeout_seconds(&self.config).await
     }
 
     pub(super) async fn set_runtime_state(
@@ -175,26 +194,110 @@ impl MCPServiceProxyManager {
 
         let mut rx = readiness_signal
             .expect("readiness signal must exist when state requires waiting")
+            .ready_tx
             .subscribe();
 
         if *rx.borrow() {
             return Ok(()); // Already signaled true
         }
 
-        tokio::time::timeout(
+        // Convert away from `watch::Ref` before any further `.await` — that guard
+        // is !Send and must not be held across awaits inside tokio::spawn tasks.
+        let wait_outcome = match tokio::time::timeout(
             std::time::Duration::from_secs(timeout_secs),
             rx.wait_for(|v| *v),
         )
         .await
-        .map_err(|_| {
-            format!(
-                "Proxy tool loading timed out after {}s for session: {}",
-                timeout_secs, session_id
-            )
-        })?
-        .map_err(|e| format!("Proxy readiness watch error: {}", e))?;
+        {
+            Ok(Ok(ready)) => {
+                drop(ready);
+                WaitOutcome::Ready
+            }
+            Ok(Err(e)) => WaitOutcome::WatchError(e.to_string()),
+            Err(_) => WaitOutcome::TimedOut,
+        };
 
-        Ok(())
+        match wait_outcome {
+            WaitOutcome::Ready => Ok(()),
+            WaitOutcome::WatchError(e) => {
+                // Discovery may still be waiting on a slow/failed stdio server while HTTP
+                // (and builtin) tools are already usable. Finalize Session Ready (TimedOut
+                // pending servers) instead of only clearing the wait map.
+                if self.get_proxy(session_id).await.is_some() {
+                    log::warn!(
+                        "Proxy readiness watch failed for session {}: {}; finalizing with currently available tools",
+                        session_id,
+                        e
+                    );
+                    self.finalize_discovery_for_wait_timeout(
+                        session_id,
+                        &format!("Proxy readiness watch failed: {e}"),
+                    )
+                    .await;
+                    return Ok(());
+                }
+                Err(format!("Proxy readiness watch error: {}", e))
+            }
+            WaitOutcome::TimedOut => {
+                if self.get_proxy(session_id).await.is_some() {
+                    log::warn!(
+                        "Proxy tool loading timed out after {}s for session: {}; finalizing with currently available tools",
+                        timeout_secs,
+                        session_id
+                    );
+                    self.finalize_discovery_for_wait_timeout(
+                        session_id,
+                        &format!(
+                            "Tool discovery timed out after {timeout_secs}s waiting for proxy readiness"
+                        ),
+                    )
+                    .await;
+                    return Ok(());
+                }
+                Err(format!(
+                    "Proxy tool loading timed out after {}s for session: {}",
+                    timeout_secs, session_id
+                ))
+            }
+        }
+    }
+
+    /// Mark pending MCP servers TimedOut, flip Session Ready, wake waiters.
+    /// Idempotent when initialization already left `pending`.
+    pub(super) async fn finalize_discovery_for_wait_timeout(&self, session_id: &str, reason: &str) {
+        let entry = {
+            let map = self.proxy_readiness.read().await;
+            map.get(session_id).cloned()
+        };
+        let app_handle = entry.as_ref().and_then(|e| e.app_handle.clone());
+
+        let update_result = update_runtime_state_store(
+            &self.runtime_states,
+            session_id,
+            app_handle.as_ref(),
+            |state| {
+                let applied = apply_discovery_timeout_finalize(state, reason);
+                // Idempotent TimedOut skip must still open Session Ready for waiters
+                // (e.g. empty external set already Success but ready was cleared).
+                if !applied && state.proxy.exists {
+                    state.proxy.ready = true;
+                }
+            },
+        )
+        .await;
+
+        if let Some(entry) = entry {
+            entry.ready_tx.send_replace(true);
+        }
+        self.proxy_readiness.write().await.remove(session_id);
+
+        if update_result.changed {
+            log::info!(
+                "Finalized MCP discovery on wait timeout for session {} (emitted={})",
+                session_id,
+                update_result.emitted
+            );
+        }
     }
 
     /// Call a tool via the appropriate session proxy
@@ -293,7 +396,8 @@ impl MCPServiceProxyManager {
         };
 
         if !is_builtin {
-            self.wait_until_proxy_ready(session_id, 30)
+            let timeout_secs = self.startup_timeout_secs().await;
+            self.wait_until_proxy_ready(session_id, timeout_secs)
                 .await
                 .map_err(|e| format!("Proxy not ready for external tool '{}': {}", tool_name, e))?;
         }

@@ -43,6 +43,8 @@ pub enum SessionRuntimeServerStatus {
     DiscoveringTools,
     Ready,
     Failed,
+    /// Discovery deadline or soft wait timed out before this server finished.
+    TimedOut,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -206,6 +208,41 @@ impl SessionRuntimeState {
         }
     }
 
+    pub fn is_terminal_server_status(status: &SessionRuntimeServerStatus) -> bool {
+        matches!(
+            status,
+            SessionRuntimeServerStatus::Ready
+                | SessionRuntimeServerStatus::Failed
+                | SessionRuntimeServerStatus::TimedOut
+        )
+    }
+
+    pub fn is_unsuccessful_terminal_status(status: &SessionRuntimeServerStatus) -> bool {
+        matches!(
+            status,
+            SessionRuntimeServerStatus::Failed | SessionRuntimeServerStatus::TimedOut
+        )
+    }
+
+    /// Mark still-pending servers as timed out and recompute Session Ready.
+    /// Idempotent when initialization has already left `pending`.
+    pub fn finalize_discovery_timeout(&mut self, reason: impl Into<String>) -> bool {
+        if self.initialization.result != SessionRuntimeInitResult::Pending {
+            return false;
+        }
+
+        let reason = reason.into();
+        for server in &mut self.servers {
+            if !Self::is_terminal_server_status(&server.status) {
+                server.status = SessionRuntimeServerStatus::TimedOut;
+                server.error = Some(reason.clone());
+            }
+        }
+
+        self.recompute_summary();
+        true
+    }
+
     pub fn recompute_summary(&mut self) {
         let total_servers = self.servers.len();
         let ready_servers = self
@@ -213,10 +250,10 @@ impl SessionRuntimeState {
             .iter()
             .filter(|server| server.status == SessionRuntimeServerStatus::Ready)
             .count();
-        let failed_servers = self
+        let unsuccessful_servers = self
             .servers
             .iter()
-            .filter(|server| server.status == SessionRuntimeServerStatus::Failed)
+            .filter(|server| Self::is_unsuccessful_terminal_status(&server.status))
             .count();
 
         if self.proxy.mode == SessionRuntimeProxyMode::None {
@@ -242,18 +279,18 @@ impl SessionRuntimeState {
             return;
         }
 
-        if failed_servers > 0 && ready_servers > 0 {
+        if unsuccessful_servers > 0 && ready_servers > 0 {
             self.phase = SessionRuntimePhase::Degraded;
             self.proxy.ready = true;
             self.initialization.result = SessionRuntimeInitResult::Partial;
             self.initialization.error = Some(format!(
-                "{} of {} external servers failed during initialization",
-                failed_servers, total_servers
+                "{} of {} external servers failed or timed out during initialization",
+                unsuccessful_servers, total_servers
             ));
             return;
         }
 
-        if failed_servers == total_servers {
+        if unsuccessful_servers == total_servers {
             self.phase = SessionRuntimePhase::Failed;
             // Builtin tools remain usable when the proxy exists; external MCP
             // failure must not permanently block chat/send.
@@ -263,7 +300,12 @@ impl SessionRuntimeState {
                 .servers
                 .iter()
                 .find_map(|server| server.error.clone())
-                .or_else(|| Some("All external servers failed during initialization".to_string()));
+                .or_else(|| {
+                    Some(
+                        "All external servers failed or timed out during initialization"
+                            .to_string(),
+                    )
+                });
             return;
         }
 

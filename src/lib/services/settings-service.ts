@@ -164,7 +164,7 @@ export const DEFAULT_SETTING: Settings = {
     webActionTimeoutSeconds: 30,
     httpServerPort: 3030,
     httpServerExpose: false,
-    mcpServerStartupTimeoutSeconds: 60,
+    mcpServerStartupTimeoutSeconds: 30,
     mcpToolTimeoutSeconds: 0,
     searchIndexFrequencyMinutes: 5,
     scheduledTaskMinimumIntervalMinutes: 0,

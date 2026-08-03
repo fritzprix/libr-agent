@@ -99,6 +99,7 @@ async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id:
 async fn start_http_servers_in_parallel(
     http_manager: &HttpSessionManager,
     http_configs: &HashMap<String, crate::mcp::types::MCPServerConfig>,
+    startup_timeout: Duration,
 ) -> Vec<HttpStartupResult> {
     let mut tasks: JoinSet<HttpStartupResult> = JoinSet::new();
 
@@ -109,10 +110,20 @@ async fn start_http_servers_in_parallel(
         tasks.spawn(async move {
             let panic_server_name = server_name.clone();
             let outcome = match AssertUnwindSafe(async move {
-                manager
-                    .start_server(&server_name, config)
-                    .await
-                    .map_err(|error| error.to_string())
+                match tokio::time::timeout(
+                    startup_timeout,
+                    manager.start_server(&server_name, config),
+                )
+                .await
+                {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(error)) => Err(error.to_string()),
+                    Err(_) => Err(format!(
+                        "HTTP server '{}' startup timed out after {}s",
+                        server_name,
+                        startup_timeout.as_secs()
+                    )),
+                }
             })
             .catch_unwind()
             .await
@@ -398,8 +409,12 @@ impl MCPServiceProxyManager {
 
         if !loaded.http_configs.is_empty() {
             let http_startup_start = Instant::now();
-            let http_startup_results =
-                start_http_servers_in_parallel(&http_manager, &loaded.http_configs).await;
+            let http_startup_results = start_http_servers_in_parallel(
+                &http_manager,
+                &loaded.http_configs,
+                tool_discovery_timeout,
+            )
+            .await;
             http_startup_ms = http_startup_start.elapsed().as_millis();
             let update_result = update_runtime_state_store(
                 &self.runtime_states,

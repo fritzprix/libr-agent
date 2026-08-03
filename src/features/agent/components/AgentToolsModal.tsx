@@ -10,8 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { useAgentTools } from '@/hooks/use-agent-tools';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { useSessionAgentTools } from '@/features/agent/hooks/useSessionAgentTools';
 import { Button } from '@/components/ui/button';
 import { parseToolName, isBuiltinTool } from '@/lib/tool-call-utils';
 import { useTranslation } from 'react-i18next';
@@ -31,9 +30,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
   onClose,
 }) => {
   const { t } = useTranslation();
-  const { session } = useAgentSessionState();
-
-  const { availableTools, isLoading, error } = useAgentTools(session?.id);
+  const { availableTools, isLoading, error } = useSessionAgentTools();
 
   const { builtinTools, mcpTools } = useMemo(() => {
     const builtin = availableTools.filter((t) => isBuiltinTool(t.name));

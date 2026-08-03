@@ -77,7 +77,6 @@ pub mod repeated_thinking_recovery_tests;
 pub mod request_layout_checkpoint_tests;
 pub mod resume_proxy_rehydration_tests;
 pub mod runtime_state_sequence_tests;
-pub mod runtime_state_summary_tests;
 pub mod scheduled_task_policy_tests;
 pub mod scheduled_task_session_callback_tests;
 pub mod scheduled_task_timezone_tests;

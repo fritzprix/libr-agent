@@ -51,6 +51,10 @@ vi.mock('@/context/AgentSessionContext', () => ({
       },
     },
     messages: [],
+    isProxyReady: mocks.isProxyReady,
+    runtimeState: {
+      servers: [],
+    },
   }),
   useAgentSessionActions: () => ({
     clearSessionHistory: mocks.clearSessionHistory,
@@ -62,7 +66,6 @@ vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
     submit: mocks.submit,
     isSessionLoading: mocks.isSessionLoading,
-    isProxyReady: mocks.isProxyReady,
     workflowStatus: mocks.workflowStatus,
     cancel: mocks.cancel,
     resume: mocks.resume,
@@ -90,9 +93,11 @@ vi.mock('@/features/agent/hooks/useScopedSkills', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-agent-tools', () => ({
-  useAgentTools: () => ({
+vi.mock('@/features/agent/hooks/useSessionAgentTools', () => ({
+  useSessionAgentTools: () => ({
     availableTools: [],
+    isLoading: false,
+    error: null,
   }),
 }));
 

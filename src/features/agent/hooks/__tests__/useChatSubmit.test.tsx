@@ -30,6 +30,12 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
     info: vi.fn(),
@@ -91,6 +97,61 @@ describe('useChatSubmit', () => {
 
     act(() => {
       result.current.setInput('x'.repeat(11));
+    });
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(mockState.toastError).not.toHaveBeenCalled();
+    expect(mockState.submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks non-command submit while proxy is not ready', async () => {
+    const { result } = renderHook(() =>
+      useChatSubmit({
+        session: { id: 'session-1' },
+        submit: mockState.submit,
+        pendingFiles: [],
+        commitPendingFiles: mockState.commitPendingFiles,
+        clearPendingFiles: mockState.clearPendingFiles,
+        refetchSessionFiles: mockState.refetchSessionFiles,
+        hasPersistedMessages: false,
+        isProxyReady: false,
+      }),
+    );
+
+    act(() => {
+      result.current.setInput('hello');
+    });
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(mockState.toastError).toHaveBeenCalledWith(
+      'agent.input.proxyNotReadyToast',
+    );
+    expect(mockState.submit).not.toHaveBeenCalled();
+    expect(result.current.input).toBe('hello');
+  });
+
+  it('allows submit once proxy is ready', async () => {
+    const { result } = renderHook(() =>
+      useChatSubmit({
+        session: { id: 'session-1' },
+        submit: mockState.submit,
+        pendingFiles: [],
+        commitPendingFiles: mockState.commitPendingFiles,
+        clearPendingFiles: mockState.clearPendingFiles,
+        refetchSessionFiles: mockState.refetchSessionFiles,
+        hasPersistedMessages: false,
+        isProxyReady: true,
+      }),
+    );
+
+    act(() => {
+      result.current.setInput('hello');
     });
 
     await act(async () => {

@@ -19,7 +19,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
-import { useAgentTools } from '@/hooks/use-agent-tools';
+import { useSessionAgentTools } from '@/features/agent/hooks/useSessionAgentTools';
 import { useLLMService } from '@/context/LLMServiceContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getLogger } from '@/lib/logger';
@@ -245,11 +245,12 @@ export function AgentChatStatusBar() {
   );
 
   // ✅ Single Source of Truth: Fetch filtered tools from Rust backend
+  // Session hook invalidates SWR when MCP discovery catches up (slow stdio).
   const {
     availableTools,
     isLoading: toolsLoading,
     error: toolsError,
-  } = useAgentTools(session?.id);
+  } = useSessionAgentTools();
 
   // Categorize tools by type
   const { builtinTools, externalTools } = useMemo(() => {
