@@ -1,10 +1,10 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
+use super::proxy_config::resolve_startup_timeout_seconds;
 use super::runtime_updates::{
     apply_discovery_timeout_finalize, emit_runtime_state, replace_runtime_state_store,
     update_runtime_state_store, RuntimeStateUpdateResult,
 };
-use super::proxy_config::resolve_startup_timeout_seconds;
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::mcp::builtin::service_id::BuiltinServiceId;
@@ -264,11 +264,7 @@ impl MCPServiceProxyManager {
 
     /// Mark pending MCP servers TimedOut, flip Session Ready, wake waiters.
     /// Idempotent when initialization already left `pending`.
-    pub(super) async fn finalize_discovery_for_wait_timeout(
-        &self,
-        session_id: &str,
-        reason: &str,
-    ) {
+    pub(super) async fn finalize_discovery_for_wait_timeout(&self, session_id: &str, reason: &str) {
         let entry = {
             let map = self.proxy_readiness.read().await;
             map.get(session_id).cloned()

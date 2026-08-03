@@ -817,9 +817,7 @@ async fn test_ready_signal_survives_zero_receivers() {
 /// (TimedOut pending servers) so UI/backend Ready stay aligned.
 #[tokio::test]
 async fn test_wait_proceeds_degraded_if_never_signaled() {
-    use crate::agent::runtime_state::{
-        SessionRuntimeServerStatus, SessionRuntimeTransport,
-    };
+    use crate::agent::runtime_state::{SessionRuntimeServerStatus, SessionRuntimeTransport};
 
     let harness = create_test_harness().await;
     let manager = &harness.manager;
@@ -876,8 +874,7 @@ async fn test_wait_proceeds_degraded_if_never_signaled() {
     );
     assert!(
         state.servers.iter().any(|server| {
-            server.name == "slow-stdio"
-                && server.status == SessionRuntimeServerStatus::TimedOut
+            server.name == "slow-stdio" && server.status == SessionRuntimeServerStatus::TimedOut
         }),
         "pending servers must be marked TimedOut on waiter finalize"
     );

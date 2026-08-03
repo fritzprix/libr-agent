@@ -45,13 +45,11 @@ function serverStatusLabel(
   }
 }
 
-function ServerStatusIcon({
-  server,
-}: {
-  server: SessionRuntimeServerState;
-}) {
+function ServerStatusIcon({ server }: { server: SessionRuntimeServerState }) {
   if (server.status === 'ready') {
-    return <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />;
+    return (
+      <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+    );
   }
   if (server.status === 'failed' || server.status === 'timed_out') {
     return <AlertCircle className="size-3.5 shrink-0 text-destructive" />;

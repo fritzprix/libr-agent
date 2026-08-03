@@ -301,7 +301,10 @@ impl SessionRuntimeState {
                 .iter()
                 .find_map(|server| server.error.clone())
                 .or_else(|| {
-                    Some("All external servers failed or timed out during initialization".to_string())
+                    Some(
+                        "All external servers failed or timed out during initialization"
+                            .to_string(),
+                    )
                 });
             return;
         }

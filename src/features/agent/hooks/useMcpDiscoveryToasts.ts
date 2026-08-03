@@ -99,8 +99,7 @@ export function useMcpDiscoveryToasts({
 
     if (initResult === 'failed' || phase === 'failed') {
       const hasPerServerFeedback = servers.some(
-        (server) =>
-          server.status === 'failed' || server.status === 'timed_out',
+        (server) => server.status === 'failed' || server.status === 'timed_out',
       );
       if (!hasPerServerFeedback) {
         toast.error(t('agent.statusBar.mcpResultFailed'), {

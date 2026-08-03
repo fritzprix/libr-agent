@@ -124,7 +124,9 @@ export function useChatSubmit({
       }
 
       if (!isProxyReady) {
-        logger.info('Submit ignored: proxy not ready (MCP discovery unfinished)');
+        logger.info(
+          'Submit ignored: proxy not ready (MCP discovery unfinished)',
+        );
         toast.error(t('agent.input.proxyNotReadyToast'));
         return;
       }
