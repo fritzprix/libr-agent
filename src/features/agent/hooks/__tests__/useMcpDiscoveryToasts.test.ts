@@ -127,4 +127,29 @@ describe('useMcpDiscoveryToasts', () => {
 
     expect(toast.error).not.toHaveBeenCalled();
   });
+
+  it('shows failed summary toast when no per-server feedback exists', () => {
+    renderHook(() =>
+      useMcpDiscoveryToasts({
+        hasSession: true,
+        isProxyReady: true,
+        phase: 'failed',
+        initResult: 'failed',
+        servers: [
+          {
+            name: 'configured-stdio',
+            transport: 'stdio',
+            status: 'ready',
+            toolCount: 0,
+          },
+        ],
+        sessionId: 's-fail-summary',
+      }),
+    );
+
+    expect(toast.error).toHaveBeenCalledWith(
+      'agent.statusBar.mcpResultFailed',
+      expect.objectContaining({ duration: 8000 }),
+    );
+  });
 });

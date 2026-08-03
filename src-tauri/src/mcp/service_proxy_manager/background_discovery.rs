@@ -569,12 +569,14 @@ pub(super) async fn spawn_background_tool_loading(
                         finish_background_discovery(
                             &context,
                             &ready_tx,
-                            stdio_server_count,
-                            http_server_count,
-                            total_start,
-                            stdio_ms,
-                            http_ms,
-                            false,
+                            DiscoveryFinishStats {
+                                stdio_server_count,
+                                http_server_count,
+                                total_start,
+                                stdio_ms,
+                                http_ms,
+                                already_finalized_by_deadline: false,
+                            },
                         )
                         .await;
                     }
@@ -635,12 +637,14 @@ pub(super) async fn spawn_background_tool_loading(
                         finish_background_discovery(
                             &context,
                             &ready_tx,
-                            stdio_server_count,
-                            http_server_count,
-                            total_start,
-                            stdio_ms,
-                            http_ms,
-                            true,
+                            DiscoveryFinishStats {
+                                stdio_server_count,
+                                http_server_count,
+                                total_start,
+                                stdio_ms,
+                                http_ms,
+                                already_finalized_by_deadline: true,
+                            },
                         )
                         .await;
                     }
@@ -657,20 +661,24 @@ pub(super) async fn spawn_background_tool_loading(
     });
 }
 
-async fn finish_background_discovery(
-    context: &DiscoveryContext,
-    ready_tx: &Arc<tokio::sync::watch::Sender<bool>>,
+struct DiscoveryFinishStats {
     stdio_server_count: usize,
     http_server_count: usize,
     total_start: Instant,
     stdio_ms: u128,
     http_ms: u128,
     already_finalized_by_deadline: bool,
+}
+
+async fn finish_background_discovery(
+    context: &DiscoveryContext,
+    ready_tx: &Arc<tokio::sync::watch::Sender<bool>>,
+    stats: DiscoveryFinishStats,
 ) {
     log::info!(
         "[bg] Tool loading complete for session: {} (deadline_finalize={})",
         context.session_id,
-        already_finalized_by_deadline
+        stats.already_finalized_by_deadline
     );
     // Use send_replace, not send: the initial watch receiver is dropped at
     // channel creation, and soft readiness waits may also drop before discovery
@@ -690,11 +698,11 @@ async fn finish_background_discovery(
 
     log_background_discovery_metrics(
         &context.session_id,
-        stdio_server_count,
-        http_server_count,
+        stats.stdio_server_count,
+        stats.http_server_count,
         context.runtime_state_emits.load(Ordering::Relaxed),
-        total_start.elapsed().as_millis(),
-        stdio_ms,
-        http_ms,
+        stats.total_start.elapsed().as_millis(),
+        stats.stdio_ms,
+        stats.http_ms,
     );
 }
