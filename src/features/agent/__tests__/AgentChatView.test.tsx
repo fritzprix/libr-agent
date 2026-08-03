@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -295,9 +295,27 @@ describe('AgentChatView', () => {
       runtimeState: {
         ...createBaseRuntimeState(),
         phase: 'initializing',
+        servers: [
+          {
+            name: 'arxiv',
+            transport: 'stdio',
+            status: 'connecting',
+            toolCount: 0,
+          },
+          {
+            name: 'exa',
+            transport: 'http',
+            status: 'discovering_tools',
+            toolCount: 0,
+          },
+        ],
+        initialization: {
+          result: 'pending',
+          currentStep: 'Loading MCP: arxiv, exa (0/2)',
+        },
       },
       initializationStep: {
-        step: 'Connecting to MCP server',
+        step: 'Loading MCP: arxiv, exa (0/2)',
         status: 'running' as const,
       },
     });
@@ -305,7 +323,104 @@ describe('AgentChatView', () => {
     render(<AgentChatView />);
 
     expect(screen.getByText('mock-messages')).toBeInTheDocument();
-    expect(screen.getByText('Connecting to MCP server')).toBeInTheDocument();
+    expect(
+      screen.getByText('Loading MCP: arxiv, exa (0/2)'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-server-status-list')).toBeInTheDocument();
+    expect(screen.getByText('arxiv')).toBeInTheDocument();
+    expect(screen.getByText('exa')).toBeInTheDocument();
+  });
+
+  it('shows a dismissible result banner after partial MCP discovery', () => {
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+      isProxyReady: true,
+      runtimeState: {
+        ...createBaseRuntimeState(),
+        phase: 'degraded',
+        proxy: {
+          exists: true,
+          mode: 'configured',
+          ready: true,
+        },
+        servers: [
+          {
+            name: 'arxiv',
+            transport: 'stdio',
+            status: 'failed',
+            toolCount: 0,
+            error: 'stdio spawn timed out',
+          },
+          {
+            name: 'exa',
+            transport: 'http',
+            status: 'ready',
+            toolCount: 4,
+          },
+        ],
+        initialization: {
+          result: 'partial',
+          currentStep: 'MCP partial: arxiv failed (1/2 ready)',
+          error: '1 of 2 MCP servers failed',
+        },
+      },
+    });
+
+    render(<AgentChatView />);
+
+    expect(screen.getByText('Some MCP servers failed')).toBeInTheDocument();
+    expect(screen.getByText('arxiv')).toBeInTheDocument();
+    expect(screen.getByText('Timed out')).toBeInTheDocument();
+    expect(screen.getByText('exa')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    expect(
+      screen.queryByText('Some MCP servers failed'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('auto-hides the success result banner after a short hold', () => {
+    vi.useFakeTimers();
+
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+      isProxyReady: true,
+      runtimeState: {
+        ...createBaseRuntimeState(),
+        phase: 'ready',
+        proxy: {
+          exists: true,
+          mode: 'configured',
+          ready: true,
+        },
+        servers: [
+          {
+            name: 'exa',
+            transport: 'http',
+            status: 'ready',
+            toolCount: 4,
+          },
+        ],
+        initialization: {
+          result: 'success',
+          currentStep: 'MCP ready: exa',
+        },
+      },
+    });
+
+    render(<AgentChatView />);
+
+    expect(screen.getByText('MCP servers ready')).toBeInTheDocument();
+    expect(screen.getByText('exa')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+
+    expect(screen.queryByText('MCP servers ready')).not.toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 
   it('renders both desktop side panels at the same time', () => {

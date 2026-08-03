@@ -3,6 +3,7 @@ import { useAgentSessionListActions } from './AgentSessionListContext';
 import { useAgentSessionState as useAgentSessionStateLogic } from './agent-session/useAgentSessionState';
 import { useAgentSessionEvents } from './agent-session/useAgentSessionEvents';
 import { useAgentSessionActionsLogic } from './agent-session/useAgentSessionActions';
+import { useMcpServerFailureToasts } from './agent-session/useMcpServerFailureToasts';
 import { useLLMService } from './LLMServiceContext';
 import type {
   AgentSessionStateContextValue,
@@ -56,6 +57,8 @@ export function AgentSessionProvider({
     persistViewedAt,
     clearStreamingMessage,
   });
+
+  useMcpServerFailureToasts(sessionId, stateProps.state.runtimeState);
 
   const customActions = useAgentSessionActionsLogic(sessionId, stateProps, {
     acknowledgeSessionAttention,

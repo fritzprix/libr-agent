@@ -46,6 +46,7 @@ import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
 import { getLogger } from '@/lib/logger';
 import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
+import { useMcpDiscoveryBanner } from './hooks/useMcpDiscoveryBanner';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -522,6 +523,105 @@ function AgentChatInner() {
   );
 }
 
+function AgentChatViewContent({
+  optionalSessionState,
+  routeSessionId,
+}: {
+  optionalSessionState: NonNullable<
+    ReturnType<typeof useOptionalAgentSessionState>
+  >;
+  routeSessionId?: string;
+}) {
+  const { t } = useTranslation();
+  const { session, isSessionLoading } = optionalSessionState;
+  const runtimeState = optionalSessionState.runtimeState;
+  const attachmentSessionId = session?.id ?? routeSessionId ?? '';
+  const isStartingSession =
+    session?.status === 'idle' && session?.id === routeSessionId;
+  const isDockerProvisioning =
+    session?.status === 'provisioning' ||
+    runtimeState.initialization.docker !== undefined;
+  const sessionLoadingLabel = getSessionLoadingLabel(
+    isStartingSession,
+    isDockerProvisioning,
+    session?.dockerConfig?.image ??
+      (session?.dockerConfig?.attachContainer
+        ? `attach:${session.dockerConfig.attachContainer}`
+        : undefined) ??
+      runtimeState.initialization.docker?.image,
+    t,
+  );
+  const initializationStep =
+    runtimeState.initialization.docker?.step ??
+    runtimeState.initialization.currentStep ??
+    optionalSessionState.initializationStep?.step;
+  const initializationError =
+    runtimeState.phase === 'failed'
+      ? (runtimeState.initialization.docker?.error ??
+        runtimeState.initialization.error ??
+        null)
+      : null;
+  const isProxyReady = optionalSessionState.isProxyReady;
+  const shouldShowBlockingLoader =
+    (!session || runtimeState.phase === 'failed') && isSessionLoading;
+  const { bannerKind, dismissResultBanner } = useMcpDiscoveryBanner({
+    hasSession: Boolean(session),
+    isProxyReady,
+    phase: runtimeState.phase,
+    initResult: runtimeState.initialization.result,
+    servers: runtimeState.servers,
+    sessionId: session?.id,
+  });
+
+  return (
+    <AgentResourceAttachmentProvider sessionId={attachmentSessionId}>
+      {shouldShowBlockingLoader ? (
+        <SessionLoadingOverlay
+          label={sessionLoadingLabel}
+          initializationStep={initializationStep}
+          initializationError={initializationError}
+          servers={runtimeState.servers}
+          initResult={runtimeState.initialization.result}
+          variant="blocking"
+        />
+      ) : !session ? (
+        <div className="flex h-full items-center justify-center p-4">
+          <div className="text-destructive">
+            {t('agent.chat.sessionNotFoundOrFailed')}
+          </div>
+        </div>
+      ) : (
+        <div className="relative h-full">
+          <AgentChatProvider>
+            <AgentPlanningProvider>
+              <AgentWorkspaceProvider>
+                <AgentChatInner />
+              </AgentWorkspaceProvider>
+            </AgentPlanningProvider>
+          </AgentChatProvider>
+
+          {bannerKind ? (
+            <SessionLoadingOverlay
+              label={sessionLoadingLabel}
+              initializationStep={initializationStep}
+              initializationError={
+                bannerKind === 'result' ? initializationError : null
+              }
+              servers={runtimeState.servers}
+              initResult={runtimeState.initialization.result}
+              mode={bannerKind}
+              onDismiss={
+                bannerKind === 'result' ? dismissResultBanner : undefined
+              }
+              variant="banner"
+            />
+          ) : null}
+        </div>
+      )}
+    </AgentResourceAttachmentProvider>
+  );
+}
+
 export default function AgentChatView() {
   const { t } = useTranslation();
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
@@ -547,76 +647,10 @@ export default function AgentChatView() {
     );
   }
 
-  const { session, isSessionLoading } = optionalSessionState;
-  const attachmentSessionId = session?.id ?? routeSessionId ?? '';
-  const isStartingSession =
-    session?.status === 'idle' && session?.id === routeSessionId;
-  const isDockerProvisioning =
-    session?.status === 'provisioning' ||
-    optionalSessionState.runtimeState.initialization.docker !== undefined;
-  const sessionLoadingLabel = getSessionLoadingLabel(
-    isStartingSession,
-    isDockerProvisioning,
-    session?.dockerConfig?.image ??
-      (session?.dockerConfig?.attachContainer
-        ? `attach:${session.dockerConfig.attachContainer}`
-        : undefined) ??
-      optionalSessionState.runtimeState.initialization.docker?.image,
-    t,
-  );
-  const initializationStep =
-    optionalSessionState.runtimeState.initialization.docker?.step ??
-    optionalSessionState.initializationStep?.step;
-  const initializationError =
-    optionalSessionState.runtimeState.phase === 'failed'
-      ? (optionalSessionState.runtimeState.initialization.docker?.error ??
-        optionalSessionState.runtimeState.initialization.error ??
-        null)
-      : null;
-  const isProxyReady = optionalSessionState.isProxyReady;
-  const shouldShowBlockingLoader =
-    (!session || optionalSessionState.runtimeState.phase === 'failed') &&
-    isSessionLoading;
-  const shouldShowProxyLoadingBanner =
-    !!session &&
-    !isProxyReady &&
-    optionalSessionState.runtimeState.phase !== 'failed';
-
   return (
-    <AgentResourceAttachmentProvider sessionId={attachmentSessionId}>
-      {shouldShowBlockingLoader ? (
-        <SessionLoadingOverlay
-          label={sessionLoadingLabel}
-          initializationStep={initializationStep}
-          initializationError={initializationError}
-          variant="blocking"
-        />
-      ) : !session ? (
-        <div className="flex h-full items-center justify-center p-4">
-          <div className="text-destructive">
-            {t('agent.chat.sessionNotFoundOrFailed')}
-          </div>
-        </div>
-      ) : (
-        <div className="relative h-full">
-          <AgentChatProvider>
-            <AgentPlanningProvider>
-              <AgentWorkspaceProvider>
-                <AgentChatInner />
-              </AgentWorkspaceProvider>
-            </AgentPlanningProvider>
-          </AgentChatProvider>
-
-          {shouldShowProxyLoadingBanner && (
-            <SessionLoadingOverlay
-              label={sessionLoadingLabel}
-              initializationStep={initializationStep}
-              initializationError={initializationError}
-              variant="banner"
-            />
-          )}
-        </div>
-      )}
-    </AgentResourceAttachmentProvider>
+    <AgentChatViewContent
+      optionalSessionState={optionalSessionState}
+      routeSessionId={routeSessionId}
+    />
   );
 }

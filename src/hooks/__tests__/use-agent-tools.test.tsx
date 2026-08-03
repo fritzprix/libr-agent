@@ -1,11 +1,15 @@
 import { SWRConfig } from 'swr';
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useAgentTools } from '../use-agent-tools';
+import {
+  buildMcpToolsDiscoveryRevision,
+  useAgentTools,
+} from '../use-agent-tools';
 import { getAgentAvailableTools } from '@/lib/backend/agent-commands';
 import { validateMCPTools } from '@/lib/schemas/mcp-tool';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
 import type { MCPTool } from '@/lib/mcp/protocol/tool';
+import type { ReactNode } from 'react';
 
 // Mock dependencies
 vi.mock('@/lib/backend/agent-commands', () => ({
@@ -29,13 +33,60 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
+function createWrapper() {
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+        {children}
+      </SWRConfig>
+    );
+  };
+}
+
+describe('buildMcpToolsDiscoveryRevision', () => {
+  it('includes proxy readiness and sorted server fingerprints', () => {
+    expect(
+      buildMcpToolsDiscoveryRevision(
+        [
+          { name: 'arxiv', status: 'ready', toolCount: 5 },
+          { name: 'exa', status: 'ready', toolCount: 2 },
+        ],
+        true,
+      ),
+    ).toBe('ready:arxiv:ready:5|exa:ready:2');
+  });
+
+  it('changes when a slow stdio server becomes ready', () => {
+    const pending = buildMcpToolsDiscoveryRevision(
+      [
+        { name: 'arxiv', status: 'discovering', toolCount: 0 },
+        { name: 'exa', status: 'ready', toolCount: 2 },
+      ],
+      false,
+    );
+    const ready = buildMcpToolsDiscoveryRevision(
+      [
+        { name: 'arxiv', status: 'ready', toolCount: 5 },
+        { name: 'exa', status: 'ready', toolCount: 2 },
+      ],
+      true,
+    );
+
+    expect(pending).toBe('pending:arxiv:discovering:0|exa:ready:2');
+    expect(ready).toBe('ready:arxiv:ready:5|exa:ready:2');
+    expect(pending).not.toBe(ready);
+  });
+});
+
 describe('useAgentTools', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('should return initial state when sessionId is undefined', () => {
-    const { result } = renderHook(() => useAgentTools(undefined), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
+    const { result } = renderHook(() => useAgentTools(undefined), {
+      wrapper: createWrapper(),
+    });
 
     expect(result.current.availableTools).toEqual([]);
     expect(result.current.isLoading).toBe(false);
@@ -46,20 +97,33 @@ describe('useAgentTools', () => {
   it('should fetch and validate tools successfully', async () => {
     const mockSessionId = 'test-session-123';
     const mockBackendResponse: MCPTool[] = [
-      { name: 'tool1', description: 'test1', inputSchema: { type: 'object', properties: {} } },
-      { name: 'tool2', description: 'test2', inputSchema: { type: 'object', properties: {} } },
+      {
+        name: 'tool1',
+        description: 'test1',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'tool2',
+        description: 'test2',
+        inputSchema: { type: 'object', properties: {} },
+      },
     ];
     const mockValidatedTools: MCPTool[] = [
-      { name: 'tool1', description: 'test1', inputSchema: { type: 'object', properties: {} } },
+      {
+        name: 'tool1',
+        description: 'test1',
+        inputSchema: { type: 'object', properties: {} },
+      },
     ];
 
     vi.mocked(getAgentAvailableTools).mockResolvedValue(mockBackendResponse);
     vi.mocked(validateMCPTools).mockReturnValue(mockValidatedTools);
     vi.mocked(isBuiltinTool).mockReturnValue(false);
 
-    const { result } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
+    const { result } = renderHook(() => useAgentTools(mockSessionId), {
+      wrapper: createWrapper(),
+    });
 
-    // Initial state while fetching
     expect(result.current.isLoading).toBe(true);
     expect(result.current.error).toBeUndefined();
     expect(result.current.availableTools).toEqual([]);
@@ -74,13 +138,80 @@ describe('useAgentTools', () => {
     expect(result.current.error).toBeUndefined();
   });
 
+  it('should refetch when discovery revision advances after soft timeout', async () => {
+    const mockSessionId = 'test-session-race';
+    const partialTools: MCPTool[] = [
+      {
+        name: 'exa_search',
+        description: 'http only',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+    const fullTools: MCPTool[] = [
+      ...partialTools,
+      {
+        name: 'arxiv_search',
+        description: 'stdio arrived later',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    vi.mocked(getAgentAvailableTools)
+      .mockResolvedValueOnce(partialTools)
+      .mockResolvedValueOnce(fullTools);
+    vi.mocked(validateMCPTools)
+      .mockReturnValueOnce(partialTools)
+      .mockReturnValueOnce(fullTools);
+    vi.mocked(isBuiltinTool).mockReturnValue(false);
+
+    const pendingRevision = buildMcpToolsDiscoveryRevision(
+      [
+        { name: 'arxiv', status: 'discovering', toolCount: 0 },
+        { name: 'exa', status: 'ready', toolCount: 1 },
+      ],
+      false,
+    );
+    const readyRevision = buildMcpToolsDiscoveryRevision(
+      [
+        { name: 'arxiv', status: 'ready', toolCount: 1 },
+        { name: 'exa', status: 'ready', toolCount: 1 },
+      ],
+      true,
+    );
+
+    const { result, rerender } = renderHook(
+      ({ revision }) =>
+        useAgentTools(mockSessionId, { discoveryRevision: revision }),
+      {
+        wrapper: createWrapper(),
+        initialProps: { revision: pendingRevision },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.availableTools).toEqual(partialTools);
+    });
+    expect(getAgentAvailableTools).toHaveBeenCalledTimes(1);
+
+    rerender({ revision: readyRevision });
+
+    await waitFor(() => {
+      expect(result.current.availableTools).toEqual(fullTools);
+    });
+    expect(getAgentAvailableTools).toHaveBeenCalledTimes(2);
+  });
+
   it('should handle API errors', async () => {
     const mockSessionId = 'test-session-123';
     const errorMessage = 'Network error';
 
-    vi.mocked(getAgentAvailableTools).mockRejectedValue(new Error(errorMessage));
+    vi.mocked(getAgentAvailableTools).mockRejectedValue(
+      new Error(errorMessage),
+    );
 
-    const { result } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
+    const { result } = renderHook(() => useAgentTools(mockSessionId), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -96,7 +227,9 @@ describe('useAgentTools', () => {
 
     vi.mocked(getAgentAvailableTools).mockRejectedValue(errorMessage);
 
-    const { result } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
+    const { result } = renderHook(() => useAgentTools(mockSessionId), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -108,11 +241,15 @@ describe('useAgentTools', () => {
 
   it('should throw and handle error if response is not an array', async () => {
     const mockSessionId = 'test-session-123';
-    const invalidResponse = { name: 'tool1' }; // Not an array
+    const invalidResponse = { name: 'tool1' };
 
-    vi.mocked(getAgentAvailableTools).mockResolvedValue(invalidResponse as unknown as MCPTool[]);
+    vi.mocked(getAgentAvailableTools).mockResolvedValue(
+      invalidResponse as unknown as MCPTool[],
+    );
 
-    const { result } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
+    const { result } = renderHook(() => useAgentTools(mockSessionId), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -131,20 +268,19 @@ describe('useAgentTools', () => {
 
     vi.mocked(getAgentAvailableTools).mockReturnValue(promise);
 
-    const { result, unmount } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
+    const { result, unmount } = renderHook(() => useAgentTools(mockSessionId), {
+      wrapper: createWrapper(),
+    });
 
     expect(result.current.isLoading).toBe(true);
     expect(result.current.availableTools).toEqual([]);
 
     unmount();
 
-    // Resolve after unmount
     resolvePromise!([]);
 
-    // Wait for the promise microtask to flush; state should not change after unmount.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // React 18 keeps the last snapshot; verify it did not update post-unmount.
     expect(result.current.isLoading).toBe(true);
     expect(result.current.availableTools).toEqual([]);
   });

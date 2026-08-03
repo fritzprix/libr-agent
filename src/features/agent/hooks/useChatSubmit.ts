@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { createId } from '@paralleldrive/cuid2';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { useSettings } from '@/hooks/use-settings';
@@ -40,6 +41,8 @@ interface UseChatSubmitProps {
     typeof useAgentResourceAttachment
   >['refetchSessionFiles'];
   hasPersistedMessages: boolean;
+  /** When false, non-command chat submit is blocked until Session Ready. */
+  isProxyReady?: boolean;
   onSubmitted?: () => void | Promise<void>;
   onClearSession?: () => void;
   onExecutionModeChange?: (mode: ExecutionMode) => void;
@@ -53,10 +56,12 @@ export function useChatSubmit({
   clearPendingFiles,
   refetchSessionFiles,
   hasPersistedMessages,
+  isProxyReady = true,
   onSubmitted,
   onClearSession,
   onExecutionModeChange,
 }: UseChatSubmitProps) {
+  const { t } = useTranslation();
   const { value: settings } = useSettings();
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,7 +82,7 @@ export function useChatSubmit({
         return;
       }
 
-      // Intercept CLI command execution
+      // Intercept CLI command execution (allowed before Session Ready)
       if (messageText.startsWith('/')) {
         setIsSubmitting(true);
         const currentInput = input;
@@ -115,6 +120,12 @@ export function useChatSubmit({
         } finally {
           setIsSubmitting(false);
         }
+        return;
+      }
+
+      if (!isProxyReady) {
+        logger.info('Submit ignored: proxy not ready (MCP discovery unfinished)');
+        toast.error(t('agent.input.proxyNotReadyToast'));
         return;
       }
 
@@ -241,6 +252,8 @@ export function useChatSubmit({
       onClearSession,
       onExecutionModeChange,
       settings.maxInputContext,
+      isProxyReady,
+      t,
     ],
   );
 

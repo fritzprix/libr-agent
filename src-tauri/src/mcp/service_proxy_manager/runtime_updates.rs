@@ -169,7 +169,6 @@ pub(super) fn apply_loading_tool_config(state: &mut SessionRuntimeState) {
 }
 
 pub(super) fn apply_http_connecting(state: &mut SessionRuntimeState, server_names: &[String]) {
-    state.set_current_step("Connecting to HTTP tool servers");
     for server_name in server_names {
         state.upsert_server(
             server_name,
@@ -179,6 +178,7 @@ pub(super) fn apply_http_connecting(state: &mut SessionRuntimeState, server_name
             None,
         );
     }
+    refresh_discovery_step(state);
 }
 
 pub(super) fn apply_proxy_created(state: &mut SessionRuntimeState, has_external_servers: bool) {
@@ -190,8 +190,80 @@ pub(super) fn apply_proxy_created(state: &mut SessionRuntimeState, has_external_
     };
 }
 
-pub(super) fn apply_batch_step(state: &mut SessionRuntimeState, step: impl Into<String>) {
-    state.set_current_step(step);
+fn is_terminal_server_status(status: &SessionRuntimeServerStatus) -> bool {
+    SessionRuntimeState::is_terminal_server_status(status)
+}
+
+/// Rebuild `current_step` from live server statuses so parallel stdio/HTTP
+/// discovery does not leave a misleading transport-only label in the UI.
+pub(super) fn refresh_discovery_step(state: &mut SessionRuntimeState) {
+    if state.servers.is_empty() {
+        return;
+    }
+
+    let total = state.servers.len();
+    let done = state
+        .servers
+        .iter()
+        .filter(|server| is_terminal_server_status(&server.status))
+        .count();
+    let pending: Vec<&str> = state
+        .servers
+        .iter()
+        .filter(|server| !is_terminal_server_status(&server.status))
+        .map(|server| server.name.as_str())
+        .collect();
+
+    if pending.is_empty() {
+        return;
+    }
+
+    state.set_current_step(format!(
+        "Loading MCP: {} ({}/{})",
+        pending.join(", "),
+        done,
+        total
+    ));
+}
+
+fn apply_completion_step(state: &mut SessionRuntimeState) {
+    if state.servers.is_empty() {
+        state.set_current_step("Session initialization complete");
+        return;
+    }
+
+    let ready_names: Vec<&str> = state
+        .servers
+        .iter()
+        .filter(|server| server.status == SessionRuntimeServerStatus::Ready)
+        .map(|server| server.name.as_str())
+        .collect();
+    let unsuccessful_names: Vec<&str> = state
+        .servers
+        .iter()
+        .filter(|server| SessionRuntimeState::is_unsuccessful_terminal_status(&server.status))
+        .map(|server| server.name.as_str())
+        .collect();
+
+    match state.initialization.result {
+        SessionRuntimeInitResult::Success => {
+            state.set_current_step(format!("MCP ready: {}", ready_names.join(", ")));
+        }
+        SessionRuntimeInitResult::Partial => {
+            state.set_current_step(format!(
+                "MCP partial: {} failed/timed out ({}/{} ready)",
+                unsuccessful_names.join(", "),
+                ready_names.len(),
+                state.servers.len()
+            ));
+        }
+        SessionRuntimeInitResult::Failed => {
+            state.set_current_step(format!("MCP failed: {}", unsuccessful_names.join(", ")));
+        }
+        SessionRuntimeInitResult::Pending => {
+            state.set_current_step("Session initialization complete");
+        }
+    }
 }
 
 pub(super) fn apply_server_discovering(
@@ -206,6 +278,7 @@ pub(super) fn apply_server_discovering(
         0,
         None,
     );
+    refresh_discovery_step(state);
 }
 
 pub(super) fn apply_server_connecting(
@@ -220,6 +293,7 @@ pub(super) fn apply_server_connecting(
         0,
         None,
     );
+    refresh_discovery_step(state);
 }
 
 pub(super) fn apply_server_ready(
@@ -235,6 +309,7 @@ pub(super) fn apply_server_ready(
         tool_count,
         None,
     );
+    refresh_discovery_step(state);
 }
 
 pub(super) fn apply_server_failed(
@@ -250,9 +325,24 @@ pub(super) fn apply_server_failed(
         0,
         Some(error),
     );
+    refresh_discovery_step(state);
 }
 
 pub(super) fn apply_initialization_complete(state: &mut SessionRuntimeState) {
-    state.set_current_step("Session initialization complete");
     state.recompute_summary();
+    apply_completion_step(state);
+}
+
+/// Finalize Session Ready after discovery deadline / soft wait timeout.
+/// Marks non-terminal servers as `TimedOut`, recomputes summary, updates step.
+/// Returns false when initialization was already finalized (idempotent).
+pub(super) fn apply_discovery_timeout_finalize(
+    state: &mut SessionRuntimeState,
+    reason: &str,
+) -> bool {
+    if !state.finalize_discovery_timeout(reason) {
+        return false;
+    }
+    apply_completion_step(state);
+    true
 }

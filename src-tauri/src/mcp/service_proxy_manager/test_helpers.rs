@@ -1,3 +1,4 @@
+use super::management::ProxyReadinessEntry;
 use super::MCPServiceProxyManager;
 use std::sync::Arc;
 
@@ -13,10 +14,13 @@ impl MCPServiceProxyManager {
     ) -> Arc<tokio::sync::watch::Sender<bool>> {
         let (tx, _rx) = tokio::sync::watch::channel(false);
         let tx = Arc::new(tx);
-        self.proxy_readiness
-            .write()
-            .await
-            .insert(session_id.to_string(), tx.clone());
+        self.proxy_readiness.write().await.insert(
+            session_id.to_string(),
+            ProxyReadinessEntry {
+                ready_tx: tx.clone(),
+                app_handle: None,
+            },
+        );
         tx
     }
 

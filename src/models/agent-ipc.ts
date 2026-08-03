@@ -198,7 +198,8 @@ export type SessionRuntimeServerStatus =
   | 'connecting'
   | 'discovering_tools'
   | 'ready'
-  | 'failed';
+  | 'failed'
+  | 'timed_out';
 
 export interface SessionRuntimeProxyState {
   exists: boolean;

@@ -25,7 +25,7 @@ mod test_helpers;
 mod tests;
 
 pub use caching::{persist_tool_cache_for_server, spawn_tool_cache_update};
-pub use management::{decide_proxy_readiness_state, ProxyReadinessState};
+pub use management::{decide_proxy_readiness_state, ProxyReadinessEntry, ProxyReadinessState};
 pub use proxy_config::{decide_existing_proxy_disposition, ExistingProxyDisposition};
 
 /// Manages per-session MCP service proxies for isolated tool execution
@@ -62,9 +62,10 @@ pub struct MCPServiceProxyManager {
     /// Session isolation configuration
     config: SessionIsolationConfig,
 
-    /// Readiness signal per session: true when background tool loading is complete.
-    /// Sessions with no external servers are considered immediately ready (no entry).
-    proxy_readiness: Arc<RwLock<HashMap<String, Arc<tokio::sync::watch::Sender<bool>>>>>,
+    /// Readiness signal per session: true when background tool loading is complete
+    /// (or discovery was finalized by deadline / soft wait). Sessions with no
+    /// external servers are considered immediately ready (no entry).
+    proxy_readiness: Arc<RwLock<HashMap<String, ProxyReadinessEntry>>>,
 
     /// Per-session creation lock to prevent duplicate proxy creation under concurrent calls.
     /// Two concurrent `create_proxy` calls for the same session_id will serialize here;
