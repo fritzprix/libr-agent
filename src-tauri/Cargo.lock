@@ -4358,6 +4358,7 @@ dependencies = [
  "walkdir",
  "warp",
  "windows-sys 0.59.0",
+ "winreg 0.55.0",
  "zip 0.6.6",
 ]
 

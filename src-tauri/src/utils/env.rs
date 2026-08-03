@@ -115,8 +115,8 @@ fn merge_path_values(preferred: &OsStr, fallback: &OsStr) -> Option<OsString> {
     }
 }
 
-// Discovered/shell paths are prepended so user-local tool dirs (e.g. Python Scripts)
-// win over WindowsApps shims. Host PATH entries still follow and remain reachable.
+// Discovered/shell/registry paths are prepended so user-local tool dirs (e.g. Python Scripts,
+// cargo/uv from HKCU Path) win over WindowsApps shims. Host PATH entries still follow.
 fn merge_with_current_path(preferred: OsString, current_path: Option<OsString>) -> OsString {
     let merged = current_path
         .as_ref()
@@ -143,14 +143,44 @@ pub fn get_effective_path_os() -> OsString {
 
     #[cfg(windows)]
     {
-        if let Some(discovered) =
-            crate::utils::windows_path_discovery::get_windows_discovered_path_os()
-        {
-            return merge_with_current_path(discovered, current_path);
-        }
+        compose_windows_effective_path(
+            crate::utils::windows_path_discovery::get_windows_discovered_path_os(),
+            crate::utils::windows_registry_path::get_windows_registry_path_os(),
+            current_path,
+        )
     }
 
-    current_path.unwrap_or_else(|| OsString::from(default_path()))
+    // Non-Windows without a successful Unix shell probe: keep process PATH (or defaults).
+    #[cfg(not(windows))]
+    {
+        current_path.unwrap_or_else(|| OsString::from(default_path()))
+    }
+}
+
+/// Build the Windows effective PATH used by isolated child processes.
+///
+/// Order (first wins for duplicates):
+/// 1. Discovered tool dirs (Python Scripts ahead of WindowsApps shims)
+/// 2. Registry Machine+User Path (GUI-stripped process PATH recovery)
+/// 3. Current process PATH
+/// 4. Hard-coded system default if everything is empty
+#[cfg(windows)]
+pub fn compose_windows_effective_path(
+    discovered: Option<OsString>,
+    registry: Option<OsString>,
+    current_path: Option<OsString>,
+) -> OsString {
+    let mut base = current_path;
+
+    if let Some(registry_path) = registry {
+        base = Some(merge_with_current_path(registry_path, base));
+    }
+
+    if let Some(discovered_path) = discovered {
+        return merge_with_current_path(discovered_path, base);
+    }
+
+    base.unwrap_or_else(|| OsString::from(default_path()))
 }
 
 pub fn get_effective_path() -> String {

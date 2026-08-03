@@ -10,6 +10,8 @@ pub mod sqlite;
 pub mod terminal;
 #[cfg(windows)]
 pub mod windows_path_discovery;
+#[cfg(windows)]
+pub mod windows_registry_path;
 
 /// Safely truncates a string to a maximum number of characters.
 /// If truncated, adds an ellipsis (...) to the end.
