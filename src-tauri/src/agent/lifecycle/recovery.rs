@@ -67,7 +67,6 @@ async fn close_orphaned_tool_calls(
                 content: vec![crate::mcp::types::MCPContent::Text {
                     text: "[system] Tool call did not complete (session recovered after crash)."
                         .to_string(),
-                    is_error: Some(true),
                 }],
                 tool_calls: None,
                 tool_call_id: Some(tc.id.clone()),

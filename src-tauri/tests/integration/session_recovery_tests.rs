@@ -176,7 +176,6 @@ fn build_user_message(session_id: &str, index: usize) -> Message {
         role: "user".to_string(),
         content: vec![MCPContent::Text {
             text: format!("message {index}"),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,
@@ -206,7 +205,6 @@ fn build_assistant_tool_call_message(
     message.role = "assistant".to_string();
     message.content = vec![MCPContent::Text {
         text: "assistant requested a tool".to_string(),
-        is_error: None,
     }];
     message.tool_calls = Some(vec![ToolCall {
         id: tool_call_id.to_string(),

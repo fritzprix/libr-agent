@@ -289,7 +289,6 @@ fn build_assistant_message(session_id: &str, id: &str, text: &str) -> Message {
         role: "assistant".to_string(),
         content: vec![MCPContent::Text {
             text: text.to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,

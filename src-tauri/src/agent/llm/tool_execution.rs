@@ -236,18 +236,7 @@ impl ToolExecutionContext<'_> {
                 let protocol_error = response.error.is_some();
                 let tool_level_error = match &response.result {
                     Some(crate::mcp::types::MCPResponseResult::ToolCall(mcp_result)) => {
-                        mcp_result.is_error == Some(true)
-                            || mcp_result.content.as_ref().is_some_and(|content| {
-                                content.iter().any(|content_item| {
-                                    matches!(
-                                        content_item,
-                                        crate::mcp::types::MCPContent::Text {
-                                            is_error: Some(true),
-                                            ..
-                                        }
-                                    )
-                                })
-                            })
+                        mcp_result.indicates_error()
                     }
                     _ => false,
                 };
@@ -406,7 +395,6 @@ fn args_parse_error_result(
         content: message.clone(),
         mcp_content: Some(vec![crate::mcp::types::MCPContent::Text {
             text: message.clone(),
-            is_error: Some(true),
         }]),
         structured_content: Some(structured),
         error: Some(message),

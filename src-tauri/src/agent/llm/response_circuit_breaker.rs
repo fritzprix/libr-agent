@@ -248,7 +248,6 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                 "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).\n\nThe 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls. Review your last attempts and propose a fundamentally different approach.",
                                 safe_tool, count
                             ),
-                            is_error: None,
                         });
                 }
             }

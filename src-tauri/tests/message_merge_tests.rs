@@ -14,7 +14,6 @@ fn text_message(id: &str, text: &str) -> Message {
         role: "user".to_string(),
         content: vec![MCPContent::Text {
             text: text.to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,

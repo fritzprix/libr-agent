@@ -74,7 +74,6 @@ impl UiServer {
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: format!("User replied: {}", answer_str),
-                is_error: None,
             }]),
             structured_content: None,
             is_error: Some(false),
@@ -160,10 +159,7 @@ impl UiServer {
         );
 
         Ok(MCPResult {
-            content: Some(vec![MCPContent::Text {
-                text,
-                is_error: None,
-            }]),
+            content: Some(vec![MCPContent::Text { text }]),
             structured_content: None,
             is_error: Some(false),
         })

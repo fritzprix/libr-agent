@@ -214,7 +214,6 @@ async fn execute_session_callback(
         role: "user".to_string(),
         content: vec![MCPContent::Text {
             text: task.message.clone(),
-            is_error: None,
         }],
         source: Some(MessageSource::ScheduledTask), // 기존 enum 재사용
         // ... 나머지 필드는 execute_global_task 와 동일하게 채움

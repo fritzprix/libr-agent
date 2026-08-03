@@ -755,7 +755,6 @@ mod tests {
                 role: "assistant".to_string(),
                 content: vec![MCPContent::Text {
                     text: text.to_string(),
-                    is_error: None,
                 }],
                 tool_calls: None,
                 tool_call_id: None,
@@ -783,7 +782,6 @@ mod tests {
                 role: "tool".to_string(),
                 content: vec![MCPContent::Text {
                     text: "tool output".to_string(),
-                    is_error: None,
                 }],
                 tool_calls: None,
                 tool_call_id: None,

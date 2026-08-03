@@ -8,7 +8,6 @@ fn make_message(source: Option<MessageSource>) -> Message {
         role: "user".to_string(),
         content: vec![MCPContent::Text {
             text: "hello".to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,

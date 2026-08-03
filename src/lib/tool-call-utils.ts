@@ -1,5 +1,4 @@
 import type { Message } from '@/models/chat';
-import { isMCPErrorContent } from '@/lib/mcp/protocol/content';
 import { z } from 'zod';
 import { getLogger } from '@/lib/logger';
 import { ALL_BUILTIN_SERVICE_ALIASES } from './generated/builtin-services';
@@ -14,15 +13,16 @@ const ToolArgumentsSchema = z.record(z.unknown());
 
 /**
  * Checks if a tool result message contains an error.
- * Uses the Message.error property for type-safe error detection.
+ *
+ * SSOT: `metadata.toolError` from the backend. Also accepts `Message.error`
+ * for LLM/service failure payloads attached to messages.
  */
 export function hasToolCallError(toolResult?: Message): boolean {
-  // Type-safe error detection using Message.error property
-  if (toolResult?.error) return true;
+  if (toolResult?.metadata?.toolError === true) {
+    return true;
+  }
 
-  // Fallback: Check if any content item has isError property
-  // This handles cases where backend might preserve MCP result structure in content
-  if (toolResult?.content?.some(isMCPErrorContent)) {
+  if (toolResult?.error) {
     return true;
   }
 

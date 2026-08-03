@@ -96,7 +96,6 @@ pub fn build_request_layout(
             role: "user".to_string(),
             content: vec![MCPContent::Text {
                 text: format_session_context_text(provider, &session_context),
-                is_error: None,
             }],
             tool_calls: None,
             tool_call_id: None,
@@ -127,7 +126,6 @@ pub fn build_request_layout(
             if message.role == "user" && !message.is_internal_synthetic_user_message() {
                 let mut new_content = vec![MCPContent::Text {
                     text: format_session_context_text(provider, &session_context),
-                    is_error: None,
                 }];
                 new_content.append(&mut message.content);
                 message.content = new_content;

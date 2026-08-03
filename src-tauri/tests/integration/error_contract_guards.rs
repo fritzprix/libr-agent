@@ -21,21 +21,7 @@ fn extract_text(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> String {
         .expect("expected at least one MCPContent item");
 
     match content {
-        MCPContent::Text { text, .. } => text.clone(),
-        other => panic!("expected MCPContent::Text, got: {other:?}"),
-    }
-}
-
-fn extract_text_error_flag(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> Option<bool> {
-    let content = result
-        .content
-        .as_ref()
-        .expect("expected MCPResult.content")
-        .first()
-        .expect("expected at least one MCPContent item");
-
-    match content {
-        MCPContent::Text { is_error, .. } => *is_error,
+        MCPContent::Text { text } => text.clone(),
         other => panic!("expected MCPContent::Text, got: {other:?}"),
     }
 }
@@ -46,7 +32,7 @@ fn missing_param_error_has_actionable_next_steps() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("Next Steps") || text.contains("Recovery"));
 }
@@ -65,7 +51,7 @@ fn guided_error_includes_next_steps_section() {
 
     let text = extract_text(&r);
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("Next Steps") || text.contains("Recovery"));
     assert!(text.contains("listInteractable"));
@@ -77,7 +63,7 @@ fn not_found_error_uses_error_semantics() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("asst_123"));
     assert!(text.contains("Next Steps") || text.contains("Recovery"));
@@ -89,7 +75,7 @@ fn missing_agent_config_error_suggests_listing_configs() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("Agent configuration 'exa' not found"));
     assert!(text.contains("list(type=\"configs\")"));
@@ -104,7 +90,7 @@ fn missing_agent_session_error_suggests_listing_sessions() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("Agent session 'sess_123' not found"));
     assert!(text.contains("list(type=\"sessions\")"));
@@ -116,7 +102,7 @@ fn duplicate_error_uses_error_semantics() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("already exists"));
 }
@@ -132,7 +118,7 @@ fn invalid_state_uses_error_semantics() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
 }
 
@@ -147,7 +133,7 @@ fn operation_failed_uses_error_semantics() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("Read Session failed"));
 }
@@ -161,7 +147,7 @@ fn permission_denied_uses_error_semantics() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("Permission denied"));
 }
@@ -177,7 +163,7 @@ fn timeout_guided_error_is_informational() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(false));
-    assert_eq!(extract_text_error_flag(&r), None);
+    assert_eq!(r.is_error, Some(false));
     assert!(text.contains("Notice:"));
     assert!(text.contains("Next Steps") || text.contains("Recovery") || text.contains("Guidance"));
 }
@@ -193,7 +179,7 @@ fn internal_guided_error_is_informational() {
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(false));
-    assert_eq!(extract_text_error_flag(&r), None);
+    assert_eq!(r.is_error, Some(false));
     assert!(text.contains("Notice:"));
     assert!(text.contains("Next Steps") || text.contains("Recovery") || text.contains("Guidance"));
 }
@@ -241,7 +227,6 @@ fn tool_result_message_preserves_structured_content_metadata() {
         "call_123",
         vec![MCPContent::Text {
             text: "Human-readable summary".to_string(),
-            is_error: None,
         }],
         Some(json!({
             "toolName": "checkSession",
@@ -250,6 +235,7 @@ fn tool_result_message_preserves_structured_content_metadata() {
             "responseStatus": "success",
             "result": "Final answer",
         })),
+        false,
     );
 
     assert_eq!(
@@ -289,7 +275,7 @@ async fn session_wait_timeout_is_converted_to_success_result() {
         .expect("timeout result should include structured content");
 
     assert_eq!(result.is_error, Some(false));
-    assert_eq!(extract_text_error_flag(&result), Some(false));
+    assert_eq!(result.is_error, Some(false));
     assert!(text.contains("timed out after 15s"));
     assert!(text.contains("checkSession(sessionId=\"sess_123\", wait=true)"));
     assert!(text.contains("list(type=\"sessions\")"));
@@ -342,6 +328,6 @@ async fn ui_cancel_returns_informational_result() {
     let text = extract_text(&result);
 
     assert_eq!(result.is_error, Some(false));
-    assert_eq!(extract_text_error_flag(&result), None);
+    assert_eq!(result.is_error, Some(false));
     assert_eq!(text, "User cancelled the prompt.");
 }

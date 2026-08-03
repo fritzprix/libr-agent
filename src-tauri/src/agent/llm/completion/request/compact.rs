@@ -192,14 +192,14 @@ fn determine_tool_result_status(message: &Message) -> &'static str {
         return "error";
     }
 
-    for content in &message.content {
-        if let MCPContent::Text {
-            is_error: Some(true),
-            ..
-        } = content
-        {
-            return "error";
-        }
+    let metadata_tool_error = message
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("toolError"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    if metadata_tool_error {
+        return "error";
     }
 
     "success"
