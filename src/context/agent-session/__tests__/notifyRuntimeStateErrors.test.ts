@@ -125,4 +125,30 @@ describe('notifyRuntimeStateErrors', () => {
 
     expect(toast.error).not.toHaveBeenCalled();
   });
+
+  it('does not toast generic failure when timed_out servers are present', () => {
+    const prev = baseState();
+    const next = baseState({
+      phase: 'failed',
+      proxy: { exists: true, mode: 'configured', ready: true },
+      initialization: {
+        result: 'failed',
+        error:
+          'All external servers failed or timed out during initialization',
+      },
+      servers: [
+        {
+          name: 'slow-stdio',
+          transport: 'stdio',
+          status: 'timed_out',
+          toolCount: 0,
+          error: 'Tool discovery timed out after 30s',
+        },
+      ],
+    });
+
+    notifyRuntimeStateErrors(prev, next);
+
+    expect(toast.error).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,4 @@
-import { AlertCircle, Check, X } from 'lucide-react';
+import { AlertCircle, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -9,17 +9,13 @@ import type {
 } from '@/models/agent-ipc';
 import { cn } from '@/lib/utils';
 
-export type SessionLoadingOverlayMode = 'loading' | 'result';
-
 interface SessionLoadingOverlayProps {
   label: string;
   initializationStep?: string | null;
   initializationError?: string | null;
-  variant: 'blocking' | 'overlay' | 'banner';
+  variant: 'blocking' | 'overlay';
   servers?: SessionRuntimeServerState[];
   initResult?: SessionRuntimeInitResult;
-  mode?: SessionLoadingOverlayMode;
-  onDismiss?: () => void;
 }
 
 function serverStatusLabel(
@@ -70,10 +66,8 @@ function ServerStatusIcon({
 
 function McpServerStatusList({
   servers,
-  compact,
 }: {
   servers: SessionRuntimeServerState[];
-  compact?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -83,10 +77,7 @@ function McpServerStatusList({
 
   return (
     <ul
-      className={cn(
-        'flex flex-col gap-1',
-        compact ? 'mt-1 max-w-full' : 'mt-2 w-full max-w-sm',
-      )}
+      className="flex flex-col gap-1 mt-2 w-full max-w-sm"
       data-testid="mcp-server-status-list"
     >
       {servers.map((server) => (
@@ -113,23 +104,6 @@ function McpServerStatusList({
   );
 }
 
-function resultHeadline(
-  initResult: SessionRuntimeInitResult | undefined,
-  t: (key: string) => string,
-  fallback: string,
-): string {
-  switch (initResult) {
-    case 'success':
-      return t('agent.statusBar.mcpResultSuccess');
-    case 'partial':
-      return t('agent.statusBar.mcpResultPartial');
-    case 'failed':
-      return t('agent.statusBar.mcpResultFailed');
-    default:
-      return fallback;
-  }
-}
-
 export function SessionLoadingOverlay({
   label,
   initializationStep,
@@ -137,75 +111,12 @@ export function SessionLoadingOverlay({
   variant,
   servers = [],
   initResult,
-  mode = 'loading',
-  onDismiss,
 }: SessionLoadingOverlayProps) {
-  const { t } = useTranslation();
   const isFailed = Boolean(initializationError) || initResult === 'failed';
-  const isResultMode = mode === 'result';
-  const headline = isResultMode
-    ? resultHeadline(initResult, t, initializationStep ?? label)
-    : (initializationError ?? initializationStep ?? label);
-  const canDismiss = isResultMode && Boolean(onDismiss);
-
-  if (variant === 'banner') {
-    return (
-      <div
-        role="status"
-        aria-live="polite"
-        className={cn(
-          'absolute top-0 left-0 right-0 z-20 border-b px-4 py-2 text-xs backdrop-blur-sm animate-in fade-in slide-in-from-top-1 duration-200',
-          isFailed
-            ? 'border-destructive/30 bg-destructive/10 text-destructive dark:border-destructive/40 dark:bg-destructive/20'
-            : initResult === 'partial'
-              ? 'border-amber-200/50 bg-amber-50/90 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/80 dark:text-amber-200'
-              : isResultMode && initResult === 'success'
-                ? 'border-emerald-200/50 bg-emerald-50/90 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/80 dark:text-emerald-200'
-                : 'border-amber-200/50 bg-amber-50/90 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/80 dark:text-amber-200',
-        )}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              {!isResultMode && !isFailed ? (
-                <LoadingSpinner
-                  size="sm"
-                  className="border-2 text-amber-600 dark:text-amber-400 shrink-0"
-                  label={label}
-                />
-              ) : null}
-              {isResultMode && initResult === 'success' ? (
-                <Check className="size-3.5 shrink-0" />
-              ) : null}
-              {(isFailed || initResult === 'partial') && isResultMode ? (
-                <AlertCircle className="size-3.5 shrink-0" />
-              ) : null}
-              <span className="font-medium">
-                {isResultMode
-                  ? headline
-                  : (initializationError ?? initializationStep ?? label)}
-              </span>
-            </div>
-            <McpServerStatusList servers={servers} compact />
-          </div>
-          {canDismiss ? (
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="shrink-0 rounded p-0.5 opacity-70 hover:opacity-100"
-              aria-label={t('agent.statusBar.mcpResultDismiss')}
-            >
-              <X className="size-3.5" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
 
   const content = (
     <>
-      {!isFailed && !isResultMode ? (
+      {!isFailed ? (
         <LoadingSpinner size="lg" className="border-4" label={label} />
       ) : null}
 
@@ -220,7 +131,7 @@ export function SessionLoadingOverlay({
           }
           aria-hidden="true"
         >
-          {isResultMode ? headline : label}
+          {label}
         </div>
 
         <div
@@ -232,7 +143,7 @@ export function SessionLoadingOverlay({
         >
           {isFailed && initializationError ? (
             <span>{initializationError}</span>
-          ) : !isResultMode && initializationStep ? (
+          ) : initializationStep ? (
             <span className="animate-in fade-in slide-in-from-bottom-1 duration-300">
               {initializationStep}
             </span>

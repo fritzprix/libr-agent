@@ -239,7 +239,10 @@ pub async fn start_workflow(
             return;
         }
 
-        if let Err(e) = ensure_proxy_ready(&proxy_manager, &app_handle, &session_id_clone, 60).await
+        let proxy_ready_timeout = proxy_manager.startup_timeout_secs().await;
+        if let Err(e) =
+            ensure_proxy_ready(&proxy_manager, &app_handle, &session_id_clone, proxy_ready_timeout)
+                .await
         {
             log::error!(
                 "Proxy check failed during background start for session {}: {}",

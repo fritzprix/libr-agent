@@ -77,22 +77,22 @@ function SystemBackgroundTasksSectionComponent({
       <NumberSettingField
         label={t(
           'settings.system.mcpServerStartupTimeout',
-          'MCP Server Startup Timeout (Sec)',
+          'MCP Discovery Timeout (Sec)',
         )}
         description={t(
           'settings.system.mcpServerStartupTimeoutDescription',
-          'How long to wait for MCP tool servers to initialize. Increase if servers fail to start.',
+          'How long to wait for MCP servers to finish tool discovery before marking them timed out and opening the session. Increase for slow servers (e.g. npx first run).',
         )}
         placeholder={t(
           'settings.system.placeholders.mcpServerStartupTimeout',
-          'e.g., 60',
+          'e.g., 30',
         )}
         min={10}
         max={120}
         value={localSystemSettings.mcpServerStartupTimeoutSeconds}
         parseValue={(rawValue) =>
           parseIntegerInput(rawValue, {
-            fallback: 60,
+            fallback: 30,
             min: 10,
             max: 120,
           })

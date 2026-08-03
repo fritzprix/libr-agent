@@ -628,7 +628,8 @@ pub(super) async fn spawn_background_tool_loading(
                     context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
                 }
 
-                // Let discovery finish for late catch-up without blocking Ready.
+                // Keep loading after Ready: late apply_server_ready may overwrite
+                // TimedOut→Ready and refresh tools; finish recomputes summary.
                 match discovery_handle.await {
                     Ok((stdio_ms, http_ms)) => {
                         finish_background_discovery(

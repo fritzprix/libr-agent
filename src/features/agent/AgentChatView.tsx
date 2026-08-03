@@ -46,7 +46,7 @@ import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
 import { getLogger } from '@/lib/logger';
 import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
-import { useMcpDiscoveryBanner } from './hooks/useMcpDiscoveryBanner';
+import { useMcpDiscoveryToasts } from './hooks/useMcpDiscoveryToasts';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -564,13 +564,14 @@ function AgentChatViewContent({
   const isProxyReady = optionalSessionState.isProxyReady;
   const shouldShowBlockingLoader =
     (!session || runtimeState.phase === 'failed') && isSessionLoading;
-  const { bannerKind, dismissResultBanner } = useMcpDiscoveryBanner({
+  useMcpDiscoveryToasts({
     hasSession: Boolean(session),
     isProxyReady,
     phase: runtimeState.phase,
     initResult: runtimeState.initialization.result,
     servers: runtimeState.servers,
     sessionId: session?.id,
+    currentStep: initializationStep,
   });
 
   return (
@@ -599,23 +600,6 @@ function AgentChatViewContent({
               </AgentWorkspaceProvider>
             </AgentPlanningProvider>
           </AgentChatProvider>
-
-          {bannerKind ? (
-            <SessionLoadingOverlay
-              label={sessionLoadingLabel}
-              initializationStep={initializationStep}
-              initializationError={
-                bannerKind === 'result' ? initializationError : null
-              }
-              servers={runtimeState.servers}
-              initResult={runtimeState.initialization.result}
-              mode={bannerKind}
-              onDismiss={
-                bannerKind === 'result' ? dismissResultBanner : undefined
-              }
-              variant="banner"
-            />
-          ) : null}
         </div>
       )}
     </AgentResourceAttachmentProvider>

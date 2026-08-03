@@ -224,3 +224,13 @@ pub(super) async fn apply_startup_timeout_settings(
 
     config
 }
+
+/// Resolve the effective MCP discovery / Session Ready timeout in seconds
+/// (user setting when present, otherwise config default of 30).
+pub(super) async fn resolve_startup_timeout_seconds(
+    base_config: &SessionIsolationConfig,
+) -> u64 {
+    apply_startup_timeout_settings(base_config.clone())
+        .await
+        .process_startup_timeout_seconds
+}

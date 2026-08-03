@@ -19,8 +19,15 @@ export function isMcpServerTimeoutError(error: string): boolean {
   );
 }
 
+function isToastableServerFailure(
+  status: SessionRuntimeServerState['status'],
+): boolean {
+  return status === 'failed' || status === 'timed_out';
+}
+
 /**
- * Diff runtime server snapshots and return newly failed servers that should toast once.
+ * Diff runtime server snapshots and return newly failed/timed-out servers that
+ * should toast once.
  */
 export function collectNewMcpServerFailures(
   previousKeys: ReadonlySet<string>,
@@ -29,21 +36,26 @@ export function collectNewMcpServerFailures(
   const toasts: McpServerFailureToast[] = [];
 
   for (const server of servers) {
-    if (server.status !== 'failed') {
+    if (!isToastableServerFailure(server.status)) {
       continue;
     }
 
     const error = server.error?.trim() ?? '';
-    const key = `${server.transport}:${server.name}:${error || 'failed'}`;
+    const key = `${server.transport}:${server.name}:${server.status}:${error || 'unknown'}`;
     if (previousKeys.has(key)) {
       continue;
     }
+
+    const kind: McpServerFailureToastKind =
+      server.status === 'timed_out' || isMcpServerTimeoutError(error)
+        ? 'timeout'
+        : 'failed';
 
     toasts.push({
       key,
       serverName: server.name,
       transport: server.transport,
-      kind: isMcpServerTimeoutError(error) ? 'timeout' : 'failed',
+      kind,
       error: error || 'Unknown error',
     });
   }

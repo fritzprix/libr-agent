@@ -302,6 +302,8 @@ pub(super) fn apply_server_ready(
     transport: SessionRuntimeTransport,
     tool_count: usize,
 ) {
+    // May overwrite TimedOut after discovery deadline; summary is recomputed
+    // when finish_background_discovery / apply_initialization_complete runs.
     state.upsert_server(
         server_name,
         transport,

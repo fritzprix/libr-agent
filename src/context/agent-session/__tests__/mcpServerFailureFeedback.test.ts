@@ -94,4 +94,25 @@ describe('collectNewMcpServerFailures', () => {
     expect(toasts).toHaveLength(1);
     expect(toasts[0]?.kind).toBe('timeout');
   });
+
+  it('returns timeout toasts for timed_out status from discovery finalize', () => {
+    const toasts = collectNewMcpServerFailures(new Set(), [
+      server({
+        name: 'slow-stdio',
+        status: 'timed_out',
+        error: 'Tool discovery timed out after 30s',
+      }),
+      server({
+        name: 'exa',
+        transport: 'http',
+        status: 'ready',
+        toolCount: 4,
+      }),
+    ]);
+
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]?.kind).toBe('timeout');
+    expect(toasts[0]?.serverName).toBe('slow-stdio');
+    expect(toasts[0]?.key).toContain('timed_out');
+  });
 });

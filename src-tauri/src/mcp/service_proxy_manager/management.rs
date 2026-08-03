@@ -4,6 +4,7 @@ use super::runtime_updates::{
     apply_discovery_timeout_finalize, emit_runtime_state, replace_runtime_state_store,
     update_runtime_state_store, RuntimeStateUpdateResult,
 };
+use super::proxy_config::resolve_startup_timeout_seconds;
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::mcp::builtin::service_id::BuiltinServiceId;
@@ -74,6 +75,11 @@ impl MCPServiceProxyManager {
             .get(session_id)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Effective MCP discovery / soft-wait timeout (settings or default 30s).
+    pub async fn startup_timeout_secs(&self) -> u64 {
+        resolve_startup_timeout_seconds(&self.config).await
     }
 
     pub(super) async fn set_runtime_state(
@@ -394,7 +400,8 @@ impl MCPServiceProxyManager {
         };
 
         if !is_builtin {
-            self.wait_until_proxy_ready(session_id, 30)
+            let timeout_secs = self.startup_timeout_secs().await;
+            self.wait_until_proxy_ready(session_id, timeout_secs)
                 .await
                 .map_err(|e| format!("Proxy not ready for external tool '{}': {}", tool_name, e))?;
         }

@@ -10,10 +10,16 @@ export function notifyRuntimeStateErrors(
   prevState: SessionRuntimeState,
   nextState: SessionRuntimeState,
 ): void {
+  // Skip when per-server failed/timed_out rows exist — those toast via
+  // useMcpServerFailureToasts.
+  const hasPerServerFailureFeedback = nextState.servers.some(
+    (server) => server.status === 'failed' || server.status === 'timed_out',
+  );
+
   if (
     prevState.phase !== 'failed' &&
     nextState.phase === 'failed' &&
-    nextState.servers.every((server) => server.status !== 'failed') &&
+    !hasPerServerFailureFeedback &&
     nextState.initialization.error
   ) {
     toast.error('MCP Server initialization failed', {
