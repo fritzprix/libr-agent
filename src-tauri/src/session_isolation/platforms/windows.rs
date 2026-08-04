@@ -52,7 +52,8 @@ pub async fn create_basic_isolated_command(
     // Apply environment isolation: clear all inherited environment variables
     cmd.env_clear();
 
-    // Re-apply whitelisted essential system variables (PATH includes discovered Python/pip/pipx dirs)
+    // Re-apply whitelisted essential system variables
+    // (PATH includes discovered Python/Cargo/Node CLI tool dirs)
     for (k, v) in crate::utils::env::get_isolated_env() {
         cmd.env(k, v);
     }

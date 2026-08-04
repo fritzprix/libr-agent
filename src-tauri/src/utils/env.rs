@@ -115,8 +115,8 @@ fn merge_path_values(preferred: &OsStr, fallback: &OsStr) -> Option<OsString> {
     }
 }
 
-// Discovered/shell paths are prepended so user-local tool dirs (e.g. Python Scripts)
-// win over WindowsApps shims. Host PATH entries still follow and remain reachable.
+// Discovered/shell paths are prepended so user-local tool dirs (e.g. Python Scripts,
+// Cargo bin, Node managers) win over WindowsApps shims. Host PATH entries still follow.
 fn merge_with_current_path(preferred: OsString, current_path: Option<OsString>) -> OsString {
     let merged = current_path
         .as_ref()
