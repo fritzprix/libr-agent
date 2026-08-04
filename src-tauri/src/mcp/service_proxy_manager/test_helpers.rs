@@ -28,4 +28,25 @@ impl MCPServiceProxyManager {
     pub(crate) async fn readiness_entry_count(&self) -> usize {
         self.proxy_readiness.read().await.len()
     }
+
+    /// Whether a session still has a stdio manager entry (test probe for destroy hygiene).
+    pub(crate) async fn has_stdio_manager_for_test(&self, session_id: &str) -> bool {
+        self.session_stdio_managers
+            .read()
+            .await
+            .contains_key(session_id)
+    }
+
+    /// Whether a session still has an HTTP manager entry (test probe for destroy hygiene).
+    pub(crate) async fn has_http_manager_for_test(&self, session_id: &str) -> bool {
+        self.session_http_managers
+            .read()
+            .await
+            .contains_key(session_id)
+    }
+
+    /// Whether a per-session creation guard remains registered.
+    pub(crate) async fn has_creation_guard_for_test(&self, session_id: &str) -> bool {
+        self.creation_guards.lock().await.contains_key(session_id)
+    }
 }

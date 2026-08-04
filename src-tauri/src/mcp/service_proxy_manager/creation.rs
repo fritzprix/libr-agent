@@ -228,13 +228,10 @@ impl MCPServiceProxyManager {
         app_handle: Option<AppHandle>,
     ) -> Result<Arc<MCPServiceProxy>, String> {
         let total_start = Instant::now();
-        let session_guard = {
-            let mut guards = self.creation_guards.lock().await;
-            guards
-                .entry(session_id.clone())
-                .or_insert_with(|| Arc::new(Mutex::new(())))
-                .clone()
-        };
+        // Per-session tokio Mutex intentionally held across HTTP startup and publish.
+        // This is single-flight for the same session_id, not a std::Mutex / worker-thread
+        // hazard. Different sessions do not share this lock.
+        let session_guard = self.session_creation_guard(&session_id).await;
         let _session_lock = session_guard.lock().await;
 
         let config_load_start = Instant::now();
@@ -501,6 +498,7 @@ impl MCPServiceProxyManager {
         }
 
         if loaded.has_external_servers() {
+            // Kick off discovery under the lock so destroy cannot race between insert and spawn.
             spawn_background_tool_loading(
                 self,
                 BackgroundDiscoveryPlan {
@@ -528,6 +526,9 @@ impl MCPServiceProxyManager {
                 runtime_state_emits += 1;
             }
         }
+
+        // End single-flight: publish and discovery/builtin_ready kickoff are visible.
+        drop(_session_lock);
 
         log_create_proxy_metrics(&CreateProxyMetrics {
             session_id: &session_id,

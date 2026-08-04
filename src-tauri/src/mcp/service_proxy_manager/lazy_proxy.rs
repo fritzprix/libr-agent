@@ -5,7 +5,6 @@ use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeState;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 impl MCPServiceProxyManager {
     /// Ensure a session has a proxy that matches its persisted agent configuration.
@@ -53,14 +52,10 @@ impl MCPServiceProxyManager {
             return Ok(existing);
         }
 
-        let session_guard = {
-            let mut guards = self.creation_guards.lock().await;
-            guards
-                .entry(session_id.to_string())
-                .or_insert_with(|| Arc::new(Mutex::new(())))
-                .clone()
-        };
-        let _lock = session_guard.lock().await;
+        // Per-session tokio Mutex intentionally held across publish + builtin_ready.
+        // Same single-flight lock as create_proxy / destroy_proxy; not a worker-thread hazard.
+        let session_guard = self.session_creation_guard(session_id).await;
+        let _session_lock = session_guard.lock().await;
 
         if let Some(existing) = self.get_proxy(session_id).await {
             return Ok(existing);
@@ -117,6 +112,8 @@ impl MCPServiceProxyManager {
             .insert(session_id.to_string(), empty_http);
         self.set_runtime_state(session_id, SessionRuntimeState::builtin_ready(), None)
             .await;
+
+        drop(_session_lock);
 
         log::info!(
             "Lazily initialised builtin-only proxy for idle session {} with tools: {:?}",

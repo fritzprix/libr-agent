@@ -302,7 +302,7 @@ describe('AgentChatView', () => {
   it('shows discovery loading toast during proxy initialization', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
-      isSessionLoading: true,
+      isSessionLoading: false,
       isProxyReady: false,
       runtimeState: {
         ...createBaseRuntimeState(),

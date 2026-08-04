@@ -185,10 +185,10 @@ export function useAgentSessionState() {
     state: {
       session,
       messages,
+      // MCP `initializing` is not session loading — show the chat once open returns;
+      // proxy readiness / discovery toasts gate send and MCP progress separately.
       isSessionLoading:
-        runtimeState.phase === 'hydrating' ||
-        runtimeState.phase === 'initializing' ||
-        session?.status === 'provisioning',
+        runtimeState.phase === 'hydrating' || session?.status === 'provisioning',
       isProxyReady,
       isLoadingOlderMessages,
       hasOlderMessages,

@@ -67,9 +67,10 @@ pub struct MCPServiceProxyManager {
     /// external servers are considered immediately ready (no entry).
     proxy_readiness: Arc<RwLock<HashMap<String, ProxyReadinessEntry>>>,
 
-    /// Per-session creation lock to prevent duplicate proxy creation under concurrent calls.
-    /// Two concurrent `create_proxy` calls for the same session_id will serialize here;
-    /// the second caller blocks until the first finishes and then hits the idempotency re-check.
+    /// Per-session creation lock shared by `create_proxy`, `ensure_builtin_proxy`, and
+    /// `destroy_proxy`. Concurrent creates for the same session_id serialize here (single-flight
+    /// across HTTP startup and publish); destroy waits for in-flight create/publish before
+    /// tearing down. Different sessions use independent inner mutexes.
     creation_guards: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
 
     /// Structured runtime state snapshots owned by Rust and pushed to the frontend.
