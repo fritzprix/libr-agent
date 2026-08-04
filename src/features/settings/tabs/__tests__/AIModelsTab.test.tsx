@@ -71,13 +71,9 @@ vi.mock('@/components/ui', () => ({
     <div>{children}</div>
   ),
   Tooltip: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  TooltipTrigger: ({
-    children,
-    asChild: _asChild,
-  }: {
-    children: ReactNode;
-    asChild?: boolean;
-  }) => <div>{children}</div>,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
   TooltipContent: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
   ),
