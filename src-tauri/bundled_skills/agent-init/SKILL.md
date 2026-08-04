@@ -88,3 +88,4 @@ When executing future agent tasks in this workspace:
 - Architecture Template: `references/templates/architecture-template.md`
 - Coding Standards Template: `references/templates/coding-standards-template.md`
 - Update Protocol Guide: `references/update-protocol.md`
+- Merge Policy Guide: `references/merge-policy.md`
