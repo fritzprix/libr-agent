@@ -285,7 +285,12 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
     {
         Ok(_) => {
             let hint = SuccessHint::new(
-                build_agent_config_echo_message("created successfully", &normalized_name, &id, &config),
+                build_agent_config_echo_message(
+                    "created successfully",
+                    &normalized_name,
+                    &id,
+                    &config,
+                ),
                 vec![
                     "List agent configurations to review the new configuration".to_string(),
                     "Update the configuration if you want to refine its prompt or capabilities"
