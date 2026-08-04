@@ -157,6 +157,19 @@ impl SessionRuntimeState {
         }
     }
 
+    pub fn failed(error: String) -> Self {
+        Self {
+            phase: SessionRuntimePhase::Failed,
+            initialization: SessionRuntimeInitializationState {
+                current_step: Some("Session initialization failed".to_string()),
+                result: SessionRuntimeInitResult::Failed,
+                error: Some(error),
+                docker: None,
+            },
+            ..Self::default()
+        }
+    }
+
     pub fn configured_initializing(servers: Vec<SessionRuntimeServerState>) -> Self {
         Self {
             sequence: 0,
