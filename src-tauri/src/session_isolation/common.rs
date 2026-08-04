@@ -99,7 +99,7 @@ mod tests {
             return;
         };
 
-        let cargo_bin = PathBuf::from(home).join(".cargo").join("bin");
+        let cargo_bin = PathBuf::from(&home).join(".cargo").join("bin");
         let restricted = get_restricted_path();
         assert!(
             restricted.contains(cargo_bin.to_string_lossy().as_ref()),

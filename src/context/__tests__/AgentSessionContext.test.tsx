@@ -355,7 +355,7 @@ describe('AgentSessionContext (Local)', () => {
         expect(result.current.runtimeState.phase).toBe('degraded');
     });
 
-    it('sets isProxyReady to false when proxy.ready is false during initialization', async () => {
+    it('keeps isSessionLoading false during MCP initialization so chat can render', async () => {
         openAgentSessionMock.mockResolvedValue(
             createOpenSessionResponse(TEST_SESSION_ID, {
                 runtimeState: createReadyRuntimeState({
@@ -369,11 +369,11 @@ describe('AgentSessionContext (Local)', () => {
             wrapper: defaultWrapper,
         });
 
-        // During initialization phase, isSessionLoading should be true
         await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(true);
+            expect(result.current.runtimeState.phase).toBe('initializing');
         });
 
+        expect(result.current.isSessionLoading).toBe(false);
         expect(result.current.isProxyReady).toBe(false);
     });
 

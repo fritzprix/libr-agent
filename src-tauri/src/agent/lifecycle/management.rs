@@ -83,26 +83,11 @@ pub async fn resume_session(
     // SSOT: MCP activation is session → assistant → mcpServerIds.
     let (tool_ids, mcp_server_ids) = crate::agent::resolve_session_mcp_bindings(&session).await?;
 
-    // Create proxy for this session (tool discovery runs asynchronously in background)
-    proxy_manager
-        .create_proxy(
-            session_id.to_string(),
-            tool_ids,
-            mcp_server_ids,
-            Some(app_handle.clone()),
-        )
-        .await?;
-
-    log::info!(
-        "Created MCP proxy for resumed session: {} with builtin tools",
-        session_id
-    );
-
     // Load compact context if exists (SP17)
     let compact_context_record =
         crate::agent::lifecycle::load_compact_context_record(session_id, "session resume").await?;
 
-    // Add to active sessions with cancellation token and empty cache
+    // Activate session in memory first so open/resume can return without waiting on MCP.
     let mut active = active_sessions.write().await;
     if let Some(existing_session) = active.get_mut(session_id) {
         log::info!(
@@ -135,6 +120,18 @@ pub async fn resume_session(
             ),
         );
     }
+    drop(active);
+
+    // MCP proxy creation (incl. HTTP startup) must not block session UI.
+    // Workflow soft-waits via ensure_proxy_ready; discovery surfaces via runtime-state events.
+    crate::agent::lifecycle::spawn_create_proxy_for_session(
+        Arc::clone(proxy_manager),
+        app_handle.clone(),
+        session_id.to_string(),
+        tool_ids,
+        mcp_server_ids,
+    )
+    .await;
 
     log::info!("Resumed agent session: {}", session_id);
     Ok(session)

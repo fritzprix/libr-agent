@@ -10,6 +10,7 @@ use crate::agent::runtime_state::SessionRuntimeState;
 use crate::mcp::builtin::service_id::BuiltinServiceId;
 use std::sync::Arc;
 use tauri::AppHandle;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProxyReadinessState {
@@ -82,7 +83,7 @@ impl MCPServiceProxyManager {
         resolve_startup_timeout_seconds(&self.config).await
     }
 
-    pub(super) async fn set_runtime_state(
+    pub(crate) async fn set_runtime_state(
         &self,
         session_id: &str,
         runtime_state: SessionRuntimeState,
@@ -120,14 +121,32 @@ impl MCPServiceProxyManager {
         self.proxies.read().await.get(session_id).cloned()
     }
 
+    /// Per-session creation mutex used by create / ensure_builtin / destroy.
+    ///
+    /// The outer `creation_guards` map lock is held only long enough to insert or look up
+    /// the per-session `Arc<Mutex<()>>`. Callers hold the returned mutex across publish
+    /// (and, for create, across HTTP startup) for single-flight semantics.
+    pub(super) async fn session_creation_guard(&self, session_id: &str) -> Arc<Mutex<()>> {
+        let mut guards = self.creation_guards.lock().await;
+        guards
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
     /// Destroy a proxy and cleanup its resources
     ///
     /// This should be called when an agent session terminates to free resources.
     /// Builtin tool instances are automatically dropped when the proxy is removed.
+    /// Serialized with in-flight `create_proxy` / `ensure_builtin_proxy` via the
+    /// per-session creation lock.
     ///
     /// # Arguments
     /// * `session_id` - The session identifier
     pub async fn destroy_proxy(&self, session_id: &str) {
+        let session_guard = self.session_creation_guard(session_id).await;
+        let _session_lock = session_guard.lock().await;
+
         // 1. Remove builtin proxy
         let proxy_removed = self.proxies.write().await.remove(session_id).is_some();
 
@@ -143,7 +162,8 @@ impl MCPServiceProxyManager {
         // 4. Remove HTTP session manager (HTTP connections are shared, just remove the manager)
         self.session_http_managers.write().await.remove(session_id);
 
-        // 5. Remove per-session creation guard (allows future re-creation of same session_id)
+        // 5. Remove per-session creation guard while still holding `_session_lock`
+        //    so waiters cannot observe a missing guard mid-teardown.
         self.creation_guards.lock().await.remove(session_id);
 
         if proxy_removed {
