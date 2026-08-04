@@ -1,3 +1,21 @@
+## [0.8.38] - 2026-08-05
+
+### 🚀 Features
+
+- **Opt-in Temperature Override**: Added an opt-in temperature override setting for AI model requests, while streamlining default model parameters.
+- **MCP Discovery & Session Ready**: Finalized Session Ready notifications upon MCP discovery deadlines and aligned default discovery timeout to 30 seconds with progress toast notifications.
+
+### 🐛 Fixes
+
+- **Windows Environment & Path Recovery**: Recovered Windows `PATH` and system environment from the registry for isolated child processes, ensuring reliable tool path discovery for Cargo and CLI commands.
+- **MCP Proxy Hygiene & Tool Errors**: Hardened `create_proxy` mutex hygiene to unblock session display reliably and standardized tool error state handling using single-source-of-truth `result`/`toolError` metadata.
+- **Cargo Manifest & CI**: Fixed `winreg` target dependency scoping in `Cargo.toml` to prevent scoping non-Windows dependencies on CI, and removed duplicate `quick-xml` entry from `Cargo.lock`.
+
+### 🔧 Internal
+
+- **Agent-Init Skill Guidance**: Updated `agent-init` skill with lean `agents.md` guidelines and explicitly linked dev merge-policy rules.
+- **Dependency Updates**: Bumped Rust backend dependencies (`docx-rs`, `jsonschema`, `ammonia`, `fastembed`, `calamine`, `tokio-util`, `serde_json`).
+
 ## [0.8.37] - 2026-08-02
 
 ### 🚀 Features
