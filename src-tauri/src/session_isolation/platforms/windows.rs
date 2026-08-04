@@ -52,8 +52,9 @@ pub async fn create_basic_isolated_command(
     // Apply environment isolation: clear all inherited environment variables
     cmd.env_clear();
 
-    // Re-apply whitelisted essential system variables
-    // (PATH includes discovered Python/Cargo/Node CLI tool dirs)
+    // Re-apply whitelisted essential system variables.
+    // PATH is rebuilt via registry User/Machine Path + discovered
+    // Python/Cargo/Node CLI tool dirs (see get_effective_path).
     for (k, v) in crate::utils::env::get_isolated_env() {
         cmd.env(k, v);
     }
@@ -71,7 +72,7 @@ pub async fn create_basic_isolated_command(
         cmd.env(key, value);
     }
 
-    info!("Windows environment configured: workspace isolated, PATH preserved (with discovered tool dirs)");
+    info!("Windows environment configured: workspace isolated, PATH rebuilt from registry + discovered tool dirs");
     let path_len = crate::utils::env::get_effective_path().len();
     let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
     let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
