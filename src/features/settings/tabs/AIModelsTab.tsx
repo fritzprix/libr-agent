@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus } from 'lucide-react';
+import { Plus, Info } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
 import {
   createCustomOpenAIProvider,
@@ -13,9 +13,17 @@ import type {
   ModelChoice,
 } from '@/lib/services/settings-service';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
-import { Button } from '@/components/ui';
+import {
+  Button,
+  Checkbox,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui';
 import { ProviderCard } from '../components/ProviderCard';
 import { CustomProviderCard } from '../components/CustomProviderCard';
+import { NumberSettingField } from '../components/NumberSettingField';
+import { parseFloatInput } from '../components/settings-number-utils';
 
 const EMPTY_CUSTOM_PROVIDERS: CustomOpenAIProvider[] = [];
 
@@ -25,6 +33,8 @@ interface AIModelsTabProps {
   providerEntries: AIServiceProvider[];
   localPreferredModel: ModelChoice;
   localFallbackModel?: ModelChoice | null;
+  temperatureOverrideEnabled: boolean;
+  temperature: number;
   onPendingChange: (
     provider: AIServiceProvider,
     patch: Partial<ServiceConfig>,
@@ -32,6 +42,8 @@ interface AIModelsTabProps {
   onCustomProvidersChange: (providers: CustomOpenAIProvider[]) => void;
   onPreferredModelChange: (model: string, provider: string) => void;
   onFallbackModelChange: (model: string, provider: string) => void;
+  onTemperatureOverrideEnabledChange: (enabled: boolean) => void;
+  onTemperatureChange: (temperature: number) => void;
 }
 
 function AIModelsTabComponent({
@@ -40,10 +52,14 @@ function AIModelsTabComponent({
   providerEntries,
   localPreferredModel,
   localFallbackModel,
+  temperatureOverrideEnabled,
+  temperature,
   onPendingChange,
   onCustomProvidersChange,
   onPreferredModelChange,
   onFallbackModelChange,
+  onTemperatureOverrideEnabledChange,
+  onTemperatureChange,
 }: AIModelsTabProps) {
   const { t } = useTranslation('common');
   const providers = customProviders ?? EMPTY_CUSTOM_PROVIDERS;
@@ -229,12 +245,83 @@ function AIModelsTabComponent({
             onConfigUpdate={onFallbackModelChange}
             className="w-full max-w-sm"
           />
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="mt-1 text-xs text-muted-foreground">
             {t(
               'settings.aiModels.fallbackModelDescription',
               'Used as a last resort when the primary model returns malformed or empty responses after all retries.',
             )}
           </p>
+        </div>
+
+        <div className="min-w-0 space-y-3">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="temperature-override-enabled"
+              checked={temperatureOverrideEnabled}
+              onCheckedChange={(checked) => {
+                onTemperatureOverrideEnabledChange(checked === true);
+              }}
+            />
+            <label
+              htmlFor="temperature-override-enabled"
+              className="cursor-pointer text-sm font-medium text-muted-foreground"
+            >
+              {t(
+                'settings.aiModels.temperatureOverride',
+                'Override temperature',
+              )}
+            </label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex text-muted-foreground hover:text-foreground"
+                  aria-label={t(
+                    'settings.aiModels.temperatureOverrideTooltipAria',
+                    'About temperature defaults',
+                  )}
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-pretty">
+                {t(
+                  'settings.aiModels.temperatureOverrideTooltip',
+                  'Most providers already set a default temperature per model. Leave this off unless you need to override that model default.',
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'settings.aiModels.temperatureOverrideDescription',
+              'When disabled, provider and serving-engine defaults apply. Enable to send a custom temperature on AI requests.',
+            )}
+          </p>
+          {temperatureOverrideEnabled ? (
+            <NumberSettingField
+              label={t('settings.aiModels.temperature', 'Temperature')}
+              description={t(
+                'settings.aiModels.temperatureDescription',
+                'Controls randomness. Lower is more deterministic; higher is more creative. Range 0–2.',
+              )}
+              value={temperature}
+              min={0}
+              max={2}
+              step={0.1}
+              allowDecimal
+              placeholder="0.7"
+              parseValue={(rawValue) =>
+                parseFloatInput(rawValue, {
+                  fallback: temperature,
+                  min: 0,
+                  max: 2,
+                })
+              }
+              onValueChange={onTemperatureChange}
+              containerClassName="min-w-0"
+            />
+          ) : null}
         </div>
       </div>
 

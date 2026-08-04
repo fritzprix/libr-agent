@@ -100,6 +100,12 @@ export interface AIServiceConfig {
   promptCachePrefixMessageCount?: number;
 
   /**
+   * Optional sampling temperature override.
+   * When unset, providers omit temperature so serving-engine defaults apply.
+   */
+  temperature?: number;
+
+  /**
    * Enable reasoning mode for supported models.
    * Per-conversation temporary setting (not global).
    *

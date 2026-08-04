@@ -280,6 +280,9 @@ export class OpenAIService extends BaseAIService<
           max_completion_tokens: config.maxTokens,
           stream: true,
           stream_options: { include_usage: true },
+          ...(config.temperature !== undefined && {
+            temperature: config.temperature,
+          }),
           ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
           tools,
           tool_choice: !options.availableTools?.length
@@ -557,6 +560,7 @@ export class OpenAIService extends BaseAIService<
         stream: false,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: s?.maxTokens ?? config.maxTokens,
+        temperature: s?.temperature ?? config.temperature,
         top_p: s?.topP,
         presence_penalty: s?.presencePenalty,
         frequency_penalty: s?.frequencyPenalty,

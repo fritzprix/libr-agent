@@ -11,6 +11,7 @@ import type { MCPResponse, SamplingResult } from './response';
 export interface SamplingOptions {
   model?: string;
   maxTokens?: number;
+  temperature?: number;
   topP?: number;
   topK?: number;
   stopSequences?: string[];

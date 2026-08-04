@@ -126,6 +126,9 @@ export class GroqService extends BaseAIService<
                 config.defaultModel ||
                 'llama-3.1-8b-instant',
               max_tokens: config.maxTokens,
+              ...(config.temperature !== undefined && {
+                temperature: config.temperature,
+              }),
               reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
               stream: true,
               tools: tools,
@@ -402,6 +405,7 @@ export class GroqService extends BaseAIService<
             stream: false,
             messages: [{ role: 'user', content: prompt }],
             max_tokens: s?.maxTokens ?? config.maxTokens,
+            temperature: s?.temperature ?? config.temperature,
             top_p: s?.topP,
             presence_penalty: s?.presencePenalty,
             frequency_penalty: s?.frequencyPenalty,

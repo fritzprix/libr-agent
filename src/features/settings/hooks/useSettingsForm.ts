@@ -43,6 +43,8 @@ function getAiModelsComparableState(settings: SettingsFormState) {
     customProviders: normalizeCustomOpenAIProviders(settings.customProviders),
     preferredModel: settings.preferredModel,
     fallbackModel: settings.fallbackModel,
+    temperatureOverrideEnabled: settings.temperatureOverrideEnabled,
+    temperature: settings.temperature,
     agentHubUrl: settings.agentHubUrl,
   };
 }
