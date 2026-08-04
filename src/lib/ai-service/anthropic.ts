@@ -623,7 +623,6 @@ export class AnthropicService extends BaseAIService<
           {
             model,
             max_tokens: s?.maxTokens ?? config.maxTokens ?? 4096,
-            temperature: s?.temperature ?? config.temperature,
             top_p: s?.topP,
             top_k: s?.topK,
             stop_sequences: s?.stopSequences,

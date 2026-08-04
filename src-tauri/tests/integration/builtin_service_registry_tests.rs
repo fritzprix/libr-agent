@@ -45,7 +45,6 @@ fn mock_agent_config(aliases: Option<Vec<&str>>) -> AgentConfig {
                 })
                 .collect()
         }),
-        temperature: Some(1.0),
         max_tokens: None,
         max_depth: None,
         max_fanout: None,

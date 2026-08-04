@@ -61,8 +61,6 @@ export interface AIServiceConfig {
   defaultModel?: string;
   /** The maximum number of tokens to generate in a response. */
   maxTokens?: number;
-  /** The sampling temperature for the model. */
-  temperature?: number;
   /** Safety settings for the model (e.g. Gemini). */
   safetySettings?: SafetySetting[];
   /** An array of tools available to the service. */

@@ -36,7 +36,6 @@ async function testOllamaReasoning() {
     enableReasoning: true,
     reasoningEffort: 'medium', // Will fallback to boolean true
     maxTokens: 2000,
-    temperature: 0.7,
   };
 
   try {
@@ -84,7 +83,6 @@ async function testAnthropicReasoning() {
   const config: AIServiceConfig = {
     enableReasoning: true, // Will use extended_thinking for Claude 3.5+
     maxTokens: 2000,
-    temperature: 0.7,
   };
 
   try {
@@ -134,7 +132,6 @@ async function testOpenAIReasoning() {
     enableReasoning: true,
     reasoningEffort: 'medium', // For o3/o4 models
     maxTokens: 2000,
-    temperature: 0.7,
   };
 
   try {

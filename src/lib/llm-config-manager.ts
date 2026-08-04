@@ -53,8 +53,6 @@ export interface ServiceConfig {
   provider: string;
   /** The ID of the model to use. */
   model: string;
-  /** The sampling temperature. */
-  temperature: number;
   /** The maximum number of tokens to generate. */
   maxTokens: number;
   /** The nucleus sampling probability. */

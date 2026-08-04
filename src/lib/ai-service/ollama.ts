@@ -319,7 +319,6 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         ...(requestTools ? { tools: requestTools } : {}),
         keep_alive: '5m',
         options: {
-          temperature: config.temperature || 0.7,
           num_predict: config.maxTokens || 4096,
         },
       };
@@ -495,7 +494,6 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
           messages: [{ role: 'user', content: prompt }],
           options: {
             num_predict: s?.maxTokens ?? config.maxTokens,
-            temperature: s?.temperature ?? config.temperature,
             top_p: s?.topP,
             stop: s?.stopSequences,
           },

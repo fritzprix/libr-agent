@@ -30,12 +30,9 @@ pub struct AgentConfig {
     /// - Some([...]) = specific services allowed
     pub allowed_built_in_service_aliases: Option<Vec<BuiltinServiceId>>,
 
-    // NOTE: Model and Provider have been moved to the session level or global settings.
-    // Assistants focus on identity (system prompt) and capabilities (MCP servers).
-    // The actual LLM configuration follows global settings or session overrides.
-    /// Temperature for LLM (0.0-2.0, None = provider default)
-    pub temperature: Option<f32>,
-
+    // NOTE: Model and provider live at session / global settings. Sampling params such as
+    // temperature are omitted so provider/serving-engine defaults apply. Assistants focus
+    // on identity (system prompt) and capabilities (MCP servers).
     /// Maximum tokens to generate
     pub max_tokens: Option<u32>,
 
@@ -77,7 +74,6 @@ impl Default for AgentConfig {
             system_prompt: "You are a helpful AI assistant.".to_string(),
             mcp_server_ids: Vec::new(),
             allowed_built_in_service_aliases: None, // Allow all by default
-            temperature: None,
             max_tokens: None,
             max_depth: None,
             max_fanout: None,
@@ -113,12 +109,6 @@ impl AgentConfig {
             return Err("System prompt cannot be empty".to_string());
         }
 
-        if let Some(t) = self.temperature {
-            if !(0.0..=2.0).contains(&t) {
-                return Err("Temperature must be between 0.0 and 2.0".to_string());
-            }
-        }
-
         Ok(())
     }
 }
@@ -130,7 +120,6 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AgentConfig::default();
-        assert_eq!(config.temperature, None);
         assert!(config.validate().is_ok());
     }
 
@@ -143,7 +132,6 @@ mod tests {
             system_prompt: "You are a helpful assistant".to_string(),
             mcp_server_ids: vec!["server1".to_string()],
             allowed_built_in_service_aliases: Some(vec![BuiltinServiceId::Browser]),
-            temperature: None,
             max_tokens: Some(8192),
             max_depth: Some(8),
             max_fanout: Some(4),
@@ -159,7 +147,7 @@ mod tests {
         let parsed = AgentConfig::from_json(&json).unwrap();
 
         assert_eq!(parsed.id, config.id);
-        assert_eq!(parsed.temperature, config.temperature);
+        assert_eq!(parsed.max_tokens, config.max_tokens);
         assert_eq!(parsed.name, config.name);
     }
 
@@ -170,15 +158,7 @@ mod tests {
         // Valid config
         assert!(config.validate().is_ok());
 
-        // Invalid temperature
-        config.temperature = Some(3.0);
-        assert!(config.validate().is_err());
-
-        config.temperature = Some(-0.5);
-        assert!(config.validate().is_err());
-
         // Invalid name
-        config.temperature = None;
         config.name = String::new();
         assert!(config.validate().is_err());
     }

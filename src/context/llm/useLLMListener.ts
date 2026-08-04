@@ -57,7 +57,6 @@ interface UseLLMListenerProps {
     provider: string,
     apiKey?: string,
     systemPrompt?: string,
-    temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
   ) => Promise<Message>;
@@ -113,7 +112,6 @@ export function useLLMListener({
             model,
             provider,
             systemPrompt,
-            temperature,
             maxTokens,
             availableTools,
           } = event.payload;
@@ -222,7 +220,6 @@ export function useLLMListener({
                     targetProvider,
                     targetApiKey,
                     systemPrompt,
-                    temperature,
                     maxTokens,
                     availableTools,
                   );
@@ -297,7 +294,6 @@ export function useLLMListener({
                   fallbackModel.provider,
                   fallbackApiKey,
                   systemPrompt,
-                  temperature,
                   maxTokens,
                   availableTools,
                 );

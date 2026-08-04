@@ -96,7 +96,6 @@ const service = AIServiceFactory.getService(
   '', // No API key needed for local Ollama
   {
     defaultModel: 'llama3.1',
-    temperature: 0.7,
     maxTokens: 4096,
   },
 );
@@ -179,7 +178,7 @@ for await (const chunk of service.streamChat(messages, {
    - Use SSD storage for faster model loading
 
 3. **Configuration Tuning**
-   - Lower temperature for more consistent responses
+   - Leave sampling to the Ollama/model defaults unless you have a specific need
    - Adjust max tokens based on your needs
    - Use keep_alive to keep models loaded between requests
 
@@ -238,7 +237,6 @@ interface AIServiceConfig {
   retryDelay?: number; // Delay between retries in ms
   defaultModel?: string; // Default model name
   maxTokens?: number; // Maximum response tokens
-  temperature?: number; // Response creativity (0.0-1.0)
   host?: string; // Ollama server host URL
 }
 ```

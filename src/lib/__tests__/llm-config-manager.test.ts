@@ -197,7 +197,6 @@ describe('LLMConfigManager', () => {
           const isValid = manager.validateServiceConfig({
               provider: 'openai',
               model: 'gpt-4o',
-              temperature: 0.7,
               maxTokens: 1000,
               topP: 1,
               frequencyPenalty: 0,
@@ -210,7 +209,6 @@ describe('LLMConfigManager', () => {
         const isValid = manager.validateServiceConfig({
             provider: 'unknown',
             model: 'gpt-4o',
-            temperature: 0.7,
             maxTokens: 1000,
             topP: 1,
             frequencyPenalty: 0,
@@ -223,7 +221,6 @@ describe('LLMConfigManager', () => {
         const isValid = manager.validateServiceConfig({
             provider: 'openai',
             model: 'unknown-model',
-            temperature: 0.7,
             maxTokens: 1000,
             topP: 1,
             frequencyPenalty: 0,

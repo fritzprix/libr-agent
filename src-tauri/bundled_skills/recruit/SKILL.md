@@ -88,7 +88,6 @@ agent__create({
   "name": "GitHub Specialist",
   "description": "...",
   "systemPrompt": "...",
-  "temperature": 0.3,
   "builtinCapabilities": ["planning", "browser"],
   "externalMcpServers": ["<mcp-server-id-from-inventory>"]
 })

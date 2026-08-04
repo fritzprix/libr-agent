@@ -28,7 +28,6 @@ struct CreateAgentRequest {
     #[serde(rename = "systemPrompt")]
     system_prompt: Option<String>,
     description: Option<String>,
-    temperature: Option<f32>,
     #[serde(rename = "allowedBuiltInServiceAliases")]
     allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
     #[serde(rename = "mcpServerIds")]
@@ -44,7 +43,6 @@ struct UpdateAgentRequest {
     #[serde(rename = "systemPrompt")]
     system_prompt: Option<String>,
     description: Option<String>,
-    temperature: Option<f32>,
     #[serde(rename = "allowedBuiltInServiceAliases")]
     allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
     #[serde(rename = "mcpServerIds")]
@@ -55,7 +53,6 @@ struct ConfigMergeParams<'a> {
     base_config: Option<Value>,
     system_prompt: Option<&'a str>,
     description: Option<&'a str>,
-    temperature: Option<f32>,
     allowed_builtin_service_aliases: Option<&'a Vec<BuiltinServiceId>>,
     mcp_server_ids: Option<&'a Vec<String>>,
 }
@@ -94,7 +91,6 @@ fn build_agent_config_response_data(id: &str, name: &str, config: &Value) -> Val
         "name": name,
         "description": config.get("description").and_then(Value::as_str),
         "systemPrompt": config.get("systemPrompt").and_then(Value::as_str),
-        "temperature": config.get("temperature").and_then(Value::as_f64),
         "builtinCapabilities": effective_builtin_capabilities.clone(),
         "configuredBuiltinCapabilities": configured_builtin_capabilities.clone(),
         "effectiveBuiltinCapabilities": effective_builtin_capabilities,
@@ -113,19 +109,13 @@ fn build_agent_config_echo_message(action: &str, name: &str, id: &str, config: &
         .get("description")
         .and_then(Value::as_str)
         .unwrap_or("none");
-    let temperature = config
-        .get("temperature")
-        .and_then(Value::as_f64)
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "provider default".to_string());
 
     format!(
-        "Agent configuration '{}' {} (ID: {})\n\nDescription: {}\nTemperature: {}\nConfigured builtin capabilities: {}\nEffective builtin capabilities: {}\nExternal MCP servers: {}",
+        "Agent configuration '{}' {} (ID: {})\n\nDescription: {}\nConfigured builtin capabilities: {}\nEffective builtin capabilities: {}\nExternal MCP servers: {}",
         name,
         action,
         id,
         description,
-        temperature,
         format_summary_list(&configured_builtin_capabilities),
         format_summary_list(&effective_builtin_capabilities),
         format_summary_list(&external_mcp_servers),
@@ -140,9 +130,6 @@ fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
     }
     if let Some(v) = params.description {
         config["description"] = json!(v);
-    }
-    if let Some(v) = params.temperature {
-        config["temperature"] = json!(v);
     }
 
     if let Some(v) = params.allowed_builtin_service_aliases {
@@ -262,7 +249,6 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
         base_config: None,
         system_prompt: trim_optional_text(request.system_prompt.as_deref()).as_deref(),
         description: trim_optional_text(request.description.as_deref()).as_deref(),
-        temperature: request.temperature,
         allowed_builtin_service_aliases: Some(&builtin_aliases),
         mcp_server_ids: request.mcp_server_ids.as_ref(),
     });
@@ -302,7 +288,7 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
                 build_agent_config_echo_message("created successfully", &normalized_name, &id, &config),
                 vec![
                     "List agent configurations to review the new configuration".to_string(),
-                    "Update the configuration if you want to refine its prompt, temperature, or capabilities"
+                    "Update the configuration if you want to refine its prompt or capabilities"
                         .to_string(),
                 ],
             );
@@ -414,7 +400,6 @@ pub async fn update_agent(
         base_config: Some(base_config),
         system_prompt: trim_optional_text(request.system_prompt.as_deref()).as_deref(),
         description: trim_optional_text(request.description.as_deref()).as_deref(),
-        temperature: request.temperature,
         allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
         mcp_server_ids: request.mcp_server_ids.as_ref(),
     });
@@ -655,7 +640,6 @@ async fn list_agent_configs_from_db(
             "name": agent.name,
             "description": parsed_config.get("description").and_then(Value::as_str),
             "systemPrompt": parsed_config.get("systemPrompt").and_then(Value::as_str),
-            "temperature": parsed_config.get("temperature").and_then(Value::as_f64),
             "builtinCapabilities": effective_builtin_capabilities,
             "externalMcpServers": res_capabilities,
         }));

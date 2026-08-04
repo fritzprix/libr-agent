@@ -364,10 +364,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           geminiConfig.maxOutputTokens = config.maxTokens;
         }
 
-        if (config.temperature !== undefined) {
-          geminiConfig.temperature = config.temperature;
-        }
-
         if (thinkingConfig) {
           geminiConfig.thinkingConfig = thinkingConfig;
         }
@@ -537,7 +533,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           config: {
             abortSignal,
             maxOutputTokens: s?.maxTokens ?? rawConfig.maxTokens,
-            temperature: s?.temperature ?? rawConfig.temperature,
             topP: s?.topP,
             topK: s?.topK,
             stopSequences: s?.stopSequences,

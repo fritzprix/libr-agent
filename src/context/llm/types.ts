@@ -67,7 +67,6 @@ export interface CompletionRequest {
   apiKey?: string;
   /** Stable system prompt (base sections plus stable service-context blocks). */
   systemPrompt?: string;
-  temperature?: number;
   maxTokens?: number;
   availableTools?: MCPTool[];
 }
@@ -130,7 +129,6 @@ export interface LLMServiceContextValue {
     provider: string,
     apiKey?: string,
     systemPrompt?: string,
-    temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
   ) => Promise<Message>;

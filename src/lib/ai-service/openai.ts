@@ -557,7 +557,6 @@ export class OpenAIService extends BaseAIService<
         stream: false,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: s?.maxTokens ?? config.maxTokens,
-        temperature: s?.temperature ?? config.temperature,
         top_p: s?.topP,
         presence_penalty: s?.presencePenalty,
         frequency_penalty: s?.frequencyPenalty,
