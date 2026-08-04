@@ -65,8 +65,55 @@ pub fn get_restricted_path() -> String {
                     .to_string_lossy()
                     .to_string(),
             );
+            paths.push(
+                home_path
+                    .join(".bun")
+                    .join("bin")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            paths.push(
+                home_path
+                    .join(".volta")
+                    .join("bin")
+                    .to_string_lossy()
+                    .to_string(),
+            );
         }
 
         paths.join(":")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_restricted_path_includes_cargo_bin_on_unix() {
+        if cfg!(windows) {
+            return;
+        }
+
+        let Ok(home) = std::env::var("HOME") else {
+            return;
+        };
+
+        let cargo_bin = PathBuf::from(home).join(".cargo").join("bin");
+        let restricted = get_restricted_path();
+        assert!(
+            restricted.contains(cargo_bin.to_string_lossy().as_ref()),
+            "Unix restricted PATH should include ~/.cargo/bin; got: {restricted}"
+        );
+        assert!(
+            restricted.contains(
+                PathBuf::from(&home)
+                    .join(".bun")
+                    .join("bin")
+                    .to_string_lossy()
+                    .as_ref()
+            ),
+            "Unix restricted PATH should include ~/.bun/bin"
+        );
     }
 }

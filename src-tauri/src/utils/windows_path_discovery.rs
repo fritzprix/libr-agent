@@ -2,9 +2,9 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-/// Cached PATH prefix discovered from common Python/pip/pipx install locations.
+/// Cached PATH prefix discovered from common user/dev tool install locations.
 /// GUI-launched Windows apps often inherit a stripped PATH that omits user-local
-/// tool directories where `jupyter`, `pip`, and pipx shims are installed.
+/// directories for Python/pip/pipx, Cargo/Rust, Node package managers, and similar CLIs.
 pub fn get_windows_discovered_path_os() -> Option<OsString> {
     static DISCOVERED: OnceLock<Option<OsString>> = OnceLock::new();
     DISCOVERED
@@ -91,24 +91,73 @@ fn discover_windows_tool_paths() -> Vec<PathBuf> {
         push_unique_dir(&mut paths, &python_root.join("Library").join("bin"));
     }
 
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        collect_versioned_scripts_dirs(&PathBuf::from(appdata).join("Python"), &mut paths);
+    let user_profile = std::env::var_os("USERPROFILE").map(PathBuf::from);
+    let appdata = std::env::var_os("APPDATA").map(PathBuf::from);
+    let localappdata = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let program_files = std::env::var_os("ProgramFiles").map(PathBuf::from);
+
+    if let Some(ref appdata) = appdata {
+        collect_versioned_scripts_dirs(&appdata.join("Python"), &mut paths);
     }
 
-    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-        collect_versioned_scripts_dirs(
-            &PathBuf::from(localappdata).join("Programs").join("Python"),
-            &mut paths,
-        );
+    if let Some(ref localappdata) = localappdata {
+        collect_versioned_scripts_dirs(&localappdata.join("Programs").join("Python"), &mut paths);
     }
 
-    if let Ok(profile) = std::env::var("USERPROFILE") {
-        push_unique_dir(
-            &mut paths,
-            &PathBuf::from(profile).join(".local").join("bin"),
-        );
+    for dir in collect_windows_user_tool_dirs(
+        user_profile.as_deref(),
+        appdata.as_deref(),
+        localappdata.as_deref(),
+        program_files.as_deref(),
+    ) {
+        push_unique_dir(&mut paths, &dir);
     }
 
+    paths
+}
+
+/// Well-known Windows user/dev CLI install dirs (Cargo, Node managers, Scoop, etc.).
+/// Only existing directories are returned so isolated PATH stays lean.
+pub fn collect_windows_user_tool_dirs(
+    user_profile: Option<&Path>,
+    appdata: Option<&Path>,
+    localappdata: Option<&Path>,
+    program_files: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(profile) = user_profile {
+        candidates.push(profile.join(".local").join("bin"));
+        // rustup / cargo / many rustup-installed CLIs (often also hosts `uv`)
+        candidates.push(profile.join(".cargo").join("bin"));
+        candidates.push(profile.join(".bun").join("bin"));
+        candidates.push(profile.join(".volta").join("bin"));
+        candidates.push(profile.join("scoop").join("shims"));
+        // fnm default root may hold current Node shims depending on install mode
+        candidates.push(profile.join(".fnm"));
+    }
+
+    if let Some(appdata) = appdata {
+        candidates.push(appdata.join("npm"));
+        candidates.push(appdata.join("pnpm"));
+        candidates.push(appdata.join("fnm"));
+    }
+
+    if let Some(localappdata) = localappdata {
+        // Default PNPM_HOME on Windows
+        candidates.push(localappdata.join("pnpm"));
+        candidates.push(localappdata.join("Programs").join("nodejs"));
+        candidates.push(localappdata.join("fnm"));
+    }
+
+    if let Some(program_files) = program_files {
+        candidates.push(program_files.join("nodejs"));
+    }
+
+    let mut paths = Vec::new();
+    for candidate in candidates {
+        push_unique_dir(&mut paths, &candidate);
+    }
     paths
 }
 
@@ -208,5 +257,64 @@ mod tests {
         assert_eq!(found, Some(versioned));
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_collect_windows_user_tool_dirs_includes_cargo_and_cli_managers() {
+        let root = std::env::temp_dir().join("libragent_user_tool_dirs_test");
+        let _ = std::fs::remove_dir_all(&root);
+
+        let profile = root.join("profile");
+        let appdata = root.join("appdata");
+        let localappdata = root.join("localappdata");
+        let program_files = root.join("program_files");
+
+        let expected = [
+            profile.join(".cargo").join("bin"),
+            profile.join(".bun").join("bin"),
+            profile.join(".volta").join("bin"),
+            profile.join("scoop").join("shims"),
+            profile.join(".local").join("bin"),
+            appdata.join("npm"),
+            appdata.join("pnpm"),
+            localappdata.join("pnpm"),
+            localappdata.join("Programs").join("nodejs"),
+            program_files.join("nodejs"),
+        ];
+
+        for dir in &expected {
+            std::fs::create_dir_all(dir).expect("create tool dir");
+        }
+
+        // Missing dirs must be skipped
+        let missing_fnm = profile.join(".fnm");
+        assert!(!missing_fnm.exists());
+
+        let found = collect_windows_user_tool_dirs(
+            Some(&profile),
+            Some(&appdata),
+            Some(&localappdata),
+            Some(&program_files),
+        );
+
+        for dir in &expected {
+            assert!(
+                found.iter().any(|p| p == dir),
+                "expected {} in discovered tool dirs: {found:?}",
+                dir.display()
+            );
+        }
+        assert!(
+            found.iter().all(|p| p != &missing_fnm),
+            "non-existent dirs must not be added"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_collect_windows_user_tool_dirs_skips_missing_roots() {
+        let found = collect_windows_user_tool_dirs(None, None, None, None);
+        assert!(found.is_empty());
     }
 }
