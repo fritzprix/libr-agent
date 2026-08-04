@@ -116,7 +116,8 @@ fn merge_path_values(preferred: &OsStr, fallback: &OsStr) -> Option<OsString> {
 }
 
 // Discovered/shell/registry paths are prepended so user-local tool dirs (e.g. Python Scripts,
-// cargo/uv from HKCU Path) win over WindowsApps shims. Host PATH entries still follow.
+// Cargo bin, Node managers, cargo/uv from HKCU Path) win over WindowsApps shims.
+// Host PATH entries still follow.
 fn merge_with_current_path(preferred: OsString, current_path: Option<OsString>) -> OsString {
     let merged = current_path
         .as_ref()
@@ -160,7 +161,7 @@ pub fn get_effective_path_os() -> OsString {
 /// Build the Windows effective PATH used by isolated child processes.
 ///
 /// Order (first wins for duplicates):
-/// 1. Discovered tool dirs (Python Scripts ahead of WindowsApps shims)
+/// 1. Discovered tool dirs (Python Scripts, Cargo bin, Node managers — ahead of WindowsApps shims)
 /// 2. Registry Machine+User Path (GUI-stripped process PATH recovery)
 /// 3. Current process PATH
 /// 4. Hard-coded system default if everything is empty

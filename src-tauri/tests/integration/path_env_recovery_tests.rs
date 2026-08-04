@@ -20,5 +20,6 @@ fn test_isolated_env_uses_effective_path() {
     assert_eq!(isolated_path, effective_path);
 }
 
-// Windows registry PATH recovery lives in `windows_path_env_recovery_tests.rs`
-// because this consolidated integration binary is `cfg(not(windows))`.
+// Windows PATH recovery (registry + discovered Cargo/CLI dirs) lives in
+// `windows_path_env_recovery_tests.rs` because this consolidated integration
+// binary is `cfg(not(windows))`.

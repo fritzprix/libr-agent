@@ -53,7 +53,8 @@ pub async fn create_basic_isolated_command(
     cmd.env_clear();
 
     // Re-apply whitelisted essential system variables.
-    // PATH is rebuilt via registry User/Machine Path + discovered tool dirs (see get_effective_path).
+    // PATH is rebuilt via registry User/Machine Path + discovered
+    // Python/Cargo/Node CLI tool dirs (see get_effective_path).
     for (k, v) in crate::utils::env::get_isolated_env() {
         cmd.env(k, v);
     }
