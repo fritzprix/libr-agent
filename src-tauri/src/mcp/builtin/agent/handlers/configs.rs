@@ -528,8 +528,8 @@ pub async fn list_agents_or_sessions(
             ToolGroup::Agent,
         )
         .with_guidance(vec![
-            "Use list(type=\"configs\") to see agent configurations".to_string(),
-            "Use list(type=\"sessions\") to inspect delegated sub-agent sessions".to_string(),
+            "Use listAgents(type=\"configs\") to see agent configurations".to_string(),
+            "Use listAgents(type=\"sessions\") to inspect delegated sub-agent sessions".to_string(),
         ])
         .to_mcp_result()),
     }

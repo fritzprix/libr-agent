@@ -156,8 +156,8 @@ impl ErrorGuidance {
             // Agent tool errors (Unified Assistant/Swarm)
             (ErrorCategory::ResourceNotFound, ToolGroup::Agent) => vec![
                 "Verify the agentId or sessionId is correct".to_string(),
-                "Use list(type=\"configs\") to find available agent configurations".to_string(),
-                "Use list(type=\"sessions\") or checkSession to inspect active delegated sessions"
+                "Use listAgents(type=\"configs\") to find available agent configurations".to_string(),
+                "Use listAgents(type=\"sessions\") or checkSession to inspect active delegated sessions"
                     .to_string(),
             ],
             (ErrorCategory::DuplicateResource, ToolGroup::Agent) => vec![

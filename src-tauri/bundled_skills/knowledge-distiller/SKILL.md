@@ -9,7 +9,7 @@ This skill provides a systematic workflow for retrieving conversation sessions, 
 
 ## Prerequisites
 
-- The agent session must have the optional `history` and `knowledge` builtin services enabled. If tool calls fail with a "not enabled" error, enable them via Assistants settings or `agent__update` before running this workflow.
+- The agent session must have the optional `history` and `knowledge` builtin services enabled. If tool calls fail with a "not enabled" error, enable them via Assistants settings or `agent__updateAgent` before running this workflow.
 - Runtime tool names use the `server__tool` format shown below (for example `history__list`, `knowledge__record_knowledge`). Match names from the session tool list.
 
 ## Execution Triggers

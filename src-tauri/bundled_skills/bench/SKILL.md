@@ -48,12 +48,12 @@ This skill turns LibrAgent's parent-child delegation primitives into a structure
 
 | Primitive | Role |
 |---|---|
-| `agent__list(type="configs")` | Find the assistant to bench |
+| `agent__listAgents(type="configs")` | Find the assistant to bench |
 | `agent__startSession(task="...")` | Spawn a child worker for one problem |
 | `agent__checkSession(sessionId, wait=true)` | Block until a child finishes, get its answer |
 | `agent__checkSession(sessionId)` (poll) | Monitor progress without blocking |
 | `agent__stopSession(sessionId)` | Cancel a stuck child |
-| `agent__list(type="sessions")` | See all active children |
+| `agent__listAgents(type="sessions")` | See all active children |
 
 ## Benchmark Definition Format
 
@@ -115,7 +115,7 @@ Record: `benchmark.name`, `benchmark.assistant`, `benchmark.problems[]`.
 ### 2. Choose the assistant to bench
 
 ```
-agent__list(type="configs", query="Coding Expert")
+agent__listAgents(type="configs", query="Coding Expert")
 ```
 
 Record the `id` for `agent__startSession`. If the user names a custom assistant, use that ID.
@@ -316,12 +316,12 @@ When verifying results, use the most lightweight and accurate verification metho
 
 | Step | Tool | Parameters |
 |---|---|---|
-| Find assistant | `agent__list` | `{ type: "configs", query: "..." }` |
+| Find assistant | `agent__listAgents` | `{ type: "configs", query: "..." }` |
 | Spawn child | `agent__startSession` | `{ agentId, task, waitForResult: false }` |
 | Poll child | `agent__checkSession` | `{ sessionId }` |
 | Wait for child | `agent__checkSession` | `{ sessionId, wait: true, timeout: 300 }` |
 | Stop stuck child | `agent__stopSession` | `{ sessionId }` |
-| List children | `agent__list` | `{ type: "sessions" }` |
+| List children | `agent__listAgents` | `{ type: "sessions" }` |
 | Read file | `workspace__readFile` | `{ path: "benchmarks/..." }` |
 
 ## Guidelines

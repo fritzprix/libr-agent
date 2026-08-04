@@ -424,7 +424,7 @@ pub async fn get_org(
         .with_guidance(vec![
             "Verify orgId matches an ID returned by createOrg or a previous getOrg call."
                 .to_string(),
-            "Use list(type=\"sessions\") to inspect sessions and their org membership.".to_string(),
+            "Use listAgents(type=\"sessions\") to inspect sessions and their org membership.".to_string(),
             "If the org was never created, call createOrg(name=\"...\") from the root session."
                 .to_string(),
         ])

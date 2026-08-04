@@ -91,7 +91,7 @@ fn caller_session_not_found_result(session_id: &str) -> MCPResult {
     )
     .with_guidance(vec![
         "Resume the parent/root session and retry the operation".to_string(),
-        "Use list(type=\"sessions\") to inspect delegated sessions if needed".to_string(),
+        "Use listAgents(type=\"sessions\") to inspect delegated sessions if needed".to_string(),
         "The caller session may have been terminated or expired".to_string(),
     ])
     .to_mcp_result()
@@ -119,7 +119,7 @@ fn invalid_explicit_org_result(org_id: &str) -> MCPResult {
     .with_guidance(vec![
         "Use createOrg(name=\"...\") again from the root session if the org lineage was reset"
             .to_string(),
-        "Use list(type=\"sessions\") to inspect the current delegated lineage".to_string(),
+        "Use listAgents(type=\"sessions\") to inspect the current delegated lineage".to_string(),
     ])
     .to_mcp_result()
 }
@@ -248,7 +248,7 @@ pub async fn load_accessible_delegated_session(
             "Use {} only with delegated child/descendant sessions started from the current session",
             tool_name
         ),
-        "Use list(type=\"sessions\") to inspect the delegated sessions you can control directly"
+        "Use listAgents(type=\"sessions\") to inspect the delegated sessions you can control directly"
             .to_string(),
         "Start a new delegated session with startSession(...) if you need fresh child work"
             .to_string(),

@@ -531,7 +531,7 @@ pub async fn handle_wait_timeout_result(
                     )
                 } else {
                     format!(
-                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use list(type=\"sessions\") to confirm it is still active.{}\n\nCurrent status: {}",
+                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use listAgents(type=\"sessions\") to confirm it is still active.{}\n\nCurrent status: {}",
                         session_id, timeout_seconds, session_id, latest_msgs_str, session_status
                     )
                 };

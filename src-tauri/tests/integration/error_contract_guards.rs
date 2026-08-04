@@ -92,9 +92,9 @@ fn missing_agent_config_error_suggests_listing_configs() {
     assert_eq!(extract_text_error_flag(&r), Some(true));
     assert!(text.contains("✗"));
     assert!(text.contains("Agent configuration 'exa' not found"));
-    assert!(text.contains("list(type=\"configs\")"));
+    assert!(text.contains("listAgents(type=\"configs\")"));
     assert!(
-        text.contains("Retry startSession with a valid agentId copied from list(type=\"configs\")")
+        text.contains("Retry startSession with a valid agentId copied from listAgents(type=\"configs\")")
     );
 }
 
@@ -107,7 +107,7 @@ fn missing_agent_session_error_suggests_listing_sessions() {
     assert_eq!(extract_text_error_flag(&r), Some(true));
     assert!(text.contains("✗"));
     assert!(text.contains("Agent session 'sess_123' not found"));
-    assert!(text.contains("list(type=\"sessions\")"));
+    assert!(text.contains("listAgents(type=\"sessions\")"));
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn operation_failed_uses_error_semantics() {
     let r = operation_failed_error(
         "Read Session",
         "Session 'sess_123' not found",
-        vec!["Use list() to find a valid session ID".to_string()],
+        vec!["Use listSessions() to find a valid session ID".to_string()],
         ToolGroup::Agent,
     );
     let text = extract_text(&r);
@@ -292,7 +292,7 @@ async fn session_wait_timeout_is_converted_to_success_result() {
     assert_eq!(extract_text_error_flag(&result), Some(false));
     assert!(text.contains("timed out after 15s"));
     assert!(text.contains("checkSession(sessionId=\"sess_123\", wait=true)"));
-    assert!(text.contains("list(type=\"sessions\")"));
+    assert!(text.contains("listAgents(type=\"sessions\")"));
     assert_eq!(
         structured.get("toolName").and_then(|v| v.as_str()),
         Some("checkSession")

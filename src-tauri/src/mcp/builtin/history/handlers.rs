@@ -134,7 +134,7 @@ pub async fn read_session(_server: &HistoryServer, args: Value) -> Result<MCPRes
                 "Read Session",
                 &format!("Session '{}' not found", args.session_id),
                 vec![
-                    "Use list() to find a valid session ID".to_string(),
+                    "Use listSessions() to find a valid session ID".to_string(),
                     "Retry readSession with a copied sessionId from list()".to_string(),
                 ],
                 ToolGroup::Agent,
@@ -252,7 +252,7 @@ pub async fn search_history(
                 "Search History",
                 &format!("Session '{}' not found", session_id),
                 vec![
-                    "Use list() to find a valid session ID".to_string(),
+                    "Use listSessions() to find a valid session ID".to_string(),
                     "Retry search() with a copied sessionId from list()".to_string(),
                 ],
                 ToolGroup::Agent,
@@ -275,7 +275,7 @@ pub async fn search_history(
         return Ok(SuccessHint::new(
             text,
             vec![
-                "Use list() to inspect sessions that match your current filters".to_string(),
+                "Use listSessions() to inspect sessions that match your current filters".to_string(),
                 "Relax sessionId/agentId/from/to filters and retry search()".to_string(),
             ],
         )
@@ -299,7 +299,7 @@ pub async fn search_history(
                     session_id
                 ),
                 vec![
-                    "Use list() to confirm the session ID".to_string(),
+                    "Use listSessions() to confirm the session ID".to_string(),
                     "Relax agentId/from/to filters and try search() again".to_string(),
                 ],
                 ToolGroup::Agent,
