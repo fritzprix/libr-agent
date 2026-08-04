@@ -168,6 +168,9 @@ export class CerebrasService extends BaseAIService<
               messages: cerebrasMessages,
               model,
               stream: true,
+              ...(config.temperature !== undefined && {
+                temperature: config.temperature,
+              }),
               tools: tools,
               tool_choice: tools ? 'auto' : undefined,
             },

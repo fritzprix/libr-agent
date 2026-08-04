@@ -25,7 +25,6 @@ export interface AgentConfig {
   /** Allowed built-in service aliases (undefined = all allowed) */
   allowedBuiltInServiceAliases?: string[];
 
-  temperature: number;
   maxTokens?: number;
 
   /** Optional maximum recursive child depth */

@@ -123,7 +123,6 @@ pub fn stable_prompt_source_key(config: &AgentConfig) -> String {
     config.name.hash(&mut hasher);
     config.system_prompt.hash(&mut hasher);
     config.description.hash(&mut hasher);
-    config.temperature.map(f32::to_bits).hash(&mut hasher);
     config.max_tokens.hash(&mut hasher);
     config.mcp_server_ids.hash(&mut hasher);
     config.allowed_built_in_service_aliases.hash(&mut hasher);

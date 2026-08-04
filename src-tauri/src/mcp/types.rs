@@ -177,7 +177,7 @@ pub struct SamplingOptions {
     pub model: Option<String>,
     /// The maximum number of tokens to generate.
     pub max_tokens: Option<u32>,
-    /// The sampling temperature.
+    /// Sampling temperature. When unset, provider/serving-engine defaults apply.
     pub temperature: Option<f64>,
     /// The nucleus sampling probability.
     pub top_p: Option<f64>,

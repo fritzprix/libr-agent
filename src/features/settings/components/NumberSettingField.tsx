@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Input } from '@/components/ui';
-import { isIntegerInRange } from '@/features/settings/components/settings-number-utils';
+import {
+  isFloatInRange,
+  isIntegerInRange,
+} from '@/features/settings/components/settings-number-utils';
 
 interface NumberSettingFieldProps {
   label: string;
@@ -12,6 +15,8 @@ interface NumberSettingFieldProps {
   min?: number;
   max?: number;
   step?: number;
+  /** When true, accept decimal drafts (e.g. temperature 0.7). Default integer-only. */
+  allowDecimal?: boolean;
   labelAdornment?: ReactNode;
   containerClassName?: string;
   inputClassName?: string;
@@ -27,6 +32,7 @@ export function NumberSettingField({
   min,
   max,
   step,
+  allowDecimal = false,
   labelAdornment,
   containerClassName = 'min-w-0 rounded-xl border border-border/70 p-4',
   inputClassName = 'bg-background border text-foreground w-full max-w-xs',
@@ -64,7 +70,10 @@ export function NumberSettingField({
 
           // Keep incomplete / out-of-range drafts local so typing "256" with
           // min=32 is not rewritten to "32" on the first digit.
-          if (!isIntegerInRange(rawValue, { min, max })) {
+          const inRange = allowDecimal
+            ? isFloatInRange(rawValue, { min, max })
+            : isIntegerInRange(rawValue, { min, max });
+          if (!inRange) {
             return;
           }
 

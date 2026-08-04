@@ -95,6 +95,13 @@ vi.mock('@/components/ui', () => ({
   ),
 }));
 
+const temperatureProps = {
+  temperatureOverrideEnabled: false,
+  temperature: 0.7,
+  onTemperatureOverrideEnabledChange: vi.fn(),
+  onTemperatureChange: vi.fn(),
+};
+
 describe('AIModelsTab', () => {
   beforeEach(() => {
     mockAgentModelPicker.mockClear();
@@ -132,6 +139,7 @@ describe('AIModelsTab', () => {
         onCustomProvidersChange={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
+        {...temperatureProps}
       />,
     );
 
@@ -176,6 +184,7 @@ describe('AIModelsTab', () => {
       onCustomProvidersChange: vi.fn(),
       onPreferredModelChange: vi.fn(),
       onFallbackModelChange: vi.fn(),
+      ...temperatureProps,
     };
 
     const { rerender } = render(
@@ -237,6 +246,7 @@ describe('AIModelsTab', () => {
         onCustomProvidersChange={onCustomProvidersChange}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
+        {...temperatureProps}
       />,
     );
 
@@ -256,5 +266,73 @@ describe('AIModelsTab', () => {
         id: expect.any(String),
       }),
     );
+  });
+
+  it('shows temperature field only when override is enabled', () => {
+    const onTemperatureOverrideEnabledChange = vi.fn();
+    const serviceConfigs: Record<AIServiceProvider, ServiceConfig> = {
+      [AIServiceProvider.Groq]: {},
+      [AIServiceProvider.OpenAI]: {},
+      [AIServiceProvider.Anthropic]: {},
+      [AIServiceProvider.Gemini]: {},
+      [AIServiceProvider.Fireworks]: {},
+      [AIServiceProvider.Cerebras]: {},
+      [AIServiceProvider.Ollama]: {},
+      [AIServiceProvider.OpenRouter]: {},
+      [AIServiceProvider.Empty]: {},
+    };
+
+    const { rerender } = render(
+      <AIModelsTab
+        serviceConfigs={serviceConfigs}
+        customProviders={[]}
+        providerEntries={[AIServiceProvider.OpenAI]}
+        localPreferredModel={{
+          provider: AIServiceProvider.OpenAI,
+          model: 'gpt-4o',
+        }}
+        localFallbackModel={undefined}
+        onPendingChange={vi.fn()}
+        onCustomProvidersChange={vi.fn()}
+        onPreferredModelChange={vi.fn()}
+        onFallbackModelChange={vi.fn()}
+        temperatureOverrideEnabled={false}
+        temperature={0.7}
+        onTemperatureOverrideEnabledChange={
+          onTemperatureOverrideEnabledChange
+        }
+        onTemperatureChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByPlaceholderText('0.7')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Override temperature'));
+    expect(onTemperatureOverrideEnabledChange).toHaveBeenCalledWith(true);
+
+    rerender(
+      <AIModelsTab
+        serviceConfigs={serviceConfigs}
+        customProviders={[]}
+        providerEntries={[AIServiceProvider.OpenAI]}
+        localPreferredModel={{
+          provider: AIServiceProvider.OpenAI,
+          model: 'gpt-4o',
+        }}
+        localFallbackModel={undefined}
+        onPendingChange={vi.fn()}
+        onCustomProvidersChange={vi.fn()}
+        onPreferredModelChange={vi.fn()}
+        onFallbackModelChange={vi.fn()}
+        temperatureOverrideEnabled
+        temperature={0.7}
+        onTemperatureOverrideEnabledChange={
+          onTemperatureOverrideEnabledChange
+        }
+        onTemperatureChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByDisplayValue('0.7')).toBeVisible();
   });
 });

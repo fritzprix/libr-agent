@@ -89,7 +89,6 @@ export function buildAgentConfig(
     allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
       assistant.allowedBuiltInServiceAliases,
     ),
-    temperature: 1.0,
     ...(runtimeLimits.defaultSessionMaxDepth > 0
       ? { maxDepth: runtimeLimits.defaultSessionMaxDepth }
       : {}),

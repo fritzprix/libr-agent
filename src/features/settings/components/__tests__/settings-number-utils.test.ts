@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatBytesAsKilobytes,
+  isFloatInRange,
   isIntegerInRange,
+  parseFloatInput,
   parseIntegerInput,
   parseKilobytesInputToBytes,
 } from '../settings-number-utils';
@@ -23,6 +25,20 @@ describe('settings-number-utils', () => {
     expect(isIntegerInRange('', { min: 32, max: 1024 })).toBe(false);
     expect(isIntegerInRange('2000', { min: 32, max: 1024 })).toBe(false);
     expect(isIntegerInRange('12abc', { min: 1, max: 100 })).toBe(false);
+  });
+
+  it('parses and clamps float input', () => {
+    expect(parseFloatInput('0.7', { fallback: 0.5, min: 0, max: 2 })).toBe(0.7);
+    expect(parseFloatInput('3', { fallback: 0.5, min: 0, max: 2 })).toBe(2);
+    expect(parseFloatInput('', { fallback: 0.5, min: 0, max: 2 })).toBe(0.5);
+  });
+
+  it('detects in-range floats without clamping mid-edit values', () => {
+    expect(isFloatInRange('0.', { min: 0, max: 2 })).toBe(false);
+    expect(isFloatInRange('0.7', { min: 0, max: 2 })).toBe(true);
+    expect(isFloatInRange('1.5', { min: 0, max: 2 })).toBe(true);
+    expect(isFloatInRange('2.1', { min: 0, max: 2 })).toBe(false);
+    expect(isFloatInRange('1.2abc', { min: 0, max: 2 })).toBe(false);
   });
 
   it('converts kilobytes input to clamped bytes', () => {

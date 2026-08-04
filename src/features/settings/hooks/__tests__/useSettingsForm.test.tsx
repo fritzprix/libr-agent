@@ -336,5 +336,17 @@ describe('useSettingsForm', () => {
       },
     ]);
   });
+
+  it('should mark ai-models dirty when temperature override changes', () => {
+    const { result } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.update('temperatureOverrideEnabled', true);
+    });
+
+    expect(result.current.formState.temperatureOverrideEnabled).toBe(true);
+    expect(result.current.dirtyState['ai-models']).toBe(true);
+    expect(result.current.isDirty).toBe(true);
+  });
 });
 

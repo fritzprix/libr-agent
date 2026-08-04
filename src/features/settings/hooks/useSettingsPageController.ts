@@ -459,5 +459,6 @@ export function useSettingsPageController() {
     updateAdvanced,
     updateDisplay,
     updateExperimental,
+    update,
   };
 }

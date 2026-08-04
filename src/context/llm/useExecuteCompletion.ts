@@ -148,7 +148,6 @@ export function useExecuteCompletion({
       provider: string,
       apiKey?: string,
       systemPrompt?: string,
-      temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
     ): Promise<Message> => {
@@ -157,7 +156,6 @@ export function useExecuteCompletion({
         messageCount: messages.length,
         provider,
         model,
-        temperature,
         maxTokens,
         toolCount: availableTools?.length ?? 0,
         firstMessageId: messages[0]?.id ?? 'none',
@@ -230,7 +228,6 @@ export function useExecuteCompletion({
             maxTokens ||
             settingsRef.current.advanced?.defaultMaxOutputTokens ||
             8192,
-          temperature: temperature,
         };
 
         // ── Prepare context messages based on selected strategy ─────────────

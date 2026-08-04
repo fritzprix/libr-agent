@@ -10,6 +10,9 @@ export function buildServiceRuntimeConfig(
     ...baseConfig,
     maxRetries: settings.advanced.maxRetries,
     retryDelay: settings.advanced.retryDelay,
+    ...(settings.temperatureOverrideEnabled
+      ? { temperature: settings.temperature }
+      : {}),
     ...overrides,
   };
 }
