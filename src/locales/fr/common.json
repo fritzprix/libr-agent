@@ -153,7 +153,10 @@
     "scheduledTasks": "Tâches planifiées",
     "session": "Session",
     "knowledge": "Connaissance",
-    "org": "Organisation"
+    "org": "Organisation",
+    "expandSession": "Développer les sessions enfants",
+    "collapseSession": "Réduire les sessions enfants",
+    "loadingSessionChildren": "Chargement des sessions enfants"
   },
   "sessionHistory": {
     "heading": "Historique des sessions",
@@ -185,7 +188,9 @@
     },
     "toasts": {
       "deleted": "Session supprimée",
-      "deleteFailed": "Échec de la suppression de la session"
+      "deleteFailed": "Échec de la suppression de la session",
+      "loadMoreFailed": "Échec du chargement de sessions supplémentaires",
+      "loadChildrenFailed": "Échec du chargement des sessions enfants"
     },
     "tabs": {
       "all": "Tout",
@@ -264,6 +269,7 @@
       "resumeAria": "Reprendre la session {{name}}",
       "expandChildrenAria": "Développer les sessions enfants de {{name}}",
       "collapseChildrenAria": "Réduire les sessions enfants de {{name}}",
+      "loadingChildrenAria": "Chargement des sessions enfants de {{name}}",
       "groupAria": "Actions de session",
       "deleteTooltip": "Supprimer la session",
       "deleteAria": "Supprimer la session {{name}}",

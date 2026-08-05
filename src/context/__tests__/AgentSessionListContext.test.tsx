@@ -408,4 +408,84 @@ describe('AgentSessionListContext', () => {
 
         expect(safeInvoke).toHaveBeenCalledWith('agent_delete_session', { sessionId: 'session-1' });
     });
+
+    it('ensureChildrenLoaded merges direct children into the session list', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({
+                    items: [
+                        {
+                            id: 'parent-1',
+                            name: 'Parent',
+                            status: 'idle',
+                            createdAt: Date.now(),
+                            updatedAt: Date.now(),
+                        },
+                    ],
+                    nextCursor: undefined,
+                });
+            }
+            if (cmd === 'agent_list_attention_sessions') {
+                return Promise.resolve([]);
+            }
+            if (cmd === 'agent_get_child_sessions') {
+                return Promise.resolve([
+                    {
+                        id: 'child-1',
+                        name: 'Child',
+                        status: 'busy',
+                        parentSessionId: 'parent-1',
+                        createdAt: Date.now() - 10_000,
+                        updatedAt: Date.now() - 10_000,
+                    },
+                ]);
+            }
+            return Promise.resolve();
+        });
+
+        const { result } = renderHook(
+            () => ({
+                state: useAgentSessionListState(),
+                actions: useAgentSessionListActions(),
+            }),
+            { wrapper: TestWrapper },
+        );
+
+        await waitFor(() => {
+            expect(result.current.state.sessions).toHaveLength(1);
+        });
+
+        await act(async () => {
+            await result.current.actions.ensureChildrenLoaded('parent-1');
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.sessions.map((s) => s.id).sort()).toEqual([
+                'child-1',
+                'parent-1',
+            ]);
+        });
+
+        expect(result.current.state.loadingChildrenParentIds.has('parent-1')).toBe(
+            false,
+        );
+
+        expect(safeInvoke).toHaveBeenCalledWith('agent_get_child_sessions', {
+            sessionId: 'parent-1',
+        });
+
+        const childCallsBefore = (
+            safeInvoke as ReturnType<typeof vi.fn>
+        ).mock.calls.filter(([cmd]) => cmd === 'agent_get_child_sessions').length;
+
+        await act(async () => {
+            await result.current.actions.ensureChildrenLoaded('parent-1');
+        });
+
+        const childCallsAfter = (
+            safeInvoke as ReturnType<typeof vi.fn>
+        ).mock.calls.filter(([cmd]) => cmd === 'agent_get_child_sessions').length;
+
+        expect(childCallsAfter).toBe(childCallsBefore);
+    });
 });

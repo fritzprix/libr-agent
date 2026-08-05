@@ -90,9 +90,14 @@ export default function AppSidebar() {
   const { status: updateStatus } = useUpdateContext();
   const hasUpdate = updateStatus === 'available';
 
-  const { sessions, hasMoreSessions, isLoadingMoreSessions } =
-    useAgentSessionListState();
-  const { loadMoreSessions } = useAgentSessionListActions();
+  const {
+    sessions,
+    hasMoreSessions,
+    isLoadingMoreSessions,
+    loadingChildrenParentIds,
+  } = useAgentSessionListState();
+  const { loadMoreSessions, ensureChildrenLoaded } =
+    useAgentSessionListActions();
 
   const recentSessionsRootRef = useRef<HTMLDivElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -132,17 +137,32 @@ export default function AppSidebar() {
     });
   }, [loadMoreSessions, t]);
 
-  const handleToggleExpand = useCallback((sessionId: string) => {
-    setExpandedSessionIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(sessionId)) {
-        next.delete(sessionId);
-      } else {
-        next.add(sessionId);
-      }
-      return next;
-    });
-  }, []);
+  const handleToggleExpand = useCallback(
+    (sessionId: string) => {
+      setExpandedSessionIds((previous) => {
+        const next = new Set(previous);
+        if (next.has(sessionId)) {
+          next.delete(sessionId);
+        } else {
+          next.add(sessionId);
+          void ensureChildrenLoaded(sessionId).catch((error) => {
+            logger.error('Failed to load session children', {
+              sessionId,
+              error,
+            });
+            toast.error(
+              t(
+                'sessionHistory.toasts.loadChildrenFailed',
+                'Failed to load child sessions',
+              ),
+            );
+          });
+        }
+        return next;
+      });
+    },
+    [ensureChildrenLoaded, t],
+  );
 
   useInfiniteScroll({
     rootRef: recentSessionsRootRef,
@@ -364,71 +384,85 @@ export default function AppSidebar() {
                       nestingLevel,
                       hasExpandableChildren,
                       isExpanded,
-                    }) => (
-                      <SidebarMenuItem key={session.id}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={
-                            location.pathname === `/agent/${session.id}`
-                          }
-                          tooltip={
-                            session.name ||
-                            `${t('sidebar.session')} ${session.id.slice(0, 8)}`
-                          }
-                        >
-                          <Link
-                            to={`/agent/${session.id}`}
-                            className={cn(
-                              'flex w-full items-center gap-2',
-                              nestingLevel > 0 && 'text-muted-foreground',
-                            )}
-                            style={{
-                              paddingLeft: `${nestingLevel * 12}px`,
-                            }}
+                    }) => {
+                      const isLoadingChildren = loadingChildrenParentIds.has(
+                        session.id,
+                      );
+
+                      return (
+                        <SidebarMenuItem key={session.id}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={
+                              location.pathname === `/agent/${session.id}`
+                            }
+                            tooltip={
+                              session.name ||
+                              `${t('sidebar.session')} ${session.id.slice(0, 8)}`
+                            }
                           >
-                            {hasExpandableChildren ? (
-                              <button
-                                type="button"
-                                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-                                aria-expanded={isExpanded}
-                                aria-label={
-                                  isExpanded
-                                    ? t(
-                                        'sidebar.collapseSession',
-                                        'Collapse session children',
-                                      )
-                                    : t(
-                                        'sidebar.expandSession',
-                                        'Expand session children',
-                                      )
-                                }
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  handleToggleExpand(session.id);
-                                }}
-                              >
-                                {isExpanded ? (
-                                  <ChevronDown className="h-3.5 w-3.5" />
-                                ) : (
-                                  <ChevronRight className="h-3.5 w-3.5" />
-                                )}
-                              </button>
-                            ) : (
-                              <span className="inline-block h-4 w-4 shrink-0" />
-                            )}
-                            <StatusDot status={session.status} />
-                            <span className="truncate text-xs">
-                              {session.name ||
-                                `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
-                            </span>
-                            {session.isBookmarked && (
-                              <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
-                            )}
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ),
+                            <Link
+                              to={`/agent/${session.id}`}
+                              className={cn(
+                                'flex w-full items-center gap-2',
+                                nestingLevel > 0 && 'text-muted-foreground',
+                              )}
+                              style={{
+                                paddingLeft: `${nestingLevel * 12}px`,
+                              }}
+                            >
+                              {hasExpandableChildren ? (
+                                <button
+                                  type="button"
+                                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                                  aria-expanded={isExpanded}
+                                  aria-busy={isLoadingChildren}
+                                  aria-label={
+                                    isLoadingChildren
+                                      ? t(
+                                          'sidebar.loadingSessionChildren',
+                                          'Loading session children',
+                                        )
+                                      : isExpanded
+                                        ? t(
+                                            'sidebar.collapseSession',
+                                            'Collapse session children',
+                                          )
+                                        : t(
+                                            'sidebar.expandSession',
+                                            'Expand session children',
+                                          )
+                                  }
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleToggleExpand(session.id);
+                                  }}
+                                >
+                                  {isLoadingChildren ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : isExpanded ? (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="inline-block h-4 w-4 shrink-0" />
+                              )}
+                              <StatusDot status={session.status} />
+                              <span className="truncate text-xs">
+                                {session.name ||
+                                  `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
+                              </span>
+                              {session.isBookmarked && (
+                                <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
+                              )}
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    },
                   )}
                 </SidebarMenu>
                 <div ref={loadMoreSentinelRef} className="h-px w-full" />

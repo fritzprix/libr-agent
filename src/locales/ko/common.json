@@ -153,7 +153,10 @@
     "scheduledTasks": "예약된 작업",
     "session": "세션",
     "knowledge": "지식",
-    "org": "조직"
+    "org": "조직",
+    "expandSession": "하위 세션 펼치기",
+    "collapseSession": "하위 세션 접기",
+    "loadingSessionChildren": "하위 세션 불러오는 중"
   },
   "sessionHistory": {
     "heading": "세션 기록",
@@ -185,7 +188,9 @@
     },
     "toasts": {
       "deleted": "세션이 삭제되었습니다",
-      "deleteFailed": "세션 삭제에 실패했습니다"
+      "deleteFailed": "세션 삭제에 실패했습니다",
+      "loadMoreFailed": "세션을 더 불러오지 못했습니다",
+      "loadChildrenFailed": "자식 세션을 불러오지 못했습니다"
     },
     "tabs": {
       "all": "전체",
@@ -267,6 +272,7 @@
       "resumeAria": "세션 {{name}} 재개",
       "expandChildrenAria": "{{name}}의 하위 세션 펼치기",
       "collapseChildrenAria": "{{name}}의 하위 세션 접기",
+      "loadingChildrenAria": "{{name}}의 하위 세션 불러오는 중",
       "groupAria": "세션 작업",
       "deleteTooltip": "세션 삭제",
       "deleteAria": "세션 {{name}} 삭제",

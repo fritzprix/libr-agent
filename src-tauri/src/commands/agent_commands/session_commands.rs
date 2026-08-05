@@ -462,6 +462,18 @@ pub async fn agent_get_child_session_ids(
         .map_err(|e| format!("Failed to get child sessions: {}", e))
 }
 
+/// Get direct child session metadata for a parent session (for tree expand lazy-load).
+#[command]
+pub async fn agent_get_child_sessions(
+    _manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<Vec<SessionMetadata>, String> {
+    let repo = crate::state::get_session_repository();
+    repo.get_child_sessions(&session_id)
+        .await
+        .map_err(|e| format!("Failed to get child sessions: {}", e))
+}
+
 /// Get all descendant session IDs (recursive) for a parent session
 #[command]
 pub async fn agent_get_descendant_session_ids(
