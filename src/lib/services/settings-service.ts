@@ -100,6 +100,13 @@ export interface Settings {
   customProviders: CustomOpenAIProvider[];
   preferredModel: ModelChoice;
   fallbackModel?: ModelChoice;
+  /**
+   * When true, send `temperature` on AI service requests.
+   * When false (default), omit temperature so provider/serving-engine defaults apply.
+   */
+  temperatureOverrideEnabled: boolean;
+  /** Temperature used only when `temperatureOverrideEnabled` is true. Range 0–2. */
+  temperature: number;
   contextStrategy: ContextStrategy;
   windowSize: number;
   maxInputContext: number;
@@ -128,6 +135,8 @@ export const DEFAULT_SETTING: Settings = {
     model: DEFAULT_MODEL?.modelId || '',
   },
   fallbackModel: undefined,
+  temperatureOverrideEnabled: false,
+  temperature: 0.7,
   contextStrategy: 'compact',
   windowSize: 20,
   maxInputContext: 49152,
@@ -164,7 +173,7 @@ export const DEFAULT_SETTING: Settings = {
     webActionTimeoutSeconds: 30,
     httpServerPort: 3030,
     httpServerExpose: false,
-    mcpServerStartupTimeoutSeconds: 60,
+    mcpServerStartupTimeoutSeconds: 30,
     mcpToolTimeoutSeconds: 0,
     searchIndexFrequencyMinutes: 5,
     scheduledTaskMinimumIntervalMinutes: 0,

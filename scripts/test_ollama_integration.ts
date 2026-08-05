@@ -27,7 +27,6 @@ async function testStreamingChat() {
       stream: true as const,
       keep_alive: '5m',
       options: {
-        temperature: 0.7,
         num_predict: 4096,
       },
     };

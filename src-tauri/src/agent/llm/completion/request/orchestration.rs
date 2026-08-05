@@ -190,7 +190,6 @@ pub async fn request_llm_completion(
         model: snapshot.model,
         provider: snapshot.provider,
         system_prompt: request_layout.system_prompt,
-        temperature: snapshot.agent_config.temperature,
         max_tokens: snapshot.agent_config.max_tokens,
         available_tools,
     };

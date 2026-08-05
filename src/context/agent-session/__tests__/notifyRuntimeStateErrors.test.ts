@@ -27,7 +27,7 @@ describe('notifyRuntimeStateErrors', () => {
     vi.clearAllMocks();
   });
 
-  it('toasts newly failed MCP servers when phase becomes degraded', () => {
+  it('does not toast per-server failures (handled by useMcpServerFailureToasts)', () => {
     const prev = baseState();
     const next = baseState({
       sequence: 2,
@@ -56,77 +56,7 @@ describe('notifyRuntimeStateErrors', () => {
 
     notifyRuntimeStateErrors(prev, next);
 
-    expect(toast.error).toHaveBeenCalledTimes(1);
-    expect(toast.error).toHaveBeenCalledWith(
-      "MCP Server 'harbor-mcp' failed to load",
-      expect.objectContaining({
-        description: 'connection closed: initialize response',
-      }),
-    );
-  });
-
-  it('does not re-toast servers that were already failed', () => {
-    const prev = baseState({
-      phase: 'degraded',
-      proxy: { exists: true, mode: 'configured', ready: true },
-      servers: [
-        {
-          name: 'harbor-mcp',
-          transport: 'stdio',
-          status: 'failed',
-          toolCount: 0,
-          error: 'connection closed',
-        },
-      ],
-    });
-    const next = {
-      ...prev,
-      sequence: prev.sequence + 1,
-    };
-
-    notifyRuntimeStateErrors(prev, next);
-
     expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it('toasts each newly failed server when phase is failed', () => {
-    const prev = baseState();
-    const next = baseState({
-      phase: 'failed',
-      proxy: { exists: true, mode: 'configured', ready: true },
-      initialization: {
-        result: 'failed',
-        error: 'All external servers failed during initialization',
-      },
-      servers: [
-        {
-          name: 'harbor-mcp',
-          transport: 'stdio',
-          status: 'failed',
-          toolCount: 0,
-          error: 'No such file or directory',
-        },
-        {
-          name: 'broken-http',
-          transport: 'http',
-          status: 'failed',
-          toolCount: 0,
-          error: 'connection refused',
-        },
-      ],
-    });
-
-    notifyRuntimeStateErrors(prev, next);
-
-    expect(toast.error).toHaveBeenCalledTimes(2);
-    expect(toast.error).toHaveBeenCalledWith(
-      "MCP Server 'harbor-mcp' failed to load",
-      expect.objectContaining({ description: 'No such file or directory' }),
-    );
-    expect(toast.error).toHaveBeenCalledWith(
-      "MCP Server 'broken-http' failed to load",
-      expect.objectContaining({ description: 'connection refused' }),
-    );
   });
 
   it('does not toast while still initializing', () => {
@@ -169,5 +99,56 @@ describe('notifyRuntimeStateErrors', () => {
         description: 'Loading tool configurations failed',
       }),
     );
+  });
+
+  it('does not toast generic failure when failed servers are present', () => {
+    const prev = baseState();
+    const next = baseState({
+      phase: 'failed',
+      proxy: { exists: true, mode: 'configured', ready: true },
+      initialization: {
+        result: 'failed',
+        error: 'All external servers failed during initialization',
+      },
+      servers: [
+        {
+          name: 'harbor-mcp',
+          transport: 'stdio',
+          status: 'failed',
+          toolCount: 0,
+          error: 'No such file or directory',
+        },
+      ],
+    });
+
+    notifyRuntimeStateErrors(prev, next);
+
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('does not toast generic failure when timed_out servers are present', () => {
+    const prev = baseState();
+    const next = baseState({
+      phase: 'failed',
+      proxy: { exists: true, mode: 'configured', ready: true },
+      initialization: {
+        result: 'failed',
+        error:
+          'All external servers failed or timed out during initialization',
+      },
+      servers: [
+        {
+          name: 'slow-stdio',
+          transport: 'stdio',
+          status: 'timed_out',
+          toolCount: 0,
+          error: 'Tool discovery timed out after 30s',
+        },
+      ],
+    });
+
+    notifyRuntimeStateErrors(prev, next);
+
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

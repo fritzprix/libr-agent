@@ -622,7 +622,7 @@ impl AgentSessionManager {
     /// Returns the filtered tool list that matches what the LLM will receive.
     /// Wait for background tool loading... stdio/HTTP servers are spawned asynchronously...
     /// partial tool list is far better than no list.
-    /// This operation has a 10-second timeout to prevent blocking the main thread if the proxy manager is unresponsive.
+    /// Soft-wait uses the configured MCP discovery timeout (default 30s).
     pub async fn get_available_tools(
         &self,
         session_id: &str,
@@ -631,9 +631,10 @@ impl AgentSessionManager {
             .ensure_configured_proxy(session_id, Some(self.app_handle.clone()))
             .await?;
 
+        let timeout_secs = self.proxy_manager.startup_timeout_secs().await;
         if let Err(e) = self
             .proxy_manager
-            .wait_until_proxy_ready(session_id, 10)
+            .wait_until_proxy_ready(session_id, timeout_secs)
             .await
         {
             log::warn!(

@@ -26,12 +26,12 @@ fn create_tool() -> MCPTool {
         name: "createAgent".to_string(),
         title: Some("Create Agent Configuration".to_string()),
         description: tool_description(
-            "Create a new named agent configuration (assistant) with system prompt, temperature, and tool capabilities.",
+            "Create a new named agent configuration (assistant) with system prompt and tool capabilities.",
             &[],
             &[
                 "Choose a unique name and optional description.",
-                "Set systemPrompt, temperature, and tool access lists as needed.",
-                "Model selection is controlled at session or global settings — not here.",
+                "Set systemPrompt and tool access lists as needed.",
+                "Model selection and sampling defaults are controlled by the provider — not here.",
             ],
             &[
                 "Discover configs with agent__listAgents(type='configs').",
@@ -42,7 +42,6 @@ fn create_tool() -> MCPTool {
             vec![
                 ("name".to_string(), string_prop_required("Unique name for the agent configuration.")),
                 ("description".to_string(), string_prop(None, None, Some("Short description of what this agent does. If omitted, the configuration is created without a description."))),
-                ("temperature".to_string(), number_prop(Some(0.0), Some(2.0), Some("Sampling temperature (0.0 to 2.0). If omitted, the configuration leaves temperature unset and the runtime/model default applies."))),
                 ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['planning', 'browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted (or []), only core services are enabled — list optional aliases explicitly when needed."))),
                 ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow (e.g. ['github', 'google-search']). If omitted, the configuration leaves external MCP server overrides unset."))),
                 ("systemPrompt".to_string(), string_prop(None, None, Some("The core personality and instructions for the agent. If omitted, no custom system prompt is stored."))),
@@ -119,11 +118,11 @@ fn update_tool() -> MCPTool {
         name: "updateAgent".to_string(),
         title: Some("Update Agent Configuration".to_string()),
         description: tool_description(
-            "Update an existing agent configuration including system prompt, temperature, and tool access.",
+            "Update an existing agent configuration including system prompt and tool access.",
             &["Configuration ID from agent__listAgents(type='configs')."],
             &[
                 "Pass the config id and only the fields to change.",
-                "Model selection is controlled elsewhere — not via this tool.",
+                "Model selection and sampling defaults are controlled elsewhere — not via this tool.",
             ],
             &[
                 "Verify capabilities with agent__listAgents(verbose=true).",
@@ -143,10 +142,6 @@ fn update_tool() -> MCPTool {
                 (
                     "description".to_string(),
                     string_prop(None, None, Some("New description. If omitted, keep the current description unchanged.")),
-                ),
-                (
-                    "temperature".to_string(),
-                    number_prop(Some(0.0), Some(2.0), Some("Change temperature. If omitted, keep the current temperature unchanged.")),
                 ),
                 ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("Replace the optional builtin service aliases that are added on top of the always-on core services. If omitted, keep the current optional builtin capability list unchanged."))),
                 ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("Replace the allowed external MCP server IDs. If omitted, keep the current external MCP server list unchanged."))),

@@ -1,10 +1,105 @@
+import { AlertCircle, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { isMcpServerTimeoutError } from '@/context/agent-session/mcpServerFailureFeedback';
+import type {
+  SessionRuntimeInitResult,
+  SessionRuntimeServerState,
+} from '@/models/agent-ipc';
+import { cn } from '@/lib/utils';
 
 interface SessionLoadingOverlayProps {
   label: string;
   initializationStep?: string | null;
   initializationError?: string | null;
-  variant: 'blocking' | 'overlay' | 'banner';
+  variant: 'blocking' | 'overlay';
+  servers?: SessionRuntimeServerState[];
+  initResult?: SessionRuntimeInitResult;
+}
+
+function serverStatusLabel(
+  server: SessionRuntimeServerState,
+  t: (key: string, options?: Record<string, string | number>) => string,
+): string {
+  switch (server.status) {
+    case 'ready':
+      return t('agent.statusBar.mcpServerReadyTools', {
+        count: server.toolCount,
+      });
+    case 'connecting':
+      return t('agent.statusBar.mcpServerConnecting');
+    case 'discovering_tools':
+      return t('agent.statusBar.mcpServerDiscovering');
+    case 'timed_out':
+      return t('agent.statusBar.mcpServerTimedOut');
+    case 'failed': {
+      const error = server.error?.trim() ?? '';
+      if (error && isMcpServerTimeoutError(error)) {
+        return t('agent.statusBar.mcpServerTimedOut');
+      }
+      return t('agent.statusBar.mcpServerFailedShort');
+    }
+    default:
+      return server.transport;
+  }
+}
+
+function ServerStatusIcon({ server }: { server: SessionRuntimeServerState }) {
+  if (server.status === 'ready') {
+    return (
+      <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+    );
+  }
+  if (server.status === 'failed' || server.status === 'timed_out') {
+    return <AlertCircle className="size-3.5 shrink-0 text-destructive" />;
+  }
+  return (
+    <LoadingSpinner
+      size="sm"
+      className="border-2 text-amber-600 dark:text-amber-400 shrink-0"
+    />
+  );
+}
+
+function McpServerStatusList({
+  servers,
+}: {
+  servers: SessionRuntimeServerState[];
+}) {
+  const { t } = useTranslation();
+
+  if (servers.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul
+      className="flex flex-col gap-1 mt-2 w-full max-w-sm"
+      data-testid="mcp-server-status-list"
+    >
+      {servers.map((server) => (
+        <li
+          key={`${server.transport}:${server.name}`}
+          className={cn(
+            'flex items-center gap-2 text-xs',
+            server.status === 'failed' || server.status === 'timed_out'
+              ? 'text-destructive/90'
+              : server.status === 'ready'
+                ? 'text-emerald-700 dark:text-emerald-300'
+                : 'text-muted-foreground',
+          )}
+        >
+          <ServerStatusIcon server={server} />
+          <span className="font-medium truncate">{server.name}</span>
+          <span className="opacity-70 shrink-0">{server.transport}</span>
+          <span className="opacity-80 truncate">
+            {serverStatusLabel(server, t)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export function SessionLoadingOverlay({
@@ -12,31 +107,10 @@ export function SessionLoadingOverlay({
   initializationStep,
   initializationError,
   variant,
+  servers = [],
+  initResult,
 }: SessionLoadingOverlayProps) {
-  const isFailed = Boolean(initializationError);
-
-  if (variant === 'banner') {
-    return (
-      <div
-        role="status"
-        aria-live="polite"
-        className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between border-b border-amber-200/50 bg-amber-50/90 px-4 py-2 text-xs text-amber-800 backdrop-blur-sm dark:border-amber-900/40 dark:bg-amber-950/80 dark:text-amber-200 animate-in fade-in slide-in-from-top-1 duration-200"
-      >
-        <div className="flex items-center gap-2">
-          {!isFailed ? (
-            <LoadingSpinner
-              size="sm"
-              className="border-2 text-amber-600 dark:text-amber-400 shrink-0"
-              label={label}
-            />
-          ) : null}
-          <span className="font-medium">
-            {initializationError ?? initializationStep ?? label}
-          </span>
-        </div>
-      </div>
-    );
-  }
+  const isFailed = Boolean(initializationError) || initResult === 'failed';
 
   const content = (
     <>
@@ -62,10 +136,10 @@ export function SessionLoadingOverlay({
           className={
             isFailed
               ? 'text-xs text-destructive/80 max-w-sm text-center'
-              : 'text-xs text-muted-foreground/70 h-4'
+              : 'text-xs text-muted-foreground/70'
           }
         >
-          {isFailed ? (
+          {isFailed && initializationError ? (
             <span>{initializationError}</span>
           ) : initializationStep ? (
             <span className="animate-in fade-in slide-in-from-bottom-1 duration-300">
@@ -73,6 +147,8 @@ export function SessionLoadingOverlay({
             </span>
           ) : null}
         </div>
+
+        <McpServerStatusList servers={servers} />
       </div>
     </>
   );

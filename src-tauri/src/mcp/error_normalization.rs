@@ -43,7 +43,8 @@ impl ExternalMcpErrorCategory {
 /// - Must include Category + Cause
 /// - Must include 1..N concrete recovery bullets
 ///
-/// Note: UI grouping relies on `MCPContent::Text { is_error: Some(true) }`.
+/// Note: UI grouping relies on `Message.metadata.toolError` (persisted via the
+/// messages.error column marker). Content items must not carry item-level `isError`.
 #[must_use]
 pub fn external_tool_error_result(
     operation: &str,
@@ -76,10 +77,7 @@ pub fn external_tool_error_result(
     }
 
     MCPResult {
-        content: Some(vec![MCPContent::Text {
-            text,
-            is_error: Some(true),
-        }]),
+        content: Some(vec![MCPContent::Text { text }]),
         structured_content: Some(json!({
           "error": {
             "operation": operation,
@@ -206,10 +204,7 @@ pub fn builtin_tool_error_result(
     }
 
     MCPResult {
-        content: Some(vec![MCPContent::Text {
-            text,
-            is_error: Some(true),
-        }]),
+        content: Some(vec![MCPContent::Text { text }]),
         structured_content: Some(json!({
           "error": {
             "operation": operation,
@@ -384,11 +379,10 @@ mod tests {
 
         assert_eq!(r.is_error, Some(true));
         let content = r.content.expect("content");
-        let MCPContent::Text { text, is_error } = content[0].clone() else {
+        let MCPContent::Text { text } = content[0].clone() else {
             panic!("expected text");
         };
 
-        assert_eq!(is_error, Some(true));
         assert!(text.contains("Source: External(filesystem)"));
         assert!(text.contains("Tool: filesystem__read_file"));
         assert!(text.contains("Category: Transport"));

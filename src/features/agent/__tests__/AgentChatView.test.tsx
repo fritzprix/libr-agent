@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from 'sonner';
 
 import type { AgentSessionStateContextValue } from '@/context/agent-session/types';
 import type { AgentSession } from '@/models/agent';
@@ -225,6 +226,9 @@ vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    warning: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
   },
 }));
 
@@ -243,6 +247,11 @@ describe('AgentChatView', () => {
     mocks.isMobile = false;
     mocks.showWorkspacePanel = false;
     mocks.showPlanningPanel = false;
+    vi.mocked(toast.loading).mockClear();
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.warning).mockClear();
+    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.dismiss).mockClear();
   });
 
   it('shows the blocking loader when there is no hydrated session yet', () => {
@@ -283,21 +292,42 @@ describe('AgentChatView', () => {
 
     expect(screen.getByText('mock-messages')).toBeInTheDocument();
     expect(screen.getByText('mock-header')).toBeInTheDocument();
-    expect(screen.getAllByText('Opening session')).not.toHaveLength(0);
     expect(screen.getByTestId('chat-provider')).toBeInTheDocument();
+    expect(toast.loading).toHaveBeenCalledWith(
+      'Opening session',
+      expect.objectContaining({ id: 'mcp-discovery:session-1' }),
+    );
   });
 
-  it('renders top banner during proxy initialization when session is present', () => {
+  it('shows discovery loading toast during proxy initialization', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
-      isSessionLoading: true,
+      isSessionLoading: false,
       isProxyReady: false,
       runtimeState: {
         ...createBaseRuntimeState(),
         phase: 'initializing',
+        servers: [
+          {
+            name: 'arxiv',
+            transport: 'stdio',
+            status: 'connecting',
+            toolCount: 0,
+          },
+          {
+            name: 'exa',
+            transport: 'http',
+            status: 'discovering_tools',
+            toolCount: 0,
+          },
+        ],
+        initialization: {
+          result: 'pending',
+          currentStep: 'Loading MCP: arxiv, exa (0/2)',
+        },
       },
       initializationStep: {
-        step: 'Connecting to MCP server',
+        step: 'Loading MCP: arxiv, exa (0/2)',
         status: 'running' as const,
       },
     });
@@ -305,9 +335,96 @@ describe('AgentChatView', () => {
     render(<AgentChatView />);
 
     expect(screen.getByText('mock-messages')).toBeInTheDocument();
-    expect(screen.getByText('Connecting to MCP server')).toBeInTheDocument();
+    expect(screen.queryByTestId('mcp-server-status-list')).not.toBeInTheDocument();
+    expect(toast.loading).toHaveBeenCalledWith(
+      'Loading MCP: arxiv, exa (0/2)',
+      expect.objectContaining({ id: 'mcp-discovery:session-1' }),
+    );
   });
 
+  it('shows partial discovery warning toast without top banner', () => {
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+      isProxyReady: true,
+      runtimeState: {
+        ...createBaseRuntimeState(),
+        phase: 'degraded',
+        proxy: {
+          exists: true,
+          mode: 'configured',
+          ready: true,
+        },
+        servers: [
+          {
+            name: 'arxiv',
+            transport: 'stdio',
+            status: 'failed',
+            toolCount: 0,
+            error: 'stdio spawn timed out',
+          },
+          {
+            name: 'exa',
+            transport: 'http',
+            status: 'ready',
+            toolCount: 4,
+          },
+        ],
+        initialization: {
+          result: 'partial',
+          currentStep: 'MCP partial: arxiv failed (1/2 ready)',
+          error: '1 of 2 MCP servers failed',
+        },
+      },
+    });
+
+    render(<AgentChatView />);
+
+    expect(screen.getByText('mock-messages')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Some MCP servers failed or timed out'),
+    ).not.toBeInTheDocument();
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Some MCP servers failed or timed out',
+      expect.objectContaining({ duration: 5000 }),
+    );
+  });
+
+  it('shows success discovery toast when MCP is ready', () => {
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+      isProxyReady: true,
+      runtimeState: {
+        ...createBaseRuntimeState(),
+        phase: 'ready',
+        proxy: {
+          exists: true,
+          mode: 'configured',
+          ready: true,
+        },
+        servers: [
+          {
+            name: 'exa',
+            transport: 'http',
+            status: 'ready',
+            toolCount: 4,
+          },
+        ],
+        initialization: {
+          result: 'success',
+          currentStep: 'MCP ready: exa',
+        },
+      },
+    });
+
+    render(<AgentChatView />);
+
+    expect(screen.getByText('mock-messages')).toBeInTheDocument();
+    expect(screen.queryByText('MCP servers ready')).not.toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith(
+      'MCP servers ready',
+      expect.objectContaining({ duration: 2500 }),
+    );
+  });
   it('renders both desktop side panels at the same time', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),

@@ -63,7 +63,6 @@ fn build_user_message_with_text(
         role: "user".to_string(),
         content: vec![MCPContent::Text {
             text: text.to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,
@@ -664,7 +663,6 @@ async fn strip_pending_queue_keeps_answered_promoted_prompt_and_purges_index() {
     assistant.role = "assistant".to_string();
     assistant.content = vec![MCPContent::Text {
         text: "done".to_string(),
-        is_error: None,
     }];
 
     message_repo

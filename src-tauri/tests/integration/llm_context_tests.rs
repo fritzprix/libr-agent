@@ -68,7 +68,6 @@ impl TestMessageBuilder {
     fn text(mut self, text: &str) -> Self {
         self.message.content = vec![MCPContent::Text {
             text: text.to_string(),
-            is_error: None,
         }];
         self
     }

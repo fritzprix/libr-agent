@@ -114,7 +114,6 @@ fn create_agent_schema_property_order_puts_system_prompt_last() {
         &[
             "name",
             "description",
-            "temperature",
             "builtinCapabilities",
             "externalMcpServers",
             "systemPrompt",
@@ -137,7 +136,6 @@ fn update_agent_schema_property_order_puts_system_prompt_last() {
             "id",
             "name",
             "description",
-            "temperature",
             "builtinCapabilities",
             "externalMcpServers",
             "systemPrompt",

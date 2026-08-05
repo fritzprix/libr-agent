@@ -22,7 +22,6 @@ interface AssistantConfig {
   deletionProtected: boolean;
   model?: string;
   provider?: string;
-  temperature?: number;
   maxTokens?: number;
 }
 

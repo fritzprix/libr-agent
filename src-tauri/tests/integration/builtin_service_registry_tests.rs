@@ -45,7 +45,6 @@ fn mock_agent_config(aliases: Option<Vec<&str>>) -> AgentConfig {
                 })
                 .collect()
         }),
-        temperature: Some(1.0),
         max_tokens: None,
         max_depth: None,
         max_fanout: None,
@@ -99,10 +98,10 @@ fn test_tool_result_with_structured_content() {
     let tool_call_id = "call-123";
     let content = vec![MCPContent::Text {
         text: "Test result".to_string(),
-        is_error: None,
     }];
 
-    let message = create_tool_result_message_with_content(session_id, tool_call_id, content, None);
+    let message =
+        create_tool_result_message_with_content(session_id, tool_call_id, content, None, false);
 
     // No double wrapping
     assert_eq!(message.content.len(), 1);
@@ -163,15 +162,14 @@ fn test_multiple_content_items() {
     let content = vec![
         MCPContent::Text {
             text: "First item".to_string(),
-            is_error: None,
         },
         MCPContent::Text {
             text: "Second item".to_string(),
-            is_error: None,
         },
     ];
 
-    let message = create_tool_result_message_with_content(session_id, tool_call_id, content, None);
+    let message =
+        create_tool_result_message_with_content(session_id, tool_call_id, content, None, false);
 
     assert_eq!(message.content.len(), 2);
 

@@ -177,7 +177,7 @@ pub struct SamplingOptions {
     pub model: Option<String>,
     /// The maximum number of tokens to generate.
     pub max_tokens: Option<u32>,
-    /// The sampling temperature.
+    /// Sampling temperature. When unset, provider/serving-engine defaults apply.
     pub temperature: Option<f64>,
     /// The nucleus sampling probability.
     pub top_p: Option<f64>,
@@ -215,12 +215,7 @@ pub struct ServiceInfo {
 #[serde(rename_all = "lowercase")]
 pub enum MCPContent {
     #[serde(rename = "text")]
-    Text {
-        text: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "isError")]
-        is_error: Option<bool>,
-    },
+    Text { text: String },
     #[serde(rename = "image")]
     Image {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -282,7 +277,6 @@ impl MCPResult {
         Self {
             content: Some(vec![MCPContent::Text {
                 text: text.to_string(),
-                is_error: None,
             }]),
             structured_content: None,
             is_error: Some(false),
@@ -294,7 +288,6 @@ impl MCPResult {
         Self {
             content: Some(vec![MCPContent::Text {
                 text: text.to_string(),
-                is_error: None,
             }]),
             structured_content: Some(data),
             is_error: Some(false),
@@ -312,16 +305,59 @@ impl MCPResult {
     }
 
     /// Creates an error MCPResult.
+    ///
+    /// Sets top-level `is_error` only — content items stay standard `{ type, text }`.
     pub fn error(message: &str) -> Self {
         Self {
             content: Some(vec![MCPContent::Text {
                 text: message.to_string(),
-                is_error: Some(true),
             }]),
             structured_content: None,
             is_error: Some(true),
         }
     }
+
+    /// True when this result reports a tool-level failure (MCP CallToolResult.isError).
+    pub fn indicates_error(&self) -> bool {
+        self.is_error == Some(true)
+    }
+}
+
+/// Scan raw content JSON for legacy item-level `"isError": true` (pre-cleanup DB rows).
+///
+/// `MCPContent::Text` no longer has an `is_error` field; serde ignores the unknown key on
+/// deserialize. Call this on the raw DB string before typed parse to recover toolError.
+pub fn raw_content_json_has_legacy_item_error(content_json: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(content_json) else {
+        return false;
+    };
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    items.iter().any(|item| {
+        item.get("type").and_then(|t| t.as_str()) == Some("text")
+            && item.get("isError").and_then(|v| v.as_bool()) == Some(true)
+    })
+}
+
+/// Lift legacy/non-compliant content-item `isError` into top-level `MCPResult.is_error`
+/// when deserializing external tool payloads from raw JSON.
+pub fn mcp_result_from_value(value: serde_json::Value) -> Result<MCPResult, serde_json::Error> {
+    let legacy_item_error = value
+        .get("content")
+        .and_then(|content| content.as_array())
+        .is_some_and(|items| {
+            items.iter().any(|item| {
+                item.get("type").and_then(|t| t.as_str()) == Some("text")
+                    && item.get("isError").and_then(|v| v.as_bool()) == Some(true)
+            })
+        });
+
+    let mut result: MCPResult = serde_json::from_value(value)?;
+    if legacy_item_error && result.is_error != Some(true) {
+        result.is_error = Some(true);
+    }
+    Ok(result)
 }
 
 /// JSON-RPC 2.0 request/response identifier

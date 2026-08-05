@@ -215,10 +215,7 @@ pub fn create_tool_result_message(
     structured_content: Option<serde_json::Value>,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
-    let content_array = vec![MCPContent::Text {
-        text: content,
-        is_error: None,
-    }];
+    let content_array = vec![MCPContent::Text { text: content }];
 
     Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -257,18 +254,7 @@ pub fn create_error_tool_result(
     let now = chrono::Utc::now().timestamp_millis();
     let content_array = vec![MCPContent::Text {
         text: format!("Error: {}", error_message),
-        is_error: Some(true),
     }];
-
-    let metadata = match structured_content {
-        Some(value) => Some(serde_json::json!({
-            "toolError": true,
-            "structuredContent": value,
-        })),
-        None => Some(serde_json::json!({
-            "toolError": true,
-        })),
-    };
 
     Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -289,7 +275,7 @@ pub fn create_error_tool_result(
         updated_at: now,
         source: Some(MessageSource::Tool),
         error: None,
-        metadata,
+        metadata: build_tool_message_metadata(true, structured_content),
     }
 }
 
@@ -512,7 +498,7 @@ pub async fn spill_oversized_tool_result_messages(
         let mut next_content = Vec::with_capacity(message.content.len());
         for (content_index, content) in message.content.into_iter().enumerate() {
             match content {
-                MCPContent::Text { text, is_error } if text.len() > inline_limit_bytes => {
+                MCPContent::Text { text } if text.len() > inline_limit_bytes => {
                     let relative_path = format!(
                         "{}/{}-{}-{}.txt",
                         TOOL_RESULT_SPILLOVER_DIR,
@@ -557,7 +543,7 @@ pub async fn spill_oversized_tool_result_messages(
                                 truncate_kind,
                             )
                         ),
-                        is_error,
+                        // Error semantics live on Message.metadata.toolError, not content items.
                     });
                 }
                 other => next_content.push(other),
@@ -682,28 +668,17 @@ pub async fn externalize_media_content_for_storage(
     Ok(next_content)
 }
 
-/// Create a tool result message from strict MCP content
+/// Create a tool result message from strict MCP content.
+///
+/// `tool_error` is the SSOT for UI grouping (`metadata.toolError`).
 pub fn create_tool_result_message_with_content(
     session_id: &str,
     tool_call_id: &str,
     content: Vec<MCPContent>,
     structured_content: Option<serde_json::Value>,
+    tool_error: bool,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
-
-    // Some servers may return error semantics via MCPContent (e.g., Text { is_error: Some(true) })
-    // without flipping the outer ToolExecutionResult.is_error flag.
-    // We propagate that signal into Message.metadata.toolError so the UI can group failed tool
-    // results deterministically without parsing text.
-    let tool_error = content.iter().any(|c| {
-        matches!(
-            c,
-            MCPContent::Text {
-                is_error: Some(true),
-                ..
-            }
-        )
-    });
 
     Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -796,6 +771,7 @@ pub async fn handle_tool_result(
                             &tool_call_id,
                             mcp_content,
                             structured_content.clone(),
+                            true,
                         )
                     } else {
                         create_error_tool_result(
@@ -814,6 +790,7 @@ pub async fn handle_tool_result(
                         &tool_call_id,
                         mcp_content,
                         structured_content.clone(),
+                        false,
                     )
                 } else {
                     // ⚠️ This branch should never happen for successful tool calls
@@ -887,27 +864,23 @@ mod tests {
             "STALE ANCHOR on line 28 — retry with anchor: 'ab12cd'\n  → refresh anchors and retry NOW";
         let content = vec![MCPContent::Text {
             text: guided_text.to_string(),
-            is_error: Some(true),
         }];
 
-        // This is the branch now taken when is_error=true AND mcp_content is Some
-        let msg = create_tool_result_message_with_content("sess1", "tc1", content, None);
+        let msg = create_tool_result_message_with_content("sess1", "tc1", content, None, true);
 
-        // The agent must see the full guided error, not a bare "Unknown error"
         assert!(
             msg.content.iter().any(|c| matches!(c,
-                MCPContent::Text { text, .. } if text.contains("STALE ANCHOR")
+                MCPContent::Text { text } if text.contains("STALE ANCHOR")
             )),
             "guided_error text must be preserved in the tool message"
         );
-        // toolError metadata must still be set so the UI marks it as failed
         assert_eq!(
             msg.metadata
                 .as_ref()
                 .and_then(|m| m.get("toolError"))
                 .and_then(|v| v.as_bool()),
             Some(true),
-            "toolError metadata must be set when content carries is_error:true"
+            "toolError metadata must be set from ToolExecutionResult.is_error"
         );
     }
 
@@ -916,22 +889,28 @@ mod tests {
     /// "Unknown error" is acceptable here because there is literally no content.
     #[test]
     fn test_error_without_mcp_content_falls_back_to_error_string() {
-        // Explicit error message
         let msg = create_error_tool_result("sess1", "tc1", "Failed to parse args: EOF", None);
         assert!(
             msg.content.iter().any(|c| matches!(c,
-                MCPContent::Text { text, .. } if text.contains("Failed to parse args")
+                MCPContent::Text { text } if text.contains("Failed to parse args")
             )),
             "explicit error string must appear in the message"
         );
 
-        // No error message → "Unknown error" fallback
         let fallback = create_error_tool_result("sess1", "tc1", "Unknown error", None);
         assert!(
             fallback.content.iter().any(|c| matches!(c,
-                MCPContent::Text { text, .. } if text.contains("Unknown error")
+                MCPContent::Text { text } if text.contains("Unknown error")
             )),
             "Unknown error fallback must appear when no message is available"
+        );
+        assert_eq!(
+            fallback
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("toolError"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
         );
     }
 }

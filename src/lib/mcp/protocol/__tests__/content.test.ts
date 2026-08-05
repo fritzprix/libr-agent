@@ -1,15 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { isMCPErrorContent } from '../content';
-import { MCPContent, MCPErrorContent, MCPTextContent } from '../content';
+import type { MCPContent, MCPTextContent } from '../content';
 
 describe('MCP Content Types', () => {
-  describe('isMCPErrorContent', () => {
-    const errorContent: MCPErrorContent = {
-      type: 'text',
-      text: 'Error message',
-      isError: true,
-    };
-
+  it('represents plain text content without item-level isError', () => {
     const textContent: MCPTextContent = {
       type: 'text',
       text: 'Regular message',
@@ -21,16 +14,8 @@ describe('MCP Content Types', () => {
       mimeType: 'image/png',
     };
 
-    it('should return true for error content', () => {
-      expect(isMCPErrorContent(errorContent)).toBe(true);
-    });
-
-    it('should return false for regular text content', () => {
-      expect(isMCPErrorContent(textContent)).toBe(false);
-    });
-
-    it('should return false for other content types', () => {
-      expect(isMCPErrorContent(imageContent)).toBe(false);
-    });
+    expect(textContent.type).toBe('text');
+    expect(imageContent.type).toBe('image');
+    expect('isError' in textContent).toBe(false);
   });
 });

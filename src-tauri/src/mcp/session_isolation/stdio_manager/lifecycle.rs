@@ -226,6 +226,8 @@ fn log_spawn_path_diagnostics(server_name: &str, command: &str) {
         "Scripts",
         ".local\\bin",
         ".local/bin",
+        ".cargo\\bin",
+        ".cargo/bin",
     ];
     let matched_markers: Vec<&str> = markers
         .iter()

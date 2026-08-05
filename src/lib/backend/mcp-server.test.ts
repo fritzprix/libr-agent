@@ -128,7 +128,7 @@ describe('mcp-server backend API', () => {
     it('should call sample_from_mcp_server with all provided parameters', async () => {
       const serverName = 'test-server';
       const prompt = 'Hello world';
-      const options: SamplingOptions = { maxTokens: 100, temperature: 0.5 };
+      const options: SamplingOptions = { maxTokens: 100, topP: 0.9 };
       const mockResponse = { result: { sampling: { finishReason: 'stop' } } };
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);

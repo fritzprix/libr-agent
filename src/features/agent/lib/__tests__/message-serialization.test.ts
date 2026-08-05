@@ -195,10 +195,81 @@ describe('message-serialization', () => {
           arguments: { ok: true },
           result: {
             content: [{ type: 'text', text: 'done' }],
-            text: 'done',
-            isError: false,
           },
         },
+      ]);
+    });
+
+    it('propagates tool failure via top-level isError from metadata.toolError', () => {
+      const toolCalls: ToolCall[] = [
+        {
+          id: 'call-fail',
+          type: 'function',
+          function: {
+            name: 'workspace__runPowerShell',
+            arguments: '{"command":"exit 1","timeout":120}',
+          },
+        },
+      ];
+      const failureText =
+        '✗ Command failed with exit code: 1\n\nError output:\n...';
+      const toolResultsMap = new Map<string, Message>([
+        [
+          'call-fail',
+          createMessage({
+            id: 'result-fail',
+            role: 'tool',
+            tool_call_id: 'call-fail',
+            content: [{ type: 'text', text: failureText }],
+            metadata: { toolError: true },
+          }),
+        ],
+      ]);
+
+      const parsed = JSON.parse(
+        serializeToolCallsForClipboard(toolCalls, toolResultsMap),
+      ) as unknown;
+
+      expect(parsed).toEqual([
+        {
+          id: 'call-fail',
+          name: 'workspace__runPowerShell',
+          arguments: { command: 'exit 1', timeout: 120 },
+          result: {
+            content: [{ type: 'text', text: failureText }],
+            isError: true,
+          },
+        },
+      ]);
+    });
+
+    it('detects failure from metadata.toolError alone', () => {
+      const toolCalls: ToolCall[] = [
+        {
+          id: 'call-2',
+          type: 'function',
+          function: { name: 'demo', arguments: '{}' },
+        },
+      ];
+      const toolResultsMap = new Map<string, Message>([
+        [
+          'call-2',
+          createMessage({
+            id: 'result-2',
+            role: 'tool',
+            content: [{ type: 'text', text: 'failed' }],
+            metadata: { toolError: true },
+          }),
+        ],
+      ]);
+
+      const parsed = JSON.parse(
+        serializeToolCallsForClipboard(toolCalls, toolResultsMap),
+      ) as Array<{ result?: { isError?: boolean; content: unknown[] } }>;
+
+      expect(parsed[0]?.result?.isError).toBe(true);
+      expect(parsed[0]?.result?.content).toEqual([
+        { type: 'text', text: 'failed' },
       ]);
     });
   });

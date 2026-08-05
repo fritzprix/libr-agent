@@ -140,7 +140,6 @@ impl ExampleServer {
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: text.to_string(),
-                is_error: None,
             }]),
             is_error: Some(false),
             structured_content: None,

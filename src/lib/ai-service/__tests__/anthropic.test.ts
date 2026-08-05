@@ -40,7 +40,6 @@ describe('AnthropicService', () => {
   beforeEach(() => {
     service = new AnthropicService('test-api-key', {
       maxTokens: 1024,
-      temperature: 0.7,
     });
     // Access the private anthropic client for mocking
     mockAnthropicClient = (service as unknown as { anthropic: unknown })

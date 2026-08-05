@@ -1,7 +1,8 @@
 import type { Message, ToolCall } from '@/models/chat';
-import type { MCPContent } from '@/lib/mcp';
+import type { MCPContent, MCPTextContent } from '@/lib/mcp';
 import { extractTextContent } from '@/lib/message-utils';
 import { messageToMarkdown } from '@/lib/message-markdown';
+import { hasToolCallError } from '@/lib/tool-call-utils';
 
 export type MessageSerializationMode = 'full' | 'text' | 'tools';
 
@@ -16,15 +17,41 @@ export interface SerializeMessageOptions {
   toolResultsMap?: Map<string, Message>;
 }
 
+/**
+ * Clipboard/export shape aligned with MCP CallToolResult:
+ * top-level `isError`, content items without item-level `isError`, no redundant `text`.
+ */
 export interface SerializedToolCall {
   id: string;
   name: string;
   arguments: unknown;
   result?: {
     content: MCPContent[];
-    text: string;
     isError?: boolean;
   };
+}
+
+/**
+ * Strip non-standard item-level `isError` from text content for MCP-compliant export.
+ */
+function toCallToolResultContent(content: MCPContent[]): MCPContent[] {
+  return content.map((item): MCPContent => {
+    if (item.type !== 'text') {
+      return item;
+    }
+
+    const cleaned: MCPTextContent = {
+      type: 'text',
+      text: item.text,
+    };
+    if (item.annotations !== undefined) {
+      cleaned.annotations = item.annotations;
+    }
+    if (item.serviceInfo !== undefined) {
+      cleaned.serviceInfo = item.serviceInfo;
+    }
+    return cleaned;
+  });
 }
 
 function parseToolArguments(argumentsJson: string): unknown {
@@ -234,10 +261,10 @@ export function serializeToolCallsForClipboard(
     };
 
     if (resultMessage) {
+      const isError = hasToolCallError(resultMessage);
       entry.result = {
-        content: resultMessage.content ?? [],
-        text: extractTextContent(resultMessage),
-        isError: Boolean(resultMessage.error),
+        content: toCallToolResultContent(resultMessage.content ?? []),
+        ...(isError ? { isError: true } : {}),
       };
     }
 

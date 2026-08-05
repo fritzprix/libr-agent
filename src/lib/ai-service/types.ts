@@ -61,8 +61,6 @@ export interface AIServiceConfig {
   defaultModel?: string;
   /** The maximum number of tokens to generate in a response. */
   maxTokens?: number;
-  /** The sampling temperature for the model. */
-  temperature?: number;
   /** Safety settings for the model (e.g. Gemini). */
   safetySettings?: SafetySetting[];
   /** An array of tools available to the service. */
@@ -100,6 +98,12 @@ export interface AIServiceConfig {
    * expect stable leading message history in the cache key.
    */
   promptCachePrefixMessageCount?: number;
+
+  /**
+   * Optional sampling temperature override.
+   * When unset, providers omit temperature so serving-engine defaults apply.
+   */
+  temperature?: number;
 
   /**
    * Enable reasoning mode for supported models.

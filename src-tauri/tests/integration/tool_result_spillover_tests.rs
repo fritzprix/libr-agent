@@ -82,7 +82,6 @@ fn make_tool_message(session_id: &str, tool_call_id: &str, text: &str) -> Messag
         role: "tool".to_string(),
         content: vec![MCPContent::Text {
             text: text.to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: Some(tool_call_id.to_string()),
@@ -134,7 +133,6 @@ async fn spillover_pointer_is_what_gets_persisted_to_repository() {
         content: vec![
             MCPContent::Text {
                 text: original_text.clone(),
-                is_error: None,
             },
             MCPContent::Resource {
                 resource: serde_json::json!({

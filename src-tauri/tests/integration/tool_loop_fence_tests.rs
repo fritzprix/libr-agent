@@ -115,7 +115,6 @@ fn build_history(session_id: &str) -> Vec<Message> {
         role: "assistant".to_string(),
         content: vec![MCPContent::Text {
             text: "Acknowledged. Preparing the next batch of workspace reads.".to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,
@@ -165,7 +164,6 @@ fn build_assistant_message(session_id: &str, tool_call_count: usize) -> Message 
         role: "assistant".to_string(),
         content: vec![MCPContent::Text {
             text: "I will inspect the relevant files in small batches.".to_string(),
-            is_error: None,
         }],
         tool_calls: Some((0..tool_call_count).map(build_tool_call).collect()),
         tool_call_id: None,

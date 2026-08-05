@@ -320,6 +320,9 @@ export class AnthropicService extends BaseAIService<
           model: model,
           max_tokens: config.maxTokens!,
           messages: anthropicMessages,
+          ...(config.temperature !== undefined && {
+            temperature: config.temperature,
+          }),
           ...(systemBlocks && { system: systemBlocks }),
           ...(extendedThinking && { extended_thinking: extendedThinking }),
           ...(requestTools && { tools: requestTools }),

@@ -283,28 +283,51 @@ impl SqliteMessageRepository {
         })
     }
 
-    /// Rebuild UI-facing metadata from persisted content.
+    /// Rebuild UI-facing metadata / error fields from persisted columns.
     ///
-    /// `messages.metadata` is not a DB column; `Message.metadata.toolError` is derived at
-    /// write time (see `create_tool_result_message_with_content`) from `MCPContent::Text.is_error`.
-    /// Re-derive on read so cold session loads / crash-recovery tombstones still group as errors.
-    fn metadata_from_persisted_content(
-        content: &[crate::mcp::types::MCPContent],
-    ) -> Option<serde_json::Value> {
-        let tool_error = content.iter().any(|c| {
-            matches!(
-                c,
-                crate::mcp::types::MCPContent::Text {
-                    is_error: Some(true),
-                    ..
-                }
-            )
-        });
-        if tool_error {
+    /// `messages.metadata` is not a DB column. Tool failures are persisted as
+    /// `error: {"toolError": true}` (new) or legacy `content[].isError` in the
+    /// raw content JSON (old rows; the typed `MCPContent::Text` field is gone).
+    fn decode_persisted_tool_error(
+        content_json: &str,
+        error: Option<serde_json::Value>,
+    ) -> (Option<serde_json::Value>, Option<serde_json::Value>) {
+        let tool_error_from_column = error
+            .as_ref()
+            .and_then(|value| value.get("toolError"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let tool_error_from_legacy_content =
+            crate::mcp::types::raw_content_json_has_legacy_item_error(content_json);
+        let tool_error = tool_error_from_column || tool_error_from_legacy_content;
+
+        let metadata = if tool_error {
             Some(serde_json::json!({ "toolError": true }))
         } else {
             None
+        };
+
+        // Tool-error marker occupies the error column; do not expose it as Message.error
+        // (that field is reserved for LLM/service failure UI payloads).
+        let error = if tool_error_from_column { None } else { error };
+
+        (error, metadata)
+    }
+
+    /// Encode in-memory `metadata.toolError` into the durable `error` column marker.
+    fn encode_persisted_error(message: &Message) -> Option<serde_json::Value> {
+        let tool_error = message
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("toolError"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+
+        if tool_error {
+            return Some(serde_json::json!({ "toolError": true }));
         }
+
+        message.error.clone()
     }
 
     /// Convert SeaORM message model to Message type
@@ -318,11 +341,11 @@ impl SqliteMessageRepository {
 
         let tool_use: Option<serde_json::Value> = from_json_option(&model.tool_use);
 
-        let error: Option<serde_json::Value> = from_json_option(&model.error);
+        let raw_error: Option<serde_json::Value> = from_json_option(&model.error);
 
         let usage: Option<serde_json::Value> = from_json_option(&model.usage);
 
-        let metadata = Self::metadata_from_persisted_content(&content);
+        let (error, metadata) = Self::decode_persisted_tool_error(&model.content, raw_error);
 
         Message {
             id: model.id,
@@ -368,7 +391,7 @@ impl SqliteMessageRepository {
             DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
         })?;
 
-        let error_json = to_json_option(&message.error).map_err(|e| {
+        let error_json = to_json_option(&Self::encode_persisted_error(message)).map_err(|e| {
             DbError::SerializationError(format!("Failed to serialize error: {}", e))
         })?;
 
@@ -816,7 +839,6 @@ mod tests {
             role: "user".to_string(),
             content: vec![MCPContent::Text {
                 text: "Hello".to_string(),
-                is_error: None,
             }],
             tool_calls: None,
             tool_call_id: None,
@@ -854,7 +876,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reload_derives_tool_error_metadata_from_content_is_error() {
+    async fn test_reload_derives_tool_error_from_error_column_marker() {
         let repo = setup_test_db().await;
         create_test_session(&repo.db, "session1").await;
 
@@ -863,9 +885,7 @@ mod tests {
         message.tool_call_id = Some("call-1".to_string());
         message.content = vec![MCPContent::Text {
             text: "tool failed".to_string(),
-            is_error: Some(true),
         }];
-        // metadata is not a DB column; callers may set it in memory, but reload must re-derive.
         message.metadata = Some(serde_json::json!({ "toolError": true }));
 
         repo.insert(&message).await.expect("Failed to insert");
@@ -883,8 +903,66 @@ mod tests {
                 .and_then(|metadata| metadata.get("toolError"))
                 .and_then(|value| value.as_bool()),
             Some(true),
-            "toolError must be reconstructed from persisted content.is_error"
+            "toolError must be reconstructed from persisted error-column marker"
         );
+        assert!(
+            loaded.error.is_none(),
+            "toolError marker must not surface as Message.error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reload_derives_tool_error_from_legacy_content_json_is_error() {
+        let repo = setup_test_db().await;
+        create_test_session(&repo.db, "session1").await;
+
+        // Simulate a pre-cleanup DB row that still has content[].isError.
+        use sea_orm::{ActiveModelTrait, Set};
+        let now = chrono::Utc::now().timestamp_millis();
+        crate::entity::message::ActiveModel {
+            id: Set("legacy-tool-err".to_string()),
+            session_id: Set("session1".to_string()),
+            role: Set("tool".to_string()),
+            content: Set(r#"[{"type":"text","text":"legacy fail","isError":true}]"#.to_string()),
+            tool_calls: Set(None),
+            tool_call_id: Set(Some("call-legacy".to_string())),
+            is_streaming: Set(Some(0)),
+            thinking: Set(None),
+            thinking_signature: Set(None),
+            assistant_id: Set(None),
+            attachments: Set(None),
+            tool_use: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            source: Set(Some("tool".to_string())),
+            error: Set(None),
+            usage: Set(None),
+            prompt_tokens: Set(None),
+        }
+        .insert(&repo.db)
+        .await
+        .expect("Failed to insert legacy row");
+
+        let loaded = repo
+            .get_by_id("legacy-tool-err")
+            .await
+            .expect("Failed to get message")
+            .expect("message should exist");
+
+        assert_eq!(
+            loaded
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("toolError"))
+                .and_then(|value| value.as_bool()),
+            Some(true),
+            "toolError must be reconstructed from legacy content JSON isError"
+        );
+        // Typed content must not retain the removed field (serde ignores unknown keys).
+        assert!(matches!(
+            loaded.content.first(),
+            Some(MCPContent::Text { text }) if text == "legacy fail"
+        ));
     }
 
     #[tokio::test]

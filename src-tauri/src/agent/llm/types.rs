@@ -114,7 +114,6 @@ pub struct CompletionRequest {
     /// Stable system prompt (sections 1–4 plus stable service-context blocks).
     /// Cacheable across turns within a session.
     pub system_prompt: Option<String>,
-    pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
 }

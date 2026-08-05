@@ -82,7 +82,7 @@ Full Model Context Protocol support — both built-in and external servers.
 
 | Component                 | File                                            | Description                                                      |
 | ------------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
-| **Entity**                | `src-tauri/src/entity/assistant.rs`             | Assistant config: name, system prompt, temperature, model, tools |
+| **Entity**                | `src-tauri/src/entity/assistant.rs`             | Assistant config: name, system prompt, tools                 |
 | **Service**               | `src-tauri/src/services/assistant_service.rs`   | CRUD operations                                                  |
 | **Frontend**              | `src/features/assistant/`                       | List, Card, Editor pages                                         |
 | **Built-in Tools Editor** | `src/features/assistant/BuiltInToolsEditor.tsx` | Select which builtin tools each assistant gets                   |

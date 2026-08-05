@@ -58,6 +58,10 @@ interface MockAgentSessionContextValue {
   preflightTokenMetrics: PreflightTokenMetrics | null;
   setExecutionMode: typeof mocks.setExecutionMode;
   updateSessionConfig: typeof mocks.updateSessionConfig;
+  isProxyReady: boolean;
+  runtimeState: {
+    servers: Array<{ name: string; status: string; toolCount: number }>;
+  };
 }
 
 const mockSession: MockSession = {
@@ -78,6 +82,10 @@ const mockAgentSession: MockAgentSessionContextValue = {
   preflightTokenMetrics: null,
   setExecutionMode: mocks.setExecutionMode,
   updateSessionConfig: mocks.updateSessionConfig,
+  isProxyReady: true,
+  runtimeState: {
+    servers: [],
+  },
 };
 
 const mockAgentChat = {
@@ -118,8 +126,8 @@ vi.mock('@/context/SettingsContext', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-agent-tools', () => ({
-  useAgentTools: () => ({
+vi.mock('@/features/agent/hooks/useSessionAgentTools', () => ({
+  useSessionAgentTools: () => ({
     availableTools: [],
     isLoading: false,
     error: null,

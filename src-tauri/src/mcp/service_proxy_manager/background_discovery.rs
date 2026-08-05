@@ -1,8 +1,9 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
+use super::management::ProxyReadinessEntry;
 use super::persist_tool_cache_for_server;
 use super::runtime_updates::{
-    apply_batch_step, apply_initialization_complete, apply_server_connecting,
+    apply_discovery_timeout_finalize, apply_initialization_complete, apply_server_connecting,
     apply_server_discovering, apply_server_failed, apply_server_ready, update_runtime_state_store,
 };
 use super::MCPServiceProxyManager;
@@ -145,10 +146,6 @@ async fn load_stdio_tools(
             &context.session_id,
             context.app_handle.as_ref(),
             |state| {
-                apply_batch_step(
-                    state,
-                    format!("Connecting to {} stdio servers", stdio_configs.len()),
-                );
                 for server_name in stdio_configs.keys() {
                     apply_server_connecting(state, server_name, SessionRuntimeTransport::Stdio);
                 }
@@ -314,7 +311,9 @@ async fn load_http_tools(
             &context.session_id,
             context.app_handle.as_ref(),
             |state| {
-                apply_batch_step(state, "Loading tools from HTTP servers");
+                for server_name in http_configs.keys() {
+                    apply_server_connecting(state, server_name, SessionRuntimeTransport::Http);
+                }
             },
         )
         .await;
@@ -506,11 +505,13 @@ pub(super) async fn spawn_background_tool_loading(
 ) {
     let (ready_tx, _) = tokio::sync::watch::channel(false);
     let ready_tx = Arc::new(ready_tx);
-    manager
-        .proxy_readiness
-        .write()
-        .await
-        .insert(plan.session_id.clone(), ready_tx.clone());
+    manager.proxy_readiness.write().await.insert(
+        plan.session_id.clone(),
+        ProxyReadinessEntry {
+            ready_tx: ready_tx.clone(),
+            app_handle: plan.app_handle.clone(),
+        },
+    );
 
     let context = DiscoveryContext {
         session_id: plan.session_id,
@@ -522,53 +523,186 @@ pub(super) async fn spawn_background_tool_loading(
     };
     tokio::spawn(async move {
         let total_start = Instant::now();
-        let stdio_start = Instant::now();
-        let stdio_server_count = plan.stdio_configs.len();
-        let http_server_count = plan.http_configs.len();
-        load_stdio_tools(
-            context.clone(),
-            plan.stdio_manager,
-            plan.proxy.clone(),
-            plan.stdio_configs,
-        )
-        .await;
-        let stdio_ms = stdio_start.elapsed().as_millis();
+        let stdio_manager = plan.stdio_manager;
+        let http_manager = plan.http_manager;
+        let stdio_proxy = plan.proxy.clone();
+        let http_proxy = plan.proxy;
+        let stdio_configs = plan.stdio_configs;
+        let http_configs = plan.http_configs;
+        let stdio_server_count = stdio_configs.len();
+        let http_server_count = http_configs.len();
+        let discovery_timeout = context.tool_discovery_timeout;
 
-        let http_start = Instant::now();
-        load_http_tools(
-            context.clone(),
-            plan.http_manager,
-            plan.proxy,
-            plan.http_configs,
-        )
-        .await;
-        let http_ms = http_start.elapsed().as_millis();
+        // Keep discovery on a JoinHandle so a deadline can finalize Session Ready
+        // without cancelling in-flight stdio/HTTP loading (late Ready still updates).
+        let discovery_context = context.clone();
+        let mut discovery_handle = tokio::spawn(async move {
+            let stdio_fut = async {
+                let started = Instant::now();
+                load_stdio_tools(
+                    discovery_context.clone(),
+                    stdio_manager,
+                    stdio_proxy,
+                    stdio_configs,
+                )
+                .await;
+                started.elapsed().as_millis()
+            };
+            let http_fut = async {
+                let started = Instant::now();
+                load_http_tools(
+                    discovery_context.clone(),
+                    http_manager,
+                    http_proxy,
+                    http_configs,
+                )
+                .await;
+                started.elapsed().as_millis()
+            };
+            tokio::join!(stdio_fut, http_fut)
+        });
 
-        log::info!(
-            "[bg] Tool loading complete for session: {}",
-            context.session_id
-        );
-        let _ = ready_tx.send(true);
-        let update_result = update_runtime_state_store(
-            &context.runtime_states,
-            &context.session_id,
-            context.app_handle.as_ref(),
-            |state| {
-                apply_initialization_complete(state);
-            },
-        )
-        .await;
-        if update_result.emitted {
-            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+        tokio::select! {
+            join_result = &mut discovery_handle => {
+                match join_result {
+                    Ok((stdio_ms, http_ms)) => {
+                        finish_background_discovery(
+                            &context,
+                            &ready_tx,
+                            DiscoveryFinishStats {
+                                stdio_server_count,
+                                http_server_count,
+                                total_start,
+                                stdio_ms,
+                                http_ms,
+                                already_finalized_by_deadline: false,
+                            },
+                        )
+                        .await;
+                    }
+                    Err(error) => {
+                        log::error!(
+                            "[bg] Tool discovery task join failed for session {}: {:?}",
+                            context.session_id,
+                            error
+                        );
+                        ready_tx.send_replace(true);
+                        let update_result = update_runtime_state_store(
+                            &context.runtime_states,
+                            &context.session_id,
+                            context.app_handle.as_ref(),
+                            |state| {
+                                apply_discovery_timeout_finalize(
+                                    state,
+                                    "Tool discovery task failed before completion",
+                                );
+                            },
+                        )
+                        .await;
+                        if update_result.emitted {
+                            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+            _ = tokio::time::sleep(discovery_timeout) => {
+                let reason = format!(
+                    "Tool discovery timed out after {}s",
+                    discovery_timeout.as_secs()
+                );
+                log::warn!(
+                    "[bg] {} for session {}; marking pending servers TimedOut and setting Session Ready",
+                    reason,
+                    context.session_id
+                );
+                // Use send_replace, not send: receiver_count may be 0.
+                ready_tx.send_replace(true);
+                let update_result = update_runtime_state_store(
+                    &context.runtime_states,
+                    &context.session_id,
+                    context.app_handle.as_ref(),
+                    |state| {
+                        apply_discovery_timeout_finalize(state, &reason);
+                    },
+                )
+                .await;
+                if update_result.emitted {
+                    context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+                }
+
+                // Keep loading after Ready: late apply_server_ready may overwrite
+                // TimedOut→Ready and refresh tools; finish recomputes summary.
+                match discovery_handle.await {
+                    Ok((stdio_ms, http_ms)) => {
+                        finish_background_discovery(
+                            &context,
+                            &ready_tx,
+                            DiscoveryFinishStats {
+                                stdio_server_count,
+                                http_server_count,
+                                total_start,
+                                stdio_ms,
+                                http_ms,
+                                already_finalized_by_deadline: true,
+                            },
+                        )
+                        .await;
+                    }
+                    Err(error) => {
+                        log::error!(
+                            "[bg] Late tool discovery join failed for session {}: {:?}",
+                            context.session_id,
+                            error
+                        );
+                    }
+                }
+            }
         }
-        log_background_discovery_metrics(
-            &context.session_id,
-            stdio_server_count,
-            http_server_count,
-            context.runtime_state_emits.load(Ordering::Relaxed),
-            total_start.elapsed().as_millis(),
-            stdio_ms,
-            http_ms,
-        );
     });
+}
+
+struct DiscoveryFinishStats {
+    stdio_server_count: usize,
+    http_server_count: usize,
+    total_start: Instant,
+    stdio_ms: u128,
+    http_ms: u128,
+    already_finalized_by_deadline: bool,
+}
+
+async fn finish_background_discovery(
+    context: &DiscoveryContext,
+    ready_tx: &Arc<tokio::sync::watch::Sender<bool>>,
+    stats: DiscoveryFinishStats,
+) {
+    log::info!(
+        "[bg] Tool loading complete for session: {} (deadline_finalize={})",
+        context.session_id,
+        stats.already_finalized_by_deadline
+    );
+    // Use send_replace, not send: the initial watch receiver is dropped at
+    // channel creation, and soft readiness waits may also drop before discovery
+    // finishes. tokio::watch::Sender::send refuses to update when
+    // receiver_count == 0, which left later waiters stuck on false until timeout.
+    ready_tx.send_replace(true);
+    let update_result = update_runtime_state_store(
+        &context.runtime_states,
+        &context.session_id,
+        context.app_handle.as_ref(),
+        apply_initialization_complete,
+    )
+    .await;
+    if update_result.emitted {
+        context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    log_background_discovery_metrics(
+        &context.session_id,
+        stats.stdio_server_count,
+        stats.http_server_count,
+        context.runtime_state_emits.load(Ordering::Relaxed),
+        stats.total_start.elapsed().as_millis(),
+        stats.stdio_ms,
+        stats.http_ms,
+    );
 }

@@ -54,7 +54,6 @@ fn build_user_message(session_id: &str, id: &str, text: &str) -> Message {
         role: "user".to_string(),
         content: vec![MCPContent::Text {
             text: text.to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,
@@ -322,7 +321,6 @@ fn build_tool_message(session_id: &str, id: &str, tool_call_id: &str, text: &str
         role: "tool".to_string(),
         content: vec![MCPContent::Text {
             text: text.to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: Some(tool_call_id.to_string()),
@@ -461,7 +459,6 @@ fn build_assistant_message_with_thinking(
         role: "assistant".to_string(),
         content: vec![MCPContent::Text {
             text: text.to_string(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,

@@ -31,6 +31,7 @@ const SettingsPage: FC = function SettingsPage() {
   const { t } = useTranslation('common');
   const {
     formState,
+    update,
     updateDisplay,
     updateAdvanced,
     activeTab,
@@ -175,10 +176,20 @@ const SettingsPage: FC = function SettingsPage() {
                 providerEntries={PROVIDER_ENTRIES}
                 localPreferredModel={formState.preferredModel}
                 localFallbackModel={formState.fallbackModel}
+                temperatureOverrideEnabled={
+                  formState.temperatureOverrideEnabled
+                }
+                temperature={formState.temperature}
                 onPendingChange={handlePendingChange}
                 onCustomProvidersChange={handleCustomProvidersChange}
                 onPreferredModelChange={handlePreferredModelChange}
                 onFallbackModelChange={handleFallbackModelChange}
+                onTemperatureOverrideEnabledChange={(enabled) =>
+                  update('temperatureOverrideEnabled', enabled)
+                }
+                onTemperatureChange={(temperature) =>
+                  update('temperature', temperature)
+                }
               />
             </TabsContent>
 

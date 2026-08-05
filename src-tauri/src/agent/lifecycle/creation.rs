@@ -219,27 +219,12 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     // SSOT: MCP activation is session → assistant → mcpServerIds (not create-request payload).
     let (tool_ids, mcp_server_ids) = crate::agent::resolve_session_mcp_bindings(&session).await?;
 
-    // Create proxy for this session
-    proxy_manager
-        .create_proxy(
-            session_id.clone(),
-            tool_ids,
-            mcp_server_ids,
-            Some(app_handle.clone()),
-        )
-        .await?;
-
-    log::info!(
-        "Created MCP proxy for session: {} with builtin tools",
-        session_id
-    );
-
     // Load compact context if exists (SP17)
     let compact_context_record =
         crate::agent::lifecycle::load_compact_context_record(&session_id, "session creation")
             .await?;
 
-    // Add to active sessions with cancellation token and empty cache
+    // Activate session in memory first so create can return without waiting on MCP.
     let mut active = active_sessions.write().await;
     if let Some(existing_session) = active.get_mut(&session_id) {
         log::info!(
@@ -260,6 +245,17 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
             AgentSession::new(session.clone(), context_registry, compact_context_record),
         );
     }
+    drop(active);
+
+    // MCP proxy creation must not block session create — same soft-wait model as resume/open.
+    crate::agent::lifecycle::spawn_create_proxy_for_session(
+        Arc::clone(&proxy_manager),
+        app_handle.clone(),
+        session_id.clone(),
+        tool_ids,
+        mcp_server_ids,
+    )
+    .await;
 
     log::info!("Created agent session: {}", session_id);
 

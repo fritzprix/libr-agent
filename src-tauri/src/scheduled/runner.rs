@@ -522,7 +522,6 @@ async fn inject_scheduled_message(
         role: "user".to_string(),
         content: vec![MCPContent::Text {
             text: task.message.clone(),
-            is_error: None,
         }],
         tool_calls: None,
         tool_call_id: None,

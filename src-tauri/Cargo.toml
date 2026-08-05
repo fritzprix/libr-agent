@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.8.37"
+version = "0.8.38"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -74,12 +74,12 @@ handlebars = "6.4"
 ammonia = "4.0"
 jsonschema = "0.49"
 
-# Windows-only: decode process output captured from stdio pipes using the system ANSI code page
-windows-sys = { version = "0.59", features = ["Win32_Globalization"] }
+# Windows-only: ANSI code-page decode for stdio; ExpandEnvironmentStrings for registry PATH
+windows-sys = { version = "0.59", features = ["Win32_Globalization", "Win32_System_Environment"] }
 
 # File parsing dependencies
 docx-rs = "0.4"           # DOCX parsing
-calamine = { version = "0.35", features = ["dates"] }  # XLSX parsing
+calamine = { version = "0.36", features = ["dates"] }  # XLSX parsing
 lopdf = "0.31"            # PDF parsing
 pdf-extract = "0.12"       # Better PDF text extraction
 markdown2pdf = "1.5"      # Proven Markdown → PDF (github theme) for message export
@@ -99,6 +99,10 @@ libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 tauri-plugin-mcp-bridge = "0.12.0"
 sqlite-vec = "0.1.9"
 fastembed = "5.15.0"
+
+[target.'cfg(windows)'.dependencies]
+# Read HKCU/HKLM Path so GUI-launched isolation recovers user tool dirs (cargo, uv, npm, …)
+winreg = "0.55"
 
 [features]
 default = ["workspace-str-replace"]

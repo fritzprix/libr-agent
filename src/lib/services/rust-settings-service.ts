@@ -23,7 +23,8 @@ type SettingValue =
   | CustomOpenAIProvider[] // customProviders
   | ModelChoice // preferredModel / fallbackModel
   | null // fallbackModel can be null (cleared)
-  | number // windowSize, toolCallGroupVisibleCount
+  | boolean // temperatureOverrideEnabled
+  | number // windowSize, toolCallGroupVisibleCount, temperature
   | string // uiLanguage, agentHubUrl
   | AdvancedSettings
   | Partial<AdvancedSettings> // advancedSettings
@@ -151,6 +152,19 @@ function mapDtosToSettings(dtos: SettingDto[]): Settings {
     fallbackModel:
       (settingsMap.get('fallbackModel') as ModelChoice | null | undefined) ??
       DEFAULT_SETTING.fallbackModel,
+    temperatureOverrideEnabled: getTypedValue(
+      'temperatureOverrideEnabled',
+      DEFAULT_SETTING.temperatureOverrideEnabled,
+      (val): val is boolean => typeof val === 'boolean',
+    ),
+    temperature: (() => {
+      const value = getTypedValue(
+        'temperature',
+        DEFAULT_SETTING.temperature,
+        (val): val is number => typeof val === 'number' && Number.isFinite(val),
+      );
+      return Math.min(2, Math.max(0, value));
+    })(),
     contextStrategy: getTypedValue(
       'contextStrategy',
       DEFAULT_SETTING.contextStrategy,
@@ -271,6 +285,15 @@ export class RustSettingsService implements ISettingsService {
       // fallbackModel: allow null to explicitly clear it
       if (settings.fallbackModel !== undefined) {
         changes['fallbackModel'] = settings.fallbackModel ?? null;
+      }
+
+      if (settings.temperatureOverrideEnabled !== undefined) {
+        changes['temperatureOverrideEnabled'] =
+          settings.temperatureOverrideEnabled;
+      }
+
+      if (settings.temperature !== undefined) {
+        changes['temperature'] = settings.temperature;
       }
 
       if (settings.contextStrategy != null) {
