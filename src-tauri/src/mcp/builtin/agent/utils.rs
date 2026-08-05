@@ -178,18 +178,17 @@ pub fn build_agent_session_tool_data(
     turn_count: usize,
     next_actions: Vec<Value>,
 ) -> serde_json::Map<String, Value> {
+    // Agent-facing: always emit short display token (no `session-` prefix), never storage keys.
+    let display_id = crate::utils::session_id::display_session_id(session_id);
     let mut data = build_agent_tool_data(
         tool_name,
         "session",
-        Some(session_id),
+        Some(&display_id),
         message,
         response_status,
         next_actions,
     );
-    data.insert(
-        "sessionId".to_string(),
-        Value::String(session_id.to_string()),
-    );
+    data.insert("sessionId".to_string(), Value::String(display_id));
     data.insert(
         "status".to_string(),
         Value::String(session_status.to_string()),
@@ -326,12 +325,13 @@ pub async fn count_session_turns(session_id: &str) -> usize {
 }
 
 pub fn check_session_next_actions(session_id: &str) -> Vec<Value> {
+    let display_id = crate::utils::session_id::display_session_id(session_id);
     vec![
         json!({
             "toolName": "agent__checkSession",
             "reason": "Poll the session again for the latest status and turn count.",
             "args": {
-                "sessionId": session_id,
+                "sessionId": display_id,
                 "wait": false
             }
         }),
@@ -339,7 +339,7 @@ pub fn check_session_next_actions(session_id: &str) -> Vec<Value> {
             "toolName": "agent__checkSession",
             "reason": "Block again later when you want to wait for a terminal result.",
             "args": {
-                "sessionId": session_id,
+                "sessionId": display_id,
                 "wait": true
             }
         }),
@@ -524,15 +524,16 @@ pub async fn handle_wait_timeout_result(
                     None => ("unknown".to_string(), 0, String::new(), Vec::new()),
                 };
 
+                let display_id = crate::utils::session_id::display_session_id(session_id);
                 let text = if is_spawn {
                     format!(
                         "Child session created (ID: {}) but waiting for completion timed out after {}s.\n\nThe agent is likely still working. Use agent__checkSession(sessionId=\"{}\", wait=true) later to fetch the final result.{}\n\nCurrent status: {}",
-                        session_id, timeout_seconds, session_id, latest_msgs_str, session_status
+                        display_id, timeout_seconds, display_id, latest_msgs_str, session_status
                     )
                 } else {
                     format!(
                         "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call agent__checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use agent__listAgents(type=\"sessions\") to confirm it is still active.{}\n\nCurrent status: {}",
-                        session_id, timeout_seconds, session_id, latest_msgs_str, session_status
+                        display_id, timeout_seconds, display_id, latest_msgs_str, session_status
                     )
                 };
 
@@ -555,7 +556,7 @@ pub async fn handle_wait_timeout_result(
                 data.insert("latestMessages".to_string(), json!(latest_msgs_json));
 
                 if is_spawn {
-                    data.insert("id".to_string(), Value::String(session_id.to_string()));
+                    data.insert("id".to_string(), Value::String(display_id));
                 }
 
                 Err(Ok(MCPResult {

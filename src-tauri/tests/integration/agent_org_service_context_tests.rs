@@ -2,8 +2,8 @@ use crate::common;
 
 use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::repositories::{
-    build_child_sessions_context, build_explicit_org_layer_context, SessionMetadata,
-    SessionRepository, SessionStatus, SqliteSessionRepository,
+    build_child_sessions_context, build_explicit_org_layer_context, format_active_sessions_notice,
+    SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };
 
 fn build_session(
@@ -435,26 +435,33 @@ async fn agent_server_get_service_context_includes_active_sessions_notice() {
     assert!(!prompt.contains("## Child Sessions"));
 
     // 6. Assert active sessions notice is correctly built with status groupings
-    // Header includes total count; session IDs are truncated to 8 chars for prompt compactness.
+    // Header includes total count; session IDs must be complete so messageToSession works.
     assert!(prompt.contains("### Sub-Agent Sessions (3 total, reuse via messageToSession)"));
     assert!(prompt.contains("⚠️ **Reuse Existing Sessions First**:"));
 
     // Group: Ready to Reuse (Idle)
     assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
     assert!(prompt.contains("  These sessions are idle and ready for new instructions."));
-    assert!(prompt.contains("  - `child-id` (name: \"Active Child 1\")"));
+    // Agent-facing ids are short tokens only (no `session-` prefix).
+    // Fixtures use synthetic names (`child-idle`, `child-paused`, `child-error`), not real
+    // spawn/legacy formats — they only exercise short-token truncation:
+    //   child-idle (10) → child-idle; child-paused (12) → ild-paused; child-error (11) → hild-error
+    assert!(prompt.contains("  - `child-idle` (name: \"Active Child 1\")"));
 
     // Group: Suspended (Paused)
     assert!(prompt.contains("- **Suspended (Paused):**"));
     assert!(
         prompt.contains("  These sessions were suspended (e.g. waiting for input or approval).")
     );
-    assert!(prompt.contains("  - `child-pa` (name: \"Active Child 2\")"));
+    assert!(prompt.contains("  - `ild-paused` (name: \"Active Child 2\")"));
 
     // Group: Failed (Error)
     assert!(prompt.contains("- **Failed (Error):**"));
     assert!(prompt.contains(
         "  These sessions encountered an error. Send a message to retry or recover them."
     ));
-    assert!(prompt.contains("  - `child-er` (name: \"Error Child\")"));
+    assert!(prompt.contains("  - `hild-error` (name: \"Error Child\")"));
 }
+
+// Display-alias notice regression lives in the Windows-safe
+// `tests/session_id_display_tests.rs` binary (no AppHandle/WebView link).

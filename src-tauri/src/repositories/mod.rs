@@ -53,8 +53,9 @@ pub use session_repository::{
 pub use settings_repository::{SettingsRepository, SqliteSettingsRepository};
 
 pub(crate) fn format_session_label(session: &SessionMetadata) -> String {
+    let display_id = crate::utils::session_id::display_session_id(&session.id);
     match session.name.as_deref() {
-        Some(name) if !name.is_empty() => format!("{} — {}", session.id, name),
-        _ => session.id.clone(),
+        Some(name) if !name.is_empty() => format!("{} — {}", display_id, name),
+        _ => display_id,
     }
 }
