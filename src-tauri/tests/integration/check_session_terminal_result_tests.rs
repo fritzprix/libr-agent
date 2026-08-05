@@ -207,7 +207,7 @@ fn terminal_error_check_session_result_marks_session_as_recoverable() {
         structured
             .get("recoveryStrategy")
             .and_then(|value| value.as_str()),
-        Some("messageToSession")
+        Some("agent__messageToSession")
     );
 }
 
@@ -235,7 +235,7 @@ fn paused_check_session_result_includes_recovery_guidance() {
         .expect("structured content expected");
 
     assert!(text.contains("is paused and will not make progress on its own"));
-    assert!(text.contains("messageToSession"));
+    assert!(text.contains("agent__messageToSession"));
     assert_eq!(
         structured.get("status").and_then(|value| value.as_str()),
         Some("paused")
