@@ -351,9 +351,11 @@ async fn resolve_delegated_session_ref(
                 ToolGroup::Agent,
             )
             .with_guidance(vec![
-                "Use the full session id from list(type=\"sessions\") when short aliases collide"
-                    .to_string(),
-                format!("Retry {} with the exact stored session id", tool_name),
+                "Multiple delegated sessions share this short alias; confirm the target by name via list(type=\"sessions\")".to_string(),
+                format!(
+                    "Retry {} with an exact storage id if available, or remove unused sibling sessions so aliases are unique",
+                    tool_name
+                ),
             ])
             .to_mcp_result())
         }

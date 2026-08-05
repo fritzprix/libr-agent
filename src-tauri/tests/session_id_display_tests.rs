@@ -1,6 +1,6 @@
 //! Windows-safe coverage for session id display aliases, reverse lookup, and spawn ids.
-//! (Not behind cfg(not(windows)) — avoids the consolidated `integration_tests` WebView/
-//! AppHandle link path that crashes with STATUS_ENTRYPOINT_NOT_FOUND on Windows.)
+//! (Standalone binary — does not pull AppHandle/WebView into the link.)
+//! Org/active-session prompt composition lives in `agent_org_service_context_tests.rs`.
 
 use regex::Regex;
 use tauri_mcp_agent_lib::execution_mode::ExecutionMode;

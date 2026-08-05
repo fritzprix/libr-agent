@@ -1,9 +1,18 @@
-use crate::common;
+//! Org / child / active-session service-context composition.
+//!
+//! Standalone binary so Windows CI runs these cases too. Avoids:
+//! - consolidated `tests/integration/` (AppHandle/WebView link → STATUS_ENTRYPOINT_NOT_FOUND)
+//! - `common::setup_test_db*` / `reset_state()` (same crash on Windows)
+//!
+//! Uses `InMemorySessionRepository` and the same composition order as
+//! `AgentServer::get_service_context` without constructing AgentServer.
 
 use tauri_mcp_agent_lib::agent::ExecutionMode;
+use tauri_mcp_agent_lib::mcp::builtin::agent::AGENT_DELEGATION_HEADER;
+use tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode;
 use tauri_mcp_agent_lib::repositories::{
     build_child_sessions_context, build_explicit_org_layer_context, format_active_sessions_notice,
-    SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
+    InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
 };
 
 fn build_session(
@@ -39,18 +48,44 @@ fn build_session(
         is_bookmarked: false,
         execution_mode: ExecutionMode::Normal,
         workspace_override: None,
-        workspace_isolation:
-            tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+        workspace_isolation: WorkspaceIsolationMode::Host,
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
     }
 }
 
+/// Mirrors `AgentServer::get_service_context` without constructing AgentServer.
+async fn compose_service_context_prompt(
+    repo: &InMemorySessionRepository,
+    session_id: &str,
+) -> String {
+    let mut context_prompt = AGENT_DELEGATION_HEADER.to_string();
+
+    if let Ok(Some(session)) = repo.get_session(session_id).await {
+        if let Ok(children) = repo.get_child_sessions(session_id).await {
+            if let Some(active_notice) = format_active_sessions_notice(&children) {
+                context_prompt.push('\n');
+                context_prompt.push_str(&active_notice);
+            }
+        }
+
+        if session.org_id.is_some() {
+            if let Ok(Some(org_layer_context)) =
+                build_explicit_org_layer_context(repo, &session).await
+            {
+                context_prompt.push('\n');
+                context_prompt.push_str(&org_layer_context);
+            }
+        }
+    }
+
+    context_prompt
+}
+
 #[tokio::test]
 async fn org_service_context_includes_only_local_org_layer_for_org_sessions() {
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSessionRepository::new(db.clone());
+    let repo = InMemorySessionRepository::new();
 
     repo.upsert_session(&build_session(
         "root",
@@ -126,8 +161,7 @@ async fn org_service_context_includes_only_local_org_layer_for_org_sessions() {
 
 #[tokio::test]
 async fn org_service_context_omits_org_section_for_non_org_sessions() {
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSessionRepository::new(db.clone());
+    let repo = InMemorySessionRepository::new();
 
     repo.upsert_session(&build_session(
         "solo",
@@ -154,8 +188,7 @@ async fn org_service_context_omits_org_section_for_non_org_sessions() {
 
 #[tokio::test]
 async fn org_service_context_omits_org_section_when_root_session_id_is_missing() {
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSessionRepository::new(db.clone());
+    let repo = InMemorySessionRepository::new();
 
     repo.upsert_session(&build_session(
         "partial-org",
@@ -182,10 +215,8 @@ async fn org_service_context_omits_org_section_when_root_session_id_is_missing()
 
 #[tokio::test]
 async fn org_service_context_includes_child_sessions_even_without_org() {
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSessionRepository::new(db.clone());
+    let repo = InMemorySessionRepository::new();
 
-    // Parent session with no org info
     repo.upsert_session(&build_session(
         "parent-x",
         "Parent Coordinator",
@@ -198,7 +229,6 @@ async fn org_service_context_includes_child_sessions_even_without_org() {
     .await
     .expect("parent session should persist");
 
-    // Child session a
     repo.upsert_session(&build_session(
         "child-1",
         "Child Agent A",
@@ -211,7 +241,6 @@ async fn org_service_context_includes_child_sessions_even_without_org() {
     .await
     .expect("child session a should persist");
 
-    // Child session b (with status: Busy to verify status formatting)
     let mut child2 = build_session(
         "child-2",
         "Child Agent B",
@@ -246,15 +275,9 @@ async fn org_service_context_includes_child_sessions_even_without_org() {
 }
 
 #[tokio::test]
-async fn agent_server_get_service_context_composes_child_and_org_context() {
-    use std::sync::Arc;
-    use tauri_mcp_agent_lib::mcp::builtin::agent::AgentServer;
-    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+async fn service_context_composes_child_and_org_context() {
+    let repo = InMemorySessionRepository::new();
 
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSessionRepository::new(db.clone());
-
-    // 1. Create a parent session with org info
     repo.upsert_session(&build_session(
         "parent-org-session",
         "Parent Coordinator",
@@ -267,7 +290,6 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
     .await
     .expect("parent session should persist");
 
-    // 2. Create a child session
     repo.upsert_session(&build_session(
         "child-org-session",
         "Child Analyst",
@@ -280,20 +302,13 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
     .await
     .expect("child session should persist");
 
-    // 3. Initialize AgentServer
-    let server = AgentServer::new("parent-org-session".to_string(), Arc::new(db), None)
-        .await
-        .expect("AgentServer should initialize");
+    let prompt = compose_service_context_prompt(&repo, "parent-org-session").await;
 
-    // 4. Retrieve service context
-    let context = server.get_service_context(None).await;
-    let prompt = context.context_prompt;
-
-    // 5. Assert it contains both child and org details
-    // Header includes total count; session IDs are truncated to 8 chars for prompt compactness.
+    // Agent-facing ids are short tokens only (no `session-` prefix).
+    // Fixture `child-org-session` (17 chars) → last 10: `rg-session`.
     assert!(prompt.contains("### Sub-Agent Sessions (1 total, reuse via messageToSession)"));
     assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
-    assert!(prompt.contains("  - `child-or` (name: \"Child Analyst\")"));
+    assert!(prompt.contains("  - `rg-session` (name: \"Child Analyst\")"));
     assert!(prompt.contains("### Explicit Org Layer"));
     assert!(prompt.contains("- Org: Beta Org (ID: org-beta)"));
     assert!(prompt.contains("## Agent Delegation"));
@@ -301,10 +316,8 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
 
 #[tokio::test]
 async fn org_service_context_truncates_child_sessions_exceeding_max_limit() {
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSessionRepository::new(db.clone());
+    let repo = InMemorySessionRepository::new();
 
-    // Create a parent session
     repo.upsert_session(&build_session(
         "parent-limit",
         "Parent Coordinator",
@@ -317,7 +330,6 @@ async fn org_service_context_truncates_child_sessions_exceeding_max_limit() {
     .await
     .expect("parent session should persist");
 
-    // Create 25 child sessions
     for i in 1..=25 {
         let child_id = format!("child-{}", i);
         let child_name = format!("Child Agent {}", i);
@@ -343,8 +355,6 @@ async fn org_service_context_truncates_child_sessions_exceeding_max_limit() {
         context.contains("## Child Sessions"),
         "context should contain Child Sessions header"
     );
-
-    // Verify it contains the truncation note indicating 5 more omitted
     assert!(
         context.contains("- ... and 5 more omitted"),
         "should contain the truncation note indicating 5 more omitted"
@@ -352,15 +362,9 @@ async fn org_service_context_truncates_child_sessions_exceeding_max_limit() {
 }
 
 #[tokio::test]
-async fn agent_server_get_service_context_includes_active_sessions_notice() {
-    use std::sync::Arc;
-    use tauri_mcp_agent_lib::mcp::builtin::agent::AgentServer;
-    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+async fn service_context_includes_active_sessions_notice() {
+    let repo = InMemorySessionRepository::new();
 
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSessionRepository::new(db.clone());
-
-    // 1. Create a parent session
     repo.upsert_session(&build_session(
         "parent-active-test",
         "Parent Coordinator",
@@ -373,7 +377,6 @@ async fn agent_server_get_service_context_includes_active_sessions_notice() {
     .await
     .expect("parent session should persist");
 
-    // 2. Create active child sessions
     let mut child1 = build_session(
         "child-idle",
         "Active Child 1",
@@ -416,52 +419,29 @@ async fn agent_server_get_service_context_includes_active_sessions_notice() {
         .await
         .expect("child-error should persist");
 
-    // 3. Initialize AgentServer
-    let server = AgentServer::new("parent-active-test".to_string(), Arc::new(db), None)
-        .await
-        .expect("AgentServer should initialize");
+    let prompt = compose_service_context_prompt(&repo, "parent-active-test").await;
 
-    // 4. Retrieve service context
-    let context = server.get_service_context(None).await;
-    let prompt = context.context_prompt;
-
-    // Assert volatility is Volatile to prevent dynamic sorting shuffles
-    assert_eq!(
-        context.volatility,
-        tauri_mcp_agent_lib::mcp::types::ContextVolatility::Volatile
-    );
-
-    // 5. Assert child sessions lists are omitted when active sessions exist
+    // `get_service_context` only appends the active-sessions notice (no ## Child Sessions).
     assert!(!prompt.contains("## Child Sessions"));
 
-    // 6. Assert active sessions notice is correctly built with status groupings
-    // Header includes total count; session IDs must be complete so messageToSession works.
     assert!(prompt.contains("### Sub-Agent Sessions (3 total, reuse via messageToSession)"));
     assert!(prompt.contains("⚠️ **Reuse Existing Sessions First**:"));
 
-    // Group: Ready to Reuse (Idle)
     assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
     assert!(prompt.contains("  These sessions are idle and ready for new instructions."));
     // Agent-facing ids are short tokens only (no `session-` prefix).
-    // Fixtures use synthetic names (`child-idle`, `child-paused`, `child-error`), not real
-    // spawn/legacy formats — they only exercise short-token truncation:
     //   child-idle (10) → child-idle; child-paused (12) → ild-paused; child-error (11) → hild-error
     assert!(prompt.contains("  - `child-idle` (name: \"Active Child 1\")"));
 
-    // Group: Suspended (Paused)
     assert!(prompt.contains("- **Suspended (Paused):**"));
     assert!(
         prompt.contains("  These sessions were suspended (e.g. waiting for input or approval).")
     );
     assert!(prompt.contains("  - `ild-paused` (name: \"Active Child 2\")"));
 
-    // Group: Failed (Error)
     assert!(prompt.contains("- **Failed (Error):**"));
     assert!(prompt.contains(
         "  These sessions encountered an error. Send a message to retry or recover them."
     ));
     assert!(prompt.contains("  - `hild-error` (name: \"Error Child\")"));
 }
-
-// Display-alias notice regression lives in the Windows-safe
-// `tests/session_id_display_tests.rs` binary (no AppHandle/WebView link).

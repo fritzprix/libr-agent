@@ -93,7 +93,7 @@ pub fn resolve_session_id_among<'a>(
         .collect();
 
     match matches.as_slice() {
-        [only] => SessionIdResolve::Unique(*only),
+        [only] => SessionIdResolve::Unique(only),
         [] => SessionIdResolve::Missing,
         many => SessionIdResolve::Ambiguous(many.len()),
     }
