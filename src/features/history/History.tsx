@@ -21,10 +21,12 @@ export default function History() {
     isSessionsListLoading,
     hasMoreSessions,
     isLoadingMoreSessions,
+    loadingChildrenParentIds,
   } = useAgentSessionListState();
   const {
     loadSessions,
     loadMoreSessions,
+    ensureChildrenLoaded,
     deleteSession,
     deleteSessionOnly,
     toggleBookmark,
@@ -100,6 +102,21 @@ export default function History() {
     });
   }, [loadMoreSessions, t]);
 
+  const handleEnsureChildrenLoaded = useCallback(
+    (sessionId: string) => {
+      void ensureChildrenLoaded(sessionId).catch((error) => {
+        logger.error('Failed to load child sessions', { sessionId, error });
+        toast.error(
+          t(
+            'sessionHistory.toasts.loadChildrenFailed',
+            'Failed to load child sessions',
+          ),
+        );
+      });
+    },
+    [ensureChildrenLoaded, t],
+  );
+
   return (
     <div className="flex min-h-full w-full flex-col text-foreground">
       <SessionHistoryPanel
@@ -113,6 +130,8 @@ export default function History() {
         onSearchQueryChange={setSearchQuery}
         onRefresh={handleRefreshSessions}
         onLoadMore={handleLoadMoreSessions}
+        onEnsureChildrenLoaded={handleEnsureChildrenLoaded}
+        loadingChildrenParentIds={loadingChildrenParentIds}
         onResume={handleResumeSession}
         onDelete={handleDeleteSession}
         onDeleteOnly={handleDeleteSessionOnly}

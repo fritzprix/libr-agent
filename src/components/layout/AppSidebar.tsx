@@ -90,9 +90,13 @@ export default function AppSidebar() {
   const { status: updateStatus } = useUpdateContext();
   const hasUpdate = updateStatus === 'available';
 
-  const { sessions, hasMoreSessions, isLoadingMoreSessions } =
-    useAgentSessionListState();
-  const { loadMoreSessions } = useAgentSessionListActions();
+  const {
+    sessions,
+    hasMoreSessions,
+    isLoadingMoreSessions,
+    loadingChildrenParentIds,
+  } = useAgentSessionListState();
+  const { loadMoreSessions, ensureChildrenLoaded } = useAgentSessionListActions();
 
   const recentSessionsRootRef = useRef<HTMLDivElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -132,17 +136,32 @@ export default function AppSidebar() {
     });
   }, [loadMoreSessions, t]);
 
-  const handleToggleExpand = useCallback((sessionId: string) => {
-    setExpandedSessionIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(sessionId)) {
-        next.delete(sessionId);
-      } else {
-        next.add(sessionId);
-      }
-      return next;
-    });
-  }, []);
+  const handleToggleExpand = useCallback(
+    (sessionId: string) => {
+      setExpandedSessionIds((previous) => {
+        const next = new Set(previous);
+        if (next.has(sessionId)) {
+          next.delete(sessionId);
+        } else {
+          next.add(sessionId);
+          void ensureChildrenLoaded(sessionId).catch((error) => {
+            logger.error('Failed to load session children', {
+              sessionId,
+              error,
+            });
+            toast.error(
+              t(
+                'sessionHistory.toasts.loadChildrenFailed',
+                'Failed to load child sessions',
+              ),
+            );
+          });
+        }
+        return next;
+      });
+    },
+    [ensureChildrenLoaded, t],
+  );
 
   useInfiniteScroll({
     rootRef: recentSessionsRootRef,
@@ -364,7 +383,11 @@ export default function AppSidebar() {
                       nestingLevel,
                       hasExpandableChildren,
                       isExpanded,
-                    }) => (
+                    }) => {
+                      const isLoadingChildren =
+                        loadingChildrenParentIds.has(session.id);
+
+                      return (
                       <SidebarMenuItem key={session.id}>
                         <SidebarMenuButton
                           asChild
@@ -391,16 +414,22 @@ export default function AppSidebar() {
                                 type="button"
                                 className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
                                 aria-expanded={isExpanded}
+                                aria-busy={isLoadingChildren}
                                 aria-label={
-                                  isExpanded
+                                  isLoadingChildren
                                     ? t(
-                                        'sidebar.collapseSession',
-                                        'Collapse session children',
+                                        'sidebar.loadingSessionChildren',
+                                        'Loading session children',
                                       )
-                                    : t(
-                                        'sidebar.expandSession',
-                                        'Expand session children',
-                                      )
+                                    : isExpanded
+                                      ? t(
+                                          'sidebar.collapseSession',
+                                          'Collapse session children',
+                                        )
+                                      : t(
+                                          'sidebar.expandSession',
+                                          'Expand session children',
+                                        )
                                 }
                                 onClick={(event) => {
                                   event.preventDefault();
@@ -408,7 +437,9 @@ export default function AppSidebar() {
                                   handleToggleExpand(session.id);
                                 }}
                               >
-                                {isExpanded ? (
+                                {isLoadingChildren ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : isExpanded ? (
                                   <ChevronDown className="h-3.5 w-3.5" />
                                 ) : (
                                   <ChevronRight className="h-3.5 w-3.5" />
@@ -428,7 +459,8 @@ export default function AppSidebar() {
                           </Link>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
-                    ),
+                      );
+                    },
                   )}
                 </SidebarMenu>
                 <div ref={loadMoreSentinelRef} className="h-px w-full" />

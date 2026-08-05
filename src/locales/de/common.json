@@ -153,7 +153,10 @@
     "scheduledTasks": "Geplante Aufgaben",
     "session": "Sitzung",
     "knowledge": "Wissen",
-    "org": "Organisation"
+    "org": "Organisation",
+    "expandSession": "Untersitzungen erweitern",
+    "collapseSession": "Untersitzungen einklappen",
+    "loadingSessionChildren": "Untersitzungen werden geladen"
   },
   "sessionHistory": {
     "heading": "Sitzungsverlauf",
@@ -185,7 +188,9 @@
     },
     "toasts": {
       "deleted": "Sitzung gelöscht",
-      "deleteFailed": "Sitzung konnte nicht gelöscht werden"
+      "deleteFailed": "Sitzung konnte nicht gelöscht werden",
+      "loadMoreFailed": "Weitere Sitzungen konnten nicht geladen werden",
+      "loadChildrenFailed": "Untersitzungen konnten nicht geladen werden"
     },
     "tabs": {
       "all": "Alle",
@@ -264,6 +269,7 @@
       "resumeAria": "Sitzung {{name}} fortsetzen",
       "expandChildrenAria": "Untergeordnete Sitzungen für {{name}} ausklappen",
       "collapseChildrenAria": "Untergeordnete Sitzungen für {{name}} einklappen",
+      "loadingChildrenAria": "Untergeordnete Sitzungen für {{name}} werden geladen",
       "groupAria": "Sitzungsaktionen",
       "deleteTooltip": "Sitzung löschen",
       "deleteAria": "Sitzung {{name}} löschen",

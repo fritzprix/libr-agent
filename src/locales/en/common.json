@@ -153,7 +153,10 @@
     "scheduledTasks": "Scheduled Tasks",
     "session": "Session",
     "knowledge": "Knowledge",
-    "org": "Org"
+    "org": "Org",
+    "expandSession": "Expand session children",
+    "collapseSession": "Collapse session children",
+    "loadingSessionChildren": "Loading session children"
   },
   "sessionHistory": {
     "heading": "Session History",
@@ -186,7 +189,9 @@
     },
     "toasts": {
       "deleted": "Session deleted",
-      "deleteFailed": "Failed to delete session"
+      "deleteFailed": "Failed to delete session",
+      "loadMoreFailed": "Failed to load more sessions",
+      "loadChildrenFailed": "Failed to load child sessions"
     },
     "tabs": {
       "all": "All",
@@ -268,6 +273,7 @@
       "resumeAria": "Resume session {{name}}",
       "expandChildrenAria": "Expand child sessions for {{name}}",
       "collapseChildrenAria": "Collapse child sessions for {{name}}",
+      "loadingChildrenAria": "Loading child sessions for {{name}}",
       "groupAria": "Session actions",
       "deleteTooltip": "Delete session",
       "deleteAria": "Delete session {{name}}",

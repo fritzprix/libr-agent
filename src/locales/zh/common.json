@@ -153,7 +153,10 @@
     "scheduledTasks": "计划任务",
     "session": "会话",
     "knowledge": "知识",
-    "org": "组织"
+    "org": "组织",
+    "expandSession": "展开子会话",
+    "collapseSession": "折叠子会话",
+    "loadingSessionChildren": "正在加载子会话"
   },
   "sessionHistory": {
     "heading": "会话历史",
@@ -185,7 +188,9 @@
     },
     "toasts": {
       "deleted": "会话已删除",
-      "deleteFailed": "删除会话失败"
+      "deleteFailed": "删除会话失败",
+      "loadMoreFailed": "加载更多会话失败",
+      "loadChildrenFailed": "加载子会话失败"
     },
     "tabs": {
       "all": "全部",
@@ -264,6 +269,7 @@
       "resumeAria": "恢复会话 {{name}}",
       "expandChildrenAria": "展开 {{name}} 的子会话",
       "collapseChildrenAria": "折叠 {{name}} 的子会话",
+      "loadingChildrenAria": "正在加载 {{name}} 的子会话",
       "groupAria": "会话操作",
       "deleteTooltip": "删除会话",
       "deleteAria": "删除会话 {{name}}",

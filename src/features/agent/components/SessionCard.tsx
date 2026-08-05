@@ -16,6 +16,7 @@ import {
   BookmarkCheck,
   ChevronDown,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -52,6 +53,8 @@ interface SessionCardProps {
   unloadedChildrenCount?: number;
   /** Toggle child visibility. */
   onToggleExpand?: (sessionId: string) => void;
+  /** Whether direct children are currently being fetched for this row. */
+  isLoadingChildren?: boolean;
 }
 
 /**
@@ -76,6 +79,7 @@ export function SessionCard({
   hiddenChildrenCount = 0,
   unloadedChildrenCount = 0,
   onToggleExpand,
+  isLoadingChildren = false,
 }: SessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -278,21 +282,30 @@ export function SessionCard({
                 variant="ghost"
                 className="h-6 w-6 shrink-0"
                 onClick={() => onToggleExpand?.(session.id)}
+                aria-busy={isLoadingChildren}
                 aria-label={
-                  isExpanded
+                  isLoadingChildren
                     ? t(
-                        'sessionHistory.actions.collapseChildrenAria',
-                        'Collapse child sessions for {{name}}',
+                        'sessionHistory.actions.loadingChildrenAria',
+                        'Loading child sessions for {{name}}',
                         { name: sessionNameFallback },
                       )
-                    : t(
-                        'sessionHistory.actions.expandChildrenAria',
-                        'Expand child sessions for {{name}}',
-                        { name: sessionNameFallback },
-                      )
+                    : isExpanded
+                      ? t(
+                          'sessionHistory.actions.collapseChildrenAria',
+                          'Collapse child sessions for {{name}}',
+                          { name: sessionNameFallback },
+                        )
+                      : t(
+                          'sessionHistory.actions.expandChildrenAria',
+                          'Expand child sessions for {{name}}',
+                          { name: sessionNameFallback },
+                        )
                 }
               >
-                {isExpanded ? (
+                {isLoadingChildren ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : isExpanded ? (
                   <ChevronDown className="h-4 w-4" aria-hidden="true" />
                 ) : (
                   <ChevronRight className="h-4 w-4" aria-hidden="true" />
