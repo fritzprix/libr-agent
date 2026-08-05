@@ -304,7 +304,10 @@ export function SessionCard({
                 }
               >
                 {isLoadingChildren ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <Loader2
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 ) : isExpanded ? (
                   <ChevronDown className="h-4 w-4" aria-hidden="true" />
                 ) : (
