@@ -4,6 +4,7 @@ pub mod json;
 pub mod pagination;
 pub mod platform;
 pub mod security;
+pub mod session_id;
 #[cfg(any(unix, windows))]
 pub mod shell_runtime;
 pub mod sqlite;

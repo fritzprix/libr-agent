@@ -149,6 +149,7 @@ async fn start_session_impl(
     };
 
     let session_id = response.id;
+    let display_id = crate::utils::session_id::display_session_id(&session_id);
 
     if wait_for_result {
         let mut check_args = json!({ "sessionId": session_id, "wait": true });
@@ -167,22 +168,22 @@ async fn start_session_impl(
         SuccessHint::new(
             format!(
                 "Session started successfully (ID: {}, org: {}).{}",
-                session_id, org_name, workspace_note
+                display_id, org_name, workspace_note
             ),
             vec![format!(
                 "Use agent__checkSession(\"{}\", wait=true) to wait for the answer.",
-                session_id
+                display_id
             )],
         )
     } else {
         SuccessHint::new(
             format!(
                 "Session started successfully (ID: {}).{}",
-                session_id, workspace_note
+                display_id, workspace_note
             ),
             vec![format!(
                 "Use agent__checkSession(\"{}\", wait=true) to wait for the answer.",
-                session_id
+                display_id
             )],
         )
     };
@@ -190,12 +191,12 @@ async fn start_session_impl(
     let mut response_data = build_agent_tool_data(
         tool_name,
         "session",
-        Some(&session_id),
+        Some(&display_id),
         &message,
         "pending",
         check_session_next_actions(&session_id),
     );
-    response_data.insert("sessionId".to_string(), Value::String(session_id.clone()));
+    response_data.insert("sessionId".to_string(), Value::String(display_id));
     response_data.insert("status".to_string(), Value::String("started".to_string()));
     if let Some(workspace_path) = effective_workspace_path {
         response_data.insert("workspacePath".to_string(), Value::String(workspace_path));
@@ -222,23 +223,26 @@ pub async fn message_to_session(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_id = read_required_string(&args, "sessionId")?;
+    let session_ref = read_required_string(&args, "sessionId")?;
     let message_text = read_required_string(&args, "message")?;
     let reset = args.get("reset").and_then(|v| v.as_bool()).unwrap_or(false);
     let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
         Ok(config) => config,
         Err(result) => return Ok(result),
     };
-    if let Err(result) = load_accessible_delegated_session(
+    let target_session = match load_accessible_delegated_session(
         manager,
         caller_session_id,
-        &session_id,
+        &session_ref,
         "messageToSession",
     )
     .await
     {
-        return Ok(result);
-    }
+        Ok(session) => session,
+        Err(result) => return Ok(result),
+    };
+    let session_id = target_session.id.clone();
+    let display_id = crate::utils::session_id::display_session_id(&session_id);
     let response = match crate::services::AgentService::send_message_to_session(
         manager,
         &session_id,
@@ -250,7 +254,7 @@ pub async fn message_to_session(
     {
         Ok(response) => response,
         Err(err) if err.contains("Session not found:") => {
-            return Ok(missing_agent_session_error(&session_id));
+            return Ok(missing_agent_session_error(&session_ref));
         }
         Err(err) => return Err(err),
     };
@@ -269,22 +273,22 @@ pub async fn message_to_session(
     }
 
     let hint = SuccessHint::new(
-        format!("Message {} for session {}.", response.status, session_id),
+        format!("Message {} for session {}.", response.status, display_id),
         vec![format!(
             "Use agent__checkSession(\"{}\", wait=true) to see the response.",
-            session_id
+            display_id
         )],
     );
     let message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
         "messageToSession",
         "session",
-        Some(&session_id),
+        Some(&display_id),
         &message,
         "pending",
-        check_session_next_actions(&session_id),
+        check_session_next_actions(&display_id),
     );
-    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("sessionId".to_string(), Value::String(display_id));
     response_data.insert("messageId".to_string(), Value::String(response.message_id));
     response_data.insert("status".to_string(), Value::String(response.status));
 
@@ -300,9 +304,9 @@ pub async fn stop_session(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_id = read_required_string(&args, "sessionId")?;
+    let session_ref = read_required_string(&args, "sessionId")?;
 
-    if caller_session_id == session_id {
+    if crate::utils::session_id::session_id_matches_ref(caller_session_id, &session_ref) {
         return Ok(self_target_session_action_result(
             "stopSession",
             "Self-termination is not allowed via stopSession.",
@@ -316,7 +320,7 @@ pub async fn stop_session(
     let target_session = match load_accessible_delegated_session(
         manager,
         caller_session_id,
-        &session_id,
+        &session_ref,
         "stopSession",
     )
     .await
@@ -324,6 +328,8 @@ pub async fn stop_session(
         Ok(session) => session,
         Err(result) => return Ok(result),
     };
+    let session_id = target_session.id.clone();
+    let display_id = crate::utils::session_id::display_session_id(&session_id);
 
     if target_session.status != SessionStatus::Busy
         && target_session.status != SessionStatus::Queued
@@ -331,17 +337,17 @@ pub async fn stop_session(
         let current_status = target_session.status.as_str().to_string();
         let message = format!(
             "Session {} was already {}. No action taken.",
-            session_id, current_status
+            display_id, current_status
         );
         let mut response_data = build_agent_tool_data(
             "stopSession",
             "session",
-            Some(&session_id),
+            Some(&display_id),
             &message,
             "noop",
             vec![],
         );
-        response_data.insert("sessionId".to_string(), Value::String(session_id));
+        response_data.insert("sessionId".to_string(), Value::String(display_id));
         response_data.insert("stopped".to_string(), Value::Bool(false));
         response_data.insert("status".to_string(), Value::String(current_status));
 
@@ -351,24 +357,24 @@ pub async fn stop_session(
 
     if let Err(error) = manager.terminate_session(session_id.clone()).await {
         if error.contains("not found") {
-            return Ok(missing_agent_session_error(&session_id));
+            return Ok(missing_agent_session_error(&session_ref));
         }
         return Err(error);
     }
 
     crate::services::agent_service::remove_lineage(&session_id).await;
 
-    let hint = SuccessHint::new(format!("Session {} stopped.", session_id), vec![]);
+    let hint = SuccessHint::new(format!("Session {} stopped.", display_id), vec![]);
     let message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
         "stopSession",
         "session",
-        Some(&session_id),
+        Some(&display_id),
         &message,
         "success",
         vec![],
     );
-    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("sessionId".to_string(), Value::String(display_id));
     response_data.insert("stopped".to_string(), Value::Bool(true));
     response_data.insert(
         "status".to_string(),
@@ -386,14 +392,14 @@ pub async fn compact_session_context(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_id = read_required_string(&args, "sessionId")?;
+    let session_ref = read_required_string(&args, "sessionId")?;
     let timeout_seconds = args
         .get("timeout")
         .and_then(|value| value.as_u64())
         .map(|value| value.clamp(5, 300))
         .unwrap_or(60);
 
-    if caller_session_id == session_id {
+    if crate::utils::session_id::session_id_matches_ref(caller_session_id, &session_ref) {
         return Ok(self_target_session_action_result(
             "compactSessionContext",
                 "Self-compaction is not allowed via compactSessionContext.",
@@ -409,7 +415,7 @@ pub async fn compact_session_context(
     let target_session = match load_accessible_delegated_session(
         manager,
         caller_session_id,
-        &session_id,
+        &session_ref,
         "compactSessionContext",
     )
     .await
@@ -417,6 +423,8 @@ pub async fn compact_session_context(
         Ok(session) => session,
         Err(result) => return Ok(result),
     };
+    let session_id = target_session.id.clone();
+    let display_id = crate::utils::session_id::display_session_id(&session_id);
 
     if target_session.status == SessionStatus::Busy
         || target_session.status == SessionStatus::Queued
@@ -425,18 +433,18 @@ pub async fn compact_session_context(
             ErrorCategory::InvalidState,
             format!(
                 "Session {} is busy or queued. compactSessionContext only supports idle, paused, or error sessions.",
-                session_id
+                display_id
             ),
             ToolGroup::Agent,
         )
         .with_guidance(vec![
             format!(
                 "Wait for session {} to stop running before compacting it manually",
-                session_id
+                display_id
             ),
             format!(
                 "Use agent__checkSession(\"{}\", wait=true) if you need to block for the current run",
-                session_id
+                display_id
             ),
         ])
         .to_mcp_result());
@@ -467,23 +475,23 @@ pub async fn compact_session_context(
         let message = if let Some(record) = previous_record {
             format!(
                 "No new compaction was needed for session {}. Existing compact summary is already current through {}.",
-                session_id, record.to_id
+                display_id, record.to_id
             )
         } else {
             format!(
                 "No compaction was needed for session {}. There is not enough uncompacted history yet.",
-                session_id
+                display_id
             )
         };
         let mut response_data = build_agent_tool_data(
             "compactSessionContext",
             "session",
-            Some(&session_id),
+            Some(&display_id),
             &message,
             "noop",
-            check_session_next_actions(&session_id),
+            check_session_next_actions(&display_id),
         );
-        response_data.insert("sessionId".to_string(), Value::String(session_id));
+        response_data.insert("sessionId".to_string(), Value::String(display_id));
         response_data.insert("status".to_string(), Value::String("noop".to_string()));
         response_data.insert("compacted".to_string(), Value::Bool(false));
 
@@ -499,18 +507,18 @@ pub async fn compact_session_context(
             ErrorCategory::Timeout,
             format!(
                 "Compaction for session {} did not finish within {} seconds.",
-                session_id, timeout_seconds
+                display_id, timeout_seconds
             ),
             ToolGroup::Agent,
         )
         .with_guidance(vec![
             format!(
                 "Retry compactSessionContext(sessionId=\"{}\") after the frontend finishes the compaction request",
-                session_id
+                display_id
             ),
             format!(
                 "Use agent__checkSession(\"{}\", wait=false) to inspect whether the delegated session is still active",
-                session_id
+                display_id
             ),
             format!("Last wait error: {}", error),
         ])
@@ -523,7 +531,7 @@ pub async fn compact_session_context(
             ErrorCategory::InternalError,
             format!(
                 "Compaction for session {} settled but no compact summary record was saved.",
-                session_id
+                display_id
             ),
             ToolGroup::Agent,
         )
@@ -546,17 +554,17 @@ pub async fn compact_session_context(
     };
     let message = format!(
         "Session {} {}.\n\nLatest compacted message: {}\n\nCompact summary:\n{}",
-        session_id, state_label, compact_record.to_id, compact_record.summary
+        display_id, state_label, compact_record.to_id, compact_record.summary
     );
     let mut response_data = build_agent_tool_data(
         "compactSessionContext",
         "session",
-        Some(&session_id),
+        Some(&display_id),
         &message,
         status,
-        check_session_next_actions(&session_id),
+        check_session_next_actions(&display_id),
     );
-    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("sessionId".to_string(), Value::String(display_id));
     response_data.insert("status".to_string(), Value::String(status.to_string()));
     response_data.insert("compacted".to_string(), Value::Bool(!unchanged));
     response_data.insert("toId".to_string(), Value::String(compact_record.to_id));
@@ -584,10 +592,10 @@ pub async fn delete_session(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_id = read_required_string(&args, "sessionId")?;
+    let session_ref = read_required_string(&args, "sessionId")?;
 
     // 1. Prevent self-deletion (matching stopSession pattern)
-    if caller_session_id == session_id {
+    if crate::utils::session_id::session_id_matches_ref(caller_session_id, &session_ref) {
         return Ok(self_target_session_action_result(
             "deleteSession",
             "Self-deletion is not allowed via deleteSession.",
@@ -599,10 +607,10 @@ pub async fn delete_session(
     }
 
     // 2. Perform lineage permissions check (reuse load_accessible_delegated_session)
-    let _target_session = match load_accessible_delegated_session(
+    let target_session = match load_accessible_delegated_session(
         manager,
         caller_session_id,
-        &session_id,
+        &session_ref,
         "deleteSession",
     )
     .await
@@ -610,6 +618,8 @@ pub async fn delete_session(
         Ok(session) => session,
         Err(result) => return Ok(result),
     };
+    let session_id = target_session.id.clone();
+    let display_id = crate::utils::session_id::display_session_id(&session_id);
 
     // 3. Execute cascade deletion
     let deleted_ids = manager.delete_session(session_id.clone()).await?;
@@ -627,27 +637,27 @@ pub async fn delete_session(
             .get(1..)
             .unwrap_or(&[])
             .iter()
-            .map(|id| format!("  - {}", id))
+            .map(|id| format!("  - {}", crate::utils::session_id::display_session_id(id)))
             .collect::<Vec<_>>()
             .join("\n");
         format!(
             "Session {} deleted.\nCascade removed {} descendant session(s):\n{}",
-            session_id, cascade_count, descendant_list
+            display_id, cascade_count, descendant_list
         )
     } else {
-        format!("Session {} deleted.", session_id)
+        format!("Session {} deleted.", display_id)
     };
 
     let hint = SuccessHint::new(message.clone(), vec![]);
     let mut response_data = build_agent_tool_data(
         "deleteSession",
         "session",
-        Some(&session_id),
+        Some(&display_id),
         &message,
         "success",
         vec![],
     );
-    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("sessionId".to_string(), Value::String(display_id));
     response_data.insert("deleted".to_string(), Value::Bool(true));
     response_data.insert(
         "descendantCount".to_string(),
@@ -658,7 +668,7 @@ pub async fn delete_session(
         Value::Array(
             deleted_ids
                 .iter()
-                .map(|id| Value::String(id.clone()))
+                .map(|id| Value::String(crate::utils::session_id::display_session_id(id)))
                 .collect(),
         ),
     );

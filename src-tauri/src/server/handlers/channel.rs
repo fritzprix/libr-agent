@@ -1,8 +1,10 @@
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::ChannelNotification;
+use crate::utils::session_id::display_session_id;
 use std::sync::Arc;
 use warp::{http::StatusCode, Rejection, Reply};
 
+use super::helpers::{resolve_error_reply, resolve_http_session_ref};
 use super::types::{
     AutoRouteChannelResponse, ChannelPermissionRequestBody, ChannelPermissionResponse,
     ErrorResponse, InjectChannelRequest, SendMessageResponse,
@@ -13,6 +15,11 @@ pub async fn inject_channel_message(
     manager: Arc<AgentSessionManager>,
     body: InjectChannelRequest,
 ) -> Result<impl Reply, Rejection> {
+    let id = match resolve_http_session_ref(&id).await {
+        Ok(id) => id,
+        Err((status, error)) => return Ok(resolve_error_reply(status, error)),
+    };
+
     match manager.get_session(&id).await {
         Ok(Some(_)) => {}
         Ok(None) => {
@@ -102,7 +109,7 @@ pub async fn inject_channel_message_auto(
     Ok(warp::reply::with_status(
         warp::reply::json(&AutoRouteChannelResponse {
             id: message_id,
-            session_id: target.session_id,
+            session_id: display_session_id(&target.session_id),
             session_name: target.session_name,
             status: if triggered {
                 "processed".to_string()
@@ -119,6 +126,11 @@ pub async fn respond_channel_permission(
     manager: Arc<AgentSessionManager>,
     body: ChannelPermissionRequestBody,
 ) -> Result<impl Reply, Rejection> {
+    let id = match resolve_http_session_ref(&id).await {
+        Ok(id) => id,
+        Err((status, error)) => return Ok(resolve_error_reply(status, error)),
+    };
+
     let approved =
         match crate::agent::tool_approvals::parse_channel_permission_behavior(&body.behavior) {
             Ok(approved) => approved,

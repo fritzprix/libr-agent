@@ -1,7 +1,7 @@
 mod assistants;
 mod channel;
 mod health;
-mod helpers;
+pub(crate) mod helpers;
 mod messages;
 mod sessions;
 mod settings;

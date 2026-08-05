@@ -184,7 +184,19 @@ pub async fn load_accessible_delegated_session(
         return Err(caller_session_not_found_result(caller_session_id));
     }
 
-    let Some(target_session) = (match manager.get_session(target_session_id).await {
+    let resolved_target_id = match resolve_delegated_session_ref(
+        manager,
+        caller_session_id,
+        target_session_id,
+        tool_name,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(result) => return Err(result),
+    };
+
+    let Some(target_session) = (match manager.get_session(&resolved_target_id).await {
         Ok(session) => session,
         Err(error) => {
             return Err(guided_error(
@@ -258,6 +270,98 @@ pub async fn load_accessible_delegated_session(
     .to_mcp_result())
 }
 
+/// Resolve a full session id, bare short token, or optional `session-{short}` form.
+///
+/// Exact DB hits win. Otherwise alias resolution is scoped to delegated descendants of
+/// `caller_session_id` so short refs stay unambiguous within the caller's tree.
+async fn resolve_delegated_session_ref(
+    manager: &crate::agent::AgentSessionManager,
+    caller_session_id: &str,
+    target_ref: &str,
+    tool_name: &str,
+) -> Result<String, MCPResult> {
+    match manager.get_session(target_ref).await {
+        Ok(Some(_)) => return Ok(target_ref.to_string()),
+        Ok(None) => {}
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::InternalError,
+                format!(
+                    "Failed to resolve session reference for {}: {}",
+                    tool_name, error
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Retry the operation once session metadata is available again".to_string(),
+                "If the issue persists, inspect the session repository health".to_string(),
+            ])
+            .to_mcp_result())
+        }
+    }
+
+    let all_sessions = match manager.get_all_sessions().await {
+        Ok(sessions) => sessions,
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::InternalError,
+                format!(
+                    "Failed to list sessions while resolving reference for {}: {}",
+                    tool_name, error
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Retry the operation once session metadata is available again".to_string(),
+                "If the issue persists, inspect the session repository health".to_string(),
+            ])
+            .to_mcp_result())
+        }
+    };
+
+    let sessions_by_id: HashMap<String, SessionMetadata> = all_sessions
+        .iter()
+        .map(|session| (session.id.clone(), session.clone()))
+        .collect();
+
+    let descendant_ids: Vec<&str> = all_sessions
+        .iter()
+        .filter(|session| {
+            is_delegated_descendant_session(&sessions_by_id, caller_session_id, &session.id)
+        })
+        .map(|session| session.id.as_str())
+        .collect();
+
+    match crate::utils::session_id::resolve_session_id_among(
+        descendant_ids.iter().copied(),
+        target_ref,
+    ) {
+        crate::utils::session_id::SessionIdResolve::Unique(resolved) => Ok(resolved.to_string()),
+        crate::utils::session_id::SessionIdResolve::Missing => {
+            Err(crate::mcp::builtin::error_guidance::missing_agent_session_error(target_ref))
+        }
+        crate::utils::session_id::SessionIdResolve::Ambiguous(count) => {
+            let caller_alias = crate::utils::session_id::display_session_id(caller_session_id);
+            Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Session reference '{}' is ambiguous among {} delegated descendants of '{}'.",
+                    target_ref, count, caller_alias
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Multiple delegated sessions share this short alias; confirm the target by name via list(type=\"sessions\")".to_string(),
+                format!(
+                    "Retry {} with an exact storage id if available, or remove unused sibling sessions so aliases are unique",
+                    tool_name
+                ),
+            ])
+            .to_mcp_result())
+        }
+    }
+}
+
 pub async fn prepare_teamwork_workspace(
     server: &super::AgentServer,
     _args: Value,
@@ -305,7 +409,9 @@ pub async fn prepare_teamwork_workspace(
     let mut response_data = build_agent_tool_data(
         "prepareTeamworkWorkspace",
         "workspace",
-        Some(caller_session_id),
+        Some(&crate::utils::session_id::display_session_id(
+            caller_session_id,
+        )),
         &message,
         "success",
         vec![
@@ -322,7 +428,9 @@ pub async fn prepare_teamwork_workspace(
     );
     response_data.insert(
         "sessionId".to_string(),
-        Value::String(caller_session_id.to_string()),
+        Value::String(crate::utils::session_id::display_session_id(
+            caller_session_id,
+        )),
     );
     response_data.insert("artifactPath".to_string(), Value::String(artifact_path));
     response_data.insert("mode".to_string(), Value::String("teamwork".to_string()));
@@ -331,11 +439,12 @@ pub async fn prepare_teamwork_workspace(
 }
 
 fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> Value {
+    let display_id = crate::utils::session_id::display_session_id(session_id);
     json!({
         "toolName": "agent__messageToSession",
         "reason": reason,
         "args": {
-            "sessionId": session_id,
+            "sessionId": display_id,
             "message": default_session_recovery_message(status),
         }
     })
@@ -510,12 +619,13 @@ pub fn build_paused_check_session_result_from_messages(
     messages_value: &[Value],
     enrichment: Option<&CheckSessionEnrichment>,
 ) -> MCPResult {
+    let display_id = crate::utils::session_id::display_session_id(session_id);
     let latest_output = latest_session_output(messages_value);
     let recovery_reason =
         "Wake the paused child session so it can continue from the last stable step.";
     let mut message = format!(
         "Session {} is paused and will not make progress on its own.\n\nLast known output:\n{}\n\nRecovery: send a follow-up message with agent__messageToSession(...) to restart the child workflow.",
-        session_id, latest_output
+        display_id, latest_output
     );
     if let Some(enrichment) = enrichment {
         message = append_check_session_context_to_message(&message, enrichment);
@@ -526,7 +636,7 @@ pub fn build_paused_check_session_result_from_messages(
             "toolName": "agent__checkSession",
             "reason": "Check again after sending a recovery message.",
             "args": {
-                "sessionId": session_id,
+                "sessionId": display_id,
                 "wait": true
             }
         }),
@@ -566,6 +676,7 @@ pub fn build_terminal_check_session_result_from_messages(
     messages_value: &[Value],
     enrichment: Option<&CheckSessionEnrichment>,
 ) -> MCPResult {
+    let display_id = crate::utils::session_id::display_session_id(session_id);
     let assistant_text = latest_session_output(messages_value);
     let normalized_status = status.to_ascii_lowercase();
     let is_abnormal = matches!(normalized_status.as_str(), "error" | "failed");
@@ -584,7 +695,7 @@ pub fn build_terminal_check_session_result_from_messages(
                 "toolName": "agent__checkSession",
                 "reason": "Check again after sending a recovery message.",
                 "args": {
-                    "sessionId": session_id,
+                    "sessionId": display_id,
                     "wait": true
                 }
             }),
@@ -594,7 +705,7 @@ pub fn build_terminal_check_session_result_from_messages(
             "toolName": "agent__messageToSession",
             "reason": "Request the child session for more detail, file contents, or full output.",
             "args": {
-                "sessionId": session_id,
+                "sessionId": display_id,
                 "message": "Please share the complete output or file contents."
             }
         })]
@@ -602,17 +713,17 @@ pub fn build_terminal_check_session_result_from_messages(
     let mut message = if is_abnormal {
         format!(
             "Session {} ended abnormally ({}).\n\nLast known output:\n{}\n\nRecovery: this child session will not continue on its own. Use agent__messageToSession(...) to retry from the last stable step.",
-            session_id, status, assistant_text
+            display_id, status, assistant_text
         )
     } else if normalized_status == "terminated" {
         format!(
             "Session {} was terminated.\n\nLast known output:\n{}\n\nIf you still need the work, restart it explicitly with agent__messageToSession(...).",
-            session_id, assistant_text
+            display_id, assistant_text
         )
     } else {
         format!(
             "Session {} is terminal ({}).\n\nResult:\n{}\n\nIf you need more detail, use agent__messageToSession(\"{}\", message=\"Please share the complete output or file contents.\") to ask the child session for the full result.",
-            session_id, status, assistant_text, session_id
+            display_id, status, assistant_text, display_id
         )
     };
     if let Some(enrichment) = enrichment {

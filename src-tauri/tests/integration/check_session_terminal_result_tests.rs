@@ -22,7 +22,7 @@ fn extract_text(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> String {
 #[test]
 fn terminal_check_session_result_includes_final_answer_without_waiting() {
     let result = build_terminal_check_session_result_from_messages(
-        "session-terminal-123",
+        "term123456",
         "idle",
         7,
         &[json!({
@@ -50,7 +50,7 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
         .first()
         .expect("messageToSession follow-up expected");
 
-    assert!(text.contains("Session session-terminal-123 is terminal (idle)."));
+    assert!(text.contains("Session term123456 is terminal (idle)."));
     assert!(text.contains("All subtasks completed successfully."));
     assert!(text.contains("If you need more detail, use agent__messageToSession"));
     assert_eq!(
@@ -88,7 +88,7 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
             .get("args")
             .and_then(|value| value.get("sessionId"))
             .and_then(|value| value.as_str()),
-        Some("session-terminal-123")
+        Some("term123456")
     );
     assert_eq!(
         follow_up_action

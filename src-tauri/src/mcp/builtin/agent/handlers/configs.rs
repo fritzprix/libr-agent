@@ -729,7 +729,7 @@ async fn list_delegated_sessions(
         if let Ok(Some(child_data)) = session_repo.get_session(&child_id).await {
             let status = format!("{:?}", child_data.status).to_lowercase();
             paged_results.push(json!({
-                "id": child_id,
+                "id": crate::utils::session_id::display_session_id(&child_id),
                 "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
                 "status": status
             }));

@@ -366,7 +366,9 @@ pub async fn create_org(
 
     let message = format!(
         "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nChild sessions started from this org root automatically join Org view and inherit the org workspace unless workspaceOverride is set.",
-        org_name, org_id, org_root_session_id
+        org_name,
+        org_id,
+        crate::utils::session_id::display_session_id(&org_root_session_id)
     );
     let mut response_data = build_agent_tool_data(
         "createOrg",
@@ -380,7 +382,9 @@ pub async fn create_org(
     response_data.insert("orgName".to_string(), Value::String(org_name));
     response_data.insert(
         "orgRootSessionId".to_string(),
-        Value::String(org_root_session_id),
+        Value::String(crate::utils::session_id::display_session_id(
+            &org_root_session_id,
+        )),
     );
     response_data.insert(
         "teamworkScaffold".to_string(),
@@ -456,12 +460,13 @@ pub async fn get_org(
     let member_lines = members
         .iter()
         .map(|session| {
+            let display_id = crate::utils::session_id::display_session_id(&session.id);
             format!(
                 "- {} [{}] depth={} session={}",
-                session.name.clone().unwrap_or_else(|| session.id.clone()),
+                session.name.clone().unwrap_or_else(|| display_id.clone()),
                 session.status.as_str(),
                 session.depth.unwrap_or(0),
-                session.id
+                display_id
             )
         })
         .collect::<Vec<_>>()
@@ -470,11 +475,12 @@ pub async fn get_org(
         .iter()
         .filter(|session| session.status == crate::repositories::SessionStatus::Busy)
         .count();
+    let root_display_id = crate::utils::session_id::display_session_id(&root_session.id);
     let message = format!(
         "Explicit org summary\n\nOrg: {} (ID: {})\nRoot session: {}\nMembers: {} (busy: {})\n\n{}",
         org_name,
         target_org_id,
-        root_session.id,
+        root_display_id,
         members.len(),
         busy_count,
         member_lines
@@ -494,7 +500,7 @@ pub async fn get_org(
     response_data.insert("orgName".to_string(), Value::String(org_name));
     response_data.insert(
         "orgRootSessionId".to_string(),
-        Value::String(root_session.id.clone()),
+        Value::String(root_display_id),
     );
     response_data.insert("memberCount".to_string(), json!(members.len()));
     response_data.insert("busyCount".to_string(), json!(busy_count));
@@ -504,7 +510,7 @@ pub async fn get_org(
             .iter()
             .map(|session| {
                 json!({
-                    "sessionId": session.id,
+                    "sessionId": crate::utils::session_id::display_session_id(&session.id),
                     "name": session.name,
                     "status": session.status.as_str(),
                     "depth": session.depth.unwrap_or(0),
