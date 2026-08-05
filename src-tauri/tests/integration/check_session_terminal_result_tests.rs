@@ -52,7 +52,7 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
 
     assert!(text.contains("Session session-terminal-123 is terminal (idle)."));
     assert!(text.contains("All subtasks completed successfully."));
-    assert!(text.contains("If you need more detail, use messageToSession"));
+    assert!(text.contains("If you need more detail, use agent__messageToSession"));
     assert_eq!(
         structured
             .get("responseStatus")
@@ -75,7 +75,7 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
         follow_up_action
             .get("toolName")
             .and_then(|value| value.as_str()),
-        Some("messageToSession")
+        Some("agent__messageToSession")
     );
     assert_eq!(
         follow_up_action

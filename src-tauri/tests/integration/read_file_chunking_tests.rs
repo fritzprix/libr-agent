@@ -69,7 +69,7 @@ async fn read_file_truncates_large_output_and_guides_next_chunk() {
         "chunk summary should explain why the preview stopped: {text}"
     );
     assert!(
-        text.contains("Next chunk: readFile({\"path\": \"big.txt\", \"offset\":"),
+        text.contains("Next chunk: workspace__readFile({\"path\": \"big.txt\", \"offset\":"),
         "response should tell the agent how to continue reading: {text}"
     );
     assert!(
@@ -196,7 +196,7 @@ async fn read_file_empty_file_preserves_standard_success_shape() {
         "empty-file response should report a complete zero-line read: {text}"
     );
     assert!(
-        !text.contains("Next chunk: readFile("),
+        !text.contains("Next chunk: workspace__readFile("),
         "empty-file response should not suggest a nonexistent follow-up chunk: {text}"
     );
 
