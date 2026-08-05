@@ -9,13 +9,13 @@
 
 An agent MUST trigger an immediate update when any of the following conditions occur:
 
-| Drift Event | Examples | Target File to Update |
-|---|---|---|
-| **Directory / File Structure Change** | New core modules added, files renamed/moved, new feature folder created | `docs/guidelines/architecture-and-files.md` |
-| **Command / Build Script Change** | `package.json` scripts updated, new test runner, new validation pipeline command | `docs/guidelines/coding-standards.md` & `agents.md` Cheat Sheet |
-| **New User Directives / Precautions** | User says "Never use X library", "Always write comments in Korean", "Avoid editing file Y" | `docs/guidelines/persona-and-rules.md` & `agents.md` Directives |
-| **Persona / Tone Request** | User specifies desired vibe (e.g., concise, informal, humorous, or strict) | `docs/guidelines/persona-and-rules.md` & `agents.md` Persona |
-| **New Coding / Architectural Pattern** | Introduction of a new service wrapper, error handling pattern, or state library | `docs/guidelines/coding-standards.md` or `architecture-and-files.md` |
+| Drift Event                            | Examples                                                                                   | Target File to Update                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| **Directory / File Structure Change**  | New core modules added, files renamed/moved, new feature folder created                    | `docs/guidelines/architecture-and-files.md`                          |
+| **Command / Build Script Change**      | `package.json` scripts updated, new test runner, new validation pipeline command           | `docs/guidelines/coding-standards.md` & `agents.md` Cheat Sheet      |
+| **New User Directives / Precautions**  | User says "Never use X library", "Always write comments in Korean", "Avoid editing file Y" | `docs/guidelines/persona-and-rules.md` & `agents.md` Directives      |
+| **Persona / Tone Request**             | User specifies desired vibe (e.g., concise, informal, humorous, or strict)                 | `docs/guidelines/persona-and-rules.md` & `agents.md` Persona         |
+| **New Coding / Architectural Pattern** | Introduction of a new service wrapper, error handling pattern, or state library            | `docs/guidelines/coding-standards.md` or `architecture-and-files.md` |
 
 ---
 
@@ -30,4 +30,4 @@ An agent MUST trigger an immediate update when any of the following conditions o
    - Keep `agents.md` concise. Detailed descriptions stay inside `docs/guidelines/*.md`.
 
 3. **Log & Inform**:
-   - Briefly inform the user in 1 sentence about the guideline update made during the task (e.g. *"Updated `docs/guidelines/architecture-and-files.md` with the new auth module structure."*).
+   - Briefly inform the user in 1 sentence about the guideline update made during the task (e.g. _"Updated `docs/guidelines/architecture-and-files.md` with the new auth module structure."_).

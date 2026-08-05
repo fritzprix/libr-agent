@@ -355,7 +355,7 @@ async fn edit_file_directory_target_reports_directory_error_before_anchor_guidan
         "expected directory-specific guidance, got: {text}"
     );
     assert!(
-        text.contains("Use listDirectory"),
+        text.contains("Use workspace__listDirectory"),
         "directory guidance should point at listDirectory: {text}"
     );
 }

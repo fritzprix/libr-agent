@@ -22,7 +22,7 @@ Instead of just blindly adding missing tools, **boost** operates as an **Optimiz
 
 ### `externalMcpServers` replaces the full list
 
-`agent__update` **replaces** the `externalMcpServers` array entirely — it does not merge it.
+`agent__updateAgent` **replaces** the `externalMcpServers` array entirely — it does not merge it.
 
 When proposing updates:
 * **Add:** Add the new tool IDs to the existing list.
@@ -36,7 +36,7 @@ Never send only the added tools, or you will accidentally delete all pre-existin
 
 ### Server IDs, not display names
 
-Resolve names like `github` or `search` to **cuid2 server IDs** via `tool__list` before making updates.
+Resolve names like `github` or `search` to **cuid2 server IDs** via `tool__listServers` before making updates.
 
 ---
 
@@ -48,13 +48,13 @@ Scan the current state of assistants and tools:
 
 1. **Retrieve Configurations:**
    ```json
-   agent__list({ "type": "configs", "verbose": true })
+   agent__listAgents({ "type": "configs", "verbose": true })
    ```
    For each assistant, record its `id`, `name`, `description`, `systemPrompt`, `externalMcpServers`, and `builtinCapabilities`.
 
 2. **Retrieve Tool Inventory:**
    ```json
-   tool__list({ "availability": "inventory" })
+   tool__listServers({ "availability": "inventory" })
    ```
    Get all available tool servers in the environment.
 
@@ -72,7 +72,7 @@ Calculate the final tool list precisely using a mathematical union and differenc
 ```
 final_list = (current_list + add_list) - remove_list
 ```
-Double-check that all tools intended to be retained (`Keep`) are explicitly present in the resulting `final_list` payload for `agent__update`.
+Double-check that all tools intended to be retained (`Keep`) are explicitly present in the resulting `final_list` payload for `agent__updateAgent`.
 
 ### 3. Draft Diagnostic Report
 
@@ -96,7 +96,7 @@ Once the user approves the optimization proposal:
 
 For each assistant requiring changes:
 ```json
-agent__update({
+agent__updateAgent({
   "id": "<assistant-id>",
   "externalMcpServers": ["<final-resolved-id-1>", "<final-resolved-id-2>"],
   "builtinCapabilities": ["<final-resolved-builtins>"]
@@ -111,7 +111,7 @@ Verify that the changes were correctly applied:
 
 1. Check the updated configurations:
    ```json
-   agent__list({ "type": "configs", "verbose": true })
+   agent__listAgents({ "type": "configs", "verbose": true })
    ```
 2. Report the successful optimization to the user, highlighting the added and pruned tools. Tell them that existing sessions will pick up these changes upon restart or next configuration resolution.
 
@@ -121,16 +121,16 @@ Verify that the changes were correctly applied:
 
 - **Prevent Tool Bloat Proactively:** Treat tool removal with equal importance to tool addition. Do not let assistants become "jack of all trades" with bloated tool lists.
 - **Role-Tool Alignment:** Every tool attached to an assistant must be explicitly justified by its `description` or `systemPrompt`.
-- **Atomic updates:** Ensure you calculate the union and difference correctly before calling `agent__update`. Never send an incomplete list that deletes required tools.
+- **Atomic updates:** Ensure you calculate the union and difference correctly before calling `agent__updateAgent`. Never send an incomplete list that deletes required tools.
 - **English Prompt Preservation:** Boost only modifies tool configurations (`externalMcpServers` and `builtinCapabilities`). Do not modify the `systemPrompt` text unless separately requested.
 
 ## Builtin Tools
 
 | Step | Tool |
 | --- | --- |
-| List assistants | `agent__list({ "type": "configs", "verbose": true })` |
-| Inventory MCP | `tool__list({ "availability": "inventory" })` |
-| Apply changes | `agent__update({ id, externalMcpServers, builtinCapabilities? })` |
+| List assistants | `agent__listAgents({ "type": "configs", "verbose": true })` |
+| Inventory MCP | `tool__listServers({ "availability": "inventory" })` |
+| Apply changes | `agent__updateAgent({ id, externalMcpServers, builtinCapabilities? })` |
 | Create new specialist | **recruit** (separate workflow) |
 
 

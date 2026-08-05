@@ -27,7 +27,8 @@ impl WorkspaceServer {
                         "Provide a directory path (relative paths resolve from the workspace)"
                             .to_string(),
                         "Examples: {\"path\": \"src\"} or {\"path\": \"/tmp\"}".to_string(),
-                        "Use listDirectory('.') to inspect the workspace directory".to_string(),
+                        "Use workspace__listDirectory('.') to inspect the workspace directory"
+                            .to_string(),
                     ])
                     .to_mcp_result());
                 }
@@ -59,7 +60,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Verify the directory path is correct".to_string(),
-                    "Use listDirectory to see available files".to_string(),
+                    "Use workspace__listDirectory to see available files".to_string(),
                     "Ensure you have read permissions for the directory".to_string(),
                 ])
                 .to_mcp_result());
@@ -142,22 +143,22 @@ impl WorkspaceServer {
         // If the validated path is actually a file, return a clear InvalidInput-style error
         if safe_path.is_file() {
             info!(
-                "listDirectory called with file path instead of directory: {:?}",
+                "workspace__listDirectory called with file path instead of directory: {:?}",
                 safe_path
             );
             return Ok(
                 guided_error(
                     ErrorCategory::InvalidInput,
                     format!(
-                        "The path '{}' points to a file, not a directory. Use readFile to read file contents.",
+                        "The path '{}' points to a file, not a directory. Use workspace__readFile to read file contents.",
                         path_str
                     ),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
                     "Provide a directory path when using listDirectory".to_string(),
-                    "Use readFile to read the contents of a single file".to_string(),
-                    "Use listDirectory on the parent directory to see available files and subdirectories".to_string(),
+                    "Use workspace__readFile to read the contents of a single file".to_string(),
+                    "Use workspace__listDirectory on the parent directory to see available files and subdirectories".to_string(),
                 ])
                 .to_mcp_result(),
             );
@@ -233,7 +234,8 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Use listDirectory('.') to inspect the workspace root".to_string(),
+                        "Use workspace__listDirectory('.') to inspect the workspace root"
+                            .to_string(),
                         "Verify the directory path is correct".to_string(),
                         "Check whether the directory exists and is readable".to_string(),
                     ])

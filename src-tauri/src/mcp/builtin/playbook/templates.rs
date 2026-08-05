@@ -120,7 +120,7 @@ pub const PLAYBOOK_LIST_TEMPLATE: &str = r#"<!DOCTYPE html>
                     window.parent.postMessage({
                         type: 'tool',
                         payload: {
-                            toolName: 'selectPlaybook',
+                            toolName: 'playbook__selectPlaybook',
                             params: { id: id }
                         }
                     }, '*');
@@ -147,7 +147,7 @@ pub const PLAYBOOK_LIST_TEMPLATE: &str = r#"<!DOCTYPE html>
                 window.parent.postMessage({
                     type: 'tool',
                     payload: {
-                        toolName: 'getPlaybookPage',
+                        toolName: 'playbook__getPlaybookPage',
                         params: { page: page - 1, pageSize: {{pageSize}} }
                     }
                 }, '*');
@@ -156,7 +156,7 @@ pub const PLAYBOOK_LIST_TEMPLATE: &str = r#"<!DOCTYPE html>
                 window.parent.postMessage({
                     type: 'tool',
                     payload: {
-                        toolName: 'getPlaybookPage',
+                        toolName: 'playbook__getPlaybookPage',
                         params: { page: page + 1, pageSize: {{pageSize}} }
                     }
                 }, '*');

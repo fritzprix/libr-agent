@@ -36,6 +36,7 @@ It manages user directives, strict precautions, and agent persona while keeping 
 ### Step 1: Explore Workspace & Discover Information
 
 Scan the workspace root to collect facts:
+
 - **Build & Language Configs**: Check `package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`, etc.
 - **Directory Structure**: Inspect depth-2 tree (`src/`, `src-tauri/`, `docs/`, `lib/`, `tests/`).
 - **Commands**: Extract scripts for dev, build, test, lint, and validation.
@@ -70,12 +71,14 @@ Create or update `agents.md` at the workspace root using `references/templates/a
 When executing future agent tasks in this workspace:
 
 #### 📖 Selective Reading Protocol
+
 - Read `agents.md` for overall routing.
 - Read `docs/guidelines/architecture-and-files.md` before refactoring or locating code.
 - Read `docs/guidelines/coding-standards.md` before writing/testing code.
 - Read `docs/guidelines/persona-and-rules.md` when verifying tone, user preferences, or compliance.
 
 #### 🔄 Immediate Update Protocol (Self-Healing)
+
 - If code structure, file paths, commands, or user directives change during work, **immediately update** the target guide file in `docs/guidelines/` using `workspace__strReplace`.
 - Sync `agents.md` if high-level cheat sheets or summaries changed.
 - See `references/update-protocol.md` for details.
@@ -83,6 +86,7 @@ When executing future agent tasks in this workspace:
 ---
 
 ## 🛠️ Resources & Templates
+
 - Entrypoint Template: `references/templates/agents-md-template.md`
 - Persona & Rules Template: `references/templates/persona-and-rules-template.md`
 - Architecture Template: `references/templates/architecture-template.md`

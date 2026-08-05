@@ -66,7 +66,7 @@ pub(crate) fn handle_browser_op_error(
     let guidance_strs = if is_timeout {
         vec![
             "The page load timed out. This often happens with complex sites.",
-            "Try creating a new session with 'createSession' to reset the state.",
+            "Try creating a new session with 'browser__createSession' to reset the state.",
             "If the problem persists, the site might be blocking automated access.",
         ]
     } else {

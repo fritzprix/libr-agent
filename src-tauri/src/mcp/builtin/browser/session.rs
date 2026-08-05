@@ -25,7 +25,7 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
                     &e,
                     vec![
                         "Verify the browser session is still active".to_string(),
-                        "Use createSession to start a new session if needed".to_string(),
+                        "Use browser__createSession to start a new session if needed".to_string(),
                     ],
                     ToolGroup::Browser,
                 ))
@@ -45,7 +45,7 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
 
         let hint = SuccessHint::new(
             format!("Browser session closed (ID: {})", id),
-            vec!["Use createSession to start a new browser session".to_string()],
+            vec!["Use browser__createSession to start a new browser session".to_string()],
         );
         Ok(hint.to_mcp_result_with_data(Some(json!({
             "sessionId": id,
@@ -59,8 +59,8 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
         )
         .with_guidance(vec![
             "The browser is already clean; no further close action is required".to_string(),
-            "Use createSession if you want to start a fresh browser session".to_string(),
-            "Use getCurrentUrl only after createSession has created an active session".to_string(),
+            "Use browser__createSession if you want to start a fresh browser session".to_string(),
+            "Use browser__getCurrentUrl only after browser__createSession has created an active session".to_string(),
         ])
         .to_mcp_result())
     }
@@ -135,7 +135,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
                 vec![
                     "Page load timed out, but the session is ready and page may be usable."
                         .to_string(),
-                    "Try `getPageContent({})` to see if content loaded despite the timeout."
+                    "Try `browser__getPageContent({})` to see if content loaded despite the timeout."
                         .to_string(),
                     "If the page is blank, navigate to a different URL.".to_string(),
                 ],
@@ -204,8 +204,9 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
                     id, url
                 ),
                 vec![
-                    "Use `getPageContent({})` to read the current page content".to_string(),
-                    "Use listInteractable to see interactive elements".to_string(),
+                    "Use `browser__getPageContent({})` to read the current page content"
+                        .to_string(),
+                    "Use browser__listInteractable to see interactive elements".to_string(),
                 ],
             )
         }
@@ -213,8 +214,8 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         (
             format!("Browser session created (ID: {}). {}", id, status_msg),
             vec![
-                "Use `navigateToUrl` to navigate this active session to a webpage".to_string(),
-                "Or call createSession with a `url` next time to open the first page immediately"
+                "Use `browser__navigateToUrl` to navigate this active session to a webpage".to_string(),
+                "Or call browser__createSession with a `url` next time to open the first page immediately"
                     .to_string(),
             ],
         )

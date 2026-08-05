@@ -170,7 +170,7 @@ async fn start_session_impl(
                 session_id, org_name, workspace_note
             ),
             vec![format!(
-                "Use checkSession(\"{}\", wait=true) to wait for the answer.",
+                "Use agent__checkSession(\"{}\", wait=true) to wait for the answer.",
                 session_id
             )],
         )
@@ -181,7 +181,7 @@ async fn start_session_impl(
                 session_id, workspace_note
             ),
             vec![format!(
-                "Use checkSession(\"{}\", wait=true) to wait for the answer.",
+                "Use agent__checkSession(\"{}\", wait=true) to wait for the answer.",
                 session_id
             )],
         )
@@ -271,7 +271,7 @@ pub async fn message_to_session(
     let hint = SuccessHint::new(
         format!("Message {} for session {}.", response.status, session_id),
         vec![format!(
-            "Use checkSession(\"{}\", wait=true) to see the response.",
+            "Use agent__checkSession(\"{}\", wait=true) to see the response.",
             session_id
         )],
     );
@@ -435,7 +435,7 @@ pub async fn compact_session_context(
                 session_id
             ),
             format!(
-                "Use checkSession(\"{}\", wait=true) if you need to block for the current run",
+                "Use agent__checkSession(\"{}\", wait=true) if you need to block for the current run",
                 session_id
             ),
         ])
@@ -509,7 +509,7 @@ pub async fn compact_session_context(
                 session_id
             ),
             format!(
-                "Use checkSession(\"{}\", wait=false) to inspect whether the delegated session is still active",
+                "Use agent__checkSession(\"{}\", wait=false) to inspect whether the delegated session is still active",
                 session_id
             ),
             format!("Last wait error: {}", error),

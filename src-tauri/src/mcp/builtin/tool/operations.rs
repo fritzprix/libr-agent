@@ -113,11 +113,11 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
             )
             .with_guidance(vec![
                 format!(
-                    "Use update(name=\"{}\", transport=...) to change the existing server configuration",
+                    "Use tool__updateServer(name=\"{}\", transport=...) to change the existing server configuration",
                     name
                 ),
                 format!(
-                    "Use list(query=\"{}\") to inspect the existing server before modifying it",
+                    "Use tool__listServers(query=\"{}\") to inspect the existing server before modifying it",
                     name
                 ),
                 "Choose a different unique name if you want to register a separate server"

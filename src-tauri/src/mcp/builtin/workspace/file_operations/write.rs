@@ -184,7 +184,7 @@ impl WorkspaceServer {
                     "Provide a file path (relative paths resolve from the workspace)".to_string(),
                     "Examples: {\"path\": \"src/main.rs\"} or {\"path\": \"/tmp/file.txt\"}"
                         .to_string(),
-                    "Use listDirectory('.') to explore available paths".to_string(),
+                    "Use workspace__listDirectory('.') to explore available paths".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -203,7 +203,7 @@ impl WorkspaceServer {
             .guidance(vec![
                 "Use a normal file path without '..' traversal segments".to_string(),
                 "Example: 'src/main.rs' instead of '../src/main.rs'".to_string(),
-                "Use listDirectory to explore available paths".to_string(),
+                "Use workspace__listDirectory to explore available paths".to_string(),
             ])
             .to_mcp_result());
         }
@@ -239,7 +239,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Verify the target path is not a protected location".to_string(),
-                    "Use listDirectory to see available paths".to_string(),
+                    "Use workspace__listDirectory to see available paths".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -281,7 +281,7 @@ impl WorkspaceServer {
                             path_str
                         ),
                         format!(
-                            "Use listDirectory on the parent of \"{}\" to see existing names.",
+                            "Use workspace__listDirectory on the parent of \"{}\" to see existing names.",
                             path_str
                         ),
                         format!(
@@ -421,7 +421,7 @@ impl WorkspaceServer {
                             )
                             .guidance(vec![
                                 format!(
-                                    "Use readFile(\"{}\") to inspect the current file state",
+                                    "Use workspace__readFile(\"{}\") to inspect the current file state",
                                     write_display_path
                                 ),
                                 "Check file permissions if the follow-up read unexpectedly failed"
@@ -558,7 +558,7 @@ impl WorkspaceServer {
                     message.push_str(write_file_anchor_preview_note());
                     message.push_str(&format!("```\n{}\n```\n", display_lines));
                 } else if LINE_ANCHORS_ENABLED {
-                    // create (and overwrite-of-missing): anchor preview only when needed for editFile
+                    // create (and overwrite-of-missing): anchor preview only when needed for workspace__editFile
                     let (preview_body, truncated) =
                         truncated_content_preview(content, max_display_lines, max_display_bytes);
                     preview_was_truncated = truncated;
@@ -573,7 +573,7 @@ impl WorkspaceServer {
                         write_display_path, requested_path_str, write_display_path
                     ));
                     next_steps.push(format!(
-                        "To replace \"{}\", call writeFile with \"mode\": \"overwrite\". To edit in place, use {} or mode=\"append\".",
+                        "To replace \"{}\", call workspace__writeFile with \"mode\": \"overwrite\". To edit in place, use {} or mode=\"append\".",
                         requested_path_str, PRIMARY_EDIT_TOOL
                     ));
                 }
@@ -639,7 +639,7 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Check that the directory exists with listDirectory".to_string(),
+                        "Check that the directory exists with workspace__listDirectory".to_string(),
                         "Verify you have write permissions".to_string(),
                         "Ensure the path is valid and within allowed directories".to_string(),
                     ])

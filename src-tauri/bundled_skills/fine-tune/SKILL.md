@@ -37,7 +37,7 @@ history__exportDataset({
 })
 ```
 
-To export a subset, call `history__list` or `history__search` first and pass `sessionIds`.
+To export a subset, call `history__listSessions` or `history__searchHistory` first and pass `sessionIds`.
 
 ### 2. Run Pre-flight Check & Train
 Execute the helper script to verify resources and launch training:

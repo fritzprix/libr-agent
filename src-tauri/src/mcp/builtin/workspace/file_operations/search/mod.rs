@@ -169,7 +169,7 @@ impl WorkspaceServer {
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         warn!(
-            "searchFiles is deprecated; use globFiles for filename search or grepFiles for content search"
+            "searchFiles is deprecated; use workspace__globFiles for filename search or workspace__grepFiles for content search"
         );
 
         let query = args.get("query").and_then(|v| v.as_str());
@@ -182,8 +182,10 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Provide a non-empty regex pattern for content search with grepFiles".to_string(),
-                "Use globFiles with filePattern when you only want to find files".to_string(),
+                "Provide a non-empty regex pattern for content search with workspace__grepFiles"
+                    .to_string(),
+                "Use workspace__globFiles with filePattern when you only want to find files"
+                    .to_string(),
             ])
             .to_mcp_result());
         }
@@ -196,7 +198,7 @@ impl WorkspaceServer {
             )
             .guidance(vec![
                 "Provide a non-empty glob like `*.rs` or `src/**/*.ts`".to_string(),
-                "Omit filePattern when you want content search across all files with grepFiles"
+                "Omit filePattern when you want content search across all files with workspace__grepFiles"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -216,8 +218,8 @@ impl WorkspaceServer {
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Use grepFiles with query for content search".to_string(),
-            "Use globFiles with filePattern for filename search".to_string(),
+            "Use workspace__grepFiles with query for content search".to_string(),
+            "Use workspace__globFiles with filePattern for filename search".to_string(),
         ])
         .to_mcp_result())
     }
@@ -243,7 +245,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Verify the file path is within allowed directories".to_string(),
-                    "Use listDirectory to see available files".to_string(),
+                    "Use workspace__listDirectory to see available files".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -257,8 +259,8 @@ impl WorkspaceServer {
             )
             .guidance(vec![
                 "Search workspace files outside .libragent/tmp and .libragent/exports".to_string(),
-                "Use readProcessOutput or listProcesses to inspect temp process output".to_string(),
-                "Use export on real workspace files instead of searching generated export artifacts"
+                "Use workspace__readProcessOutput or workspace__listProcesses to inspect temp process output".to_string(),
+                "Use workspace__export on real workspace files instead of searching generated export artifacts"
                     .to_string(),
             ])
             .to_mcp_result());

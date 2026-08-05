@@ -42,9 +42,9 @@ pub async fn create_goal(
                 )
                 .with_guidance(vec![
                     "Skip createGoal when the goal text is unchanged".to_string(),
-                    "Use updateGoal only if you need to change the goal text".to_string(),
-                    "Use addTodo to break down this goal into tasks".to_string(),
-                    "Use getCurrentState to review the current plan".to_string(),
+                    "Use planning__updateGoal only if you need to change the goal text".to_string(),
+                    "Use planning__addTodo to break down this goal into tasks".to_string(),
+                    "Use planning__getCurrentState to review the current plan".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -62,8 +62,8 @@ pub async fn create_goal(
     match repo.create_goal(session_id, goal_text).await {
         Ok(id) => {
             let mut next_hints = vec![
-                "Use addTodo to break down this goal into tasks".to_string(),
-                "Use getCurrentState to review the full plan".to_string(),
+                "Use planning__addTodo to break down this goal into tasks".to_string(),
+                "Use planning__getCurrentState to review the full plan".to_string(),
             ];
             let summary = match repo.get_planning_summary(session_id).await {
                 Ok(summary) => summary,
@@ -89,7 +89,8 @@ pub async fn create_goal(
             "create the goal",
             &e,
             vec![
-                "Use getCurrentState to verify whether a goal is already active.".to_string(),
+                "Use planning__getCurrentState to verify whether a goal is already active."
+                    .to_string(),
                 "Retry only if the goal was not created.".to_string(),
             ],
         )),
@@ -121,8 +122,8 @@ pub async fn update_goal(
         Ok(updated) => {
             if updated {
                 let mut next_hints = vec![
-                    "Use addTodo to add tasks for this updated goal".to_string(),
-                    "Use getCurrentState to review changes".to_string(),
+                    "Use planning__addTodo to add tasks for this updated goal".to_string(),
+                    "Use planning__getCurrentState to review changes".to_string(),
                 ];
                 let summary = match repo.get_planning_summary(session_id).await {
                     Ok(summary) => summary,
@@ -152,8 +153,8 @@ pub async fn update_goal(
             "update the active goal",
             &e,
             vec![
-                "Use getCurrentState to confirm whether the goal changed.".to_string(),
-                "Use createGoal if no goal exists yet.".to_string(),
+                "Use planning__getCurrentState to confirm whether the goal changed.".to_string(),
+                "Use planning__createGoal if no goal exists yet.".to_string(),
             ],
         )),
     }
@@ -171,7 +172,7 @@ pub async fn clear_goal(
         Ok(_) => {
             let hint = SuccessHint::new(
                 "✓ Goal cleared",
-                vec!["Use createGoal to set a new objective".to_string()],
+                vec!["Use planning__createGoal to set a new objective".to_string()],
             );
             Ok(hint.to_mcp_result())
         }
@@ -179,7 +180,8 @@ pub async fn clear_goal(
             "clear the active goal",
             &e,
             vec![
-                "Use getCurrentState to see whether the goal is still active.".to_string(),
+                "Use planning__getCurrentState to see whether the goal is still active."
+                    .to_string(),
                 "Retry only if the goal was not cleared.".to_string(),
             ],
         )),

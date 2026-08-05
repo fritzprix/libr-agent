@@ -192,9 +192,9 @@ fn validate_edit_anchors(
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
+                "Run workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true) again"
                     .to_string(),
-                "Pass start as \"N:anchor\" from readFile (e.g. from '42:a31f2c|let x = 1;', use \"start\": \"42:a31f2c\")."
+                "Pass start as \"N:anchor\" from workspace__readFile (e.g. from '42:a31f2c|let x = 1;', use \"start\": \"42:a31f2c\")."
                     .to_string(),
             ])
             .to_mcp_result());
@@ -216,7 +216,7 @@ fn validate_edit_anchors(
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Run readFile with showLineAnchors=true to get current line prefixes".to_string(),
+            "Run workspace__readFile with showLineAnchors=true to get current line prefixes".to_string(),
             "Rebuild the edit with an updated start: \"N:anchor\"".to_string(),
         ])
         .to_mcp_result());
@@ -236,7 +236,7 @@ fn validate_edit_anchors(
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Run readFile with showLineAnchors=true to get current line prefixes".to_string(),
+            "Run workspace__readFile with showLineAnchors=true to get current line prefixes".to_string(),
             "Rebuild the edit with an updated start: \"N:anchor\"".to_string(),
         ])
         .to_mcp_result());
@@ -261,9 +261,9 @@ fn validate_edit_anchors(
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
+                    "Run workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true) again"
                         .to_string(),
-                    "Pass end as \"N:anchor\" from readFile (e.g. from '72:b47aa1|...;', use \"end\": \"72:b47aa1\")."
+                    "Pass end as \"N:anchor\" from workspace__readFile (e.g. from '72:b47aa1|...;', use \"end\": \"72:b47aa1\")."
                         .to_string(),
                 ])
                 .to_mcp_result());
@@ -285,7 +285,7 @@ fn validate_edit_anchors(
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Run readFile with showLineAnchors=true to get the current end line prefix"
+                "Run workspace__readFile with showLineAnchors=true to get the current end line prefix"
                     .to_string(),
                 "Rebuild the edit with an updated end: \"N:anchor\"".to_string(),
             ])
@@ -306,7 +306,7 @@ fn validate_edit_anchors(
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Run readFile with showLineAnchors=true to get the current end line prefix"
+                "Run workspace__readFile with showLineAnchors=true to get the current end line prefix"
                     .to_string(),
                 "Rebuild the edit with an updated end: \"N:anchor\"".to_string(),
             ])
@@ -338,7 +338,7 @@ pub(super) async fn prepare_file_edit_batch(
             )
             .guidance(vec![
                 "Use a normal file path without '..' traversal segments".to_string(),
-                "Use listDirectory to inspect valid target paths".to_string(),
+                "Use workspace__listDirectory to inspect valid target paths".to_string(),
             ])
             .to_mcp_result());
         }

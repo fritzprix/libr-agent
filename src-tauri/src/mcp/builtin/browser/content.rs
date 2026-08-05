@@ -44,8 +44,8 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before extracting content"
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before extracting content"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -83,7 +83,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
                 vec![
                     "Verify the browser session is active",
                     "Ensure the page has fully loaded before extracting",
-                    "If you need a fresh navigation in this same session, use `navigateToUrl` with a URL",
+                    "If you need a fresh navigation in this same session, use `browser__navigateToUrl` with a URL",
                     "Try waiting a moment before retrying",
                 ],
             ))
@@ -129,7 +129,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     let mut response_text = if is_unchanged {
         // Return minimal response for unchanged content
         format!(
-            "[Content Unchanged]\nPage Title: {}\nURL: {}\n\nThe content of this page has not changed since the last extraction.\nYou can read the previously extracted content using getPageContent({{ \"page\": 1 }}).\n\nIf you need to interact with the page, use listInteractable.",
+            "[Content Unchanged]\nPage Title: {}\nURL: {}\n\nThe content of this page has not changed since the last extraction.\nYou can read the previously extracted content using browser__getPageContent({{ \"page\": 1 }}).\n\nIf you need to interact with the page, use browser__listInteractable.",
             if page_title.is_empty() {
                 "N/A"
             } else {
@@ -219,7 +219,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     // Add pagination footer
     if !auto_merged && total_pages > 1 {
         response_text.push_str(&format!(
-            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use getPageContent({{ \"page\": N }}) to read pages 2-{}.",
+            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use browser__getPageContent({{ \"page\": N }}) to read pages 2-{}.",
             total_pages,
             total_pages
         ));
@@ -249,8 +249,8 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     let hint = SuccessHint::new(
         response_text,
         vec![
-            "Use listInteractable to see interactive elements".to_string(),
-            "Use clickElement to interact with the page".to_string(),
+            "Use browser__listInteractable to see interactive elements".to_string(),
+            "Use browser__clickElement to interact with the page".to_string(),
         ],
     );
 
@@ -272,8 +272,9 @@ pub async fn read_web_content(server: &BrowserServer, args: Value) -> Result<MCP
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = browser_session_id.ok_or_else(|| {
+        "No active browser session. Call browser__createSession first.".to_string()
+    })?;
 
     let page = match args.get("page").and_then(|v| v.as_u64()) {
         Some(0) => {
@@ -324,7 +325,7 @@ pub async fn read_web_content(server: &BrowserServer, args: Value) -> Result<MCP
                     vec![
                         "All pages read. Content reading is complete".to_string(),
                         "You should now process the gathered information to answer the user's request".to_string(),
-                        "If you truly need further actions on this page, use listInteractable".to_string(),
+                        "If you truly need further actions on this page, use browser__listInteractable".to_string(),
                     ]
                 },
             );
@@ -641,7 +642,7 @@ pub async fn fetch_url(
     let hint = SuccessHint::new(
         result_text,
         vec![
-            "Use createSession and navigateToUrl if you need interactive inspection of this page"
+            "Use browser__createSession and browser__navigateToUrl if you need interactive inspection of this page"
                 .to_string(),
             "Use workspace tools only if you downloaded a file instead of page content".to_string(),
         ],

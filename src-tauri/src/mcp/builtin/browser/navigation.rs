@@ -32,8 +32,9 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before navigating".to_string(),
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before navigating"
+                    .to_string(),
             ])
             .to_mcp_result());
         }
@@ -83,7 +84,7 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
                 e,
                 vec![
                     "Verify the URL format is valid (must include http:// or https://)",
-                    "Use createSession to start a new browser session",
+                    "Use browser__createSession to start a new browser session",
                     "Check if the session still exists",
                     "Try checking if the page loaded using getPageTitle",
                 ],
@@ -181,8 +182,9 @@ pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPRe
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before navigating".to_string(),
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before navigating"
+                    .to_string(),
             ])
             .to_mcp_result());
         }
@@ -196,7 +198,7 @@ pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPRe
                 e,
                 vec![
                     "Ensure there is a previous page in history",
-                    "Use getCurrentUrl to check current page",
+                    "Use browser__getCurrentUrl to check current page",
                 ],
             ))
         }
@@ -230,8 +232,9 @@ pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MC
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before navigating".to_string(),
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before navigating"
+                    .to_string(),
             ])
             .to_mcp_result());
         }
@@ -245,7 +248,7 @@ pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MC
                 e,
                 vec![
                     "Ensure there is a next page in history",
-                    "Use getCurrentUrl to check current page",
+                    "Use browser__getCurrentUrl to check current page",
                 ],
             ))
         }
@@ -279,8 +282,9 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before navigating".to_string(),
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before navigating"
+                    .to_string(),
             ])
             .to_mcp_result());
         }
@@ -297,7 +301,7 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
                 &e,
                 vec![
                     "Verify the browser session is active".to_string(),
-                    "Use createSession to start a new session if needed".to_string(),
+                    "Use browser__createSession to start a new session if needed".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -307,8 +311,8 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
     let hint = SuccessHint::new(
         result,
         vec![
-            "Use getPageContent to inspect the current page.".to_string(),
-            "Use navigateToUrl only if you need to replace the current page in this same active session."
+            "Use browser__getPageContent to inspect the current page.".to_string(),
+            "Use browser__navigateToUrl only if you need to replace the current page in this same active session."
                 .to_string(),
         ],
     );
@@ -327,8 +331,9 @@ pub async fn get_page_title(server: &BrowserServer, _args: Value) -> Result<MCPR
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = browser_session_id.ok_or_else(|| {
+        "No active browser session. Call browser__createSession first.".to_string()
+    })?;
 
     let result = match service
         .execute_script(&browser_session_id, "document.title")
@@ -351,7 +356,8 @@ pub async fn get_page_title(server: &BrowserServer, _args: Value) -> Result<MCPR
     let hint = SuccessHint::new(
         result,
         vec![
-            "Extract full page content with getPageContent to see what's on this page".to_string(),
+            "Extract full page content with browser__getPageContent to see what's on this page"
+                .to_string(),
         ],
     );
     Ok(hint.to_mcp_result())

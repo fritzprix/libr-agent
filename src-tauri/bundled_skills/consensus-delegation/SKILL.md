@@ -32,9 +32,9 @@ Define before spawning anything:
 
 ### 2. Pick specialists
 
-- `agent__list(type="configs")` to discover assistants; use returned IDs in `agent__startSession`
+- `agent__listAgents(type="configs")` to discover assistants; use returned IDs in `agent__startSession`
 - Prefer assistants whose system prompts or assistant-scoped skills match each perspective
-- If no suitable assistant exists, `agent__create` a config first, then spawn with the new ID
+- If no suitable assistant exists, `agent__createAgent` a config first, then spawn with the new ID
 - Keep the panel small (usually 2-4). More reviewers add noise and hit fanout/concurrency limits
 
 ### 3. Prepare identical handoffs
@@ -55,7 +55,7 @@ When all reviewers need the same codebase, start each child with the same `works
 Default pattern:
 
 1. `agent__startSession(agentId="...", task="...", waitForResult=false, workspaceOverride="...")` for each specialist
-2. `agent__list(type="sessions")` if you need to confirm child IDs and status—this does not return review results
+2. `agent__listAgents(type="sessions")` if you need to confirm child IDs and status—this does not return review results
 3. Collect with `agent__checkSession(sessionId)` or `agent__checkSession(sessionId, wait=true)` for actual conclusions
 
 Notes:
@@ -101,10 +101,10 @@ Do not present a single child's output as the final answer without comparison.
 
 | Step | Tool |
 | --- | --- |
-| Discover assistants | `agent__list(type="configs")` |
-| Create missing specialist | `agent__create(...)` |
+| Discover assistants | `agent__listAgents(type="configs")` |
+| Create missing specialist | `agent__createAgent(...)` |
 | Spawn reviewer | `agent__startSession(..., waitForResult=false)` |
-| Inspect children | `agent__list(type="sessions")` — IDs and status only |
+| Inspect children | `agent__listAgents(type="sessions")` — IDs and status only |
 | Poll or wait | `agent__checkSession(sessionId)` / `agent__checkSession(sessionId, wait=true)` — results |
 | Reconcile | `agent__messageToSession(sessionId, message)` |
 | Stop stuck work | `agent__stopSession(sessionId)` |

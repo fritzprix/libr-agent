@@ -250,7 +250,7 @@ pub fn categorize_session_api_error(err: &str) -> (ExternalMcpErrorCategory, Vec
                     (
                         ExternalMcpErrorCategory::NotFound,
                         vec![
-                            "Use listAssistants to see available assistant configurations".to_string(),
+                            "Use agent__listAgents to see available assistant configurations".to_string(),
                             "Verify the assistantId matches one of the existing assistants".to_string(),
                             "Check for typos in the assistantId parameter".to_string(),
                         ],
@@ -259,8 +259,8 @@ pub fn categorize_session_api_error(err: &str) -> (ExternalMcpErrorCategory, Vec
                     (
                         ExternalMcpErrorCategory::NotFound,
                         vec![
-                            "Verify the session ID is correct using getAgentStatus".to_string(),
-                            "The session may have been terminated — use getChildAgents to list active sessions".to_string(),
+                            "Verify the session ID is correct using agent__checkSession".to_string(),
+                            "The session may have been terminated — use agent__listAgents(type=\"sessions\") to list active sessions".to_string(),
                         ],
                     )
                 }
@@ -269,7 +269,7 @@ pub fn categorize_session_api_error(err: &str) -> (ExternalMcpErrorCategory, Vec
                 ExternalMcpErrorCategory::Timeout,
                 vec![
                     "Increase the timeoutSeconds parameter".to_string(),
-                    "Check the session status with getAgentStatus".to_string(),
+                    "Check the session status with agent__checkSession".to_string(),
                 ],
             ),
             503 => (
@@ -313,9 +313,10 @@ pub fn categorize_session_api_error(err: &str) -> (ExternalMcpErrorCategory, Vec
             ExternalMcpErrorCategory::Timeout,
             vec![
                 "Increase the timeoutSeconds parameter".to_string(),
-                "Check the session status with getAgentStatus to see if it is still running"
+                "Check the session status with agent__checkSession to see if it is still running"
                     .to_string(),
-                "Use awaitAgent with a longer timeout to wait for slow sessions".to_string(),
+                "Use agent__checkSession with a longer timeout to wait for slow sessions"
+                    .to_string(),
             ],
         );
     }

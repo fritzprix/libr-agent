@@ -67,7 +67,7 @@ pub fn listing_truncation_note(
     let has_more = offset + page_len < total_items;
     if has_more {
         format!(
-            "\n\n*(Showing {} to {} of {} items. Call listDirectory with offset: {} to see more)*",
+            "\n\n*(Showing {} to {} of {} items. Call workspace__listDirectory with offset: {} to see more)*",
             offset + 1,
             offset + page_len,
             total_items,

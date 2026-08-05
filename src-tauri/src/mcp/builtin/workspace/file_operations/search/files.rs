@@ -116,7 +116,7 @@ pub(super) async fn search_files_only(
             ),
             vec![
                 "Verify the pattern syntax (use glob format like `*.txt` or `**/*.rs`)".to_string(),
-                "Use listDirectory to explore available files".to_string(),
+                "Use workspace__listDirectory to explore available files".to_string(),
             ],
         )
     } else {

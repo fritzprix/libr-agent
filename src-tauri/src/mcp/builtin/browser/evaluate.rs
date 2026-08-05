@@ -22,9 +22,9 @@ pub async fn evaluate_js(server: &BrowserServer, args: Value) -> Result<MCPResul
                     ToolGroup::Browser,
                 )
                 .guidance(vec![
-                    "Use createSession FIRST to start a browser session".to_string(),
-                    "Wait for createSession to return a success message before evaluating JavaScript".to_string(),
-                    "Use navigateToUrl after createSession if you need to inspect a specific page".to_string(),
+                    "Use browser__createSession FIRST to start a browser session".to_string(),
+                    "Wait for browser__createSession to return a success message before evaluating JavaScript".to_string(),
+                    "Use browser__navigateToUrl after browser__createSession if you need to inspect a specific page".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -58,7 +58,8 @@ pub async fn evaluate_js(server: &BrowserServer, args: Value) -> Result<MCPResul
                     "Verify the script uses valid JavaScript syntax".to_string(),
                     "Wrap complex return values with JSON.stringify(...) before returning them"
                         .to_string(),
-                    "Use getConsoleLogs to inspect page-side errors after execution".to_string(),
+                    "Use browser__getConsoleLogs to inspect page-side errors after execution"
+                        .to_string(),
                 ],
                 ToolGroup::Browser,
             ));
@@ -68,8 +69,8 @@ pub async fn evaluate_js(server: &BrowserServer, args: Value) -> Result<MCPResul
     let hint = SuccessHint::new(
         format!("JavaScript executed\n\nResult:\n{}", result),
         vec![
-            "Use getConsoleLogs if you need page-side error output".to_string(),
-            "Use getPageContent to verify page state after DOM changes".to_string(),
+            "Use browser__getConsoleLogs if you need page-side error output".to_string(),
+            "Use browser__getPageContent to verify page state after DOM changes".to_string(),
         ],
     );
     Ok(hint.to_mcp_result())
@@ -91,9 +92,9 @@ pub async fn get_console_logs(server: &BrowserServer, args: Value) -> Result<MCP
                     ToolGroup::Browser,
                 )
                 .guidance(vec![
-                    "Use createSession FIRST to start a browser session".to_string(),
-                    "Wait for createSession to return a success message before reading console logs".to_string(),
-                    "Use navigateToUrl after createSession if you need logs from a specific page".to_string(),
+                    "Use browser__createSession FIRST to start a browser session".to_string(),
+                    "Wait for browser__createSession to return a success message before reading console logs".to_string(),
+                    "Use browser__navigateToUrl after browser__createSession if you need logs from a specific page".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -115,8 +116,8 @@ pub async fn get_console_logs(server: &BrowserServer, args: Value) -> Result<MCP
                 &error,
                 vec![
                     "Verify the browser session is still active".to_string(),
-                    "Use evaluateJS to reproduce the issue before reading logs again".to_string(),
-                    "Use navigateToUrl or createSession to reset the page if logging has stalled"
+                    "Use browser__evaluateJS to reproduce the issue before reading logs again".to_string(),
+                    "Use browser__navigateToUrl or browser__createSession to reset the page if logging has stalled"
                         .to_string(),
                 ],
                 ToolGroup::Browser,
@@ -128,8 +129,8 @@ pub async fn get_console_logs(server: &BrowserServer, args: Value) -> Result<MCP
     let hint = SuccessHint::new(
         formatted,
         vec![
-            "Use evaluateJS to inspect page state around the logged errors".to_string(),
-            "Use getPageContent if you need the rendered page context".to_string(),
+            "Use browser__evaluateJS to inspect page state around the logged errors".to_string(),
+            "Use browser__getPageContent if you need the rendered page context".to_string(),
         ],
     );
     Ok(hint.to_mcp_result())

@@ -11,8 +11,8 @@ pub fn create_session_tool() -> MCPTool {
             "Create or replace the active browser session for this agent. One agent has one active browser session/page at a time.",
             &[],
             &[
-                "Call createSession before other browser tools if no active session exists.",
-                "If a session already exists, createSession closes it and starts a fresh one.",
+                "Call browser__createSession before other browser tools if no active session exists.",
+                "If a session already exists, browser__createSession closes it and starts a fresh one.",
                 "If url is omitted, the session opens https://www.google.com.",
             ],
             &[
@@ -46,8 +46,8 @@ pub fn navigate_to_url_tool() -> MCPTool {
         description: "Navigate the single active browser session to a specific URL.
 
 Behavior:
-- Requires an active session created by `createSession`
-- There is only one active browser session per agent — navigateToUrl will overwrite the current page
+- Requires an active session created by `browser__createSession`
+- There is only one active browser session per agent — browser__navigateToUrl will overwrite the current page
 - Replaces the current page and invalidates previously extracted page content
 - Returns navigation status plus the live page title and URL, not full page content
 
@@ -162,15 +162,15 @@ pub fn get_page_content_tool() -> MCPTool {
         title: Some("Get Page Content".to_string()),
         description: "Get content from the active browser session page as markdown.
 
-This is the normal next step after `navigateToUrl`.
+This is the normal next step after `browser__navigateToUrl`.
 - No `page` arg: extract fresh content from the current page.
 - With `page`: read a specific page number from the most recently extracted cache.
 
 Pagination is cache-based, not scroll-based.
-If the response says `[Page 1/N]`, continue with `getPageContent({ \"page\": 2 })`.
+If the response says `[Page 1/N]`, continue with `browser__getPageContent({ \"page\": 2 })`.
 
-⚠️ Navigation (navigateToUrl, navigateBack, navigateForward) clears the content cache.
-Call `getPageContent({})` again after any navigation."
+⚠️ Navigation (browser__navigateToUrl, navigateBack, navigateForward) clears the content cache.
+Call `browser__getPageContent({})` again after any navigation."
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -219,7 +219,7 @@ pub fn click_element_tool() -> MCPTool {
         input_schema: object_prop(
             vec![(
                 "selector".to_string(),
-                string_prop_required("CSS selector of the element to click (must match an element visible in listInteractable or getPageContent)"),
+                string_prop_required("CSS selector of the element to click (must match an element visible in browser__listInteractable or browser__getPageContent)"),
             )],
             vec!["selector".to_string()],
             None,
@@ -305,8 +305,8 @@ pub fn list_interactable_tool() -> MCPTool {
         title: Some("List Interactable Elements".to_string()),
         description: "List interactable elements on the page.
 
-Use this before `clickElement` or `inputText` to discover valid CSS selectors instead of guessing.
-Prefer this over getPageContent when you only need to find elements for interaction."
+Use this before `browser__clickElement` or `browser__inputText` to discover valid CSS selectors instead of guessing.
+Prefer this over browser__getPageContent when you only need to find elements for interaction."
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -343,7 +343,7 @@ pub fn close_session_tool() -> MCPTool {
         description: "Explicitly close the browser session and clear the stored session state.
 
 Good practice after finishing a task to free resources.
-starting over with `createSession` after closing is the recommended recovery path if the session enters a broken state."
+starting over with `browser__createSession` after closing is the recommended recovery path if the session enters a broken state."
             .to_string(),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
@@ -376,7 +376,7 @@ pub fn fetch_tool() -> MCPTool {
             "Stateless one-off fetch: fetch a single URL without affecting the active browser session.",
             &[],
             &[
-                "Use this instead of chaining multiple `navigateToUrl` calls when you only need the content of a single, independent URL.",
+                "Use this instead of chaining multiple `browser__navigateToUrl` calls when you only need the content of a single, independent URL.",
                 "This does not create or reuse the visible stateful browser workflow.",
                 "HTML or text responses are returned as markdown in the tool result.",
                 "Non-HTML responses require savePath so the file can be downloaded into the workspace.",

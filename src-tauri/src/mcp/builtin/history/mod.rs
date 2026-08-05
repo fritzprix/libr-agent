@@ -82,7 +82,7 @@ impl BuiltinMCPServer for HistoryServer {
                     ToolGroup::Agent,
                 )
                 .with_guidance(vec![
-                    "Use one of the available history tools: listSessions, readSession, readMessage, searchHistory, or exportDataset."
+                    "Use one of the available history tools: history__listSessions, history__readSession, history__readMessage, history__searchHistory, or history__exportDataset."
                         .to_string(),
                 ])
                 .to_mcp_result());

@@ -117,7 +117,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Select workspace files or directories outside .libragent/tmp and .libragent/exports".to_string(),
-                    "Use readProcessOutput or listProcesses instead of exporting raw temp outputs".to_string(),
+                    "Use workspace__readProcessOutput or workspace__listProcesses instead of exporting raw temp outputs".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -203,8 +203,8 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Use listDirectory('.') to verify workspace-relative paths".to_string(),
-                "Use search with filePattern to find the exact file or directory name".to_string(),
+                "Use workspace__listDirectory('.') to verify workspace-relative paths".to_string(),
+                "Use workspace__globFiles with filePattern to find the exact file or directory name".to_string(),
                 "Export paths must be relative to the workspace root".to_string(),
             ])
             .to_mcp_result());
@@ -325,7 +325,7 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Use listDirectory or search to verify the selected paths contain readable files"
+                "Use workspace__listDirectory or search to verify the selected paths contain readable files"
                     .to_string(),
                 "Directories are allowed, but only readable files inside them are added"
                     .to_string(),

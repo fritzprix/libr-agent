@@ -65,7 +65,7 @@ async fn validate_edit_target_path(
             )
             .guidance(vec![
                 "Use workspace-relative paths only".to_string(),
-                "Use listDirectory('.') to inspect valid target paths".to_string(),
+                "Use workspace__listDirectory('.') to inspect valid target paths".to_string(),
             ])
             .to_mcp_result());
         }
@@ -92,15 +92,20 @@ async fn validate_edit_target_path(
         return Err(guided_error(
             ErrorCategory::ResourceNotFound,
             format!(
-                "File '{}' does not exist, so editFile cannot modify it",
+                "File '{}' does not exist, so workspace__editFile cannot modify it",
                 path_str
             ),
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            format!("Use writeFile(\"{}\") to create the file first", path_str),
-            "Use listDirectory('.') to verify the correct workspace-relative path".to_string(),
-            "Use search with filePattern if you need to find the existing file first".to_string(),
+            format!(
+                "Use workspace__writeFile(\"{}\") to create the file first",
+                path_str
+            ),
+            "Use workspace__listDirectory('.') to verify the correct workspace-relative path"
+                .to_string(),
+            "Use workspace__globFiles with filePattern if you need to find the existing file first"
+                .to_string(),
         ])
         .to_mcp_result());
     }
@@ -112,7 +117,7 @@ async fn validate_edit_target_path(
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Use listDirectory to inspect files inside that directory".to_string(),
+            "Use workspace__listDirectory to inspect files inside that directory".to_string(),
             format!(
                 "Select a file path inside '{}', not the directory itself",
                 path_str
@@ -185,7 +190,7 @@ async fn write_prepared_batches(
             .guidance(vec![
                 rollback_note,
                 "Check file permissions and available disk space".to_string(),
-                "Rerun readFile(showLineAnchors=true) before retrying if files may have changed"
+                "Rerun workspace__readFile(showLineAnchors=true) before retrying if files may have changed"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -359,12 +364,12 @@ impl WorkspaceServer {
             Err(error) => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
-                    format!("editFile argument error: {error}"),
+                    format!("workspace__editFile argument error: {error}"),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
                     "Provide start as \"N:anchor\" (e.g. \"start\": \"42:a31f2c\")".to_string(),
-                    "Copy the \"42:a31f2c\" prefix from readFile output: 42:a31f2c|content"
+                    "Copy the \"42:a31f2c\" prefix from workspace__readFile output: 42:a31f2c|content"
                         .to_string(),
                     "Replace: {\"path\": \"src/a.ts\", \"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
                 ])
@@ -376,7 +381,7 @@ impl WorkspaceServer {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "editFile arguments do not match the declared schema: {validation_error}"
+                    "workspace__editFile arguments do not match the declared schema: {validation_error}"
                 ),
                 ToolGroup::Workspace,
             )
@@ -385,7 +390,7 @@ impl WorkspaceServer {
                 "Prepend: {\"path\": \"src/a.ts\", \"content\": \"header\"}".to_string(),
                 "Insert below a line: {\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"start\": \"10:a31f2c\", \"content\": \"text\"}".to_string(),
                 "Delete range: {\"path\": \"src/b.ts\", \"start\": \"10:a31f2c\", \"end\": \"15:b47aa1\"}".to_string(),
-                "One edit per call; copy start/end as \"N:anchor\" from readFile(showLineAnchors=true)".to_string(),
+                "One edit per call; copy start/end as \"N:anchor\" from workspace__readFile(showLineAnchors=true)".to_string(),
             ])
             .to_mcp_result());
         }
@@ -436,7 +441,7 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                format!("Split the work into multiple editFile calls with at most {EDIT_FILE_MAX_EDITS} edits each"),
+                format!("Split the work into multiple workspace__editFile calls with at most {EDIT_FILE_MAX_EDITS} edits each"),
                 "Combine adjacent line replacements into a single range edit when possible".to_string(),
             ])
             .to_mcp_result());

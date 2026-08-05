@@ -116,9 +116,9 @@ impl WorkspaceServer {
                         .as_ref()
                         .is_some_and(|mapper| mapper.container_to_host(&cwd).is_none())
                     {
-                        "\n⚠️  Shell CWD is outside /workspace; readFile/listDirectory/writeFile cannot map this container path"
+                        "\n⚠️  Shell CWD is outside /workspace; workspace__readFile/workspace__listDirectory/workspace__writeFile cannot map this container path"
                     } else if display_cwd != "." && cwd_changed {
-                        "\n⚠️  readFile and listDirectory still use workspace root, not the shell CWD\n    Use /workspace absolute paths, relative workspace paths, or shell commands like ls/find for the current shell directory"
+                        "\n⚠️  workspace__readFile and workspace__listDirectory still use workspace root, not the shell CWD\n    Use /workspace absolute paths, relative workspace paths, or shell commands like ls/find for the current shell directory"
                     } else {
                         ""
                     };

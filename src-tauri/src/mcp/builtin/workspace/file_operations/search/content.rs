@@ -124,7 +124,7 @@ pub(super) async fn search_content_in_file(
             .guidance(vec![
                 "Search a smaller file or narrow the directory before searching contents"
                     .to_string(),
-                "Use readFile or listDirectory first to inspect large generated artifacts"
+                "Use workspace__readFile or workspace__listDirectory first to inspect large generated artifacts"
                     .to_string(),
             ])
             .to_mcp_result());

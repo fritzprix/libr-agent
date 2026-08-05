@@ -61,7 +61,7 @@ fn parse_line_ref(raw: &str, field_name: &str) -> Result<(usize, Option<String>)
     let Some(anchor_part) = anchor_part else {
         return Err(format!(
             "'{field_name}' must use \"N:anchor\" format (e.g. \"42:a31f2c\"). \
-Copy the prefix before '|' from readFile(showLineAnchors=true)."
+Copy the prefix before '|' from workspace__readFile(showLineAnchors=true)."
         ));
     };
 
@@ -121,13 +121,15 @@ fn expand_line_ref_fields(canonical: &mut Map<String, Value>) -> Result<(), Stri
 }
 
 static EDIT_FILE_DISCOVERY_SCHEMA_JSON: Lazy<Result<Value, String>> = Lazy::new(|| {
-    serde_json::to_value(create_edit_file_input_schema())
-        .map_err(|error| format!("Failed to serialize editFile discovery schema: {error}"))
+    serde_json::to_value(create_edit_file_input_schema()).map_err(|error| {
+        format!("Failed to serialize workspace__editFile discovery schema: {error}")
+    })
 });
 
 static EDIT_FILE_VALIDATION_SCHEMA_JSON: Lazy<Result<Value, String>> = Lazy::new(|| {
-    serde_json::to_value(create_edit_file_validation_schema())
-        .map_err(|error| format!("Failed to serialize editFile validation schema: {error}"))
+    serde_json::to_value(create_edit_file_validation_schema()).map_err(|error| {
+        format!("Failed to serialize workspace__editFile validation schema: {error}")
+    })
 });
 
 static EDIT_FILE_FLAT_VALIDATOR: Lazy<Result<jsonschema::Validator, String>> = Lazy::new(|| {
@@ -135,7 +137,7 @@ static EDIT_FILE_FLAT_VALIDATOR: Lazy<Result<jsonschema::Validator, String>> = L
         .as_ref()
         .map_err(|error| error.clone())?;
     jsonschema::validator_for(schema_json)
-        .map_err(|error| format!("Failed to build editFile flat validator: {error}"))
+        .map_err(|error| format!("Failed to build workspace__editFile flat validator: {error}"))
 });
 
 static EDIT_FILE_BATCH_VALIDATOR: Lazy<Result<jsonschema::Validator, String>> = Lazy::new(|| {
@@ -143,7 +145,7 @@ static EDIT_FILE_BATCH_VALIDATOR: Lazy<Result<jsonschema::Validator, String>> = 
         .as_ref()
         .map_err(|error| error.clone())?;
     jsonschema::validator_for(schema_json)
-        .map_err(|error| format!("Failed to build editFile batch validator: {error}"))
+        .map_err(|error| format!("Failed to build workspace__editFile batch validator: {error}"))
 });
 
 fn canonicalize_edit_object(edit: &Value) -> Result<Value, String> {
@@ -376,7 +378,8 @@ pub(super) fn parse_line_edit(
             )
             .guidance(vec![
                 "Provide start as \"N:anchor\" (e.g. \"start\": \"42:a31f2c\")".to_string(),
-                "Copy the \"42:a31f2c\" prefix from readFile output: 42:a31f2c|content".to_string(),
+                "Copy the \"42:a31f2c\" prefix from workspace__readFile output: 42:a31f2c|content"
+                    .to_string(),
                 "Existing lines are 1-based; use start: \"0\" only to prepend at the file top"
                     .to_string(),
             ])
@@ -563,7 +566,7 @@ pub(super) fn parse_line_edit(
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) first".to_string(),
+            "Run workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true) first".to_string(),
             "Copy start as \"N:anchor\" from the line format N:anchor|content \
 (e.g. from '42:a31f2c|let x = 1;', pass \"start\": \"42:a31f2c\")."
                 .to_string(),
@@ -583,8 +586,8 @@ pub(super) fn parse_line_edit(
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) first".to_string(),
-            "Pass start: \"N:anchor\" and end: \"M:anchor\" copied from readFile output"
+            "Run workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true) first".to_string(),
+            "Pass start: \"N:anchor\" and end: \"M:anchor\" copied from workspace__readFile output"
                 .to_string(),
             "Only multi-line replace and delete need 'end'".to_string(),
         ])

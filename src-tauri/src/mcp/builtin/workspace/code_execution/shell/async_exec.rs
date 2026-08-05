@@ -73,8 +73,8 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Use listProcesses to see running processes".to_string(),
-                    "Use stopProcess to cancel unnecessary processes".to_string(),
+                    "Use workspace__listProcesses to see running processes".to_string(),
+                    "Use workspace__stopProcess to cancel unnecessary processes".to_string(),
                     "Wait for some processes to finish before starting new ones".to_string(),
                 ])
                 .to_mcp_result());
@@ -290,7 +290,7 @@ impl WorkspaceServer {
                     .guidance(vec![
                         "Verify the command syntax is correct".to_string(),
                         "Check if required programs are installed".to_string(),
-                        "Use listProcesses to see failed process details".to_string(),
+                        "Use workspace__listProcesses to see failed process details".to_string(),
                     ])
                     .to_mcp_result());
                 }
@@ -323,12 +323,14 @@ impl WorkspaceServer {
             ),
             vec![
                 format!(
-                    "Use waitForProcess(\"{}\", 0) to check status and completion",
+                    "Use workspace__waitForProcess(\"{}\", 0) to check status and completion",
                     process_id
                 ),
-                "Use listProcesses to map optional names back to process IDs".to_string(),
-                "Use readProcessOutput with 'both' to inspect stdout and stderr".to_string(),
-                "Use listProcesses to see all running processes".to_string(),
+                "Use workspace__listProcesses to map optional names back to process IDs"
+                    .to_string(),
+                "Use workspace__readProcessOutput with 'both' to inspect stdout and stderr"
+                    .to_string(),
+                "Use workspace__listProcesses to see all running processes".to_string(),
             ],
         );
 
@@ -338,7 +340,7 @@ impl WorkspaceServer {
             "command": command,
             "mode": "async",
             "cwd": cwd,
-            "note": "use waitForProcess or readProcessOutput to retrieve output"
+            "note": "use workspace__waitForProcess or workspace__readProcessOutput to retrieve output"
         });
 
         Ok(hint.to_mcp_result_with_data(Some(response_data)))

@@ -127,7 +127,7 @@ pub async fn handle_create_scheduled_task(
     };
 
     let text = format!(
-        "Scheduled task created (ID: {}).\n\n{}\n\n{}\n- getScheduledTask(\"{}\") — inspect full task\n- toggleScheduledTask(\"{}\", enabled=false) — pause\n- updateScheduledTask(\"{}\", ...) — revise schedule or message",
+        "Scheduled task created (ID: {}).\n\n{}\n\n{}\n- scheduled_task__getScheduledTask(\"{}\") — inspect full task\n- scheduled_task__toggleScheduledTask(\"{}\", enabled=false) — pause\n- scheduled_task__updateScheduledTask(\"{}\", ...) — revise schedule or message",
         created.id,
         render_task_detail(&created),
         hint_headers::AVAILABLE_OPERATIONS,
@@ -213,10 +213,10 @@ pub async fn handle_list_scheduled_tasks(
 
     Ok(SuccessHint::new(
         format!(
-            "{header}\n\n{body}\n\n{} getScheduledTask(\"...\") can show full detail before updating or deleting.",
+            "{header}\n\n{body}\n\n{} scheduled_task__getScheduledTask(\"...\") can show full detail before updating or deleting.",
             hint_headers::TIP
         ),
-        vec!["getScheduledTask(\"...\") can show one task in full detail".to_string()],
+        vec!["scheduled_task__getScheduledTask(\"...\") can show one task in full detail".to_string()],
     )
     .to_mcp_result_with_data(Some(json!({
         "tasks": tasks.iter().map(task_to_json).collect::<Vec<_>>(),
@@ -259,36 +259,38 @@ pub async fn handle_get_scheduled_task(
     let (guidance, success_hints) = match task.task_category.as_str() {
         TASK_CATEGORY_GLOBAL => {
             let guidance = format!(
-                "{}\n- updateScheduledTask(\"{}\", ...) — modify schedule or message\n- toggleScheduledTask(\"{}\", enabled=false) — pause",
+                "{}\n- scheduled_task__updateScheduledTask(\"{}\", ...) — modify schedule or message\n- scheduled_task__toggleScheduledTask(\"{}\", enabled=false) — pause",
                 hint_headers::AVAILABLE_OPERATIONS,
                 task.id,
                 task.id
             );
             let hints = vec![format!(
-                "updateScheduledTask(\"{}\", ...) can change schedule or message",
+                "scheduled_task__updateScheduledTask(\"{}\", ...) can change schedule or message",
                 task.id
             )];
             (guidance, hints)
         }
         TASK_CATEGORY_SESSION => {
             let guidance = format!(
-                "{}\n- toggleScheduledTask(\"{}\", enabled=false) — pause\n- deleteScheduledTask(\"{}\") — cancel",
+                "{}\n- scheduled_task__toggleScheduledTask(\"{}\", enabled=false) — pause\n- scheduled_task__deleteScheduledTask(\"{}\") — cancel",
                 hint_headers::AVAILABLE_OPERATIONS,
                 task.id,
                 task.id
             );
             let hints = vec![format!(
-                "toggleScheduledTask(\"{}\", enabled=false) can pause the session callback, or deleteScheduledTask(\"{}\") can cancel it",
+                "scheduled_task__toggleScheduledTask(\"{}\", enabled=false) can pause the session callback, or scheduled_task__deleteScheduledTask(\"{}\") can cancel it",
                 task.id, task.id
             )];
             (guidance, hints)
         }
         _ => {
             let guidance = format!(
-                "{} getScheduledTask(\"...\") can show full task details.",
+                "{} scheduled_task__getScheduledTask(\"...\") can show full task details.",
                 hint_headers::TIP
             );
-            let hints = vec!["getScheduledTask(\"...\") can show full task details".to_string()];
+            let hints = vec![
+                "scheduled_task__getScheduledTask(\"...\") can show full task details".to_string(),
+            ];
             (guidance, hints)
         }
     };
@@ -440,7 +442,7 @@ pub async fn handle_update_scheduled_task(
     let changed_summary = changed_fields.join(", ");
     Ok(SuccessHint::new(
         format!(
-            "Scheduled task updated (ID: {}).\n\nChanged fields: {}\nNext run: {}\nEnabled: {}\n\n{} getScheduledTask(\"{}\") can confirm the persisted state.",
+            "Scheduled task updated (ID: {}).\n\nChanged fields: {}\nNext run: {}\nEnabled: {}\n\n{} scheduled_task__getScheduledTask(\"{}\") can confirm the persisted state.",
             updated.id,
             changed_summary,
             format_timestamp(updated.next_run_at),
@@ -449,7 +451,7 @@ pub async fn handle_update_scheduled_task(
             updated.id
         ),
         vec![format!(
-            "getScheduledTask(\"{}\") can confirm the persisted schedule",
+            "scheduled_task__getScheduledTask(\"{}\") can confirm the persisted schedule",
             updated.id
         )],
     )
@@ -517,7 +519,7 @@ pub async fn handle_toggle_scheduled_task(
     };
     Ok(SuccessHint::new(
         format!(
-            "Scheduled task {} (ID: {}) is now {}.\nNext run: {}\n\n{} getScheduledTask(\"{}\") can show the full schedule state.",
+            "Scheduled task {} (ID: {}) is now {}.\nNext run: {}\n\n{} scheduled_task__getScheduledTask(\"{}\") can show the full schedule state.",
             updated.name,
             updated.id,
             state_text,
@@ -526,7 +528,7 @@ pub async fn handle_toggle_scheduled_task(
             updated.id
         ),
         vec![format!(
-            "getScheduledTask(\"{}\") can show the full task state",
+            "scheduled_task__getScheduledTask(\"{}\") can show the full task state",
             updated.id
         )],
     )
@@ -617,7 +619,7 @@ pub async fn handle_schedule_callback(
 
     Ok(SuccessHint::new(
         format!(
-            "Session callback scheduled (ID: {}).\n\n{}\n\n{} getScheduledTask(\"{}\") can show details; toggleScheduledTask(\"{}\", enabled=false) can cancel.",
+            "Session callback scheduled (ID: {}).\n\n{}\n\n{} scheduled_task__getScheduledTask(\"{}\") can show details; scheduled_task__toggleScheduledTask(\"{}\", enabled=false) can cancel.",
             created.id,
             render_task_detail(&created),
             hint_headers::TIP,
@@ -625,7 +627,7 @@ pub async fn handle_schedule_callback(
             created.id
         ),
         vec![format!(
-            "getScheduledTask(\"{}\") can show the callback before scheduling another",
+            "scheduled_task__getScheduledTask(\"{}\") can show the callback before scheduling another",
             created.id
         )],
     )
@@ -674,12 +676,12 @@ pub async fn handle_delete_scheduled_task(
 
     Ok(SuccessHint::new(
         format!(
-            "Scheduled task deleted (ID: {}).\n\nDeleted task summary:\n{}\n\n{} listScheduledTasks() can verify the remaining schedule set.",
+            "Scheduled task deleted (ID: {}).\n\nDeleted task summary:\n{}\n\n{} scheduled_task__listScheduledTasks() can verify the remaining schedule set.",
             existing.id,
             render_task_line(&existing),
             hint_headers::TIP
         ),
-        vec!["listScheduledTasks() can verify the remaining schedule set".to_string()],
+        vec!["scheduled_task__listScheduledTasks() can verify the remaining schedule set".to_string()],
     )
     .to_mcp_result_with_data(Some(json!({
         "deletedTask": task_to_json(&existing)
@@ -724,7 +726,7 @@ fn check_session_ownership(
 ) -> Result<(), crate::mcp::types::MCPResult> {
     if task_category == TASK_CATEGORY_SESSION && task_session_id != Some(server_session_id) {
         Err(permission_denied_error(
-            "You can only manage session callbacks for your own session. Use scheduleCallback or cancel_session_scheduled_task from the owning session.",
+            "You can only manage session callbacks for your own session. Use scheduled_task__scheduleCallback or scheduled_task__deleteScheduledTask from the owning session.",
             ToolGroup::ScheduledTask,
         ))
     } else {
@@ -856,7 +858,8 @@ fn service_error_result(operation: &str, error: &str) -> crate::mcp::types::MCPR
             operation,
             error,
             vec![
-                "Use listScheduledTasks() to inspect the current schedule state".to_string(),
+                "Use scheduled_task__listScheduledTasks() to inspect the current schedule state"
+                    .to_string(),
                 "Verify assistantId, cronExpression, and workspaceOverride values".to_string(),
             ],
             ToolGroup::ScheduledTask,

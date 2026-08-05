@@ -235,10 +235,10 @@ Cause: Tool 'grok__search_web' belongs to registered external server 'grok' (Ser
 but that server is not attached to session 'sess_456'.
 
 Recovery:
-- Use tool__list({"availability":"session"}) to inspect tools callable right now.
-- Use tool__list({"availability":"inventory"}) to inspect registered servers and Server IDs.
-- Attach Server ID "srv_123" with agent__update(id:"<agentId>", externalMcpServers:["srv_123"]).
-- If changing this agent is the wrong move, use agent__list(type="configs") and
+- Use tool__listServers({"availability":"session"}) to inspect tools callable right now.
+- Use tool__listServers({"availability":"inventory"}) to inspect registered servers and Server IDs.
+- Attach Server ID "srv_123" with agent__updateAgent(id:"<agentId>", externalMcpServers:["srv_123"]).
+- If changing this agent is the wrong move, use agent__listAgents(type="configs") and
   delegate with agent__startSession(agentId:"<agentId>", task:"...").
 ```
 
@@ -255,9 +255,9 @@ Recovery:
 
 Allowed cross-group recovery examples:
 
-- `tool__list(...)` to inspect current session visibility vs global inventory
-- `agent__update(...)` to attach missing external capabilities
-- `agent__list(type="configs")` to find a better-equipped agent
+- `tool__listServers(...)` to inspect current session visibility vs global inventory
+- `agent__updateAgent(...)` to attach missing external capabilities
+- `agent__listAgents(type="configs")` to find a better-equipped agent
 - `agent__startSession(...)` to delegate when the current session should not be mutated
 
 This exception is for **environment repair / delegation only**. Do not use it to suggest unrelated business-domain actions.
@@ -266,8 +266,8 @@ This exception is for **environment repair / delegation only**. Do not use it to
 
 **Rule:** If the current session lacks a capability, recovery guidance must expose at least one **repair path** and one **continuation path**.
 
-- **Repair path:** fix the current environment (`tool__list`, `agent__update`, reconnect, reattach)
-- **Continuation path:** continue the task elsewhere (`agent__list`, `agent__startSession`, delegated child session)
+- **Repair path:** fix the current environment (`tool__listServers`, `agent__updateAgent`, reconnect, reattach)
+- **Continuation path:** continue the task elsewhere (`agent__listAgents`, `agent__startSession`, delegated child session)
 
 **Anti-Pattern:**
 
@@ -281,9 +281,9 @@ This exception is for **environment repair / delegation only**. Do not use it to
 ✗ Tool not available in this session.
 
 Recovery:
-- Use tool__list({"availability":"session"}) to confirm the current callable set.
-- Use tool__list({"availability":"inventory"}) to inspect registered servers.
-- Attach the missing capability with agent__update(...).
+- Use tool__listServers({"availability":"session"}) to confirm the current callable set.
+- Use tool__listServers({"availability":"inventory"}) to inspect registered servers.
+- Attach the missing capability with agent__updateAgent(...).
 - Or delegate to another agent with agent__startSession(...).
 ```
 

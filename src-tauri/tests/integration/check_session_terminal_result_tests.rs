@@ -190,7 +190,7 @@ fn terminal_error_check_session_result_marks_session_as_recoverable() {
         .expect("structured content expected");
 
     assert!(text.contains("ended abnormally (error)"));
-    assert!(text.contains("Use messageToSession"));
+    assert!(text.contains("Use agent__messageToSession"));
     assert_eq!(
         structured
             .get("responseStatus")

@@ -345,20 +345,20 @@ async fn list_processes_prefers_read_output_for_finished_processes() {
     let text = extract_text_content(&list_result);
     assert!(
         text.contains(&format!(
-            "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+            "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
             process_id
         )),
         "finished processes should point to readProcessOutput first: {text}"
     );
     assert!(
         !text.contains(&format!(
-            "Use waitForProcess('{}', 0) to check status",
+            "Use workspace__waitForProcess('{}', 0) to check status",
             process_id
         )),
         "finished processes should not suggest polling again as the primary next step: {text}"
     );
     assert!(
-        !text.contains("Use stopProcess"),
+        !text.contains("workspace__stopProcess") && !text.contains("stopProcess("),
         "finished processes should not suggest stopProcess: {text}"
     );
 }
@@ -405,7 +405,7 @@ async fn read_process_output_avoids_stop_hint_after_process_has_finished() {
         "finished processes should suggest analyzing the finished output: {text}"
     );
     assert!(
-        !text.contains("Use stopProcess"),
+        !text.contains("workspace__stopProcess") && !text.contains("stopProcess("),
         "finished processes should not suggest stopProcess: {text}"
     );
     assert!(
