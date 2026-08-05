@@ -328,7 +328,7 @@ pub async fn count_session_turns(session_id: &str) -> usize {
 pub fn check_session_next_actions(session_id: &str) -> Vec<Value> {
     vec![
         json!({
-            "toolName": "checkSession",
+            "toolName": "agent__checkSession",
             "reason": "Poll the session again for the latest status and turn count.",
             "args": {
                 "sessionId": session_id,
@@ -336,7 +336,7 @@ pub fn check_session_next_actions(session_id: &str) -> Vec<Value> {
             }
         }),
         json!({
-            "toolName": "checkSession",
+            "toolName": "agent__checkSession",
             "reason": "Block again later when you want to wait for a terminal result.",
             "args": {
                 "sessionId": session_id,
@@ -377,7 +377,7 @@ pub async fn wait_until_session_terminal(
         if let Some(ref flag) = caller_cancel_pending {
             if flag.load(Ordering::Relaxed) {
                 return Err(format!(
-                    "awaitAgent interrupted: calling session was cancelled while waiting for '{}'",
+                    "agent__checkSession interrupted: calling session was cancelled while waiting for '{}'",
                     session_id
                 ));
             }
@@ -399,7 +399,7 @@ pub async fn wait_until_session_terminal(
             let elapsed = started_at.elapsed();
             if elapsed >= limit {
                 return Err(format!(
-                    "awaitAgent timed out after {}s for session {}",
+                    "agent__checkSession timed out after {}s for session {}",
                     timeout_seconds, session_id
                 ));
             }
@@ -526,12 +526,12 @@ pub async fn handle_wait_timeout_result(
 
                 let text = if is_spawn {
                     format!(
-                        "Child session created (ID: {}) but waiting for completion timed out after {}s.\n\nThe agent is likely still working. Use checkSession(sessionId=\"{}\", wait=true) later to fetch the final result.{}\n\nCurrent status: {}",
+                        "Child session created (ID: {}) but waiting for completion timed out after {}s.\n\nThe agent is likely still working. Use agent__checkSession(sessionId=\"{}\", wait=true) later to fetch the final result.{}\n\nCurrent status: {}",
                         session_id, timeout_seconds, session_id, latest_msgs_str, session_status
                     )
                 } else {
                     format!(
-                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use list(type=\"sessions\") to confirm it is still active.{}\n\nCurrent status: {}",
+                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call agent__checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use agent__listAgents(type=\"sessions\") to confirm it is still active.{}\n\nCurrent status: {}",
                         session_id, timeout_seconds, session_id, latest_msgs_str, session_status
                     )
                 };

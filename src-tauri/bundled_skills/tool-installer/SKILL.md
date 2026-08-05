@@ -20,9 +20,9 @@ This skill registers MCP servers into the current LibrAgent session or the user'
 
 1. **Identify sources** — Consult [app_paths.md](references/app_paths.md) for config locations.
 2. **Scan** — Read detected config files. Resolve environment variables (`%APPDATA%`, `%USERPROFILE%`, `~`) before reading. If a project-level config (e.g., `.cursor/mcp.json`) exists in the current workspace, prioritize it.
-3. **Compare** — List all found MCP servers. Use `tool__list` to compare with LibrAgent's current registrations. Mark servers as new or already registered.
+3. **Compare** — List all found MCP servers. Use `tool__listServers` to compare with LibrAgent's current registrations. Mark servers as new or already registered.
 4. **Select** — Present the list to the user. Ask which servers to import (all or specific ones).
-5. **Register** — Use `tool__register` for each selected server. Skip duplicates (same name and command).
+5. **Register** — Use `tool__registerServer` for each selected server. Skip duplicates (same name and command).
 6. **(Optional)** — Offer to update `claude_desktop_config.json` as well.
 
 **Schema notes:** VS Code Copilot uses `servers` as the root key; Zed uses `context_servers`. Normalize entries before registration.
@@ -39,7 +39,7 @@ Identify the source and transport details.
 
 #### 2. Register in LibrAgent
 
-Use the `tool__register` tool to add the MCP server.
+Use the `tool__registerServer` tool to add the MCP server.
 
 **Example Task:**
 "Register the 'everything' MCP server using npx."

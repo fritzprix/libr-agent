@@ -64,7 +64,7 @@ pub(super) fn planning_follow_up_read_notice(
                 state_label
             ),
             hint: format!(
-                "Use getCurrentState to load the {} once the planning store settles.",
+                "Use planning__getCurrentState to load the {} once the planning store settles.",
                 state_label
             ),
         }
@@ -75,7 +75,7 @@ pub(super) fn planning_follow_up_read_notice(
                 state_label
             ),
             hint: format!(
-                "Use getCurrentState to reload the {} after the internal error clears.",
+                "Use planning__getCurrentState to reload the {} after the internal error clears.",
                 state_label
             ),
         }

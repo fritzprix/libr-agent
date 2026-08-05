@@ -61,7 +61,7 @@ fn get_page_content_description_marks_read_after_navigation_workflow() {
     let description = browser_tool_description("getPageContent");
 
     assert!(
-        description.contains("This is the normal next step after `navigateToUrl`"),
+        description.contains("This is the normal next step after `browser__navigateToUrl`"),
         "getPageContent should be described as the immediate follow-up to navigation"
     );
 }
@@ -90,7 +90,7 @@ fn list_interactable_description_explains_selector_discovery_role() {
     let description = browser_tool_description("listInteractable");
 
     assert!(
-        description.contains("before `clickElement` or `inputText`"),
+        description.contains("before `browser__clickElement` or `browser__inputText`"),
         "listInteractable should explain that it is the selector discovery step"
     );
     assert!(
@@ -108,7 +108,7 @@ fn close_session_description_mentions_state_reset() {
         "closeSession should explain that it resets stored browser session state"
     );
     assert!(
-        description.contains("starting over with `createSession`"),
+        description.contains("starting over with `browser__createSession`"),
         "closeSession should point agents toward the recovery path"
     );
 }
@@ -122,7 +122,7 @@ fn fetch_description_marks_stateless_alternative() {
         "fetch should be framed as the stateless alternative"
     );
     assert!(
-        description.contains("instead of chaining multiple `navigateToUrl` calls"),
+        description.contains("instead of chaining multiple `browser__navigateToUrl` calls"),
         "fetch should explicitly discourage repeated navigation for independent lookups"
     );
     assert!(

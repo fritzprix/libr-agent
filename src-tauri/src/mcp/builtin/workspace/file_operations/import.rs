@@ -149,7 +149,7 @@ impl WorkspaceServer {
             )
             .guidance(vec![
                 "Verify each srcAbsPath exists and is readable on the local filesystem".to_string(),
-                "Use listDirectory to confirm the destination path inside the workspace"
+                "Use workspace__listDirectory to confirm the destination path inside the workspace"
                     .to_string(),
                 "Retry with one file first to isolate the failing item".to_string(),
             ])

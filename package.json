@@ -60,6 +60,7 @@
     "assistants:validate": "node scripts/validate-assistant-skills.cjs",
     "skills:audit": "node scripts/audit-bundled-skills.cjs",
     "skills:mirror:check": "node scripts/check-skills-mirror-drift.cjs",
+    "tool-names:check": "node scripts/check-obsolete-tool-names.cjs",
     "skill:validate": "python .agents/skills/skill-creator/scripts/validate_skill.py",
     "skill:package": "python .agents/skills/skill-creator/scripts/package_skill.py",
     "refactor:prepare": "node scripts/refactor-pipeline.js prepare",

@@ -205,6 +205,7 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 Lade das neueste Installationsprogramm für deine Plattform von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.38_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64-setup.exe) · [`LibrAgent_0.8.38_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.38_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.38_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.AppImage) · [`LibrAgent_0.8.38_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.deb) · [`LibrAgent-0.8.38-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent-0.8.38-1.x86_64.rpm)
@@ -234,7 +235,7 @@ pnpm tauri dev
 
 **Schritt 3 — Erstelle deinen ersten Agenten**
 
-- _"Erstelle einen Recherche-Agenten für Wettbewerbsintelligenz"_ → über Assistants-Einstellungen oder `agent__create` erstellen
+- _"Erstelle einen Recherche-Agenten für Wettbewerbsintelligenz"_ → über Assistants-Einstellungen oder `agent__createAgent` erstellen
 - _"Baue ein Recherche-Team mit meinen aktuellen Tools"_ → `teamwork` scaffoldet Rollen und gemeinsamen Workspace
 - _"Führe parallele Recherche-Subtasks aus"_ → `delegate` startet und überwacht Kind-Sitzungen
 

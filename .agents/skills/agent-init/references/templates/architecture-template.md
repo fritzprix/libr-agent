@@ -32,11 +32,12 @@ Brief description of system components, layer separation, and key runtime flows:
 ```
 
 ### Key File Locations
+
 | File / Directory Path | Purpose / Description | Key Exports / Responsibilities |
-|---|---|---|
-| `{key_path_1}` | `{purpose_1}` | `{responsibility_1}` |
-| `{key_path_2}` | `{purpose_2}` | `{responsibility_2}` |
-| `{key_path_3}` | `{purpose_3}` | `{responsibility_3}` |
+| --------------------- | --------------------- | ------------------------------ |
+| `{key_path_1}`        | `{purpose_1}`         | `{responsibility_1}`           |
+| `{key_path_2}`        | `{purpose_2}`         | `{responsibility_2}`           |
+| `{key_path_3}`        | `{purpose_3}`         | `{responsibility_3}`           |
 
 ---
 

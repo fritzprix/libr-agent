@@ -9,8 +9,8 @@ This skill provides a systematic workflow for retrieving conversation sessions, 
 
 ## Prerequisites
 
-- The agent session must have the optional `history` and `knowledge` builtin services enabled. If tool calls fail with a "not enabled" error, enable them via Assistants settings or `agent__update` before running this workflow.
-- Runtime tool names use the `server__tool` format shown below (for example `history__list`, `knowledge__record_knowledge`). Match names from the session tool list.
+- The agent session must have the optional `history` and `knowledge` builtin services enabled. If tool calls fail with a "not enabled" error, enable them via Assistants settings or `agent__updateAgent` before running this workflow.
+- Runtime tool names use the `server__tool` format shown below (for example `history__listSessions`, `knowledge__recordKnowledge`). Match names from the session tool list.
 
 ## Execution Triggers
 
@@ -28,7 +28,7 @@ Determine which sessions to analyze based on the user's request:
 - **Recent**: The last N sessions from the history.
 - **Current**: Focus only on the active or most recent session.
 
-Use `history__list` to retrieve the relevant `sessionId` list if the scope is broader than the current session.
+Use `history__listSessions` to retrieve the relevant `sessionId` list if the scope is broader than the current session.
 
 ### 2. Context Preview & Filtering
 For each target session:
@@ -47,14 +47,14 @@ Identify and structure the following components:
 - **Content**: A concise, stand-alone summary of the knowledge.
 
 ### 4. Structured Recording
-Use the `knowledge__record_knowledge` tool to persist the findings:
+Use the `knowledge__recordKnowledge` tool to persist the findings:
 - **content**: The distilled summary.
 - **entities/relationships**: Structured data for the graph.
 - **source**: Reference the source `sessionId` or date for traceability.
 - **tags**: Include `["distilled", "auto-knowledge", "context-sync"]`.
 
 ## Safety & Efficiency
-- **De-duplication**: Before recording, use `knowledge__search_knowledge` to check if similar knowledge already exists to avoid redundant entries.
+- **De-duplication**: Before recording, use `knowledge__searchKnowledge` to check if similar knowledge already exists to avoid redundant entries.
 - **Relevance**: Skip sessions that are purely social or don't contain reusable technical/project context.
 
 ## References

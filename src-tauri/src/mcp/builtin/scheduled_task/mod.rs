@@ -136,8 +136,10 @@ impl BuiltinMCPServer for ScheduledTaskServer {
                 ));
             }
             if tasks.len() > 3 {
-                context_lines
-                    .push("Use listScheduledTasks() for the full schedule set.".to_string());
+                context_lines.push(
+                    "Use scheduled_task__listScheduledTasks() for the full schedule set."
+                        .to_string(),
+                );
             }
         }
 

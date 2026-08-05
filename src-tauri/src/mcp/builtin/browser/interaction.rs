@@ -27,8 +27,8 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before clicking elements"
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before clicking elements"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -59,7 +59,7 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                     vec![
                         "Verify the selector is correct CSS syntax".to_string(),
                         "The element might be lazy-loaded. Use `scrollPage` to load more content down the page.".to_string(),
-                        "Use listInteractable to find valid selectors".to_string(),
+                        "Use browser__listInteractable to find valid selectors".to_string(),
                     ],
                     ToolGroup::Browser,
                 ));
@@ -69,9 +69,9 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                     "Click element",
                     &format!("Element with selector '{}' is not visible", selector),
                     vec![
-                        "The element exists but is hidden. Use `getPageContent({})` to analyze the page structure and find a parent container or toggle button.".to_string(),
+                        "The element exists but is hidden. Use `browser__getPageContent({})` to analyze the page structure and find a parent container or toggle button.".to_string(),
                         "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
-                        "Use `listInteractable` to find visible elements that might reveal this target.".to_string(),
+                        "Use `browser__listInteractable` to find visible elements that might reveal this target.".to_string(),
                     ],
                     ToolGroup::Browser,
                 ));
@@ -88,7 +88,7 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                 vec![
                     "Verify the selector is correct CSS syntax".to_string(),
                     "Try using `scrollPage` to reveal lazy-loaded elements".to_string(),
-                    "Use listInteractable to find valid selectors".to_string(),
+                    "Use browser__listInteractable to find valid selectors".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -117,8 +117,8 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before inputting text"
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before inputting text"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -175,7 +175,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                     vec![
                         "Verify the selector targets an input/textarea element".to_string(),
                         "The element might be lazy-loaded. Use `scrollPage` to load more content down the page.".to_string(),
-                        "Use listInteractable to find valid selectors".to_string(),
+                        "Use browser__listInteractable to find valid selectors".to_string(),
                     ],
                     ToolGroup::Browser,
                 ));
@@ -185,9 +185,9 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                     "Input text",
                     &format!("Element with selector '{}' is not visible", selector),
                     vec![
-                        "The input is hidden. Use `getPageContent({})` to find the form section or toggle that contains it.".to_string(),
+                        "The input is hidden. Use `browser__getPageContent({})` to find the form section or toggle that contains it.".to_string(),
                         "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
-                        "Use `clickElement` on the parent container or toggle to reveal the input.".to_string(),
+                        "Use `browser__clickElement` on the parent container or toggle to reveal the input.".to_string(),
                     ],
                     ToolGroup::Browser,
                 ));
@@ -204,7 +204,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                 vec![
                     "Verify the selector targets an input/textarea element".to_string(),
                     "Try using `scrollPage` to reveal lazy-loaded elements".to_string(),
-                    "Use listInteractable with filterType='semantic_input'".to_string(),
+                    "Use browser__listInteractable with filterType='semantic_input'".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -233,8 +233,9 @@ pub async fn scroll_page(server: &BrowserServer, args: Value) -> Result<MCPResul
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before scrolling".to_string(),
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before scrolling"
+                    .to_string(),
             ])
             .to_mcp_result());
         }
@@ -289,8 +290,8 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
                 ToolGroup::Browser,
             )
             .guidance(vec![
-                "Use createSession FIRST to start a browser session".to_string(),
-                "Wait for createSession to return a success message before listing elements"
+                "Use browser__createSession FIRST to start a browser session".to_string(),
+                "Wait for browser__createSession to return a success message before listing elements"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -329,7 +330,7 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
                 vec![
                     "Verify the browser session is active".to_string(),
                     "Ensure the page has fully loaded".to_string(),
-                    "Try `getPageContent({})` first to see page structure".to_string(),
+                    "Try `browser__getPageContent({})` first to see page structure".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -345,8 +346,8 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
                 &e,
                 vec![
                     "The page may have returned unexpected data".to_string(),
-                    "If the page is stale or broken, use `navigateToUrl` with a URL to replace the current page in this session.".to_string(),
-                    "Use `getPageContent({})` to verify page structure".to_string(),
+                    "If the page is stale or broken, use `browser__navigateToUrl` with a URL to replace the current page in this session.".to_string(),
+                    "Use `browser__getPageContent({})` to verify page structure".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -356,10 +357,10 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
     let hint = SuccessHint::new(
         formatted_text,
         vec![
-            "Use `clickElement` with the selector.".to_string(),
+            "Use `browser__clickElement` with the selector.".to_string(),
             "If the target is off-screen, use `scrollPage` to bring it into the viewport."
                 .to_string(),
-            "Use `getPageContent({})` to see the full page structure regardless of scroll position."
+            "Use `browser__getPageContent({})` to see the full page structure regardless of scroll position."
                 .to_string(),
         ],
     );
@@ -565,8 +566,8 @@ pub async fn create_rich_response(
     let hint = SuccessHint::new(
         summary,
         vec![
-            "Use `getPageContent({})` to read the full page content.".to_string(),
-            "Use `clickElement` to interact with elements.".to_string(),
+            "Use `browser__getPageContent({})` to read the full page content.".to_string(),
+            "Use `browser__clickElement` to interact with elements.".to_string(),
             "Use `inputText` to type into forms.".to_string(),
         ],
     );

@@ -20,7 +20,7 @@ Use when distilling sessions into the knowledge base.
 
 ## Extraction block template
 
-Before `knowledge__record_knowledge`:
+Before `knowledge__recordKnowledge`:
 
 ```markdown
 - **content**: Stand-alone paragraph (no "as discussed")
@@ -34,12 +34,12 @@ Before `knowledge__record_knowledge`:
 
 | User ask | Scope |
 | --- | --- |
-| "today" | `history__list` filter by date |
+| "today" | `history__listSessions` filter by date |
 | "recent N" | first N session IDs |
 | "this chat" | current session only |
 
 ## De-duplication
 
-1. `knowledge__search_knowledge` with key terms from draft content.
+1. `knowledge__searchKnowledge` with key terms from draft content.
 2. If match >80% overlap → update or skip, do not create duplicate.
 3. Prefer merging into one stronger entry over many fragments.

@@ -69,7 +69,7 @@ async fn read_file_truncates_large_output_and_guides_next_chunk() {
         "chunk summary should explain why the preview stopped: {text}"
     );
     assert!(
-        text.contains("Next chunk: readFile({\"path\": \"big.txt\", \"offset\":"),
+        text.contains("Next chunk: workspace__readFile({\"path\": \"big.txt\", \"offset\":"),
         "response should tell the agent how to continue reading: {text}"
     );
     assert!(
@@ -196,7 +196,7 @@ async fn read_file_empty_file_preserves_standard_success_shape() {
         "empty-file response should report a complete zero-line read: {text}"
     );
     assert!(
-        !text.contains("Next chunk: readFile("),
+        !text.contains("Next chunk: workspace__readFile("),
         "empty-file response should not suggest a nonexistent follow-up chunk: {text}"
     );
 
@@ -344,7 +344,9 @@ async fn read_file_supports_offset_and_size_forward() {
         "range-limited reads should report remainder against totalLines: {text}"
     );
     assert!(
-        text.contains("Next chunk: readFile({\"path\": \"test.txt\", \"offset\": 5, \"size\": 3})"),
+        text.contains(
+            "Next chunk: workspace__readFile({\"path\": \"test.txt\", \"offset\": 5, \"size\": 3})"
+        ),
         "range-limited reads should include a copy-pasteable next chunk: {text}"
     );
 
@@ -382,7 +384,7 @@ async fn read_file_complete_reports_total_lines_without_next_chunk() {
         "full-file reads should say complete with totalLines: {text}"
     );
     assert!(
-        !text.contains("Next chunk: readFile("),
+        !text.contains("Next chunk: workspace__readFile("),
         "complete reads should not suggest another chunk: {text}"
     );
 
@@ -426,7 +428,7 @@ async fn read_file_reached_end_from_mid_file_is_not_complete() {
         "mid-to-end reads should distinguish EOF from complete-file: {text}"
     );
     assert!(
-        !text.contains("Next chunk: readFile("),
+        !text.contains("Next chunk: workspace__readFile("),
         "EOF without remaining lines should not suggest a next chunk: {text}"
     );
 

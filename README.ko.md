@@ -205,6 +205,7 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.38_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64-setup.exe) · [`LibrAgent_0.8.38_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.38_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.38_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.AppImage) · [`LibrAgent_0.8.38_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.deb) · [`LibrAgent-0.8.38-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent-0.8.38-1.x86_64.rpm)
@@ -234,7 +235,7 @@ pnpm tauri dev
 
 **3 단계 — 첫 에이전트 생성**
 
-- _"경쟁 정보 수집을 위한 리서처 에이전트 생성"_ → Assistants 설정 또는 `agent__create`로 생성
+- _"경쟁 정보 수집을 위한 리서처 에이전트 생성"_ → Assistants 설정 또는 `agent__createAgent`로 생성
 - _"현재 도구로 연구 팀 빌드"_ → `teamwork`이 역할과 공유 워크스페이스 scaffold
 - _"병렬 리서치 서브태스크 실행"_ → `delegate`가 자식 세션 생성 및 모니터링
 

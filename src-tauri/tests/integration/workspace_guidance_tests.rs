@@ -291,7 +291,7 @@ async fn persistent_shell_uses_shell_specific_guidance_after_changing_cwd() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("readFile and listDirectory still use workspace root, not the shell CWD"),
+        text.contains("workspace__readFile and workspace__listDirectory still use workspace root, not the shell CWD"),
         "persistent shell guidance should explicitly warn about workspace-root file tools: {text}"
     );
     assert!(

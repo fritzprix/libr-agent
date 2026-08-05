@@ -47,8 +47,8 @@ async fn planning_context_surfaces_read_failures_instead_of_empty_state() {
         "todo read failures should not be reported as an empty task list: {text}"
     );
     assert!(
-        text.contains("Use getCurrentState to reload the current goal state")
-            || text.contains("Use getCurrentState to load the current goal state"),
+        text.contains("Use planning__getCurrentState to reload the current goal state")
+            || text.contains("Use planning__getCurrentState to load the current goal state"),
         "goal reload guidance should be visible: {text}"
     );
     assert!(

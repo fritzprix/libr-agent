@@ -66,7 +66,7 @@ pub fn operation_failed_error(
     .to_mcp_result()
 }
 
-/// Create a guided error for a missing agent configuration during `startSession`.
+/// Create a guided error for a missing agent configuration during `agent__startSession`.
 pub fn missing_agent_config_error(agent_id: &str) -> MCPResult {
     guided_error(
         ErrorCategory::ResourceNotFound,
@@ -74,9 +74,10 @@ pub fn missing_agent_config_error(agent_id: &str) -> MCPResult {
         ToolGroup::Agent,
     )
     .with_guidance(vec![
-        "Use list(type=\"configs\") to see available agent configurations".to_string(),
+        "Use agent__listAgents(type=\"configs\") to see available agent configurations".to_string(),
         format!("Verify '{}' exactly matches a listed agent ID", agent_id),
-        "Retry startSession with a valid agentId copied from list(type=\"configs\")".to_string(),
+        "Retry agent__startSession with a valid agentId copied from agent__listAgents(type=\"configs\")"
+            .to_string(),
     ])
     .to_mcp_result()
 }
@@ -89,7 +90,7 @@ pub fn missing_agent_session_error(session_id: &str) -> MCPResult {
         ToolGroup::Agent,
     )
     .with_guidance(vec![
-        "Use list(type=\"sessions\") to see active delegated sessions".to_string(),
+        "Use agent__listAgents(type=\"sessions\") to see active delegated sessions".to_string(),
         format!(
             "Verify sessionId '{}' matches one of the listed active session IDs",
             session_id

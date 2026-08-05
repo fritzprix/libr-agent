@@ -101,7 +101,7 @@ pub async fn list_sessions(_server: &HistoryServer, args: Value) -> Result<MCPRe
 
     Ok(SuccessHint::new(
         text,
-        vec!["Use readSession(sessionId=\"...\") to inspect messages".to_string()],
+        vec!["Use history__readSession(sessionId=\"...\") to inspect messages".to_string()],
     )
     .to_mcp_result_with_data(Some(json!({
         "sessions": paged.items,
@@ -134,8 +134,8 @@ pub async fn read_session(_server: &HistoryServer, args: Value) -> Result<MCPRes
                 "Read Session",
                 &format!("Session '{}' not found", args.session_id),
                 vec![
-                    "Use list() to find a valid session ID".to_string(),
-                    "Retry readSession with a copied sessionId from list()".to_string(),
+                    "Use history__listSessions() to find a valid session ID".to_string(),
+                    "Retry history__readSession with a copied sessionId from history__listSessions()".to_string(),
                 ],
                 ToolGroup::Agent,
             ));
@@ -158,7 +158,10 @@ pub async fn read_session(_server: &HistoryServer, args: Value) -> Result<MCPRes
 
     Ok(SuccessHint::new(
         text,
-        vec!["Use readMessage(messageId=\"...\") to page through a large message body".to_string()],
+        vec![
+            "Use history__readMessage(messageId=\"...\") to page through a large message body"
+                .to_string(),
+        ],
     )
     .to_mcp_result_with_data(Some(json!(response))))
 }
@@ -184,7 +187,7 @@ pub async fn read_message(_server: &HistoryServer, args: Value) -> Result<MCPRes
                 "Read Message",
                 &format!("Message '{}' not found", args.message_id),
                 vec![
-                    "Use readSession(sessionId=\"...\") to list message IDs".to_string(),
+                    "Use history__readSession(sessionId=\"...\") to list message IDs".to_string(),
                     "Retry readMessage with a copied messageId from readSession()".to_string(),
                 ],
                 ToolGroup::Agent,
@@ -217,7 +220,7 @@ pub async fn read_message(_server: &HistoryServer, args: Value) -> Result<MCPRes
         next_offset
             .map(|offset| {
                 vec![format!(
-                    "Use readMessage(messageId=\"{}\", offsetChars={offset}) for the next chunk",
+                    "Use history__readMessage(messageId=\"{}\", offsetChars={offset}) for the next chunk",
                     message.id
                 )]
             })
@@ -252,8 +255,8 @@ pub async fn search_history(
                 "Search History",
                 &format!("Session '{}' not found", session_id),
                 vec![
-                    "Use list() to find a valid session ID".to_string(),
-                    "Retry search() with a copied sessionId from list()".to_string(),
+                    "Use history__listSessions() to find a valid session ID".to_string(),
+                    "Retry history__searchHistory() with a copied sessionId from history__listSessions()".to_string(),
                 ],
                 ToolGroup::Agent,
             ));
@@ -275,8 +278,10 @@ pub async fn search_history(
         return Ok(SuccessHint::new(
             text,
             vec![
-                "Use list() to inspect sessions that match your current filters".to_string(),
-                "Relax sessionId/agentId/from/to filters and retry search()".to_string(),
+                "Use history__listSessions() to inspect sessions that match your current filters"
+                    .to_string(),
+                "Relax sessionId/agentId/from/to filters and retry history__searchHistory()"
+                    .to_string(),
             ],
         )
         .to_mcp_result_with_data(Some(json!({
@@ -299,8 +304,9 @@ pub async fn search_history(
                     session_id
                 ),
                 vec![
-                    "Use list() to confirm the session ID".to_string(),
-                    "Relax agentId/from/to filters and try search() again".to_string(),
+                    "Use history__listSessions() to confirm the session ID".to_string(),
+                    "Relax agentId/from/to filters and try history__searchHistory() again"
+                        .to_string(),
                 ],
                 ToolGroup::Agent,
             ));
@@ -375,9 +381,9 @@ pub async fn search_history(
     Ok(SuccessHint::new(
         text,
         vec![
-            "Use readSession(sessionId=\"...\") to inspect the surrounding conversation"
+            "Use history__readSession(sessionId=\"...\") to inspect the surrounding conversation"
                 .to_string(),
-            "Use readMessage(messageId=\"...\") to expand a specific hit".to_string(),
+            "Use history__readMessage(messageId=\"...\") to expand a specific hit".to_string(),
         ],
     )
     .to_mcp_result_with_data(Some(json!({

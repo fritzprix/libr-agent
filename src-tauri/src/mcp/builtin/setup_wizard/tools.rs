@@ -30,7 +30,7 @@ Returns:
 
 💡 Suggested operations:
 • Review installed tools — no need to reinstall what you already have
-• getSetupGuide(tool) applies only to missing tools
+• setup-wizard__getSetupGuide(tool) applies only to missing tools
 • Available guides: node, python, uv, docker, git"
                 .to_string(),
         input_schema: object_schema(SchemaProperties::new(), vec![]),
@@ -79,8 +79,8 @@ The guide includes:
 • Post-installation notes and configuration tips
 
 💡 Example workflow:
-1. (Optional) Call detectPlatform to identify your system
-2. Call getSetupGuide(tool, platform) to get instructions
+1. (Optional) Call setup-wizard__detectPlatform to identify your system
+2. Call setup-wizard__getSetupGuide(tool, platform) to get instructions
 3. Follow the numbered steps in the response
 4. Run verification command to confirm installation"
             .to_string(),

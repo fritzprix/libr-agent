@@ -205,6 +205,7 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows：** [`LibrAgent_0.8.38_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64-setup.exe) · [`LibrAgent_0.8.38_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64_en-US.msi)
 - **macOS（Apple Silicon）：** [`LibrAgent_0.8.38_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_aarch64.dmg)
 - **Linux：** [`LibrAgent_0.8.38_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.AppImage) · [`LibrAgent_0.8.38_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.deb) · [`LibrAgent-0.8.38-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent-0.8.38-1.x86_64.rpm)
@@ -234,7 +235,7 @@ pnpm tauri dev
 
 **第 3 步——创建你的第一个代理**
 
-- *"为竞争情报创建研究者代理"*→ 通过 Assistants 设置或 `agent__create` 创建
+- *"为竞争情报创建研究者代理"*→ 通过 Assistants 设置或 `agent__createAgent` 创建
 - *"用我的当前工具构建研究团队"*→ `teamwork` 搭建角色和共享工作空间
 - *"运行并行研究子任务"*→ `delegate` 生成并监控子会话
 

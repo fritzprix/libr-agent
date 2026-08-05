@@ -99,9 +99,9 @@ pub async fn add_todo(
                 ToolGroup::Planning,
             )
             .with_guidance(vec![
-                "Use updateTodo(todoId=..., description='...') to modify the existing todo"
+                "Use planning__updateTodo(todoId=..., description='...') to modify the existing todo"
                     .to_string(),
-                "Use getCurrentState to see existing todos and their IDs".to_string(),
+                "Use planning__getCurrentState to see existing todos and their IDs".to_string(),
                 "Use a different description if this is a separate task".to_string(),
             ])
             .to_mcp_result());
@@ -123,7 +123,7 @@ pub async fn add_todo(
     {
         Ok(id) => {
             let mut next_hints = vec![format!(
-                "Use updateTodo(id={}, action='done') to mark as done",
+                "Use planning__updateTodo(id={}, action='done') to mark as done",
                 id
             )];
             let summary_text = match repo.get_planning_summary(session_id).await {
@@ -148,7 +148,7 @@ pub async fn add_todo(
             "add this todo",
             &e,
             vec![
-                "Use getCurrentState to verify whether the todo was created.".to_string(),
+                "Use planning__getCurrentState to verify whether the todo was created.".to_string(),
                 "Retry only if the todo is still missing.".to_string(),
             ],
         )),
@@ -191,8 +191,8 @@ pub async fn check_todo(
                 ToolGroup::Planning,
             )
             .with_guidance(vec![
-                "Use getCurrentState to see current todos and their IDs".to_string(),
-                "Copy the ID exactly from the Planning service context or getCurrentState output"
+                "Use planning__getCurrentState to see current todos and their IDs".to_string(),
+                "Copy the ID exactly from the Planning service context or planning__getCurrentState output"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -202,7 +202,7 @@ pub async fn check_todo(
                 "read the requested todo",
                 &e,
                 vec![
-                    "Use getCurrentState to refresh the current todo list.".to_string(),
+                    "Use planning__getCurrentState to refresh the current todo list.".to_string(),
                     "Retry after the planning store settles.".to_string(),
                 ],
             ))
@@ -216,7 +216,8 @@ pub async fn check_todo(
             "update this todo",
             &e,
             vec![
-                "Use getCurrentState to verify the final todo status before retrying.".to_string(),
+                "Use planning__getCurrentState to verify the final todo status before retrying."
+                    .to_string(),
                 "Retry only if the status did not change.".to_string(),
             ],
         ));
@@ -240,7 +241,7 @@ pub async fn check_todo(
                 let remaining = updated_todos.iter().filter(|t| !t.is_checked).count();
                 if remaining == 0 && !updated_todos.is_empty() {
                     vec![
-                        "All todos complete! Use reflect to review what went well and what could improve."
+                        "All todos complete! Use planning__reflect to review what went well and what could improve."
                             .to_string(),
                     ]
                 } else if remaining > 0 {
@@ -309,8 +310,8 @@ pub async fn cancel_todo(
                 ToolGroup::Planning,
             )
             .with_guidance(vec![
-                "Use getCurrentState to see current todos and their IDs".to_string(),
-                "Copy the ID exactly from the Planning service context or getCurrentState output"
+                "Use planning__getCurrentState to see current todos and their IDs".to_string(),
+                "Copy the ID exactly from the Planning service context or planning__getCurrentState output"
                     .to_string(),
             ])
             .to_mcp_result());
@@ -320,7 +321,7 @@ pub async fn cancel_todo(
                 "read the requested todo",
                 &e,
                 vec![
-                    "Use getCurrentState to refresh the current todo list.".to_string(),
+                    "Use planning__getCurrentState to refresh the current todo list.".to_string(),
                     "Retry after the planning store settles.".to_string(),
                 ],
             ))
@@ -334,15 +335,16 @@ pub async fn cancel_todo(
             "remove this todo",
             &e,
             vec![
-                "Use getCurrentState to verify whether the todo is still present.".to_string(),
+                "Use planning__getCurrentState to verify whether the todo is still present."
+                    .to_string(),
                 "Retry only if the todo was not removed.".to_string(),
             ],
         ));
     }
 
     let mut next_hints = vec![
-        "Use addTodo to create a replacement if needed".to_string(),
-        "Use getCurrentState to verify the updated task list".to_string(),
+        "Use planning__addTodo to create a replacement if needed".to_string(),
+        "Use planning__getCurrentState to verify the updated task list".to_string(),
     ];
     let summary_text = match repo.get_planning_summary(session_id).await {
         Ok(summary_text) => summary_text,

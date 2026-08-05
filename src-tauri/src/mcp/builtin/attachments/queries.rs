@@ -293,7 +293,7 @@ pub async fn read_content(
     };
 
     let mut hints = vec![
-        "Use search to find specific attachments".to_string(),
+        "Use attachments__searchAttachments to find specific attachments".to_string(),
         format!(
             "Use delete with contentId='{}' to remove this attachment",
             args.content_id

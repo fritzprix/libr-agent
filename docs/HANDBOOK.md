@@ -628,6 +628,7 @@ Each stage below is broken into its constituent components with behavioral descr
 
 - **File:** `src-tauri/src/commands/scheduled_task_commands.rs`
 - **Key Functions:** `create_scheduled_task`, `list_scheduled_tasks`, `get_scheduled_task`, `update_scheduled_task`, `toggle_scheduled_task`, `delete_scheduled_task`, `list_session_scheduled_tasks`, `cancel_session_scheduled_task`
+- **Agent-facing MCP tools:** `scheduled_task__createScheduledTask`, `scheduled_task__listScheduledTasks`, `scheduled_task__getScheduledTask`, `scheduled_task__updateScheduledTask`, `scheduled_task__toggleScheduledTask`, `scheduled_task__deleteScheduledTask`, `scheduled_task__scheduleCallback`
 
 #### `services/scheduled_task_service.rs` — Task Service
 

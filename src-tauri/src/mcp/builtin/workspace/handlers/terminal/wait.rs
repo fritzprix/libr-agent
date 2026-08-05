@@ -145,7 +145,7 @@ impl WorkspaceServer {
                     )
                     .guidance(vec![
                         "Wait a few seconds before checking again".to_string(),
-                        "Or use waitForProcess with a non-zero timeout".to_string(),
+                        "Or use workspace__waitForProcess with a non-zero timeout".to_string(),
                     ])
                     .to_mcp_result());
                 }
@@ -169,7 +169,8 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Process is still running in background".to_string(),
-                    "Use waitForProcess(timeout=0) to check status without waiting".to_string(),
+                    "Use workspace__waitForProcess(timeout=0) to check status without waiting"
+                        .to_string(),
                     "Increase timeout parameter if needed".to_string(),
                 ])
                 .to_mcp_result());

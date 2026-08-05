@@ -52,7 +52,7 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
 
     assert!(text.contains("Session session-terminal-123 is terminal (idle)."));
     assert!(text.contains("All subtasks completed successfully."));
-    assert!(text.contains("If you need more detail, use messageToSession"));
+    assert!(text.contains("If you need more detail, use agent__messageToSession"));
     assert_eq!(
         structured
             .get("responseStatus")
@@ -75,7 +75,7 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
         follow_up_action
             .get("toolName")
             .and_then(|value| value.as_str()),
-        Some("messageToSession")
+        Some("agent__messageToSession")
     );
     assert_eq!(
         follow_up_action
@@ -190,7 +190,7 @@ fn terminal_error_check_session_result_marks_session_as_recoverable() {
         .expect("structured content expected");
 
     assert!(text.contains("ended abnormally (error)"));
-    assert!(text.contains("Use messageToSession"));
+    assert!(text.contains("Use agent__messageToSession"));
     assert_eq!(
         structured
             .get("responseStatus")
@@ -207,7 +207,7 @@ fn terminal_error_check_session_result_marks_session_as_recoverable() {
         structured
             .get("recoveryStrategy")
             .and_then(|value| value.as_str()),
-        Some("messageToSession")
+        Some("agent__messageToSession")
     );
 }
 
@@ -235,7 +235,7 @@ fn paused_check_session_result_includes_recovery_guidance() {
         .expect("structured content expected");
 
     assert!(text.contains("is paused and will not make progress on its own"));
-    assert!(text.contains("messageToSession"));
+    assert!(text.contains("agent__messageToSession"));
     assert_eq!(
         structured.get("status").and_then(|value| value.as_str()),
         Some("paused")

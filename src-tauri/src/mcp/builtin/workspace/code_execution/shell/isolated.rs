@@ -65,8 +65,8 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Use listProcesses to see active processes".to_string(),
-                    "Use stopProcess to cancel unnecessary processes".to_string(),
+                    "Use workspace__listProcesses to see active processes".to_string(),
+                    "Use workspace__stopProcess to cancel unnecessary processes".to_string(),
                     "Wait for some processes to finish before starting new ones".to_string(),
                 ])
                 .to_mcp_result());
@@ -431,7 +431,7 @@ impl WorkspaceServer {
 
                 let might_be_interactive = validation::is_likely_interactive_command(command);
                 let mut message = format!(
-                    "Sync timeout handoff: command was still running after {} seconds, so it continues in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending\n\nUse waitForProcess/readProcessOutput only with this processId — completed sync runs (success or failure) never get a processId.",
+                    "Sync timeout handoff: command was still running after {} seconds, so it continues in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending\n\nUse workspace__waitForProcess/workspace__readProcessOutput only with this processId — completed sync runs (success or failure) never get a processId.",
                     timeout_secs, process_id, status
                 );
 
@@ -443,14 +443,14 @@ impl WorkspaceServer {
 
                 let mut next_actions = vec![
                     format!(
-                        "Use waitForProcess(\"{}\", 0) to check current status",
+                        "Use workspace__waitForProcess(\"{}\", 0) to check current status",
                         process_id
                     ),
                     format!(
-                        "Use readProcessOutput(\"{}\", \"both\") to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput(\"{}\", \"both\") to inspect stdout and stderr",
                         process_id
                     ),
-                    format!("Use stopProcess(\"{}\") to terminate it", process_id),
+                    format!("Use workspace__stopProcess(\"{}\") to terminate it", process_id),
                 ];
 
                 if might_be_interactive {

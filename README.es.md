@@ -205,6 +205,7 @@ _Importante: `bootstrap` es una capacidad integrada que se usa frecuentemente ju
 Descarga el último instalador para tu plataforma desde la **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.38_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64-setup.exe) · [`LibrAgent_0.8.38_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.38_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.38_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.AppImage) · [`LibrAgent_0.8.38_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.deb) · [`LibrAgent-0.8.38-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent-0.8.38-1.x86_64.rpm)
@@ -234,7 +235,7 @@ pnpm tauri dev
 
 **Paso 3 — Crea tu primer agente**
 
-- _"Crea un agente investigador para inteligencia competitiva"_ → créalo vía Assistants o `agent__create`
+- _"Crea un agente investigador para inteligencia competitiva"_ → créalo vía Assistants o `agent__createAgent`
 - _"Construye un equipo de investigación con mis herramientas actuales"_ → `teamwork` scaffold roles y workspace compartido
 - _"Ejecuta subtareas de investigación en paralelo"_ → `delegate` inicia y monitoriza sesiones hijas
 

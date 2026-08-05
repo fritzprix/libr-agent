@@ -346,7 +346,7 @@ fn write_file_then_shell_guidance() -> Vec<String> {
     vec![
         "Shell could not parse nested quotes or a heredoc in this one-liner.".to_string(),
         format!(
-            "Use writeFile to save the script, then {} with a short command (e.g. `bash script.sh` or `python3 script.py`).",
+            "Use workspace__writeFile to save the script, then {} with a short command (e.g. `bash script.sh` or `python3 script.py`).",
             RUN_SHELL_TOOL
         ),
         "Do not embed multi-line scripts with nested quotes inside a single shell call.".to_string(),
@@ -367,15 +367,15 @@ pub fn shell_command_failure_guidance(
         Some(1) => vec![
             "General command failure - review error output above".to_string(),
             "Verify command syntax and required files exist".to_string(),
-            "Use listDirectory to check file paths".to_string(),
+            "Use workspace__listDirectory to check file paths".to_string(),
         ],
         Some(2) => vec![
             "Misuse of shell command or invalid arguments".to_string(),
             format!(
-                "For multi-line or quote-heavy scripts, use writeFile then {} with a short command.",
+                "For multi-line or quote-heavy scripts, use workspace__writeFile then {} with a short command.",
                 crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL
             ),
-            "Verify required files exist with listDirectory.".to_string(),
+            "Verify required files exist with workspace__listDirectory.".to_string(),
         ],
         Some(127) => vec![
             "Command not found - program is not installed or not in PATH".to_string(),
@@ -569,7 +569,7 @@ index 111..222 100644
         let joined = guidance.join("\n");
         assert!(
             joined.contains("writeFile"),
-            "quote-parse failures must point at writeFile: {joined}"
+            "quote-parse failures must point at workspace__writeFile: {joined}"
         );
         assert!(
             joined.contains(crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL),
@@ -588,7 +588,7 @@ index 111..222 100644
         assert!(joined.contains("Misuse of shell command"));
         assert!(
             joined.contains("writeFile"),
-            "plain exit 2 should still offer writeFile alternative: {joined}"
+            "plain exit 2 should still offer workspace__writeFile alternative: {joined}"
         );
     }
 }

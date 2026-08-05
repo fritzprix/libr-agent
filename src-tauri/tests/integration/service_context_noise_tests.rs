@@ -27,9 +27,7 @@ async fn workspace_service_context_exposes_platform_and_drops_process_guidance()
     // Platform/shell are intentional agent-facing live state (not noise).
     assert!(service_context.context_prompt.contains("- Platform:"));
     assert!(service_context.context_prompt.contains("- Default Shell:"));
-    assert!(!service_context
-        .context_prompt
-        .contains("Use waitForProcess"));
+    assert!(!service_context.context_prompt.contains("waitForProcess"));
 }
 
 #[tokio::test]

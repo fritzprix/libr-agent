@@ -171,7 +171,7 @@ pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Resul
 
     let mut guidance = scaffold.guidance_lines();
     guidance.push(
-        "If @teamwork/ has not been prepared yet, call prepareTeamworkWorkspace() from the root session first."
+        "If @teamwork/ has not been prepared yet, call agent__prepareTeamworkWorkspace() from the root session first."
             .to_string(),
     );
     guidance.push(
@@ -179,13 +179,13 @@ pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Resul
             .to_string(),
     );
     guidance.push(
-        "After the scaffold exists and @teamwork/.libragent/teamwork.json declares executionSubstrate.mode=\"org\" plus executionSubstrate.orgLineage.intended=true, call createOrg(name=\"...\") again."
+        "After the scaffold exists and @teamwork/.libragent/teamwork.json declares executionSubstrate.mode=\"org\" plus executionSubstrate.orgLineage.intended=true, call agent__createOrg(name=\"...\") again."
             .to_string(),
     );
 
     Err(guided_error(
         ErrorCategory::InvalidState,
-        "createOrg requires a complete org teamwork scaffold in the teamwork directory before explicit org identity can be created.\n\nChecked directory: @teamwork/".to_string(),
+        "agent__createOrg requires a complete org teamwork scaffold in the teamwork directory before explicit org identity can be created.\n\nChecked directory: @teamwork/".to_string(),
         ToolGroup::Agent,
     )
     .with_guidance(guidance)
@@ -195,11 +195,11 @@ pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Resul
 fn create_org_next_actions(org_id: &str, include_builder_guidance: bool) -> Vec<Value> {
     let mut next_actions = vec![
         json!({
-            "toolName": "startSession",
+            "toolName": "agent__startSession",
             "reason": "Create or add an explicit org member session. Org inheritance is automatic here.",
         }),
         json!({
-            "toolName": "getOrg",
+            "toolName": "agent__getOrg",
             "reason": "Inspect the explicit org summary.",
             "args": { "orgId": org_id }
         }),
@@ -265,13 +265,13 @@ pub async fn create_org(
     if session.parent_session_id.is_some() {
         return Ok(guided_error(
             ErrorCategory::InvalidInput,
-            "createOrg must be called from a top-level root session, not a delegated child"
+            "agent__createOrg must be called from a top-level root session, not a delegated child"
                 .to_string(),
             ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Resume the top-level/root session first.".to_string(),
-            "Then call createOrg(name=\"...\") from that root session.".to_string(),
+            "Then call agent__createOrg(name=\"...\") from that root session.".to_string(),
         ])
         .to_mcp_result());
     }
@@ -422,10 +422,10 @@ pub async fn get_org(
             ToolGroup::Agent,
         )
         .with_guidance(vec![
-            "Verify orgId matches an ID returned by createOrg or a previous getOrg call."
+            "Verify orgId matches an ID returned by agent__createOrg or a previous agent__getOrg call."
                 .to_string(),
-            "Use list(type=\"sessions\") to inspect sessions and their org membership.".to_string(),
-            "If the org was never created, call createOrg(name=\"...\") from the root session."
+            "Use agent__listAgents(type=\"sessions\") to inspect sessions and their org membership.".to_string(),
+            "If the org was never created, call agent__createOrg(name=\"...\") from the root session."
                 .to_string(),
         ])
         .to_mcp_result());
@@ -486,7 +486,7 @@ pub async fn get_org(
         &message,
         "success",
         vec![json!({
-            "toolName": "startSession",
+            "toolName": "agent__startSession",
             "reason": "Add another explicit org member under this org.",
         })],
     );
@@ -516,8 +516,8 @@ pub async fn get_org(
     Ok(SuccessHint::new(
         message,
         vec![
-            "Use checkSession(sessionId) to inspect a member.".to_string(),
-            "Use messageToSession(sessionId, message) to coordinate members.".to_string(),
+            "Use agent__checkSession(sessionId) to inspect a member.".to_string(),
+            "Use agent__messageToSession(sessionId, message) to coordinate members.".to_string(),
         ],
     )
     .to_mcp_result_with_data(Some(Value::Object(response_data))))

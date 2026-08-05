@@ -120,7 +120,7 @@ The introduction becomes convincing when it answers a simple question: **What do
 
 ### 4. Turn tools into agent capability
 
-- create assistants via Assistants settings or `agent__create`
+- create assistants via Assistants settings or `agent__createAgent`
 - assign MCP servers and builtin capabilities per assistant
 
 ### 5. Grow from one agent to coordination

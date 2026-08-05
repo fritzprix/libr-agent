@@ -8,7 +8,7 @@
 - The user may request the specialist in any language — translate intent, not the stored prompt.
 - `description` (Assistants card) may use the user's locale; `systemPrompt` does not.
 
-Fill placeholders from user intent and `tool__list` inventory. Keep prompts **action-oriented** — not just a tool list.
+Fill placeholders from user intent and `tool__listServers` inventory. Keep prompts **action-oriented** — not just a tool list.
 
 ## Base Skeleton (all roles)
 

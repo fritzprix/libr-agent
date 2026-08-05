@@ -100,7 +100,8 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Provide the exact text to replace, copied from readFile output".to_string(),
+                    "Provide the exact text to replace, copied from workspace__readFile output"
+                        .to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -174,7 +175,7 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Use readFile on the target path and copy the exact text block to replace"
+                "Use workspace__readFile on the target path and copy the exact text block to replace"
                     .to_string(),
                 "Check whitespace, indentation, and line endings — matching is exact".to_string(),
                 "For larger structural edits, split the change into smaller unique old_string values"
@@ -246,7 +247,7 @@ impl WorkspaceServer {
 
         Ok(SuccessHint::new(
             message,
-            vec!["Use readFile to verify the updated content".to_string()],
+            vec!["Use workspace__readFile to verify the updated content".to_string()],
         )
         .to_mcp_result())
     }

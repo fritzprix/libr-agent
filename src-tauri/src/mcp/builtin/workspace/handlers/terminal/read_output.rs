@@ -85,7 +85,9 @@ fn build_read_error(process_id: &str, stream_label: &str, error: &str) -> MCPRes
                 format!("No {stream_label} output file found"),
                 vec![
                     "The process may not have started yet".to_string(),
-                    format!("Use waitForProcess(\"{process_id}\", 0) to verify process status"),
+                    format!(
+                    "Use workspace__waitForProcess(\"{process_id}\", 0) to verify process status"
+                ),
                     "Wait a moment and try again - the process may not have generated output"
                         .to_string(),
                     "Check if the process ran with output redirected elsewhere".to_string(),
@@ -98,7 +100,7 @@ fn build_read_error(process_id: &str, stream_label: &str, error: &str) -> MCPRes
                     format!("Cannot read {stream_label} stream for process \"{process_id}\""),
                     "Check process permissions and ownership".to_string(),
                     "Try running as elevated user if needed".to_string(),
-                    "Use listProcesses to view process details".to_string(),
+                    "Use workspace__listProcesses to view process details".to_string(),
                 ],
             )
         } else if error_lower.contains("too large") || error_lower.contains("too big") {
@@ -108,7 +110,8 @@ fn build_read_error(process_id: &str, stream_label: &str, error: &str) -> MCPRes
                     "Maximum 100 lines per request".to_string(),
                     "Reduce 'lines' parameter to read less data".to_string(),
                     "Use mode=\"head\" for beginning or mode=\"tail\" for end".to_string(),
-                    "Use output_paths with readFile/search for deeper inspection".to_string(),
+                    "Use output_paths with workspace__readFile/search for deeper inspection"
+                        .to_string(),
                 ],
             )
         } else if error_lower.contains("invalid") || error_lower.contains("utf") {
@@ -124,7 +127,7 @@ fn build_read_error(process_id: &str, stream_label: &str, error: &str) -> MCPRes
             (
                 "Failed to read process output".to_string(),
                 vec![
-                    format!("Verify process {process_id} exists: use listProcesses()"),
+                    format!("Verify process {process_id} exists: use workspace__listProcesses()"),
                     format!("Check stream=\"{stream_label}\" is correct (stdout, stderr, or both)"),
                     "Ensure the process has generated output".to_string(),
                     "Check file permissions and disk space".to_string(),
@@ -232,7 +235,7 @@ impl WorkspaceServer {
             )
             .guidance(vec![
                 "Process may belong to a different session".to_string(),
-                "Use listProcesses() to see processes in your session".to_string(),
+                "Use workspace__listProcesses() to see processes in your session".to_string(),
             ])
             .to_mcp_result());
         }
@@ -295,7 +298,7 @@ impl WorkspaceServer {
             (
                 "note".to_string(),
                 json!(
-                    "Text output only. Max 100 lines per request. output_paths are absolute internal diagnostics paths; do not pass them to readFile or listDirectory."
+                    "Text output only. Max 100 lines per request. output_paths are absolute internal diagnostics paths; do not pass them to workspace__readFile or workspace__listDirectory."
                 ),
             ),
         ]);
@@ -303,18 +306,19 @@ impl WorkspaceServer {
         let next_actions = if is_process_running {
             vec![
                 format!(
-                    "Use waitForProcess('{}', 0) to check whether it has finished",
+                    "Use workspace__waitForProcess('{}', 0) to check whether it has finished",
                     process_id
                 ),
                 format!(
-                    "Use stopProcess('{}') only if the running process is stuck",
+                    "Use workspace__stopProcess('{}') only if the running process is stuck",
                     process_id
                 ),
             ]
         } else {
             vec![
                 "Analyze the captured output to verify command success".to_string(),
-                "Use listProcesses() if you need another processId from this session".to_string(),
+                "Use workspace__listProcesses() if you need another processId from this session"
+                    .to_string(),
             ]
         };
 

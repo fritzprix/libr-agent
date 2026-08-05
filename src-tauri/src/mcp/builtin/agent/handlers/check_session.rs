@@ -119,7 +119,7 @@ pub async fn check_session(
     }
 
     let next_steps = vec![format!(
-        "Use checkSession(\"{}\", wait=true) to wait for completion.",
+        "Use agent__checkSession(\"{}\", wait=true) to wait for completion.",
         session_id
     )];
     let message = append_check_session_context_to_message(

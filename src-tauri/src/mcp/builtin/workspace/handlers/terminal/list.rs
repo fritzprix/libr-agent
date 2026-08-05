@@ -140,45 +140,45 @@ impl WorkspaceServer {
             match first_status {
                 "failed" => {
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                     actions.push(
-                        "Use listProcesses() again if you need another processId from this session"
+                        "Use workspace__listProcesses() again if you need another processId from this session"
                             .to_string(),
                     );
                 }
                 "finished" => {
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                     actions.push(
-                        "Use listProcesses() again if you need another processId from this session"
+                        "Use workspace__listProcesses() again if you need another processId from this session"
                             .to_string(),
                     );
                 }
                 "running" => {
                     actions.push(format!(
-                        "Use waitForProcess('{}', 0) to check status",
+                        "Use workspace__waitForProcess('{}', 0) to check status",
                         first_id
                     ));
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                     actions.push(format!(
-                        "Use stopProcess('{}') to terminate running process",
+                        "Use workspace__stopProcess('{}') to terminate running process",
                         first_id
                     ));
                 }
                 _ => {
                     actions.push(format!(
-                        "Use waitForProcess('{}', 0) to check status",
+                        "Use workspace__waitForProcess('{}', 0) to check status",
                         first_id
                     ));
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                 }
