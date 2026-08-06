@@ -1,6 +1,6 @@
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::{MCPContent, MCPResult};
-use crate::repositories::{MessageRepository, SessionMetadata};
+use crate::repositories::{MessageRepository, SessionMetadata, SessionRepository};
 use serde_json::{json, Value};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -46,6 +46,8 @@ pub fn latest_assistant_message_text(
     messages: &[Value],
     max_chars: Option<usize>,
 ) -> Option<(String, String)> {
+    let mut first_assistant_id: Option<String> = None;
+
     for message in messages {
         let role = message.get("role").and_then(|v| v.as_str()).unwrap_or("");
         if role != "assistant" {
@@ -58,36 +60,43 @@ pub fn latest_assistant_message_text(
             .unwrap_or("unknown")
             .to_string();
 
-        let content = match message.get("content").and_then(|v| v.as_array()) {
-            Some(content) => content,
-            None => continue,
-        };
+        if first_assistant_id.is_none() {
+            first_assistant_id = Some(message_id.clone());
+        }
 
-        for item in content.iter().rev() {
-            let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            if item_type != "text" {
-                continue;
-            }
-
-            if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
-                let text = text.trim();
-                if !text.is_empty() {
-                    let output = match max_chars {
-                        Some(limit) if limit > 0 => truncate_text(text, limit),
-                        _ => text.to_string(),
-                    };
-                    return Some((message_id, output));
-                }
+        if let Some(text) = message.get("content").and_then(|v| v.as_str()) {
+            let text = text.trim();
+            if !text.is_empty() {
+                let output = match max_chars {
+                    Some(limit) if limit > 0 => truncate_text(text, limit),
+                    _ => text.to_string(),
+                };
+                return Some((message_id, output));
             }
         }
 
-        return Some((
-            message_id,
-            "[assistant message has no text content]".to_string(),
-        ));
+        if let Some(content) = message.get("content").and_then(|v| v.as_array()) {
+            for item in content.iter().rev() {
+                let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                if item_type != "text" {
+                    continue;
+                }
+
+                if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        let output = match max_chars {
+                            Some(limit) if limit > 0 => truncate_text(text, limit),
+                            _ => text.to_string(),
+                        };
+                        return Some((message_id, output));
+                    }
+                }
+            }
+        }
     }
 
-    None
+    first_assistant_id.map(|id| (id, "[assistant message has no text content]".to_string()))
 }
 
 pub fn latest_tool_message_text(messages: &[Value]) -> Option<String> {
@@ -261,10 +270,33 @@ pub(crate) fn select_preferred_session_messages(
     db_messages
 }
 
+/// Fetch newest-first messages for checkSession result assembly.
+///
+/// Requires [`StorageSessionId`] so `display_session_id(...)` cannot be passed
+/// by accident. When the session repository is initialized, also rejects ids
+/// that are not an exact `sessions.id` row (legacy display-token footgun).
 pub async fn fetch_session_messages_for_result(
-    session_id: &str,
+    storage_session_id: &crate::utils::session_id::StorageSessionId,
     limit: u64,
 ) -> Result<Vec<Value>, String> {
+    let session_id = storage_session_id.as_str();
+
+    if let Some(session_repo) = crate::state::try_get_session_repository() {
+        let exists = session_repo
+            .get_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to verify session id for message lookup: {e}"))?
+            .is_some();
+        if !exists {
+            return Err(format!(
+                "BUG: session message lookup used unknown id '{session_id}'. \
+                 Pass StorageSessionId::from_resolved(SessionMetadata.id), never \
+                 display_session_id() — display tokens yield empty history and false \
+                 \"No final answer yet.\""
+            ));
+        }
+    }
+
     let repo = crate::state::get_message_repository();
     let messages = repo
         .get_messages_by_session(session_id, limit)
@@ -605,5 +637,25 @@ mod tests {
         let selected = select_preferred_session_messages(db_messages, Some(cached_messages));
 
         assert_eq!(latest_session_output(&selected), "authoritative answer");
+    }
+
+    #[test]
+    fn latest_assistant_message_text_scans_past_empty_tool_call_turns() {
+        // Message #2 (latest): tool call turn with no text content
+        let latest_empty_asst = json!({
+            "id": "asst-2",
+            "role": "assistant",
+            "content": [],
+            "tool_calls": [{"id": "call-1", "function": {"name": "agent__checkSession"}}]
+        });
+        // Message #1 (earlier): contains the real final answer text
+        let earlier_asst = assistant_json("asst-1", "Consensus delegation review completed successfully.");
+
+        let messages = vec![latest_empty_asst, earlier_asst];
+
+        let (msg_id, output) = latest_assistant_message_text(&messages, None).unwrap();
+        assert_eq!(msg_id, "asst-1");
+        assert_eq!(output, "Consensus delegation review completed successfully.");
+        assert_eq!(latest_session_output(&messages), "Consensus delegation review completed successfully.");
     }
 }

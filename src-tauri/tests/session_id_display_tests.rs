@@ -10,8 +10,8 @@ use tauri_mcp_agent_lib::repositories::{
 };
 use tauri_mcp_agent_lib::services::agent_service::spawn::generate_spawn_session_id;
 use tauri_mcp_agent_lib::utils::session_id::{
-    display_session_id, resolve_session_id_among, session_id_matches_ref, session_id_short_token,
-    SessionIdResolve,
+    display_session_id, reject_display_token_used_as_storage_key, resolve_session_id_among,
+    session_id_matches_ref, session_id_short_token, SessionIdResolve, StorageSessionId,
 };
 
 fn sample_session(id: &str, name: &str, status: SessionStatus) -> SessionMetadata {
@@ -172,4 +172,41 @@ fn http_style_resolve_among_all_candidates_accepts_short_token() {
         resolve_session_id_among(candidates, "abcdef1234"),
         SessionIdResolve::Unique("abcdef1234")
     );
+}
+
+/// Regression: #1689 checkSession passed `display_session_id` into message fetch.
+/// Legacy storage keys have a different string than their display token — using
+/// the display token as a DB key returns empty history → "No final answer yet."
+#[test]
+fn reject_display_token_as_storage_key_for_legacy_session() {
+    let storage = "session-376d7c7c-aaaa-bbbb-cccc-dddddddd5ed777";
+    let display = display_session_id(storage);
+    assert_ne!(
+        storage, display,
+        "legacy ids must differ from display tokens (otherwise this test is vacuous)"
+    );
+    assert_eq!(display.len(), 10);
+
+    let err = reject_display_token_used_as_storage_key(&display, &[storage])
+        .expect_err("display token must not be accepted as storage key");
+    assert!(
+        err.contains("display token"),
+        "error should name the footgun: {err}"
+    );
+    assert!(
+        err.contains(storage),
+        "error should point at the real storage id: {err}"
+    );
+
+    reject_display_token_used_as_storage_key(storage, &[storage])
+        .expect("exact storage id must be accepted");
+
+    // Modern spawn ids: display == storage, so display_session_id is fine for lookup.
+    let modern = "a1b2c3d4e5";
+    assert_eq!(display_session_id(modern), modern);
+    reject_display_token_used_as_storage_key(modern, &[modern]).expect("modern id ok");
+
+    // StorageSessionId is the typed wrapper callers must use for message fetch.
+    let typed = StorageSessionId::from_resolved(storage);
+    assert_eq!(typed.as_str(), storage);
 }
