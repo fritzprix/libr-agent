@@ -8,8 +8,7 @@ import {
   useAgentSessionListActions,
   useAgentSessionListState,
 } from '@/context/AgentSessionListContext';
-import { useAgentPlanning } from '@/context/AgentPlanningContext';
-import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
+import { useAgentPanels } from '@/context/AgentPanelsContext';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
@@ -18,11 +17,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { PanelRight, FolderOpen, Copy, Loader2 } from 'lucide-react';
+import { PanelRight, FolderOpen, Copy, Loader2, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useClipboard } from '@/hooks/useClipboard';
 import { messagesToMarkdown } from '@/lib/message-utils';
+import { PanelAttentionDot } from './PanelAttentionDot';
 
 interface AgentChatHeaderProps {
   children?: React.ReactNode;
@@ -38,8 +38,12 @@ export function AgentChatHeader({
   const { renameSession } = useAgentSessionActions();
   const { toggleBookmark } = useAgentSessionListActions();
   const { sessions, notificationSessions } = useAgentSessionListState();
-  const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
-  const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
+  const { isPanelOpen, togglePanel, hasPanelAttention } = useAgentPanels();
+  const showWorkspacePanel = isPanelOpen('workspace');
+  const showPlanningPanel = isPanelOpen('planning');
+  const showProcessesPanel = isPanelOpen('processes');
+  const processesAttention = hasPanelAttention('processes');
+  const planningAttention = hasPanelAttention('planning');
   const { messages } = useAgentChat();
   const [isCopying, setIsCopying] = useState(false);
   const [bookmarkOverride, setBookmarkOverride] = useState<
@@ -147,7 +151,9 @@ export function AgentChatHeader({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={toggleWorkspacePanel}
+                onClick={() => {
+                  togglePanel('workspace');
+                }}
                 aria-label={t('agent.header.toggleWorkspaceAria')}
                 aria-controls="agent-workspace-panel"
                 aria-expanded={showWorkspacePanel}
@@ -169,15 +175,63 @@ export function AgentChatHeader({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={togglePlanningPanel}
-                aria-label={t('agent.header.togglePlanningAria')}
+                onClick={() => {
+                  togglePanel('processes');
+                }}
+                aria-label={
+                  processesAttention
+                    ? t(
+                        'agent.header.toggleProcessesHasUpdatesAria',
+                        'Toggle Background Processes Panel (has updates)',
+                      )
+                    : t(
+                        'agent.header.toggleProcessesAria',
+                        'Toggle Background Processes Panel',
+                      )
+                }
+                aria-controls="agent-processes-panel"
+                aria-expanded={showProcessesPanel}
+                className="relative h-6 px-2"
+              >
+                <Terminal
+                  className={`h-4 w-4 ${showProcessesPanel ? 'text-primary' : ''}`}
+                />
+                <PanelAttentionDot visible={processesAttention} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t(
+                'agent.header.toggleProcessesTooltip',
+                'Toggle Background Processes Panel',
+              )}
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  togglePanel('planning');
+                }}
+                aria-label={
+                  planningAttention
+                    ? t(
+                        'agent.header.togglePlanningHasUpdatesAria',
+                        'Toggle AI Planning Panel (has updates)',
+                      )
+                    : t('agent.header.togglePlanningAria')
+                }
                 aria-controls="agent-planning-panel"
                 aria-expanded={showPlanningPanel}
-                className="h-6 px-2"
+                className="relative h-6 px-2"
               >
                 <PanelRight
                   className={`h-4 w-4 ${showPlanningPanel ? 'text-primary' : ''}`}
                 />
+                <PanelAttentionDot visible={planningAttention} />
               </Button>
             </TooltipTrigger>
             <TooltipContent>

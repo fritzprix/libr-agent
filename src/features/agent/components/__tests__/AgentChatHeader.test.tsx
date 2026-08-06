@@ -7,8 +7,8 @@ import { AgentChatHeader } from '../AgentChatHeader';
 const mockRenameSession = vi.fn();
 const mockToggleBookmark = vi.fn();
 const mockCopyToClipboard = vi.fn();
-const mockTogglePlanningPanel = vi.fn();
-const mockToggleWorkspacePanel = vi.fn();
+const mockTogglePanel = vi.fn();
+const mockHasPanelAttention = vi.fn((/* eslint-disable @typescript-eslint/no-unused-vars */ _id: string) => false);
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSessionState: () => ({
@@ -61,17 +61,17 @@ vi.mock('@/context/AgentSessionListContext', () => ({
   }),
 }));
 
-vi.mock('@/context/AgentPlanningContext', () => ({
-  useAgentPlanning: () => ({
-    showPlanningPanel: false,
-    togglePlanningPanel: mockTogglePlanningPanel,
-  }),
-}));
-
-vi.mock('@/context/AgentWorkspaceContext', () => ({
-  useAgentWorkspace: () => ({
-    showWorkspacePanel: false,
-    toggleWorkspacePanel: mockToggleWorkspacePanel,
+vi.mock('@/context/AgentPanelsContext', () => ({
+  useAgentPanels: () => ({
+    isPanelOpen: () => false,
+    openPanel: vi.fn(),
+    closePanel: vi.fn(),
+    togglePanel: mockTogglePanel,
+    closeAllPanels: vi.fn(),
+    getLastClosedAt: () => 0,
+    hasPanelAttention: mockHasPanelAttention,
+    markPanelAttention: vi.fn(),
+    clearPanelAttention: vi.fn(),
   }),
 }));
 
@@ -131,8 +131,17 @@ vi.mock('react-i18next', () => ({
       if (key === 'agent.header.toggleWorkspaceAria') {
         return 'Toggle workspace';
       }
+      if (key === 'agent.header.toggleProcessesAria') {
+        return 'Toggle processes';
+      }
+      if (key === 'agent.header.toggleProcessesHasUpdatesAria') {
+        return 'Toggle processes (has updates)';
+      }
       if (key === 'agent.header.togglePlanningAria') {
         return 'Toggle planning';
+      }
+      if (key === 'agent.header.togglePlanningHasUpdatesAria') {
+        return 'Toggle planning (has updates)';
       }
       if (key === 'agent.header.defaultAssistant') {
         return 'Agent';
@@ -154,6 +163,7 @@ global.ResizeObserver = class ResizeObserver {
 describe('AgentChatHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHasPanelAttention.mockReturnValue(false);
   });
 
   it('renders a bookmark toggle for the active chat session and wires it to list actions', () => {
@@ -177,5 +187,28 @@ describe('AgentChatHeader', () => {
       renameButton.compareDocumentPosition(bookmarkButton) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('toggles the processes panel from the header control', () => {
+    render(<AgentChatHeader />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle processes' }));
+
+    expect(mockTogglePanel).toHaveBeenCalledWith('processes');
+  });
+
+  it('shows an attention dot on the processes toggle when marked', () => {
+    mockHasPanelAttention.mockImplementation(
+      (id: string) => id === 'processes',
+    );
+
+    render(<AgentChatHeader />);
+
+    expect(screen.getByTestId('panel-attention-dot')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: 'Toggle processes (has updates)',
+      }),
+    ).toBeInTheDocument();
   });
 });

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   isMobile: false,
   showWorkspacePanel: false,
   showPlanningPanel: false,
+  showProcessesPanel: false,
 }));
 
 function createBaseRuntimeState(): SessionRuntimeState {
@@ -117,27 +118,25 @@ vi.mock('@/context/AgentChatContext', () => ({
   }),
 }));
 
-vi.mock('@/context/AgentWorkspaceContext', () => ({
-  AgentWorkspaceProvider: ({ children }: { children: ReactNode }) => (
+vi.mock('@/context/AgentPanelsContext', () => ({
+  AgentPanelsProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
-  useAgentWorkspace: () => ({
-    showWorkspacePanel: mocks.showWorkspacePanel,
-    openWorkspacePanel: vi.fn(),
-    closeWorkspacePanel: vi.fn(),
-    toggleWorkspacePanel: vi.fn(),
-  }),
-}));
-
-vi.mock('@/context/AgentPlanningContext', () => ({
-  AgentPlanningProvider: ({ children }: { children: ReactNode }) => (
-    <>{children}</>
-  ),
-  useAgentPlanning: () => ({
-    showPlanningPanel: mocks.showPlanningPanel,
-    openPlanningPanel: vi.fn(),
-    closePlanningPanel: vi.fn(),
-    togglePlanningPanel: vi.fn(),
+  useAgentPanels: () => ({
+    isPanelOpen: (id: 'workspace' | 'planning' | 'processes') => {
+      if (id === 'workspace') return mocks.showWorkspacePanel;
+      if (id === 'planning') return mocks.showPlanningPanel;
+      if (id === 'processes') return mocks.showProcessesPanel;
+      return false;
+    },
+    openPanel: vi.fn(),
+    closePanel: vi.fn(),
+    togglePanel: vi.fn(),
+    closeAllPanels: vi.fn(),
+    getLastClosedAt: () => 0,
+    hasPanelAttention: () => false,
+    markPanelAttention: vi.fn(),
+    clearPanelAttention: vi.fn(),
   }),
 }));
 
@@ -176,12 +175,20 @@ vi.mock('../components/AgentWorkspacePanel', () => ({
   AgentWorkspacePanel: () => <div>mock-workspace-panel</div>,
 }));
 
+vi.mock('../components/AgentProcessPanel', () => ({
+  AgentProcessPanel: () => <div>mock-process-panel</div>,
+}));
+
 vi.mock('../components/AgentPlanningPanel', () => ({
   AgentPlanningPanel: () => <div>mock-planning-panel</div>,
 }));
 
 vi.mock('../components/AgentPlanningUpdates', () => ({
   AgentPlanningUpdates: () => <div>mock-planning-updates</div>,
+}));
+
+vi.mock('../components/AgentProcessAttentionUpdates', () => ({
+  AgentProcessAttentionUpdates: () => null,
 }));
 
 vi.mock('@/components/ui/sheet', () => ({
@@ -247,6 +254,7 @@ describe('AgentChatView', () => {
     mocks.isMobile = false;
     mocks.showWorkspacePanel = false;
     mocks.showPlanningPanel = false;
+    mocks.showProcessesPanel = false;
     vi.mocked(toast.loading).mockClear();
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.warning).mockClear();
@@ -450,9 +458,10 @@ describe('AgentChatView', () => {
 
     render(<AgentChatView />);
 
-    expect(screen.getByTestId('sheet-content-left')).toBeInTheDocument();
+    expect(screen.getAllByTestId('sheet-content-left')).toHaveLength(2);
     expect(screen.getByTestId('sheet-content-right')).toBeInTheDocument();
     expect(screen.getAllByText('mock-workspace-panel')).toHaveLength(1);
+    expect(screen.getAllByText('mock-process-panel')).toHaveLength(1);
     expect(screen.getAllByText('mock-planning-panel')).toHaveLength(1);
   });
 });

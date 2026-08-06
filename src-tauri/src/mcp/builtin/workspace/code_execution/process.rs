@@ -79,11 +79,32 @@ pub async fn read_output_file(file_path: &PathBuf) -> Result<String, String> {
 /// Returns (pid, exit_code, stdout_content, stderr_content)
 /// Respects cancellation token for graceful shutdown
 pub async fn spawn_and_stream_to_files(
+    cmd: Command,
+    stdout_path: PathBuf,
+    stderr_path: PathBuf,
+    process_label: String,
+    cancel_token: CancellationToken,
+) -> Result<(Option<u32>, Option<i32>, String, String), String> {
+    spawn_and_stream_to_files_with_pid_tx(
+        cmd,
+        stdout_path,
+        stderr_path,
+        process_label,
+        cancel_token,
+        None,
+    )
+    .await
+}
+
+/// Same as [`spawn_and_stream_to_files`], but optionally reports the OS PID as soon as
+/// the child is spawned (needed for stopProcess while the process is still running).
+pub async fn spawn_and_stream_to_files_with_pid_tx(
     mut cmd: Command,
     stdout_path: PathBuf,
     stderr_path: PathBuf,
     process_label: String,
     cancel_token: CancellationToken,
+    pid_tx: Option<tokio::sync::oneshot::Sender<Option<u32>>>,
 ) -> Result<(Option<u32>, Option<i32>, String, String), String> {
     // Configure stdio pipes - critical for capturing output
     cmd.stdout(Stdio::piped());
@@ -129,6 +150,9 @@ pub async fn spawn_and_stream_to_files(
 
     let pid = child.id();
     info!("Process {} started with PID {:?}", process_label, pid);
+    if let Some(tx) = pid_tx {
+        let _ = tx.send(pid);
+    }
     // Determine maximum output size from configuration (default 100MB)
     let max_output_size = crate::config::max_output_size();
 
@@ -171,6 +195,9 @@ pub async fn spawn_and_stream_to_files(
                                     if writer.write_all(&buffer[..n]).await.is_err() {
                                         break;
                                     }
+                                    // Flush every chunk so readProcessOutput can see live output
+                                    // while the process is still running (timeout handoff path).
+                                    let _ = writer.flush().await;
                                 }
                                 Err(_) => break,
                             }
@@ -236,6 +263,9 @@ pub async fn spawn_and_stream_to_files(
                                     if writer.write_all(&buffer[..n]).await.is_err() {
                                         break;
                                     }
+                                    // Flush every chunk so readProcessOutput can see live output
+                                    // while the process is still running (timeout handoff path).
+                                    let _ = writer.flush().await;
                                 }
                                 Err(_) => break,
                             }
@@ -345,22 +375,20 @@ pub async fn spawn_and_stream_to_files(
 }
 
 /// Spawn process and stream output to both in-memory buffers and files (for async/long-running processes)
-/// Returns (pid, exit_code, streaming_handle)
-/// Provides real-time access to output through broadcast channels and circular buffers
+/// Returns (pid, exit_code)
+///
+/// `streaming` must be registered in the process registry *before* this call so
+/// `readProcessOutput` can serve live lines while the process is still running.
+/// Optional `pid_tx` reports the OS PID as soon as the child is spawned.
 pub async fn spawn_and_stream_hybrid(
     mut cmd: Command,
     stdout_path: PathBuf,
     stderr_path: PathBuf,
     process_label: String,
     cancel_token: CancellationToken,
-) -> Result<
-    (
-        Option<u32>,
-        Option<i32>,
-        Arc<terminal_manager::StreamingHandle>,
-    ),
-    String,
-> {
+    streaming: Arc<terminal_manager::StreamingHandle>,
+    pid_tx: Option<tokio::sync::oneshot::Sender<Option<u32>>>,
+) -> Result<(Option<u32>, Option<i32>), String> {
     // Configure stdio pipes
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
@@ -388,8 +416,10 @@ pub async fn spawn_and_stream_hybrid(
         process_label, pid
     );
 
-    // Create streaming handle with 1000 line buffer
-    let streaming = Arc::new(terminal_manager::StreamingHandle::new(1000));
+    if let Some(tx) = pid_tx {
+        let _ = tx.send(pid);
+    }
+
     let max_output_size = crate::config::max_output_size();
 
     // Stdout streaming: line-by-line with broadcast and file
@@ -407,8 +437,6 @@ pub async fn spawn_and_stream_hybrid(
                 Ok(file) => {
                     let mut writer = tokio::io::BufWriter::new(file);
                     let mut total_bytes = 0u64;
-                    let mut lines_since_flush = 0;
-                    const FLUSH_INTERVAL: usize = 10;
 
                     loop {
                         tokio::select! {
@@ -426,20 +454,17 @@ pub async fn spawn_and_stream_hybrid(
                                         if total_bytes > max_output_size {
                                             warn!("Process {} stdout size limit exceeded", label);
                                             let _ = writer.write_all(b"\n[Output truncated: size limit exceeded]\n").await;
+                                            let _ = writer.flush().await;
                                             break;
                                         }
 
-                                        // 1. Send to broadcast channel + buffer
+                                        // 1. Send to broadcast channel + buffer (visible immediately)
                                         streaming_clone.push_stdout(cleaned_line.clone()).await;
 
-                                        // 2. Write to file with periodic flush
+                                        // 2. Write to file and flush every line for disk readers
                                         if writer.write_all(cleaned_line.as_bytes()).await.is_ok() {
                                             let _ = writer.write_all(b"\n").await;
-                                            lines_since_flush += 1;
-                                            if lines_since_flush >= FLUSH_INTERVAL {
-                                                let _ = writer.flush().await;
-                                                lines_since_flush = 0;
-                                            }
+                                            let _ = writer.flush().await;
                                         }
                                     }
                                     Ok(None) => break, // EOF
@@ -483,8 +508,6 @@ pub async fn spawn_and_stream_hybrid(
                 Ok(file) => {
                     let mut writer = tokio::io::BufWriter::new(file);
                     let mut total_bytes = 0u64;
-                    let mut lines_since_flush = 0;
-                    const FLUSH_INTERVAL: usize = 10;
 
                     loop {
                         tokio::select! {
@@ -502,20 +525,17 @@ pub async fn spawn_and_stream_hybrid(
                                         if total_bytes > max_output_size {
                                             warn!("Process {} stderr size limit exceeded", label);
                                             let _ = writer.write_all(b"\n[Output truncated: size limit exceeded]\n").await;
+                                            let _ = writer.flush().await;
                                             break;
                                         }
 
-                                        // 1. Send to broadcast channel + buffer
+                                        // 1. Send to broadcast channel + buffer (visible immediately)
                                         streaming_clone.push_stderr(cleaned_line.clone()).await;
 
-                                        // 2. Write to file with periodic flush
+                                        // 2. Write to file and flush every line for disk readers
                                         if writer.write_all(cleaned_line.as_bytes()).await.is_ok() {
                                             let _ = writer.write_all(b"\n").await;
-                                            lines_since_flush += 1;
-                                            if lines_since_flush >= FLUSH_INTERVAL {
-                                                let _ = writer.flush().await;
-                                                lines_since_flush = 0;
-                                            }
+                                            let _ = writer.flush().await;
                                         }
                                     }
                                     Ok(None) => break, // EOF
@@ -579,5 +599,5 @@ pub async fn spawn_and_stream_hybrid(
         process_label, exit_code
     );
 
-    Ok((pid, exit_code, streaming))
+    Ok((pid, exit_code))
 }

@@ -118,6 +118,16 @@ impl StreamingHandle {
 
         buffer.iter().rev().take(n).rev().cloned().collect()
     }
+
+    /// Get first N lines from buffer
+    pub async fn get_head(&self, stream: StreamType, n: usize) -> Vec<String> {
+        let buffer = match stream {
+            StreamType::Stdout => self.stdout_buffer.lock().await,
+            StreamType::Stderr => self.stderr_buffer.lock().await,
+        };
+
+        buffer.iter().take(n).cloned().collect()
+    }
 }
 
 /// Thread-safe process registry with cancellation tokens and streaming handles

@@ -181,6 +181,8 @@ impl WorkspaceServer {
         tokio::spawn(async move {
             let _process_permit = process_permit;
 
+            let (pid_tx, pid_rx) = tokio::sync::oneshot::channel();
+
             {
                 let mut reg = registry.write().await;
                 if let Some(entry) = reg.entries.get_mut(&pid_copy) {
@@ -188,12 +190,26 @@ impl WorkspaceServer {
                 }
             }
 
-            let result = process::spawn_and_stream_to_files(
+            {
+                let registry = registry.clone();
+                let pid_copy = pid_copy.clone();
+                tokio::spawn(async move {
+                    if let Ok(pid) = pid_rx.await {
+                        let mut reg = registry.write().await;
+                        if let Some(entry) = reg.entries.get_mut(&pid_copy) {
+                            entry.pid = pid;
+                        }
+                    }
+                });
+            }
+
+            let result = process::spawn_and_stream_to_files_with_pid_tx(
                 cmd,
                 stdout_path_for_task.clone(),
                 stderr_path_for_task.clone(),
                 format!("sync:{pid_copy}"),
                 cancel_token,
+                Some(pid_tx),
             )
             .await;
 

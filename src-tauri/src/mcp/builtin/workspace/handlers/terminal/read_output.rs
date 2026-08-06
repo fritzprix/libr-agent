@@ -66,6 +66,49 @@ async fn read_stream_output(
     }
 }
 
+fn stream_type_for_name(stream: &str) -> terminal_manager::StreamType {
+    match stream {
+        "stderr" => terminal_manager::StreamType::Stderr,
+        _ => terminal_manager::StreamType::Stdout,
+    }
+}
+
+async fn read_stream_prefer_live(
+    streaming: Option<&std::sync::Arc<terminal_manager::StreamingHandle>>,
+    file_path: &PathBuf,
+    stream_name: &str,
+    mode: &str,
+    lines: usize,
+) -> Result<Vec<String>, String> {
+    if let Some(handle) = streaming {
+        let stream_type = stream_type_for_name(stream_name);
+        let from_memory = match mode {
+            "head" => handle.get_head(stream_type, lines).await,
+            "tail" => handle.get_tail(stream_type, lines).await,
+            _ => {
+                return Err(format!("Unsupported mode '{mode}'"));
+            }
+        };
+        if !from_memory.is_empty() {
+            return Ok(from_memory);
+        }
+    }
+
+    // Fall back to on-disk files (sync timeout-handoff path, or empty start).
+    // Missing files while still starting should read as empty, not hard-fail.
+    match read_stream_output(file_path, mode, lines).await {
+        Ok(content) => Ok(content),
+        Err(error) => {
+            let lower = error.to_lowercase();
+            if lower.contains("not found") || lower.contains("no such file") {
+                Ok(Vec::new())
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
 fn format_stream_section(stream: &str, lines: &[String]) -> String {
     let body = if lines.is_empty() {
         "(no output)".to_string()
@@ -195,7 +238,7 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // Get process entry
+        // Get process entry + live streaming handle (if registered)
         let registry = self.process_registry.read().await;
         let entry = match registry.entries.get(process_id) {
             Some(e) => e.clone(),
@@ -239,6 +282,8 @@ impl WorkspaceServer {
             ])
             .to_mcp_result());
         }
+
+        let streaming = registry.streaming_handles.get(process_id).cloned();
         drop(registry);
 
         let status = status_label(&entry.status);
@@ -254,7 +299,15 @@ impl WorkspaceServer {
 
         for stream_name in selection.stream_names() {
             let file_path = stream_file_path(&entry, stream_name);
-            let content = match read_stream_output(&file_path, mode, lines).await {
+            let content = match read_stream_prefer_live(
+                streaming.as_ref(),
+                &file_path,
+                stream_name,
+                mode,
+                lines,
+            )
+            .await
+            {
                 Ok(content) => content,
                 Err(error) => {
                     return Ok(build_read_error(process_id, stream_name, &error));

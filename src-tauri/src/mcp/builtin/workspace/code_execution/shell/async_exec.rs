@@ -196,12 +196,33 @@ impl WorkspaceServer {
 
         tokio::spawn(async move {
             let _process_permit = process_permit;
-            // Update registry: starting -> running
+
+            // Create streaming handle up-front and register it so live readers
+            // (readProcessOutput / process panel) can see output while Running.
+            let streaming = Arc::new(terminal_manager::StreamingHandle::new(1000));
+            let (pid_tx, pid_rx) = tokio::sync::oneshot::channel();
+
             {
                 let mut reg = registry.write().await;
                 if let Some(entry) = reg.entries.get_mut(&pid_copy) {
                     entry.status = terminal_manager::ProcessStatus::Running;
                 }
+                reg.streaming_handles
+                    .insert(pid_copy.clone(), streaming.clone());
+            }
+
+            // Update OS PID as soon as the child is spawned (for stopProcess).
+            {
+                let registry = registry.clone();
+                let pid_copy = pid_copy.clone();
+                tokio::spawn(async move {
+                    if let Ok(pid) = pid_rx.await {
+                        let mut reg = registry.write().await;
+                        if let Some(entry) = reg.entries.get_mut(&pid_copy) {
+                            entry.pid = pid;
+                        }
+                    }
+                });
             }
 
             // Execute using hybrid streaming
@@ -211,6 +232,8 @@ impl WorkspaceServer {
                 stderr_path.clone(),
                 format!("async:{pid_copy}"),
                 cancel_token,
+                streaming,
+                Some(pid_tx),
             )
             .await;
 
@@ -218,7 +241,7 @@ impl WorkspaceServer {
             let mut reg = registry.write().await;
             if let Some(entry) = reg.entries.get_mut(&pid_copy) {
                 match result {
-                    Ok((pid, exit_code, streaming_handle)) => {
+                    Ok((pid, exit_code)) => {
                         entry.pid = pid;
                         entry.exit_code = exit_code;
                         entry.finished_at.get_or_insert_with(chrono::Utc::now);
@@ -235,10 +258,6 @@ impl WorkspaceServer {
                                 terminal_manager::ProcessStatus::Failed
                             };
                         }
-
-                        // Store streaming handle for real-time access (after entry mutations)
-                        reg.streaming_handles
-                            .insert(pid_copy.clone(), streaming_handle);
                     }
                     Err(e) => {
                         entry.finished_at.get_or_insert_with(chrono::Utc::now);
@@ -255,7 +274,7 @@ impl WorkspaceServer {
                 }
             }
 
-            // Remove cancellation token (keep streaming handle for 5 minutes)
+            // Remove cancellation token (keep streaming handle for post-exit reads)
             reg.cancellation_tokens.remove(&pid_copy);
 
             // Extract notifier before dropping write lock, then wake waiters.
