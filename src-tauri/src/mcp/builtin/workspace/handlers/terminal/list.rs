@@ -27,6 +27,7 @@ impl WorkspaceServer {
                     e.status,
                     terminal_manager::ProcessStatus::Finished
                         | terminal_manager::ProcessStatus::Failed
+                        | terminal_manager::ProcessStatus::Killed
                 ),
                 _ => true,
             })
@@ -65,6 +66,7 @@ impl WorkspaceServer {
                     e.status,
                     terminal_manager::ProcessStatus::Finished
                         | terminal_manager::ProcessStatus::Failed
+                        | terminal_manager::ProcessStatus::Killed
                 )
             })
             .count();

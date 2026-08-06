@@ -5,6 +5,7 @@ import equal from 'fast-deep-equal';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useAgentChat } from '@/context/AgentChatContext';
+import { useAgentPanels } from '@/context/AgentPanelsContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { getLogger } from '@/lib/logger';
@@ -24,6 +25,7 @@ export function AgentPlanningUpdates() {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const { showPlanningPanel } = useAgentPlanning();
+  const { markPanelAttention } = useAgentPanels();
   const { serviceContexts, updateServiceContexts } = useAgentChat();
   const previousPlanningRef = useRef<PlanningState | undefined>(undefined);
   const previousScratchpadRef = useRef<ScratchpadState | undefined>(undefined);
@@ -102,6 +104,8 @@ export function AgentPlanningUpdates() {
     );
 
     if ((planningChanged || scratchpadChanged) && !showPlanningPanel) {
+      // Notification-dot on the header toggle — do not auto-open the panel.
+      markPanelAttention('planning');
       toast(t('agent.planning.title'), {
         id: `${PLANNING_TOAST_ID_PREFIX}-${session.id}`,
         duration: 5000,
@@ -119,7 +123,14 @@ export function AgentPlanningUpdates() {
 
     previousPlanningRef.current = planningState;
     previousScratchpadRef.current = scratchpadState;
-  }, [planningState, scratchpadState, session?.id, showPlanningPanel, t]);
+  }, [
+    markPanelAttention,
+    planningState,
+    scratchpadState,
+    session?.id,
+    showPlanningPanel,
+    t,
+  ]);
 
   return null;
 }

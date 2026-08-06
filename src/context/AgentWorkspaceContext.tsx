@@ -1,13 +1,9 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from 'react';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('AgentWorkspaceContext');
+/**
+ * Compatibility facade over AgentPanelsContext.
+ * Panel open state lives only in AgentPanelsProvider — do not add local state here.
+ */
+import { useMemo } from 'react';
+import { useAgentPanels } from '@/context/AgentPanelsContext';
 
 interface AgentWorkspaceContextValue {
   showWorkspacePanel: boolean;
@@ -16,76 +12,32 @@ interface AgentWorkspaceContextValue {
   toggleWorkspacePanel: () => void;
 }
 
-const AgentWorkspaceContext = createContext<
-  AgentWorkspaceContextValue | undefined
->(undefined);
-
-interface AgentWorkspaceProviderProps {
-  children: React.ReactNode;
-}
-
+/** @deprecated Prefer AgentPanelsProvider — this no longer owns state. */
 export function AgentWorkspaceProvider({
   children,
-}: AgentWorkspaceProviderProps) {
-  const [showWorkspacePanel, setShowWorkspacePanel] = useState(false);
-
-  const openWorkspacePanel = useCallback(() => {
-    setShowWorkspacePanel((current) => {
-      if (!current) {
-        logger.info('Workspace panel opened');
-      }
-      return true;
-    });
-  }, []);
-
-  const closeWorkspacePanel = useCallback(() => {
-    setShowWorkspacePanel((current) => {
-      if (current) {
-        logger.info('Workspace panel closed');
-      }
-      return false;
-    });
-  }, []);
-
-  const toggleWorkspacePanel = useCallback(() => {
-    setShowWorkspacePanel((current) => {
-      const next = !current;
-      logger.info('Workspace panel toggled', {
-        from: current,
-        to: next,
-      });
-      return next;
-    });
-  }, []);
-
-  const value = useMemo<AgentWorkspaceContextValue>(
-    () => ({
-      showWorkspacePanel,
-      openWorkspacePanel,
-      closeWorkspacePanel,
-      toggleWorkspacePanel,
-    }),
-    [
-      showWorkspacePanel,
-      openWorkspacePanel,
-      closeWorkspacePanel,
-      toggleWorkspacePanel,
-    ],
-  );
-
-  return (
-    <AgentWorkspaceContext.Provider value={value}>
-      {children}
-    </AgentWorkspaceContext.Provider>
-  );
+}: {
+  children: React.ReactNode;
+}) {
+  return <>{children}</>;
 }
 
+/** @deprecated Prefer useAgentPanels() — this is a thin compatibility facade. */
 export function useAgentWorkspace(): AgentWorkspaceContextValue {
-  const context = useContext(AgentWorkspaceContext);
-  if (context === undefined) {
-    throw new Error(
-      'useAgentWorkspace must be used within an AgentWorkspaceProvider',
-    );
-  }
-  return context;
+  const { isPanelOpen, openPanel, closePanel, togglePanel } = useAgentPanels();
+
+  return useMemo(
+    () => ({
+      showWorkspacePanel: isPanelOpen('workspace'),
+      openWorkspacePanel: () => {
+        openPanel('workspace');
+      },
+      closeWorkspacePanel: () => {
+        closePanel('workspace');
+      },
+      toggleWorkspacePanel: () => {
+        togglePanel('workspace');
+      },
+    }),
+    [closePanel, isPanelOpen, openPanel, togglePanel],
+  );
 }

@@ -1,13 +1,9 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from 'react';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('AgentPlanningContext');
+/**
+ * Compatibility facade over AgentPanelsContext.
+ * Panel open state lives only in AgentPanelsProvider — do not add local state here.
+ */
+import { useMemo } from 'react';
+import { useAgentPanels } from '@/context/AgentPanelsContext';
 
 interface AgentPlanningContextValue {
   showPlanningPanel: boolean;
@@ -16,76 +12,32 @@ interface AgentPlanningContextValue {
   togglePlanningPanel: () => void;
 }
 
-const AgentPlanningContext = createContext<
-  AgentPlanningContextValue | undefined
->(undefined);
-
-interface AgentPlanningProviderProps {
-  children: React.ReactNode;
-}
-
+/** @deprecated Prefer AgentPanelsProvider — this no longer owns state. */
 export function AgentPlanningProvider({
   children,
-}: AgentPlanningProviderProps) {
-  const [showPlanningPanel, setShowPlanningPanel] = useState(false);
-
-  const openPlanningPanel = useCallback(() => {
-    setShowPlanningPanel((current) => {
-      if (!current) {
-        logger.info('Planning panel opened');
-      }
-      return true;
-    });
-  }, []);
-
-  const closePlanningPanel = useCallback(() => {
-    setShowPlanningPanel((current) => {
-      if (current) {
-        logger.info('Planning panel closed');
-      }
-      return false;
-    });
-  }, []);
-
-  const togglePlanningPanel = useCallback(() => {
-    setShowPlanningPanel((current) => {
-      const next = !current;
-      logger.info('Planning panel toggled', {
-        from: current,
-        to: next,
-      });
-      return next;
-    });
-  }, []);
-
-  const value = useMemo<AgentPlanningContextValue>(
-    () => ({
-      showPlanningPanel,
-      openPlanningPanel,
-      closePlanningPanel,
-      togglePlanningPanel,
-    }),
-    [
-      showPlanningPanel,
-      openPlanningPanel,
-      closePlanningPanel,
-      togglePlanningPanel,
-    ],
-  );
-
-  return (
-    <AgentPlanningContext.Provider value={value}>
-      {children}
-    </AgentPlanningContext.Provider>
-  );
+}: {
+  children: React.ReactNode;
+}) {
+  return <>{children}</>;
 }
 
+/** @deprecated Prefer useAgentPanels() — this is a thin compatibility facade. */
 export function useAgentPlanning(): AgentPlanningContextValue {
-  const context = useContext(AgentPlanningContext);
-  if (context === undefined) {
-    throw new Error(
-      'useAgentPlanning must be used within an AgentPlanningProvider',
-    );
-  }
-  return context;
+  const { isPanelOpen, openPanel, closePanel, togglePanel } = useAgentPanels();
+
+  return useMemo(
+    () => ({
+      showPlanningPanel: isPanelOpen('planning'),
+      openPlanningPanel: () => {
+        openPanel('planning');
+      },
+      closePlanningPanel: () => {
+        closePanel('planning');
+      },
+      togglePlanningPanel: () => {
+        togglePanel('planning');
+      },
+    }),
+    [closePanel, isPanelOpen, openPanel, togglePanel],
+  );
 }
