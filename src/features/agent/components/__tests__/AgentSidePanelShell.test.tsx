@@ -181,4 +181,35 @@ describe('AgentSidePanelShell', () => {
     ).toBeInTheDocument();
     expect(screen.getByTestId('panel-attention-dot')).toBeInTheDocument();
   });
+
+  it('closes the shell from the explicit close control', () => {
+    function ShellState({ children }: { children: ReactNode }) {
+      const { openPanel, isShellOpen } = useAgentPanels();
+      return (
+        <div>
+          <button type="button" onClick={() => openPanel('workspace')}>
+            open
+          </button>
+          <span data-testid="shell-open">{String(isShellOpen())}</span>
+          {children}
+        </div>
+      );
+    }
+
+    render(
+      <AgentPanelsProvider>
+        <ShellState>
+          <AgentSidePanelShell isVisible />
+        </ShellState>
+      </AgentPanelsProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'open' }));
+    expect(screen.getByTestId('shell-open')).toHaveTextContent('true');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Close agent panels' }),
+    );
+    expect(screen.getByTestId('shell-open')).toHaveTextContent('false');
+  });
 });

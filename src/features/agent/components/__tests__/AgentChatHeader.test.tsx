@@ -7,8 +7,11 @@ import { AgentChatHeader } from '../AgentChatHeader';
 const mockRenameSession = vi.fn();
 const mockToggleBookmark = vi.fn();
 const mockCopyToClipboard = vi.fn();
-const mockTogglePanel = vi.fn();
-const mockHasPanelAttention = vi.fn((/* eslint-disable @typescript-eslint/no-unused-vars */ _id: string) => false);
+const mockToggleShell = vi.fn();
+const mockHasPanelAttention = vi.fn(
+  (/* eslint-disable @typescript-eslint/no-unused-vars */ _id: string) => false,
+);
+let shellOpen = false;
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSessionState: () => ({
@@ -61,19 +64,31 @@ vi.mock('@/context/AgentSessionListContext', () => ({
   }),
 }));
 
-vi.mock('@/context/AgentPanelsContext', () => ({
-  useAgentPanels: () => ({
-    isPanelOpen: () => false,
-    openPanel: vi.fn(),
-    closePanel: vi.fn(),
-    togglePanel: mockTogglePanel,
-    closeAllPanels: vi.fn(),
-    getLastClosedAt: () => 0,
-    hasPanelAttention: mockHasPanelAttention,
-    markPanelAttention: vi.fn(),
-    clearPanelAttention: vi.fn(),
-  }),
-}));
+vi.mock('@/context/AgentPanelsContext', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/context/AgentPanelsContext')
+  >('@/context/AgentPanelsContext');
+  return {
+    ...actual,
+    useAgentPanels: () => ({
+      isShellOpen: () => shellOpen,
+      openShell: vi.fn(),
+      closeShell: vi.fn(),
+      toggleShell: mockToggleShell,
+      activeTab: 'workspace',
+      setActiveTab: vi.fn(),
+      isPanelOpen: () => false,
+      openPanel: vi.fn(),
+      closePanel: vi.fn(),
+      togglePanel: vi.fn(),
+      closeAllPanels: vi.fn(),
+      getLastClosedAt: () => 0,
+      hasPanelAttention: mockHasPanelAttention,
+      markPanelAttention: vi.fn(),
+      clearPanelAttention: vi.fn(),
+    }),
+  };
+});
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
@@ -128,20 +143,11 @@ vi.mock('react-i18next', () => ({
       if (key === 'agent.header.copyAria') {
         return 'Copy conversation';
       }
-      if (key === 'agent.header.toggleWorkspaceAria') {
-        return 'Toggle workspace';
+      if (key === 'agent.header.toggleShellAria') {
+        return 'Toggle agent panels';
       }
-      if (key === 'agent.header.toggleProcessesAria') {
-        return 'Toggle processes';
-      }
-      if (key === 'agent.header.toggleProcessesHasUpdatesAria') {
-        return 'Toggle processes (has updates)';
-      }
-      if (key === 'agent.header.togglePlanningAria') {
-        return 'Toggle planning';
-      }
-      if (key === 'agent.header.togglePlanningHasUpdatesAria') {
-        return 'Toggle planning (has updates)';
+      if (key === 'agent.header.toggleShellHasUpdatesAria') {
+        return 'Toggle agent panels (has updates)';
       }
       if (key === 'agent.header.defaultAssistant') {
         return 'Agent';
@@ -163,6 +169,7 @@ global.ResizeObserver = class ResizeObserver {
 describe('AgentChatHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shellOpen = false;
     mockHasPanelAttention.mockReturnValue(false);
   });
 
@@ -189,15 +196,17 @@ describe('AgentChatHeader', () => {
     ).toBeTruthy();
   });
 
-  it('toggles the processes panel from the header control', () => {
+  it('toggles the agent panel shell from the header control', () => {
     render(<AgentChatHeader />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Toggle processes' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Toggle agent panels' }),
+    );
 
-    expect(mockTogglePanel).toHaveBeenCalledWith('processes');
+    expect(mockToggleShell).toHaveBeenCalledTimes(1);
   });
 
-  it('shows an attention dot on the processes toggle when marked', () => {
+  it('shows an attention dot on the shell toggle when any tab is marked', () => {
     mockHasPanelAttention.mockImplementation(
       (id: string) => id === 'processes',
     );
@@ -207,7 +216,7 @@ describe('AgentChatHeader', () => {
     expect(screen.getByTestId('panel-attention-dot')).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
-        name: 'Toggle processes (has updates)',
+        name: 'Toggle agent panels (has updates)',
       }),
     ).toBeInTheDocument();
   });

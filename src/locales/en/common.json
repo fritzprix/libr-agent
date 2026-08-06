@@ -920,6 +920,9 @@
       "copyTooltip": "Copy conversation as Markdown",
       "toggleWorkspaceAria": "Toggle Workspace Files Panel",
       "toggleWorkspaceTooltip": "Toggle Workspace Files Panel",
+      "toggleShellAria": "Toggle agent panels",
+      "toggleShellTooltip": "Toggle agent panels",
+      "toggleShellHasUpdatesAria": "Toggle agent panels (has updates)",
       "toggleProcessesAria": "Toggle Background Processes Panel",
       "toggleProcessesTooltip": "Toggle Background Processes Panel",
       "toggleProcessesHasUpdatesAria": "Toggle Background Processes Panel (has updates)",
@@ -1091,7 +1094,9 @@
     },
     "panels": {
       "shellTitle": "Agent panels",
-      "tabHasUpdatesAria": "{{tab}} (has updates)"
+      "tabHasUpdatesAria": "{{tab}} (has updates)",
+      "close": "Close",
+      "closeAria": "Close agent panels"
     },
     "planning": {
       "title": "AI Planning",

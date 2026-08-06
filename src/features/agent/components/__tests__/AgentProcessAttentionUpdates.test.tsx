@@ -5,6 +5,7 @@ import { AgentProcessAttentionUpdates } from '../AgentProcessAttentionUpdates';
 
 const mockAgentCallBuiltinTool = vi.fn();
 const mockMarkPanelAttention = vi.fn();
+const mockClearPanelAttention = vi.fn();
 let panelOpen = false;
 
 vi.mock('@/hooks/use-rust-backend', () => ({
@@ -23,6 +24,7 @@ vi.mock('@/context/AgentPanelsContext', () => ({
   useAgentPanels: () => ({
     isPanelOpen: (id: string) => id === 'processes' && panelOpen,
     markPanelAttention: mockMarkPanelAttention,
+    clearPanelAttention: mockClearPanelAttention,
   }),
 }));
 

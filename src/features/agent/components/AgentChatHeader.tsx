@@ -8,7 +8,7 @@ import {
   useAgentSessionListActions,
   useAgentSessionListState,
 } from '@/context/AgentSessionListContext';
-import { useAgentPanels } from '@/context/AgentPanelsContext';
+import { AGENT_PANEL_IDS, useAgentPanels } from '@/context/AgentPanelsContext';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { FolderOpen, Copy, Loader2, Terminal, ListChecks } from 'lucide-react';
+import { Copy, Loader2, PanelRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useClipboard } from '@/hooks/useClipboard';
@@ -38,12 +38,9 @@ export function AgentChatHeader({
   const { renameSession } = useAgentSessionActions();
   const { toggleBookmark } = useAgentSessionListActions();
   const { sessions, notificationSessions } = useAgentSessionListState();
-  const { isPanelOpen, togglePanel, hasPanelAttention } = useAgentPanels();
-  const showWorkspacePanel = isPanelOpen('workspace');
-  const showPlanningPanel = isPanelOpen('planning');
-  const showProcessesPanel = isPanelOpen('processes');
-  const processesAttention = hasPanelAttention('processes');
-  const planningAttention = hasPanelAttention('planning');
+  const { isShellOpen, toggleShell, hasPanelAttention } = useAgentPanels();
+  const shellOpen = isShellOpen();
+  const shellAttention = AGENT_PANEL_IDS.some((id) => hasPanelAttention(id));
   const { messages } = useAgentChat();
   const [isCopying, setIsCopying] = useState(false);
   const [bookmarkOverride, setBookmarkOverride] = useState<
@@ -152,90 +149,28 @@ export function AgentChatHeader({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  togglePanel('workspace');
-                }}
-                aria-label={t('agent.header.toggleWorkspaceAria')}
-                aria-controls="agent-workspace-panel"
-                aria-expanded={showWorkspacePanel}
-                className="h-6 px-2"
-              >
-                <FolderOpen
-                  className={`h-4 w-4 ${showWorkspacePanel ? 'text-primary' : ''}`}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {t('agent.header.toggleWorkspaceTooltip')}
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  togglePanel('processes');
+                  toggleShell();
                 }}
                 aria-label={
-                  processesAttention
+                  shellAttention
                     ? t(
-                        'agent.header.toggleProcessesHasUpdatesAria',
-                        'Toggle Background Processes Panel (has updates)',
+                        'agent.header.toggleShellHasUpdatesAria',
+                        'Toggle agent panels (has updates)',
                       )
-                    : t(
-                        'agent.header.toggleProcessesAria',
-                        'Toggle Background Processes Panel',
-                      )
+                    : t('agent.header.toggleShellAria', 'Toggle agent panels')
                 }
-                aria-controls="agent-processes-panel"
-                aria-expanded={showProcessesPanel}
+                aria-controls="agent-side-panel-shell"
+                aria-expanded={shellOpen}
                 className="relative h-6 px-2"
               >
-                <Terminal
-                  className={`h-4 w-4 ${showProcessesPanel ? 'text-primary' : ''}`}
+                <PanelRight
+                  className={`h-4 w-4 ${shellOpen ? 'text-primary' : ''}`}
                 />
-                <PanelAttentionDot visible={processesAttention} />
+                <PanelAttentionDot visible={shellAttention} />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {t(
-                'agent.header.toggleProcessesTooltip',
-                'Toggle Background Processes Panel',
-              )}
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  togglePanel('planning');
-                }}
-                aria-label={
-                  planningAttention
-                    ? t(
-                        'agent.header.togglePlanningHasUpdatesAria',
-                        'Toggle AI Planning Panel (has updates)',
-                      )
-                    : t('agent.header.togglePlanningAria')
-                }
-                aria-controls="agent-planning-panel"
-                aria-expanded={showPlanningPanel}
-                className="relative h-6 px-2"
-              >
-                <ListChecks
-                  className={`h-4 w-4 ${showPlanningPanel ? 'text-primary' : ''}`}
-                />
-                <PanelAttentionDot visible={planningAttention} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {t('agent.header.togglePlanningTooltip')}
+              {t('agent.header.toggleShellTooltip', 'Toggle agent panels')}
             </TooltipContent>
           </Tooltip>
 

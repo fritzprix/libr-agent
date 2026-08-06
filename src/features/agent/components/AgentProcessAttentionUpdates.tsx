@@ -23,7 +23,8 @@ const logger = getLogger('AgentProcessAttentionUpdates');
 
 export function AgentProcessAttentionUpdates() {
   const { session } = useAgentSessionState();
-  const { isPanelOpen, markPanelAttention } = useAgentPanels();
+  const { isPanelOpen, markPanelAttention, clearPanelAttention } =
+    useAgentPanels();
   const { agentCallBuiltinTool } = useRustBackend();
   const panelOpen = isPanelOpen('processes');
 
@@ -33,13 +34,14 @@ export function AgentProcessAttentionUpdates() {
   const panelOpenRef = useRef(panelOpen);
   panelOpenRef.current = panelOpen;
 
+  // Reset baseline on every session change so a different process list is not
+  // treated as an in-session update, and drop leftover attention dots.
   useEffect(() => {
-    if (!session?.id) {
-      hasHydratedRef.current = false;
-      fingerprintRef.current = '';
-      setHasActive(false);
-    }
-  }, [session?.id]);
+    hasHydratedRef.current = false;
+    fingerprintRef.current = '';
+    setHasActive(false);
+    clearPanelAttention('processes');
+  }, [clearPanelAttention, session?.id]);
 
   // While the processes tab is active the user sees updates live — clear the
   // baseline so leaving the tab does not immediately re-mark viewed changes.
