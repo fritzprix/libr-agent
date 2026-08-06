@@ -166,6 +166,67 @@ fn terminal_check_session_result_falls_back_to_tool_text_when_assistant_has_no_t
 }
 
 #[test]
+fn terminal_check_session_result_prefers_ui_report_result_body() {
+    let result = build_terminal_check_session_result_from_messages(
+        "session-terminal-report-result",
+        "idle",
+        5,
+        &[
+            json!({
+                "role": "tool",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Final result reported (status=success).\nTitle: Result\nResult:\n## Verdict: approve-with-caveats\n## Confidence: high\n\nSTOP: Do not call any more tools. The task outcome is already delivered."
+                    },
+                    {
+                        "type": "resource",
+                        "resource": {
+                            "uri": "ui://result/review-1",
+                            "mimeType": "text/html",
+                            "text": "<html></html>"
+                        },
+                        "serviceInfo": {
+                            "serverName": "ui",
+                            "toolName": "reportResult",
+                            "backendType": "BuiltInRust"
+                        }
+                    }
+                ]
+            }),
+            json!({
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [{"id": "call-1", "function": {"name": "ui__reportResult"}}]
+            }),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "The persist_terminal test passes in isolation — continuing the review."
+                    }
+                ]
+            }),
+        ],
+        None,
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+
+    assert_eq!(
+        structured.get("result").and_then(|value| value.as_str()),
+        Some("## Verdict: approve-with-caveats\n## Confidence: high")
+    );
+    let text = extract_text(&result);
+    assert!(text.contains("approve-with-caveats"));
+    assert!(!text.contains("persist_terminal test passes"));
+}
+
+#[test]
 fn terminal_error_check_session_result_marks_session_as_recoverable() {
     let result = build_terminal_check_session_result_from_messages(
         "session-error-123",

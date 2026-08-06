@@ -153,7 +153,7 @@ pub fn reject_display_token_used_as_storage_key(
     lookup_id: &str,
     known_storage_ids: &[&str],
 ) -> Result<(), String> {
-    if known_storage_ids.iter().any(|id| *id == lookup_id) {
+    if known_storage_ids.contains(&lookup_id) {
         return Ok(());
     }
 

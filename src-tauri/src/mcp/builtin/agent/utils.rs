@@ -124,7 +124,95 @@ pub fn latest_tool_message_text(messages: &[Value]) -> Option<String> {
     None
 }
 
+/// Whether a tool-message content item is the `ui__reportResult` resource sibling
+/// (paired with a text summary item in the same `content` array).
+fn content_item_is_report_result_resource(item: &Value) -> bool {
+    if item.get("type").and_then(|v| v.as_str()) != Some("resource") {
+        return false;
+    }
+
+    let tool_name = item
+        .get("serviceInfo")
+        .and_then(|info| info.get("toolName"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if tool_name == "reportResult" {
+        return true;
+    }
+
+    item.get("resource")
+        .and_then(|resource| resource.get("uri"))
+        .and_then(|v| v.as_str())
+        .is_some_and(|uri| uri.starts_with("ui://result/"))
+}
+
+/// Extract the user-facing body from a `ui__reportResult` tool summary.
+///
+/// The tool wraps the deliverable as:
+/// `...Result:\n{body}\n\nSTOP: Do not call any more tools...`
+fn extract_report_result_body_from_summary(summary: &str) -> Option<String> {
+    const RESULT_MARKER: &str = "Result:\n";
+    const STOP_MARKER: &str = "\n\nSTOP:";
+
+    let start = summary.find(RESULT_MARKER)? + RESULT_MARKER.len();
+    let rest = &summary[start..];
+    let body = match rest.find(STOP_MARKER) {
+        Some(end) => &rest[..end],
+        None => rest,
+    };
+    let body = body.trim();
+    if body.is_empty() {
+        None
+    } else {
+        Some(body.to_string())
+    }
+}
+
+/// Newest `ui__reportResult` deliverable body, if any (messages are newest-first).
+///
+/// Parent `checkSession` / blocking `messageToSession` must prefer this over
+/// earlier assistant chatter when a child finished via reportResult.
+pub fn latest_report_result_body(messages: &[Value]) -> Option<String> {
+    for message in messages {
+        let role = message.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        if role != "tool" {
+            continue;
+        }
+
+        let Some(content) = message.get("content").and_then(|v| v.as_array()) else {
+            continue;
+        };
+
+        // Identify via the resource sibling, then read the paired text summary.
+        if !content.iter().any(content_item_is_report_result_resource) {
+            continue;
+        }
+
+        for item in content {
+            if item.get("type").and_then(|v| v.as_str()) != Some("text") {
+                continue;
+            }
+            let Some(text) = item.get("text").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if let Some(body) = extract_report_result_body_from_summary(text) {
+                return Some(body);
+            }
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
 pub fn latest_session_output(messages: &[Value]) -> String {
+    // Explicit UI final deliverable wins over earlier assistant narration.
+    if let Some(report_body) = latest_report_result_body(messages) {
+        return report_body;
+    }
+
     let (_, mut assistant_text) = latest_assistant_message_text(messages, None)
         .unwrap_or(("none".to_string(), "No final answer yet.".to_string()));
 
@@ -649,13 +737,105 @@ mod tests {
             "tool_calls": [{"id": "call-1", "function": {"name": "agent__checkSession"}}]
         });
         // Message #1 (earlier): contains the real final answer text
-        let earlier_asst = assistant_json("asst-1", "Consensus delegation review completed successfully.");
+        let earlier_asst = assistant_json(
+            "asst-1",
+            "Consensus delegation review completed successfully.",
+        );
 
         let messages = vec![latest_empty_asst, earlier_asst];
 
         let (msg_id, output) = latest_assistant_message_text(&messages, None).unwrap();
         assert_eq!(msg_id, "asst-1");
-        assert_eq!(output, "Consensus delegation review completed successfully.");
-        assert_eq!(latest_session_output(&messages), "Consensus delegation review completed successfully.");
+        assert_eq!(
+            output,
+            "Consensus delegation review completed successfully."
+        );
+        assert_eq!(
+            latest_session_output(&messages),
+            "Consensus delegation review completed successfully."
+        );
+    }
+
+    #[test]
+    fn latest_session_output_prefers_report_result_over_earlier_assistant_text() {
+        // Mirrors production: child called ui__reportResult, then parent checkSession
+        // used to return older assistant narration instead of the report body.
+        let report_tool = json!({
+            "id": "tool-report",
+            "role": "tool",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Final result reported (status=success).\nTitle: Result\nResult:\n## Verdict: approve-with-caveats\n## Confidence: high\n\nSTOP: Do not call any more tools. The task outcome is already delivered. End your turn now with at most a one-sentence confirmation."
+                },
+                {
+                    "type": "resource",
+                    "resource": {
+                        "uri": "ui://result/abc-123",
+                        "mimeType": "text/html",
+                        "text": "<html></html>"
+                    },
+                    "serviceInfo": {
+                        "serverName": "ui",
+                        "toolName": "reportResult",
+                        "backendType": "BuiltInRust"
+                    }
+                }
+            ]
+        });
+        let empty_asst = json!({
+            "id": "asst-report-call",
+            "role": "assistant",
+            "content": [],
+            "tool_calls": [{"id": "call-report", "function": {"name": "ui__reportResult"}}]
+        });
+        let earlier_asst = assistant_json(
+            "asst-progress",
+            "The persist_terminal test passes in isolation — continuing the review.",
+        );
+
+        let messages = vec![report_tool, empty_asst, earlier_asst];
+
+        assert_eq!(
+            latest_session_output(&messages),
+            "## Verdict: approve-with-caveats\n## Confidence: high"
+        );
+    }
+
+    #[test]
+    fn latest_session_output_falls_back_to_report_result_text_without_markers() {
+        // When the summary format drifts (no Result:/STOP markers), still prefer
+        // the reportResult tool text over earlier assistant narration.
+        let report_tool = json!({
+            "id": "tool-report-plain",
+            "role": "tool",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Deliverable without wrapper markers: approve-with-caveats"
+                },
+                {
+                    "type": "resource",
+                    "resource": {
+                        "uri": "ui://result/plain-1",
+                        "mimeType": "text/html",
+                        "text": "<html></html>"
+                    },
+                    "serviceInfo": {
+                        "serverName": "ui",
+                        "toolName": "reportResult",
+                        "backendType": "BuiltInRust"
+                    }
+                }
+            ]
+        });
+        let earlier_asst = assistant_json("asst-old", "Earlier assistant chatter should lose.");
+
+        let messages = vec![report_tool, earlier_asst];
+
+        assert_eq!(
+            latest_session_output(&messages),
+            "Deliverable without wrapper markers: approve-with-caveats"
+        );
     }
 }
