@@ -40,6 +40,7 @@ import {
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { cn } from '@/lib/utils';
 
+import { PanelEyebrow, PanelListFrame } from './panel-chrome';
 import { FileTreeNode } from './workspace-panel/FileTreeNode';
 import { useWorkspaceFiles } from './workspace-panel/useWorkspaceFiles';
 import { useWorkspaceOverride } from './workspace-panel/useWorkspaceOverride';
@@ -69,7 +70,8 @@ async function withNativeOpenLock(
 
 interface AgentWorkspacePanelProps {
   isVisible?: boolean;
-  variant?: 'rail' | 'sheet';
+  /** `tab` omits outer Card border when hosted inside AgentSidePanelShell. */
+  variant?: 'rail' | 'sheet' | 'tab';
 }
 
 export function AgentWorkspacePanel({
@@ -301,7 +303,7 @@ export function AgentWorkspacePanel({
         className={cn(
           'h-full w-full rounded-none bg-background py-0 shadow-none gap-0',
           variant === 'rail'
-            ? 'border-y-0 border-l-0 border-r border-border/40'
+            ? 'border-y-0 border-r-0 border-l border-border/40'
             : 'border-0',
           dragState.isOver && 'border-success bg-success/5',
         )}
@@ -309,10 +311,13 @@ export function AgentWorkspacePanel({
         <CardHeader className="border-b border-border/40 px-4 py-3">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                <Folder className="h-3.5 w-3.5" />
-                <span>{t('agent.workspace.title')}</span>
-              </div>
+              {variant !== 'tab' ? (
+                <PanelEyebrow icon={<Folder className="h-3.5 w-3.5" />}>
+                  {t('agent.workspace.title')}
+                </PanelEyebrow>
+              ) : (
+                <div />
+              )}
               <div className="flex items-center gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -524,14 +529,14 @@ export function AgentWorkspacePanel({
           )}
 
           {loading && fileTree.length === 0 ? (
-            <div className="flex items-center justify-center rounded-lg border border-border/40 bg-muted/[0.18] py-8">
-              <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+            <PanelListFrame className="flex items-center justify-center py-8">
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
               <span className="text-xs text-muted-foreground">
                 {t('agent.workspace.loading')}
               </span>
-            </div>
+            </PanelListFrame>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border/40 bg-muted/[0.18]">
+            <PanelListFrame className="overflow-hidden">
               {fileTree.map((node) => (
                 <FileTreeNode
                   key={node.id}
@@ -546,7 +551,7 @@ export function AgentWorkspacePanel({
                   {t('agent.workspace.noFilesFound')}
                 </div>
               )}
-            </div>
+            </PanelListFrame>
           )}
         </CardContent>
 

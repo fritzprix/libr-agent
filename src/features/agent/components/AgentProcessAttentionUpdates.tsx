@@ -1,6 +1,6 @@
 /**
- * Watches background processes while the processes panel is closed and marks
- * an attention (notification) dot on the header toggle — never auto-opens.
+ * Watches background processes while the processes panel/tab is not active and
+ * marks an attention (notification) dot — never auto-opens the shell.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAgentPanels } from '@/context/AgentPanelsContext';
@@ -9,23 +9,17 @@ import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
 import {
+  filterVisibleProcesses,
+  PROCESS_LIST_POLL_INTERVAL_MS,
+  PROCESS_MESSAGE_REFRESH_DEBOUNCE_MS,
+  processListFingerprint,
+} from './process-panel/listProcessesShared';
+import {
   isActiveProcessStatus,
   parseListProcessesResult,
 } from './process-panel/types';
 
 const logger = getLogger('AgentProcessAttentionUpdates');
-
-const POLL_INTERVAL_MS = 2500;
-const MESSAGE_REFRESH_DEBOUNCE_MS = 500;
-
-function processFingerprint(
-  processes: Array<{ process_id: string; status: string }>,
-): string {
-  return processes
-    .map((process) => `${process.process_id}:${process.status}`)
-    .sort()
-    .join('|');
-}
 
 export function AgentProcessAttentionUpdates() {
   const { session } = useAgentSessionState();
@@ -47,8 +41,8 @@ export function AgentProcessAttentionUpdates() {
     }
   }, [session?.id]);
 
-  // While the panel is open the user sees updates live — clear the closed-panel
-  // baseline so closing does not immediately re-mark already-viewed changes.
+  // While the processes tab is active the user sees updates live — clear the
+  // baseline so leaving the tab does not immediately re-mark viewed changes.
   useEffect(() => {
     if (panelOpen) {
       hasHydratedRef.current = false;
@@ -79,10 +73,8 @@ export function AgentProcessAttentionUpdates() {
         return;
       }
 
-      const visible = parsed.processes.filter(
-        (process) => process.status !== 'killed',
-      );
-      const nextFingerprint = processFingerprint(visible);
+      const visible = filterVisibleProcesses(parsed.processes);
+      const nextFingerprint = processListFingerprint(visible);
       const nextHasActive = visible.some((process) =>
         isActiveProcessStatus(process.status),
       );
@@ -119,7 +111,7 @@ export function AgentProcessAttentionUpdates() {
   const messageTriggerOptions = useMemo(
     () => ({
       enabled: Boolean(session?.id) && !panelOpen,
-      debounceMs: MESSAGE_REFRESH_DEBOUNCE_MS,
+      debounceMs: PROCESS_MESSAGE_REFRESH_DEBOUNCE_MS,
     }),
     [panelOpen, session?.id],
   );
@@ -133,7 +125,7 @@ export function AgentProcessAttentionUpdates() {
 
     const timer = window.setInterval(() => {
       void refresh();
-    }, POLL_INTERVAL_MS);
+    }, PROCESS_LIST_POLL_INTERVAL_MS);
 
     return () => {
       window.clearInterval(timer);

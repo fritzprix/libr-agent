@@ -2,75 +2,73 @@ import { describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
-import {
-  AgentPanelsProvider,
-  getSiblingPanels,
-  useAgentPanels,
-} from '../AgentPanelsContext';
+import { AgentPanelsProvider, useAgentPanels } from '../AgentPanelsContext';
 
 function wrapper({ children }: { children: ReactNode }) {
   return <AgentPanelsProvider>{children}</AgentPanelsProvider>;
 }
 
 describe('AgentPanelsContext', () => {
-  it('opens a panel and reports isPanelOpen', () => {
+  it('opens a panel tab and reports isPanelOpen only for the active tab', () => {
     const { result } = renderHook(() => useAgentPanels(), { wrapper });
 
+    expect(result.current.isShellOpen()).toBe(false);
     expect(result.current.isPanelOpen('workspace')).toBe(false);
 
     act(() => {
       result.current.openPanel('workspace');
     });
 
+    expect(result.current.isShellOpen()).toBe(true);
+    expect(result.current.activeTab).toBe('workspace');
     expect(result.current.isPanelOpen('workspace')).toBe(true);
+    expect(result.current.isPanelOpen('processes')).toBe(false);
   });
 
-  it('closes sibling left-side panels when opening processes', () => {
+  it('switches tabs without closing the shell', () => {
     const { result } = renderHook(() => useAgentPanels(), { wrapper });
 
     act(() => {
       result.current.openPanel('workspace');
     });
-    expect(result.current.isPanelOpen('workspace')).toBe(true);
-
-    const before = Date.now();
     act(() => {
       result.current.openPanel('processes');
     });
 
+    expect(result.current.isShellOpen()).toBe(true);
+    expect(result.current.activeTab).toBe('processes');
     expect(result.current.isPanelOpen('processes')).toBe(true);
     expect(result.current.isPanelOpen('workspace')).toBe(false);
-    expect(result.current.isPanelOpen('planning')).toBe(false);
-    expect(result.current.getLastClosedAt('workspace')).toBeGreaterThanOrEqual(
-      before,
-    );
   });
 
-  it('records lastClosedAt for siblings closed via toggle mutual exclusion', () => {
+  it('togglePanel closes when the same tab is active, otherwise opens that tab', () => {
     const { result } = renderHook(() => useAgentPanels(), { wrapper });
 
     act(() => {
-      result.current.openPanel('workspace');
+      result.current.togglePanel('planning');
     });
+    expect(result.current.isPanelOpen('planning')).toBe(true);
+
+    act(() => {
+      result.current.togglePanel('processes');
+    });
+    expect(result.current.isShellOpen()).toBe(true);
+    expect(result.current.isPanelOpen('processes')).toBe(true);
 
     const before = Date.now();
     act(() => {
       result.current.togglePanel('processes');
     });
-
-    expect(result.current.isPanelOpen('processes')).toBe(true);
-    expect(result.current.isPanelOpen('workspace')).toBe(false);
-    expect(result.current.getLastClosedAt('workspace')).toBeGreaterThanOrEqual(
-      before,
-    );
+    expect(result.current.isShellOpen()).toBe(false);
+    expect(result.current.getLastClosedAt()).toBeGreaterThanOrEqual(before);
   });
 
-  it('closeAllPanels closes every panel and stamps lastClosedAt', () => {
+  it('closeAllPanels closes the shell and clears attention', () => {
     const { result } = renderHook(() => useAgentPanels(), { wrapper });
 
     act(() => {
       result.current.openPanel('workspace');
-      result.current.openPanel('planning');
+      result.current.markPanelAttention('planning');
     });
 
     const before = Date.now();
@@ -78,75 +76,33 @@ describe('AgentPanelsContext', () => {
       result.current.closeAllPanels();
     });
 
-    expect(result.current.isPanelOpen('workspace')).toBe(false);
-    expect(result.current.isPanelOpen('planning')).toBe(false);
-    expect(result.current.isPanelOpen('processes')).toBe(false);
-    expect(result.current.getLastClosedAt('workspace')).toBeGreaterThanOrEqual(
-      before,
-    );
-    expect(result.current.getLastClosedAt('planning')).toBeGreaterThanOrEqual(
-      before,
-    );
-    expect(result.current.getLastClosedAt('processes')).toBeGreaterThanOrEqual(
-      before,
-    );
+    expect(result.current.isShellOpen()).toBe(false);
+    expect(result.current.getLastClosedAt()).toBeGreaterThanOrEqual(before);
+    expect(result.current.hasPanelAttention('planning')).toBe(false);
   });
 
-  it('allows planning to stay open while a left panel opens', () => {
-    const { result } = renderHook(() => useAgentPanels(), { wrapper });
-
-    act(() => {
-      result.current.openPanel('planning');
-      result.current.openPanel('workspace');
-    });
-
-    expect(result.current.isPanelOpen('planning')).toBe(true);
-    expect(result.current.isPanelOpen('workspace')).toBe(true);
-  });
-
-  it('records lastClosedAt when closing', () => {
-    const { result } = renderHook(() => useAgentPanels(), { wrapper });
-
-    act(() => {
-      result.current.openPanel('planning');
-    });
-
-    const before = Date.now();
-    act(() => {
-      result.current.closePanel('planning');
-    });
-
-    expect(result.current.isPanelOpen('planning')).toBe(false);
-    expect(result.current.getLastClosedAt('planning')).toBeGreaterThanOrEqual(
-      before,
-    );
-  });
-
-  it('records lastClosedAt when toggling closed', () => {
+  it('marks attention only when the tab is not currently visible', () => {
     const { result } = renderHook(() => useAgentPanels(), { wrapper });
 
     act(() => {
       result.current.openPanel('workspace');
+      result.current.markPanelAttention('workspace');
     });
+    expect(result.current.hasPanelAttention('workspace')).toBe(false);
 
-    const before = Date.now();
     act(() => {
-      result.current.togglePanel('workspace');
+      result.current.markPanelAttention('processes');
     });
+    expect(result.current.hasPanelAttention('processes')).toBe(true);
 
-    expect(result.current.isPanelOpen('workspace')).toBe(false);
-    expect(result.current.getLastClosedAt('workspace')).toBeGreaterThanOrEqual(
-      before,
-    );
+    act(() => {
+      result.current.closeShell();
+      result.current.markPanelAttention('planning');
+    });
+    expect(result.current.hasPanelAttention('planning')).toBe(true);
   });
 
-  it('lists workspace and processes as siblings', () => {
-    expect(getSiblingPanels('workspace')).toEqual(['processes']);
-    expect(getSiblingPanels('processes')).toEqual(['workspace']);
-    expect(getSiblingPanels('planning')).toEqual([]);
-  });
-
-  it('marks attention only while closed and clears it on open', () => {
+  it('clears attention when opening a tab', () => {
     const { result } = renderHook(() => useAgentPanels(), { wrapper });
 
     act(() => {
@@ -158,27 +114,5 @@ describe('AgentPanelsContext', () => {
       result.current.openPanel('processes');
     });
     expect(result.current.hasPanelAttention('processes')).toBe(false);
-
-    act(() => {
-      result.current.closePanel('processes');
-      result.current.markPanelAttention('processes');
-    });
-    expect(result.current.hasPanelAttention('processes')).toBe(true);
-
-    act(() => {
-      result.current.togglePanel('processes');
-    });
-    expect(result.current.hasPanelAttention('processes')).toBe(false);
-  });
-
-  it('does not mark attention while the panel is already open', () => {
-    const { result } = renderHook(() => useAgentPanels(), { wrapper });
-
-    act(() => {
-      result.current.openPanel('planning');
-      result.current.markPanelAttention('planning');
-    });
-
-    expect(result.current.hasPanelAttention('planning')).toBe(false);
   });
 });

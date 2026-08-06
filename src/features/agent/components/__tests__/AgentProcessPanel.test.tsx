@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -299,5 +299,83 @@ describe('AgentProcessPanel', () => {
         { processId: 'proc-1', timeout: 0 },
       );
     });
+  });
+
+  it('auto-refreshes process output while the dialog is open for a running process', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mockAgentCallBuiltinTool.mockImplementation(
+        async (_sessionId: string, toolName: string) => {
+          if (toolName === 'workspace__listProcesses') {
+            return {
+              isError: false,
+              structuredContent: {
+                processes: [
+                  {
+                    process_id: 'proc-1',
+                    name: 'server',
+                    command: 'pnpm tauri dev',
+                    status: 'running',
+                    pid: 1001,
+                    started_at: '2026-08-06T00:00:00.000Z',
+                    exit_code: null,
+                  },
+                ],
+                total: 1,
+                running: 1,
+                finished: 0,
+              },
+            };
+          }
+
+          if (toolName === 'workspace__readProcessOutput') {
+            return {
+              isError: false,
+              structuredContent: {
+                process_id: 'proc-1',
+                stream: 'both',
+                mode: 'tail',
+                status: 'running',
+                is_process_running: true,
+                outputs: {
+                  stdout: { content: ['line-1'] },
+                  stderr: { content: [] },
+                },
+              },
+            };
+          }
+
+          return { isError: false, structuredContent: {} };
+        },
+      );
+
+      render(<AgentProcessPanel isVisible />);
+
+      await waitFor(() => {
+        expect(screen.getByText('server')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByLabelText('Read process output'));
+
+      await waitFor(() => {
+        expect(screen.getByText('line-1')).toBeInTheDocument();
+      });
+
+      const readCallsBefore = mockAgentCallBuiltinTool.mock.calls.filter(
+        (call) => call[1] === 'workspace__readProcessOutput',
+      ).length;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+
+      const readCallsAfter = mockAgentCallBuiltinTool.mock.calls.filter(
+        (call) => call[1] === 'workspace__readProcessOutput',
+      ).length;
+
+      expect(readCallsAfter).toBeGreaterThan(readCallsBefore);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

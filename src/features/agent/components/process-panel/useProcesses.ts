@@ -8,6 +8,12 @@ import { useTranslation } from 'react-i18next';
 import type { MCPContent } from '@/lib/mcp/protocol/content';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
 import {
+  filterVisibleProcesses,
+  PROCESS_LIST_POLL_INTERVAL_MS,
+  PROCESS_MESSAGE_REFRESH_DEBOUNCE_MS,
+  summarizeVisibleProcesses,
+} from './listProcessesShared';
+import {
   isActiveProcessStatus,
   parseListProcessesResult,
   parseReadProcessOutputResult,
@@ -17,9 +23,6 @@ import {
 } from './types';
 
 const logger = getLogger('useProcesses');
-
-const POLL_INTERVAL_MS = 2500;
-const MESSAGE_REFRESH_DEBOUNCE_MS = 500;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -66,6 +69,7 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionProcessId, setActionProcessId] = useState<string | null>(null);
+  const [outputProcessId, setOutputProcessId] = useState<string | null>(null);
   const [outputResult, setOutputResult] =
     useState<ReadProcessOutputResult | null>(null);
   const [outputOpen, setOutputOpen] = useState(false);
@@ -196,23 +200,26 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
   const messageTriggerOptions = useMemo(
     () => ({
       enabled: enabled && Boolean(session?.id),
-      debounceMs: MESSAGE_REFRESH_DEBOUNCE_MS,
+      debounceMs: PROCESS_MESSAGE_REFRESH_DEBOUNCE_MS,
     }),
     [enabled, session?.id],
   );
 
   useAgentMessageTrigger(onMessageTrigger, messageTriggerOptions);
 
-  const hasActiveProcesses = listResult.processes.some((process) =>
-    isActiveProcessStatus(process.status),
-  );
-
   // Killed processes stay in the backend registry (for agent tools) but should
   // leave the panel once terminated — matching user expectation after stop.
   const processes = useMemo(
-    () => listResult.processes.filter((process) => process.status !== 'killed'),
+    () => filterVisibleProcesses(listResult.processes),
     [listResult.processes],
   );
+
+  const summary = useMemo(
+    () => summarizeVisibleProcesses(processes),
+    [processes],
+  );
+
+  const hasActiveProcesses = summary.running > 0;
 
   useEffect(() => {
     if (!enabled || !session?.id || !hasActiveProcesses) {
@@ -221,7 +228,7 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
 
     const timer = window.setInterval(() => {
       void refresh({ silent: true });
-    }, POLL_INTERVAL_MS);
+    }, PROCESS_LIST_POLL_INTERVAL_MS);
 
     return () => {
       window.clearInterval(timer);
@@ -257,12 +264,6 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
           processes: prev.processes.filter(
             (item) => item.process_id !== process.process_id,
           ),
-          total: Math.max(0, prev.total - 1),
-          running: Math.max(
-            0,
-            prev.running - (isActiveProcessStatus(process.status) ? 1 : 0),
-          ),
-          finished: prev.finished + 1,
         }));
 
         toast.success(
@@ -289,6 +290,7 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
     [agentCallBuiltinTool, refresh, session?.id],
   );
 
+  /** Non-blocking status check via waitForProcess(timeout: 0). */
   const pollProcess = useCallback(
     async (process: ProcessEntry) => {
       const sessionId = session?.id;
@@ -325,7 +327,7 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
                 'Failed to poll process status',
               );
         toast.error(message);
-        logger.error('Failed to poll process', {
+        logger.error('Failed to poll process status', {
           processId: process.process_id,
           error: message,
         });
@@ -336,25 +338,28 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
     [agentCallBuiltinTool, refresh, session?.id],
   );
 
-  const readOutput = useCallback(
-    async (process: ProcessEntry) => {
+  const fetchOutput = useCallback(
+    async (
+      processId: string,
+      opts?: { silent?: boolean },
+    ): Promise<boolean> => {
       const sessionId = session?.id;
       if (!sessionId) {
-        return;
+        return false;
       }
 
-      setOutputLoading(true);
-      setActionProcessId(process.process_id);
-      setOutputOpen(true);
-      setOutputResult(null);
-      setOutputError(null);
+      const silent = Boolean(opts?.silent);
+      if (!silent) {
+        setOutputLoading(true);
+        setOutputError(null);
+      }
 
       try {
         const response = await agentCallBuiltinTool(
           sessionId,
           'workspace__readProcessOutput',
           {
-            processId: process.process_id,
+            processId,
             stream: 'both',
             mode: 'tail',
             lines: 100,
@@ -368,22 +373,34 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
               'agent.processes.readError',
               'Failed to read process output',
             );
-          setOutputError(message);
-          return;
+          if (!silent) {
+            setOutputError(message);
+          } else {
+            logger.warn('Silent process output refresh returned error', {
+              processId,
+              message,
+            });
+          }
+          return false;
         }
 
         const parsed = parseReadProcessOutputResult(response.structuredContent);
         if (!parsed) {
-          setOutputError(
-            tRef.current(
-              'agent.processes.invalidOutputPayload',
-              'Process output response was invalid',
-            ),
+          const message = tRef.current(
+            'agent.processes.invalidOutputPayload',
+            'Process output response was invalid',
           );
-          return;
+          if (!silent) {
+            setOutputError(message);
+          }
+          return false;
         }
 
         setOutputResult(parsed);
+        if (!silent) {
+          setOutputError(null);
+        }
+        return true;
       } catch (err) {
         const message =
           err instanceof Error
@@ -392,30 +409,78 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
                 'agent.processes.readError',
                 'Failed to read process output',
               );
-        setOutputError(message);
+        if (!silent) {
+          setOutputError(message);
+        }
         logger.error('Failed to read process output', {
-          processId: process.process_id,
+          processId,
           error: message,
         });
+        return false;
       } finally {
-        setOutputLoading(false);
-        setActionProcessId(null);
+        if (!silent) {
+          setOutputLoading(false);
+        }
       }
     },
     [agentCallBuiltinTool, session?.id],
   );
 
+  const readOutput = useCallback(
+    async (process: ProcessEntry) => {
+      setActionProcessId(process.process_id);
+      setOutputProcessId(process.process_id);
+      setOutputOpen(true);
+      setOutputResult(null);
+      try {
+        await fetchOutput(process.process_id);
+      } finally {
+        setActionProcessId(null);
+      }
+    },
+    [fetchOutput],
+  );
+
   const closeOutput = useCallback(() => {
     setOutputOpen(false);
+    setOutputProcessId(null);
     setOutputResult(null);
     setOutputError(null);
   }, []);
 
+  const outputProcess = useMemo(
+    () =>
+      outputProcessId
+        ? (processes.find((item) => item.process_id === outputProcessId) ??
+          null)
+        : null,
+    [outputProcessId, processes],
+  );
+
+  const outputIsActive = outputProcess
+    ? isActiveProcessStatus(outputProcess.status)
+    : Boolean(outputResult?.is_process_running);
+
+  // Live tail: re-fetch while the output dialog is open and the process is active.
+  useEffect(() => {
+    if (!outputOpen || !outputProcessId || !outputIsActive || !session?.id) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void fetchOutput(outputProcessId, { silent: true });
+    }, PROCESS_LIST_POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [fetchOutput, outputIsActive, outputOpen, outputProcessId, session?.id]);
+
   return {
     processes,
-    total: processes.length,
-    running: listResult.running,
-    finished: listResult.finished,
+    total: summary.total,
+    running: summary.running,
+    finished: summary.finished,
     loading,
     error,
     actionProcessId,
@@ -423,6 +488,7 @@ export function useProcesses(options: { enabled?: boolean } = {}) {
     outputLoading,
     outputResult,
     outputError,
+    outputProcessId,
     refresh,
     stopProcess,
     pollProcess,

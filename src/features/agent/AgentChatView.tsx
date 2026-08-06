@@ -36,9 +36,7 @@ import { AgentChatStatusBar } from './components/AgentChatStatusBar';
 import { AgentChatMessages } from './components/AgentChatMessages';
 import { AgentChatInput } from './components/AgentChatInput';
 import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
-import { AgentWorkspacePanel } from './components/AgentWorkspacePanel';
-import { AgentPlanningPanel } from './components/AgentPlanningPanel';
-import { AgentProcessPanel } from './components/AgentProcessPanel';
+import { AgentSidePanelShell } from './components/AgentSidePanelShell';
 import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { AgentProcessAttentionUpdates } from './components/AgentProcessAttentionUpdates';
 import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
@@ -324,11 +322,8 @@ function InteractiveShellPromptDialog({
 
 function AgentChatInner() {
   const isMobile = useIsMobile();
-  const { closePanel, openPanel, isPanelOpen } = useAgentPanels();
-  const showWorkspacePanel = isPanelOpen('workspace');
-  const showPlanningPanel = isPanelOpen('planning');
-  const showProcessesPanel = isPanelOpen('processes');
-  const showLeftPanel = showWorkspacePanel || showProcessesPanel;
+  const { closeShell, openShell, isShellOpen } = useAgentPanels();
+  const showSidePanel = isShellOpen();
   const { t } = useTranslation();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -336,41 +331,16 @@ function AgentChatInner() {
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
-  const hasOpenedLeftRef = useRef(!isMobile && showLeftPanel);
-  const hasOpenedPlanningRef = useRef(!isMobile && showPlanningPanel);
-  const lastLeftPanelRef = useRef<'workspace' | 'processes'>(
-    showProcessesPanel ? 'processes' : 'workspace',
-  );
+  const hasOpenedShellRef = useRef(!isMobile && showSidePanel);
 
   useEffect(() => {
-    if (showProcessesPanel) {
-      lastLeftPanelRef.current = 'processes';
-    } else if (showWorkspacePanel) {
-      lastLeftPanelRef.current = 'workspace';
+    if (!isMobile && showSidePanel) {
+      hasOpenedShellRef.current = true;
     }
-  }, [showProcessesPanel, showWorkspacePanel]);
+  }, [isMobile, showSidePanel]);
 
-  useEffect(() => {
-    if (!isMobile && showLeftPanel) {
-      hasOpenedLeftRef.current = true;
-    }
-  }, [isMobile, showLeftPanel]);
-
-  useEffect(() => {
-    if (!isMobile && showPlanningPanel) {
-      hasOpenedPlanningRef.current = true;
-    }
-  }, [isMobile, showPlanningPanel]);
-
-  const hasOpenedLeftDesktop =
-    !isMobile && (showLeftPanel || hasOpenedLeftRef.current);
-  const hasOpenedPlanningDesktop =
-    !isMobile && (showPlanningPanel || hasOpenedPlanningRef.current);
-  const leftPanelKind = showProcessesPanel
-    ? 'processes'
-    : showWorkspacePanel
-      ? 'workspace'
-      : lastLeftPanelRef.current;
+  const hasOpenedShellDesktop =
+    !isMobile && (showSidePanel || hasOpenedShellRef.current);
 
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
@@ -442,37 +412,15 @@ function AgentChatInner() {
     workflowStatus,
   ]);
 
-  const handleWorkspaceSheetOpenChange = useCallback(
+  const handleSidePanelSheetOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (nextOpen) {
-        openPanel('workspace');
+        openShell();
         return;
       }
-      closePanel('workspace');
+      closeShell();
     },
-    [closePanel, openPanel],
-  );
-
-  const handleProcessesSheetOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (nextOpen) {
-        openPanel('processes');
-        return;
-      }
-      closePanel('processes');
-    },
-    [closePanel, openPanel],
-  );
-
-  const handlePlanningSheetOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (nextOpen) {
-        openPanel('planning');
-        return;
-      }
-      closePanel('planning');
-    },
-    [closePanel, openPanel],
+    [closeShell, openShell],
   );
 
   return (
@@ -496,49 +444,14 @@ function AgentChatInner() {
           className="relative flex min-h-0 flex-1 overflow-hidden"
           data-testid="agent-chat-body"
         >
-          {!isMobile && hasOpenedLeftDesktop && (
-            <DesktopPanelRail side="left" open={showLeftPanel}>
-              {/* Keep both mounted so local UI state (tree expand, scroll) survives rail switches. */}
-              <div className="relative h-full w-full">
-                <div
-                  className={cn(
-                    'h-full',
-                    leftPanelKind !== 'workspace' && 'hidden',
-                  )}
-                  aria-hidden={leftPanelKind !== 'workspace'}
-                >
-                  <AgentWorkspacePanel
-                    isVisible={showWorkspacePanel}
-                    variant="rail"
-                  />
-                </div>
-                <div
-                  className={cn(
-                    'h-full',
-                    leftPanelKind !== 'processes' && 'hidden',
-                  )}
-                  aria-hidden={leftPanelKind !== 'processes'}
-                >
-                  <AgentProcessPanel
-                    isVisible={showProcessesPanel}
-                    variant="rail"
-                  />
-                </div>
-              </div>
-            </DesktopPanelRail>
-          )}
-
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <AgentChatStatusBar />
             <AgentChatMessages />
           </div>
 
-          {!isMobile && hasOpenedPlanningDesktop && (
-            <DesktopPanelRail side="right" open={showPlanningPanel}>
-              <AgentPlanningPanel
-                isVisible={showPlanningPanel}
-                variant="rail"
-              />
+          {!isMobile && hasOpenedShellDesktop && (
+            <DesktopPanelRail side="right" open={showSidePanel}>
+              <AgentSidePanelShell isVisible={showSidePanel} variant="rail" />
             </DesktopPanelRail>
           )}
         </div>
@@ -546,35 +459,15 @@ function AgentChatInner() {
       </div>
 
       {isMobile && (
-        <>
-          <MobilePanelSheet
-            open={showWorkspacePanel}
-            onOpenChange={handleWorkspaceSheetOpenChange}
-            side="left"
-            title={t('agent.workspace.title')}
-            description={t('agent.workspace.title')}
-          >
-            <AgentWorkspacePanel isVisible variant="sheet" />
-          </MobilePanelSheet>
-          <MobilePanelSheet
-            open={showProcessesPanel}
-            onOpenChange={handleProcessesSheetOpenChange}
-            side="left"
-            title={t('agent.processes.title', 'Background Processes')}
-            description={t('agent.processes.title', 'Background Processes')}
-          >
-            <AgentProcessPanel isVisible variant="sheet" />
-          </MobilePanelSheet>
-          <MobilePanelSheet
-            open={showPlanningPanel}
-            onOpenChange={handlePlanningSheetOpenChange}
-            side="right"
-            title={t('agent.planning.title')}
-            description={t('agent.planning.title')}
-          >
-            <AgentPlanningPanel isVisible variant="sheet" />
-          </MobilePanelSheet>
-        </>
+        <MobilePanelSheet
+          open={showSidePanel}
+          onOpenChange={handleSidePanelSheetOpenChange}
+          side="right"
+          title={t('agent.panels.shellTitle', 'Agent panels')}
+          description={t('agent.panels.shellTitle', 'Agent panels')}
+        >
+          <AgentSidePanelShell isVisible variant="sheet" />
+        </MobilePanelSheet>
       )}
       <AgentPlanningUpdates />
       <AgentProcessAttentionUpdates />

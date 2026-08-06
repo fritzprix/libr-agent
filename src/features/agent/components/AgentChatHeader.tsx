@@ -17,7 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { PanelRight, FolderOpen, Copy, Loader2, Terminal } from 'lucide-react';
+import { FolderOpen, Copy, Loader2, Terminal, ListChecks } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useClipboard } from '@/hooks/useClipboard';
@@ -228,7 +228,7 @@ export function AgentChatHeader({
                 aria-expanded={showPlanningPanel}
                 className="relative h-6 px-2"
               >
-                <PanelRight
+                <ListChecks
                   className={`h-4 w-4 ${showPlanningPanel ? 'text-primary' : ''}`}
                 />
                 <PanelAttentionDot visible={planningAttention} />

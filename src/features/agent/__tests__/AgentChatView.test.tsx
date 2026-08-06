@@ -12,9 +12,8 @@ import AgentChatView from '../AgentChatView';
 const mocks = vi.hoisted(() => ({
   agentSessionState: undefined as AgentSessionStateContextValue | undefined,
   isMobile: false,
-  showWorkspacePanel: false,
-  showPlanningPanel: false,
-  showProcessesPanel: false,
+  showSidePanel: false,
+  activeTab: 'workspace' as 'workspace' | 'planning' | 'processes',
 }));
 
 function createBaseRuntimeState(): SessionRuntimeState {
@@ -123,12 +122,14 @@ vi.mock('@/context/AgentPanelsContext', () => ({
     <>{children}</>
   ),
   useAgentPanels: () => ({
-    isPanelOpen: (id: 'workspace' | 'planning' | 'processes') => {
-      if (id === 'workspace') return mocks.showWorkspacePanel;
-      if (id === 'planning') return mocks.showPlanningPanel;
-      if (id === 'processes') return mocks.showProcessesPanel;
-      return false;
-    },
+    isShellOpen: () => mocks.showSidePanel,
+    openShell: vi.fn(),
+    closeShell: vi.fn(),
+    toggleShell: vi.fn(),
+    activeTab: mocks.activeTab,
+    setActiveTab: vi.fn(),
+    isPanelOpen: (id: 'workspace' | 'planning' | 'processes') =>
+      mocks.showSidePanel && mocks.activeTab === id,
     openPanel: vi.fn(),
     closePanel: vi.fn(),
     togglePanel: vi.fn(),
@@ -171,16 +172,8 @@ vi.mock('../components/AgentChatAttachedFiles', () => ({
   AgentChatAttachedFiles: () => <div>mock-attached-files</div>,
 }));
 
-vi.mock('../components/AgentWorkspacePanel', () => ({
-  AgentWorkspacePanel: () => <div>mock-workspace-panel</div>,
-}));
-
-vi.mock('../components/AgentProcessPanel', () => ({
-  AgentProcessPanel: () => <div>mock-process-panel</div>,
-}));
-
-vi.mock('../components/AgentPlanningPanel', () => ({
-  AgentPlanningPanel: () => <div>mock-planning-panel</div>,
+vi.mock('../components/AgentSidePanelShell', () => ({
+  AgentSidePanelShell: () => <div>mock-side-panel-shell</div>,
 }));
 
 vi.mock('../components/AgentPlanningUpdates', () => ({
@@ -252,9 +245,8 @@ describe('AgentChatView', () => {
   beforeEach(() => {
     mocks.agentSessionState = createSessionState();
     mocks.isMobile = false;
-    mocks.showWorkspacePanel = false;
-    mocks.showPlanningPanel = false;
-    mocks.showProcessesPanel = false;
+    mocks.showSidePanel = false;
+    mocks.activeTab = 'workspace';
     vi.mocked(toast.loading).mockClear();
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.warning).mockClear();
@@ -433,35 +425,30 @@ describe('AgentChatView', () => {
       expect.objectContaining({ duration: 2500 }),
     );
   });
-  it('renders both desktop side panels at the same time', () => {
+  it('renders the desktop side panel shell on the right', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
     });
-    mocks.showWorkspacePanel = true;
-    mocks.showPlanningPanel = true;
+    mocks.showSidePanel = true;
 
     render(<AgentChatView />);
 
-    expect(screen.getByText('mock-workspace-panel')).toBeInTheDocument();
-    expect(screen.getByText('mock-planning-panel')).toBeInTheDocument();
+    expect(screen.getByText('mock-side-panel-shell')).toBeInTheDocument();
     expect(screen.queryByTestId('sheet-content-left')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sheet-content-right')).not.toBeInTheDocument();
   });
 
-  it('renders mobile panels inside sheets instead of desktop rails', () => {
+  it('renders the mobile side panel shell inside a right sheet', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
     });
     mocks.isMobile = true;
-    mocks.showWorkspacePanel = true;
-    mocks.showPlanningPanel = true;
+    mocks.showSidePanel = true;
 
     render(<AgentChatView />);
 
-    expect(screen.getAllByTestId('sheet-content-left')).toHaveLength(2);
     expect(screen.getByTestId('sheet-content-right')).toBeInTheDocument();
-    expect(screen.getAllByText('mock-workspace-panel')).toHaveLength(1);
-    expect(screen.getAllByText('mock-process-panel')).toHaveLength(1);
-    expect(screen.getAllByText('mock-planning-panel')).toHaveLength(1);
+    expect(screen.queryByTestId('sheet-content-left')).not.toBeInTheDocument();
+    expect(screen.getByText('mock-side-panel-shell')).toBeInTheDocument();
   });
 });

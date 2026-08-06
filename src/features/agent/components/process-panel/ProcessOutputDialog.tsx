@@ -46,9 +46,20 @@ export function ProcessOutputDialog({
 }: ProcessOutputDialogProps) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+
+  useEffect(() => {
+    if (!open) {
+      stickToBottomRef.current = true;
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open || loading || (!result && !error)) {
+      return;
+    }
+    if (!stickToBottomRef.current) {
       return;
     }
     const node = bottomRef.current;
@@ -78,7 +89,16 @@ export function ProcessOutputDialog({
           </div>
         ) : (
           <ScrollArea className="min-h-0 flex-1 pr-3">
-            <div className="space-y-4 pb-2">
+            <div
+              ref={viewportRef}
+              className="space-y-4 pb-2"
+              onScroll={(event) => {
+                const target = event.currentTarget;
+                const distanceFromBottom =
+                  target.scrollHeight - target.scrollTop - target.clientHeight;
+                stickToBottomRef.current = distanceFromBottom < 48;
+              }}
+            >
               {error ? (
                 <div
                   role="alert"

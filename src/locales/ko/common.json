@@ -1089,6 +1089,10 @@
       "badgeMcp": "mcp",
       "viewSchema": "입력 스키마 보기"
     },
+    "panels": {
+      "shellTitle": "에이전트 패널",
+      "tabHasUpdatesAria": "{{tab}} (업데이트 있음)"
+    },
     "planning": {
       "title": "AI 계획",
       "currentGoal": "현재 목표",
@@ -1117,7 +1121,6 @@
     },
     "processes": {
       "title": "백그라운드 프로세스",
-      "placeholder": "프로세스 MVP가 준비되면 여기에 목록이 표시됩니다.",
       "empty": "이 세션에 백그라운드 프로세스가 아직 없습니다.",
       "loading": "프로세스 불러오는 중…",
       "loadingOutput": "출력 불러오는 중…",
