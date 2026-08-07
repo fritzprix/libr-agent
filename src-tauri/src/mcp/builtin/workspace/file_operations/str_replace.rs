@@ -245,11 +245,8 @@ impl WorkspaceServer {
         let message =
             format!("Replaced {replacements} occurrence(s) in '{path_str}'.\n\n{diff_output}");
 
-        Ok(SuccessHint::new(
-            message,
-            vec!["Use workspace__readFile to verify the updated content".to_string()],
-        )
-        .to_mcp_result())
+        // Diff in the body is enough — do not burn tokens on a re-read follow-up.
+        Ok(SuccessHint::new(message, vec![]).to_mcp_result())
     }
 }
 

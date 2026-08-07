@@ -140,25 +140,11 @@ impl WorkspaceServer {
             let mut actions = Vec::new();
 
             match first_status {
-                "failed" => {
+                "failed" | "finished" => {
                     actions.push(format!(
                         "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
-                    actions.push(
-                        "Use workspace__listProcesses() again if you need another processId from this session"
-                            .to_string(),
-                    );
-                }
-                "finished" => {
-                    actions.push(format!(
-                        "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
-                        first_id
-                    ));
-                    actions.push(
-                        "Use workspace__listProcesses() again if you need another processId from this session"
-                            .to_string(),
-                    );
                 }
                 "running" => {
                     actions.push(format!(

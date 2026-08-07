@@ -428,7 +428,6 @@ impl SuccessHint {
                 "workspace__readFile and workspace__listDirectory still use workspace root, not the shell CWD".to_string(),
             ],
             ("spawnProcess", ToolGroup::Workspace) => vec![
-                "Use workspace__listProcesses to see the status of the background task".to_string(),
                 "Use workspace__waitForProcess with timeout=0 to check if it's still running".to_string(),
                 "Use workspace__readProcessOutput to see standard output and error".to_string(),
             ],
@@ -440,36 +439,18 @@ impl SuccessHint {
                 "Use workspace__waitForProcess(processId, 0) only to check status, not to unlock reading".to_string(),
                 "If processId is missing from the registry, use workspace__listProcesses() — do not assume it is still starting".to_string(),
             ],
+            // Steady-path success catalogs stay empty; handlers add outcome-conditioned follow-ups.
             ("listProcesses", ToolGroup::Workspace) => vec![],
-            ("writeFile", ToolGroup::Workspace) => vec![
-                "Use workspace__readFile to verify the content".to_string(),
-                "Use workspace__listDirectory to see the file in context".to_string(),
-            ],
-            ("readFile", ToolGroup::Workspace) => vec![
-                format!(
-                    "Use workspace__{} for targeted in-place edits",
-                    crate::mcp::builtin::workspace::edit_mode::PRIMARY_EDIT_TOOL
-                ),
-                "Use workspace__writeFile only to create, overwrite, or append whole files".to_string(),
-            ],
-            ("listDirectory", ToolGroup::Workspace) => vec![
-                "Use workspace__readFile to view file contents".to_string(),
-                "Use workspace__writeFile to create new files".to_string(),
-                "Use workspace__globFiles with filePattern to narrow down names".to_string(),
-            ],
+            ("writeFile", ToolGroup::Workspace) => vec![],
+            ("readFile", ToolGroup::Workspace) => vec![],
+            ("listDirectory", ToolGroup::Workspace) => vec![],
             #[cfg(feature = "workspace-edit-file")]
             (
                 "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
                 ToolGroup::Workspace,
-            ) => vec![
-                "Use workspace__readFile to verify your edits".to_string(),
-                "Use workspace__runShell to execute the updated code".to_string(),
-            ],
+            ) => vec![],
             #[cfg(feature = "workspace-str-replace")]
-            ("strReplace", ToolGroup::Workspace) => vec![
-                "Use workspace__readFile to verify your edits".to_string(),
-                "Use workspace__runShell to execute the updated code".to_string(),
-            ],
+            ("strReplace", ToolGroup::Workspace) => vec![],
             ("globFiles", ToolGroup::Workspace) => vec![
                 "Use workspace__grepFiles to search inside matched files".to_string(),
                 "Use workspace__readFile to inspect a specific match".to_string(),
