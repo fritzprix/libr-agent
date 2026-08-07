@@ -118,15 +118,20 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     [supportedContentTypes],
   );
 
+  // Expanded tool results: let autoResizeIframe grow with content (no 384px /
+  // max-h-96-style cap — that caused an inner iframe scrollbar). Compact /
+  // inline resources keep a fixed viewport with an 80vh ceiling.
   const htmlProps = useMemo(
     () => ({
       autoResizeIframe: { height: true, width: false },
-      style: { height: '384px', maxHeight: '80vh' },
+      style: expandResources
+        ? { width: '100%', minHeight: '200px' }
+        : { height: '384px', maxHeight: '80vh' },
       iframeProps: {
         className: 'w-full',
       },
     }),
-    [],
+    [expandResources],
   );
 
   const handleLinkClick = async (
