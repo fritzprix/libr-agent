@@ -6,7 +6,11 @@ import {
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import type { useAgentChat } from '@/context/AgentChatContext';
-import { VISUAL_BOTTOM_THRESHOLD, type BottomAlignmentPhase } from './types';
+import {
+  VISUAL_BOTTOM_THRESHOLD,
+  NEAR_TOP_SCROLL_THRESHOLD,
+  type BottomAlignmentPhase,
+} from './types';
 
 /**
  * Fingerprint of latest-message fields that can change chat list *structure*.
@@ -113,6 +117,45 @@ export function isPinnedToBottom(
   threshold = VISUAL_BOTTOM_THRESHOLD,
 ): boolean {
   return distanceFromBottom <= threshold;
+}
+
+/**
+ * True when the viewport is genuinely pinned to the latest content.
+ *
+ * - Content that fits in the viewport is both "at top" and "at bottom"; treat
+ *   that as a trusted bottom so follow is not paused via reached-top.
+ * - During older-message prepend, scrollHeight can briefly collapse so
+ *   distanceFromBottom≈0 while scrollTop is still ~0 — reject that case.
+ */
+export function isTrustedVisualBottom(
+  distanceFromBottom: number,
+  scrollTop: number,
+  options?: {
+    threshold?: number;
+    nearTopThreshold?: number;
+    scrollHeight?: number;
+    clientHeight?: number;
+  },
+): boolean {
+  const threshold = options?.threshold ?? VISUAL_BOTTOM_THRESHOLD;
+  const nearTopThreshold =
+    options?.nearTopThreshold ?? NEAR_TOP_SCROLL_THRESHOLD;
+
+  if (!isPinnedToBottom(distanceFromBottom, threshold)) {
+    return false;
+  }
+
+  const scrollHeight = options?.scrollHeight;
+  const clientHeight = options?.clientHeight;
+  if (
+    scrollHeight !== undefined &&
+    clientHeight !== undefined &&
+    scrollHeight <= clientHeight + threshold
+  ) {
+    return true;
+  }
+
+  return scrollTop > nearTopThreshold;
 }
 
 export function isBottomAlignmentActive(phase: BottomAlignmentPhase): boolean {

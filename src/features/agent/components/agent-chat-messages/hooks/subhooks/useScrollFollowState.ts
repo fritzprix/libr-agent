@@ -16,11 +16,36 @@ export function useScrollFollowState({
   const shouldFollowLatestRef = useRef(true);
   const upwardReleaseDistanceRef = useRef(0);
   const selfScrollIgnoreUntilRef = useRef(0);
+  // After startReached / older-page load / reached-top: stay in history mode
+  // until the user is genuinely back at the latest content (or taps pin).
+  // Prevents collapsed-height / top-edge false bottoms from re-arming follow.
+  const isHistoryBrowsingRef = useRef(false);
 
   const setEffectivePinnedState = useCallback((nextPinned: boolean) => {
     isPinnedToBottomRef.current = nextPinned;
     setIsPinned(nextPinned);
   }, []);
+
+  const enterHistoryBrowsing = useCallback(
+    (reason: string) => {
+      if (!isHistoryBrowsingRef.current) {
+        isHistoryBrowsingRef.current = true;
+        logScrollState('history-browsing:enter', { reason });
+      }
+    },
+    [logScrollState],
+  );
+
+  const exitHistoryBrowsing = useCallback(
+    (reason: string) => {
+      if (!isHistoryBrowsingRef.current) {
+        return;
+      }
+      isHistoryBrowsingRef.current = false;
+      logScrollState('history-browsing:exit', { reason });
+    },
+    [logScrollState],
+  );
 
   const resumeBottomFollow = useCallback(
     (reason: string) => {
@@ -63,7 +88,10 @@ export function useScrollFollowState({
     shouldFollowLatestRef,
     upwardReleaseDistanceRef,
     selfScrollIgnoreUntilRef,
+    isHistoryBrowsingRef,
     setEffectivePinnedState,
+    enterHistoryBrowsing,
+    exitHistoryBrowsing,
     resumeBottomFollow,
     pauseBottomFollow,
   };
