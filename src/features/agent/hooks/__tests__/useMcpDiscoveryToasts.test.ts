@@ -53,7 +53,7 @@ describe('useMcpDiscoveryToasts', () => {
     });
   });
 
-  it('shows success toast when discovery completes', () => {
+  it('shows success toast with deterministic ID when discovery completes', () => {
     renderHook(() =>
       useMcpDiscoveryToasts({
         hasSession: true,
@@ -66,14 +66,13 @@ describe('useMcpDiscoveryToasts', () => {
       }),
     );
 
-    expect(toast.dismiss).toHaveBeenCalledWith('mcp-discovery:s1');
     expect(toast.success).toHaveBeenCalledWith(
       'agent.statusBar.mcpResultSuccess',
-      expect.objectContaining({ duration: 2500 }),
+      expect.objectContaining({ id: 'mcp-discovery:s1', duration: 2500 }),
     );
   });
 
-  it('shows warning toast for partial discovery', () => {
+  it('shows warning toast with deterministic ID for partial discovery', () => {
     renderHook(() =>
       useMcpDiscoveryToasts({
         hasSession: true,
@@ -101,7 +100,7 @@ describe('useMcpDiscoveryToasts', () => {
 
     expect(toast.warning).toHaveBeenCalledWith(
       'agent.statusBar.mcpResultPartial',
-      expect.objectContaining({ duration: 5000 }),
+      expect.objectContaining({ id: 'mcp-discovery:s-timeout', duration: 5000 }),
     );
   });
 
@@ -128,7 +127,7 @@ describe('useMcpDiscoveryToasts', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('shows failed summary toast when no per-server feedback exists', () => {
+  it('shows failed summary toast with deterministic ID when no per-server feedback exists', () => {
     renderHook(() =>
       useMcpDiscoveryToasts({
         hasSession: true,
@@ -149,7 +148,60 @@ describe('useMcpDiscoveryToasts', () => {
 
     expect(toast.error).toHaveBeenCalledWith(
       'agent.statusBar.mcpResultFailed',
-      expect.objectContaining({ duration: 8000 }),
+      expect.objectContaining({
+        id: 'mcp-discovery:s-fail-summary',
+        duration: 8000,
+      }),
     );
+  });
+
+  it('dismisses discovery toast on unmount', () => {
+    const { unmount } = renderHook(() =>
+      useMcpDiscoveryToasts({
+        hasSession: true,
+        isProxyReady: false,
+        phase: 'initializing',
+        initResult: 'pending',
+        servers: readyServers,
+        sessionId: 's1',
+      }),
+    );
+
+    vi.clearAllMocks();
+    unmount();
+
+    expect(toast.dismiss).toHaveBeenCalledWith('mcp-discovery:s1');
+  });
+
+  it('does not re-trigger result toast when switching back to an already-ready session', () => {
+    let currentSessionId = 's1';
+    const props = (sessionId: string) => ({
+      hasSession: true,
+      isProxyReady: true,
+      phase: 'ready' as const,
+      initResult: 'success' as const,
+      servers: readyServers,
+      sessionId,
+    });
+
+    const { rerender } = renderHook(() =>
+      useMcpDiscoveryToasts(props(currentSessionId)),
+    );
+
+    expect(toast.success).toHaveBeenCalledTimes(1);
+
+    // Switch to s2
+    currentSessionId = 's2';
+    rerender();
+    expect(toast.success).toHaveBeenCalledTimes(2);
+
+    vi.clearAllMocks();
+
+    // Switch back to s1
+    currentSessionId = 's1';
+    rerender();
+
+    // Should not re-fire toast.success for s1
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

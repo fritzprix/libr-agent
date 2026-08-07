@@ -4,6 +4,13 @@ import { toast } from 'sonner';
 import type { SessionRuntimeState } from '@/models/agent-ipc';
 import { collectNewMcpServerFailures } from './mcpServerFailureFeedback';
 
+export function mcpServerFailureToastId(
+  sessionId: string,
+  failureKey: string,
+): string {
+  return `mcp-failure:${sessionId}:${failureKey}`;
+}
+
 /**
  * Show Sonner feedback when session MCP servers fail or time out during init/resume.
  * One server's failure must not suppress toasts for others.
@@ -13,22 +20,37 @@ export function useMcpServerFailureToasts(
   runtimeState: SessionRuntimeState,
 ): void {
   const { t } = useTranslation();
-  const toastedKeysRef = useRef<Set<string>>(new Set());
-  const previousSessionIdRef = useRef(sessionId);
+  const toastedKeysBySessionRef = useRef<Map<string, Set<string>>>(new Map());
+  const activeToastIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (previousSessionIdRef.current !== sessionId) {
-      toastedKeysRef.current = new Set();
-      previousSessionIdRef.current = sessionId;
+    return () => {
+      for (const toastId of activeToastIdsRef.current) {
+        toast.dismiss(toastId);
+      }
+      activeToastIdsRef.current.clear();
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
     }
 
+    if (!toastedKeysBySessionRef.current.has(sessionId)) {
+      toastedKeysBySessionRef.current.set(sessionId, new Set());
+    }
+    const sessionToastedKeys = toastedKeysBySessionRef.current.get(sessionId)!;
+
     const newFailures = collectNewMcpServerFailures(
-      toastedKeysRef.current,
+      sessionToastedKeys,
       runtimeState.servers,
     );
 
     for (const failure of newFailures) {
-      toastedKeysRef.current.add(failure.key);
+      sessionToastedKeys.add(failure.key);
+      const toastId = mcpServerFailureToastId(sessionId, failure.key);
+      activeToastIdsRef.current.add(toastId);
 
       if (failure.kind === 'timeout') {
         toast.error(
@@ -37,6 +59,7 @@ export function useMcpServerFailureToasts(
             transport: failure.transport,
           }),
           {
+            id: toastId,
             description: t('agent.statusBar.mcpServerTimeoutDescription', {
               error: failure.error,
             }),
@@ -50,6 +73,7 @@ export function useMcpServerFailureToasts(
             transport: failure.transport,
           }),
           {
+            id: toastId,
             description: t('agent.statusBar.mcpServerFailedDescription', {
               error: failure.error,
             }),

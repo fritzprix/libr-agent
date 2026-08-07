@@ -39,11 +39,7 @@ export function useMcpDiscoveryToasts({
   currentStep,
 }: UseMcpDiscoveryToastsArgs): void {
   const { t } = useTranslation();
-  const resultKeyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    resultKeyRef.current = null;
-  }, [sessionId]);
+  const resultKeyBySessionRef = useRef<Map<string, string>>(new Map());
 
   const showLoading = hasSession && !isProxyReady && phase !== 'failed';
   const discoveryFinished =
@@ -66,8 +62,11 @@ export function useMcpDiscoveryToasts({
       return;
     }
 
-    toast.dismiss(id);
-  }, [sessionId, hasSession, showLoading, currentStep, t]);
+    // Dismiss loading toast only if discovery failed or ended without terminal result toast
+    if (!discoveryFinished) {
+      toast.dismiss(id);
+    }
+  }, [sessionId, hasSession, showLoading, discoveryFinished, currentStep, t]);
 
   useEffect(() => {
     if (!sessionId || !hasSession || showLoading) {
@@ -78,13 +77,16 @@ export function useMcpDiscoveryToasts({
     }
 
     const resultKey = `${sessionId}:${initResult}:${phase}`;
-    if (resultKeyRef.current === resultKey) {
+    if (resultKeyBySessionRef.current.get(sessionId) === resultKey) {
       return;
     }
-    resultKeyRef.current = resultKey;
+    resultKeyBySessionRef.current.set(sessionId, resultKey);
+
+    const id = discoveryToastId(sessionId);
 
     if (initResult === 'success') {
       toast.success(t('agent.statusBar.mcpResultSuccess'), {
+        id,
         duration: SUCCESS_TOAST_MS,
       });
       return;
@@ -92,6 +94,7 @@ export function useMcpDiscoveryToasts({
 
     if (initResult === 'partial' || phase === 'degraded') {
       toast.warning(t('agent.statusBar.mcpResultPartial'), {
+        id,
         duration: PARTIAL_TOAST_MS,
       });
       return;
@@ -103,6 +106,7 @@ export function useMcpDiscoveryToasts({
       );
       if (!hasPerServerFeedback) {
         toast.error(t('agent.statusBar.mcpResultFailed'), {
+          id,
           duration: 8000,
         });
       }

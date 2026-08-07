@@ -9,6 +9,7 @@ import type { SessionRuntimeState } from '@/models/agent-ipc';
 export function notifyRuntimeStateErrors(
   prevState: SessionRuntimeState,
   nextState: SessionRuntimeState,
+  sessionId?: string,
 ): void {
   // Skip when per-server failed/timed_out rows exist — those toast via
   // useMcpServerFailureToasts.
@@ -23,6 +24,7 @@ export function notifyRuntimeStateErrors(
     nextState.initialization.error
   ) {
     toast.error('MCP Server initialization failed', {
+      id: sessionId ? `mcp-runtime-error:${sessionId}` : undefined,
       description: nextState.initialization.error,
       duration: 8000,
     });

@@ -79,7 +79,7 @@ describe('notifyRuntimeStateErrors', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('toasts generic init failure when phase is failed without server list', () => {
+  it('toasts generic init failure with deterministic ID when phase is failed without server list', () => {
     const prev = baseState();
     const next = baseState({
       phase: 'failed',
@@ -91,11 +91,12 @@ describe('notifyRuntimeStateErrors', () => {
       servers: [],
     });
 
-    notifyRuntimeStateErrors(prev, next);
+    notifyRuntimeStateErrors(prev, next, 's1');
 
     expect(toast.error).toHaveBeenCalledWith(
       'MCP Server initialization failed',
       expect.objectContaining({
+        id: 'mcp-runtime-error:s1',
         description: 'Loading tool configurations failed',
       }),
     );
