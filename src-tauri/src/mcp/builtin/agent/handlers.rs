@@ -613,6 +613,11 @@ pub async fn resolve_check_session_enrichment(meta: &SessionMetadata) -> CheckSe
     check_session_enrichment_from_metadata(meta, assistant_name)
 }
 
+/// Build a paused checkSession MCP result from pre-fetched messages.
+///
+/// `session_id` must be the opaque storage key (`SessionMetadata.id`). It is
+/// only used to derive the agent-facing display token — never pass
+/// `display_session_id(...)` here if you also feed messages fetched by that id.
 pub fn build_paused_check_session_result_from_messages(
     session_id: &str,
     turn_count: usize,
@@ -669,6 +674,12 @@ pub fn build_paused_check_session_result_from_messages(
     hint.to_mcp_result_with_data(Some(Value::Object(response_data)))
 }
 
+/// Build a terminal checkSession MCP result from pre-fetched messages.
+///
+/// `session_id` must be the opaque storage key (`SessionMetadata.id`). It is
+/// only used to derive the agent-facing display token — messages must already
+/// have been loaded via `fetch_session_messages_for_result` with a
+/// `StorageSessionId`.
 pub fn build_terminal_check_session_result_from_messages(
     session_id: &str,
     status: &str,
@@ -768,16 +779,18 @@ pub fn build_terminal_check_session_result_from_messages(
 }
 
 async fn build_terminal_check_session_result(
-    session_id: &str,
+    storage_session_id: &crate::utils::session_id::StorageSessionId,
     status: &str,
     turn_count: usize,
     enrichment: &CheckSessionEnrichment,
 ) -> Result<MCPResult, String> {
+    // Message fetch requires the opaque storage key, never display_session_id().
     let messages_value =
-        fetch_session_messages_for_result(session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT).await?;
+        fetch_session_messages_for_result(storage_session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT)
+            .await?;
 
     Ok(build_terminal_check_session_result_from_messages(
-        session_id,
+        storage_session_id.as_str(),
         status,
         turn_count,
         &messages_value,
@@ -786,15 +799,17 @@ async fn build_terminal_check_session_result(
 }
 
 async fn build_paused_check_session_result(
-    session_id: &str,
+    storage_session_id: &crate::utils::session_id::StorageSessionId,
     turn_count: usize,
     enrichment: &CheckSessionEnrichment,
 ) -> Result<MCPResult, String> {
+    // Message fetch requires the opaque storage key, never display_session_id().
     let messages_value =
-        fetch_session_messages_for_result(session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT).await?;
+        fetch_session_messages_for_result(storage_session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT)
+            .await?;
 
     Ok(build_paused_check_session_result_from_messages(
-        session_id,
+        storage_session_id.as_str(),
         turn_count,
         &messages_value,
         Some(enrichment),

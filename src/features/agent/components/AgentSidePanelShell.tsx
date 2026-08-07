@@ -1,11 +1,17 @@
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   useAgentPanels,
   type AgentPanelId,
 } from '@/context/AgentPanelsContext';
 import { cn } from '@/lib/utils';
-import { FolderOpen, ListChecks, Terminal } from 'lucide-react';
+import { FolderOpen, ListChecks, Terminal, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AgentPlanningPanel } from './AgentPlanningPanel';
 import { AgentProcessPanel } from './AgentProcessPanel';
@@ -21,14 +27,21 @@ const TAB_ORDER: AgentPanelId[] = ['workspace', 'processes', 'planning'];
 
 /**
  * Single right-side shell hosting Files / Processes / Planning as tabs.
+ * Tabs switch content only; use the header shell toggle or the close control
+ * to dismiss the shell.
  */
 export function AgentSidePanelShell({
   isVisible = true,
   variant = 'rail',
 }: AgentSidePanelShellProps) {
   const { t } = useTranslation();
-  const { activeTab, setActiveTab, hasPanelAttention, isPanelOpen } =
-    useAgentPanels();
+  const {
+    activeTab,
+    setActiveTab,
+    hasPanelAttention,
+    isPanelOpen,
+    closeShell,
+  } = useAgentPanels();
 
   return (
     <Card
@@ -51,8 +64,8 @@ export function AgentSidePanelShell({
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div className="shrink-0 border-b border-border/40 px-3 py-2">
-          <TabsList className="grid h-9 w-full grid-cols-3">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border/40 px-2 py-2">
+          <TabsList className="grid h-9 min-w-0 flex-1 grid-cols-3">
             {TAB_ORDER.map((tabId) => {
               const attention = hasPanelAttention(tabId);
               const label =
@@ -89,6 +102,24 @@ export function AgentSidePanelShell({
               );
             })}
           </TabsList>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  closeShell();
+                }}
+                aria-label={t('agent.panels.closeAria', 'Close agent panels')}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('agent.panels.close', 'Close')}</TooltipContent>
+          </Tooltip>
         </div>
 
         {TAB_ORDER.map((tabId) => (

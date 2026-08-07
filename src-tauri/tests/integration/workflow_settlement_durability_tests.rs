@@ -33,6 +33,7 @@ use tauri_mcp_agent_lib::repositories::{
     MessageRepository, SessionMetadata, SessionRepository, SessionStatus, SqliteMessageRepository,
     SqliteSessionRepository, SqliteSettingsRepository,
 };
+use tauri_mcp_agent_lib::utils::session_id::StorageSessionId;
 use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus, set_settings_repository};
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use tokio_util::sync::CancellationToken;
@@ -333,9 +334,12 @@ async fn persist_terminal_assistant_sync_makes_cache_only_message_durable_before
     .await
     .expect("persist succeeds");
 
-    let messages_for_check_session = fetch_session_messages_for_result(&harness.session_id, 50)
-        .await
-        .expect("checkSession message fetch");
+    let messages_for_check_session = fetch_session_messages_for_result(
+        &StorageSessionId::from_resolved(harness.session_id.clone()),
+        50,
+    )
+    .await
+    .expect("checkSession message fetch");
     assert_eq!(
         latest_session_output(&messages_for_check_session),
         "All subtasks completed."
@@ -377,9 +381,12 @@ async fn settle_session_and_go_idle_persists_terminal_message_and_sets_idle() {
         )
     }));
 
-    let messages_for_check_session = fetch_session_messages_for_result(&harness.session_id, 50)
-        .await
-        .expect("checkSession message fetch");
+    let messages_for_check_session = fetch_session_messages_for_result(
+        &StorageSessionId::from_resolved(harness.session_id.clone()),
+        50,
+    )
+    .await
+    .expect("checkSession message fetch");
     assert_eq!(
         latest_session_output(&messages_for_check_session),
         "Workflow finished cleanly."

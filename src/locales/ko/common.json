@@ -920,6 +920,9 @@
       "copyTooltip": "대화 내용을 마크다운으로 복사",
       "toggleWorkspaceAria": "워크스페이스 파일 패널 전환",
       "toggleWorkspaceTooltip": "워크스페이스 파일 패널 전환",
+      "toggleShellAria": "에이전트 패널 전환",
+      "toggleShellTooltip": "에이전트 패널 전환",
+      "toggleShellHasUpdatesAria": "에이전트 패널 전환 (업데이트 있음)",
       "toggleProcessesAria": "백그라운드 프로세스 패널 전환",
       "toggleProcessesTooltip": "백그라운드 프로세스 패널 전환",
       "toggleProcessesHasUpdatesAria": "백그라운드 프로세스 패널 전환 (업데이트 있음)",
@@ -1091,7 +1094,9 @@
     },
     "panels": {
       "shellTitle": "에이전트 패널",
-      "tabHasUpdatesAria": "{{tab}} (업데이트 있음)"
+      "tabHasUpdatesAria": "{{tab}} (업데이트 있음)",
+      "close": "닫기",
+      "closeAria": "에이전트 패널 닫기"
     },
     "planning": {
       "title": "AI 계획",

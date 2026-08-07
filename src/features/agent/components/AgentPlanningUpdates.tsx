@@ -21,15 +21,45 @@ const logger = getLogger('AgentPlanningUpdates');
 
 const PLANNING_TOAST_ID_PREFIX = 'agent-planning-update';
 
+/** Treat missing / empty plan snapshots as equivalent across context reloads. */
+function normalizePlanning(
+  state: PlanningState | undefined,
+): PlanningState | null {
+  if (!state) {
+    return null;
+  }
+  if ((state.goal == null || state.goal === '') && state.todos.length === 0) {
+    return null;
+  }
+  return state;
+}
+
+function normalizeScratchpad(
+  state: ScratchpadState | undefined,
+): ScratchpadState | null {
+  if (!state) {
+    return null;
+  }
+  if (state.items.length === 0 && state.count === 0) {
+    return null;
+  }
+  return state;
+}
+
 export function AgentPlanningUpdates() {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const { showPlanningPanel } = useAgentPlanning();
-  const { markPanelAttention } = useAgentPanels();
+  const { markPanelAttention, clearPanelAttention } = useAgentPanels();
   const { serviceContexts, updateServiceContexts } = useAgentChat();
   const previousPlanningRef = useRef<PlanningState | undefined>(undefined);
   const previousScratchpadRef = useRef<ScratchpadState | undefined>(undefined);
-  const hasHydratedRef = useRef(false);
+  const trackedSessionIdRef = useRef<string | undefined>(undefined);
+  /**
+   * After a session switch, the next real planning/scratchpad delta is usually
+   * the async service-context reload — absorb it instead of notifying.
+   */
+  const absorbNextDeltaRef = useRef(false);
 
   const planningState = useMemo(
     () => parsePlanningState(serviceContexts.planning?.structuredState),
@@ -39,14 +69,6 @@ export function AgentPlanningUpdates() {
     () => parseScratchpadState(serviceContexts.scratchpad?.structuredState),
     [serviceContexts.scratchpad?.structuredState],
   );
-
-  useEffect(() => {
-    if (!session?.id) {
-      hasHydratedRef.current = false;
-      previousPlanningRef.current = undefined;
-      previousScratchpadRef.current = undefined;
-    }
-  }, [session?.id]);
 
   const triggerCallback = useCallback(() => {
     updateServiceContexts().catch((error: unknown) => {
@@ -86,44 +108,70 @@ export function AgentPlanningUpdates() {
   useAgentMessageTrigger(triggerCallback, triggerOptions);
 
   useEffect(() => {
-    if (!session?.id) {
+    const sessionId = session?.id;
+
+    if (!sessionId) {
+      trackedSessionIdRef.current = undefined;
+      previousPlanningRef.current = undefined;
+      previousScratchpadRef.current = undefined;
+      absorbNextDeltaRef.current = false;
+      clearPanelAttention('planning');
       return;
     }
 
-    if (!hasHydratedRef.current) {
+    // Session switch (or first mount): adopt current snapshot as baseline and
+    // drop leftover attention from the previous session.
+    if (trackedSessionIdRef.current !== sessionId) {
+      trackedSessionIdRef.current = sessionId;
       previousPlanningRef.current = planningState;
       previousScratchpadRef.current = scratchpadState;
-      hasHydratedRef.current = true;
+      absorbNextDeltaRef.current = true;
+      clearPanelAttention('planning');
       return;
     }
 
-    const planningChanged = !equal(previousPlanningRef.current, planningState);
+    const planningChanged = !equal(
+      normalizePlanning(previousPlanningRef.current),
+      normalizePlanning(planningState),
+    );
     const scratchpadChanged = !equal(
-      previousScratchpadRef.current,
-      scratchpadState,
+      normalizeScratchpad(previousScratchpadRef.current),
+      normalizeScratchpad(scratchpadState),
     );
 
-    if ((planningChanged || scratchpadChanged) && !showPlanningPanel) {
-      // Notification-dot on the header toggle — do not auto-open the panel.
+    if (!planningChanged && !scratchpadChanged) {
+      // Empty→empty after switch: nothing to absorb; arm real updates.
+      absorbNextDeltaRef.current = false;
+      return;
+    }
+
+    const previousTodos = previousPlanningRef.current?.todos;
+    previousPlanningRef.current = planningState;
+    previousScratchpadRef.current = scratchpadState;
+
+    if (absorbNextDeltaRef.current) {
+      absorbNextDeltaRef.current = false;
+      return;
+    }
+
+    if (!showPlanningPanel) {
       markPanelAttention('planning');
       toast(t('agent.planning.title'), {
-        id: `${PLANNING_TOAST_ID_PREFIX}-${session.id}`,
+        id: `${PLANNING_TOAST_ID_PREFIX}-${sessionId}`,
         duration: 5000,
         description: (
           <PlanningToastSummary
             goal={planningState?.goal ?? null}
             todos={planningState?.todos ?? []}
-            previousTodos={previousPlanningRef.current?.todos}
+            previousTodos={previousTodos}
             scratchpad={scratchpadState}
             scratchpadChanged={scratchpadChanged}
           />
         ),
       });
     }
-
-    previousPlanningRef.current = planningState;
-    previousScratchpadRef.current = scratchpadState;
   }, [
+    clearPanelAttention,
     markPanelAttention,
     planningState,
     scratchpadState,
