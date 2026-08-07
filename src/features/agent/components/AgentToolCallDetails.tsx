@@ -69,7 +69,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
               : t('agent.toolDetails.result', 'Result')}
           </div>
           {hasError ? (
-            <div className="bg-destructive/10 border border-destructive/20 rounded p-3">
+            <div className="bg-destructive/10 border border-destructive/20 rounded p-3 max-h-96 overflow-y-auto">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
@@ -81,7 +81,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
               </div>
             </div>
           ) : (
-            <div className="bg-background rounded border p-2">
+            <div className="bg-background rounded border p-2 max-h-96 overflow-y-auto">
               <AgentMessageRenderer
                 message={toolResult}
                 className="text-sm"
