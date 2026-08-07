@@ -108,7 +108,12 @@ pub(crate) async fn create_builtin_server(
             )))
         }
         BuiltinServiceId::Attachments => Ok(Some(Box::new(
-            crate::mcp::builtin::attachments::AttachmentsServer::new(_session_id, _session_manager),
+            crate::mcp::builtin::attachments::AttachmentsServer::new_with_db(
+                _session_id,
+                _session_manager,
+                (*_db).clone(),
+            )
+            .await?,
         ))),
         BuiltinServiceId::Ui => Ok(Some(Box::new(crate::mcp::builtin::ui::UiServer::new()))),
         BuiltinServiceId::Browser => {

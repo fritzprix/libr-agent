@@ -135,4 +135,172 @@ mod tests {
 
         assert_eq!(list_result[0].src_url, src_url);
     }
+
+    #[tokio::test]
+    async fn test_attachments_persist_across_storage_restart() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test_restart.db");
+        std::fs::File::create(&db_path).unwrap();
+
+        let url = crate::utils::sqlite::format_sqlite_url(&db_path.to_string_lossy());
+        crate::lifecycle::database::register_sqlite_vec();
+
+        let session_id = "restart_session".to_string();
+        let content_body = "Persisted across restart.\nLine two.";
+        let content_id;
+
+        // Phase 1: write with a DB-backed store, then drop it (simulates app exit)
+        {
+            let db = sea_orm::Database::connect(&url)
+                .await
+                .expect("Failed to connect to database");
+            use migration::{Migrator, MigratorTrait};
+            Migrator::up(&db, None)
+                .await
+                .expect("Failed to run migrations");
+
+            let mut storage = AttachmentsStorage::new_with_db(db)
+                .await
+                .expect("Failed to init storage");
+
+            storage
+                .create_store(session_id.clone(), None, None)
+                .await
+                .expect("Failed to create store");
+
+            let item = storage
+                .add_content(AddContentInput {
+                    session_id: &session_id,
+                    filename: "persisted.txt",
+                    mime_type: "text/plain",
+                    size: content_body.len(),
+                    content: content_body,
+                    chunks: vec![content_body.to_string()],
+                    src_url: None,
+                })
+                .await
+                .expect("Failed to add content");
+            content_id = item.id;
+        }
+
+        // Phase 2: reconnect with empty in-memory cache (simulates app relaunch)
+        {
+            let db = sea_orm::Database::connect(&url)
+                .await
+                .expect("Failed to reconnect to database");
+
+            let mut storage = AttachmentsStorage::new_with_db(db)
+                .await
+                .expect("Failed to re-init storage");
+
+            storage
+                .get_or_create_store(session_id.clone(), None, None)
+                .await
+                .expect("Failed to load existing store");
+
+            let (listed, total) = storage
+                .list_content(&session_id, 0, 10)
+                .await
+                .expect("Failed to list after restart");
+            assert_eq!(total, 1);
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].id, content_id);
+            assert_eq!(listed[0].filename, "persisted.txt");
+
+            let read = storage
+                .read_content(&content_id, 1, None)
+                .await
+                .expect("Failed to read after restart");
+            assert!(read.contains("Persisted across restart"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_or_create_store_creates_when_missing() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test_missing_store.db");
+        std::fs::File::create(&db_path).unwrap();
+
+        let url = crate::utils::sqlite::format_sqlite_url(&db_path.to_string_lossy());
+        crate::lifecycle::database::register_sqlite_vec();
+
+        let db = sea_orm::Database::connect(&url)
+            .await
+            .expect("Failed to connect to database");
+        use migration::{Migrator, MigratorTrait};
+        Migrator::up(&db, None)
+            .await
+            .expect("Failed to run migrations");
+
+        let mut storage = AttachmentsStorage::new_with_db(db)
+            .await
+            .expect("Failed to init storage");
+
+        let session_id = "brand_new_session".to_string();
+        let store = storage
+            .get_or_create_store(session_id.clone(), None, None)
+            .await
+            .expect("Failed to create store for missing session");
+
+        assert_eq!(store.session_id, session_id);
+
+        let (listed, total) = storage
+            .list_content(&session_id, 0, 10)
+            .await
+            .expect("Failed to list empty store");
+        assert_eq!(total, 0);
+        assert!(listed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_empty_store_hydrates_with_no_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test_empty_store.db");
+        std::fs::File::create(&db_path).unwrap();
+
+        let url = crate::utils::sqlite::format_sqlite_url(&db_path.to_string_lossy());
+        crate::lifecycle::database::register_sqlite_vec();
+        let session_id = "empty_session".to_string();
+
+        {
+            let db = sea_orm::Database::connect(&url)
+                .await
+                .expect("Failed to connect to database");
+            use migration::{Migrator, MigratorTrait};
+            Migrator::up(&db, None)
+                .await
+                .expect("Failed to run migrations");
+
+            let mut storage = AttachmentsStorage::new_with_db(db)
+                .await
+                .expect("Failed to init storage");
+
+            storage
+                .create_store(session_id.clone(), None, None)
+                .await
+                .expect("Failed to create empty store");
+        }
+
+        {
+            let db = sea_orm::Database::connect(&url)
+                .await
+                .expect("Failed to reconnect to database");
+
+            let mut storage = AttachmentsStorage::new_with_db(db)
+                .await
+                .expect("Failed to re-init storage");
+
+            storage
+                .get_or_create_store(session_id.clone(), None, None)
+                .await
+                .expect("Failed to hydrate empty store");
+
+            let (listed, total) = storage
+                .list_content(&session_id, 0, 10)
+                .await
+                .expect("Failed to list after empty hydrate");
+            assert_eq!(total, 0);
+            assert!(listed.is_empty());
+        }
+    }
 }
