@@ -1098,6 +1098,7 @@
     },
     "panels": {
       "shellTitle": "Agent panels",
+      "resizeHandleAria": "Resize agent panels",
       "tabHasUpdatesAria": "{{tab}} (has updates)",
       "close": "Close",
       "closeAria": "Close agent panels"

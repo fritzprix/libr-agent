@@ -1098,6 +1098,7 @@
     },
     "panels": {
       "shellTitle": "에이전트 패널",
+      "resizeHandleAria": "에이전트 패널 크기 조절",
       "tabHasUpdatesAria": "{{tab}} (업데이트 있음)",
       "close": "닫기",
       "closeAria": "에이전트 패널 닫기"
