@@ -53,8 +53,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   const isDark = useIsDarkMode();
   // next-themes leaves resolvedTheme undefined until mounted; do not inject a
   // speculative light theme (defaultTheme is dark, so undefined !== dark).
-  const themeReady =
-    resolvedTheme === 'dark' || resolvedTheme === 'light';
+  const themeReady = resolvedTheme === 'dark' || resolvedTheme === 'light';
 
   const markdownComponents = useMemo(
     () => ({
@@ -137,9 +136,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   );
   const themeStyleTag = useMemo(
     () =>
-      themeCssVars
-        ? buildUiResourceThemeStyleTag(isDark, themeCssVars)
-        : null,
+      themeCssVars ? buildUiResourceThemeStyleTag(isDark, themeCssVars) : null,
     [isDark, themeCssVars],
   );
 
