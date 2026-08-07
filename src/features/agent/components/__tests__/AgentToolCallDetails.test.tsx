@@ -63,6 +63,25 @@ const makeToolResult = (text: string): Message =>
         tool_call_id: 'call-1',
     }) as Message;
 
+const makeUIResourceResult = (): Message =>
+    ({
+        id: 'msg-result-ui',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        content: [
+            {
+                type: 'resource',
+                resource: {
+                    uri: 'ui://test',
+                    mimeType: 'text/html',
+                    text: '<p>widget</p>',
+                },
+            },
+        ],
+        tool_call_id: 'call-1',
+    }) as Message;
+
 describe('AgentToolCallDetails', () => {
     it('renders nothing when showDetails is false', () => {
         const { container } = render(
@@ -137,5 +156,29 @@ describe('AgentToolCallDetails', () => {
         expect(parseSpy).not.toHaveBeenCalled();
 
         parseSpy.mockRestore();
+    });
+
+    it('applies max-h-96 to text tool results', () => {
+        const { getByTestId } = render(
+            <AgentToolCallDetails
+                toolCall={makeToolCall()}
+                toolResult={makeToolResult('plain text result')}
+                showDetails={true}
+            />,
+        );
+        expect(getByTestId('tool-call-result').className).toContain('max-h-96');
+        expect(getByTestId('tool-call-result').className).toContain('overflow-y-auto');
+    });
+
+    it('skips max-h-96 when tool result contains a UI resource', () => {
+        const { getByTestId } = render(
+            <AgentToolCallDetails
+                toolCall={makeToolCall()}
+                toolResult={makeUIResourceResult()}
+                showDetails={true}
+            />,
+        );
+        expect(getByTestId('tool-call-result').className).not.toContain('max-h-96');
+        expect(getByTestId('tool-call-result').className).not.toContain('overflow-y-auto');
     });
 });
