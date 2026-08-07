@@ -4,6 +4,10 @@
     <meta charset='utf-8' />
     <meta name='viewport' content='width=device-width,initial-scale=1' />
     <style>
+      /*
+        Warning chrome stays amber; surfaces follow host theme tokens so dark
+        mode does not get a full-bleed light panel.
+      */
       body {
         font-family:
           system-ui,
@@ -11,16 +15,18 @@
           sans-serif;
         margin: 0;
         padding: 32px 16px;
-        background: #fef3c7;
+        background: color-mix(in oklab, #f59e0b 20%, var(--background, #fffbeb));
+        color: var(--foreground, #78350f);
       }
       .circuit-container {
         max-width: 600px;
         margin: 0 auto;
-        background: white;
+        background: var(--card, #ffffff);
+        color: var(--card-foreground, #78350f);
         border: 2px solid #f59e0b;
         border-radius: 8px;
         padding: 32px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 6px color-mix(in oklab, var(--foreground, #000000) 12%, transparent);
       }
       .warning-icon {
         font-size: 48px;
@@ -30,18 +36,18 @@
       .title {
         font-size: 24px;
         font-weight: 700;
-        color: #92400e;
+        color: #d97706;
         margin-bottom: 16px;
         text-align: center;
       }
       .message {
         font-size: 16px;
-        color: #78350f;
+        color: var(--muted-foreground, #78350f);
         margin-bottom: 24px;
         line-height: 1.6;
       }
       .tool-info {
-        background: #fef3c7;
+        background: color-mix(in oklab, #f59e0b 16%, var(--muted, #fef3c7));
         border-left: 4px solid #f59e0b;
         padding: 12px 16px;
         margin-bottom: 24px;
@@ -50,12 +56,13 @@
           monospace;
         font-size: 14px;
         word-break: break-all;
+        color: var(--foreground, #78350f);
       }
       .btn-resume {
         width: 100%;
         padding: 14px 24px;
         background: #f59e0b;
-        color: white;
+        color: #ffffff;
         border: none;
         border-radius: 6px;
         font-size: 16px;
@@ -118,7 +125,8 @@
     </script>
     <script>
       // Auto-resize logic for MCP-UI client autoResizeIframe.
-      const resizeTarget = document.querySelector('.card') || document.body;
+      const resizeTarget =
+        document.querySelector('.circuit-container') || document.body;
       const bodyStyles = window.getComputedStyle(document.body);
       const bodyPaddingY =
         parseFloat(bodyStyles.paddingTop || '0') +
