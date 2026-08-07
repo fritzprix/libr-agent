@@ -7,6 +7,7 @@ import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import {
   setScrollerMetrics,
   baseMessage,
+  makeSingleGroupEntry,
   makeStreamingGroupEntry,
   makeStreamingMessage,
 } from './AgentChatMessages.compaction-setup';
@@ -22,6 +23,12 @@ const {
   resizeObserverCallbacks,
   resetHarness,
 } = setupScrollFollowHarness();
+
+const olderPageState = vi.hoisted(() => ({
+  isLoadingOlderMessages: false,
+  hasOlderMessages: true,
+  loadOlderMessages: vi.fn(async () => undefined),
+}));
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
@@ -40,6 +47,9 @@ vi.mock('@/context/AgentSessionContext', () => ({
     session: sessionState.session,
     pendingApprovals: [],
     respondToToolApproval: vi.fn(),
+    hasOlderMessages: olderPageState.hasOlderMessages,
+    isLoadingOlderMessages: olderPageState.isLoadingOlderMessages,
+    loadOlderMessages: olderPageState.loadOlderMessages,
   }),
 }));
 
@@ -112,6 +122,9 @@ vi.mock('react-virtuoso', () => ({
 
 beforeEach(() => {
   resetHarness();
+  olderPageState.isLoadingOlderMessages = false;
+  olderPageState.hasOlderMessages = true;
+  olderPageState.loadOlderMessages.mockClear();
 });
 
 describe('AgentChatMessages – streaming follow & prepend preservation', () => {
@@ -643,12 +656,11 @@ describe('AgentChatMessages – streaming follow & prepend preservation', () => 
       ];
       rerender(<AgentChatMessages />);
 
-      expect(scrollToIndexMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          align: 'start',
-          behavior: 'auto',
-        }),
+      // Position is preserved via firstItemIndex only — no manual anchor scroll.
+      const anchorScrollCalls = scrollToIndexMock.mock.calls.filter(
+        (call) => call[0]?.align === 'start',
       );
+      expect(anchorScrollCalls).toHaveLength(0);
       scrollToIndexMock.mockClear();
 
       const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
@@ -667,6 +679,234 @@ describe('AgentChatMessages – streaming follow & prepend preservation', () => 
       expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
     } finally {
       performanceNowSpy.mockRestore();
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('pauses bottom follow when older-page loading starts before prepend', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+
+    chatState.messages = [makeStreamingMessage('visible head')];
+    chatState.workflowStatus = 'busy';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      const { rerender } = render(<AgentChatMessages />);
+
+      // Still following bottom (default) when older fetch begins — header height
+      // can change and must not schedule scrollToBottom.
+      olderPageState.isLoadingOlderMessages = true;
+      scrollToIndexMock.mockClear();
+      scrollIntoView.mockClear();
+      rerender(<AgentChatMessages />);
+
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+
+      act(() => {
+        resizeObserverCallbacks.current.forEach((callback) =>
+          callback([], {} as ResizeObserver),
+        );
+      });
+
+      const bottomScrollCalls = scrollToIndexMock.mock.calls.filter(
+        (call) => call[0]?.align === 'end' || call[0]?.index === 'LAST',
+      );
+      expect(bottomScrollCalls).toHaveLength(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('does not re-init to bottom across older-page load rerenders (same session)', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+
+    const page2Head = {
+      ...baseMessage,
+      id: 'page-2-head',
+      content: [{ type: 'text' as const, text: 'page-2 head' }],
+    };
+    const page1Older = {
+      ...baseMessage,
+      id: 'page-1-older',
+      content: [{ type: 'text' as const, text: 'page-1 older' }],
+    };
+
+    chatState.messages = [page2Head];
+    chatState.workflowStatus = 'idle';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeSingleGroupEntry(page2Head),
+    );
+
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      const { container, rerender } = render(<AgentChatMessages />);
+      const scroller = container.querySelector(
+        '.agent-chat-scrollbar',
+      ) as HTMLDivElement | null;
+      expect(scroller).not.toBeNull();
+
+      // Consume initial session-changed bottom alignment.
+      scrollToIndexMock.mockClear();
+      scrollIntoView.mockClear();
+
+      olderPageState.isLoadingOlderMessages = true;
+      rerender(<AgentChatMessages />);
+
+      // Same session: scroller already attached; multiple load-related
+      // rerenders must not re-fire force session-changed bottom scroll.
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 2400,
+        clientHeight: 400,
+        scrollTop: 8,
+      });
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      groupedMessagesMock.splice(
+        0,
+        groupedMessagesMock.length,
+        makeSingleGroupEntry(page1Older),
+        makeSingleGroupEntry(page2Head),
+      );
+      olderPageState.isLoadingOlderMessages = false;
+      rerender(<AgentChatMessages />);
+
+      act(() => {
+        resizeObserverCallbacks.current.forEach((callback) =>
+          callback([], {} as ResizeObserver),
+        );
+      });
+
+      const bottomScrollCalls = scrollToIndexMock.mock.calls.filter(
+        (call) => call[0]?.align === 'end' || call[0]?.index === 'LAST',
+      );
+      expect(bottomScrollCalls).toHaveLength(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('does not jump to bottom after startReached when top-edge reports false bottom', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+
+    chatState.messages = [makeStreamingMessage('visible head')];
+    chatState.workflowStatus = 'idle';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      const { container, rerender } = render(<AgentChatMessages />);
+      const scroller = container.querySelector(
+        '.agent-chat-scrollbar',
+      ) as HTMLDivElement | null;
+      expect(scroller).not.toBeNull();
+
+      const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+        startReached?: () => void;
+        totalListHeightChanged?: (height: number) => void;
+      };
+
+      scrollToIndexMock.mockClear();
+      scrollIntoView.mockClear();
+
+      act(() => {
+        virtuosoProps.startReached?.();
+      });
+
+      // Top-edge prepend race: viewport briefly fits / distanceFromBottom≈0
+      // while scrollTop≈0. Must not re-arm follow → bottom yank.
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 400,
+        clientHeight: 400,
+        scrollTop: 0,
+      });
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      olderPageState.isLoadingOlderMessages = true;
+      rerender(<AgentChatMessages />);
+
+      groupedMessagesMock.splice(
+        0,
+        groupedMessagesMock.length,
+        makeSingleGroupEntry({
+          ...baseMessage,
+          id: 'older-1',
+          content: [{ type: 'text', text: 'older' }],
+        }),
+        makeStreamingGroupEntry('visible head'),
+      );
+      olderPageState.isLoadingOlderMessages = false;
+      rerender(<AgentChatMessages />);
+
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 2_400,
+        clientHeight: 400,
+        scrollTop: 0,
+      });
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+        virtuosoProps.totalListHeightChanged?.(2_400);
+        resizeObserverCallbacks.current.forEach((callback) =>
+          callback([], {} as ResizeObserver),
+        );
+      });
+
+      const bottomScrollCalls = scrollToIndexMock.mock.calls.filter(
+        (call) => call[0]?.align === 'end' || call[0]?.index === 'LAST',
+      );
+      expect(bottomScrollCalls).toHaveLength(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+    } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;

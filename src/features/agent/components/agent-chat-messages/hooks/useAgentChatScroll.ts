@@ -13,7 +13,7 @@ import {
 import {
   getInitialTopMostItemIndex,
   getVisualBottomThreshold,
-  isPinnedToBottom,
+  isTrustedVisualBottom,
   isBottomAlignmentActive,
   getScrollContentElement,
   isLayoutNeutralLatestMessageUpdate,
@@ -36,6 +36,8 @@ export interface UseAgentChatScrollOptions {
   pendingApprovals: ReturnType<typeof useAgentSession>['pendingApprovals'];
   agentError: ReturnType<typeof useAgentChat>['error'];
   agentLlmError: ReturnType<typeof useAgentChat>['llmError'];
+  /** True while an older-page fetch is in flight (header height may change). */
+  isLoadingOlderMessages?: boolean;
 }
 
 export function useAgentChatScroll({
@@ -46,6 +48,7 @@ export function useAgentChatScroll({
   pendingApprovals,
   agentError,
   agentLlmError,
+  isLoadingOlderMessages = false,
 }: UseAgentChatScrollOptions) {
   const footerEndRef = useRef<HTMLDivElement | null>(null);
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
@@ -58,6 +61,8 @@ export function useAgentChatScroll({
   const [scrollerElement, setScrollerElement] = useState<HTMLDivElement | null>(
     null,
   );
+  const scrollerElementRef = useRef<HTMLDivElement | null>(null);
+  scrollerElementRef.current = scrollerElement;
 
   const bottomThreshold = getVisualBottomThreshold();
 
@@ -74,6 +79,9 @@ export function useAgentChatScroll({
     );
   }, [sessionId]);
 
+  // Keep identity stable — logScrollState used to depend on scrollerElement and
+  // cascaded into scheduleScrollToBottom / requestBottomAlignment, which
+  // re-fired the session-reset effect (force bottom) on unrelated re-renders.
   const logScrollState = useCallback(
     (
       event: string,
@@ -95,12 +103,12 @@ export function useAgentChatScroll({
         shouldFollowLatest: shouldFollowLatestRef.current,
         bottomAlignmentPhase: bottomAlignmentPhaseRef.current,
         hasVirtuosoHandle: !!virtuosoRef.current,
-        hasScroller: !!scrollerElement,
+        hasScroller: !!scrollerElementRef.current,
         hasFooterSentinel: !!footerEndRef.current,
         ...extra,
       });
     },
-    [scrollerElement],
+    [],
   );
 
   // 1. Follow state management
@@ -111,7 +119,10 @@ export function useAgentChatScroll({
     shouldFollowLatestRef,
     upwardReleaseDistanceRef,
     selfScrollIgnoreUntilRef,
+    isHistoryBrowsingRef,
     setEffectivePinnedState,
+    enterHistoryBrowsing,
+    exitHistoryBrowsing,
     resumeBottomFollow,
     pauseBottomFollow,
   } = useScrollFollowState({ logScrollState });
@@ -126,8 +137,6 @@ export function useAgentChatScroll({
   } = usePrependPreservation({
     groupedMessages,
     sessionId,
-    virtuosoRef,
-    selfScrollIgnoreUntilRef,
     logScrollState,
   });
 
@@ -164,6 +173,8 @@ export function useAgentChatScroll({
       selfScrollIgnoreUntilRef,
       shouldFollowLatestRef,
       isPreservingPrependPositionRef,
+      isHistoryBrowsingRef,
+      upwardReleaseDistanceRef,
       bottomAlignmentPhaseRef,
       bottomAlignmentLayoutVersionRef,
       bottomAlignmentRequestedVersionRef,
@@ -186,9 +197,64 @@ export function useAgentChatScroll({
     logScrollState,
   });
 
+  // Older-page fetch changes header height before messages arrive. Pause follow
+  // immediately so ResizeObserver / height churn cannot yank to bottom.
+  useEffect(() => {
+    if (!isLoadingOlderMessages) {
+      return;
+    }
+
+    isPreservingPrependPositionRef.current = true;
+    // Treat as away-from-bottom so resumeBottomFollow('bottom-context-restored')
+    // cannot re-arm follow while older messages are loading.
+    visualBottomRef.current = false;
+    enterHistoryBrowsing('loading-older-messages');
+    abortBottomAlignment('loading-older-messages');
+    clearScheduledAutoScroll();
+    pauseBottomFollow('loading-older-messages');
+    setEffectivePinnedState(false);
+    logScrollState('loading-older:armed');
+  }, [
+    abortBottomAlignment,
+    clearScheduledAutoScroll,
+    enterHistoryBrowsing,
+    isLoadingOlderMessages,
+    isPreservingPrependPositionRef,
+    logScrollState,
+    pauseBottomFollow,
+    setEffectivePinnedState,
+    visualBottomRef,
+  ]);
+
+  const handleStartReached = useCallback(() => {
+    // Virtuoso can fire startReached before scrollTop hits NEAR_TOP — pause
+    // follow so the subsequent older-page load cannot auto-scroll to bottom.
+    visualBottomRef.current = false;
+    enterHistoryBrowsing('start-reached');
+    abortBottomAlignment('start-reached');
+    clearScheduledAutoScroll();
+    pauseBottomFollow('start-reached');
+    setEffectivePinnedState(false);
+    logScrollState('start-reached:pause-follow');
+  }, [
+    abortBottomAlignment,
+    clearScheduledAutoScroll,
+    enterHistoryBrowsing,
+    logScrollState,
+    pauseBottomFollow,
+    setEffectivePinnedState,
+    visualBottomRef,
+  ]);
+
   const handleResizeObserverLayoutChange = useCallback(
     (reason: 'content-resize-observer' | 'scroller-resize-observer') => {
       if (prependCount > 0 || isPreservingPrependPositionRef.current) {
+        return;
+      }
+
+      // Mid upward-read: height changes must not force-follow the stream.
+      if (upwardReleaseDistanceRef.current > 0 && !visualBottomRef.current) {
+        markBottomAlignmentLayoutChanged(reason);
         return;
       }
 
@@ -216,6 +282,7 @@ export function useAgentChatScroll({
       scheduleBottomAlignmentVerification,
       scheduleScrollToBottom,
       shouldFollowLatestRef,
+      upwardReleaseDistanceRef,
       visualBottomRef,
     ],
   );
@@ -257,6 +324,15 @@ export function useAgentChatScroll({
         return;
       }
 
+      if (upwardReleaseDistanceRef.current > 0 && !visualBottomRef.current) {
+        markBottomAlignmentLayoutChanged('total-list-height-changed');
+        logScrollState('virtuoso:totalListHeightChanged:upward-skip', {
+          height,
+          upwardReleaseDistance: upwardReleaseDistanceRef.current,
+        });
+        return;
+      }
+
       markBottomAlignmentLayoutChanged('total-list-height-changed');
       scheduleBottomAlignmentVerification(
         'total-list-height-changed',
@@ -266,7 +342,7 @@ export function useAgentChatScroll({
 
       if (
         !isBottomAlignmentActive(bottomAlignmentPhaseRef.current) &&
-        !isPinnedToBottomRef.current
+        !shouldFollowLatestRef.current
       ) {
         logScrollState('virtuoso:totalListHeightChanged:skip', {
           height,
@@ -281,21 +357,55 @@ export function useAgentChatScroll({
     },
     [
       bottomAlignmentPhaseRef,
-      isPinnedToBottomRef,
       isPreservingPrependPositionRef,
       logScrollState,
       markBottomAlignmentLayoutChanged,
       prependCount,
       scheduleBottomAlignmentVerification,
       scheduleScrollToBottom,
+      shouldFollowLatestRef,
+      upwardReleaseDistanceRef,
       visualBottomRef,
     ],
   );
 
-  // Session change reset effect
+  // Session change only. Callbacks live in a ref so scroller attach / rerenders
+  // cannot re-trigger force bottom (`session-changed` bypasses all suppressors).
+  const sessionResetActionsRef = useRef({
+    setBottomAlignmentPhase,
+    clearBottomAlignmentVerifyFrame,
+    setEffectivePinnedState,
+    clearScheduledAutoScroll,
+    logScrollState,
+    requestBottomAlignment,
+    scheduleScrollToBottom,
+    exitHistoryBrowsing,
+  });
+  sessionResetActionsRef.current = {
+    setBottomAlignmentPhase,
+    clearBottomAlignmentVerifyFrame,
+    setEffectivePinnedState,
+    clearScheduledAutoScroll,
+    logScrollState,
+    requestBottomAlignment,
+    scheduleScrollToBottom,
+    exitHistoryBrowsing,
+  };
+
   useEffect(() => {
-    setBottomAlignmentPhase('idle', 'session-reset');
-    clearBottomAlignmentVerifyFrame();
+    const {
+      setBottomAlignmentPhase: setPhase,
+      clearBottomAlignmentVerifyFrame: clearVerify,
+      setEffectivePinnedState: setPinned,
+      clearScheduledAutoScroll: clearAutoScroll,
+      logScrollState: logState,
+      requestBottomAlignment: requestAlignment,
+      scheduleScrollToBottom: scheduleBottom,
+      exitHistoryBrowsing: exitHistory,
+    } = sessionResetActionsRef.current;
+
+    setPhase('idle', 'session-reset');
+    clearVerify();
     bottomAlignmentRequestedVersionRef.current =
       bottomAlignmentLayoutVersionRef.current;
     virtuosoAtBottomRef.current = false;
@@ -303,34 +413,19 @@ export function useAgentChatScroll({
     shouldFollowLatestRef.current = true;
     isPreservingPrependPositionRef.current = false;
     upwardReleaseDistanceRef.current = 0;
-    setEffectivePinnedState(true);
-    clearScheduledAutoScroll();
+    exitHistory('session-changed');
+    setPinned(true);
+    clearAutoScroll();
     if (prependStabilizeTimeoutRef.current !== null) {
       window.clearTimeout(prependStabilizeTimeoutRef.current);
       prependStabilizeTimeoutRef.current = null;
     }
     previousScrollTopRef.current = null;
     scrollTopRef.current = 0;
-    logScrollState('sessionEffect:reset-bottom-alignment');
-    requestBottomAlignment('session-changed');
-    scheduleScrollToBottom('session-changed', false);
-  }, [
-    bottomAlignmentLayoutVersionRef,
-    bottomAlignmentRequestedVersionRef,
-    clearBottomAlignmentVerifyFrame,
-    clearScheduledAutoScroll,
-    isPreservingPrependPositionRef,
-    logScrollState,
-    prependStabilizeTimeoutRef,
-    requestBottomAlignment,
-    scheduleScrollToBottom,
-    sessionId,
-    setBottomAlignmentPhase,
-    setEffectivePinnedState,
-    shouldFollowLatestRef,
-    upwardReleaseDistanceRef,
-    visualBottomRef,
-  ]);
+    logState('sessionEffect:reset-bottom-alignment');
+    requestAlignment('session-changed');
+    scheduleBottom('session-changed', false);
+  }, [sessionId]);
 
   // Unmount cleanup
   useEffect(() => {
@@ -365,17 +460,33 @@ export function useAgentChatScroll({
         scrollerElement.scrollHeight -
         currentScrollTop -
         scrollerElement.clientHeight;
-      const visualPinned = isPinnedToBottom(
-        distanceFromBottom,
-        bottomThreshold,
-      );
       const isSelfScroll = performance.now() < selfScrollIgnoreUntilRef.current;
 
-      visualBottomRef.current = visualPinned;
+      // Prepend/older-page layout can briefly report distanceFromBottom≈0 while
+      // scrollTop is still at the top. Never treat that as "reached bottom".
+      const trustedVisualBottom = isTrustedVisualBottom(
+        distanceFromBottom,
+        currentScrollTop,
+        {
+          threshold: bottomThreshold,
+          scrollHeight: scrollerElement.scrollHeight,
+          clientHeight: scrollerElement.clientHeight,
+        },
+      );
+      visualBottomRef.current = trustedVisualBottom;
 
-      if (visualPinned) {
+      if (trustedVisualBottom) {
         upwardReleaseDistanceRef.current = 0;
-        resumeBottomFollow('bottom-reached');
+        // Leave history browsing only when the user is actually at the latest
+        // end — not when top-edge / collapsed-height falsely reports bottom.
+        if (isHistoryBrowsingRef.current) {
+          if (currentScrollTop > NEAR_TOP_SCROLL_THRESHOLD) {
+            exitHistoryBrowsing('bottom-reached');
+            resumeBottomFollow('bottom-reached');
+          }
+        } else {
+          resumeBottomFollow('bottom-reached');
+        }
       } else {
         if (scrollDelta > 0) {
           upwardReleaseDistanceRef.current = 0;
@@ -402,13 +513,14 @@ export function useAgentChatScroll({
           !isSelfScroll &&
           currentScrollTop <= NEAR_TOP_SCROLL_THRESHOLD
         ) {
+          enterHistoryBrowsing('reached-top');
           abortBottomAlignment('reached-top');
           clearScheduledAutoScroll();
           pauseBottomFollow('reached-top');
         }
       }
 
-      if (!visualPinned && !shouldFollowLatestRef.current) {
+      if (!trustedVisualBottom && !shouldFollowLatestRef.current) {
         virtuosoAtBottomRef.current = false;
         abortBottomAlignment('visual-bottom-lost');
         clearScheduledAutoScroll();
@@ -416,16 +528,18 @@ export function useAgentChatScroll({
 
       scheduleBottomAlignmentVerification(
         'scroll:updatePinnedState',
-        visualPinned,
+        trustedVisualBottom,
         virtuosoAtBottomRef.current,
       );
 
-      setEffectivePinnedState(visualPinned || shouldFollowLatestRef.current);
+      setEffectivePinnedState(
+        trustedVisualBottom || shouldFollowLatestRef.current,
+      );
       logScrollState('scroll:updatePinnedState', {
         currentScrollTop,
         scrollDelta,
         distanceFromBottom,
-        visualPinned,
+        trustedVisualBottom,
         isSelfScroll,
         upwardReleaseDistance: upwardReleaseDistanceRef.current,
       });
@@ -445,6 +559,9 @@ export function useAgentChatScroll({
     abortBottomAlignment,
     bottomThreshold,
     clearScheduledAutoScroll,
+    enterHistoryBrowsing,
+    exitHistoryBrowsing,
+    isHistoryBrowsingRef,
     isPreservingPrependPositionRef,
     logScrollState,
     pauseBottomFollow,
@@ -461,6 +578,7 @@ export function useAgentChatScroll({
   const handleManualScrollToBottom = useCallback(() => {
     visualBottomRef.current = true;
     upwardReleaseDistanceRef.current = 0;
+    exitHistoryBrowsing('manual-scroll-to-bottom');
     requestBottomAlignment('manual-scroll-to-bottom');
     resumeBottomFollow('manual-scroll-to-bottom');
     setEffectivePinnedState(true);
@@ -470,6 +588,7 @@ export function useAgentChatScroll({
       virtuosoAtBottomRef.current,
     );
   }, [
+    exitHistoryBrowsing,
     logScrollState,
     requestBottomAlignment,
     resumeBottomFollow,
@@ -523,12 +642,23 @@ export function useAgentChatScroll({
     if (
       groupedMessages.length > 0 &&
       hasHydratedMessagesRef.current.hasMessages &&
-      visualBottomRef.current
+      visualBottomRef.current &&
+      scrollTopRef.current > NEAR_TOP_SCROLL_THRESHOLD &&
+      !isPreservingPrependPositionRef.current &&
+      !isLoadingOlderMessages
     ) {
+      if (isHistoryBrowsingRef.current) {
+        exitHistoryBrowsing('bottom-context-restored');
+      }
       resumeBottomFollow('bottom-context-restored');
     }
 
-    if (prependCount > 0 || isPreservingPrependPositionRef.current) {
+    if (
+      prependCount > 0 ||
+      isPreservingPrependPositionRef.current ||
+      isLoadingOlderMessages ||
+      isHistoryBrowsingRef.current
+    ) {
       logScrollState('reactive-state-change:prepend-skip', {
         prependCount,
         messageId: latestMessage?.id,
@@ -536,7 +666,7 @@ export function useAgentChatScroll({
       return;
     }
 
-    if (!shouldFollowLatestRef.current && !isPinnedToBottomRef.current) {
+    if (!shouldFollowLatestRef.current) {
       return;
     }
 
@@ -566,13 +696,16 @@ export function useAgentChatScroll({
     agentLlmError,
     groupedMessages.length,
     hasHydratedMessagesRef,
-    isPinnedToBottomRef,
+    isHistoryBrowsingRef,
+    isLoadingOlderMessages,
     isPreservingPrependPositionRef,
     logScrollState,
     prependCount,
+    exitHistoryBrowsing,
     resumeBottomFollow,
     scheduleScrollToBottom,
     shouldFollowLatestRef,
+    scrollTopRef,
     visualBottomRef,
   ]);
 
@@ -586,6 +719,7 @@ export function useAgentChatScroll({
     handleVirtuosoAtBottomStateChange,
     handleTotalListHeightChanged,
     handleManualScrollToBottom,
+    handleStartReached,
     initialTopMostItemIndex,
     bottomThreshold,
     logScrollState,

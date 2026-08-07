@@ -18,6 +18,10 @@ export interface UseScrollSchedulerOptions {
   selfScrollIgnoreUntilRef: MutableRefObject<number>;
   shouldFollowLatestRef: MutableRefObject<boolean>;
   isPreservingPrependPositionRef: MutableRefObject<boolean>;
+  /** True while reading history / older pages — suppress auto bottom until exit. */
+  isHistoryBrowsingRef: MutableRefObject<boolean>;
+  /** >0 while the user is mid upward-read but before follow is fully paused. */
+  upwardReleaseDistanceRef: MutableRefObject<number>;
   bottomAlignmentPhaseRef: MutableRefObject<BottomAlignmentPhase>;
   bottomAlignmentLayoutVersionRef: MutableRefObject<number>;
   bottomAlignmentRequestedVersionRef: MutableRefObject<number>;
@@ -45,6 +49,8 @@ export function useScrollScheduler({
   selfScrollIgnoreUntilRef,
   shouldFollowLatestRef,
   isPreservingPrependPositionRef,
+  isHistoryBrowsingRef,
+  upwardReleaseDistanceRef,
   bottomAlignmentPhaseRef,
   bottomAlignmentLayoutVersionRef,
   bottomAlignmentRequestedVersionRef,
@@ -99,6 +105,10 @@ export function useScrollScheduler({
         });
       }
 
+      // #1647: Virtuoso scrollToIndex(LAST) does not include Footer spacer
+      // (composer overlap). Always align the footer sentinel when present so
+      // the last bubble clears the composer — even after a successful Virtuoso
+      // scroll.
       if (footerEndRef.current) {
         logScrollState('executeScrollToBottom:footer-sentinel-align', {
           itemCount,
@@ -140,31 +150,68 @@ export function useScrollScheduler({
     (reason: string, virtuosoAtBottom: boolean = false) => {
       const isForceReason = forceBottomScrollReasons.has(reason);
       const isNearTop = scrollTopRef.current <= NEAR_TOP_SCROLL_THRESHOLD;
-      const shouldForce =
-        isForceReason || (shouldFollowLatestRef.current && !isNearTop);
+      const alignmentActive = isBottomAlignmentActive(
+        bottomAlignmentPhaseRef.current,
+      );
+      const shouldFollow = shouldFollowLatestRef.current;
+      const shouldForce = isForceReason || (shouldFollow && !isNearTop);
+
       const shouldSuppressForPrepend =
         isPreservingPrependPositionRef.current && !isForceReason;
 
-      const shouldSuppressForUserScroll =
-        !isBottomAlignmentActive(bottomAlignmentPhaseRef.current) &&
-        !visualBottomRef.current &&
-        !shouldForce;
+      // History/older-page browsing: never auto-yank to bottom (resize/stream),
+      // even if follow briefly re-arms from a false visual bottom.
+      const shouldSuppressForHistoryBrowsing =
+        isHistoryBrowsingRef.current && !isForceReason;
+
+      // Follow paused (history / older-page): never yank from resize/stream.
+      // Do not trust visualBottom alone — prepend can false-positive bottom.
+      const shouldSuppressForPausedFollow =
+        !isForceReason && !alignmentActive && !shouldFollow;
 
       const shouldSuppressForNearTop =
-        isNearTop && !visualBottomRef.current && !isForceReason;
+        isNearTop && !isForceReason && !alignmentActive && !shouldFollow;
+
+      // Pre-pause race: upward distance accumulating while follow still on.
+      // Reject only this new request; leave any already-queued frame alone.
+      const shouldSuppressForUpwardIntent =
+        upwardReleaseDistanceRef.current > 0 &&
+        shouldFollow &&
+        !isForceReason &&
+        !alignmentActive;
 
       if (
         shouldSuppressForPrepend ||
-        shouldSuppressForUserScroll ||
+        shouldSuppressForHistoryBrowsing ||
+        shouldSuppressForPausedFollow ||
         shouldSuppressForNearTop
       ) {
         clearScheduledAutoScroll();
         logScrollState('scheduleScrollToBottom:suppressed', {
           reason,
           shouldSuppressForPrepend,
-          shouldSuppressForUserScroll,
+          shouldSuppressForHistoryBrowsing,
+          shouldSuppressForPausedFollow,
           shouldSuppressForNearTop,
+          shouldSuppressForUpwardIntent: false,
           shouldForce,
+          shouldFollow,
+          upwardReleaseDistance: upwardReleaseDistanceRef.current,
+        });
+        return;
+      }
+
+      if (shouldSuppressForUpwardIntent) {
+        logScrollState('scheduleScrollToBottom:suppressed', {
+          reason,
+          shouldSuppressForPrepend: false,
+          shouldSuppressForHistoryBrowsing: false,
+          shouldSuppressForPausedFollow: false,
+          shouldSuppressForNearTop: false,
+          shouldSuppressForUpwardIntent: true,
+          shouldForce,
+          shouldFollow,
+          upwardReleaseDistance: upwardReleaseDistanceRef.current,
         });
         return;
       }
@@ -179,28 +226,40 @@ export function useScrollScheduler({
         const isForceReasonOnFire = forceBottomScrollReasons.has(reason);
         const isNearTopOnFire =
           scrollTopRef.current <= NEAR_TOP_SCROLL_THRESHOLD;
+        const alignmentActiveOnFire = isBottomAlignmentActive(
+          bottomAlignmentPhaseRef.current,
+        );
+        const shouldFollowOnFire = shouldFollowLatestRef.current;
         const shouldForceOnFire =
-          isForceReasonOnFire ||
-          (shouldFollowLatestRef.current && !isNearTopOnFire);
+          isForceReasonOnFire || (shouldFollowOnFire && !isNearTopOnFire);
+
+        // Frame-time checks are state-only. Upward noise must not cancel a
+        // frame that was accepted while follow was still active; pauseBottomFollow
+        // clears the queue when the user fully releases follow.
         const shouldSuppressForPrependOnFire =
           isPreservingPrependPositionRef.current && !isForceReasonOnFire;
-        const shouldSuppressForUserScrollOnFire =
-          !isBottomAlignmentActive(bottomAlignmentPhaseRef.current) &&
-          !visualBottomRef.current &&
-          !shouldForceOnFire;
+        const shouldSuppressForHistoryBrowsingOnFire =
+          isHistoryBrowsingRef.current && !isForceReasonOnFire;
+        const shouldSuppressForPausedFollowOnFire =
+          !isForceReasonOnFire && !alignmentActiveOnFire && !shouldFollowOnFire;
         const shouldSuppressForNearTopOnFire =
-          isNearTopOnFire && !visualBottomRef.current && !isForceReasonOnFire;
+          isNearTopOnFire &&
+          !isForceReasonOnFire &&
+          !alignmentActiveOnFire &&
+          !shouldFollowOnFire;
 
         if (
           shouldSuppressForPrependOnFire ||
-          shouldSuppressForUserScrollOnFire ||
+          shouldSuppressForHistoryBrowsingOnFire ||
+          shouldSuppressForPausedFollowOnFire ||
           shouldSuppressForNearTopOnFire
         ) {
           logScrollState('scheduleScrollToBottom:frame-suppressed', {
             reason,
             isPreservingPrepend: isPreservingPrependPositionRef.current,
+            isHistoryBrowsing: isHistoryBrowsingRef.current,
             isNearTop: isNearTopOnFire,
-            shouldFollowLatest: shouldFollowLatestRef.current,
+            shouldFollowLatest: shouldFollowOnFire,
             visualBottom: visualBottomRef.current,
           });
           return;
@@ -208,6 +267,7 @@ export function useScrollScheduler({
 
         logScrollState('scheduleScrollToBottom:frame-fired', {
           reason,
+          shouldForce: shouldForceOnFire,
         });
         const didScroll = executeScrollToBottom(reason);
         if (didScroll && bottomAlignmentPhaseRef.current === 'requesting') {
@@ -229,12 +289,14 @@ export function useScrollScheduler({
       clearScheduledAutoScroll,
       executeScrollToBottom,
       forceBottomScrollReasons,
+      isHistoryBrowsingRef,
       isPreservingPrependPositionRef,
       logScrollState,
       scheduleBottomAlignmentVerification,
       setBottomAlignmentPhase,
       shouldFollowLatestRef,
       scrollTopRef,
+      upwardReleaseDistanceRef,
       visualBottomRef,
     ],
   );

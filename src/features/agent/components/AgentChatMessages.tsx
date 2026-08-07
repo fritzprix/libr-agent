@@ -122,16 +122,6 @@ export function AgentChatMessages() {
     : undefined;
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
-  const handleReachTop = useCallback(() => {
-    if (!hasOlderMessages || isLoadingOlderMessages) {
-      return;
-    }
-
-    void loadOlderMessages().catch(() => {
-      // Swallowed: loadOlderMessages already handles and logs errors internally.
-    });
-  }, [hasOlderMessages, isLoadingOlderMessages, loadOlderMessages]);
-
   useFileRefetcher({ messages, refetchSessionFiles });
 
   // Group messages for display
@@ -145,7 +135,6 @@ export function AgentChatMessages() {
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
   const assistantName = session?.assistant?.name || 'Agent';
 
-  // Instantiate our scroll, observers, and bottom alignment engine
   const {
     virtuosoRef,
     footerEndRef,
@@ -155,6 +144,7 @@ export function AgentChatMessages() {
     handleVirtuosoAtBottomStateChange,
     handleTotalListHeightChanged,
     handleManualScrollToBottom,
+    handleStartReached,
     initialTopMostItemIndex,
     bottomThreshold,
     logScrollState,
@@ -166,7 +156,24 @@ export function AgentChatMessages() {
     pendingApprovals,
     agentError: error,
     agentLlmError: llmError,
+    isLoadingOlderMessages,
   });
+
+  const handleReachTop = useCallback(() => {
+    handleStartReached();
+    if (!hasOlderMessages || isLoadingOlderMessages) {
+      return;
+    }
+
+    void loadOlderMessages().catch(() => {
+      // Swallowed: loadOlderMessages already handles and logs errors internally.
+    });
+  }, [
+    handleStartReached,
+    hasOlderMessages,
+    isLoadingOlderMessages,
+    loadOlderMessages,
+  ]);
 
   const compactedEvent = useMemo(() => {
     if (!compactedRange) {
