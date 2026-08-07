@@ -311,8 +311,7 @@ async fn report_result_renders_and_instructs_stop() {
         "reportResult HTML should use host theme CSS variables: {html}"
     );
     assert!(
-        !html.contains("background: #f9fafb;")
-            && !html.contains("background: white;"),
+        !html.contains("background: #f9fafb;") && !html.contains("background: white;"),
         "reportResult HTML must not hardcode light-only surfaces"
     );
 }
