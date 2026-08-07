@@ -123,7 +123,11 @@ export function AgentProcessPanel({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div
+        className="flex flex-wrap gap-2"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         <PanelSummaryPill>
           {t('agent.processes.summaryTotal', '{{count}} total', {
             count: total,
@@ -144,7 +148,11 @@ export function AgentProcessPanel({
   );
 
   const body = (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-3 p-4"
+      aria-live="polite"
+      aria-relevant="additions text"
+    >
       {error ? (
         <PanelErrorState
           message={error}
