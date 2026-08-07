@@ -186,7 +186,7 @@ export function ContentItemRenderer({
           ref={(element) => {
             resourceRefs.current[itemKey] = element;
           }}
-          className={expandResources ? 'min-h-96 w-full overflow-visible' : ''}
+          className={expandResources ? 'w-full overflow-visible' : ''}
         >
           <UIResourceRenderer
             key={themeKey}

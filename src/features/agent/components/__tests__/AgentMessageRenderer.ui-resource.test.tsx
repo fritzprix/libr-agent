@@ -116,3 +116,50 @@ describe('AgentMessageRenderer UI resource theme', () => {
     expect(screen.queryByTestId('ui-resource')).not.toBeInTheDocument();
   });
 });
+
+describe('AgentMessageRenderer UI resource iframe sizing', () => {
+  beforeEach(() => {
+    uiResourceRendererMock.mockReset();
+    themeState.resolvedTheme = 'dark';
+  });
+
+  it('uses fixed 384px height when expandResources is false', () => {
+    render(
+      <AgentMessageRenderer content={resourceContent} message={message} />,
+    );
+
+    expect(uiResourceRendererMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        htmlProps: expect.objectContaining({
+          style: expect.objectContaining({
+            height: '384px',
+            maxHeight: '80vh',
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('drops the 384px height cap when expandResources is true', () => {
+    render(
+      <AgentMessageRenderer
+        content={resourceContent}
+        message={message}
+        expandResources
+      />,
+    );
+
+    const htmlProps = uiResourceRendererMock.mock.calls[0]?.[0]?.htmlProps as {
+      style?: Record<string, string>;
+    };
+
+    expect(htmlProps.style?.height).toBeUndefined();
+    expect(htmlProps.style?.maxHeight).toBeUndefined();
+    expect(htmlProps.style).toEqual(
+      expect.objectContaining({
+        width: '100%',
+        minHeight: '200px',
+      }),
+    );
+  });
+});
