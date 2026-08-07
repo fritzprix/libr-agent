@@ -345,11 +345,10 @@ impl WorkspaceServer {
                     "Use workspace__waitForProcess(\"{}\", 0) to check status and completion",
                     process_id
                 ),
-                "Use workspace__listProcesses to map optional names back to process IDs"
-                    .to_string(),
-                "Use workspace__readProcessOutput with 'both' to inspect stdout and stderr"
-                    .to_string(),
-                "Use workspace__listProcesses to see all running processes".to_string(),
+                format!(
+                    "Use workspace__readProcessOutput(\"{}\", \"both\") to inspect stdout and stderr",
+                    process_id
+                ),
             ],
         );
 

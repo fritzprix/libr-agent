@@ -356,6 +356,7 @@ impl WorkspaceServer {
             ),
         ]);
 
+        // Finished reads already include the captured output — no patronizing follow-ups.
         let next_actions = if is_process_running {
             vec![
                 format!(
@@ -368,11 +369,7 @@ impl WorkspaceServer {
                 ),
             ]
         } else {
-            vec![
-                "Analyze the captured output to verify command success".to_string(),
-                "Use workspace__listProcesses() if you need another processId from this session"
-                    .to_string(),
-            ]
+            vec![]
         };
 
         let hint = SuccessHint::new(text, next_actions);

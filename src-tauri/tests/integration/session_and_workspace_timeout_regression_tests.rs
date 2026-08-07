@@ -240,6 +240,10 @@ async fn run_shell_timeout_hands_off_to_background_process() {
         "timeout handoff text should include processId: {text}"
     );
     assert!(
+        !text.contains("never get a processId"),
+        "timeout handoff body must not lecture about when processIds are absent: {text}"
+    );
+    assert!(
         text.contains("waitForProcess("),
         "timeout handoff should suggest the next wait action: {text}"
     );

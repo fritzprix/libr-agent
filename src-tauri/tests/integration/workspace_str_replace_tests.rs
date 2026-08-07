@@ -56,6 +56,18 @@ async fn str_replace_replaces_single_unique_match() {
     );
     let text = extract_text_content(&result);
     assert!(text.contains("Replaced 1 occurrence"), "{text}");
+    assert!(
+        text.contains("@@"),
+        "success body should include a unified diff so re-read is unnecessary: {text}"
+    );
+    assert!(
+        !text.contains("readFile to verify"),
+        "strReplace must not suggest re-reading after returning a diff: {text}"
+    );
+    assert!(
+        !text.contains("💡 Suggested Follow-ups:"),
+        "strReplace success should not append follow-ups: {text}"
+    );
 
     let updated = std::fs::read_to_string(file_path).expect("read updated file");
     assert_eq!(updated, "alpha\nBETA\ngamma\n");

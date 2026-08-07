@@ -446,8 +446,9 @@ impl WorkspaceServer {
                 );
 
                 let might_be_interactive = validation::is_likely_interactive_command(command);
+                // Keep body factual; parameterized wait/read/stop live in Suggested Follow-ups.
                 let mut message = format!(
-                    "Sync timeout handoff: command was still running after {} seconds, so it continues in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending\n\nUse workspace__waitForProcess/workspace__readProcessOutput only with this processId — completed sync runs (success or failure) never get a processId.",
+                    "Sync timeout handoff: command was still running after {} seconds, so it continues in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending",
                     timeout_secs, process_id, status
                 );
 
