@@ -305,4 +305,14 @@ async fn report_result_renders_and_instructs_stop() {
         uri.starts_with("ui://result/"),
         "reportResult URI should use ui://result/: {uri}"
     );
+    let html = resource["text"].as_str().unwrap_or("");
+    assert!(
+        html.contains("var(--background") && html.contains("var(--card"),
+        "reportResult HTML should use host theme CSS variables: {html}"
+    );
+    assert!(
+        !html.contains("background: #f9fafb;")
+            && !html.contains("background: white;"),
+        "reportResult HTML must not hardcode light-only surfaces"
+    );
 }

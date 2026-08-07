@@ -13,6 +13,7 @@ import { CodeBlock } from './components/CodeBlock';
 import { ContentItemRenderer } from './components/ContentItemRenderer';
 import { STATIC_MARKDOWN_COMPONENTS } from './config/markdown';
 import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
+import { useTheme } from 'next-themes';
 import { useUIActionHandler } from './hooks/useUIActionHandler';
 import type { AgentMessageRendererProps, RenderItem } from './types';
 import { groupContent } from './utils/contentGrouping';
@@ -20,6 +21,10 @@ import {
   releaseDisplayMediaCacheSession,
   retainDisplayMediaCacheSession,
 } from './utils/displayMediaCache';
+import {
+  buildUiResourceThemeStyleTag,
+  getUiResourceThemeVars,
+} from './utils/injectUiResourceTheme';
 import { isSafeExternalUrl } from './utils/url';
 
 const logger = getLogger('AgentMessageRenderer');
@@ -44,7 +49,12 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   followChatScroll = true,
 }) => {
   const { openExternalUrl } = useRustBackend();
+  const { resolvedTheme } = useTheme();
   const isDark = useIsDarkMode();
+  // next-themes leaves resolvedTheme undefined until mounted; do not inject a
+  // speculative light theme (defaultTheme is dark, so undefined !== dark).
+  const themeReady =
+    resolvedTheme === 'dark' || resolvedTheme === 'light';
 
   const markdownComponents = useMemo(
     () => ({
@@ -118,16 +128,36 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     [supportedContentTypes],
   );
 
-  const htmlProps = useMemo(
-    () => ({
+  // Theme tokens come from static maps keyed by resolvedTheme — not
+  // getComputedStyle — so a dark session load cannot bake light :root values
+  // into the iframe before `<html class="dark">` is applied.
+  const themeCssVars = useMemo(
+    () => (themeReady ? getUiResourceThemeVars(isDark) : null),
+    [themeReady, isDark],
+  );
+  const themeStyleTag = useMemo(
+    () =>
+      themeCssVars
+        ? buildUiResourceThemeStyleTag(isDark, themeCssVars)
+        : null,
+    [isDark, themeCssVars],
+  );
+
+  const htmlProps = useMemo(() => {
+    const backgroundColor = themeCssVars?.['--background'];
+
+    return {
       autoResizeIframe: { height: true, width: false },
       style: { height: '384px', maxHeight: '80vh' },
       iframeProps: {
         className: 'w-full',
+        style: {
+          colorScheme: isDark ? 'dark' : 'light',
+          ...(backgroundColor ? { backgroundColor } : {}),
+        },
       },
-    }),
-    [],
-  );
+    };
+  }, [isDark, themeCssVars]);
 
   const handleLinkClick = async (
     event: React.MouseEvent<HTMLAnchorElement>,
@@ -183,6 +213,8 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               remoteDomProps={remoteDomProps}
               supportedContentTypes={mutableSupportedContentTypes}
               htmlProps={htmlProps}
+              themeStyleTag={themeStyleTag}
+              themeKey={resolvedTheme ?? 'theme-pending'}
               onUIAction={handleUIAction}
               onLinkClick={handleLinkClick}
             />
