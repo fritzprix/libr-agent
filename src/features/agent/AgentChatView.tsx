@@ -40,6 +40,7 @@ import { AgentSidePanelShell } from './components/AgentSidePanelShell';
 import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { AgentProcessAttentionUpdates } from './components/AgentProcessAttentionUpdates';
 import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
+import { usePanelShortcuts } from './hooks/usePanelShortcuts';
 import { getLogger } from '@/lib/logger';
 import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
 import { useMcpDiscoveryToasts } from './hooks/useMcpDiscoveryToasts';
@@ -325,6 +326,7 @@ function AgentChatInner() {
   const { closeShell, openShell, isShellOpen } = useAgentPanels();
   const showSidePanel = isShellOpen();
   const { t } = useTranslation();
+  usePanelShortcuts();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const { pendingInteractiveShellPrompt, session } = useAgentSessionState();

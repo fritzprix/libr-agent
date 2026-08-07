@@ -8,10 +8,19 @@ const mockRenameSession = vi.fn();
 const mockToggleBookmark = vi.fn();
 const mockCopyToClipboard = vi.fn();
 const mockToggleShell = vi.fn();
+const mockOpenPanel = vi.fn();
 const mockHasPanelAttention = vi.fn(
   (/* eslint-disable @typescript-eslint/no-unused-vars */ _id: string) => false,
 );
+const mockIsPanelOpen = vi.fn(() => false);
 let shellOpen = false;
+
+vi.mock('@/lib/analytics', () => ({
+  trackBadgeClicked: vi.fn(),
+  trackPanelAction: vi.fn(),
+  trackPanelViewed: vi.fn(),
+  trackShortcutUsed: vi.fn(),
+}));
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSessionState: () => ({
@@ -77,8 +86,8 @@ vi.mock('@/context/AgentPanelsContext', async () => {
       toggleShell: mockToggleShell,
       activeTab: 'workspace',
       setActiveTab: vi.fn(),
-      isPanelOpen: () => false,
-      openPanel: vi.fn(),
+      isPanelOpen: mockIsPanelOpen,
+      openPanel: mockOpenPanel,
       closePanel: vi.fn(),
       togglePanel: vi.fn(),
       closeAllPanels: vi.fn(),
@@ -149,6 +158,38 @@ vi.mock('react-i18next', () => ({
       if (key === 'agent.header.toggleShellHasUpdatesAria') {
         return 'Toggle agent panels (has updates)';
       }
+      if (key === 'agent.header.statusBadgesAria') {
+        return 'Panel update badges';
+      }
+      if (key === 'agent.header.panelBadgeAria') {
+        const panel =
+          typeof options?.panel === 'string'
+            ? options.panel
+            : typeof defaultValue === 'string'
+              ? ''
+              : '';
+        // i18next mock: defaultValue is template; options carries interpolations
+        const interpolatedPanel =
+          typeof options?.panel === 'string' ? options.panel : panel;
+        return `${interpolatedPanel} has updates — click to open`;
+      }
+      if (key === 'agent.header.panelBadgeSrOnly') {
+        return 'has updates';
+      }
+      if (key === 'agent.header.panelBadgeLive') {
+        const panel =
+          typeof options?.panel === 'string' ? options.panel : '';
+        return `${panel} has updates`;
+      }
+      if (key === 'agent.processes.title') {
+        return 'Processes';
+      }
+      if (key === 'agent.planning.title') {
+        return 'Planning';
+      }
+      if (key === 'agent.workspace.title') {
+        return 'Workspace';
+      }
       if (key === 'agent.header.defaultAssistant') {
         return 'Agent';
       }
@@ -171,6 +212,7 @@ describe('AgentChatHeader', () => {
     vi.clearAllMocks();
     shellOpen = false;
     mockHasPanelAttention.mockReturnValue(false);
+    mockIsPanelOpen.mockReturnValue(false);
   });
 
   it('renders a bookmark toggle for the active chat session and wires it to list actions', () => {
@@ -219,5 +261,34 @@ describe('AgentChatHeader', () => {
         name: 'Toggle agent panels (has updates)',
       }),
     ).toBeInTheDocument();
+  });
+
+  it('shows a processes status badge when that panel has attention and opens it on click', async () => {
+    const { trackBadgeClicked } = await import('@/lib/analytics');
+    mockHasPanelAttention.mockImplementation(
+      (id: string) => id === 'processes',
+    );
+
+    render(<AgentChatHeader />);
+
+    const badge = screen.getByTestId('header-status-badge-processes');
+    expect(badge).toHaveAttribute('aria-controls', 'agent-side-panel-shell');
+    expect(badge).toHaveAttribute(
+      'aria-label',
+      'Processes has updates — click to open',
+    );
+
+    fireEvent.click(badge);
+
+    expect(trackBadgeClicked).toHaveBeenCalledWith('processes', 'session-123');
+    expect(mockOpenPanel).toHaveBeenCalledWith('processes');
+  });
+
+  it('hides status badges when no panel has attention', () => {
+    render(<AgentChatHeader />);
+
+    expect(
+      screen.queryByTestId('header-status-badges'),
+    ).not.toBeInTheDocument();
   });
 });

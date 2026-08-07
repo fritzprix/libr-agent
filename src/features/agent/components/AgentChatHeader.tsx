@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useClipboard } from '@/hooks/useClipboard';
 import { messagesToMarkdown } from '@/lib/message-utils';
+import { HeaderStatusBadges } from './HeaderStatusBadges';
 import { PanelAttentionDot } from './PanelAttentionDot';
 
 interface AgentChatHeaderProps {
@@ -130,7 +131,7 @@ export function AgentChatHeader({
                 onClick={handleCopyMessages}
                 disabled={isCopying}
                 aria-label={t('agent.header.copyAria')}
-                className="h-6 px-2"
+                className="h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {isCopying ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -141,6 +142,8 @@ export function AgentChatHeader({
             </TooltipTrigger>
             <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>
           </Tooltip>
+
+          <HeaderStatusBadges />
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -161,7 +164,7 @@ export function AgentChatHeader({
                 }
                 aria-controls="agent-side-panel-shell"
                 aria-expanded={shellOpen}
-                className="relative h-6 px-2"
+                className="relative h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <PanelRight
                   className={`h-4 w-4 ${shellOpen ? 'text-primary' : ''}`}

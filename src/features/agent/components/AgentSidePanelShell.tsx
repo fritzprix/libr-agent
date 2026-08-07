@@ -10,6 +10,8 @@ import {
   useAgentPanels,
   type AgentPanelId,
 } from '@/context/AgentPanelsContext';
+import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { trackPanelAction } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
 import { FolderOpen, ListChecks, Terminal, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +37,7 @@ export function AgentSidePanelShell({
   variant = 'rail',
 }: AgentSidePanelShellProps) {
   const { t } = useTranslation();
+  const { session } = useAgentSessionState();
   const {
     activeTab,
     setActiveTab,
@@ -109,8 +112,9 @@ export function AgentSidePanelShell({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => {
+                  trackPanelAction(activeTab, 'close', session?.id);
                   closeShell();
                 }}
                 aria-label={t('agent.panels.closeAria', 'Close agent panels')}

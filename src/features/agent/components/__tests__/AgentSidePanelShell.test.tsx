@@ -5,6 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentPanelsProvider, useAgentPanels } from '@/context/AgentPanelsContext';
 import { AgentSidePanelShell } from '../AgentSidePanelShell';
 
+vi.mock('@/context/AgentSessionContext', () => ({
+  useAgentSessionState: () => ({
+    session: { id: 'session-shell-test' },
+  }),
+}));
+
+vi.mock('@/lib/analytics', () => ({
+  trackPanelAction: vi.fn(),
+}));
+
 vi.mock('../AgentWorkspacePanel', () => ({
   AgentWorkspacePanel: ({ isVisible }: { isVisible?: boolean }) => (
     <div data-testid="workspace-tab" data-visible={String(Boolean(isVisible))}>
