@@ -1,6 +1,6 @@
 ---
 name: recruit
-description: Analyze installed tools and existing assistant configurations to actively propose and create specialized LibrAgent assistants via agent__create. Use when the user wants to recruit, create, or build a domain expert or specialist agent, utilizing a proactive "Architect" workflow that maps available inventory tools to functional gaps. Not for workspace agents.md (agent-init), teamwork/org, or registering MCP servers.
+description: Analyze installed tools and existing assistant configurations to actively propose and create specialized LibrAgent assistants via agent__createAgent. Use when the user wants to recruit, create, or build a domain expert or specialist agent, utilizing a proactive "Architect" workflow that maps available inventory tools to functional gaps. Not for workspace agents.md (agent-init), teamwork/org, or registering MCP servers.
 ---
 
 # Recruit (The Architect)
@@ -21,12 +21,12 @@ Instead of passively asking the user what domain they want or waiting for exact 
 
 ## Three Layers (Do Not Mix)
 
-| Layer | Examples | Set via `agent__create`? |
+| Layer | Examples | Set via `agent__createAgent`? |
 | --- | --- | --- |
 | **Core builtins** | `workspace`, `agent`, `tool`, `skills`, `scratchpad`, … | Always on — do not list redundantly |
 | **Optional builtins** | `planning`, `browser`, `knowledge`, `setup-wizard`, `media`, `history` | `builtinCapabilities` — restricts/enables optional services |
-| **External MCP** | GitHub, search, filesystem servers | `externalMcpServers` — **server IDs** from `tool__list`, not display names |
-| **Bundled skills** | `docx`, `deep-research` | **Not** via `agent__create` — suggest `@skill:name` separately |
+| **External MCP** | GitHub, search, filesystem servers | `externalMcpServers` — **server IDs** from `tool__listServers`, not display names |
+| **Bundled skills** | `docx`, `deep-research` | **Not** via `agent__createAgent` — suggest `@skill:name` separately |
 
 ---
 
@@ -38,13 +38,13 @@ Before making proposals or asking the user questions, gather the system's curren
 
 1. **Audit Available Tools:**
    ```json
-   tool__list({ "availability": "inventory" })
+   tool__listServers({ "availability": "inventory" })
    ```
    Collect all external MCP servers (ID, display name, description) and optional builtins.
 
 2. **Audit Existing Assistants:**
    ```json
-   agent__list({ "type": "configs" })
+   agent__listAgents({ "type": "configs" })
    ```
    Retrieve currently configured assistants to identify what roles are already covered.
 
@@ -72,7 +72,7 @@ Do **not** ask vague questions like "What kind of expert do you want?". Instead,
 #### Example Proposal Format:
 > Based on your tool inventory, I noticed you have the `github-mcp` server installed, but no dedicated GitHub assistant. I propose creating:
 > 
-> 1. **GitHub Specialist** (`agent__create` proposal):
+> 1. **GitHub Specialist** (`agent__createAgent` proposal):
 >    - **Description**: Manages pull requests, issues, and repository state.
 >    - **MCP Servers**: `github-mcp` (ID: `cuid...`)
 >    - **Builtins**: `["browser"]`
@@ -84,7 +84,7 @@ Do **not** ask vague questions like "What kind of expert do you want?". Instead,
 Once the user approves or refines the proposal, execute the creation:
 
 ```json
-agent__create({
+agent__createAgent({
   "name": "GitHub Specialist",
   "description": "...",
   "systemPrompt": "...",
@@ -93,7 +93,7 @@ agent__create({
 })
 ```
 
-*Note: Ensure `externalMcpServers` contains only CUID IDs from `tool__list`, never display names or slugs. `planning` is optional — include it when the specialist needs goal/todo tools.*
+*Note: Ensure `externalMcpServers` contains only CUID IDs from `tool__listServers`, never display names or slugs. `planning` is optional — include it when the specialist needs goal/todo tools.*
 
 ### 5. Verification & Handoff
 
@@ -101,7 +101,7 @@ Confirm creation and instruct the user on how to initiate a session:
 
 1. Verify:
    ```json
-   agent__list({ "type": "configs", "query": "<new name>" })
+   agent__listAgents({ "type": "configs", "query": "<new name>" })
    ```
 2. Inform the user of the new assistant's name and ID.
 3. Provide instructions on starting a session: `agent__startSession(agentId="...")` or via the UI.
@@ -111,7 +111,7 @@ Confirm creation and instruct the user on how to initiate a session:
 ## Guidelines
 
 - **Active Proposing Over Asking:** Never respond to "make me an expert" with a blank question. Always audit the inventory first and propose a concrete specialist draft.
-- **Evidence-Based Design:** Only attach MCP servers that are actually present in `tool__list` inventory.
+- **Evidence-Based Design:** Only attach MCP servers that are actually present in `tool__listServers` inventory.
 - **English-Only System Prompts:** Write the `systemPrompt` in English for optimal LLM performance and token efficiency. The user-facing `description` can match the user's preferred language.
 - **Minimal Tool Allocation:** Assign only the tools that are highly relevant to the specialist's domain. Do not over-provision tools, as it increases cognitive load and degrades performance.
 
@@ -119,10 +119,10 @@ Confirm creation and instruct the user on how to initiate a session:
 
 | Step | Tool |
 | --- | --- |
-| Inventory MCP + tools | `tool__list({ "availability": "inventory" })` |
-| Find existing assistants | `agent__list({ "type": "configs" })` |
-| Create specialist | `agent__create(...)` |
-| Verify creation | `agent__list({ "type": "configs" })` |
+| Inventory MCP + tools | `tool__listServers({ "availability": "inventory" })` |
+| Find existing assistants | `agent__listAgents({ "type": "configs" })` |
+| Create specialist | `agent__createAgent(...)` |
+| Verify creation | `agent__listAgents({ "type": "configs" })` |
 | Use specialist | `agent__startSession(agentId="...")` |
 
 ## References

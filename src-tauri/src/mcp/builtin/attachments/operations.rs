@@ -247,7 +247,7 @@ pub async fn add_content(
         ),
         vec![
             format!("Use read with contentId='{}' to view the full content", content_item.id),
-            "Use search to find attachments by keywords".to_string(),
+            "Use attachments__searchAttachments to find attachments by keywords".to_string(),
         ],
     );
 

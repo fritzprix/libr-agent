@@ -28,7 +28,7 @@ impl AgentService {
         message_source: Option<MessageSource>,
     ) -> Result<CreateSessionResponse, String> {
         let assistant = load_assistant(&body.assistant_id).await?;
-        let session_id = format!("session-{}", uuid::Uuid::new_v4());
+        let session_id = generate_spawn_session_id();
         let initial_request = body
             .request
             .as_deref()
@@ -226,6 +226,14 @@ fn build_agent_config(assistant: &AssistantModel) -> Result<(AgentConfig, Option
 
     let assistant_id = agent_config.id.clone();
     Ok((agent_config, assistant_id))
+}
+
+/// Generate a compact spawn session ID: 10-char hex (no prefix).
+///
+/// Legacy `session-...` IDs remain valid opaque DB keys; only new spawns use this form.
+pub fn generate_spawn_session_id() -> String {
+    let hex = uuid::Uuid::new_v4().simple().to_string();
+    hex[..10].to_string()
 }
 
 fn build_session_name(

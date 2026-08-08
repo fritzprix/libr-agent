@@ -1,6 +1,6 @@
 # Knowledge Schema
 
-Fields for `knowledge__record_knowledge` distillation workflow.
+Fields for `knowledge__recordKnowledge` distillation workflow.
 
 ## Required concepts
 

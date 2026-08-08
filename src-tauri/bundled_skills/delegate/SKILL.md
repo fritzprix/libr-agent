@@ -95,13 +95,13 @@ Say "use the same workspace as this session" only when you intentionally started
 
 Use the builtin agent tools deliberately:
 
-- `agent__list(type="configs")` to find the right assistant and prefer its returned ID
+- `agent__listAgents(type="configs")` to find the right assistant and prefer its returned ID
 - `agent__startSession(agentId="...", task="...", waitForResult=false)` when you have the ID
 - `agent__startSession(agentId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
 - `agent__checkSession(sessionId)` to poll
 - `agent__checkSession(sessionId, wait=true)` when you want to block until a terminal result
 - `agent__messageToSession(sessionId, message)` to correct course or provide more input
-- `agent__list(type="sessions")` to inspect delegated children of the current session
+- `agent__listAgents(type="sessions")` to inspect delegated children of the current session
 
 Default to `waitForResult=false` unless the parent truly has nothing useful to do while waiting.
 

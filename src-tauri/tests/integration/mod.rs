@@ -3,7 +3,6 @@
 pub mod agent_capability_contract_tests;
 pub mod agent_delegation_access_tests;
 pub mod agent_list_pagination_tests;
-pub mod agent_org_service_context_tests;
 pub mod agent_prompt_identity_tests;
 pub mod agent_service_explicit_org_validation_tests;
 pub mod approval_runtime_tests;

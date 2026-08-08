@@ -170,7 +170,7 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
                 "This only prepares an empty @teamwork/ directory — it does not scaffold files and does not change the session workspace.",
             ],
             &[
-                "Do not call prepareTeamworkWorkspace again after success.",
+                "Do not call agent__prepareTeamworkWorkspace again after success.",
                 "Scaffold next via the teamwork skill (prefer scripts/init_task_force.py with --output = response artifactPath) or write the full set under @teamwork/ including coordination/* and @teamwork/.libragent/teamwork.json.",
                 "Only after the org scaffold is complete, call agent__createOrg, then agent__startSession for org members.",
             ],
@@ -401,8 +401,8 @@ fn stop_session_tool() -> MCPTool {
             "Forcefully terminate an active sub-agent session when a critical problem is confirmed.",
             &["Session ID from agent__checkSession or agent__listAgents(type='sessions')."],
             &[
-                "CRITICAL: Do NOT stop a session simply because checkSession or messageToSession timed out. Timeouts only mean the child is busy working.",
-                "Always check the child session's current status and latest messages via checkSession(wait=false) to confirm it is actually stuck before stopping.",
+                "CRITICAL: Do NOT stop a session simply because agent__checkSession or agent__messageToSession timed out. Timeouts only mean the child is busy working.",
+                "Always check the child session's current status and latest messages via agent__checkSession(wait=false) to confirm it is actually stuck before stopping.",
                 "Use ONLY when there is a confirmed critical error, infinite loop, or the delegation is explicitly no longer needed.",
                 "No-op if the session is already non-running.",
             ],

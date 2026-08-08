@@ -32,7 +32,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Process may belong to a different session".to_string(),
-                    "Use listProcesses() to see processes in your session".to_string(),
+                    "Use workspace__listProcesses() to see processes in your session".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -60,7 +60,7 @@ impl WorkspaceServer {
             )
             .guidance(vec![
                 running_text,
-                "Use listProcesses() to find a valid processId.".to_string(),
+                "Use workspace__listProcesses() to find a valid processId.".to_string(),
                 "Only starting/running processes can be stopped.".to_string(),
             ])
             .to_mcp_result());
@@ -89,7 +89,7 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Use listProcesses to see running processes".to_string(),
+                    "Use workspace__listProcesses to see running processes".to_string(),
                     "Only running processes can be stopped".to_string(),
                 ])
                 .to_mcp_result());

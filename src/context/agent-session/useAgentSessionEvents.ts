@@ -113,7 +113,7 @@ export function useAgentSessionEvents(
                 return nextState;
               });
               if (applied && previousState) {
-                notifyRuntimeStateErrors(previousState, nextState);
+                notifyRuntimeStateErrors(previousState, nextState, sessionId);
               }
               break;
             }
@@ -383,7 +383,11 @@ export function useAgentSessionEvents(
           return currentState;
         });
         if (previousRuntimeState) {
-          notifyRuntimeStateErrors(previousRuntimeState, nextRuntimeState);
+          notifyRuntimeStateErrors(
+            previousRuntimeState,
+            nextRuntimeState,
+            sessionId,
+          );
         }
         void actions.persistViewedAt().catch((err) => {
           logger.error(

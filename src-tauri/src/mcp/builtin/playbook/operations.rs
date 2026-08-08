@@ -115,7 +115,7 @@ pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
     let formatted = format_playbook_summary(&playbook);
 
     let text_response = format!(
-        "Successfully created new playbook.\nID: {}\nGoal: {}\nSteps: {}\n\n{}\n\nThe playbook is now available. Use 'listPlaybooks' to see all playbooks, or 'selectPlaybook' with ID {} to execute it.",
+        "Successfully created new playbook.\nID: {}\nGoal: {}\nSteps: {}\n\n{}\n\nThe playbook is now available. Use 'playbook__listPlaybooks' to see all playbooks, or 'playbook__selectPlaybook' with ID {} to execute it.",
         id, playbook.goal, playbook.workflow.len(), formatted, id
     );
 
@@ -276,12 +276,12 @@ pub async fn list_playbooks(
     } else {
         let text_response = if playbooks.is_empty() {
             format!(
-                "[listPlaybooks] No playbooks found for assistant {}.",
+                "[playbook__listPlaybooks] No playbooks found for assistant {}.",
                 assistant_id
             )
         } else {
             format!(
-                "[listPlaybooks] Found {} playbook(s) for assistant {}.\nShowing page {} of {} ({} items on this page):\n\n{}\n\nNote: Use 'getPlaybook' to view details or 'selectPlaybook' to execute a playbook.",
+                "[playbook__listPlaybooks] Found {} playbook(s) for assistant {}.\nShowing page {} of {} ({} items on this page):\n\n{}\n\nNote: Use 'playbook__getPlaybook' to view details or 'playbook__selectPlaybook' to execute a playbook.",
                 total_items, assistant_id, page, total_pages, playbooks.len(), formatted_list
             )
         };
@@ -369,7 +369,7 @@ pub async fn get_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, 
             let formatted = format_playbook_detailed(&playbook);
 
             let text_response = format!(
-                "[get_playbook] Retrieved playbook details for ID: {}\n\n{}\n\nNote: Use 'selectPlaybook' to execute this playbook, or 'updatePlaybook' to modify it.",
+                "[get_playbook] Retrieved playbook details for ID: {}\n\n{}\n\nNote: Use 'playbook__selectPlaybook' to execute this playbook, or 'playbook__updatePlaybook' to modify it.",
                 id, formatted
             );
 

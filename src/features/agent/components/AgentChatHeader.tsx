@@ -8,8 +8,7 @@ import {
   useAgentSessionListActions,
   useAgentSessionListState,
 } from '@/context/AgentSessionListContext';
-import { useAgentPlanning } from '@/context/AgentPlanningContext';
-import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
+import { AGENT_PANEL_IDS, useAgentPanels } from '@/context/AgentPanelsContext';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
@@ -18,11 +17,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { PanelRight, FolderOpen, Copy, Loader2 } from 'lucide-react';
+import { Copy, Loader2, PanelRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useClipboard } from '@/hooks/useClipboard';
 import { messagesToMarkdown } from '@/lib/message-utils';
+import { HeaderStatusBadges } from './HeaderStatusBadges';
+import { PanelAttentionDot } from './PanelAttentionDot';
 
 interface AgentChatHeaderProps {
   children?: React.ReactNode;
@@ -38,8 +39,9 @@ export function AgentChatHeader({
   const { renameSession } = useAgentSessionActions();
   const { toggleBookmark } = useAgentSessionListActions();
   const { sessions, notificationSessions } = useAgentSessionListState();
-  const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
-  const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
+  const { isShellOpen, toggleShell, hasPanelAttention } = useAgentPanels();
+  const shellOpen = isShellOpen();
+  const shellAttention = AGENT_PANEL_IDS.some((id) => hasPanelAttention(id));
   const { messages } = useAgentChat();
   const [isCopying, setIsCopying] = useState(false);
   const [bookmarkOverride, setBookmarkOverride] = useState<
@@ -129,7 +131,7 @@ export function AgentChatHeader({
                 onClick={handleCopyMessages}
                 disabled={isCopying}
                 aria-label={t('agent.header.copyAria')}
-                className="h-6 px-2"
+                className="h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {isCopying ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -141,27 +143,7 @@ export function AgentChatHeader({
             <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>
           </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={toggleWorkspacePanel}
-                aria-label={t('agent.header.toggleWorkspaceAria')}
-                aria-controls="agent-workspace-panel"
-                aria-expanded={showWorkspacePanel}
-                className="h-6 px-2"
-              >
-                <FolderOpen
-                  className={`h-4 w-4 ${showWorkspacePanel ? 'text-primary' : ''}`}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {t('agent.header.toggleWorkspaceTooltip')}
-            </TooltipContent>
-          </Tooltip>
+          <HeaderStatusBadges />
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -169,19 +151,29 @@ export function AgentChatHeader({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={togglePlanningPanel}
-                aria-label={t('agent.header.togglePlanningAria')}
-                aria-controls="agent-planning-panel"
-                aria-expanded={showPlanningPanel}
-                className="h-6 px-2"
+                onClick={() => {
+                  toggleShell();
+                }}
+                aria-label={
+                  shellAttention
+                    ? t(
+                        'agent.header.toggleShellHasUpdatesAria',
+                        'Toggle agent panels (has updates)',
+                      )
+                    : t('agent.header.toggleShellAria', 'Toggle agent panels')
+                }
+                aria-controls="agent-side-panel-shell"
+                aria-expanded={shellOpen}
+                className="relative h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <PanelRight
-                  className={`h-4 w-4 ${showPlanningPanel ? 'text-primary' : ''}`}
+                  className={`h-4 w-4 ${shellOpen ? 'text-primary' : ''}`}
                 />
+                <PanelAttentionDot visible={shellAttention} />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {t('agent.header.togglePlanningTooltip')}
+              {t('agent.header.toggleShellTooltip', 'Toggle agent panels')}
             </TooltipContent>
           </Tooltip>
 

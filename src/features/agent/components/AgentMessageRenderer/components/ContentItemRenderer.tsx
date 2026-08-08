@@ -13,6 +13,7 @@ import {
   VideoContentRenderer,
 } from './MediaContentRenderer';
 import { MarkdownText } from './MarkdownText';
+import { applyThemeToUiResource } from '../utils/injectUiResourceTheme';
 import { isSafeExternalUrl } from '../utils/url';
 
 const logger = getLogger('AgentMessageRenderer');
@@ -32,6 +33,10 @@ interface ContentItemRendererProps {
   remoteDomProps: UIResourceRendererProps['remoteDomProps'];
   supportedContentTypes: UIResourceRendererProps['supportedContentTypes'];
   htmlProps: UIResourceRendererProps['htmlProps'];
+  /** Prebuilt `<style data-libragent-theme>` block; null skips injection. */
+  themeStyleTag: string | null;
+  /** Remount key when host theme resolves / switches (e.g. "dark" | "light"). */
+  themeKey: string;
   onUIAction: NonNullable<UIResourceRendererProps['onUIAction']>;
   onLinkClick: (
     event: MouseEvent<HTMLAnchorElement>,
@@ -97,6 +102,8 @@ export function ContentItemRenderer({
   remoteDomProps,
   supportedContentTypes,
   htmlProps,
+  themeStyleTag,
+  themeKey,
   onUIAction,
   onLinkClick,
 }: ContentItemRendererProps) {
@@ -151,19 +158,43 @@ export function ContentItemRenderer({
         return null;
       }
 
+      const themedResource = applyThemeToUiResource(
+        resourceItem.resource,
+        themeStyleTag,
+      );
+
+      // Wait for next-themes to resolve so we never mount a light-themed iframe
+      // under a dark host (or vice versa) during hydration.
+      if (!themeStyleTag) {
+        return (
+          <div
+            ref={(element) => {
+              resourceRefs.current[itemKey] = element;
+            }}
+            className={
+              expandResources
+                ? 'min-h-96 w-full bg-background'
+                : 'h-96 w-full bg-background'
+            }
+            aria-hidden
+          />
+        );
+      }
+
       return (
         <div
           ref={(element) => {
             resourceRefs.current[itemKey] = element;
           }}
-          className={expandResources ? 'min-h-96 w-full overflow-visible' : ''}
+          className={expandResources ? 'w-full overflow-visible' : ''}
         >
           <UIResourceRenderer
+            key={themeKey}
             remoteDomProps={remoteDomProps}
             onUIAction={onUIAction}
             supportedContentTypes={supportedContentTypes}
             htmlProps={htmlProps}
-            resource={resourceItem.resource}
+            resource={themedResource}
           />
         </div>
       );

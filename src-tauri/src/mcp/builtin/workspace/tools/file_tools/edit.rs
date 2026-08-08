@@ -45,7 +45,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required. Use only the 6-character opaque anchor from the start line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Do not include the line number or '|content'."),
+            Some("Required. Use only the 6-character opaque anchor from the start line in workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true). Do not include the line number or '|content'."),
         ),
     );
     props.insert(
@@ -53,7 +53,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required when endLine creates a multi-line replacement range. Use only the 6-character opaque anchor from the exact end line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Do not include the line number or '|content'."),
+            Some("Required when endLine creates a multi-line replacement range. Use only the 6-character opaque anchor from the exact end line in workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true). Do not include the line number or '|content'."),
         ),
     );
 
@@ -81,7 +81,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("6-character opaque anchor from readFile(showLineAnchors=true) for the start line. Do not include the line number or '|content'."),
+            Some("6-character opaque anchor from workspace__readFile(showLineAnchors=true) for the start line. Do not include the line number or '|content'."),
         ),
     );
     replace_item_props.insert(
@@ -157,7 +157,7 @@ pub fn create_insert_after_line_tool() -> MCPTool {
             None,
             None,
             Some(
-                "Required when afterLine targets an existing line. Use only the 6-character anchor from readFile(showLineAnchors=true) or search(showLineAnchors=true). Omit only when afterLine is 0.",
+                "Required when afterLine targets an existing line. Use only the 6-character anchor from workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true). Omit only when afterLine is 0.",
             ),
         ),
     );
@@ -182,7 +182,7 @@ pub fn create_insert_after_line_tool() -> MCPTool {
             None,
             None,
             Some(
-                "Required when afterLine targets an existing line. Use only the 6-character anchor from readFile(showLineAnchors=true) or search(showLineAnchors=true). Omit only when afterLine is 0.",
+                "Required when afterLine targets an existing line. Use only the 6-character anchor from workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true). Omit only when afterLine is 0.",
             ),
         ),
     );
@@ -244,7 +244,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required. Use only the 6-character opaque anchor from the start line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Do not include the line number or '|content'."),
+            Some("Required. Use only the 6-character opaque anchor from the start line in workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true). Do not include the line number or '|content'."),
         ),
     );
     props.insert(
@@ -252,7 +252,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required when endLine creates a multi-line deletion range. Use only the 6-character opaque anchor from the exact end line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Do not include the line number or '|content'."),
+            Some("Required when endLine creates a multi-line deletion range. Use only the 6-character opaque anchor from the exact end line in workspace__readFile(showLineAnchors=true) or workspace__searchFiles(showLineAnchors=true). Do not include the line number or '|content'."),
         ),
     );
 
@@ -275,7 +275,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("6-character opaque anchor from readFile(showLineAnchors=true) for the start line. Do not include the line number or '|content'."),
+            Some("6-character opaque anchor from workspace__readFile(showLineAnchors=true) for the start line. Do not include the line number or '|content'."),
         ),
     );
     delete_item_props.insert(
@@ -335,7 +335,7 @@ pub fn create_str_replace_tool() -> MCPTool {
         string_prop(
             Some(1),
             None,
-            Some("Exact text to find in the file. Copy verbatim from readFile output, including whitespace and newlines."),
+            Some("Exact text to find in the file. Copy verbatim from workspace__readFile output, including whitespace and newlines."),
         ),
     );
     props.insert(
@@ -352,13 +352,13 @@ pub fn create_str_replace_tool() -> MCPTool {
         title: Some("Replace Text in File".to_string()),
         description: "Perform exact string replacement in an existing file.
 
-PREREQUISITE: Use readFile first and copy the exact text block into old_string. Matching is literal — whitespace, indentation, and line endings must match.
+PREREQUISITE: Use workspace__readFile first and copy the exact text block into old_string. Matching is literal — whitespace, indentation, and line endings must match.
 
 - Single replacement (default): old_string must match exactly once unless replace_all=true.
 - replace_all=true: every occurrence of old_string is replaced.
 - new_string may be empty to delete the matched text.
 
-Use writeFile mode='create' for new files and mode='overwrite' only when replacing the entire file."
+Use workspace__writeFile mode='create' for new files and mode='overwrite' only when replacing the entire file."
             .to_string(),
         input_schema: object_schema(
             props,
@@ -389,9 +389,9 @@ fn edit_file_path_prop() -> JSONSchema {
 #[cfg(feature = "workspace-edit-file")]
 fn edit_start_prop(include_zero: bool) -> JSONSchema {
     let description = if include_zero {
-        "Copy the '42:a31f2c' from readFile's '42:a31f2c|content' line format. Omit only the trailing '|content'. Use \"0\" only to prepend at the file top."
+        "Copy the '42:a31f2c' from workspace__readFile's '42:a31f2c|content' line format. Omit only the trailing '|content'. Use \"0\" only to prepend at the file top."
     } else {
-        "Copy the '42:a31f2c' from readFile's '42:a31f2c|content' line format. Omit only the trailing '|content'."
+        "Copy the '42:a31f2c' from workspace__readFile's '42:a31f2c|content' line format. Omit only the trailing '|content'."
     };
     string_prop(Some(1), Some(32), Some(description))
 }
@@ -402,7 +402,7 @@ fn edit_end_prop() -> JSONSchema {
         Some(1),
         Some(32),
         Some(
-            "Copy the end line's '72:b47aa1' from readFile's '72:b47aa1|content' format for multi-line ranges. Omit for single-line edits.",
+            "Copy the end line's '72:b47aa1' from workspace__readFile's '72:b47aa1|content' format for multi-line ranges. Omit for single-line edits.",
         ),
     )
 }
@@ -484,7 +484,7 @@ fn create_line_edit_flat_variant() -> JSONSchema {
 
     let mut schema = object_schema(props, vec!["path".to_string(), "start".to_string()]);
     schema.description = Some(
-        "Replace or delete existing lines. Copy start (and optional end) as \"N:anchor\" from readFile."
+        "Replace or delete existing lines. Copy start (and optional end) as \"N:anchor\" from workspace__readFile."
             .to_string(),
     );
     schema
@@ -561,7 +561,7 @@ fn create_line_edit_item_variant() -> JSONSchema {
             Some(1),
             None,
             Some(
-                "Target start line number (1-based). Prefer flat start: \"N:anchor\" on editFile.",
+                "Target start line number (1-based). Prefer flat start: \"N:anchor\" on workspace__editFile.",
             ),
         ),
     );
@@ -653,7 +653,7 @@ pub fn create_edit_item_schema() -> JSONSchema {
             create_insert_after_edit_item_variant(),
         ],
         Some(
-            "A single edit operation after canonicalization. Prefer the flat editFile discovery schema with start/end.",
+            "A single edit operation after canonicalization. Prefer the flat workspace__editFile discovery schema with start/end.",
         ),
     )
 }
@@ -668,7 +668,7 @@ pub fn create_edit_file_input_schema() -> JSONSchema {
             create_insert_after_flat_variant(),
         ],
         Some(
-            "Edit one location in a file. Copy start/end as \"N:anchor\" from readFile(showLineAnchors=true).",
+            "Edit one location in a file. Copy start/end as \"N:anchor\" from workspace__readFile(showLineAnchors=true).",
         ),
     )
 }
@@ -683,7 +683,7 @@ pub fn create_edit_file_validation_schema() -> JSONSchema {
         array_schema_with_max_items(
             create_edit_item_schema(),
             Some(EDIT_FILE_MAX_EDITS),
-            Some("Internal edit list after canonicalization. Model-facing editFile uses a single flat object."),
+            Some("Internal edit list after canonicalization. Model-facing workspace__editFile uses a single flat object."),
         ),
     );
 
@@ -697,7 +697,7 @@ pub fn create_edit_file_tool() -> MCPTool {
         title: Some("Edit File".to_string()),
         description: "Apply one line edit to a file.
 
-PREREQUISITE: Obtain anchors from readFile(showLineAnchors=true), writeFile, or a previous editFile response. Anchored lines look like `42:a31f2c|...` — copy the `42:a31f2c` prefix into start (and end for ranges).
+PREREQUISITE: Obtain anchors from workspace__readFile(showLineAnchors=true), workspace__writeFile, or a previous workspace__editFile response. Anchored lines look like `42:a31f2c|...` — copy the `42:a31f2c` prefix into start (and end for ranges).
 
 Shapes:
 - Prepend: `{ \"path\": \"a.rs\", \"content\": \"...\" }`
@@ -706,7 +706,7 @@ Shapes:
 - Range replace: `{ \"path\": \"a.rs\", \"start\": \"10:a31f2c\", \"end\": \"15:b47aa1\", \"content\": \"...\" }`
 - Insert after: `{ \"path\": \"a.rs\", \"op\": \"insert_after\", \"start\": \"10:a31f2c\", \"content\": \"...\" }`
 
-One edit per call. For multiple locations, call editFile again (re-read when line numbers may have shifted)."
+One edit per call. For multiple locations, call workspace__editFile again (re-read when line numbers may have shifted)."
             .to_string(),
         input_schema: create_edit_file_input_schema(),
         output_schema: None,

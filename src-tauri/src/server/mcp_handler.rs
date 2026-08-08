@@ -1,4 +1,5 @@
 use crate::mcp::types::{MCPError, MCPResponse, MCPResponseResult, ServerCapabilities, ServerInfo};
+use crate::server::handlers::helpers::resolve_http_session_ref;
 use crate::state::get_mcp_service_proxy_manager;
 use serde::Deserialize;
 use warp::{http::StatusCode, Rejection};
@@ -134,6 +135,17 @@ pub async fn mcp_rpc(
     };
 
     let id = req.id.clone();
+    let session_id = match resolve_http_session_ref(&session_id).await {
+        Ok(resolved) => resolved,
+        Err((_, error)) => {
+            let response = error_response(id, -32602, error);
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&response),
+                StatusCode::OK,
+            ));
+        }
+    };
+
     let response = match req.method.as_str() {
         "initialize" => handle_initialize(id),
         "tools/list" => handle_tools_list(&session_id, id).await,

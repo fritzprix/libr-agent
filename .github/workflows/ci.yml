@@ -48,6 +48,9 @@ jobs:
       - name: Lint check
         run: pnpm lint
 
+      - name: Check obsolete builtin tool names
+        run: pnpm tool-names:check
+
       - name: Validate bundled skills
         if: matrix.os == 'ubuntu-latest'
         run: pnpm skills:audit

@@ -18,9 +18,8 @@ export const BOTTOM_FOLLOW_RELEASE_SCROLL_DISTANCE = 36;
 // release distance has not yet hit BOTTOM_FOLLOW_RELEASE_SCROLL_DISTANCE.
 // Short Non-Thinking sessions often reach the top in one gesture.
 export const NEAR_TOP_SCROLL_THRESHOLD = 8;
-// Stable Virtuoso Header height so switching between "no older messages"
-// and the load-older pill does not jump the first bubble. Also provides the
-// top clearance that used to disappear when Header returned null.
+// Fixed Virtuoso Header height so switching between empty / load-older /
+// loading-older pills cannot reflow the first bubble (mid-prepend nudge).
 export const CHAT_LIST_HEADER_MIN_HEIGHT_PX = 28;
 // Ignore scroll events caused by our own bottom-forcing scroll for one short
 // window so programmatic movement does not look like user intent.

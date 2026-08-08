@@ -2,7 +2,8 @@ import React, { useMemo } from 'react';
 import type { ToolCall, Message } from '@/models/chat';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 import { AlertCircle, Loader2 } from 'lucide-react';
-import { parseToolArguments } from '@/lib/tool-call-utils';
+import { hasUIResource, parseToolArguments } from '@/lib/tool-call-utils';
+import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 
 interface AgentToolCallDetailsProps {
@@ -39,6 +40,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
     () => parsedArgs || parseToolArguments(toolCall.function.arguments),
     [parsedArgs, toolCall.function.arguments],
   );
+  const containsUIResource = hasUIResource(toolResult);
 
   if (!showDetails) return null;
 
@@ -69,7 +71,12 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
               : t('agent.toolDetails.result', 'Result')}
           </div>
           {hasError ? (
-            <div className="bg-destructive/10 border border-destructive/20 rounded p-3">
+            <div
+              className={cn(
+                'bg-destructive/10 border border-destructive/20 rounded p-3',
+                !containsUIResource && 'max-h-96 overflow-y-auto',
+              )}
+            >
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
@@ -81,7 +88,13 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
               </div>
             </div>
           ) : (
-            <div className="bg-background rounded border p-2">
+            <div
+              data-testid="tool-call-result"
+              className={cn(
+                'bg-background rounded border p-2',
+                !containsUIResource && 'max-h-96 overflow-y-auto',
+              )}
+            >
               <AgentMessageRenderer
                 message={toolResult}
                 className="text-sm"

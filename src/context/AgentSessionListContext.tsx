@@ -67,6 +67,8 @@ interface AgentSessionListStateContextValue {
   isSessionsListLoading: boolean;
   hasMoreSessions: boolean;
   isLoadingMoreSessions: boolean;
+  /** Parent session IDs currently fetching direct children for tree expand. */
+  loadingChildrenParentIds: ReadonlySet<string>;
 }
 
 const AgentSessionListStateContext = createContext<
@@ -89,6 +91,13 @@ interface AgentSessionListActionsContextValue {
    * Load the next page of session history.
    */
   loadMoreSessions: () => Promise<void>;
+
+  /**
+   * Lazy-load direct child sessions for a parent (tree expand).
+   * Merges results into the shared session list; concurrent calls for the
+   * same parent share one in-flight request.
+   */
+  ensureChildrenLoaded: (parentSessionId: string) => Promise<void>;
 
   /**
    * Delete an agent session
@@ -150,6 +159,9 @@ export function AgentSessionListProvider({
   const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
   const [isLoadingMoreSessions, setIsLoadingMoreSessions] = useState(false);
   const [hasMoreSessions, setHasMoreSessions] = useState(false);
+  const [loadingChildrenParentIds, setLoadingChildrenParentIds] = useState<
+    Set<string>
+  >(() => new Set());
   const sessionsRef = useRef<AgentSession[]>([]);
   const notificationSessionsRef = useRef<AgentSession[]>([]);
   const pendingApprovalKeysRef = useRef(new Set<string>());
@@ -158,6 +170,8 @@ export function AgentSessionListProvider({
   const latestSessionListPromiseRef =
     useRef<Promise<InitialSessionListData> | null>(null);
   const nextCursorRef = useRef<AgentSessionListCursor | undefined>(undefined);
+  const childrenLoadInflightRef = useRef(new Map<string, Promise<void>>());
+  const childrenLoadCompletedRef = useRef(new Set<string>());
   const activeSessionId = useMemo(() => {
     const sessionId = matchPath('/agent/:sessionId', location.pathname)?.params
       .sessionId;
@@ -274,6 +288,9 @@ export function AgentSessionListProvider({
       setNotificationSessions(unreadAttentionSessions);
       nextCursorRef.current = initialData.page.nextCursor;
       setHasMoreSessions(Boolean(initialData.page.nextCursor));
+      childrenLoadCompletedRef.current.clear();
+      childrenLoadInflightRef.current.clear();
+      setLoadingChildrenParentIds(new Set());
 
       if (shouldLogLoad) {
         logger.info('Loaded recent sessions', {
@@ -360,6 +377,81 @@ export function AgentSessionListProvider({
       setIsLoadingMoreSessions(false);
     }
   }, [isLoadingMoreSessions]);
+
+  const ensureChildrenLoaded = useCallback(async (parentSessionId: string) => {
+    if (childrenLoadCompletedRef.current.has(parentSessionId)) {
+      return;
+    }
+
+    const existing = childrenLoadInflightRef.current.get(parentSessionId);
+    if (existing) {
+      return existing;
+    }
+
+    setLoadingChildrenParentIds((previous) => {
+      const next = new Set(previous);
+      next.add(parentSessionId);
+      return next;
+    });
+
+    const loadPromise = (async () => {
+      try {
+        const childMetadata = await safeInvoke<AgentSessionMetadata[]>(
+          'agent_get_child_sessions',
+          { sessionId: parentSessionId },
+        );
+
+        if (Array.isArray(childMetadata) && childMetadata.length > 0) {
+          const assistantsById = new Map(
+            (await listAssistants()).map((assistant) => [
+              assistant.id,
+              assistant,
+            ]),
+          );
+
+          setSessions((previousSessions) => {
+            const pendingApprovalCounts = new Map(
+              previousSessions.map((session) => [
+                session.id,
+                session.pendingApprovalCount ?? 0,
+              ]),
+            );
+            const incomingSessions = mapSessionMetadataList(
+              childMetadata,
+              pendingApprovalCounts,
+              assistantsById,
+            );
+            const nextSessions = sortSessionsByLatestActivity(
+              dedupeSessionsById([...previousSessions, ...incomingSessions]),
+            );
+            sessionsRef.current = nextSessions;
+            return nextSessions;
+          });
+        }
+
+        childrenLoadCompletedRef.current.add(parentSessionId);
+      } catch (err) {
+        logger.error('Failed to load child sessions', {
+          parentSessionId,
+          err,
+        });
+        throw err;
+      } finally {
+        childrenLoadInflightRef.current.delete(parentSessionId);
+        setLoadingChildrenParentIds((previous) => {
+          if (!previous.has(parentSessionId)) {
+            return previous;
+          }
+          const next = new Set(previous);
+          next.delete(parentSessionId);
+          return next;
+        });
+      }
+    })();
+
+    childrenLoadInflightRef.current.set(parentSessionId, loadPromise);
+    return loadPromise;
+  }, []);
 
   /**
    * Create a new agent session
@@ -725,11 +817,13 @@ export function AgentSessionListProvider({
       isSessionsListLoading,
       hasMoreSessions,
       isLoadingMoreSessions,
+      loadingChildrenParentIds,
     }),
     [
       hasMoreSessions,
       isLoadingMoreSessions,
       isSessionsListLoading,
+      loadingChildrenParentIds,
       notificationSessions,
       sessions,
     ],
@@ -740,6 +834,7 @@ export function AgentSessionListProvider({
       createSession,
       loadSessions,
       loadMoreSessions,
+      ensureChildrenLoaded,
       deleteSession,
       deleteSessionOnly,
       toggleBookmark,
@@ -751,6 +846,7 @@ export function AgentSessionListProvider({
       createSession,
       loadSessions,
       loadMoreSessions,
+      ensureChildrenLoaded,
       deleteSession,
       deleteSessionOnly,
       toggleBookmark,

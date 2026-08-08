@@ -1,3 +1,25 @@
+## [0.8.39] - 2026-08-08
+
+### 🚀 Features
+
+- **MCP UI Host Theme Injection**: Injects host application CSS custom properties and theme definitions into rawHtml MCP UI resources so embedded widgets match light and dark modes dynamically.
+- **Background Processes Panel**: Added a dedicated background processes panel featuring live output streaming, execution status indicators, process management controls, and attention alerts.
+- **Tabbed Side Panel Shell & Desktop UX**: Consolidated right side panels into a unified tabbed shell with draggable overlay resizing, discoverability badges, keyboard shortcuts, and telemetry tracking.
+- **Session File Attachment Persistence**: Restores session file attachments across app restarts.
+
+### 🐛 Fixes
+
+- **Chat Scroll Follow Stability**: Prevented prepended older message loads from unexpectedly yanking chat scroll to the bottom.
+- **MCP Failure Toast Hygiene**: Automatically dismisses stale MCP server load failure toasts when switching active agent sessions.
+- **MCP UI Resource Layout**: Resolved max-height container clipping for embedded MCP UI resources.
+- **Session Token & Result Normalization**: Emitted compact session tokens without `session-` prefixing and preferred `ui__reportResult` body payload when parsing `checkSession` results.
+- **Session Tree Expansion**: Lazy-loads child sessions when expanding tree nodes in the session sidebar for smoother performance.
+
+### 🔧 Internal
+
+- **Builtin Tools Cleanup**: Pruned redundant `SuccessHint` follow-up instructions across builtin MCP tools to reduce prompt overhead.
+- **CI Release Automation**: Configured `pull_request_target` trigger for issue-closing workflows to allow permissions on fork PR merges.
+
 ## [0.8.38] - 2026-08-05
 
 ### 🚀 Features

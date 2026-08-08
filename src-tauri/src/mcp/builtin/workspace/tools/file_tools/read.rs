@@ -50,7 +50,7 @@ pub fn create_read_file_tool() -> MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
         description: format!(
-            "Read the contents of a file. Supports UTF-8 (with BOM), UTF-16, and Windows ANSI code pages (e.g. CP949); non-UTF-8 text is decoded instead of failing. Binary files with embedded nulls are rejected. Supports reading from a specific offset and line count (size), including negative size for tailing the end of the file. Responses report totalLines and complete; when more of the file remains (inline truncation or a requested range), a copy-pasteable next readFile call is included. {}",
+            "Read the contents of a file. Supports UTF-8 (with BOM), UTF-16, and Windows ANSI code pages (e.g. CP949); non-UTF-8 text is decoded instead of failing. Binary files with embedded nulls are rejected. Supports reading from a specific offset and line count (size), including negative size for tailing the end of the file. Responses report totalLines and complete; when more of the file remains (inline truncation or a requested range), a copy-pasteable next workspace__readFile call is included. {}",
             read_file_tool_hint()
         ),
         input_schema: object_schema(props, vec!["path".to_string()]),
@@ -91,11 +91,11 @@ pub fn create_list_directory_tool() -> MCPTool {
         title: Some("List Directory".to_string()),
         description: "List files and subdirectories in a workspace directory.
 
-- listDirectory('.') — workspace directory
-- listDirectory('src/components') — subdirectory
-- listDirectory('/tmp') — absolute directory
+- workspace__listDirectory('.') — workspace directory
+- workspace__listDirectory('src/components') — subdirectory
+- workspace__listDirectory('/tmp') — absolute directory
 
-Returns names and types (file/directory). Use globFiles when you need glob-style filtering."
+Returns names and types (file/directory). Use workspace__globFiles when you need glob-style filtering."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -142,7 +142,7 @@ pub fn create_glob_files_tool() -> MCPTool {
     MCPTool {
         name: "globFiles".to_string(),
         title: Some("Glob Workspace Files".to_string()),
-        description: "Find files and directories by glob pattern. Use grepFiles to search inside matches, or readFile to inspect a specific path.".to_string(),
+        description: "Find files and directories by glob pattern. Use workspace__grepFiles to search inside matches, or workspace__readFile to inspect a specific path.".to_string(),
         input_schema: object_schema(
             props,
             vec!["path".to_string(), "filePattern".to_string()],
@@ -204,7 +204,7 @@ pub fn create_grep_files_tool() -> MCPTool {
         name: "grepFiles".to_string(),
         title: Some("Grep Workspace Files".to_string()),
         description: format!(
-            "Search file contents with a regex pattern. Results are line-based and paginated by matching lines. Use readFile on a hit, then {PRIMARY_EDIT_TOOL} to apply targeted edits."
+            "Search file contents with a regex pattern. Results are line-based and paginated by matching lines. Use workspace__readFile on a hit, then {PRIMARY_EDIT_TOOL} to apply targeted edits."
         ),
         input_schema: object_schema(props, vec!["path".to_string(), "query".to_string()]),
         output_schema: None,
@@ -271,7 +271,7 @@ pub fn create_search_tool() -> MCPTool {
     MCPTool {
         name: "searchFiles".to_string(),
         title: Some("Search Workspace (Deprecated)".to_string()),
-        description: "DEPRECATED: Use globFiles for filename search or grepFiles for content search. \
+        description: "DEPRECATED: Use workspace__globFiles for filename search or workspace__grepFiles for content search. \
                      This tool is kept for backward compatibility and will be removed in a future version. \
                      Note: Requires either 'query' (content search) or 'filePattern' (filename search).".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),

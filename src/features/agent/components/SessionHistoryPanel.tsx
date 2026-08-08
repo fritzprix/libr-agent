@@ -66,6 +66,8 @@ interface SessionHistoryPanelProps {
   onSearchQueryChange: (value: string) => void;
   onRefresh: () => void;
   onLoadMore: () => void;
+  onEnsureChildrenLoaded?: (sessionId: string) => void | Promise<void>;
+  loadingChildrenParentIds?: ReadonlySet<string>;
   onResume: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   onDeleteOnly?: (sessionId: string) => void;
@@ -92,6 +94,8 @@ export function SessionHistoryPanel({
   onSearchQueryChange,
   onRefresh,
   onLoadMore,
+  onEnsureChildrenLoaded,
+  loadingChildrenParentIds,
   onResume,
   onDelete,
   onDeleteOnly,
@@ -280,6 +284,8 @@ export function SessionHistoryPanel({
         manuallyExpandedSessionIds.has(sessionId) ||
         (isAutoExpanded && !collapsedAutoExpandedSessionIds.has(sessionId));
 
+      const willExpand = !isExpanded;
+
       setManuallyExpandedSessionIds((prev) => {
         const next = new Set(prev);
         if (isExpanded) {
@@ -301,13 +307,38 @@ export function SessionHistoryPanel({
           return next;
         });
       }
+
+      if (willExpand) {
+        void Promise.resolve(onEnsureChildrenLoaded?.(sessionId));
+      }
     },
     [
       autoExpandedAncestorIds,
       collapsedAutoExpandedSessionIds,
       manuallyExpandedSessionIds,
+      onEnsureChildrenLoaded,
     ],
   );
+
+  // Search/filter can auto-expand ancestors of matched rows. Those parents may
+  // still lack children in the paginated list, so prefetch direct children for
+  // every currently expanded auto-ancestor (deduped inside ensureChildrenLoaded).
+  useEffect(() => {
+    if (!onEnsureChildrenLoaded) {
+      return;
+    }
+
+    autoExpandedAncestorIds.forEach((sessionId) => {
+      if (collapsedAutoExpandedSessionIds.has(sessionId)) {
+        return;
+      }
+      void Promise.resolve(onEnsureChildrenLoaded(sessionId));
+    });
+  }, [
+    autoExpandedAncestorIds,
+    collapsedAutoExpandedSessionIds,
+    onEnsureChildrenLoaded,
+  ]);
 
   const statusFilterLabelByValue: Record<'all' | SessionStatus, string> = {
     all: t('sessionHistory.statusFilter.all', 'All statuses'),
@@ -392,6 +423,7 @@ export function SessionHistoryPanel({
               isExpanded={isExpanded}
               hiddenChildrenCount={hiddenChildrenCount}
               unloadedChildrenCount={unloadedChildrenCount}
+              isLoadingChildren={loadingChildrenParentIds?.has(session.id)}
               onToggleExpand={handleToggleExpand}
               onLineageSelect={(lineageId) =>
                 setSelectedLineageId((prev) =>
@@ -406,6 +438,7 @@ export function SessionHistoryPanel({
     [
       descendantCounts,
       handleToggleExpand,
+      loadingChildrenParentIds,
       onDelete,
       onDeleteOnly,
       onResume,

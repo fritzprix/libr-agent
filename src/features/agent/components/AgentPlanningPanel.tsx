@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { Circle, PanelRight } from 'lucide-react';
+import { Circle, ListChecks } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
@@ -9,13 +9,15 @@ import { ScrollArea } from '@/components/ui';
 import { getLogger } from '@/lib/logger';
 import { parsePlanningState, parseScratchpadState } from '@/models/planning';
 import { cn } from '@/lib/utils';
+import { PanelEyebrow, PanelListFrame, PanelSummaryPill } from './panel-chrome';
 import { SessionSchedulesSection } from './SessionSchedulesSection';
 
 const logger = getLogger('AgentPlanningPanel');
 
 interface AgentPlanningPanelProps {
   isVisible?: boolean;
-  variant?: 'rail' | 'sheet';
+  /** `tab` omits title eyebrow when hosted inside AgentSidePanelShell. */
+  variant?: 'rail' | 'sheet' | 'tab';
 }
 
 export function AgentPlanningPanel({
@@ -67,7 +69,7 @@ export function AgentPlanningPanel({
     <Card
       id="agent-planning-panel"
       className={cn(
-        'h-full overflow-hidden rounded-none bg-background py-0 shadow-none gap-0',
+        'flex h-full flex-col overflow-hidden rounded-none bg-background py-0 shadow-none gap-0',
         variant === 'rail'
           ? 'w-80 flex-shrink-0 border-y-0 border-r-0 border-l border-border/40'
           : 'w-full border-0',
@@ -75,18 +77,19 @@ export function AgentPlanningPanel({
     >
       <CardHeader className="border-b border-border/40 px-4 py-3">
         <div className="space-y-3">
-          <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            <PanelRight className="h-3.5 w-3.5" />
-            <span>{t('agent.planning.title')}</span>
-          </div>
+          {variant !== 'tab' ? (
+            <PanelEyebrow icon={<ListChecks className="h-3.5 w-3.5" />}>
+              {t('agent.planning.title')}
+            </PanelEyebrow>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
-            <div className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-[11px] text-muted-foreground">
+            <PanelSummaryPill>
               {completedTodos}/{totalTodos} {t('agent.planning.tasks')}
-            </div>
-            <div className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-[11px] text-muted-foreground">
+            </PanelSummaryPill>
+            <PanelSummaryPill>
               {scratchpadCount} {t('agent.planning.scratchpad')}
-            </div>
+            </PanelSummaryPill>
           </div>
 
           <div className="space-y-1.5">
@@ -124,7 +127,7 @@ export function AgentPlanningPanel({
               {totalTodos === 0 ? '0' : `${completedTodos}/${totalTodos}`}
             </span>
           </div>
-          <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/40 bg-muted/[0.18]">
+          <PanelListFrame>
             <ScrollArea className="h-full">
               {planningState?.todos && planningState.todos.length > 0 ? (
                 <div>
@@ -196,7 +199,7 @@ export function AgentPlanningPanel({
                 </div>
               )}
             </ScrollArea>
-          </div>
+          </PanelListFrame>
         </section>
 
         <section className="flex min-h-0 flex-1 flex-col space-y-2">
@@ -208,7 +211,7 @@ export function AgentPlanningPanel({
               {scratchpadCount}
             </span>
           </div>
-          <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/40 bg-muted/[0.18]">
+          <PanelListFrame>
             <ScrollArea className="h-full">
               {scratchpadState?.items && scratchpadState.items.length > 0 ? (
                 <div>
@@ -240,7 +243,7 @@ export function AgentPlanningPanel({
                 </div>
               )}
             </ScrollArea>
-          </div>
+          </PanelListFrame>
         </section>
 
         <SessionSchedulesSection sessionId={session.id} isVisible={isVisible} />

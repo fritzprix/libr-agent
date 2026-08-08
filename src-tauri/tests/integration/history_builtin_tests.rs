@@ -399,7 +399,7 @@ async fn history_list_filters_sessions_and_exposes_ids() {
     let text = extract_text_content(&result);
     assert!(text.contains("history-session-a"));
     assert!(!text.contains("history-session-b"));
-    assert!(text.contains("Use readSession(sessionId=\"...\")"));
+    assert!(text.contains("Use history__readSession(sessionId=\"...\")"));
 
     let structured = result
         .structured_content
@@ -489,8 +489,8 @@ async fn history_search_returns_filtered_snippets() {
     assert!(text.contains("history-message-a2"));
     assert!(!text.contains("history-message-b1"));
     assert!(text.contains("`history-session-a`"));
-    assert!(text.contains("Use readSession(sessionId=\"...\")"));
-    assert!(text.contains("Use readMessage(messageId=\"...\")"));
+    assert!(text.contains("Use history__readSession(sessionId=\"...\")"));
+    assert!(text.contains("Use history__readMessage(messageId=\"...\")"));
 
     let structured = result
         .structured_content
@@ -647,7 +647,7 @@ async fn history_read_responses_keep_follow_up_ids_in_text() {
     assert!(read_session_text.contains("history-session-a"));
     assert!(read_session_text.contains("history-message-a1"));
     assert!(read_session_text.contains("history-message-a2"));
-    assert!(read_session_text.contains("Use readMessage(messageId=\"...\")"));
+    assert!(read_session_text.contains("Use history__readMessage(messageId=\"...\")"));
 
     let read_message = server
         .call_tool(
@@ -666,6 +666,6 @@ async fn history_read_responses_keep_follow_up_ids_in_text() {
     assert!(read_message_text.contains("history-session-a"));
     assert!(read_message_text.contains("Next offset: 3000"));
     assert!(read_message_text.contains(
-        "Use readMessage(messageId=\"history-message-large\", offsetChars=3000) for the next chunk",
+        "Use history__readMessage(messageId=\"history-message-large\", offsetChars=3000) for the next chunk",
     ));
 }

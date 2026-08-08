@@ -279,6 +279,19 @@ async fn spawn_and_list_processes_surface_optional_name_labels() {
         spawn_text.contains("• Name: demo-process"),
         "spawn response should expose process name label: {spawn_text}"
     );
+    assert!(
+        spawn_text.contains("waitForProcess"),
+        "spawn success should keep parameterized wait follow-up: {spawn_text}"
+    );
+    assert!(
+        spawn_text.contains("readProcessOutput"),
+        "spawn success should keep parameterized read follow-up: {spawn_text}"
+    );
+    assert!(
+        !spawn_text.contains("listProcesses to see all running")
+            && !spawn_text.contains("map optional names"),
+        "spawn success must not pad with redundant listProcesses hints: {spawn_text}"
+    );
 
     let structured = spawn_result
         .structured_content
@@ -345,21 +358,25 @@ async fn list_processes_prefers_read_output_for_finished_processes() {
     let text = extract_text_content(&list_result);
     assert!(
         text.contains(&format!(
-            "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+            "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
             process_id
         )),
         "finished processes should point to readProcessOutput first: {text}"
     );
     assert!(
         !text.contains(&format!(
-            "Use waitForProcess('{}', 0) to check status",
+            "Use workspace__waitForProcess('{}', 0) to check status",
             process_id
         )),
         "finished processes should not suggest polling again as the primary next step: {text}"
     );
     assert!(
-        !text.contains("Use stopProcess"),
+        !text.contains("workspace__stopProcess") && !text.contains("stopProcess("),
         "finished processes should not suggest stopProcess: {text}"
+    );
+    assert!(
+        !text.contains("listProcesses() again"),
+        "listProcesses must not tell the agent to call itself again: {text}"
     );
 }
 
@@ -401,11 +418,15 @@ async fn read_process_output_avoids_stop_hint_after_process_has_finished() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("Analyze the captured output to verify command success"),
-        "finished processes should suggest analyzing the finished output: {text}"
+        !text.contains("Analyze the captured output to verify command success"),
+        "finished processes should not lecture the agent to analyze output it just requested: {text}"
     );
     assert!(
-        !text.contains("Use stopProcess"),
+        !text.contains("💡 Suggested Follow-ups:"),
+        "finished readProcessOutput should not append follow-ups: {text}"
+    );
+    assert!(
+        !text.contains("workspace__stopProcess") && !text.contains("stopProcess("),
         "finished processes should not suggest stopProcess: {text}"
     );
     assert!(

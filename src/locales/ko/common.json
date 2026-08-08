@@ -153,7 +153,10 @@
     "scheduledTasks": "예약된 작업",
     "session": "세션",
     "knowledge": "지식",
-    "org": "조직"
+    "org": "조직",
+    "expandSession": "하위 세션 펼치기",
+    "collapseSession": "하위 세션 접기",
+    "loadingSessionChildren": "하위 세션 불러오는 중"
   },
   "sessionHistory": {
     "heading": "세션 기록",
@@ -185,7 +188,9 @@
     },
     "toasts": {
       "deleted": "세션이 삭제되었습니다",
-      "deleteFailed": "세션 삭제에 실패했습니다"
+      "deleteFailed": "세션 삭제에 실패했습니다",
+      "loadMoreFailed": "세션을 더 불러오지 못했습니다",
+      "loadChildrenFailed": "자식 세션을 불러오지 못했습니다"
     },
     "tabs": {
       "all": "전체",
@@ -267,6 +272,7 @@
       "resumeAria": "세션 {{name}} 재개",
       "expandChildrenAria": "{{name}}의 하위 세션 펼치기",
       "collapseChildrenAria": "{{name}}의 하위 세션 접기",
+      "loadingChildrenAria": "{{name}}의 하위 세션 불러오는 중",
       "groupAria": "세션 작업",
       "deleteTooltip": "세션 삭제",
       "deleteAria": "세션 {{name}} 삭제",
@@ -914,8 +920,19 @@
       "copyTooltip": "대화 내용을 마크다운으로 복사",
       "toggleWorkspaceAria": "워크스페이스 파일 패널 전환",
       "toggleWorkspaceTooltip": "워크스페이스 파일 패널 전환",
+      "toggleShellAria": "에이전트 패널 전환",
+      "toggleShellTooltip": "에이전트 패널 전환",
+      "toggleShellHasUpdatesAria": "에이전트 패널 전환 (업데이트 있음)",
+      "toggleProcessesAria": "백그라운드 프로세스 패널 전환",
+      "toggleProcessesTooltip": "백그라운드 프로세스 패널 전환",
+      "toggleProcessesHasUpdatesAria": "백그라운드 프로세스 패널 전환 (업데이트 있음)",
       "togglePlanningAria": "AI 계획 패널 전환",
       "togglePlanningTooltip": "AI 계획 패널 전환",
+      "togglePlanningHasUpdatesAria": "AI 계획 패널 전환 (업데이트 있음)",
+      "statusBadgesAria": "패널 업데이트 배지",
+      "panelBadgeAria": "{{panel}}에 업데이트가 있습니다 — 클릭하여 열기",
+      "panelBadgeLive": "{{panel}}에 업데이트가 있습니다",
+      "panelBadgeSrOnly": "업데이트 있음",
       "defaultAssistant": "에이전트",
       "untitledSession": "제목 없는 세션",
       "sessionLabel": "세션",
@@ -1079,6 +1096,13 @@
       "badgeMcp": "mcp",
       "viewSchema": "입력 스키마 보기"
     },
+    "panels": {
+      "shellTitle": "에이전트 패널",
+      "resizeHandleAria": "에이전트 패널 크기 조절",
+      "tabHasUpdatesAria": "{{tab}} (업데이트 있음)",
+      "close": "닫기",
+      "closeAria": "에이전트 패널 닫기"
+    },
     "planning": {
       "title": "AI 계획",
       "currentGoal": "현재 목표",
@@ -1103,6 +1127,43 @@
         "nextRunNone": "예약 없음",
         "cancelFailed": "예약 콜백 취소에 실패했습니다",
         "cancelAria": "{{name}} 취소"
+      }
+    },
+    "processes": {
+      "title": "백그라운드 프로세스",
+      "empty": "이 세션에 백그라운드 프로세스가 아직 없습니다.",
+      "loading": "프로세스 불러오는 중…",
+      "loadingOutput": "출력 불러오는 중…",
+      "loadError": "프로세스를 불러오지 못했습니다",
+      "invalidPayload": "프로세스 목록 응답이 올바르지 않습니다",
+      "invalidOutputPayload": "프로세스 출력 응답이 올바르지 않습니다",
+      "retry": "다시 시도",
+      "refresh": "새로고침",
+      "refreshAria": "프로세스 목록 새로고침",
+      "summaryTotal": "전체 {{count}}",
+      "summaryRunning": "실행 중 {{count}}",
+      "summaryFinished": "완료 {{count}}",
+      "exitCode": "종료 코드 {{code}}",
+      "readOutput": "출력 보기",
+      "readOutputAria": "프로세스 출력 읽기",
+      "poll": "상태 확인",
+      "pollAria": "프로세스 상태 새로고침",
+      "stop": "중지",
+      "stopAria": "프로세스 중지",
+      "stopSuccess": "프로세스 중지를 요청했습니다",
+      "stopError": "프로세스를 중지하지 못했습니다",
+      "pollError": "프로세스 상태를 확인하지 못했습니다",
+      "readError": "프로세스 출력을 읽지 못했습니다",
+      "outputTitle": "프로세스 출력",
+      "outputMeta": "상태: {{status}} · 스트림: {{stream}}",
+      "emptyStream": "(비어 있음)",
+      "noOutput": "출력이 없습니다",
+      "status": {
+        "starting": "시작 중",
+        "running": "실행 중",
+        "finished": "완료",
+        "failed": "실패",
+        "killed": "종료됨"
       }
     },
     "pendingQueue": {

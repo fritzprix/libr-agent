@@ -1,17 +1,7 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type MutableRefObject,
-} from 'react';
-import type { VirtuosoHandle } from 'react-virtuoso';
+import { useEffect, useRef, useState } from 'react';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import { getLogger } from '@/lib/logger';
-import {
-  INITIAL_FIRST_ITEM_INDEX,
-  SELF_SCROLL_IGNORE_WINDOW_MS,
-} from '../../types';
+import { INITIAL_FIRST_ITEM_INDEX } from '../../types';
 import {
   findGroupedMessageIndexByBoundary,
   getPrependedFirstItemIndex,
@@ -29,8 +19,6 @@ export interface PreviousListState {
 export interface UsePrependPreservationOptions {
   groupedMessages: GroupedMessage[];
   sessionId: string | undefined;
-  virtuosoRef: MutableRefObject<VirtuosoHandle | null>;
-  selfScrollIgnoreUntilRef: MutableRefObject<number>;
   logScrollState: (
     event: string,
     extra?: Record<string, boolean | number | string | undefined>,
@@ -40,8 +28,6 @@ export interface UsePrependPreservationOptions {
 export function usePrependPreservation({
   groupedMessages,
   sessionId,
-  virtuosoRef,
-  selfScrollIgnoreUntilRef,
   logScrollState,
 }: UsePrependPreservationOptions) {
   const isPreservingPrependPositionRef = useRef(false);
@@ -90,6 +76,9 @@ export function usePrependPreservation({
     isPreservingPrependPositionRef.current = true;
   }
 
+  // Virtuoso preserves scroll when firstItemIndex decreases by prependCount.
+  // Do not also scrollToIndex(align:'start') — that double-corrects and nudges
+  // the viewport (especially mid-list / startReached overscan loads).
   const effectiveFirstItemIndex = didSessionChangeForListState
     ? INITIAL_FIRST_ITEM_INDEX
     : prependCount > 0
@@ -120,37 +109,6 @@ export function usePrependPreservation({
     });
   }
 
-  useLayoutEffect(() => {
-    if (prependCount <= 0) {
-      return;
-    }
-
-    const virtuoso = virtuosoRef.current;
-    if (!virtuoso) {
-      return;
-    }
-
-    const anchorVirtuosoIndex = effectiveFirstItemIndex + prependCount;
-    logScrollState('prepend-preservation:anchor-scroll', {
-      prependCount,
-      anchorVirtuosoIndex,
-      effectiveFirstItemIndex,
-    });
-    selfScrollIgnoreUntilRef.current =
-      performance.now() + SELF_SCROLL_IGNORE_WINDOW_MS;
-    virtuoso.scrollToIndex({
-      index: anchorVirtuosoIndex,
-      align: 'start',
-      behavior: 'auto',
-    });
-  }, [
-    effectiveFirstItemIndex,
-    logScrollState,
-    prependCount,
-    selfScrollIgnoreUntilRef,
-    virtuosoRef,
-  ]);
-
   useEffect(() => {
     if (didSessionChangeForListState) {
       logScrollState('listState:session-changed', {
@@ -173,6 +131,7 @@ export function usePrependPreservation({
       }, 250);
       logScrollState('prepend-preservation:start', {
         prependCount,
+        effectiveFirstItemIndex,
       });
       setFirstItemIndex(effectiveFirstItemIndex);
     }

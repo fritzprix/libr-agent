@@ -358,7 +358,7 @@ let hint = "Session-level attachment should also reference this Server ID becaus
 // ✅ COMPLIANT: Simple, actionable, static context
 let structured_state = json!({ "status": "ready" });
 
-let hint = "To enable this server, add its Server ID to an agent using agent__update()";
+let hint = "To enable this server, add its Server ID to an agent using agent__updateAgent()";
 ```
 
 **Audit Checklist:**

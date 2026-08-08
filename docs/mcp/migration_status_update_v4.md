@@ -88,7 +88,7 @@ and should not expose separate public Assistant/Swarm builtin services again.
 The public builtin surface now uses `tool` as the canonical domain.
 
 - Legacy `mcp_manager` naming still resolves as a compatibility alias where needed.
-- The active runtime naming contract remains `server__tool`, so the final exposed builtin symbol is `tool__list`, not nested names like `tool__tool__list`.
+- The active runtime naming contract remains `server__tool`, so the final exposed builtin symbol is `tool__listServers`, not nested names like `tool__tool__listServers`.
 
 ### 3. Builtin error semantics were narrowed
 

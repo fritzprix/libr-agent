@@ -27,6 +27,7 @@ impl WorkspaceServer {
                     e.status,
                     terminal_manager::ProcessStatus::Finished
                         | terminal_manager::ProcessStatus::Failed
+                        | terminal_manager::ProcessStatus::Killed
                 ),
                 _ => true,
             })
@@ -65,6 +66,7 @@ impl WorkspaceServer {
                     e.status,
                     terminal_manager::ProcessStatus::Finished
                         | terminal_manager::ProcessStatus::Failed
+                        | terminal_manager::ProcessStatus::Killed
                 )
             })
             .count();
@@ -138,47 +140,33 @@ impl WorkspaceServer {
             let mut actions = Vec::new();
 
             match first_status {
-                "failed" => {
+                "failed" | "finished" => {
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
-                    actions.push(
-                        "Use listProcesses() again if you need another processId from this session"
-                            .to_string(),
-                    );
-                }
-                "finished" => {
-                    actions.push(format!(
-                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
-                        first_id
-                    ));
-                    actions.push(
-                        "Use listProcesses() again if you need another processId from this session"
-                            .to_string(),
-                    );
                 }
                 "running" => {
                     actions.push(format!(
-                        "Use waitForProcess('{}', 0) to check status",
+                        "Use workspace__waitForProcess('{}', 0) to check status",
                         first_id
                     ));
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                     actions.push(format!(
-                        "Use stopProcess('{}') to terminate running process",
+                        "Use workspace__stopProcess('{}') to terminate running process",
                         first_id
                     ));
                 }
                 _ => {
                     actions.push(format!(
-                        "Use waitForProcess('{}', 0) to check status",
+                        "Use workspace__waitForProcess('{}', 0) to check status",
                         first_id
                     ));
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                 }

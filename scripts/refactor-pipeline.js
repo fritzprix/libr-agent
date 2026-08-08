@@ -76,13 +76,14 @@ const VALIDATE_STAGES = [
     name: 'build:nosync',
     command: pnpmCommand,
     args: ['build:nosync'],
-    env: { nodeHeapMb: 768 },
+    // Vite chunk rendering regularly exceeds 768MB on this app; keep headroom.
+    env: { nodeHeapMb: 4096 },
   },
   {
     name: 'perf:bundle',
     command: pnpmCommand,
     args: ['perf:bundle'],
-    env: { nodeHeapMb: 512 },
+    env: { nodeHeapMb: 1024 },
   },
   {
     name: 'dead-code',
@@ -94,6 +95,11 @@ const VALIDATE_STAGES = [
     name: 'skills:audit',
     command: pnpmCommand,
     args: ['skills:audit'],
+  },
+  {
+    name: 'tool-names:check',
+    command: pnpmCommand,
+    args: ['tool-names:check'],
   },
   {
     name: 'skills:mirror:check',

@@ -121,5 +121,6 @@ docs/proposals/
 kilo.json
 .tmp_*
 .slibragent/
+.vitest-*.txt
 
 ./attachments

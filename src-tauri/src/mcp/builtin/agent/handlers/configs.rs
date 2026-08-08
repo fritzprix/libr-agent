@@ -310,9 +310,9 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
                     &normalized_name,
                     &config,
                 ))),
-                "createAgent",
+                "agent__createAgent",
                 vec![json!({
-                    "toolName": "listAgents",
+                    "toolName": "agent__listAgents",
                     "reason": "Review the available agent configurations after creating this one.",
                     "args": {
                         "type": "configs"
@@ -472,9 +472,9 @@ pub async fn update_agent(
                     &name,
                     &config,
                 ))),
-                "updateAgent",
+                "agent__updateAgent",
                 vec![json!({
-                    "toolName": "listAgents",
+                    "toolName": "agent__listAgents",
                     "reason": "Review the updated agent configurations after this change.",
                     "args": {
                         "type": "configs"
@@ -518,8 +518,9 @@ pub async fn list_agents_or_sessions(
             ToolGroup::Agent,
         )
         .with_guidance(vec![
-            "Use list(type=\"configs\") to see agent configurations".to_string(),
-            "Use list(type=\"sessions\") to inspect delegated sub-agent sessions".to_string(),
+            "Use agent__listAgents(type=\"configs\") to see agent configurations".to_string(),
+            "Use agent__listAgents(type=\"sessions\") to inspect delegated sub-agent sessions"
+                .to_string(),
         ])
         .to_mcp_result()),
     }
@@ -672,13 +673,13 @@ async fn list_agent_configs_from_db(
 
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
-        "listAgents",
+        "agent__listAgents",
         "agentConfigCollection",
         None,
         &response_message,
         "success",
         vec![json!({
-            "toolName": "startSession",
+            "toolName": "agent__startSession",
             "reason": "Spawn a new delegated agent session using one of the configurations.",
         })],
     );
@@ -728,7 +729,7 @@ async fn list_delegated_sessions(
         if let Ok(Some(child_data)) = session_repo.get_session(&child_id).await {
             let status = format!("{:?}", child_data.status).to_lowercase();
             paged_results.push(json!({
-                "id": child_id,
+                "id": crate::utils::session_id::display_session_id(&child_id),
                 "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
                 "status": status
             }));
@@ -775,17 +776,17 @@ async fn list_delegated_sessions(
 
     let hint = SuccessHint::new(
         message,
-        vec!["Use checkSession(sessionId) to get results".to_string()],
+        vec!["Use agent__checkSession(sessionId) to get results".to_string()],
     );
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
-        "listAgents",
+        "agent__listAgents",
         "sessionCollection",
         None,
         &response_message,
         "success",
         vec![json!({
-            "toolName": "checkSession",
+            "toolName": "agent__checkSession",
             "reason": "Inspect one of the listed delegated sessions in more detail.",
         })],
     );

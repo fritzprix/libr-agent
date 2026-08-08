@@ -205,10 +205,10 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 **[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.38_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64-setup.exe) · [`LibrAgent_0.8.38_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.38_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.38_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.AppImage) · [`LibrAgent_0.8.38_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.deb) · [`LibrAgent-0.8.38-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent-0.8.38-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.38)
+- **Windows:** [`LibrAgent_0.8.39_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_x64-setup.exe) · [`LibrAgent_0.8.39_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.39_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.39_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_amd64.AppImage) · [`LibrAgent_0.8.39_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_amd64.deb) · [`LibrAgent-0.8.39-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent-0.8.39-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.39)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **開発者セットアップ：**
@@ -234,7 +234,7 @@ pnpm tauri dev
 
 **ステップ3——最初のエージェントを作成**
 
-- _「競合情報のためのresearcherエージェントを作成して」_ → Assistants設定または`agent__create`で作成
+- _「競合情報のためのresearcherエージェントを作成して」_ → Assistants設定または`agent__createAgent`で作成
 - _「現在のツールでresearchチームを構築して」_ → `teamwork`が役割と共有ワークスペースをスキャフォールド
 - _「並列リサーチサブタスクを実行して」_ → `delegate`が子セッションを生成・監視
 

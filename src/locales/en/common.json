@@ -153,7 +153,10 @@
     "scheduledTasks": "Scheduled Tasks",
     "session": "Session",
     "knowledge": "Knowledge",
-    "org": "Org"
+    "org": "Org",
+    "expandSession": "Expand session children",
+    "collapseSession": "Collapse session children",
+    "loadingSessionChildren": "Loading session children"
   },
   "sessionHistory": {
     "heading": "Session History",
@@ -186,7 +189,9 @@
     },
     "toasts": {
       "deleted": "Session deleted",
-      "deleteFailed": "Failed to delete session"
+      "deleteFailed": "Failed to delete session",
+      "loadMoreFailed": "Failed to load more sessions",
+      "loadChildrenFailed": "Failed to load child sessions"
     },
     "tabs": {
       "all": "All",
@@ -268,6 +273,7 @@
       "resumeAria": "Resume session {{name}}",
       "expandChildrenAria": "Expand child sessions for {{name}}",
       "collapseChildrenAria": "Collapse child sessions for {{name}}",
+      "loadingChildrenAria": "Loading child sessions for {{name}}",
       "groupAria": "Session actions",
       "deleteTooltip": "Delete session",
       "deleteAria": "Delete session {{name}}",
@@ -914,8 +920,19 @@
       "copyTooltip": "Copy conversation as Markdown",
       "toggleWorkspaceAria": "Toggle Workspace Files Panel",
       "toggleWorkspaceTooltip": "Toggle Workspace Files Panel",
+      "toggleShellAria": "Toggle agent panels",
+      "toggleShellTooltip": "Toggle agent panels",
+      "toggleShellHasUpdatesAria": "Toggle agent panels (has updates)",
+      "toggleProcessesAria": "Toggle Background Processes Panel",
+      "toggleProcessesTooltip": "Toggle Background Processes Panel",
+      "toggleProcessesHasUpdatesAria": "Toggle Background Processes Panel (has updates)",
       "togglePlanningAria": "Toggle AI Planning Panel",
       "togglePlanningTooltip": "Toggle AI Planning Panel",
+      "togglePlanningHasUpdatesAria": "Toggle AI Planning Panel (has updates)",
+      "statusBadgesAria": "Panel update badges",
+      "panelBadgeAria": "{{panel}} has updates — click to open",
+      "panelBadgeLive": "{{panel}} has updates",
+      "panelBadgeSrOnly": "has updates",
       "defaultAssistant": "Agent",
       "untitledSession": "Untitled Session",
       "sessionLabel": "Session",
@@ -1079,6 +1096,13 @@
       "badgeMcp": "mcp",
       "viewSchema": "View Input Schema"
     },
+    "panels": {
+      "shellTitle": "Agent panels",
+      "resizeHandleAria": "Resize agent panels",
+      "tabHasUpdatesAria": "{{tab}} (has updates)",
+      "close": "Close",
+      "closeAria": "Close agent panels"
+    },
     "planning": {
       "title": "AI Planning",
       "currentGoal": "Current Goal",
@@ -1103,6 +1127,43 @@
         "nextRunNone": "Not scheduled",
         "cancelFailed": "Failed to cancel scheduled callback",
         "cancelAria": "Cancel {{name}}"
+      }
+    },
+    "processes": {
+      "title": "Background Processes",
+      "empty": "No background processes in this session yet.",
+      "loading": "Loading processes…",
+      "loadingOutput": "Loading output…",
+      "loadError": "Failed to load processes",
+      "invalidPayload": "Process list response was invalid",
+      "invalidOutputPayload": "Process output response was invalid",
+      "retry": "Retry",
+      "refresh": "Refresh",
+      "refreshAria": "Refresh process list",
+      "summaryTotal": "{{count}} total",
+      "summaryRunning": "{{count}} running",
+      "summaryFinished": "{{count}} finished",
+      "exitCode": "exit {{code}}",
+      "readOutput": "View output",
+      "readOutputAria": "Read process output",
+      "poll": "Check status",
+      "pollAria": "Refresh process status",
+      "stop": "Stop",
+      "stopAria": "Stop process",
+      "stopSuccess": "Process stop requested",
+      "stopError": "Failed to stop process",
+      "pollError": "Failed to poll process status",
+      "readError": "Failed to read process output",
+      "outputTitle": "Process output",
+      "outputMeta": "Status: {{status}} · stream: {{stream}}",
+      "emptyStream": "(empty)",
+      "noOutput": "No output available",
+      "status": {
+        "starting": "starting",
+        "running": "running",
+        "finished": "finished",
+        "failed": "failed",
+        "killed": "killed"
       }
     },
     "pendingQueue": {

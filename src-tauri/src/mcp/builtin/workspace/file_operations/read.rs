@@ -78,7 +78,7 @@ impl WorkspaceServer {
                     "Provide a file path (relative paths resolve from the workspace)".to_string(),
                     "Examples: {\"path\": \"src/main.rs\"} or {\"path\": \"/tmp/file.txt\"}"
                         .to_string(),
-                    "Use listDirectory to explore available paths".to_string(),
+                    "Use workspace__listDirectory to explore available paths".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -97,7 +97,7 @@ impl WorkspaceServer {
             .guidance(vec![
                 "Use a normal file path without '..' traversal segments".to_string(),
                 "Example: 'src/main.rs' instead of '../src/main.rs'".to_string(),
-                "Use listDirectory to explore available paths".to_string(),
+                "Use workspace__listDirectory to explore available paths".to_string(),
             ])
             .to_mcp_result());
         }
@@ -144,7 +144,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Verify the file path is correct".to_string(),
-                    "Use listDirectory to see available files".to_string(),
+                    "Use workspace__listDirectory to see available files".to_string(),
                     "Ensure you have read permissions for the file".to_string(),
                 ])
                 .to_mcp_result());
@@ -180,7 +180,7 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Use listDirectory to see directory contents".to_string(),
+                "Use workspace__listDirectory to see directory contents".to_string(),
                 "To read a file inside this directory, specify the full path".to_string(),
                 format!("Example: '{}/filename.ext'", path_str),
             ])
@@ -201,7 +201,7 @@ impl WorkspaceServer {
             .guidance(vec![
                 "The file is too large to read entirely".to_string(),
                 "Try reading specific line ranges if possible".to_string(),
-                "Use grep to find specific content instead".to_string(),
+                "Use workspace__grepFiles to find specific content instead".to_string(),
             ])
             .to_mcp_result());
         }
@@ -268,7 +268,7 @@ impl WorkspaceServer {
                             chunk.displayed_line_count.max(1)
                         };
                         summary_notes.push(format!(
-                            "Next chunk: readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": {}}})",
+                            "Next chunk: workspace__readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": {}}})",
                             path_str, next_start_line, next_size
                         ));
                     }
@@ -293,7 +293,7 @@ impl WorkspaceServer {
                         )
                     } else {
                         format!(
-                            "The next unread line is too large to show safely as a complete line. Inspect that line directly with readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 1}}).",
+                            "The next unread line is too large to show safely as a complete line. Inspect that line directly with workspace__readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 1}}).",
                             path_str, target_line
                         )
                     };
@@ -304,7 +304,7 @@ impl WorkspaceServer {
                     }
                     if already_shown == 0 {
                         message.push_str(
-                            " Do not rerun readFile on a broader range until you have narrowed the line range.",
+                            " Do not rerun workspace__readFile on a broader range until you have narrowed the line range.",
                         );
                     }
                     summary_notes.push(message);
@@ -381,7 +381,7 @@ impl WorkspaceServer {
                     Ok(
                         guided_error(ErrorCategory::OperationFailed, &e, ToolGroup::Workspace)
                             .guidance(vec![
-                                "Verify the file exists with listDirectory".to_string(),
+                                "Verify the file exists with workspace__listDirectory".to_string(),
                                 "Check file permissions".to_string(),
                                 "Ensure the path is correct".to_string(),
                             ])

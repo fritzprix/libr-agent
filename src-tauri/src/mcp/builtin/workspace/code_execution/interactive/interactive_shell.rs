@@ -50,7 +50,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     format!(
-                        "Use spawnProcess for commands longer than {} seconds",
+                        "Use workspace__spawnProcess for commands longer than {} seconds",
                         max_timeout
                     ),
                     "Background processes do not block the active agent workflow".to_string(),

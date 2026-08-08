@@ -19,16 +19,18 @@ pub const LINE_ANCHORS_ENABLED: bool =
 
 /// Workspace service-context bullet listing file mutation tools.
 pub fn workspace_file_tools_context_list() -> String {
-    format!("readFile, writeFile, listDirectory, {PRIMARY_EDIT_TOOL}")
+    format!(
+        "workspace__readFile, workspace__writeFile, workspace__listDirectory, workspace__{PRIMARY_EDIT_TOOL}"
+    )
 }
 
 pub fn read_file_tool_hint() -> &'static str {
     if LINE_ANCHORS_ENABLED {
-        "Use showLineAnchors=true when you need anchors for editFile."
+        "Use showLineAnchors=true when you need anchors for workspace__editFile."
     } else {
         // Kept in the tool schema (not success next-actions) so edit workflows
         // still see a minimal affordance without padding every read result.
-        "When editing afterward, copy the exact on-disk text into strReplace."
+        "When editing afterward, copy the exact on-disk text into workspace__strReplace."
     }
 }
 
@@ -37,7 +39,7 @@ pub fn read_file_tool_hint() -> &'static str {
     not(feature = "workspace-str-replace")
 ))]
 pub fn read_file_show_line_anchors_schema_hint() -> &'static str {
-    "Optional: include opaque edit anchors for each line in the form '42:a31f2c|...'. For editFile, pass the full '42:a31f2c' (line + anchor) — omit only the trailing '|...'."
+    "Optional: include opaque edit anchors for each line in the form '42:a31f2c|...'. For workspace__editFile, pass the full '42:a31f2c' (line + anchor) — omit only the trailing '|...'."
 }
 
 #[cfg(all(
@@ -45,20 +47,20 @@ pub fn read_file_show_line_anchors_schema_hint() -> &'static str {
     not(feature = "workspace-str-replace")
 ))]
 pub fn search_show_line_anchors_schema_hint() -> &'static str {
-    "Include edit anchors in results for use with editFile (default: false). Anchored lines look like '42:a31f2c|...'; for editFile, pass '42:a31f2c' (line:anchor prefix only)."
+    "Include edit anchors in results for use with workspace__editFile (default: false). Anchored lines look like '42:a31f2c|...'; for workspace__editFile, pass '42:a31f2c' (line:anchor prefix only)."
 }
 
 pub fn search_inline_match_footer(show_hashes: bool) -> String {
     if LINE_ANCHORS_ENABLED {
         if show_hashes {
-            "Copy each line's N:anchor prefix into editFile start/end (omit '|content'); include end for range edits.\n"
+            "Copy each line's N:anchor prefix into workspace__editFile start/end (omit '|content'); include end for range edits.\n"
                 .to_string()
         } else {
             "For targeted edits, rerun with showLineAnchors=true to get anchors.\n".to_string()
         }
     } else {
         let _ = show_hashes;
-        "To edit a match, read the file and copy the exact on-disk text into strReplace.\n"
+        "To edit a match, read the file and copy the exact on-disk text into workspace__strReplace.\n"
             .to_string()
     }
 }
@@ -84,5 +86,5 @@ pub fn read_file_anchor_prefix_note() -> &'static str {
 }
 
 pub fn read_file_anchor_output_suffix() -> &'static str {
-    "\n\nFor editFile, pass the full `N:anchor` from each line (e.g. `42:a31f2c`). Omit the trailing `|{content}`."
+    "\n\nFor workspace__editFile, pass the full `N:anchor` from each line (e.g. `42:a31f2c`). Omit the trailing `|{content}`."
 }

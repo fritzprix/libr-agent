@@ -289,7 +289,7 @@ impl WorkspaceServer {
             PERSISTENT_SHELL_TOOL, display_cwd, exit_code
         );
         let file_tools_warning = if display_cwd != "." && cwd_changed {
-            "\n⚠️  readFile and listDirectory still use workspace root, not the shell CWD\n    Use absolute file-tool paths if you need the current shell directory"
+            "\n⚠️  workspace__readFile and workspace__listDirectory still use workspace root, not the shell CWD\n    Use absolute file-tool paths if you need the current shell directory"
         } else {
             ""
         };

@@ -24,14 +24,14 @@ pub async fn check_session(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_id = read_required_string(&args, "sessionId")?;
+    let session_ref = read_required_string(&args, "sessionId")?;
     let wait = args.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
     let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(3600);
 
     let current_session_meta = match load_accessible_delegated_session(
         manager,
         caller_session_id,
-        &session_id,
+        &session_ref,
         "checkSession",
     )
     .await
@@ -39,13 +39,23 @@ pub async fn check_session(
         Ok(session) => session,
         Err(result) => return Ok(result),
     };
+    let session_id = current_session_meta.id.clone();
+    let storage_session_id =
+        crate::utils::session_id::StorageSessionId::from_resolved(session_id.clone());
+    let display_id = crate::utils::session_id::display_session_id(&session_id);
     let enrichment = resolve_check_session_enrichment(&current_session_meta).await;
     let current_status = format!("{:?}", current_session_meta.status).to_lowercase();
     let current_turn_count = count_session_turns(&session_id).await;
 
     if current_status == "paused" {
-        return build_paused_check_session_result(&session_id, current_turn_count, &enrichment)
-            .await;
+        // Must pass storage session id — builders fetch messages by opaque key.
+        // display_id is only for agent-facing copy inside those builders.
+        return build_paused_check_session_result(
+            &storage_session_id,
+            current_turn_count,
+            &enrichment,
+        )
+        .await;
     }
 
     if wait {
@@ -104,40 +114,51 @@ pub async fn check_session(
         let status = extract_session_status(&session_data);
         let turn_count = count_session_turns(&session_id).await;
         if status == "paused" {
-            return build_paused_check_session_result(&session_id, turn_count, &enrichment).await;
+            return build_paused_check_session_result(&storage_session_id, turn_count, &enrichment)
+                .await;
         }
-        return build_terminal_check_session_result(&session_id, &status, turn_count, &enrichment)
-            .await;
+        return build_terminal_check_session_result(
+            &storage_session_id,
+            &status,
+            turn_count,
+            &enrichment,
+        )
+        .await;
     }
 
     let status = current_status;
     let turn_count = current_turn_count;
 
     if is_terminal_status(&status) {
-        return build_terminal_check_session_result(&session_id, &status, turn_count, &enrichment)
-            .await;
+        return build_terminal_check_session_result(
+            &storage_session_id,
+            &status,
+            turn_count,
+            &enrichment,
+        )
+        .await;
     }
 
     let next_steps = vec![format!(
-        "Use checkSession(\"{}\", wait=true) to wait for completion.",
-        session_id
+        "Use agent__checkSession(\"{}\", wait=true) to wait for completion.",
+        display_id
     )];
     let message = append_check_session_context_to_message(
         &format!(
             "Session {} is currently {} (Turns elapsed: {}).",
-            session_id, status, turn_count
+            display_id, status, turn_count
         ),
         &enrichment,
     );
     let hint = SuccessHint::new(message.clone(), next_steps);
     let mut response_data = build_agent_session_tool_data(
         "checkSession",
-        &session_id,
+        &display_id,
         &message,
         &status,
         "pending",
         turn_count,
-        check_session_next_actions(&session_id),
+        check_session_next_actions(&display_id),
     );
     apply_check_session_enrichment(&mut response_data, &enrichment);
 

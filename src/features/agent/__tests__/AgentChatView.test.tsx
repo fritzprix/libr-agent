@@ -12,8 +12,8 @@ import AgentChatView from '../AgentChatView';
 const mocks = vi.hoisted(() => ({
   agentSessionState: undefined as AgentSessionStateContextValue | undefined,
   isMobile: false,
-  showWorkspacePanel: false,
-  showPlanningPanel: false,
+  showSidePanel: false,
+  activeTab: 'workspace' as 'workspace' | 'planning' | 'processes',
 }));
 
 function createBaseRuntimeState(): SessionRuntimeState {
@@ -117,27 +117,27 @@ vi.mock('@/context/AgentChatContext', () => ({
   }),
 }));
 
-vi.mock('@/context/AgentWorkspaceContext', () => ({
-  AgentWorkspaceProvider: ({ children }: { children: ReactNode }) => (
+vi.mock('@/context/AgentPanelsContext', () => ({
+  AgentPanelsProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
-  useAgentWorkspace: () => ({
-    showWorkspacePanel: mocks.showWorkspacePanel,
-    openWorkspacePanel: vi.fn(),
-    closeWorkspacePanel: vi.fn(),
-    toggleWorkspacePanel: vi.fn(),
-  }),
-}));
-
-vi.mock('@/context/AgentPlanningContext', () => ({
-  AgentPlanningProvider: ({ children }: { children: ReactNode }) => (
-    <>{children}</>
-  ),
-  useAgentPlanning: () => ({
-    showPlanningPanel: mocks.showPlanningPanel,
-    openPlanningPanel: vi.fn(),
-    closePlanningPanel: vi.fn(),
-    togglePlanningPanel: vi.fn(),
+  useAgentPanels: () => ({
+    isShellOpen: () => mocks.showSidePanel,
+    openShell: vi.fn(),
+    closeShell: vi.fn(),
+    toggleShell: vi.fn(),
+    activeTab: mocks.activeTab,
+    setActiveTab: vi.fn(),
+    isPanelOpen: (id: 'workspace' | 'planning' | 'processes') =>
+      mocks.showSidePanel && mocks.activeTab === id,
+    openPanel: vi.fn(),
+    closePanel: vi.fn(),
+    togglePanel: vi.fn(),
+    closeAllPanels: vi.fn(),
+    getLastClosedAt: () => 0,
+    hasPanelAttention: () => false,
+    markPanelAttention: vi.fn(),
+    clearPanelAttention: vi.fn(),
   }),
 }));
 
@@ -172,16 +172,16 @@ vi.mock('../components/AgentChatAttachedFiles', () => ({
   AgentChatAttachedFiles: () => <div>mock-attached-files</div>,
 }));
 
-vi.mock('../components/AgentWorkspacePanel', () => ({
-  AgentWorkspacePanel: () => <div>mock-workspace-panel</div>,
-}));
-
-vi.mock('../components/AgentPlanningPanel', () => ({
-  AgentPlanningPanel: () => <div>mock-planning-panel</div>,
+vi.mock('../components/AgentSidePanelShell', () => ({
+  AgentSidePanelShell: () => <div>mock-side-panel-shell</div>,
 }));
 
 vi.mock('../components/AgentPlanningUpdates', () => ({
   AgentPlanningUpdates: () => <div>mock-planning-updates</div>,
+}));
+
+vi.mock('../components/AgentProcessAttentionUpdates', () => ({
+  AgentProcessAttentionUpdates: () => null,
 }));
 
 vi.mock('@/components/ui/sheet', () => ({
@@ -245,8 +245,8 @@ describe('AgentChatView', () => {
   beforeEach(() => {
     mocks.agentSessionState = createSessionState();
     mocks.isMobile = false;
-    mocks.showWorkspacePanel = false;
-    mocks.showPlanningPanel = false;
+    mocks.showSidePanel = false;
+    mocks.activeTab = 'workspace';
     vi.mocked(toast.loading).mockClear();
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.warning).mockClear();
@@ -425,34 +425,30 @@ describe('AgentChatView', () => {
       expect.objectContaining({ duration: 2500 }),
     );
   });
-  it('renders both desktop side panels at the same time', () => {
+  it('renders the desktop side panel shell on the right', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
     });
-    mocks.showWorkspacePanel = true;
-    mocks.showPlanningPanel = true;
+    mocks.showSidePanel = true;
 
     render(<AgentChatView />);
 
-    expect(screen.getByText('mock-workspace-panel')).toBeInTheDocument();
-    expect(screen.getByText('mock-planning-panel')).toBeInTheDocument();
+    expect(screen.getByText('mock-side-panel-shell')).toBeInTheDocument();
     expect(screen.queryByTestId('sheet-content-left')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sheet-content-right')).not.toBeInTheDocument();
   });
 
-  it('renders mobile panels inside sheets instead of desktop rails', () => {
+  it('renders the mobile side panel shell inside a right sheet', () => {
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
     });
     mocks.isMobile = true;
-    mocks.showWorkspacePanel = true;
-    mocks.showPlanningPanel = true;
+    mocks.showSidePanel = true;
 
     render(<AgentChatView />);
 
-    expect(screen.getByTestId('sheet-content-left')).toBeInTheDocument();
     expect(screen.getByTestId('sheet-content-right')).toBeInTheDocument();
-    expect(screen.getAllByText('mock-workspace-panel')).toHaveLength(1);
-    expect(screen.getAllByText('mock-planning-panel')).toHaveLength(1);
+    expect(screen.queryByTestId('sheet-content-left')).not.toBeInTheDocument();
+    expect(screen.getByText('mock-side-panel-shell')).toBeInTheDocument();
   });
 });

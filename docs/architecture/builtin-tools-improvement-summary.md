@@ -480,7 +480,7 @@ pnpm refactor:validate
 match (category, tool_group) {
     (ErrorCategory::ResourceNotFound, ToolGroup::Browser) => vec![
         "Use createSession to start a new browser session".to_string(),
-        "Use listSessions to see available sessions".to_string(),
+        "Use history__listSessions to see available sessions".to_string(),
         // ❌ NEVER suggests "Use add_todo" (wrong group)
     ],
     (ErrorCategory::DuplicateResource, ToolGroup::Planning) => vec![

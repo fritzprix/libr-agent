@@ -65,8 +65,8 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Use listProcesses to see active processes".to_string(),
-                    "Use stopProcess to cancel unnecessary processes".to_string(),
+                    "Use workspace__listProcesses to see active processes".to_string(),
+                    "Use workspace__stopProcess to cancel unnecessary processes".to_string(),
                     "Wait for some processes to finish before starting new ones".to_string(),
                 ])
                 .to_mcp_result());
@@ -181,6 +181,8 @@ impl WorkspaceServer {
         tokio::spawn(async move {
             let _process_permit = process_permit;
 
+            let (pid_tx, pid_rx) = tokio::sync::oneshot::channel();
+
             {
                 let mut reg = registry.write().await;
                 if let Some(entry) = reg.entries.get_mut(&pid_copy) {
@@ -188,12 +190,26 @@ impl WorkspaceServer {
                 }
             }
 
-            let result = process::spawn_and_stream_to_files(
+            {
+                let registry = registry.clone();
+                let pid_copy = pid_copy.clone();
+                tokio::spawn(async move {
+                    if let Ok(pid) = pid_rx.await {
+                        let mut reg = registry.write().await;
+                        if let Some(entry) = reg.entries.get_mut(&pid_copy) {
+                            entry.pid = pid;
+                        }
+                    }
+                });
+            }
+
+            let result = process::spawn_and_stream_to_files_with_pid_tx(
                 cmd,
                 stdout_path_for_task.clone(),
                 stderr_path_for_task.clone(),
                 format!("sync:{pid_copy}"),
                 cancel_token,
+                Some(pid_tx),
             )
             .await;
 
@@ -430,8 +446,9 @@ impl WorkspaceServer {
                 );
 
                 let might_be_interactive = validation::is_likely_interactive_command(command);
+                // Keep body factual; parameterized wait/read/stop live in Suggested Follow-ups.
                 let mut message = format!(
-                    "Sync timeout handoff: command was still running after {} seconds, so it continues in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending\n\nUse waitForProcess/readProcessOutput only with this processId — completed sync runs (success or failure) never get a processId.",
+                    "Sync timeout handoff: command was still running after {} seconds, so it continues in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending",
                     timeout_secs, process_id, status
                 );
 
@@ -443,14 +460,14 @@ impl WorkspaceServer {
 
                 let mut next_actions = vec![
                     format!(
-                        "Use waitForProcess(\"{}\", 0) to check current status",
+                        "Use workspace__waitForProcess(\"{}\", 0) to check current status",
                         process_id
                     ),
                     format!(
-                        "Use readProcessOutput(\"{}\", \"both\") to inspect stdout and stderr",
+                        "Use workspace__readProcessOutput(\"{}\", \"both\") to inspect stdout and stderr",
                         process_id
                     ),
-                    format!("Use stopProcess(\"{}\") to terminate it", process_id),
+                    format!("Use workspace__stopProcess(\"{}\") to terminate it", process_id),
                 ];
 
                 if might_be_interactive {

@@ -152,7 +152,10 @@
     "scheduledTasks": "スケジュール済みタスク",
     "session": "セッション",
     "knowledge": "知識",
-    "org": "組織"
+    "org": "組織",
+    "expandSession": "子セッションを展開",
+    "collapseSession": "子セッションを折りたたむ",
+    "loadingSessionChildren": "子セッションを読み込み中"
   },
   "sessionHistory": {
     "heading": "セッション履歴",
@@ -184,7 +187,9 @@
     },
     "toasts": {
       "deleted": "セッションを削除しました",
-      "deleteFailed": "セッションの削除に失敗しました"
+      "deleteFailed": "セッションの削除に失敗しました",
+      "loadMoreFailed": "セッションの追加読み込みに失敗しました",
+      "loadChildrenFailed": "子セッションの読み込みに失敗しました"
     },
     "tabs": {
       "all": "すべて",
@@ -257,6 +262,7 @@
       "cancel": "キャンセル",
       "cancelDeletionAria": "削除をキャンセル",
       "collapseChildrenAria": "「{{name}}」の子セッションを折りたたむ",
+      "loadingChildrenAria": "「{{name}}」の子セッションを読み込み中",
       "expandChildrenAria": "「{{name}}」の子セッションを展開"
     },
     "emptyState": {
@@ -866,6 +872,10 @@
       "toggleWorkspaceTooltip": "ワークスペースファイルパネルを切り替え",
       "togglePlanningAria": "AIプランニングパネルを切り替え",
       "togglePlanningTooltip": "AIプランニングパネルを切り替え",
+      "statusBadgesAria": "パネル更新バッジ",
+      "panelBadgeAria": "{{panel}} に更新があります — クリックして開く",
+      "panelBadgeLive": "{{panel}} に更新があります",
+      "panelBadgeSrOnly": "更新あり",
       "defaultAssistant": "エージェント",
       "untitledSession": "無題のセッション",
       "sessionLabel": "セッション",

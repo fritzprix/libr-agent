@@ -117,7 +117,7 @@ async fn register_rejects_duplicate_server_names_without_mutating_existing_confi
     let text = extract_text(&result);
     assert_eq!(result.is_error, Some(true));
     assert!(text.contains("already exists"));
-    assert!(text.contains("update(name=\"github-duplicate-check\""));
+    assert!(text.contains("tool__updateServer(name=\"github-duplicate-check\""));
 
     let reloaded = repo
         .get(&existing.id)

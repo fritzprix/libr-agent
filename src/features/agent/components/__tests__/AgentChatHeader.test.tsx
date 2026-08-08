@@ -7,8 +7,20 @@ import { AgentChatHeader } from '../AgentChatHeader';
 const mockRenameSession = vi.fn();
 const mockToggleBookmark = vi.fn();
 const mockCopyToClipboard = vi.fn();
-const mockTogglePlanningPanel = vi.fn();
-const mockToggleWorkspacePanel = vi.fn();
+const mockToggleShell = vi.fn();
+const mockOpenPanel = vi.fn();
+const mockHasPanelAttention = vi.fn(
+  (/* eslint-disable @typescript-eslint/no-unused-vars */ _id: string) => false,
+);
+const mockIsPanelOpen = vi.fn(() => false);
+let shellOpen = false;
+
+vi.mock('@/lib/analytics', () => ({
+  trackBadgeClicked: vi.fn(),
+  trackPanelAction: vi.fn(),
+  trackPanelViewed: vi.fn(),
+  trackShortcutUsed: vi.fn(),
+}));
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSessionState: () => ({
@@ -61,19 +73,31 @@ vi.mock('@/context/AgentSessionListContext', () => ({
   }),
 }));
 
-vi.mock('@/context/AgentPlanningContext', () => ({
-  useAgentPlanning: () => ({
-    showPlanningPanel: false,
-    togglePlanningPanel: mockTogglePlanningPanel,
-  }),
-}));
-
-vi.mock('@/context/AgentWorkspaceContext', () => ({
-  useAgentWorkspace: () => ({
-    showWorkspacePanel: false,
-    toggleWorkspacePanel: mockToggleWorkspacePanel,
-  }),
-}));
+vi.mock('@/context/AgentPanelsContext', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/context/AgentPanelsContext')
+  >('@/context/AgentPanelsContext');
+  return {
+    ...actual,
+    useAgentPanels: () => ({
+      isShellOpen: () => shellOpen,
+      openShell: vi.fn(),
+      closeShell: vi.fn(),
+      toggleShell: mockToggleShell,
+      activeTab: 'workspace',
+      setActiveTab: vi.fn(),
+      isPanelOpen: mockIsPanelOpen,
+      openPanel: mockOpenPanel,
+      closePanel: vi.fn(),
+      togglePanel: vi.fn(),
+      closeAllPanels: vi.fn(),
+      getLastClosedAt: () => 0,
+      hasPanelAttention: mockHasPanelAttention,
+      markPanelAttention: vi.fn(),
+      clearPanelAttention: vi.fn(),
+    }),
+  };
+});
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
@@ -128,11 +152,43 @@ vi.mock('react-i18next', () => ({
       if (key === 'agent.header.copyAria') {
         return 'Copy conversation';
       }
-      if (key === 'agent.header.toggleWorkspaceAria') {
-        return 'Toggle workspace';
+      if (key === 'agent.header.toggleShellAria') {
+        return 'Toggle agent panels';
       }
-      if (key === 'agent.header.togglePlanningAria') {
-        return 'Toggle planning';
+      if (key === 'agent.header.toggleShellHasUpdatesAria') {
+        return 'Toggle agent panels (has updates)';
+      }
+      if (key === 'agent.header.statusBadgesAria') {
+        return 'Panel update badges';
+      }
+      if (key === 'agent.header.panelBadgeAria') {
+        const panel =
+          typeof options?.panel === 'string'
+            ? options.panel
+            : typeof defaultValue === 'string'
+              ? ''
+              : '';
+        // i18next mock: defaultValue is template; options carries interpolations
+        const interpolatedPanel =
+          typeof options?.panel === 'string' ? options.panel : panel;
+        return `${interpolatedPanel} has updates — click to open`;
+      }
+      if (key === 'agent.header.panelBadgeSrOnly') {
+        return 'has updates';
+      }
+      if (key === 'agent.header.panelBadgeLive') {
+        const panel =
+          typeof options?.panel === 'string' ? options.panel : '';
+        return `${panel} has updates`;
+      }
+      if (key === 'agent.processes.title') {
+        return 'Processes';
+      }
+      if (key === 'agent.planning.title') {
+        return 'Planning';
+      }
+      if (key === 'agent.workspace.title') {
+        return 'Workspace';
       }
       if (key === 'agent.header.defaultAssistant') {
         return 'Agent';
@@ -154,6 +210,9 @@ global.ResizeObserver = class ResizeObserver {
 describe('AgentChatHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shellOpen = false;
+    mockHasPanelAttention.mockReturnValue(false);
+    mockIsPanelOpen.mockReturnValue(false);
   });
 
   it('renders a bookmark toggle for the active chat session and wires it to list actions', () => {
@@ -177,5 +236,59 @@ describe('AgentChatHeader', () => {
       renameButton.compareDocumentPosition(bookmarkButton) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('toggles the agent panel shell from the header control', () => {
+    render(<AgentChatHeader />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Toggle agent panels' }),
+    );
+
+    expect(mockToggleShell).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an attention dot on the shell toggle when any tab is marked', () => {
+    mockHasPanelAttention.mockImplementation(
+      (id: string) => id === 'processes',
+    );
+
+    render(<AgentChatHeader />);
+
+    expect(screen.getByTestId('panel-attention-dot')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: 'Toggle agent panels (has updates)',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a processes status badge when that panel has attention and opens it on click', async () => {
+    const { trackBadgeClicked } = await import('@/lib/analytics');
+    mockHasPanelAttention.mockImplementation(
+      (id: string) => id === 'processes',
+    );
+
+    render(<AgentChatHeader />);
+
+    const badge = screen.getByTestId('header-status-badge-processes');
+    expect(badge).toHaveAttribute('aria-controls', 'agent-side-panel-shell');
+    expect(badge).toHaveAttribute(
+      'aria-label',
+      'Processes has updates — click to open',
+    );
+
+    fireEvent.click(badge);
+
+    expect(trackBadgeClicked).toHaveBeenCalledWith('processes', 'session-123');
+    expect(mockOpenPanel).toHaveBeenCalledWith('processes');
+  });
+
+  it('hides status badges when no panel has attention', () => {
+    render(<AgentChatHeader />);
+
+    expect(
+      screen.queryByTestId('header-status-badges'),
+    ).not.toBeInTheDocument();
   });
 });

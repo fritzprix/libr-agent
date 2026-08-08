@@ -7,7 +7,7 @@ For importing configs from other editors (Cursor, VS Code, Windsurf, etc.), see 
 ## 1. Registration Methods
 
 ### 1.1 LibrAgent (Current Environment)
-To register a new MCP server in LibrAgent, use the `tool__register` tool.
+To register a new MCP server in LibrAgent, use the `tool__registerServer` tool.
 
 **Parameters:**
 - `name`: Unique slug for the server (e.g., 'github', 'local-fs')

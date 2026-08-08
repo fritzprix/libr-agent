@@ -43,8 +43,11 @@ export function AgentChatMessagesHeader({
 
   return (
     <div
-      className="box-border flex shrink-0 items-center justify-center px-4"
-      style={{ minHeight: CHAT_LIST_HEADER_MIN_HEIGHT_PX }}
+      className="box-border flex shrink-0 items-center justify-center overflow-hidden px-4"
+      style={{
+        height: CHAT_LIST_HEADER_MIN_HEIGHT_PX,
+        minHeight: CHAT_LIST_HEADER_MIN_HEIGHT_PX,
+      }}
       aria-hidden={!showOlderMessagesHint}
       data-testid="agent-chat-messages-header"
     >

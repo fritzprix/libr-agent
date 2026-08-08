@@ -78,10 +78,10 @@ fn missing_agent_config_error_suggests_listing_configs() {
     // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("Agent configuration 'exa' not found"));
-    assert!(text.contains("list(type=\"configs\")"));
-    assert!(
-        text.contains("Retry startSession with a valid agentId copied from list(type=\"configs\")")
-    );
+    assert!(text.contains("agent__listAgents(type=\"configs\")"));
+    assert!(text.contains(
+        "Retry agent__startSession with a valid agentId copied from agent__listAgents(type=\"configs\")"
+    ));
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn missing_agent_session_error_suggests_listing_sessions() {
     // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
     assert!(text.contains("Agent session 'sess_123' not found"));
-    assert!(text.contains("list(type=\"sessions\")"));
+    assert!(text.contains("agent__listAgents(type=\"sessions\")"));
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn operation_failed_uses_error_semantics() {
     let r = operation_failed_error(
         "Read Session",
         "Session 'sess_123' not found",
-        vec!["Use list() to find a valid session ID".to_string()],
+        vec!["Use history__listSessions() to find a valid session ID".to_string()],
         ToolGroup::Agent,
     );
     let text = extract_text(&r);
@@ -186,6 +186,8 @@ fn internal_guided_error_is_informational() {
 
 #[test]
 fn build_agent_tool_data_includes_common_metadata() {
+    // Top-level toolName is the bare local tool that produced the result.
+    // nextActions.toolName uses the invocable server__tool form.
     let data = build_agent_tool_data(
         "startSession",
         "session",
@@ -193,7 +195,7 @@ fn build_agent_tool_data_includes_common_metadata() {
         "Session started successfully.",
         "pending",
         vec![json!({
-            "toolName": "checkSession",
+            "toolName": "agent__checkSession",
             "reason": "Inspect progress later."
         })],
     );
@@ -277,8 +279,8 @@ async fn session_wait_timeout_is_converted_to_success_result() {
     assert_eq!(result.is_error, Some(false));
     assert_eq!(result.is_error, Some(false));
     assert!(text.contains("timed out after 15s"));
-    assert!(text.contains("checkSession(sessionId=\"sess_123\", wait=true)"));
-    assert!(text.contains("list(type=\"sessions\")"));
+    assert!(text.contains("agent__checkSession(sessionId=\"sess_123\", wait=true)"));
+    assert!(text.contains("agent__listAgents(type=\"sessions\")"));
     assert_eq!(
         structured.get("toolName").and_then(|v| v.as_str()),
         Some("checkSession")

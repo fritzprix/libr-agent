@@ -48,8 +48,8 @@ fn test_success_hint_formatting() {
     let hint = SuccessHint::new(
         "Todo created successfully",
         vec![
-            "Use getCurrentState to see all todos".to_string(),
-            "Use updateTodo(todoId=..., action='done') to mark as complete".to_string(),
+            "Use planning__getCurrentState to see all todos".to_string(),
+            "Use planning__updateTodo(todoId=..., action='done') to mark as complete".to_string(),
         ],
     );
 
@@ -75,8 +75,14 @@ fn test_tool_group_isolation_browser() {
     );
 
     // Should suggest browser tools only
-    assert!(error.guidance.iter().any(|g| g.contains("createSession")));
-    assert!(!error.guidance.iter().any(|g| g.contains("addTodo"))); // Should not suggest planning tools
+    assert!(error
+        .guidance
+        .iter()
+        .any(|g| g.contains("browser__createSession")));
+    assert!(!error
+        .guidance
+        .iter()
+        .any(|g| g.contains("planning__addTodo"))); // Should not suggest planning tools
 }
 
 #[test]
@@ -88,8 +94,14 @@ fn test_tool_group_isolation_planning() {
     );
 
     // Should suggest planning tools only
-    assert!(error.guidance.iter().any(|g| g.contains("getCurrentState")));
-    assert!(!error.guidance.iter().any(|g| g.contains("navigateToUrl"))); // Should not suggest browser tools
+    assert!(error
+        .guidance
+        .iter()
+        .any(|g| g.contains("planning__getCurrentState")));
+    assert!(!error
+        .guidance
+        .iter()
+        .any(|g| g.contains("browser__navigateToUrl"))); // Should not suggest browser tools
 }
 
 #[test]
@@ -112,8 +124,8 @@ fn test_guided_error_builder_uses_default_guidance() {
         panic!("Expected Text content");
     };
 
-    // Default guidance for (ResourceNotFound, Browser) includes createSession.
-    assert!(text.contains("createSession"));
+    // Default guidance for (ResourceNotFound, Browser) includes browser__createSession.
+    assert!(text.contains("browser__createSession"));
     assert!(text.contains("✗"));
     assert!(text.contains("💡 Suggested Recovery:"));
 }
@@ -145,7 +157,9 @@ fn test_timeout_guided_error_builder_is_informational() {
 #[test]
 fn test_guided_error_builder_allows_override_guidance() {
     let result = guided_error(ErrorCategory::InvalidInput, "Bad input", ToolGroup::UI)
-        .guidance(vec!["Use prompt_user with type='text'".to_string()])
+        .guidance(vec![
+            "Use ui__presentInteractive with type='text'".to_string()
+        ])
         .to_mcp_result();
 
     let content = result.content.expect("Expected MCPResult.content");
@@ -158,5 +172,5 @@ fn test_guided_error_builder_allows_override_guidance() {
     };
 
     // Should contain the override guidance, and should not need to match UI defaults.
-    assert!(text.contains("1. Use prompt_user with type='text'"));
+    assert!(text.contains("1. Use ui__presentInteractive with type='text'"));
 }

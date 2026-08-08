@@ -92,9 +92,9 @@ impl BuiltinMCPServer for PlanningServer {
                         let hint = SuccessHint::new(
                             "✓ Session planning state cleared",
                             vec![
-                                "Use createGoal to set a new objective".to_string(),
-                                "Use addTodo to add tasks for this goal".to_string(),
-                                "Use getCurrentState to verify what is present".to_string(),
+                                "Use planning__createGoal to set a new objective".to_string(),
+                                "Use planning__addTodo to add tasks for this goal".to_string(),
+                                "Use planning__getCurrentState to verify what is present".to_string(),
                             ],
                         );
                         Ok(hint.to_mcp_result())
@@ -103,7 +103,7 @@ impl BuiltinMCPServer for PlanningServer {
                         "clear the session planning state",
                         &e,
                         vec![
-                            "Use getCurrentState to verify what is still present before retrying."
+                            "Use planning__getCurrentState to verify what is still present before retrying."
                                 .to_string(),
                             "Retry only if the planning state is still there.".to_string(),
                         ],

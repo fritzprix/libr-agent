@@ -296,6 +296,55 @@ impl AttachmentsStorage {
             .collect()
     }
 
+    /// Load content and chunk rows for a session into the in-memory cache.
+    ///
+    /// Called when an existing store is discovered in SQLite so that
+    /// memory-only readers (`list_content`, `read_content`, etc.) see
+    /// persisted attachments after process restart.
+    async fn hydrate_session_cache(&mut self, session_id: &str) -> Result<(), String> {
+        let Some(db) = &self.db else {
+            return Ok(());
+        };
+
+        let content_models = content::Entity::find()
+            .filter(content::Column::SessionId.eq(session_id))
+            .all(db)
+            .await
+            .map_err(|e| format!("Failed to hydrate attachment contents: {e}"))?;
+
+        if content_models.is_empty() {
+            return Ok(());
+        }
+
+        let content_ids: Vec<String> = content_models.iter().map(|m| m.id.clone()).collect();
+
+        let chunk_models = chunk::Entity::find()
+            .filter(chunk::Column::ContentId.is_in(content_ids))
+            .order_by_asc(chunk::Column::ChunkIndex)
+            .all(db)
+            .await
+            .map_err(|e| format!("Failed to hydrate attachment chunks: {e}"))?;
+
+        let mut chunks_by_content: HashMap<String, Vec<AttachmentChunk>> = HashMap::new();
+        for model in chunk_models {
+            let chunk = AttachmentChunk::from(model);
+            chunks_by_content
+                .entry(chunk.content_id.clone())
+                .or_default()
+                .push(chunk);
+        }
+
+        for model in content_models {
+            let item = AttachmentItem::from(model);
+            let content_id = item.id.clone();
+            let chunks = chunks_by_content.remove(&content_id).unwrap_or_default();
+            self.contents.insert(content_id.clone(), item);
+            self.chunks.insert(content_id, chunks);
+        }
+
+        Ok(())
+    }
+
     /// Get or create an attachment store for the given session ID
     pub async fn get_or_create_store(
         &mut self,
@@ -309,18 +358,21 @@ impl AttachmentsStorage {
         }
 
         // If using database, check if store exists
-        if let Some(db) = &self.db {
-            let result = StoreEntity::find_by_id(session_id.clone())
+        let existing_store = if let Some(db) = &self.db {
+            StoreEntity::find_by_id(session_id.clone())
                 .one(db)
                 .await
-                .map_err(|e| format!("Failed to check store existence: {e}"))?;
+                .map_err(|e| format!("Failed to check store existence: {e}"))?
+        } else {
+            None
+        };
 
-            if let Some(model) = result {
-                // Store exists in database, convert and add to memory cache
-                let store = AttachmentStore::from(model);
-                self.stores.insert(session_id.clone(), store.clone());
-                return Ok(store);
-            }
+        if let Some(model) = existing_store {
+            // Store exists in database — cache store + hydrate contents/chunks
+            let store = AttachmentStore::from(model);
+            self.stores.insert(session_id.clone(), store.clone());
+            self.hydrate_session_cache(&session_id).await?;
+            return Ok(store);
         }
 
         // Store doesn't exist, create new one

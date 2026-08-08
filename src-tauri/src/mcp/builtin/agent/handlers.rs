@@ -91,7 +91,8 @@ fn caller_session_not_found_result(session_id: &str) -> MCPResult {
     )
     .with_guidance(vec![
         "Resume the parent/root session and retry the operation".to_string(),
-        "Use list(type=\"sessions\") to inspect delegated sessions if needed".to_string(),
+        "Use agent__listAgents(type=\"sessions\") to inspect delegated sessions if needed"
+            .to_string(),
         "The caller session may have been terminated or expired".to_string(),
     ])
     .to_mcp_result()
@@ -100,11 +101,12 @@ fn caller_session_not_found_result(session_id: &str) -> MCPResult {
 fn missing_explicit_org_result() -> MCPResult {
     guided_error(
         ErrorCategory::InvalidInput,
-        "No explicit org is associated with the current session. Call createOrg first.".to_string(),
+        "No explicit org is associated with the current session. Call agent__createOrg first."
+            .to_string(),
         ToolGroup::Agent,
     )
     .with_guidance(vec![
-        "Use createOrg(name=\"...\") from the root session first".to_string(),
+        "Use agent__createOrg(name=\"...\") from the root session first".to_string(),
         "Or pass orgId explicitly when querying a known explicit org".to_string(),
     ])
     .to_mcp_result()
@@ -117,9 +119,9 @@ fn invalid_explicit_org_result(org_id: &str) -> MCPResult {
         ToolGroup::Agent,
     )
     .with_guidance(vec![
-        "Use createOrg(name=\"...\") again from the root session if the org lineage was reset"
+        "Use agent__createOrg(name=\"...\") again from the root session if the org lineage was reset"
             .to_string(),
-        "Use list(type=\"sessions\") to inspect the current delegated lineage".to_string(),
+        "Use agent__listAgents(type=\"sessions\") to inspect the current delegated lineage".to_string(),
     ])
     .to_mcp_result()
 }
@@ -182,7 +184,19 @@ pub async fn load_accessible_delegated_session(
         return Err(caller_session_not_found_result(caller_session_id));
     }
 
-    let Some(target_session) = (match manager.get_session(target_session_id).await {
+    let resolved_target_id = match resolve_delegated_session_ref(
+        manager,
+        caller_session_id,
+        target_session_id,
+        tool_name,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(result) => return Err(result),
+    };
+
+    let Some(target_session) = (match manager.get_session(&resolved_target_id).await {
         Ok(session) => session,
         Err(error) => {
             return Err(guided_error(
@@ -248,12 +262,104 @@ pub async fn load_accessible_delegated_session(
             "Use {} only with delegated child/descendant sessions started from the current session",
             tool_name
         ),
-        "Use list(type=\"sessions\") to inspect the delegated sessions you can control directly"
+        "Use agent__listAgents(type=\"sessions\") to inspect the delegated sessions you can control directly"
             .to_string(),
-        "Start a new delegated session with startSession(...) if you need fresh child work"
+        "Start a new delegated session with agent__startSession(...) if you need fresh child work"
             .to_string(),
     ])
     .to_mcp_result())
+}
+
+/// Resolve a full session id, bare short token, or optional `session-{short}` form.
+///
+/// Exact DB hits win. Otherwise alias resolution is scoped to delegated descendants of
+/// `caller_session_id` so short refs stay unambiguous within the caller's tree.
+async fn resolve_delegated_session_ref(
+    manager: &crate::agent::AgentSessionManager,
+    caller_session_id: &str,
+    target_ref: &str,
+    tool_name: &str,
+) -> Result<String, MCPResult> {
+    match manager.get_session(target_ref).await {
+        Ok(Some(_)) => return Ok(target_ref.to_string()),
+        Ok(None) => {}
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::InternalError,
+                format!(
+                    "Failed to resolve session reference for {}: {}",
+                    tool_name, error
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Retry the operation once session metadata is available again".to_string(),
+                "If the issue persists, inspect the session repository health".to_string(),
+            ])
+            .to_mcp_result())
+        }
+    }
+
+    let all_sessions = match manager.get_all_sessions().await {
+        Ok(sessions) => sessions,
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::InternalError,
+                format!(
+                    "Failed to list sessions while resolving reference for {}: {}",
+                    tool_name, error
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Retry the operation once session metadata is available again".to_string(),
+                "If the issue persists, inspect the session repository health".to_string(),
+            ])
+            .to_mcp_result())
+        }
+    };
+
+    let sessions_by_id: HashMap<String, SessionMetadata> = all_sessions
+        .iter()
+        .map(|session| (session.id.clone(), session.clone()))
+        .collect();
+
+    let descendant_ids: Vec<&str> = all_sessions
+        .iter()
+        .filter(|session| {
+            is_delegated_descendant_session(&sessions_by_id, caller_session_id, &session.id)
+        })
+        .map(|session| session.id.as_str())
+        .collect();
+
+    match crate::utils::session_id::resolve_session_id_among(
+        descendant_ids.iter().copied(),
+        target_ref,
+    ) {
+        crate::utils::session_id::SessionIdResolve::Unique(resolved) => Ok(resolved.to_string()),
+        crate::utils::session_id::SessionIdResolve::Missing => {
+            Err(crate::mcp::builtin::error_guidance::missing_agent_session_error(target_ref))
+        }
+        crate::utils::session_id::SessionIdResolve::Ambiguous(count) => {
+            let caller_alias = crate::utils::session_id::display_session_id(caller_session_id);
+            Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Session reference '{}' is ambiguous among {} delegated descendants of '{}'.",
+                    target_ref, count, caller_alias
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Multiple delegated sessions share this short alias; confirm the target by name via list(type=\"sessions\")".to_string(),
+                format!(
+                    "Retry {} with an exact storage id if available, or remove unused sibling sessions so aliases are unique",
+                    tool_name
+                ),
+            ])
+            .to_mcp_result())
+        }
+    }
 }
 
 pub async fn prepare_teamwork_workspace(
@@ -272,13 +378,13 @@ pub async fn prepare_teamwork_workspace(
     if session.parent_session_id.is_some() {
         return Ok(guided_error(
             ErrorCategory::InvalidInput,
-            "prepareTeamworkWorkspace must be called from a top-level governing/root session."
+            "agent__prepareTeamworkWorkspace must be called from a top-level governing/root session."
                 .to_string(),
             ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Resume the governing/root session first.".to_string(),
-            "Then call prepareTeamworkWorkspace() before creating teamwork scaffold artifacts."
+            "Then call agent__prepareTeamworkWorkspace() before creating teamwork scaffold artifacts."
                 .to_string(),
         ])
         .to_mcp_result());
@@ -287,7 +393,7 @@ pub async fn prepare_teamwork_workspace(
     let artifact_path =
         crate::services::WorkspaceService::provision_teamwork_workspace(caller_session_id).await?;
     let message = format!(
-        "Teamwork artifact directory is ready for session {}. Do not call prepareTeamworkWorkspace again — the empty @teamwork/ root already exists.",
+        "Teamwork artifact directory is ready for session {}. Do not call agent__prepareTeamworkWorkspace again — the empty @teamwork/ root already exists.",
         caller_session_id
     );
     let hint = SuccessHint::new(
@@ -295,7 +401,7 @@ pub async fn prepare_teamwork_workspace(
         vec![
             "Recommended follow-up: scaffold the full org teamwork set. Prefer the teamwork skill + scripts/init_task_force.py with --output set to this response's artifactPath field, or write under @teamwork/ (agents.md, MISSION.md, ROLES.md, coordination/*, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and orgLineage.intended=true)."
                 .to_string(),
-            "After that scaffold is complete, createOrg(name=\"...\") from this root session, then startSession for org members so they inherit the shared workspace. Spawning children before createOrg leaves each spoke in an isolated workspace."
+            "After that scaffold is complete, agent__createOrg(name=\"...\") from this root session, then agent__startSession for org members so they inherit the shared workspace. Spawning children before agent__createOrg leaves each spoke in an isolated workspace."
                 .to_string(),
         ],
     );
@@ -303,24 +409,28 @@ pub async fn prepare_teamwork_workspace(
     let mut response_data = build_agent_tool_data(
         "prepareTeamworkWorkspace",
         "workspace",
-        Some(caller_session_id),
+        Some(&crate::utils::session_id::display_session_id(
+            caller_session_id,
+        )),
         &message,
         "success",
         vec![
             json!({
                 "actionType": "skill",
                 "toolName": "teamwork",
-                "reason": "Scaffold the full @teamwork/ artifact set (prefer init_task_force.py) before createOrg."
+                "reason": "Scaffold the full @teamwork/ artifact set (prefer init_task_force.py) before agent__createOrg."
             }),
             json!({
-                "toolName": "createOrg",
+                "toolName": "agent__createOrg",
                 "reason": "Create explicit org identity only after @teamwork/ scaffold + teamwork.json are ready."
             }),
         ],
     );
     response_data.insert(
         "sessionId".to_string(),
-        Value::String(caller_session_id.to_string()),
+        Value::String(crate::utils::session_id::display_session_id(
+            caller_session_id,
+        )),
     );
     response_data.insert("artifactPath".to_string(), Value::String(artifact_path));
     response_data.insert("mode".to_string(), Value::String("teamwork".to_string()));
@@ -329,17 +439,18 @@ pub async fn prepare_teamwork_workspace(
 }
 
 fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> Value {
+    let display_id = crate::utils::session_id::display_session_id(session_id);
     json!({
-        "toolName": "messageToSession",
+        "toolName": "agent__messageToSession",
         "reason": reason,
         "args": {
-            "sessionId": session_id,
+            "sessionId": display_id,
             "message": default_session_recovery_message(status),
         }
     })
 }
 
-/// Session context fields attached to every successful `checkSession` response.
+/// Session context fields attached to every successful `agent__checkSession` response.
 ///
 /// Session `name` / task title is intentionally omitted: it often reflects a past
 /// request and can mislead a parent agent about the child's current work.
@@ -386,7 +497,7 @@ pub fn check_session_enrichment_from_metadata(
     }
 }
 
-/// Insert `checkSession` context metadata into structured response data (camelCase keys).
+/// Insert `agent__checkSession` context metadata into structured response data (camelCase keys).
 pub fn apply_check_session_enrichment(
     data: &mut serde_json::Map<String, Value>,
     enrichment: &CheckSessionEnrichment,
@@ -449,7 +560,7 @@ pub fn format_check_session_context_text(enrichment: &CheckSessionEnrichment) ->
     }
 }
 
-/// Insert Metadata markdown into the checkSession body **before** SuccessHint wraps it.
+/// Insert Metadata markdown into the agent__checkSession body **before** SuccessHint wraps it.
 ///
 /// Placement (so long Result bodies / tool-result truncation keep identity visible):
 /// status line → Metadata → `Result:` / `Last known output:` → optional Follow-ups.
@@ -488,7 +599,7 @@ pub async fn resolve_check_session_enrichment(meta: &SessionMetadata) -> CheckSe
                 Ok(None) => None,
                 Err(error) => {
                     log::warn!(
-                        "checkSession: failed to resolve assistantName for {}: {}",
+                        "agent__checkSession: failed to resolve assistantName for {}: {}",
                         assistant_id,
                         error
                     );
@@ -502,18 +613,24 @@ pub async fn resolve_check_session_enrichment(meta: &SessionMetadata) -> CheckSe
     check_session_enrichment_from_metadata(meta, assistant_name)
 }
 
+/// Build a paused checkSession MCP result from pre-fetched messages.
+///
+/// `session_id` must be the opaque storage key (`SessionMetadata.id`). It is
+/// only used to derive the agent-facing display token — never pass
+/// `display_session_id(...)` here if you also feed messages fetched by that id.
 pub fn build_paused_check_session_result_from_messages(
     session_id: &str,
     turn_count: usize,
     messages_value: &[Value],
     enrichment: Option<&CheckSessionEnrichment>,
 ) -> MCPResult {
+    let display_id = crate::utils::session_id::display_session_id(session_id);
     let latest_output = latest_session_output(messages_value);
     let recovery_reason =
         "Wake the paused child session so it can continue from the last stable step.";
     let mut message = format!(
-        "Session {} is paused and will not make progress on its own.\n\nLast known output:\n{}\n\nRecovery: send a follow-up message with messageToSession(...) to restart the child workflow.",
-        session_id, latest_output
+        "Session {} is paused and will not make progress on its own.\n\nLast known output:\n{}\n\nRecovery: send a follow-up message with agent__messageToSession(...) to restart the child workflow.",
+        display_id, latest_output
     );
     if let Some(enrichment) = enrichment {
         message = append_check_session_context_to_message(&message, enrichment);
@@ -521,17 +638,17 @@ pub fn build_paused_check_session_result_from_messages(
     let next_actions = vec![
         recovery_action_for_session(session_id, "paused", recovery_reason),
         json!({
-            "toolName": "checkSession",
+            "toolName": "agent__checkSession",
             "reason": "Check again after sending a recovery message.",
             "args": {
-                "sessionId": session_id,
+                "sessionId": display_id,
                 "wait": true
             }
         }),
     ];
     let hint = SuccessHint::new(message.clone(), vec![]);
     let mut response_data = build_agent_session_tool_data(
-        "checkSession",
+        "agent__checkSession",
         session_id,
         &message,
         "paused",
@@ -542,7 +659,7 @@ pub fn build_paused_check_session_result_from_messages(
     response_data.insert("recoverable".to_string(), Value::Bool(true));
     response_data.insert(
         "recoveryStrategy".to_string(),
-        Value::String("messageToSession".to_string()),
+        Value::String("agent__messageToSession".to_string()),
     );
     response_data.insert(
         "recoveryMessage".to_string(),
@@ -557,6 +674,12 @@ pub fn build_paused_check_session_result_from_messages(
     hint.to_mcp_result_with_data(Some(Value::Object(response_data)))
 }
 
+/// Build a terminal checkSession MCP result from pre-fetched messages.
+///
+/// `session_id` must be the opaque storage key (`SessionMetadata.id`). It is
+/// only used to derive the agent-facing display token — messages must already
+/// have been loaded via `fetch_session_messages_for_result` with a
+/// `StorageSessionId`.
 pub fn build_terminal_check_session_result_from_messages(
     session_id: &str,
     status: &str,
@@ -564,6 +687,7 @@ pub fn build_terminal_check_session_result_from_messages(
     messages_value: &[Value],
     enrichment: Option<&CheckSessionEnrichment>,
 ) -> MCPResult {
+    let display_id = crate::utils::session_id::display_session_id(session_id);
     let assistant_text = latest_session_output(messages_value);
     let normalized_status = status.to_ascii_lowercase();
     let is_abnormal = matches!(normalized_status.as_str(), "error" | "failed");
@@ -579,38 +703,38 @@ pub fn build_terminal_check_session_result_from_messages(
                 "Retry the child session explicitly after abnormal termination.",
             ),
             json!({
-                "toolName": "checkSession",
+                "toolName": "agent__checkSession",
                 "reason": "Check again after sending a recovery message.",
                 "args": {
-                    "sessionId": session_id,
+                    "sessionId": display_id,
                     "wait": true
                 }
             }),
         ]
     } else {
         vec![json!({
-            "toolName": "messageToSession",
+            "toolName": "agent__messageToSession",
             "reason": "Request the child session for more detail, file contents, or full output.",
             "args": {
-                "sessionId": session_id,
+                "sessionId": display_id,
                 "message": "Please share the complete output or file contents."
             }
         })]
     };
     let mut message = if is_abnormal {
         format!(
-            "Session {} ended abnormally ({}).\n\nLast known output:\n{}\n\nRecovery: this child session will not continue on its own. Use messageToSession(...) to retry from the last stable step.",
-            session_id, status, assistant_text
+            "Session {} ended abnormally ({}).\n\nLast known output:\n{}\n\nRecovery: this child session will not continue on its own. Use agent__messageToSession(...) to retry from the last stable step.",
+            display_id, status, assistant_text
         )
     } else if normalized_status == "terminated" {
         format!(
-            "Session {} was terminated.\n\nLast known output:\n{}\n\nIf you still need the work, restart it explicitly with messageToSession(...).",
-            session_id, assistant_text
+            "Session {} was terminated.\n\nLast known output:\n{}\n\nIf you still need the work, restart it explicitly with agent__messageToSession(...).",
+            display_id, assistant_text
         )
     } else {
         format!(
-            "Session {} is terminal ({}).\n\nResult:\n{}\n\nIf you need more detail, use messageToSession(\"{}\", message=\"Please share the complete output or file contents.\") to ask the child session for the full result.",
-            session_id, status, assistant_text, session_id
+            "Session {} is terminal ({}).\n\nResult:\n{}\n\nIf you need more detail, use agent__messageToSession(\"{}\", message=\"Please share the complete output or file contents.\") to ask the child session for the full result.",
+            display_id, status, assistant_text, display_id
         )
     };
     if let Some(enrichment) = enrichment {
@@ -618,7 +742,7 @@ pub fn build_terminal_check_session_result_from_messages(
     }
     let hint = SuccessHint::new(message.clone(), vec![]);
     let mut response_data = build_agent_session_tool_data(
-        "checkSession",
+        "agent__checkSession",
         session_id,
         &message,
         status,
@@ -638,7 +762,7 @@ pub fn build_terminal_check_session_result_from_messages(
     if is_recoverable {
         response_data.insert(
             "recoveryStrategy".to_string(),
-            Value::String("messageToSession".to_string()),
+            Value::String("agent__messageToSession".to_string()),
         );
         response_data.insert(
             "recoveryMessage".to_string(),
@@ -655,16 +779,18 @@ pub fn build_terminal_check_session_result_from_messages(
 }
 
 async fn build_terminal_check_session_result(
-    session_id: &str,
+    storage_session_id: &crate::utils::session_id::StorageSessionId,
     status: &str,
     turn_count: usize,
     enrichment: &CheckSessionEnrichment,
 ) -> Result<MCPResult, String> {
+    // Message fetch requires the opaque storage key, never display_session_id().
     let messages_value =
-        fetch_session_messages_for_result(session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT).await?;
+        fetch_session_messages_for_result(storage_session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT)
+            .await?;
 
     Ok(build_terminal_check_session_result_from_messages(
-        session_id,
+        storage_session_id.as_str(),
         status,
         turn_count,
         &messages_value,
@@ -673,15 +799,17 @@ async fn build_terminal_check_session_result(
 }
 
 async fn build_paused_check_session_result(
-    session_id: &str,
+    storage_session_id: &crate::utils::session_id::StorageSessionId,
     turn_count: usize,
     enrichment: &CheckSessionEnrichment,
 ) -> Result<MCPResult, String> {
+    // Message fetch requires the opaque storage key, never display_session_id().
     let messages_value =
-        fetch_session_messages_for_result(session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT).await?;
+        fetch_session_messages_for_result(storage_session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT)
+            .await?;
 
     Ok(build_paused_check_session_result_from_messages(
-        session_id,
+        storage_session_id.as_str(),
         turn_count,
         &messages_value,
         Some(enrichment),

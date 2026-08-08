@@ -205,10 +205,10 @@ _Important : `bootstrap` est une capacité intégrée souvent utilisée avec ces
 Téléchargez le dernier installateur pour votre plateforme depuis la **[page des Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows :** [`LibrAgent_0.8.38_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64-setup.exe) · [`LibrAgent_0.8.38_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_x64_en-US.msi)
-- **macOS (Apple Silicon) :** [`LibrAgent_0.8.38_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_aarch64.dmg)
-- **Linux :** [`LibrAgent_0.8.38_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.AppImage) · [`LibrAgent_0.8.38_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent_0.8.38_amd64.deb) · [`LibrAgent-0.8.38-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.38/LibrAgent-0.8.38-1.x86_64.rpm)
-- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.38)
+- **Windows :** [`LibrAgent_0.8.39_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_x64-setup.exe) · [`LibrAgent_0.8.39_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_x64_en-US.msi)
+- **macOS (Apple Silicon) :** [`LibrAgent_0.8.39_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_aarch64.dmg)
+- **Linux :** [`LibrAgent_0.8.39_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_amd64.AppImage) · [`LibrAgent_0.8.39_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_amd64.deb) · [`LibrAgent-0.8.39-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent-0.8.39-1.x86_64.rpm)
+- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.39)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Configuration développeur :**
@@ -234,7 +234,7 @@ pnpm tauri dev
 
 **Étape 3 — Créez votre premier agent**
 
-- _"Créez un agent chercheur pour la veille concurrentielle"_ → créez via les paramètres Assistants ou `agent__create`
+- _"Créez un agent chercheur pour la veille concurrentielle"_ → créez via les paramètres Assistants ou `agent__createAgent`
 - _"Construisez une équipe de recherche avec mes outils actuels"_ → `teamwork` scaffold les rôles et le workspace partagé
 - _"Exécutez des sous-tâches de recherche en parallèle"_ → `delegate` lance et surveille les sessions enfants
 

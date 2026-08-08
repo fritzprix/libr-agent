@@ -34,12 +34,13 @@ function createContext(
 }
 
 describe('VirtuosoListComponents', () => {
-  it('keeps a stable header min-height when there are no older messages', () => {
+  it('keeps a fixed header height when there are no older messages', () => {
     render(<AgentChatMessagesHeader context={createContext()} />);
 
     const header = screen.getByTestId('agent-chat-messages-header');
     expect(header).toHaveAttribute('aria-hidden', 'true');
     expect(header).toHaveStyle({
+      height: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
       minHeight: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
     });
     expect(
@@ -47,7 +48,7 @@ describe('VirtuosoListComponents', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('reuses the same header min-height when showing the load-older pill', () => {
+  it('reuses the same fixed header height when showing the load-older pill', () => {
     render(
       <AgentChatMessagesHeader
         context={createContext({ hasOlderMessages: true })}
@@ -57,11 +58,30 @@ describe('VirtuosoListComponents', () => {
     const header = screen.getByTestId('agent-chat-messages-header');
     expect(header).toHaveAttribute('aria-hidden', 'false');
     expect(header).toHaveStyle({
+      height: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
       minHeight: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
     });
     expect(
       screen.getByText('Scroll up to load older messages'),
     ).toBeInTheDocument();
+  });
+
+  it('keeps the same fixed header height while the older-page loading pill is shown', () => {
+    render(
+      <AgentChatMessagesHeader
+        context={createContext({
+          hasOlderMessages: true,
+          isLoadingOlderMessages: true,
+        })}
+      />,
+    );
+
+    const header = screen.getByTestId('agent-chat-messages-header');
+    expect(header).toHaveStyle({
+      height: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
+      minHeight: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
+    });
+    expect(screen.getByText('Loading older messages...')).toBeInTheDocument();
   });
 
   it('preserves Virtuoso List paddingTop while adding horizontal padding', () => {

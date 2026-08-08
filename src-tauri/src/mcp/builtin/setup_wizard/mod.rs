@@ -125,7 +125,10 @@ impl SetupWizardServer {
         if !missing.is_empty() {
             sections.push(format!("\nMissing Tools ({}):", missing.len()));
             for tool in &missing {
-                sections.push(format!("  ✗ {} (Use: getSetupGuide('{}'))", tool, tool));
+                sections.push(format!(
+                    "  ✗ {} (Use: setup-wizard__getSetupGuide('{}'))",
+                    tool, tool
+                ));
             }
         }
 
@@ -133,7 +136,8 @@ impl SetupWizardServer {
 
         let mut next_steps = vec![];
         if !missing.is_empty() {
-            next_steps.push("getSetupGuide(tool) can install missing tools".to_string());
+            next_steps
+                .push("setup-wizard__getSetupGuide(tool) can install missing tools".to_string());
         }
         next_steps.push("Available guides: node, python, uv, docker, git".to_string());
 
@@ -151,7 +155,8 @@ impl SetupWizardServer {
                         ErrorCategory::InvalidInput,
                         "Tool name cannot be empty".to_string(),
                         vec![
-                            "Use detectPlatform to identify missing tools".to_string(),
+                            "Use setup-wizard__detectPlatform to identify missing tools"
+                                .to_string(),
                             "Valid tools: node, python, uv, docker, git".to_string(),
                         ],
                         ToolGroup::SetupWizard,
@@ -174,7 +179,7 @@ impl SetupWizardServer {
                     valid_tools.join(", ")
                 ),
                 vec![
-                    "Use detectPlatform first to identify missing tools".to_string(),
+                    "Use setup-wizard__detectPlatform first to identify missing tools".to_string(),
                     "Valid tools: node, python, uv, docker, git".to_string(),
                 ],
                 ToolGroup::SetupWizard,
@@ -197,7 +202,7 @@ impl SetupWizardServer {
                     ),
                     vec![
                         "Use 'auto' to detect platform automatically".to_string(),
-                        "Use detectPlatform to see your current platform".to_string(),
+                        "Use setup-wizard__detectPlatform to see your current platform".to_string(),
                     ],
                     ToolGroup::SetupWizard,
                 )
@@ -212,7 +217,7 @@ impl SetupWizardServer {
             formatted_text,
             vec![
                 format!("Run: {} to verify installation", guide.verification),
-                "Use detectPlatform to check your current environment".to_string(),
+                "Use setup-wizard__detectPlatform to check your current environment".to_string(),
             ],
         );
 
@@ -293,7 +298,7 @@ impl BuiltinMCPServer for SetupWizardServer {
             "detectPlatform" => Ok(self.detect_platform()),
             "getSetupGuide" => Ok(self.get_setup_guide(args)),
             _ => Err(format!(
-                "Unknown tool: {}. Available tools: detectPlatform, getSetupGuide",
+                "Unknown tool: {}. Available tools: setup-wizard__detectPlatform, setup-wizard__getSetupGuide",
                 tool_name
             )),
         }
@@ -577,7 +582,7 @@ mod tests {
         // Validate inline guidance for missing tools
         if text.contains("Missing Tools") {
             assert!(
-                text.contains("Use: getSetupGuide"),
+                text.contains("Use: setup-wizard__getSetupGuide"),
                 "Missing tools should include inline guidance"
             );
         }
@@ -615,7 +620,7 @@ mod tests {
             "Error message should be clear"
         );
         assert!(
-            text.contains("Use detectPlatform") || text.contains("Valid tools"),
+            text.contains("Use setup-wizard__detectPlatform") || text.contains("Valid tools"),
             "Error should provide recovery hints"
         );
 

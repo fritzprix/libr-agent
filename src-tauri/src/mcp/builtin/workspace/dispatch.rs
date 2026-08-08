@@ -17,8 +17,8 @@ impl WorkspaceServer {
                     "Tool '{tool_name}' is not available in Docker workspace isolation (Linux container shell only)"
                 ),
                 vec![
-                    "Use runShell for one-shot commands".to_string(),
-                    "Use runInPersistentShell for stateful shell sessions".to_string(),
+                    "Use workspace__runShell for one-shot commands".to_string(),
+                    "Use workspace__runInPersistentShell for stateful shell sessions".to_string(),
                 ],
             ),
             WorkspaceIsolationMode::Host if cfg!(windows) => (
@@ -26,9 +26,9 @@ impl WorkspaceServer {
                     "Tool '{tool_name}' is not available on Windows host isolation (PowerShell only)"
                 ),
                 vec![
-                    "Use runPowerShell for one-shot commands".to_string(),
-                    "Use runInPersistentPowerShell for stateful shell sessions".to_string(),
-                    "Enable Docker Mode to use bash/sh (runShell) in a Linux container".to_string(),
+                    "Use workspace__runPowerShell for one-shot commands".to_string(),
+                    "Use workspace__runInPersistentPowerShell for stateful shell sessions".to_string(),
+                    "Enable Docker Mode to use bash/sh (workspace__runShell) in a Linux container".to_string(),
                 ],
             ),
             WorkspaceIsolationMode::Host => (
@@ -36,8 +36,8 @@ impl WorkspaceServer {
                     "Tool '{tool_name}' is not available on this host platform (bash/sh only)"
                 ),
                 vec![
-                    "Use runShell for one-shot commands".to_string(),
-                    "Use runInPersistentShell for stateful shell sessions".to_string(),
+                    "Use workspace__runShell for one-shot commands".to_string(),
+                    "Use workspace__runInPersistentShell for stateful shell sessions".to_string(),
                 ],
             ),
         };

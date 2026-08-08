@@ -307,6 +307,12 @@ fn build_stable_prefix(
 
     if agent_config.id.is_some() || !agent_config.name.trim().is_empty() {
         let agent_id = agent_config.id.as_deref().unwrap_or("(unknown)");
+        // Placeholder ids (e.g. build_system_prompt without a real session) stay literal.
+        let display_session = if session_id.starts_with('(') {
+            session_id.to_string()
+        } else {
+            crate::utils::session_id::display_session_id(session_id)
+        };
         let mut identity = format!(
             "\n\n## Agent Runtime Identity\n\
             - Agent Name: {}\n\
@@ -314,17 +320,18 @@ fn build_stable_prefix(
             - Session ID: {}",
             agent_config.name.trim(),
             agent_id,
-            session_id
+            display_session
         );
 
         if let Some(ref parent_id) = agent_config.parent_session_id {
-            let short_parent: String = parent_id.chars().take(8).collect();
+            // Show the short display alias; messageToSession resolves it among accessible sessions.
+            let display_parent = crate::utils::session_id::display_session_id(parent_id);
             let depth = agent_config.depth.unwrap_or(1);
             identity.push_str(&format!(
                 "\n- Session Type: Sub-Agent (Depth: {})\n\
                 - Parent Session: {}\n\n\
                 ⚠️ You are running as a SUB-AGENT delegated by Parent Session `{}`. Focus strictly on your assigned task and return your results concisely to your parent agent.",
-                depth, short_parent, short_parent
+                depth, display_parent, display_parent
             ));
         }
 
