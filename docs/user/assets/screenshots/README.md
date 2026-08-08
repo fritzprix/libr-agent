@@ -1,11 +1,13 @@
-# Screenshots & UI schematics
+# Screenshots
 
-Schematic SVGs (exact sidebar / Settings labels) ship with the docs. Replace with real PNG captures later if desired — keep the same filenames or update markdown links.
+Captured from the running LibrAgent desktop app (`mss` + window geometry).
 
-| File | Used in |
-|------|---------|
-| `getting-started/settings-ai-models.svg` | connecting-models, 5-minute |
-| `getting-started/chat-hub.svg` | first-agent, 5-minute |
-| `getting-started/new-session.svg` | first-agent |
-| `guides/extensions.svg` | extensions |
-| `guides/org.svg` | sub-agents |
+| File | Source |
+|------|--------|
+| `getting-started/chat-hub.png` | Chat hub (Built-in / My Assistants) |
+| `getting-started/settings-ai-models.png` | Settings → **AI & Models** (Base URL redacted) |
+| `getting-started/new-session.svg` | Schematic — draft New Session (live click did not land on draft) |
+| `guides/extensions.png` | Extensions → Tools |
+| `guides/org.png` | Org view |
+
+Re-capture: with LibrAgent focused on `:DISPLAY`, use window id from `xwininfo` and grab via `mss`.

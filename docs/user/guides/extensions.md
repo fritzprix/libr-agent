@@ -9,7 +9,7 @@ title: Extensions로 MCP 설치하기
 
 Settings에 **「MCP Servers」** 탭은 없습니다. MCP/확장 기능은 **Extensions** 페이지입니다.
 
-![Extensions](../assets/screenshots/guides/extensions.svg)
+![Extensions](../assets/screenshots/guides/extensions.png)
 
 ---
 

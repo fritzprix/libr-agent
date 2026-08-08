@@ -37,7 +37,7 @@ title: 모델 연결하기
 
 > **없는 이름**: 「LLM Provider」섹션, 「AI Models」(단독), 「Preferred Model」, Settings를 여는 “우측 상단 톱니” — 현재 UI와 맞지 않습니다.
 
-![Settings → AI & Models](../assets/screenshots/getting-started/settings-ai-models.svg)
+![Settings → AI & Models](../assets/screenshots/getting-started/settings-ai-models.png)
 
 ---
 

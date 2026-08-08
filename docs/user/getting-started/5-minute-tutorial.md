@@ -26,7 +26,7 @@ title: 5분 시작 가이드
 
 왼쪽 **사이드바**에 **Chat**, **Settings** 등 메뉴가 보입니다. (설정은 우측 상단 버튼이 아니라 **사이드바 → Settings**입니다.)
 
-![Chat hub schematic](../assets/screenshots/getting-started/chat-hub.svg)
+![Chat hub screenshot](../assets/screenshots/getting-started/chat-hub.png)
 
 ---
 
@@ -40,7 +40,7 @@ title: 5분 시작 가이드
 4. **API Key**에 키를 붙여넣고 **Save Changes**를 누릅니다.
 5. 같은 탭의 **Model Preferences**에서 **Default LLM**을 고를 수 있습니다.
 
-![Settings AI & Models schematic](../assets/screenshots/getting-started/settings-ai-models.svg)
+![Settings AI & Models screenshot](../assets/screenshots/getting-started/settings-ai-models.png)
 
 > UI에 **「LLM Provider」**라는 메뉴/섹션 이름은 없습니다. 키는 **Provider API Keys**, 기본 모델은 **Default LLM**입니다.
 

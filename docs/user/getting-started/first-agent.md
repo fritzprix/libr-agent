@@ -29,7 +29,7 @@ title: 에이전트 첫 대화
 
 세션은 여기서 어시스턴트 카드를 눌러 시작합니다.
 
-![Chat hub](../assets/screenshots/getting-started/chat-hub.svg)
+![Chat hub](../assets/screenshots/getting-started/chat-hub.png)
 
 ---
 

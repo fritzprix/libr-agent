@@ -14,6 +14,9 @@
 
 ## FAQ · 시나리오
 
-- [FAQ](faq/common-questions.md) · [에러 코드](faq/error-codes.md) · [시나리오](scenarios/code-review.md)
+- [FAQ](faq/common-questions.md) · [에러 코드](faq/error-codes.md)
+- [시나리오] — 코드 리뷰, 심층 리서치, 파일 관리, 웹 브라우징, 예약 자동화
+  - [코드 리뷰](scenarios/code-review.md) · [리서치](scenarios/research.md) · [파일 관리](scenarios/file-management.md)
+  - [웹 브라우징](scenarios/web-browsing.md) · [예약 자동화](scenarios/automation.md)
 
 개발자 온보딩: [../guides/getting-started-dev.md](../guides/getting-started-dev.md)

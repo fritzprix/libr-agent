@@ -27,7 +27,7 @@ title: 서브 에이전트 · 오케스트레이션
 | **Chat / 세션 히스토리** | 세션 카드에 하위 에이전트 개수. 삭제 시 **자식 포함 삭제** vs **자식 유지** 선택 |
 | 사이드바 **Org** (`/org`) | **명시적 Org** 로 만든 팀만. 일회성 위임 세션은 여기 안 나옵니다 |
 
-![Org view](../assets/screenshots/guides/org.svg)
+![Org view](../assets/screenshots/guides/org.png)
 
 ---
 
