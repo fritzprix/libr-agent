@@ -81,7 +81,10 @@
     "bench:harbor:all": "node scripts/run-harbor-bench.cjs --preset harbor-index",
     "bench:registry": "node scripts/run-harbor-bench.cjs --preset dataset",
     "bench:termial": "pnpm bench:terminal",
-    "bench:termial:all": "pnpm bench:terminal:all"
+    "bench:termial:all": "pnpm bench:terminal:all",
+    "docs:dev": "pnpm --filter libragent-docs dev",
+    "docs:build": "pnpm --filter libragent-docs build",
+    "docs:preview": "pnpm --filter libragent-docs preview"
   },
   "pnpm": {
     "overrides": {
