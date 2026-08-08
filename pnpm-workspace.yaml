@@ -1,5 +1,6 @@
 packages:
   - '.'
+  - 'website'
 
 onlyBuiltDependencies:
   - '@swc/core'

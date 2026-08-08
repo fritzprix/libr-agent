@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-label="Extensions — Recommended">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ecfdf5"/>
+      <stop offset="100%" stop-color="#f0fdfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="url(#bg)"/>
+  <rect x="24" y="24" width="912" height="492" rx="12" fill="#fff" stroke="#99f6e4" stroke-width="2"/>
+  <text x="48" y="64" font-family="ui-sans-serif,system-ui,sans-serif" font-size="22" font-weight="700" fill="#0f766e">Extensions — Recommended</text>
+  <text x="48" y="90" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#64748b">Schematic — labels match the app sidebar / Settings</text>
+  
+  <rect x="48" y="120" width="160" height="360" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <rect x="56" y="240" width="144" height="32" rx="6" fill="#0f766e"/>
+  <text x="84" y="261" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#fff">Extensions</text>
+  <rect x="232" y="120" width="680" height="360" rx="8" fill="#fff" stroke="#e2e8f0"/>
+  <text x="256" y="160" font-family="ui-sans-serif,system-ui,sans-serif" font-size="16" font-weight="700" fill="#0f172a">Recommended Extensions</text>
+  <text x="256" y="186" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#64748b">Not a Settings tab — sidebar Extensions (/mcp-servers)</text>
+  <rect x="256" y="210" width="200" height="28" rx="6" fill="#ccfbf1" stroke="#0f766e"/>
+  <text x="276" y="229" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#0f766e">Tools</text>
+  <text x="470" y="229" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#94a3b8">Skills</text>
+  <rect x="256" y="260" width="280" height="88" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="276" y="300" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f172a">Preset MCP</text>
+  <text x="276" y="324" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#64748b">Install from catalog</text>
+  <rect x="560" y="260" width="280" height="88" rx="10" fill="#ecfdf5" stroke="#5eead4"/>
+  <text x="580" y="300" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f766e">Add Extension</text>
+  <text x="580" y="324" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#64748b">Custom stdio / HTTP</text>
+
+</svg>

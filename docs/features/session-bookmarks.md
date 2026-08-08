@@ -1,5 +1,8 @@
 # Session Bookmarks (SP12)
 
+> **Users:** bookmarking is documented in [Session management](../user/guides/sessions.md).  
+> Below is the implementation note for contributors.
+
 ## Problem
 
 With many agent sessions, there was no way to quickly surface important or

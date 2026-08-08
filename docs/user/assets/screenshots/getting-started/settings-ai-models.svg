@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-label="Settings → AI & Models">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ecfdf5"/>
+      <stop offset="100%" stop-color="#f0fdfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="url(#bg)"/>
+  <rect x="24" y="24" width="912" height="492" rx="12" fill="#fff" stroke="#99f6e4" stroke-width="2"/>
+  <text x="48" y="64" font-family="ui-sans-serif,system-ui,sans-serif" font-size="22" font-weight="700" fill="#0f766e">Settings → AI & Models</text>
+  <text x="48" y="90" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#64748b">Schematic — labels match the app sidebar / Settings</text>
+  
+  <rect x="48" y="120" width="160" height="360" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="64" y="150" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f172a">Sidebar</text>
+  <text x="64" y="180" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#334155">History</text>
+  <text x="64" y="208" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#334155">Chat</text>
+  <text x="64" y="236" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#334155">Assistants</text>
+  <text x="64" y="264" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#334155">Extensions</text>
+  <rect x="56" y="430" width="144" height="32" rx="6" fill="#0f766e"/>
+  <text x="88" y="451" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#fff">Settings</text>
+  <rect x="232" y="120" width="680" height="360" rx="8" fill="#fff" stroke="#e2e8f0"/>
+  <text x="256" y="156" font-family="ui-sans-serif,system-ui,sans-serif" font-size="16" font-weight="700" fill="#0f172a">AI &amp; Models</text>
+  <rect x="256" y="176" width="140" height="28" rx="6" fill="#ccfbf1" stroke="#0f766e"/>
+  <text x="272" y="195" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#0f766e">AI &amp; Models</text>
+  <text x="410" y="195" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#94a3b8">General · System · …</text>
+  <text x="256" y="240" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f172a">Provider API Keys</text>
+  <rect x="256" y="256" width="300" height="72" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="272" y="286" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#334155">Anthropic · API Key</text>
+  <text x="272" y="310" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#94a3b8">••••••••••••</text>
+  <text x="256" y="370" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f172a">Model Preferences</text>
+  <text x="256" y="396" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#334155">Default LLM · Fallback LLM</text>
+  <rect x="720" y="420" width="160" height="36" rx="8" fill="#0f766e"/>
+  <text x="748" y="443" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#fff">Save Changes</text>
+
+</svg>

@@ -198,6 +198,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 
 ## 📖 Documentation & Guides
 
+- **[User Guide](docs/user/README.md)** — Install, first chat, models, [bundled skills](docs/user/guides/skills.md) ([docs site](https://fritzprix.github.io/libr-agent/) after Pages is enabled).
 - **[HTTP REST API Documentation](docs/api/http_api.md)**: Complete specification of endpoints for remote control, session lifecycle, message injection, and programmatic tool approvals.
 - **[Navigation Guide](docs/guides/navigation-guide.md)**: The Command & Control hub — `/assistants` (Role Definitions) and `/playbooks` (Workflow Blueprints).
 - **[Architecture Guide](docs/architecture/agent-workflow-architecture.md)**: Session isolation, orchestration engine, and the Rust-driven Think-Act-Observe loop.
