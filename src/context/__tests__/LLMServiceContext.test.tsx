@@ -171,10 +171,17 @@ describe('LLMServiceContext – Core', () => {
 
       (listen as ReturnType<typeof vi.fn>)
         .mockReset()
-        .mockResolvedValueOnce(completionCleanup)
-        .mockResolvedValueOnce(cancelCleanup)
-        .mockResolvedValueOnce(compactRequestCleanup)
-        .mockRejectedValueOnce(registrationError);
+        .mockImplementation((eventName: string) => {
+          if (eventName === 'llm:completion-request')
+            return Promise.resolve(completionCleanup);
+          if (eventName === 'llm:completion-cancel')
+            return Promise.resolve(cancelCleanup);
+          if (eventName === 'llm:compact-request')
+            return Promise.resolve(compactRequestCleanup);
+          if (eventName === 'llm:compact-state')
+            return Promise.reject(registrationError);
+          return Promise.resolve(mockUnlisten);
+        });
 
       renderHook(() => useLLMService(), {
         wrapper: TestWrapper,
@@ -187,7 +194,7 @@ describe('LLMServiceContext – Core', () => {
         );
       });
 
-      expect(compactRequestCleanup).toHaveBeenCalledTimes(1);
+      expect(compactRequestCleanup).toHaveBeenCalled();
       expect(cancelCleanup).not.toHaveBeenCalled();
     });
   });

@@ -1,4 +1,7 @@
 import type { TokenUsage } from './types';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('stream-events');
 
 const streamToolCallStartBrand: unique symbol = Symbol('streamToolCallStart');
 const streamDirectToolCallBrand: unique symbol = Symbol('streamDirectToolCall');
@@ -243,7 +246,21 @@ export function serializeDirectToolCalls(
   return JSON.stringify({ tool_calls: toolCalls } satisfies ParsedStreamChunk);
 }
 
-export function parseStreamChunk(rawChunk: string): ParsedStreamChunk {
+export function parseStreamChunk(
+  rawChunk: string | unknown,
+): ParsedStreamChunk {
+  if (typeof rawChunk !== 'string') {
+    if (isRecord(rawChunk)) {
+      return rawChunk as ParsedStreamChunk;
+    }
+    if (rawChunk !== undefined && rawChunk !== null) {
+      logger.warn('Skipping non-string, non-record stream chunk', {
+        type: typeof rawChunk,
+      });
+    }
+    return {};
+  }
+
   let parsed: unknown;
 
   try {

@@ -198,13 +198,13 @@ export async function setupCompactRequestListener({
   );
 
   if (!isMounted()) {
-    unlisten();
+    if (typeof unlisten === 'function') unlisten();
     return undefined;
   }
 
   onRegistered();
   return () => {
-    unlisten();
+    if (typeof unlisten === 'function') unlisten();
     logger.info('LLM compact request listener cleaned up');
   };
 }
@@ -255,13 +255,13 @@ export async function setupCompactStateListener({
   );
 
   if (!isMounted()) {
-    unlisten();
+    if (typeof unlisten === 'function') unlisten();
     return undefined;
   }
 
   onRegistered();
   return () => {
-    unlisten();
+    if (typeof unlisten === 'function') unlisten();
     logger.info('LLM compact state listener cleaned up');
   };
 }

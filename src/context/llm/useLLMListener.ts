@@ -354,7 +354,7 @@ export function useLLMListener({
       );
 
       if (!isMounted) {
-        unlistenFn();
+        if (typeof unlistenFn === 'function') unlistenFn();
       } else {
         unlisten = unlistenFn;
         logStartupLifecycleOnce(
@@ -381,7 +381,7 @@ export function useLLMListener({
       );
 
       if (!isMounted) {
-        unlistenFn();
+        if (typeof unlistenFn === 'function') unlistenFn();
       } else {
         unlistenCancel = unlistenFn;
       }
