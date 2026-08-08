@@ -725,7 +725,10 @@ describe('LLMServiceContext – Completion Execution', () => {
         wrapper: TestWrapper,
       });
 
-      const parseSpy = vi.spyOn(streamEvents, 'parseStreamChunk').mockImplementation((rawChunk: string) => {
+      const parseSpy = vi.spyOn(streamEvents, 'parseStreamChunk').mockImplementation((rawChunk: unknown) => {
+        if (typeof rawChunk !== 'string') {
+          return (rawChunk as streamEvents.ParsedStreamChunk) ?? {};
+        }
         try {
           return JSON.parse(rawChunk);
         } catch {

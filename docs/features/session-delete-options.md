@@ -1,5 +1,8 @@
 # Session Delete Options (SP7)
 
+> **Users:** delete choices (with/without subagents) are in [Session management](../user/guides/sessions.md) and [Sub-agents](../user/guides/sub-agents.md).  
+> Below is the implementation note for contributors.
+
 ## Problem
 
 Before SP7, deleting a session silently orphaned all child (subagent) sessions —
