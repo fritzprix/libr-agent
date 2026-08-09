@@ -182,18 +182,21 @@ Official submissions use Harbor’s default task/agent timeouts (do **not** pass
 `--timeout-multiplier` / `--agent-timeout-multiplier`).
 
 Harbor cancels the agent coroutine when the **agent timeout** elapses. The adapter
-must **not** harvest workspace/messages after that cancel — incomplete harvests
-were scoring unfinished runs as finished.
+must **not** treat that cancel as a successful completion (incomplete success
+harvests used to score unfinished runs as finished).
 
 - Wait for session status `idle` or `error` only (`paused`/`busy` are not done).
-- On Harbor cancel (`CancelledError`), the adapter re-raises and skips harvest.
-- On every terminal path (success after harvest + ATIF dump, poll-budget/agent
-  timeout, cancel, or error) the adapter calls `DELETE /sessions/{id}` so the
+- On Harbor cancel (`CancelledError`) or poll-budget expiry, the adapter writes a
+  **diagnostic** `agent/trajectory.json` + `agent/timeout_meta.json` (best-effort),
+  then `DELETE`s the session and re-raises — it does **not** mark the trial completed.
+- If the session reaches a terminal status with **zero tool calls**, the adapter
+  still writes ATIF/meta, deletes the session, and raises `EmptyAgentWorkError`
+  so the trial is an agent error rather than a silent verifier miss.
+- On every terminal path the adapter calls `DELETE /sessions/{id}` so the
   LibrAgent session is removed instead of lingering as an orphan. DELETE also
-  terminates any still-running workflow. On success it deletes only **after**
-  harvesting messages and writing `trajectory.json`; on abort it deletes before
-  re-raising. The delete request is shielded so a Harbor cancel still completes
-  the teardown.
+  terminates any still-running workflow. Successful runs delete only **after**
+  harvesting messages and writing `trajectory.json`. Delete (and diagnostic dump)
+  are shielded so a Harbor cancel still completes teardown.
 - For **local** debugging of long tasks only, you may raise the agent budget:
 
 ```sh

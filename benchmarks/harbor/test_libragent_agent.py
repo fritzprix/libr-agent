@@ -6,8 +6,11 @@ import pytest
 
 from benchmarks.harbor.libragent_agent import (
     DEFAULT_EXECUTION_MODE,
+    EmptyAgentWorkError,
     LibrAgentHarborAdapter,
+    TrajectoryTelemetry,
     build_atif_trajectory,
+    build_diagnostic_meta,
     extract_model_name_from_assistant_payload,
     extract_model_name_from_session_payload,
     extract_trajectory_error,
@@ -504,4 +507,113 @@ def test_adapter_write_atif_trajectory_best_effort(tmp_path) -> None:
     payload = json.loads(written)
     assert payload["session_id"] == "sess-xyz"
     assert payload["final_metrics"]["total_prompt_tokens"] == 10
+
+
+def test_build_diagnostic_meta_includes_counts() -> None:
+    telemetry = TrajectoryTelemetry(
+        n_input_tokens=100,
+        n_output_tokens=10,
+        n_cache_tokens=80,
+        n_turns=2,
+        tool_calls_count=3,
+        has_usage=True,
+        error=None,
+    )
+    meta = build_diagnostic_meta(
+        reason="harbor_cancelled",
+        session_id="sess-1",
+        last_status="busy",
+        seen_non_idle=True,
+        telemetry=telemetry,
+        n_messages=5,
+        extra={"assistant_id": "asst-1"},
+    )
+    assert meta["reason"] == "harbor_cancelled"
+    assert meta["sessionId"] == "sess-1"
+    assert meta["last_status"] == "busy"
+    assert meta["seen_non_idle"] is True
+    assert meta["completed"] is False
+    assert meta["n_messages"] == 5
+    assert meta["n_turns"] == 2
+    assert meta["tool_calls_count"] == 3
+    assert meta["assistant_id"] == "asst-1"
+
+
+def test_adapter_write_diagnostic_meta(tmp_path) -> None:
+    adapter = LibrAgentHarborAdapter(logs_dir=tmp_path / "agent")
+    adapter._write_diagnostic_meta(
+        build_diagnostic_meta(
+            reason="empty_work",
+            session_id="sess-empty",
+            last_status="idle",
+            seen_non_idle=True,
+            telemetry=TrajectoryTelemetry(
+                n_input_tokens=None,
+                n_output_tokens=None,
+                n_cache_tokens=None,
+                n_turns=1,
+                tool_calls_count=0,
+                has_usage=False,
+                error=None,
+            ),
+            n_messages=2,
+            completed=True,
+        )
+    )
+    path = tmp_path / "agent" / "timeout_meta.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["reason"] == "empty_work"
+    assert payload["tool_calls_count"] == 0
+    assert payload["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_dump_incomplete_diagnostics_writes_trajectory_and_meta(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = LibrAgentHarborAdapter(
+        logs_dir=tmp_path / "agent",
+        model_name="openai/gpt-5.4",
+    )
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "do work"}]},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "working"}],
+            "toolCalls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "workspace__runShell", "arguments": "{}"},
+                }
+            ],
+            "usage": {"promptTokens": 20, "completionTokens": 4},
+        },
+    ]
+
+    async def _fake_fetch(_session_id: str) -> list:
+        return messages
+
+    monkeypatch.setattr(adapter, "_fetch_session_messages_best_effort", _fake_fetch)
+
+    await adapter._dump_incomplete_diagnostics(
+        session_id="sess-timeout",
+        last_status="busy",
+        seen_non_idle=True,
+        reason="harbor_cancelled",
+        last_session_info={"model": "openai/gpt-5.4"},
+    )
+
+    traj = json.loads((tmp_path / "agent" / "trajectory.json").read_text(encoding="utf-8"))
+    meta = json.loads((tmp_path / "agent" / "timeout_meta.json").read_text(encoding="utf-8"))
+    assert traj["session_id"] == "sess-timeout"
+    assert meta["reason"] == "harbor_cancelled"
+    assert meta["tool_calls_count"] == 1
+    assert meta["last_status"] == "busy"
+
+
+def test_empty_agent_work_error_is_runtime_error() -> None:
+    err = EmptyAgentWorkError("no tools")
+    assert isinstance(err, RuntimeError)
+    assert "no tools" in str(err)
 
