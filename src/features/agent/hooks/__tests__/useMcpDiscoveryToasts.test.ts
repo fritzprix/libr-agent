@@ -73,16 +73,14 @@ describe('useMcpDiscoveryToasts', () => {
   });
 
   it('dismisses loading toast when builtin-only session becomes ready', () => {
-    const { rerender } = renderHook(
-      ({
-        isProxyReady,
-        phase,
-        initResult,
-      }: {
-        isProxyReady: boolean;
-        phase: 'hydrating' | 'ready';
-        initResult: 'pending' | 'success';
-      }) =>
+    type BuiltinReadyProps = {
+      isProxyReady: boolean;
+      phase: 'hydrating' | 'ready';
+      initResult: 'pending' | 'success';
+    };
+
+    const { rerender } = renderHook<void, BuiltinReadyProps>(
+      ({ isProxyReady, phase, initResult }) =>
         useMcpDiscoveryToasts({
           hasSession: true,
           isProxyReady,
@@ -95,8 +93,8 @@ describe('useMcpDiscoveryToasts', () => {
       {
         initialProps: {
           isProxyReady: false,
-          phase: 'hydrating' as const,
-          initResult: 'pending' as const,
+          phase: 'hydrating',
+          initResult: 'pending',
         },
       },
     );
