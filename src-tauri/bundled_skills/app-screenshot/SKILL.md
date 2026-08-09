@@ -1,48 +1,30 @@
 ---
 name: app-screenshot
-description: Cross-platform live desktop app window capture skill for LibrAgent. Supports Windows and Linux. Triggers on requests like '앱 화면 캡처', '앱 스크린샷', 'capture app window', 'app screenshot', 'capture ui'.
+description: Cross-platform live desktop app UI control and window capture skill for LibrAgent. Supports Windows and Linux. Triggers on requests like '앱 화면 캡처', '앱 스크린샷', '앱 클릭 제어', 'capture app window', 'app screenshot', 'capture ui', 'click app button'.
 ---
 
-# App Screenshot Skill
+# App Screenshot & UI Control Skill
 
-Capture live, pixel-exact desktop screenshots of the running LibrAgent application window across **Windows and Linux**.
+Capture live, pixel-exact desktop screenshots of the running LibrAgent application window across **Windows and Linux**, with optional mouse click and UI interaction automation.
 
-## Overview
+## Features
 
-Use this skill to:
-- Capture live screenshots of the LibrAgent desktop app (`/usr/bin/libragent` or `tauri dev`)
-- Update documentation UI assets under `docs/user/assets/screenshots/`
-- Visually verify UI layout, routes, or interactive components
+- **Window Focus & Screenshot**: Finds and focuses LibrAgent app window, then captures exact window geometry.
+- **Relative Coordinate Mouse Click**: Automatically clicks buttons, menus, or cards relative to top-left of the app window before capturing (`--click X Y`).
+- **Cross-Platform**: Zero extra native dependencies (uses Python `ctypes.windll.user32` on Windows, `Xlib` / `xwininfo` on Linux).
 
-## OS Support
+## Usage Examples
 
-| Platform | Window Search Mechanism | Capture Engine |
-| :--- | :--- | :--- |
-| **Windows** | Win32 `EnumWindows` + `GetWindowRect` (`user32.dll`) | Python `mss` + `PIL` |
-| **Linux** | X11 `xwininfo -root -tree` + `_NET_ACTIVE_WINDOW` | Python `mss` + `PIL` |
-
-## Usage
-
-### Direct Script Execution
-
-Run the built-in cross-platform Python helper script:
+### 1. Capture App Screenshot
 
 ```bash
-python src-tauri/bundled_skills/app-screenshot/scripts/capture_app.py <OUTPUT_PATH> [WINDOW_TITLE_SUBSTRING]
+python src-tauri/bundled_skills/app-screenshot/scripts/capture_app.py docs/user/assets/screenshots/getting-started/new-session.png
 ```
 
-Example:
+### 2. Click Relative Coordinate & Capture
+
+Click inside the app window at relative `(X, Y)` (e.g. `X=710, Y=410` for Assistant card) and capture result:
 
 ```bash
-python src-tauri/bundled_skills/app-screenshot/scripts/capture_app.py docs/user/assets/screenshots/getting-started/new-session.png LibrAgent
-```
-
-### Post-Capture Verification
-
-After updating screenshot assets:
-1. Verify document link references in `docs/user/` and `docs/user/en/`.
-2. Run VitePress build check:
-
-```bash
-pnpm docs:build
+python src-tauri/bundled_skills/app-screenshot/scripts/capture_app.py docs/user/assets/screenshots/getting-started/new-session.png --click 710 410
 ```
