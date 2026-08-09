@@ -17,12 +17,13 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 describe('ToolStructuredResult', () => {
-  it('renders writeFile structured view', () => {
+  it('renders writeFile structured view with open when absolute_path is present', () => {
     render(
       <ToolStructuredResult
         toolName="workspace__writeFile"
         data={{
-          path: '/workspace/new.ts',
+          path: 'src/new.ts',
+          absolute_path: '/home/user/project/src/new.ts',
           action: 'created',
           bytes_written: 42,
           lines: 3,
@@ -30,8 +31,26 @@ describe('ToolStructuredResult', () => {
       />,
     );
     expect(screen.getByTestId('tool-structured-write-file')).toBeInTheDocument();
-    expect(screen.getByText('/workspace/new.ts')).toBeInTheDocument();
+    expect(screen.getByText('src/new.ts')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open file/i })).toBeInTheDocument();
+  });
+
+  it('hides open button when writeFile absolute_path is missing', () => {
+    render(
+      <ToolStructuredResult
+        toolName="workspace__writeFile"
+        data={{
+          path: 'src/new.ts',
+          action: 'created',
+          bytes_written: 42,
+          lines: 3,
+        }}
+      />,
+    );
+    expect(screen.getByTestId('tool-structured-write-file')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /open file/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders strReplace diff view', () => {

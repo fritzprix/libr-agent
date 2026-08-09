@@ -597,8 +597,15 @@ impl WorkspaceServer {
 
                 let hint = SuccessHint::new(message, next_steps);
 
+                let absolute_path = write_safe_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| write_safe_path.clone())
+                    .to_string_lossy()
+                    .to_string();
+
                 let mut structured = json!({
                     "path": write_display_path,
+                    "absolute_path": absolute_path,
                     "requested_path": requested_path_str,
                     "path_adjusted": path_adjusted,
                     "suffix": create_suffix,

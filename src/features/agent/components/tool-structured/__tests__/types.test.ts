@@ -18,13 +18,15 @@ describe('tool-structured types', () => {
 
   it('parseWriteFileResult accepts backend snake_case shape', () => {
     const parsed = parseWriteFileResult({
-      path: '/tmp/a.txt',
+      path: 'src/a.txt',
+      absolute_path: '/tmp/workspace/src/a.txt',
       action: 'created',
       bytes_written: 12,
       lines: 2,
     });
     expect(parsed).toEqual({
-      path: '/tmp/a.txt',
+      path: 'src/a.txt',
+      absolute_path: '/tmp/workspace/src/a.txt',
       action: 'created',
       bytes_written: 12,
       lines: 2,

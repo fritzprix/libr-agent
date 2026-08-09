@@ -41,7 +41,9 @@ export const FileWriteActions: React.FC<FileWriteActionsProps> = ({ data }) => {
   const [isOpening, setIsOpening] = useState(false);
   const Icon = actionIcon(data.action);
   const sizeLabel = formatBytes(data.bytes_written);
-  const canOpen = data.path.length > 0;
+  // open_path_with_default_app requires an absolute host path
+  const openPath = data.absolute_path?.trim() || '';
+  const canOpen = openPath.length > 0;
 
   const actionLabel = (() => {
     switch (data.action) {
@@ -65,7 +67,7 @@ export const FileWriteActions: React.FC<FileWriteActionsProps> = ({ data }) => {
     if (!canOpen || isOpening) return;
     setIsOpening(true);
     try {
-      await openPathWithDefaultApp(data.path);
+      await openPathWithDefaultApp(openPath);
     } catch (error) {
       logger.error('Failed to open written file', error);
       toast.error(

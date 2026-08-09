@@ -12,6 +12,8 @@ export const WriteFileChangesSchema = z.object({
 
 export const WriteFileResultSchema = z.object({
   path: z.string(),
+  /** Host filesystem absolute path for open/reveal actions */
+  absolute_path: z.string().optional(),
   requested_path: z.string().optional(),
   path_adjusted: z.boolean().optional(),
   suffix: z.string().nullish(),
