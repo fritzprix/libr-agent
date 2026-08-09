@@ -46,14 +46,21 @@ vi.mock('@/lib/logger', () => ({
     }),
 }));
 
+vi.mock('@/lib/backend', () => ({
+    openPathWithDefaultApp: vi.fn(),
+}));
+
 // Minimal fixtures
-const makeToolCall = (args = '{}'): ToolCall => ({
+const makeToolCall = (args = '{}', name = 'test__myTool'): ToolCall => ({
     id: 'call-1',
     type: 'function',
-    function: { name: 'test__myTool', arguments: args },
+    function: { name, arguments: args },
 });
 
-const makeToolResult = (text: string): Message =>
+const makeToolResult = (
+    text: string,
+    metadata?: Message['metadata'],
+): Message =>
     ({
         id: 'msg-result-1',
         sessionId: 'session-1',
@@ -61,6 +68,7 @@ const makeToolResult = (text: string): Message =>
         role: 'tool',
         content: [{ type: 'text', text }],
         tool_call_id: 'call-1',
+        metadata,
     }) as Message;
 
 const makeUIResourceResult = (): Message =>
@@ -180,5 +188,40 @@ describe('AgentToolCallDetails', () => {
         );
         expect(getByTestId('tool-call-result').className).not.toContain('max-h-96');
         expect(getByTestId('tool-call-result').className).not.toContain('overflow-y-auto');
+    });
+
+    it('prefers structured writeFile UI over markdown summary', () => {
+        const { getByTestId, queryByText } = render(
+            <AgentToolCallDetails
+                toolCall={makeToolCall('{}', 'workspace__writeFile')}
+                toolResult={makeToolResult('✓ Created file markdown summary', {
+                    structuredContent: {
+                        path: '/workspace/created.ts',
+                        action: 'created',
+                        bytes_written: 10,
+                        lines: 1,
+                    },
+                })}
+                showDetails={true}
+            />,
+        );
+        expect(getByTestId('tool-structured-write-file')).toBeInTheDocument();
+        expect(
+            queryByText('✓ Created file markdown summary'),
+        ).not.toBeInTheDocument();
+    });
+
+    it('falls back to markdown when structured payload is invalid', () => {
+        const { getByText, queryByTestId } = render(
+            <AgentToolCallDetails
+                toolCall={makeToolCall('{}', 'workspace__writeFile')}
+                toolResult={makeToolResult('plain fallback text', {
+                    structuredContent: { action: 'created' },
+                })}
+                showDetails={true}
+            />,
+        );
+        expect(queryByTestId('tool-structured-write-file')).not.toBeInTheDocument();
+        expect(getByText('plain fallback text')).toBeInTheDocument();
     });
 });
