@@ -15,6 +15,7 @@ title: 내장 도구 레퍼런스 (Built-in MCP Tools)
 LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코어 도구**와 **어시스턴트 설정에서 필요에 따라 켜고 끌 수 있는 선택 도구**로 구분됩니다.
 
 ### 1️⃣ 기본 활성화 도구 (Core Built-ins — 항상 사용 가능)
+
 어시스턴트 생성 시 기본 적용되며, 에이전트의 기본적인 작업 수행 및 UI 상호작용에 필수적인 도구입니다.
 
 - **`workspace__*`**: 작업 공간 파일 읽기/쓰기/라인편집, 디렉터리 조회, 터미널 명령어 실행
@@ -28,6 +29,7 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 - **`tool__*`**: 도구 디스커버리 및 시스템 도구 관리
 
 ### 2️⃣ 선택 활성화 도구 (Optional Built-ins — 어시스턴트 설정에서 선택)
+
 특정 목적(웹 탐색, 미디어 편집, 세부 계획 수립 등)을 위해 어시스턴트 설정(**Assistants → Edit → Tools**)에서 켜거나 끌 수 있는 도구입니다.
 
 - **`media__*`**: 이미지 처리, 리사이즈, 오디오/이미지 텍스트 추출
@@ -42,51 +44,57 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 ## 🛠️ 내장 도구 상세 기능 레퍼런스
 
 ### 1. Workspace (`workspace__*`)
-| 도구 이름 | 설명 | 주요 파라미터 |
-| :--- | :--- | :--- |
-| `workspace__read_file` | 파일 내용 읽기 | `path`, `start_line`, `end_line` |
-| `workspace__write_file` | 파일 생성 및 전체 덮어쓰기 | `path`, `content` |
-| `workspace__edit_file` | 라인 범위 지정 정교한 코드 편집 | `path`, `edits` |
-| `workspace__list_directory` | 디렉토리 구조 조회 | `path` |
-| `workspace__delete_file` | 파일 삭제 | `path` |
+
+| 도구 이름                    | 설명                             | 주요 파라미터                     |
+| :--------------------------- | :------------------------------- | :-------------------------------- |
+| `workspace__read_file`       | 파일 내용 읽기                   | `path`, `start_line`, `end_line`  |
+| `workspace__write_file`      | 파일 생성 및 전체 덮어쓰기       | `path`, `content`                 |
+| `workspace__edit_file`       | 라인 범위 지정 정교한 코드 편집  | `path`, `edits`                   |
+| `workspace__list_directory`  | 디렉토리 구조 조회               | `path`                            |
+| `workspace__delete_file`     | 파일 삭제                        | `path`                            |
 | `workspace__execute_command` | 터미널 명령어 실행 (비동기 지원) | `command`, `cwd`, `is_background` |
 
-### 2. Media (`media__*`) 🎨 *(신규/선택)*
-| 도구 이름 | 설명 | 주요 파라미터 |
-| :--- | :--- | :--- |
-| `media__process_image` | 이미지 분석, 색상 및 메타데이터 추출 | `image_path` |
-| `media__resize_image` | 이미지 해상도 변경 및 리사이즈 | `image_path`, `width`, `height` |
-| `media__extract_text` | 이미지/오디오 내 텍스트/음성 추출 | `file_path` |
+### 2. Media (`media__*`) 🎨 _(신규/선택)_
+
+| 도구 이름              | 설명                                 | 주요 파라미터                   |
+| :--------------------- | :----------------------------------- | :------------------------------ |
+| `media__process_image` | 이미지 분석, 색상 및 메타데이터 추출 | `image_path`                    |
+| `media__resize_image`  | 이미지 해상도 변경 및 리사이즈       | `image_path`, `width`, `height` |
+| `media__extract_text`  | 이미지/오디오 내 텍스트/음성 추출    | `file_path`                     |
 
 ### 3. Interactive UI (`ui__*`)
-| 도구 이름 | 설명 |
-| :--- | :--- |
-| `ui__select_prompt` | 사용자 다중 선택지 버튼 카드 렌더링 |
-| `ui__text_prompt` | 사용자 텍스트 입력 폼 렌더링 |
-| `ui__line_chart` / `ui__bar_chart` | 데이터 시각화 차트 렌더링 |
-| `ui__circuitBreak` | 반복 무한 루프 감지 및 일시정지/재개 카드 렌더링 |
-| `ui__wait` | 사용자 입력 및 외부 처리 휴식 대기 |
 
-### 4. Browser (`browser__*`) *(선택)*
-| 도구 이름 | 설명 |
-| :--- | :--- |
-| `browser__navigate` | 웹페이지 이동 |
-| `browser__click` | DOM 요소 클릭 |
-| `browser__type` | 입력 양식 텍스트 타이핑 |
-| `browser__screenshot` | 웹페이지 화면 캡처 |
+| 도구 이름                          | 설명                                             |
+| :--------------------------------- | :----------------------------------------------- |
+| `ui__select_prompt`                | 사용자 다중 선택지 버튼 카드 렌더링              |
+| `ui__text_prompt`                  | 사용자 텍스트 입력 폼 렌더링                     |
+| `ui__line_chart` / `ui__bar_chart` | 데이터 시각화 차트 렌더링                        |
+| `ui__circuitBreak`                 | 반복 무한 루프 감지 및 일시정지/재개 카드 렌더링 |
+| `ui__wait`                         | 사용자 입력 및 외부 처리 휴식 대기               |
 
-### 5. Planning & Reflection (`planning__*`) *(선택)*
-| 도구 이름 | 설명 |
-| :--- | :--- |
-| `planning__create_plan` | 3단계 이상의 복잡한 멀티스텝 작업 계획 수립 |
+### 4. Browser (`browser__*`) _(선택)_
+
+| 도구 이름             | 설명                    |
+| :-------------------- | :---------------------- |
+| `browser__navigate`   | 웹페이지 이동           |
+| `browser__click`      | DOM 요소 클릭           |
+| `browser__type`       | 입력 양식 텍스트 타이핑 |
+| `browser__screenshot` | 웹페이지 화면 캡처      |
+
+### 5. Planning & Reflection (`planning__*`) _(선택)_
+
+| 도구 이름               | 설명                                                               |
+| :---------------------- | :----------------------------------------------------------------- |
+| `planning__create_plan` | 3단계 이상의 복잡한 멀티스텝 작업 계획 수립                        |
 | `planning__update_plan` | 작업 진척도 및 단계별 상태(`todo`, `in_progress`, `done`) 업데이트 |
-| `planning__reflect` | 도구 에러 발생 시 원인 성찰(Critique) 및 교정 방안 수립 |
+| `planning__reflect`     | 도구 에러 발생 시 원인 성찰(Critique) 및 교정 방안 수립            |
 
 ### 6. Scheduled Tasks (`scheduled_task__*`)
-| 도구 이름 | 설명 |
-| :--- | :--- |
-| `scheduled_task__create` | 타이머/Cron 정기 알림 예약 생성 |
-| `scheduled_task__list` / `delete` | 예약 작업 조회 및 취소 |
+
+| 도구 이름                         | 설명                            |
+| :-------------------------------- | :------------------------------ |
+| `scheduled_task__create`          | 타이머/Cron 정기 알림 예약 생성 |
+| `scheduled_task__list` / `delete` | 예약 작업 조회 및 취소          |
 
 ---
 
