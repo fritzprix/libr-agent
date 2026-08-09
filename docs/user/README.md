@@ -9,7 +9,7 @@
 ## 가이드
 
 - [Assistants](guides/assistants.md) · [Playbooks](guides/playbooks.md) · [자동화](guides/automation.md) · [세션](guides/sessions.md)
-- [스킬](guides/skills.md) · [서브 에이전트](guides/sub-agents.md)
+- [스킬](guides/skills.md) · [서브 에이전트](guides/sub-agents.md) · [내장 도구 레퍼런스](guides/builtin-tools.md)
 - [Extensions](guides/extensions.md) · [커스텀 MCP](guides/custom-mcp.md) · [문제 해결](guides/troubleshooting.md)
 
 ## FAQ · 시나리오
