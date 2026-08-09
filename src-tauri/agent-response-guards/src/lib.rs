@@ -16,22 +16,22 @@ pub struct ResponseAdmissionDecision {
     pub skip_expected_response_id_check: bool,
 }
 
+/// Builtin UI callback tools that HTML templates post back into the agent loop.
+/// Kept for callers that need to identify these tools; admission no longer
+/// requires this allowlist — any non-empty tool_calls can restart Idle/Paused.
 pub fn is_internal_ui_callback_tool_name(tool_name: &str) -> bool {
     matches!(tool_name, "ui__getUserAnswer" | "ui__resumeCircuitBreak")
 }
 
-pub fn should_skip_expected_response_id_for_internal_ui_callback(
+pub fn should_skip_expected_response_id_for_idle_tool_entry(
     status: GuardSessionStatus,
-    tool_names: &[&str],
+    has_tool_calls: bool,
 ) -> bool {
-    !tool_names.is_empty()
+    has_tool_calls
         && matches!(
             status,
             GuardSessionStatus::Idle | GuardSessionStatus::Paused
         )
-        && tool_names
-            .iter()
-            .all(|tool_name| is_internal_ui_callback_tool_name(tool_name))
 }
 
 pub fn inspect_response_admission(
@@ -40,7 +40,6 @@ pub fn inspect_response_admission(
     cancel_pending: bool,
     allow_idle_tool_entry: bool,
     is_ui_tool: bool,
-    is_internal_ui_callback: bool,
 ) -> Result<ResponseAdmissionDecision, &'static str> {
     if token_cancelled || cancel_pending {
         return if is_ui_tool {
@@ -57,11 +56,13 @@ pub fn inspect_response_admission(
         });
     }
 
+    // UI resource actions (and other frontend-injected tool calls) arrive after
+    // the workflow settled to Idle/Paused. Admit them so tool execution can
+    // restart the loop. Cancelled tokens still reject above.
     if matches!(
         status,
         GuardSessionStatus::Idle | GuardSessionStatus::Paused
     ) && allow_idle_tool_entry
-        && is_internal_ui_callback
     {
         return Ok(ResponseAdmissionDecision {
             should_mark_busy: true,
@@ -143,47 +144,43 @@ mod tests {
     }
 
     #[test]
-    fn internal_ui_callbacks_skip_expected_response_id_when_session_is_idle_or_paused() {
-        assert!(should_skip_expected_response_id_for_internal_ui_callback(
+    fn idle_or_paused_tool_entry_skips_expected_response_id() {
+        assert!(should_skip_expected_response_id_for_idle_tool_entry(
             GuardSessionStatus::Idle,
-            &["ui__getUserAnswer"]
+            true
         ));
-        assert!(should_skip_expected_response_id_for_internal_ui_callback(
+        assert!(should_skip_expected_response_id_for_idle_tool_entry(
             GuardSessionStatus::Paused,
-            &["ui__resumeCircuitBreak"]
+            true
         ));
-    }
-
-    #[test]
-    fn non_callback_ui_tools_do_not_skip_expected_response_id() {
-        assert!(!should_skip_expected_response_id_for_internal_ui_callback(
-            GuardSessionStatus::Idle,
-            &["ui__presentInteractive"]
-        ));
-        assert!(!should_skip_expected_response_id_for_internal_ui_callback(
+        assert!(!should_skip_expected_response_id_for_idle_tool_entry(
             GuardSessionStatus::Busy,
-            &["ui__getUserAnswer"]
+            true
+        ));
+        assert!(!should_skip_expected_response_id_for_idle_tool_entry(
+            GuardSessionStatus::Idle,
+            false
         ));
     }
 
     #[test]
-    fn admission_allows_internal_callbacks_to_restart_from_idle_or_paused() {
-        let idle =
-            inspect_response_admission(GuardSessionStatus::Idle, false, false, true, true, true)
-                .expect("idle callback should be admitted");
+    fn admission_allows_tool_entry_to_restart_from_idle_or_paused() {
+        let idle_ui =
+            inspect_response_admission(GuardSessionStatus::Idle, false, false, true, true)
+                .expect("idle ui tool entry should be admitted");
         assert_eq!(
-            idle,
+            idle_ui,
             ResponseAdmissionDecision {
                 should_mark_busy: true,
                 skip_expected_response_id_check: true,
             }
         );
 
-        let paused =
-            inspect_response_admission(GuardSessionStatus::Paused, false, false, true, true, true)
-                .expect("paused callback should be admitted");
+        let paused_mcp =
+            inspect_response_admission(GuardSessionStatus::Paused, false, false, true, false)
+                .expect("paused mcp tool entry should be admitted");
         assert_eq!(
-            paused,
+            paused_mcp,
             ResponseAdmissionDecision {
                 should_mark_busy: true,
                 skip_expected_response_id_check: true,
@@ -192,20 +189,46 @@ mod tests {
     }
 
     #[test]
-    fn admission_rejects_non_callback_ui_tools_when_not_busy() {
-        let error =
-            inspect_response_admission(GuardSessionStatus::Idle, false, false, true, true, false)
-                .expect_err("non-callback ui tool should be orphaned");
+    fn admission_rejects_idle_responses_without_tool_calls() {
+        let error = inspect_response_admission(GuardSessionStatus::Idle, false, false, false, true)
+            .expect_err("idle response without tool calls should be orphaned");
 
         assert_eq!(error, ORPHANED_UI_TOOL_RESULT_ERROR);
+
+        let error =
+            inspect_response_admission(GuardSessionStatus::Idle, false, false, false, false)
+                .expect_err("idle non-ui response without tool calls should be cancelled");
+
+        assert_eq!(error, WORKFLOW_CANCELLED_ERROR);
+    }
+
+    #[test]
+    fn admission_rejects_cancelled_tool_entry_even_when_idle() {
+        let error = inspect_response_admission(GuardSessionStatus::Idle, true, false, true, true)
+            .expect_err("cancelled ui tool entry should stay orphaned");
+
+        assert_eq!(error, ORPHANED_UI_TOOL_RESULT_ERROR);
+
+        let error =
+            inspect_response_admission(GuardSessionStatus::Paused, false, true, true, false)
+                .expect_err("cancel_pending mcp tool entry should stay cancelled");
+
+        assert_eq!(error, WORKFLOW_CANCELLED_ERROR);
     }
 
     #[test]
     fn admission_rejects_cancelled_non_ui_responses_as_workflow_cancelled() {
-        let error =
-            inspect_response_admission(GuardSessionStatus::Busy, true, false, false, false, false)
-                .expect_err("cancelled non-ui response should be rejected");
+        let error = inspect_response_admission(GuardSessionStatus::Busy, true, false, false, false)
+            .expect_err("cancelled non-ui response should be rejected");
 
         assert_eq!(error, WORKFLOW_CANCELLED_ERROR);
+    }
+
+    #[test]
+    fn internal_ui_callback_tool_names_are_recognized() {
+        assert!(is_internal_ui_callback_tool_name("ui__getUserAnswer"));
+        assert!(is_internal_ui_callback_tool_name("ui__resumeCircuitBreak"));
+        assert!(!is_internal_ui_callback_tool_name("ui__presentInteractive"));
+        assert!(!is_internal_ui_callback_tool_name("workspace__export"));
     }
 }

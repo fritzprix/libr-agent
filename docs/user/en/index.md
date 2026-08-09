@@ -32,9 +32,9 @@ Language: [한국어](/) · **English**
 
 ### Onboarding in one line
 
-1. **Settings → AI & Models → Provider API Keys** → **Save Changes**  
-2. Start a session from an assistant card in **Chat**  
-3. MCP lives under **Extensions**  
+1. **Settings → AI & Models → Provider API Keys** → **Save Changes**
+2. Start a session from an assistant card in **Chat**
+3. MCP lives under **Extensions**
 4. Repeat work with **Playbooks** / **Scheduled Tasks**
 
 Screenshots: [assets/screenshots](../assets/screenshots/README.md). App UI language follows **Settings → General → Language**.
@@ -43,6 +43,6 @@ Screenshots: [assets/screenshots](../assets/screenshots/README.md). App UI langu
 
 ## Tips
 
-- Settings tab name: **AI & Models**. MCP: sidebar **Extensions** (not a Settings tab).  
-- Contributors: [getting-started-dev.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/getting-started-dev.md)  
+- Settings tab name: **AI & Models**. MCP: sidebar **Extensions** (not a Settings tab).
+- Contributors: [getting-started-dev.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/getting-started-dev.md)
 - Questions: [Discussions](https://github.com/fritzprix/libr-agent/discussions)

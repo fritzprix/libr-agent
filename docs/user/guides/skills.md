@@ -11,11 +11,11 @@ title: 스킬 (Skills)
 
 ## 스킬이란?
 
-| | 설명 |
-|---|------|
-| **무엇인가** | `SKILL.md`(+ 선택적 `scripts/`·`references/`·`assets/`) 폴더. *언제·어떤 순서로* 할지 적은 운영 절차 |
-| **무엇이 아닌가** | Settings 메뉴나 MCP 서버 자체는 아님. builtin/MCP를 **어떻게 쓸지** 알려 주는 레이어 |
-| **누가 쓰나** | 사용자가 `@skill:…`로 넣거나, 에이전트가 상황에 맞게 참조 |
+|                   | 설명                                                                                                 |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| **무엇인가**      | `SKILL.md`(+ 선택적 `scripts/`·`references/`·`assets/`) 폴더. _언제·어떤 순서로_ 할지 적은 운영 절차 |
+| **무엇이 아닌가** | Settings 메뉴나 MCP 서버 자체는 아님. builtin/MCP를 **어떻게 쓸지** 알려 주는 레이어                 |
+| **누가 쓰나**     | 사용자가 `@skill:…`로 넣거나, 에이전트가 상황에 맞게 참조                                            |
 
 **builtin**이 실행기라면 **스킬**은 플레이북에 가깝습니다.  
 MCP 설치 UI는 [Extensions](extensions.md) / [커스텀 MCP](custom-mcp.md)를 보세요.
@@ -61,19 +61,19 @@ MCP 설치 UI는 [Extensions](extensions.md) / [커스텀 MCP](custom-mcp.md)를
 
 ### 헷갈리기 쉬운 점
 
-| 말 | 실제 |
-|----|------|
-| “시스템/글로벌에 넣고 싶다” | 커스텀은 **user_skills (global)** — **system_skills 아님** |
-| “번들 스킬 수정” | 개발자가 `src-tauri/bundled_skills/`에 넣는 워크플로 |
+| 말                              | 실제                                                            |
+| ------------------------------- | --------------------------------------------------------------- |
+| “시스템/글로벌에 넣고 싶다”     | 커스텀은 **user_skills (global)** — **system_skills 아님**      |
+| “번들 스킬 수정”                | 개발자가 `src-tauri/bundled_skills/`에 넣는 워크플로            |
 | 워크스페이스 루트에 `my-skill/` | 스캔 안 됨. 반드시 <code v-pre>.libragent/skills/{name}/</code> |
 
 ### UI에서 scope
 
-| 목적 | 어디 |
-|------|------|
-| 로컬 스킬 폴더 | **Settings → General → Skills Directory** 또는 **Extensions → Skills** |
-| 어시스턴트별 스킬 | Assistants → **Skills** 탭 |
-| 파일로 배포 | 아래 skill-deployer |
+| 목적              | 어디                                                                   |
+| ----------------- | ---------------------------------------------------------------------- |
+| 로컬 스킬 폴더    | **Settings → General → Skills Directory** 또는 **Extensions → Skills** |
+| 어시스턴트별 스킬 | Assistants → **Skills** 탭                                             |
+| 파일로 배포       | 아래 skill-deployer                                                    |
 
 ---
 
@@ -93,10 +93,10 @@ MCP 설치 UI는 [Extensions](extensions.md) / [커스텀 MCP](custom-mcp.md)를
 
 ## 스킬 만들기 · 배포하기 (메타 스킬)
 
-| 단계 | 스킬 | 역할 |
-|------|------|------|
-| 1. 작성·검증 | `@skill:skill-creator` | frontmatter, `validate_skill.py --strict` |
-| 2. 설치 | `@skill:skill-deployer` | workspace / global / assistant 경로에 복사 |
+| 단계         | 스킬                    | 역할                                       |
+| ------------ | ----------------------- | ------------------------------------------ |
+| 1. 작성·검증 | `@skill:skill-creator`  | frontmatter, `validate_skill.py --strict`  |
+| 2. 설치      | `@skill:skill-deployer` | workspace / global / assistant 경로에 복사 |
 
 ```
 @skill:skill-creator
@@ -140,15 +140,15 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 ### 자주 하는 조합
 
-| 하고 싶은 일 | 추천 |
-|--------------|------|
-| 런타임 설치 | `@skill:setup-wizard` + App Wizard |
-| MCP 추천 설치 | [Extensions](extensions.md) |
-| MCP 커스텀/가져오기 | [커스텀 MCP](custom-mcp.md) · `@skill:tool-installer` |
-| 내 절차를 스킬로 | `skill-creator` → `skill-deployer` |
-| 자식 세션·팀 오케스트레이션 | [서브 에이전트 가이드](sub-agents.md) |
-| 어시스턴트 설정 | [Assistants](assistants.md) |
-| 반복 실행 | [Playbooks](playbooks.md) · [자동화](automation.md) |
+| 하고 싶은 일                | 추천                                                  |
+| --------------------------- | ----------------------------------------------------- |
+| 런타임 설치                 | `@skill:setup-wizard` + App Wizard                    |
+| MCP 추천 설치               | [Extensions](extensions.md)                           |
+| MCP 커스텀/가져오기         | [커스텀 MCP](custom-mcp.md) · `@skill:tool-installer` |
+| 내 절차를 스킬로            | `skill-creator` → `skill-deployer`                    |
+| 자식 세션·팀 오케스트레이션 | [서브 에이전트 가이드](sub-agents.md)                 |
+| 어시스턴트 설정             | [Assistants](assistants.md)                           |
+| 반복 실행                   | [Playbooks](playbooks.md) · [자동화](automation.md)   |
 
 ---
 

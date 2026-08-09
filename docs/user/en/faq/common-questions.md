@@ -13,8 +13,8 @@ title: Common questions
 
 ### How do I start LibrAgent?
 
-1. Install from [Releases](https://github.com/fritzprix/libr-agent/releases)  
-2. **Settings → AI & Models → Provider API Keys** → **Save Changes**  
+1. Install from [Releases](https://github.com/fritzprix/libr-agent/releases)
+2. **Settings → AI & Models → Provider API Keys** → **Save Changes**
 3. **Chat** → assistant card → send from **New Session**
 
 Details: [5-minute tutorial](../getting-started/5-minute-tutorial.md)
@@ -68,7 +68,7 @@ Provider free tiers (e.g. Gemini/Groq) or local endpoints such as **Ollama** via
 
 A protocol for external tools. There is **no Settings 「MCP Servers」 tab.** Use sidebar **Extensions** (`/mcp-servers`).
 
-- Catalog: [Extensions](../guides/extensions.md)  
+- Catalog: [Extensions](../guides/extensions.md)
 - Manual: [Custom MCP](../guides/custom-mcp.md)
 
 ### Will the agent delete my files?

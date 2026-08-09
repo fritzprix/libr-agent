@@ -30,9 +30,16 @@ vi.mock('@/context/AgentChatContext', () => ({
   }),
 }));
 
+const sessionStateMock = vi.hoisted(() => ({
+  session: {
+    id: 'test-session',
+    assistant: { id: 'test-assistant' },
+  } as { id: string; assistant: { id: string } } | null,
+}));
+
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSessionState: () => ({
-    session: { id: 'test-session', assistant: { id: 'test-assistant' } },
+    session: sessionStateMock.session,
   }),
 }));
 
@@ -58,6 +65,10 @@ vi.mock('@/lib/logger', () => ({
 
 describe('useUIActionHandler', () => {
   beforeEach(() => {
+    sessionStateMock.session = {
+      id: 'test-session',
+      assistant: { id: 'test-assistant' },
+    };
     submitMock.mockReset();
     executeUiTauriActionMock.mockReset();
     handleUserToolCallMock.mockReset();
@@ -100,6 +111,38 @@ describe('useUIActionHandler', () => {
     );
     expect(handleUserToolCallMock).not.toHaveBeenCalled();
     expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to message session id when context session is missing', async () => {
+    sessionStateMock.session = null;
+    handleUserToolCallMock.mockResolvedValue(undefined);
+
+    const contentRef = {
+      current: [] as MCPContent[],
+    };
+
+    const { result } = renderHook(() =>
+      useUIActionHandler(contentRef, 'message-session'),
+    );
+
+    const action: UIActionResult = {
+      type: 'tool',
+      payload: {
+        toolName: 'workspace__export',
+        params: { path: 'out.md' },
+      },
+    };
+
+    await expect(result.current(action)).resolves.toEqual({
+      status: 'tool-submitted',
+      tool: 'workspace__export',
+    });
+
+    expect(handleUserToolCallMock).toHaveBeenCalledWith(
+      'message-session',
+      'workspace__export',
+      { path: 'out.md' },
+    );
   });
 
   it('surfaces backend tauri action failures without falling back to local injection', async () => {

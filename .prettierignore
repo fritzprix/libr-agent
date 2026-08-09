@@ -19,5 +19,10 @@ public/
 .editorconfig
 .gitattributes
 
+# VitePress site build/cache (nested .gitignore is not always honored by Prettier)
+website/.vitepress/cache/
+website/.vitepress/dist/
+website/dist/
+
 # Handlebars templates (preserve formatting and doctype)
 *.hbs

@@ -41,6 +41,7 @@ const koSidebar = [
       { text: 'Playbooks', link: '/guides/playbooks' },
       { text: '자동화 (Scheduled Tasks)', link: '/guides/automation' },
       { text: 'Extensions (MCP)', link: '/guides/extensions' },
+      { text: '내장 도구 레퍼런스', link: '/guides/builtin-tools' },
       { text: '커스텀 MCP', link: '/guides/custom-mcp' },
       { text: '세션', link: '/guides/sessions' },
       { text: '문제 해결', link: '/guides/troubleshooting' },
@@ -69,9 +70,15 @@ const enSidebar = [
     text: 'Get started',
     items: [
       { text: 'Overview', link: '/en/' },
-      { text: '5-minute tutorial', link: '/en/getting-started/5-minute-tutorial' },
+      {
+        text: '5-minute tutorial',
+        link: '/en/getting-started/5-minute-tutorial',
+      },
       { text: 'First agent chat', link: '/en/getting-started/first-agent' },
-      { text: 'Connecting models', link: '/en/getting-started/connecting-models' },
+      {
+        text: 'Connecting models',
+        link: '/en/getting-started/connecting-models',
+      },
     ],
   },
   {
@@ -83,6 +90,7 @@ const enSidebar = [
       { text: 'Playbooks', link: '/en/guides/playbooks' },
       { text: 'Automation (Scheduled Tasks)', link: '/en/guides/automation' },
       { text: 'Extensions (MCP)', link: '/en/guides/extensions' },
+      { text: 'Built-in Tools', link: '/en/guides/builtin-tools' },
       { text: 'Custom MCP', link: '/en/guides/custom-mcp' },
       { text: 'Sessions', link: '/en/guides/sessions' },
       { text: 'Troubleshooting', link: '/en/guides/troubleshooting' },
@@ -99,7 +107,8 @@ const enSidebar = [
 
 export default defineConfig({
   title: 'LibrAgent',
-  description: 'LibrAgent user documentation — install, chat, and connect models',
+  description:
+    'LibrAgent user documentation — install, chat, and connect models',
   // Project Pages: https://fritzprix.github.io/libr-agent/
   base: '/libr-agent/',
   srcDir: '../docs/user',

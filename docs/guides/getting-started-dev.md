@@ -6,12 +6,12 @@
 
 ## Prerequisites
 
-| 항목 | 버전 / 설명 |
-|------|-------------|
-| **Rust** | [rustup.rs](https://rustup.rs/) — `rustc --version` 확인 |
-| **Node.js** | 20+ (LTS) |
-| **pnpm** | 9.15.9 (corepack로 pinned) |
-| **System deps (Linux)** | 아래 패키지 목록 참조 |
+| 항목                    | 버전 / 설명                                              |
+| ----------------------- | -------------------------------------------------------- |
+| **Rust**                | [rustup.rs](https://rustup.rs/) — `rustc --version` 확인 |
+| **Node.js**             | 20+ (LTS)                                                |
+| **pnpm**                | 9.15.9 (corepack로 pinned)                               |
+| **System deps (Linux)** | 아래 패키지 목록 참조                                    |
 
 ### Linux 시스템 의존성
 
@@ -52,12 +52,12 @@ pnpm install --frozen-lockfile
 
 ## Running
 
-| 명령어 | 용도 |
-|--------|------|
-| `pnpm tauri dev` | 전체 Tauri 데스크톱 앱 (백엔드 포함, HMR) |
-| `pnpm dev` | 프론트엔드 Vite dev 서버만 |
-| `pnpm build` | 프론트엔드 프로덕션 빌드 |
-| `pnpm tauri build` | 프로덕션 데스크톱 앱 번들 |
+| 명령어             | 용도                                      |
+| ------------------ | ----------------------------------------- |
+| `pnpm tauri dev`   | 전체 Tauri 데스크톱 앱 (백엔드 포함, HMR) |
+| `pnpm dev`         | 프론트엔드 Vite dev 서버만                |
+| `pnpm build`       | 프론트엔드 프로덕션 빌드                  |
+| `pnpm tauri build` | 프로덕션 데스크톱 앱 번들                 |
 
 ---
 
@@ -81,10 +81,10 @@ pnpm dead-code     # 미사용 코드를 찾습니다 (unimported)
 
 ## Testing
 
-| 유형 | 위치 | 실행 방법 |
-|------|------|-----------|
-| **Frontend** | `src/` | `pnpm test:run` (Vitest) |
-| **Backend** | `src-tauri/tests/` | `cargo test --tests` (CI 통합 테스트 전용) |
+| 유형         | 위치               | 실행 방법                                  |
+| ------------ | ------------------ | ------------------------------------------ |
+| **Frontend** | `src/`             | `pnpm test:run` (Vitest)                   |
+| **Backend**  | `src-tauri/tests/` | `cargo test --tests` (CI 통합 테스트 전용) |
 
 > **주의**: Rust의 `#[cfg(test)]` 블록은 CI에서 실행되지 않습니다. 테스트는 반드시 `src-tauri/tests/`에 통합 테스트로 작성하세요.
 
@@ -119,7 +119,7 @@ src-tauri/src/
 ### Backend → Frontend 통신
 
 - 모든 Tauri 명령어는 `src/lib/backend/`의 `safeInvoke()` 래퍼를 통해 호출
-- 중앙 로깅: `getLogger('ComponentName')` (console.* 금지)
+- 중앙 로깅: `getLogger('ComponentName')` (console.\* 금지)
 - 에러 처리: `Result<T, E>` + 구조화된 에러 객체
 
 ### 타입 안전성

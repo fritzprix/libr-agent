@@ -45,7 +45,7 @@ title: 에이전트 첫 대화
 
 > 사이드바에 **「+ New Session」** 버튼으로 시작하는 UX가 아닙니다.
 
-![New Session draft](../assets/screenshots/getting-started/new-session.svg)
+![New Session UI](../assets/screenshots/getting-started/new-session.png)
 
 ### Provider / Model
 
@@ -92,10 +92,10 @@ App Wizard가 쓰는 내장 서비스 **setup-wizard**(Setup Wizard Server)입�
 
 입력 중 `@`를 치면 스킬·파일 등을 넣을 수 있습니다.
 
-| 예 | 의미 |
-|----|------|
-| `@skill:docx` | 번들(또는 사용자) 스킬 절차를 컨텍스트에 삽입 |
-| `@skill:setup-wizard` | 런타임 설치 절차 스킬 |
+| 예                    | 의미                                          |
+| --------------------- | --------------------------------------------- |
+| `@skill:docx`         | 번들(또는 사용자) 스킬 절차를 컨텍스트에 삽입 |
+| `@skill:setup-wizard` | 런타임 설치 절차 스킬                         |
 
 앱에 기본 포함된 스킬 전체 목록은 [번들 스킬](../guides/skills.md)을 보세요.
 
@@ -119,22 +119,22 @@ App Wizard가 쓰는 내장 서비스 **setup-wizard**(Setup Wizard Server)입�
 
 앱/OS·포커스에 따라 다를 수 있습니다. 입력창에 포커스가 있으면 단축키가 먹지 않을 수 있습니다.
 
-| 동작 | 흔한 단축키 |
-|------|-------------|
-| 메시지 전송 | `Enter` |
-| 줄 바꿈 | `Shift+Enter` |
+| 동작        | 흔한 단축키   |
+| ----------- | ------------- |
+| 메시지 전송 | `Enter`       |
+| 줄 바꿈     | `Shift+Enter` |
 
 ---
 
 ## 완료!
 
-| 다음 | 문서 |
-|------|------|
-| API 키·Default LLM | [모델 연결하기](connecting-models.md) |
-| 빠른 경로 | [5분 시작 가이드](5-minute-tutorial.md) |
-| 번들 스킬 | [번들 스킬](../guides/skills.md) |
-| 문제 해결 | [문제 해결](../guides/troubleshooting.md) |
+| 다음               | 문서                                      |
+| ------------------ | ----------------------------------------- |
+| API 키·Default LLM | [모델 연결하기](connecting-models.md)     |
+| 빠른 경로          | [5분 시작 가이드](5-minute-tutorial.md)   |
+| 번들 스킬          | [번들 스킬](../guides/skills.md)          |
+| 문제 해결          | [문제 해결](../guides/troubleshooting.md) |
 
 ---
 
-*사용자용 가이드입니다. UI 맵(개발자용)은 [navigation-guide.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/navigation-guide.md)를 참고하세요.*
+_사용자용 가이드입니다. UI 맵(개발자용)은 [navigation-guide.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/navigation-guide.md)를 참고하세요._
