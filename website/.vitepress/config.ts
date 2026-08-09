@@ -69,9 +69,15 @@ const enSidebar = [
     text: 'Get started',
     items: [
       { text: 'Overview', link: '/en/' },
-      { text: '5-minute tutorial', link: '/en/getting-started/5-minute-tutorial' },
+      {
+        text: '5-minute tutorial',
+        link: '/en/getting-started/5-minute-tutorial',
+      },
       { text: 'First agent chat', link: '/en/getting-started/first-agent' },
-      { text: 'Connecting models', link: '/en/getting-started/connecting-models' },
+      {
+        text: 'Connecting models',
+        link: '/en/getting-started/connecting-models',
+      },
     ],
   },
   {
@@ -99,7 +105,8 @@ const enSidebar = [
 
 export default defineConfig({
   title: 'LibrAgent',
-  description: 'LibrAgent user documentation — install, chat, and connect models',
+  description:
+    'LibrAgent user documentation — install, chat, and connect models',
   // Project Pages: https://fritzprix.github.io/libr-agent/
   base: '/libr-agent/',
   srcDir: '../docs/user',

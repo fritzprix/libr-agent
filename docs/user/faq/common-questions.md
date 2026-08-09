@@ -104,9 +104,9 @@ Gemini/Groq 등 제공사 무료 티어, 또는 **Ollama** 등 로컬 엔드포�
 
 ## 문제가 났을 때
 
-1. 화면 메시지 확인  
-2. **Settings → AI & Models** 키·Default LLM·**Save Changes**  
-3. **Extensions**에서 MCP 명령/런타임  
+1. 화면 메시지 확인
+2. **Settings → AI & Models** 키·Default LLM·**Save Changes**
+3. **Extensions**에서 MCP 명령/런타임
 4. [문제 해결](../guides/troubleshooting.md) · [에러 코드](./error-codes.md)
 
 지원 요청: [Discussions](https://github.com/fritzprix/libr-agent/discussions) — **API 키 제외**, OS·앱 버전·Provider/모델·증상 포함.
@@ -115,10 +115,10 @@ Gemini/Groq 등 제공사 무료 티어, 또는 **Ollama** 등 로컬 엔드포�
 
 ## 다음에 해볼 것
 
-| 항목 | 링크 |
-|------|------|
-| 첫 대화 | [first-agent](../getting-started/first-agent.md) |
-| Assistants | [assistants](../guides/assistants.md) |
+| 항목               | 링크                                                                        |
+| ------------------ | --------------------------------------------------------------------------- |
+| 첫 대화            | [first-agent](../getting-started/first-agent.md)                            |
+| Assistants         | [assistants](../guides/assistants.md)                                       |
 | Playbooks / 자동화 | [playbooks](../guides/playbooks.md) · [automation](../guides/automation.md) |
-| MCP | [extensions](../guides/extensions.md) |
-| 멀티 에이전트 | [sub-agents](../guides/sub-agents.md) |
+| MCP                | [extensions](../guides/extensions.md)                                       |
+| 멀티 에이전트      | [sub-agents](../guides/sub-agents.md)                                       |

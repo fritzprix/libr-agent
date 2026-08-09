@@ -70,8 +70,8 @@ title: 5분 시작 가이드
 
 **Chat → Built-in Assistants → App Wizard**
 
-- 역할: 앱/에이전트/MCP·환경 설정 도우미  
-- 설명(앱 문구): *Environment and configuration specialist for MCP setup, agent management, and system readiness.*
+- 역할: 앱/에이전트/MCP·환경 설정 도우미
+- 설명(앱 문구): _Environment and configuration specialist for MCP setup, agent management, and system readiness._
 
 예:
 
@@ -95,12 +95,12 @@ Python이랑 Node가 이 PC에 깔려 있는지 확인해 주고, 없으면 설�
 
 ## 완료!
 
-| 다음 | 문서 |
-|------|------|
-| Settings 세부 | [모델 연결하기](connecting-models.md) |
-| Chat·세션 UI | [에이전트 첫 대화](first-agent.md) |
-| 증상별 해결 | [문제 해결](../guides/troubleshooting.md) |
+| 다음          | 문서                                      |
+| ------------- | ----------------------------------------- |
+| Settings 세부 | [모델 연결하기](connecting-models.md)     |
+| Chat·세션 UI  | [에이전트 첫 대화](first-agent.md)        |
+| 증상별 해결   | [문제 해결](../guides/troubleshooting.md) |
 
 ---
 
-*사용자용 가이드입니다. 개발자 환경 구축은 [getting-started.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/getting-started.md)를 참고하세요.*
+_사용자용 가이드입니다. 개발자 환경 구축은 [getting-started.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/getting-started.md)를 참고하세요._

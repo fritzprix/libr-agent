@@ -33,9 +33,9 @@ LibrAgent를 최대한 활용하는 방법을 배우세요. 이 문서는 개발
 
 ### 온보딩 한줄
 
-1. **Settings → AI & Models → Provider API Keys** → **Save Changes**  
-2. **Chat**에서 어시스턴트 카드로 세션 시작  
-3. MCP는 **Extensions**  
+1. **Settings → AI & Models → Provider API Keys** → **Save Changes**
+2. **Chat**에서 어시스턴트 카드로 세션 시작
+3. MCP는 **Extensions**
 4. 반복 작업은 **Playbooks** / **Scheduled Tasks**
 
 스크린샷 계획: [assets/screenshots](assets/screenshots/README.md) — P0 가이드에 UI 스키마틱(SVG)이 포함되어 있습니다.
@@ -44,6 +44,6 @@ LibrAgent를 최대한 활용하는 방법을 배우세요. 이 문서는 개발
 
 ## 팁
 
-- Settings 탭 이름: **AI & Models**. MCP: 사이드바 **Extensions**.  
-- 개발자: [docs/guides/getting-started-dev.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/getting-started-dev.md)  
+- Settings 탭 이름: **AI & Models**. MCP: 사이드바 **Extensions**.
+- 개발자: [docs/guides/getting-started-dev.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/getting-started-dev.md)
 - 질문: [Discussions](https://github.com/fritzprix/libr-agent/discussions)

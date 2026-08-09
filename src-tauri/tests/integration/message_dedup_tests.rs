@@ -895,12 +895,9 @@ async fn cold_open_cache_hydrate_preserves_history_before_ui_tool_append() {
         .insert(session_id.to_string(), cold_session);
 
     // Same first step handle_llm_response now performs before dedup/append.
-    tauri_mcp_agent_lib::agent::lifecycle::ensure_cache_initialized(
-        &active_sessions,
-        session_id,
-    )
-    .await
-    .expect("cold cache hydrate should load DB history");
+    tauri_mcp_agent_lib::agent::lifecycle::ensure_cache_initialized(&active_sessions, session_id)
+        .await
+        .expect("cold cache hydrate should load DB history");
 
     let resume_message = build_assistant_message_with_tool_calls(
         session_id,
