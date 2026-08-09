@@ -1,3 +1,24 @@
+## [0.9.0] - 2026-08-09
+
+### 🚀 Features
+
+- **MCP Structured Tool Result Rendering**: Renders structured tool outputs (file write actions, string replacement diffs, terminal execution outputs) directly with rich interactive components in chat UI.
+- **Multilingual User Documentation & VitePress Site**: Launched full user documentation site with English (`docs/user/en/`) and Korean (`docs/user/`) documentation, complete VitePress publishing pipeline, and live application screenshots.
+- **Enhanced App Screenshot Skill**: Expanded `app-screenshot` bundled skill with interactive UI clicking and control capabilities for automated visual testing and documentation workflows.
+
+### 🐛 Fixes
+
+- **Draft Chat & Assistant Tools Editor**: Opened assistant tools editor in-place from draft chat without disrupting current creation state.
+- **Session Cache Hydration**: Hydrates session cache prior to cold UI tool resumption.
+- **File Result Path Resolution**: Opens `writeFile` results via resolved absolute paths.
+- **MCP Discovery Loading Toast**: Automatically dismisses MCP discovery loading toasts when opening sessions that only use built-in tools.
+- **Harbor Diagnostic Trajectories**: Dumps diagnostic trajectory logs upon timeout or empty benchmark runs.
+
+### 🔧 Internal
+
+- **LLM Execution Modularization**: Extracted modular sub-services (`stream-accumulator`, `completion-validators`, `request-tracker`) from `useExecuteCompletion`.
+- **Release Manager Guidance**: Integrated user documentation and website synchronization steps directly into `release-manager` skill.
+
 ## [0.8.39] - 2026-08-08
 
 ### 🚀 Features
