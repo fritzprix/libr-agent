@@ -23,6 +23,7 @@ const logger = getLogger('AgentMessageRenderer');
  */
 export function useUIActionHandler(
   contentRef: React.MutableRefObject<MCPContent[]>,
+  messageSessionId?: string,
 ) {
   const { session } = useAgentSessionState();
   const { submit } = useAgentChatActions();
@@ -31,7 +32,9 @@ export function useUIActionHandler(
 
   return useCallback(
     async (result: UIActionResult) => {
-      const sessionId = session?.id;
+      // Prefer live session context; fall back to the message's session when
+      // context briefly lags after resume / session switch.
+      const sessionId = session?.id ?? messageSessionId;
 
       if (!sessionId) {
         logger.warn('No active session for UI action', { type: result.type });
@@ -191,6 +194,6 @@ export function useUIActionHandler(
         };
       }
     },
-    [session?.id, submit, openExternalUrl, contentRef],
+    [session?.id, messageSessionId, submit, openExternalUrl, contentRef],
   );
 }

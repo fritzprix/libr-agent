@@ -29,7 +29,6 @@ pub(crate) async fn inspect_response_admission(
     session_id: &str,
     allow_idle_tool_entry: bool,
     is_ui_tool: bool,
-    is_internal_ui_callback: bool,
 ) -> Result<ResponseAdmission, String> {
     let active = active_sessions.read().await;
     let Some(session) = active.get(session_id) else {
@@ -49,7 +48,6 @@ pub(crate) async fn inspect_response_admission(
         cancel_pending,
         allow_idle_tool_entry,
         is_ui_tool,
-        is_internal_ui_callback,
     );
 
     match decision {
