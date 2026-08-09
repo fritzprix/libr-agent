@@ -18,6 +18,7 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,45 @@ class TrajectoryTelemetry:
     tool_calls_count: int
     has_usage: bool
     error: str | None
+
+
+class EmptyAgentWorkError(RuntimeError):
+    """Session reached a terminal workflow status without any tool calls.
+
+    Harbor should treat this as an agent error rather than a silent verifier
+    failure on an untouched workspace.
+    """
+
+
+def build_diagnostic_meta(
+    *,
+    reason: str,
+    session_id: str,
+    last_status: str,
+    seen_non_idle: bool,
+    telemetry: TrajectoryTelemetry,
+    n_messages: int,
+    completed: bool = False,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build ``timeout_meta.json`` / incomplete-run diagnostic payload."""
+    payload: dict[str, Any] = {
+        "reason": reason,
+        "sessionId": session_id,
+        "last_status": last_status,
+        "seen_non_idle": seen_non_idle,
+        "completed": completed,
+        "n_messages": n_messages,
+        "n_turns": telemetry.n_turns,
+        "tool_calls_count": telemetry.tool_calls_count,
+        "n_input_tokens": telemetry.n_input_tokens,
+        "n_output_tokens": telemetry.n_output_tokens,
+        "n_cache_tokens": telemetry.n_cache_tokens,
+        "error": telemetry.error,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
 
 
 def _as_non_negative_int(value: Any) -> int | None:
@@ -1084,6 +1124,24 @@ class LibrAgentHarborAdapter(BaseAgent):
                         poll_deadline is not None
                         and asyncio.get_running_loop().time() >= poll_deadline
                     ):
+                        print(
+                            f"[{self.name()}] Poll wall-clock budget exhausted "
+                            f"(last status={last_status}). Writing diagnostic "
+                            f"trajectory, then deleting session."
+                        )
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await self._run_shielded(
+                                self._dump_incomplete_diagnostics(
+                                    session_id=session_id,
+                                    last_status=last_status,
+                                    seen_non_idle=seen_non_idle,
+                                    reason="poll_deadline",
+                                    last_session_info=last_session_info,
+                                    extra={
+                                        "poll_timeout_sec": self.poll_timeout_sec,
+                                    },
+                                )
+                            )
                         await self._delete_session(session_id)
                         raise TimeoutError(
                             f"LibrAgent session {session_id} did not reach a terminal "
@@ -1139,13 +1197,25 @@ class LibrAgentHarborAdapter(BaseAgent):
                         completed = True
                         break
             except asyncio.CancelledError:
-                # Harbor agent timeout cancels this coroutine. Do NOT harvest as
-                # success — that caused verifiers to score incomplete workspaces.
+                # Harbor agent timeout cancels this coroutine. Do NOT treat the
+                # run as a successful completion (that caused verifiers to score
+                # incomplete workspaces), but still dump a diagnostic ATIF so
+                # timeout trials are analyzable.
                 print(
                     f"[{self.name()}] Session polling cancelled (Harbor timeout) "
-                    f"while status={last_status}. Deleting session and refusing "
-                    f"to harvest incomplete results."
+                    f"while status={last_status}. Writing diagnostic trajectory, "
+                    f"then deleting session (not a successful harvest)."
                 )
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._run_shielded(
+                        self._dump_incomplete_diagnostics(
+                            session_id=session_id,
+                            last_status=last_status,
+                            seen_non_idle=seen_non_idle,
+                            reason="harbor_cancelled",
+                            last_session_info=last_session_info,
+                        )
+                    )
                 # Shielded delete re-raises CancelledError after teardown.
                 await self._delete_session(session_id)
                 raise
@@ -1242,6 +1312,56 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"[{self.name()}] Adopted Harbor model_info from session: "
                     f"{session_model_name}"
                 )
+
+            self._write_atif_trajectory(
+                messages=messages,
+                session_id=session_id,
+                telemetry=telemetry,
+            )
+
+            if telemetry.tool_calls_count == 0:
+                print(
+                    f"[{self.name()}] Empty agent work: terminal status={last_status} "
+                    f"with 0 tool calls ({len(messages)} messages, "
+                    f"turns={telemetry.n_turns}). Failing the trial."
+                )
+                self._write_diagnostic_meta(
+                    build_diagnostic_meta(
+                        reason="empty_work",
+                        session_id=session_id,
+                        last_status=last_status,
+                        seen_non_idle=seen_non_idle,
+                        telemetry=telemetry,
+                        n_messages=len(messages),
+                        completed=True,
+                        extra={
+                            "assistant_id": self.assistant_id,
+                            "workspaceMode": "attach" if use_attach else "host-sync",
+                        },
+                    )
+                )
+                context.metadata = {
+                    "output": final_answer,
+                    "trajectory": messages,
+                    "sessionId": session_id,
+                    "finalStatus": last_status,
+                    "completed": False,
+                    "emptyWork": True,
+                    "assistant_id": self.assistant_id,
+                    "n_turns": telemetry.n_turns,
+                    "tool_calls_count": 0,
+                    "error": (
+                        f"Session reached terminal status {last_status!r} "
+                        "without any tool calls."
+                    ),
+                }
+                await self._delete_session(session_id)
+                raise EmptyAgentWorkError(
+                    f"LibrAgent session {session_id} reached terminal status "
+                    f"{last_status!r} without any tool calls "
+                    f"(messages={len(messages)}, turns={telemetry.n_turns})."
+                )
+
             metadata: dict[str, Any] = {
                 "output": final_answer,
                 "trajectory": messages,
@@ -1263,12 +1383,6 @@ class LibrAgentHarborAdapter(BaseAgent):
                 metadata["error"] = telemetry.error
             context.metadata = metadata
 
-            self._write_atif_trajectory(
-                messages=messages,
-                session_id=session_id,
-                telemetry=telemetry,
-            )
-
             print(
                 f"[{self.name()}] Task complete. Response harvested successfully "
                 f"({len(messages)} messages, status={last_status}, "
@@ -1283,6 +1397,99 @@ class LibrAgentHarborAdapter(BaseAgent):
             # container) after Harbor moves on to the next task. DELETE also
             # terminates any still-running workflow before removing DB/workspace.
             await self._delete_session(session_id)
+
+    async def _run_shielded(self, awaitable: Awaitable[Any]) -> None:
+        """Run ``awaitable`` to completion even if the caller is cancelled."""
+        task = asyncio.ensure_future(awaitable)
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            with contextlib.suppress(BaseException):
+                await task
+            raise
+
+    async def _fetch_session_messages_best_effort(self, session_id: str) -> list[Any]:
+        """GET session messages on a short-lived client; never raise."""
+        if httpx is None:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                messages_res = await client.get(
+                    f"{self.api_url}/sessions/{session_id}/messages",
+                    params={"limit": TRAJECTORY_MESSAGE_LIMIT},
+                )
+            if messages_res.status_code != 200:
+                print(
+                    f"[{self.name()}] Warning: diagnostic message harvest failed "
+                    f"({messages_res.status_code})"
+                )
+                return []
+            messages_data = messages_res.json()
+            return normalize_session_messages(messages_data.get("messages"))
+        except Exception as e:
+            print(
+                f"[{self.name()}] Warning: diagnostic message harvest error "
+                f"for session {session_id}: {e}"
+            )
+            return []
+
+    async def _dump_incomplete_diagnostics(
+        self,
+        *,
+        session_id: str,
+        last_status: str,
+        seen_non_idle: bool,
+        reason: str,
+        last_session_info: dict[str, Any] | None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Best-effort ATIF + timeout_meta dump for cancelled/incomplete runs."""
+        session_model_name = extract_model_name_from_session_payload(last_session_info)
+        self._apply_model_name(session_model_name)
+
+        messages = await self._fetch_session_messages_best_effort(session_id)
+        telemetry = summarize_trajectory(messages)
+        self._write_atif_trajectory(
+            messages=messages,
+            session_id=session_id,
+            telemetry=telemetry,
+        )
+        meta_extra: dict[str, Any] = {"assistant_id": self.assistant_id}
+        if extra:
+            meta_extra.update(extra)
+        self._write_diagnostic_meta(
+            build_diagnostic_meta(
+                reason=reason,
+                session_id=session_id,
+                last_status=last_status,
+                seen_non_idle=seen_non_idle,
+                telemetry=telemetry,
+                n_messages=len(messages),
+                completed=False,
+                extra=meta_extra,
+            )
+        )
+        print(
+            f"[{self.name()}] Diagnostic dump ({reason}): "
+            f"messages={len(messages)}, turns={telemetry.n_turns}, "
+            f"tools={telemetry.tool_calls_count}, status={last_status}"
+        )
+
+    def _write_diagnostic_meta(self, payload: dict[str, Any]) -> None:
+        """Write ``timeout_meta.json`` under Harbor's agent logs dir."""
+        meta_path = self.logs_dir / "timeout_meta.json"
+        try:
+            meta_path.parent.mkdir(parents=True, exist_ok=True)
+            meta_path.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            print(f"[{self.name()}] Wrote diagnostic meta to {meta_path}")
+        except Exception as e:
+            print(
+                f"[{self.name()}] Warning: failed to write diagnostic meta "
+                f"to {meta_path}: {e}"
+            )
 
     def _write_atif_trajectory(
         self,

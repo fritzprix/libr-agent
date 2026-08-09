@@ -62,11 +62,11 @@ export function useMcpDiscoveryToasts({
       return;
     }
 
-    // Dismiss loading toast only if discovery failed or ended without terminal result toast
-    if (!discoveryFinished) {
-      toast.dismiss(id);
-    }
-  }, [sessionId, hasSession, showLoading, discoveryFinished, currentStep, t]);
+    // Always clear the loading toast once proxy init is no longer in progress.
+    // Builtin-only sessions (servers=[]) never show a result toast, so dismiss is
+    // required here. Sessions with external MCP reuse the same id for success/warn/error.
+    toast.dismiss(id);
+  }, [sessionId, hasSession, showLoading, currentStep, t]);
 
   useEffect(() => {
     if (!sessionId || !hasSession || showLoading) {

@@ -34,6 +34,9 @@
     "sync-builtin-services": "node scripts/sync-builtin-services.cjs && pnpm exec prettier --write --log-level warn src/lib/generated/builtin-services.ts",
     "sync-execution-mode": "node scripts/sync-execution-mode.cjs && pnpm exec prettier --write --log-level warn src/lib/generated/execution-mode.ts",
     "preview": "vite preview",
+    "docs:dev": "pnpm --filter libragent-docs dev",
+    "docs:build": "pnpm --filter libragent-docs build",
+    "docs:preview": "pnpm --filter libragent-docs preview",
     "test": "vitest",
     "test:run": "vitest run",
     "test:run:validate": "node scripts/run-vitest-validate.cjs",
@@ -81,10 +84,7 @@
     "bench:harbor:all": "node scripts/run-harbor-bench.cjs --preset harbor-index",
     "bench:registry": "node scripts/run-harbor-bench.cjs --preset dataset",
     "bench:termial": "pnpm bench:terminal",
-    "bench:termial:all": "pnpm bench:terminal:all",
-    "docs:dev": "pnpm --filter libragent-docs dev",
-    "docs:build": "pnpm --filter libragent-docs build",
-    "docs:preview": "pnpm --filter libragent-docs preview"
+    "bench:termial:all": "pnpm bench:terminal:all"
   },
   "pnpm": {
     "overrides": {

@@ -18,19 +18,19 @@ Create a task: choose assistant / playbook, schedule (cron or interval), and ena
 
 ## Typical fields
 
-| Field | Meaning |
-|-------|---------|
-| Name | Task label |
-| Schedule | When it runs |
-| Agent / Playbook | What to run |
-| Enabled | On / off |
+| Field            | Meaning      |
+| ---------------- | ------------ |
+| Name             | Task label   |
+| Schedule         | When it runs |
+| Agent / Playbook | What to run  |
+| Enabled          | On / off     |
 
 ---
 
 ## Tips
 
-- Prefer low-risk tools for unattended runs.  
-- Confirm API keys and network before enabling.  
+- Prefer low-risk tools for unattended runs.
+- Confirm API keys and network before enabling.
 - Check History after the first few runs.
 
 Failures often look like normal session errors — see [Troubleshooting](troubleshooting.md).

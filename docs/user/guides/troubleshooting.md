@@ -38,11 +38,11 @@ title: 문제 해결
 
 ### 응답이 느리거나 비용이 커요
 
-| 시도 | 위치 |
-|------|------|
-| 더 작은/빠른 모델 | Chat의 **Model** 또는 Settings **Default LLM** |
-| 컨텍스트 줄이기 | **Settings → Chat Interface → Max Input Context** |
-| 로컬 모델 | Custom OpenAI Provider로 Ollama 등 |
+| 시도              | 위치                                              |
+| ----------------- | ------------------------------------------------- |
+| 더 작은/빠른 모델 | Chat의 **Model** 또는 Settings **Default LLM**    |
+| 컨텍스트 줄이기   | **Settings → Chat Interface → Max Input Context** |
+| 로컬 모델         | Custom OpenAI Provider로 Ollama 등                |
 
 ### 응답이 너무 무작위예요
 
@@ -122,14 +122,14 @@ Settings에 **「MCP Servers」** 탭은 **없습니다.** 사이드바 **Extens
 
 ## 5. 자주 보는 메시지
 
-| 메시지 | 조치 |
-|--------|------|
-| Invalid API key | **Provider API Keys** 재입력 |
-| Rate limit exceeded | 대기 또는 모델 변경 |
-| Model not found | **Default LLM** / 세션 **Model** 변경, **Refresh models** |
-| Connection refused / Timeout | 네트워크·로컬 서버(Ollama)·MCP 프로세스 |
-| Permission denied | 폴더/OS 권한 |
-| Session not found | 재시작, History 확인 |
+| 메시지                       | 조치                                                      |
+| ---------------------------- | --------------------------------------------------------- |
+| Invalid API key              | **Provider API Keys** 재입력                              |
+| Rate limit exceeded          | 대기 또는 모델 변경                                       |
+| Model not found              | **Default LLM** / 세션 **Model** 변경, **Refresh models** |
+| Connection refused / Timeout | 네트워크·로컬 서버(Ollama)·MCP 프로세스                   |
+| Permission denied            | 폴더/OS 권한                                              |
+| Session not found            | 재시작, History 확인                                      |
 
 ---
 
@@ -151,4 +151,4 @@ Settings에 **「MCP Servers」** 탭은 **없습니다.** 사이드바 **Extens
 
 ---
 
-*사용자용입니다. 개발자 디버깅은 [getting-started.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/getting-started.md)를 참고하세요.*
+_사용자용입니다. 개발자 디버깅은 [getting-started.md](https://github.com/fritzprix/libr-agent/blob/main/docs/guides/getting-started.md)를 참고하세요._

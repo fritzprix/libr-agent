@@ -4,7 +4,6 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
-use agent_response_guards::is_internal_ui_callback_tool_name;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -41,19 +40,6 @@ fn assistant_message_has_only_ui_tool_calls(message: &Message) -> bool {
                 && tool_calls
                     .iter()
                     .all(|tool_call| tool_call.function.name.starts_with("ui__"))
-        })
-        .unwrap_or(false)
-}
-
-fn assistant_message_has_only_internal_ui_callback_tool_calls(message: &Message) -> bool {
-    message
-        .tool_calls
-        .as_ref()
-        .map(|tool_calls| {
-            !tool_calls.is_empty()
-                && tool_calls.iter().all(|tool_call| {
-                    is_internal_ui_callback_tool_name(tool_call.function.name.as_str())
-                })
         })
         .unwrap_or(false)
 }
@@ -228,6 +214,12 @@ pub async fn handle_llm_response(
     session_id: String,
     mut assistant_message: Message,
 ) -> Result<(), String> {
+    // Cold open (app restart → agent_open_session) activates the session without
+    // hydrating the in-memory message cache. UI tool entry (e.g. resumeCircuitBreak)
+    // comes through this path rather than start_workflow, so hydrate before dedup /
+    // append — otherwise the next LLM turn would see only the injected tool call.
+    crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
+
     // Early return if this assistant message is a duplicate of the last message in the session cache
     let is_duplicate = {
         let sessions = active_sessions.read().await;
@@ -262,15 +254,12 @@ pub async fn handle_llm_response(
         .map(|calls| !calls.is_empty())
         .unwrap_or(false);
     let is_ui_tool = assistant_message_has_only_ui_tool_calls(&assistant_message);
-    let is_internal_ui_callback =
-        assistant_message_has_only_internal_ui_callback_tool_calls(&assistant_message);
 
     let admission = response_admission::inspect_response_admission(
         active_sessions,
         &session_id,
         allow_idle_tool_entry,
         is_ui_tool,
-        is_internal_ui_callback,
     )
     .await?;
 

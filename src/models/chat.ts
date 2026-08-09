@@ -179,6 +179,8 @@ export interface Message {
   metadata?: {
     executionTime?: number; // Tool execution time in milliseconds
     retryCount?: number; // Number of retry attempts
+    /** MCP tool structured_content mirrored from the backend */
+    structuredContent?: unknown;
     [key: string]: unknown; // Extensible for future metadata
   };
 }

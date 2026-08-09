@@ -72,6 +72,39 @@ describe('useMcpDiscoveryToasts', () => {
     );
   });
 
+  it('dismisses loading toast when builtin-only session becomes ready', () => {
+    let isProxyReady = false;
+    let phase: 'hydrating' | 'ready' = 'hydrating';
+    let initResult: 'pending' | 'success' = 'pending';
+
+    const { rerender } = renderHook(() =>
+      useMcpDiscoveryToasts({
+        hasSession: true,
+        isProxyReady,
+        phase,
+        initResult,
+        servers: [],
+        sessionId: 's-builtin',
+        currentStep: 'Starting session...',
+      }),
+    );
+
+    expect(toast.loading).toHaveBeenCalledWith('Starting session...', {
+      id: 'mcp-discovery:s-builtin',
+    });
+    vi.clearAllMocks();
+
+    isProxyReady = true;
+    phase = 'ready';
+    initResult = 'success';
+    rerender();
+
+    expect(toast.dismiss).toHaveBeenCalledWith('mcp-discovery:s-builtin');
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it('shows warning toast with deterministic ID for partial discovery', () => {
     renderHook(() =>
       useMcpDiscoveryToasts({

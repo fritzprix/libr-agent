@@ -38,11 +38,11 @@ Wait and retry, or switch **Default LLM** / the session **Model** to another mod
 
 ### Slow or expensive replies
 
-| Try | Where |
-|-----|--------|
-| Smaller / faster model | Chat **Model** or Settings **Default LLM** |
-| Shorter context | **Settings → Chat Interface → Max Input Context** |
-| Local model | Custom OpenAI Provider (e.g. Ollama) |
+| Try                    | Where                                             |
+| ---------------------- | ------------------------------------------------- |
+| Smaller / faster model | Chat **Model** or Settings **Default LLM**        |
+| Shorter context        | **Settings → Chat Interface → Max Input Context** |
+| Local model            | Custom OpenAI Provider (e.g. Ollama)              |
 
 ### Too random
 
@@ -54,15 +54,15 @@ Wait and retry, or switch **Default LLM** / the session **Model** to another mod
 
 ### Cannot find a session
 
-1. Restart the app  
-2. Search **History**  
-3. Deleted sessions cannot be restored  
+1. Restart the app
+2. Search **History**
+3. Deleted sessions cannot be restored
 
 ### New session will not open
 
-1. Confirm key + **Default LLM**, then **Save Changes**  
-2. **Chat** → click a **Built-in Assistants** card  
-3. Send from the **New Session** draft  
+1. Confirm key + **Default LLM**, then **Save Changes**
+2. **Chat** → click a **Built-in Assistants** card
+3. Send from the **New Session** draft
 
 > This is not a **「+ New Session」** button flow.
 
@@ -78,15 +78,15 @@ The agent may be using tools or sub-agents. Check progress / pause UI; stop and 
 
 Not a Settings tab:
 
-1. **Chat → Built-in Assistants → App Wizard**  
+1. **Chat → Built-in Assistants → App Wizard**
 2. Ask it to check and guide installs (uses **setup-wizard** / alias `bootstrap`)
 
 ### MCP tools missing
 
-1. Sidebar **Extensions** (not Settings)  
-2. Enable / configure the server  
-3. Attach it to the [Assistant](assistants.md)  
-4. Start a new session  
+1. Sidebar **Extensions** (not Settings)
+2. Enable / configure the server
+3. Attach it to the [Assistant](assistants.md)
+4. Start a new session
 
 See [Extensions](extensions.md) · [Custom MCP](custom-mcp.md).
 
@@ -110,5 +110,5 @@ Children do not inherit the parent workspace by default. Put paths and goals in 
 
 ## Still stuck?
 
-- [FAQ](../faq/common-questions.md) · [Error codes](../faq/error-codes.md)  
+- [FAQ](../faq/common-questions.md) · [Error codes](../faq/error-codes.md)
 - [GitHub Discussions](https://github.com/fritzprix/libr-agent/discussions) · [Issues](https://github.com/fritzprix/libr-agent/issues)

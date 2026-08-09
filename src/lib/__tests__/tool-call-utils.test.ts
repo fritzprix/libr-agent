@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   hasToolCallError,
   hasUIResource,
+  getToolStructuredContent,
   isBuiltinTool,
   parseBuiltinToolName,
   parseToolName,
@@ -101,6 +102,26 @@ describe('tool-call-utils', () => {
 
     it('should return false for undefined message', () => {
       expect(hasUIResource(undefined)).toBe(false);
+    });
+  });
+
+  describe('getToolStructuredContent', () => {
+    it('returns structuredContent from metadata when present', () => {
+      const payload = { path: 'src/a.ts', action: 'created' };
+      const message = createTestMessage({
+        metadata: { structuredContent: payload },
+      });
+      expect(getToolStructuredContent(message)).toEqual(payload);
+    });
+
+    it('returns undefined when metadata or structuredContent is absent', () => {
+      expect(getToolStructuredContent(undefined)).toBeUndefined();
+      expect(getToolStructuredContent(createTestMessage())).toBeUndefined();
+      expect(
+        getToolStructuredContent(
+          createTestMessage({ metadata: { executionTime: 12 } }),
+        ),
+      ).toBeUndefined();
     });
   });
 

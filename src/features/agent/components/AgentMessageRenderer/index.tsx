@@ -101,7 +101,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     contentRef.current = finalContent;
   }, [finalContent]);
 
-  const handleUIAction = useUIActionHandler(contentRef);
+  const handleUIAction = useUIActionHandler(contentRef, message?.sessionId);
   const resourceRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const remoteDomProps = useMemo(

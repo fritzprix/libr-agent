@@ -10,9 +10,9 @@ title: 세션
 
 ## 새 세션 시작
 
-1. 사이드바 **Chat**  
-2. **Built-in Assistants** 또는 **My Assistants** 카드 클릭  
-3. 제목 **New Session** 초안에서 메시지 전송  
+1. 사이드바 **Chat**
+2. **Built-in Assistants** 또는 **My Assistants** 카드 클릭
+3. 제목 **New Session** 초안에서 메시지 전송
 
 「+ New Session」 단독 버튼으로 시작하지 않습니다.
 
@@ -22,17 +22,17 @@ title: 세션
 
 중요한 세션을 빠르게 다시 열려면:
 
-1. **History** 세션 카드의 북마크 아이콘을 켭니다.  
+1. **History** 세션 카드의 북마크 아이콘을 켭니다.
 2. 사이드바 **Bookmarked**, 또는 History의 bookmarked 필터로 모읍니다.
 
 ---
 
 ## 삭제
 
-- 자식(하위 에이전트)이 **없으면**: 확인 후 해당 세션만 삭제.  
-- 자식이 **있으면**:  
-  - **Delete all** (+N subagents) — 부모와 하위 함께 삭제  
-  - **Delete only this** (Subagents kept) — 부모만 삭제, 자식은 유지  
+- 자식(하위 에이전트)이 **없으면**: 확인 후 해당 세션만 삭제.
+- 자식이 **있으면**:
+  - **Delete all** (+N subagents) — 부모와 하위 함께 삭제
+  - **Delete only this** (Subagents kept) — 부모만 삭제, 자식은 유지
 
 복구되지 않습니다. 하위 에이전트 개념: [서브 에이전트](sub-agents.md)
 

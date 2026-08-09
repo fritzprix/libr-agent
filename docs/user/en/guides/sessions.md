@@ -10,7 +10,7 @@ title: Sessions
 
 ## Find sessions
 
-- Recent list on **Chat** / sidebar  
+- Recent list on **Chat** / sidebar
 - Full list: **History**
 
 ---
@@ -29,7 +29,7 @@ Deleting a session is **permanent**.
 
 Some sessions spawn child agents. When you delete a parent:
 
-- The UI may ask whether to delete **with sub-agents** or keep children.  
+- The UI may ask whether to delete **with sub-agents** or keep children.
 - Prefer the option that matches your intent — orphaned children can clutter History.
 
 Exact wording follows the product (often a confirmation dialog).

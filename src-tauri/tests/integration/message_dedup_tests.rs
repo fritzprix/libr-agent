@@ -833,3 +833,106 @@ async fn test_handle_llm_response_duplicate_prevention() {
         assert_eq!(cached_msgs[0].id, "ast-1");
     }
 }
+
+/// Simulates app restart → open session (active, empty cache) → UI Resume inject.
+/// `handle_llm_response` now calls `ensure_cache_initialized` before append/dedup so
+/// cold UI tool entry does not continue the LLM with a severed history stack.
+#[tokio::test]
+async fn cold_open_cache_hydrate_preserves_history_before_ui_tool_append() {
+    use std::sync::atomic::Ordering;
+    use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
+    use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
+
+    let db = common::setup_test_db_with_migrations().await;
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+    tauri_mcp_agent_lib::set_compact_context_repository(
+        tauri_mcp_agent_lib::repositories::SqliteCompactContextRepository::new(db.clone()),
+    );
+
+    let session_id = "test-session-cold-ui-resume";
+    session_repo
+        .upsert_session(&build_session_metadata(session_id))
+        .await
+        .expect("session created");
+
+    let history_user = build_user_message(session_id, "user-hist-1", "please keep working");
+    let history_assistant = build_assistant_message_with_thinking(
+        session_id,
+        "ast-hist-1",
+        "planning",
+        "I will call the tool again.",
+    );
+    message_repo
+        .insert(&history_user)
+        .await
+        .expect("persist user history");
+    message_repo
+        .insert(&history_assistant)
+        .await
+        .expect("persist assistant history");
+
+    // Cold open: session is active but cache was never hydrated from DB.
+    let cold_session = AgentSession::new(
+        build_session_metadata(session_id),
+        Arc::new(ContextRegistry::new()),
+        None,
+    );
+    assert!(
+        !cold_session.cache_initialized.load(Ordering::Acquire),
+        "cold session must start with uninitialized cache"
+    );
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.to_string(), cold_session);
+
+    // Same first step handle_llm_response now performs before dedup/append.
+    tauri_mcp_agent_lib::agent::lifecycle::ensure_cache_initialized(&active_sessions, session_id)
+        .await
+        .expect("cold cache hydrate should load DB history");
+
+    let resume_message = build_assistant_message_with_tool_calls(
+        session_id,
+        "ast-resume-1",
+        vec![ToolCall {
+            id: "call-resume-1".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "ui__resumeCircuitBreak".to_string(),
+                arguments: r#"{"toolName":"workspace__readFile","repetitionCount":4}"#.to_string(),
+            },
+        }],
+    );
+    {
+        let sessions = active_sessions.read().await;
+        let session = sessions.get(session_id).expect("session still active");
+        session.messages.write().await.push(resume_message);
+    }
+
+    let sessions = active_sessions.read().await;
+    let session = sessions.get(session_id).expect("session still active");
+    assert!(
+        session.cache_initialized.load(Ordering::Acquire),
+        "cache must be marked initialized"
+    );
+    let cached = session.messages.read().await;
+    let ids: Vec<&str> = cached.iter().map(|m| m.id.as_str()).collect();
+    assert!(
+        ids.contains(&"user-hist-1") && ids.contains(&"ast-hist-1"),
+        "DB history must be present before UI tool append: {:?}",
+        ids
+    );
+    assert!(
+        ids.contains(&"ast-resume-1"),
+        "injected resume assistant message must be appended: {:?}",
+        ids
+    );
+}

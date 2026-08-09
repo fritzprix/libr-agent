@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Badge,
@@ -43,6 +42,7 @@ interface DraftCapabilitiesSectionProps {
   dockerImage: string;
   setDockerImage: (value: string) => void;
   workspaceOverride: string | null;
+  onAddTools: () => void;
 }
 
 function getIconForService(iconId?: string) {
@@ -80,6 +80,7 @@ export function DraftCapabilitiesSection({
   dockerImage,
   setDockerImage,
   workspaceOverride,
+  onAddTools,
 }: DraftCapabilitiesSectionProps) {
   const { t } = useTranslation();
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -165,26 +166,26 @@ export function DraftCapabilitiesSection({
           );
         })}
 
-        <Link to="/assistants">
-          <Tooltip delayDuration={300}>
-            <TooltipTrigger asChild>
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <button type="button" onClick={onAddTools} className="inline-flex">
               <Badge
                 variant="outline"
                 className="text-[11px] text-muted-foreground/60 border-dashed font-sans font-normal cursor-pointer hover:opacity-100 hover:bg-muted hover:text-foreground transition-all px-3 py-1.5"
               >
                 {t('agent.draft.addTools', '+ Add tools')}
               </Badge>
-            </TooltipTrigger>
-            <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-xl">
-              <p className="text-xs">
-                {t(
-                  'agent.draft.addMoreCapabilities',
-                  'Add more capabilities in the settings',
-                )}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </Link>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-xl">
+            <p className="text-xs">
+              {t(
+                'agent.draft.addMoreCapabilities',
+                'Configure tools for this assistant',
+              )}
+            </p>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="flex flex-col items-center gap-5 mt-4 pt-8 border-t border-border/40 w-full max-w-md animate-in fade-in duration-1000">
