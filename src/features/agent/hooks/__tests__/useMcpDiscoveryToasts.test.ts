@@ -73,30 +73,20 @@ describe('useMcpDiscoveryToasts', () => {
   });
 
   it('dismisses loading toast when builtin-only session becomes ready', () => {
-    type BuiltinReadyProps = {
-      isProxyReady: boolean;
-      phase: 'hydrating' | 'ready';
-      initResult: 'pending' | 'success';
-    };
+    let isProxyReady = false;
+    let phase: 'hydrating' | 'ready' = 'hydrating';
+    let initResult: 'pending' | 'success' = 'pending';
 
-    const { rerender } = renderHook<void, BuiltinReadyProps>(
-      ({ isProxyReady, phase, initResult }) =>
-        useMcpDiscoveryToasts({
-          hasSession: true,
-          isProxyReady,
-          phase,
-          initResult,
-          servers: [],
-          sessionId: 's-builtin',
-          currentStep: 'Starting session...',
-        }),
-      {
-        initialProps: {
-          isProxyReady: false,
-          phase: 'hydrating',
-          initResult: 'pending',
-        },
-      },
+    const { rerender } = renderHook(() =>
+      useMcpDiscoveryToasts({
+        hasSession: true,
+        isProxyReady,
+        phase,
+        initResult,
+        servers: [],
+        sessionId: 's-builtin',
+        currentStep: 'Starting session...',
+      }),
     );
 
     expect(toast.loading).toHaveBeenCalledWith('Starting session...', {
@@ -104,11 +94,10 @@ describe('useMcpDiscoveryToasts', () => {
     });
     vi.clearAllMocks();
 
-    rerender({
-      isProxyReady: true,
-      phase: 'ready',
-      initResult: 'success',
-    });
+    isProxyReady = true;
+    phase = 'ready';
+    initResult = 'success';
+    rerender();
 
     expect(toast.dismiss).toHaveBeenCalledWith('mcp-discovery:s-builtin');
     expect(toast.success).not.toHaveBeenCalled();
