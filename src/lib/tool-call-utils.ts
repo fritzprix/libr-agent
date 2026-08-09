@@ -50,6 +50,18 @@ export function hasUIResource(toolResult?: Message): boolean {
 }
 
 /**
+ * Reads MCP structured_content mirrored onto a tool-result message as
+ * `metadata.structuredContent`. Returns `undefined` when absent.
+ */
+export function getToolStructuredContent(toolResult?: Message): unknown {
+  if (!toolResult?.metadata) return undefined;
+  if (!('structuredContent' in toolResult.metadata)) {
+    return undefined;
+  }
+  return toolResult.metadata.structuredContent;
+}
+
+/**
  * ─── Tool Name Utilities ─────────────────────────────────────────────────────
  *
  * All tool-name formatting/parsing lives here.

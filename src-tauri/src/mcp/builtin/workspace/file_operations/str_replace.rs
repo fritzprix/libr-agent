@@ -246,15 +246,48 @@ impl WorkspaceServer {
             format!("Replaced {replacements} occurrence(s) in '{path_str}'.\n\n{diff_output}");
 
         // Diff in the body is enough — do not burn tokens on a re-read follow-up.
-        Ok(SuccessHint::new(message, vec![]).to_mcp_result())
+        // structured_content powers the chat UI diff viewer (not re-sent to the LLM as tools).
+        Ok(
+            SuccessHint::new(message, vec![]).to_mcp_result_with_data(Some(serde_json::json!({
+                "path": path_str,
+                "replacements": replacements,
+                "unified_diff": diff_output,
+            }))),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{count_occurrences, read_validated_utf8_file};
+    use crate::mcp::builtin::error_guidance::SuccessHint;
     use std::io::Write;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn success_result_includes_str_replace_structured_content() {
+        let structured = serde_json::json!({
+            "path": "src/main.rs",
+            "replacements": 2,
+            "unified_diff": "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n",
+        });
+        let result = SuccessHint::new("Replaced 2 occurrence(s)".to_string(), vec![])
+            .to_mcp_result_with_data(Some(structured.clone()));
+
+        let data = result
+            .structured_content
+            .expect("strReplace success should include structured_content");
+        assert_eq!(
+            data.get("path").and_then(|v| v.as_str()),
+            Some("src/main.rs")
+        );
+        assert_eq!(data.get("replacements").and_then(|v| v.as_u64()), Some(2));
+        assert!(data
+            .get("unified_diff")
+            .and_then(|v| v.as_str())
+            .is_some_and(|diff| diff.contains("-old") && diff.contains("+new")));
+        assert_eq!(result.is_error, Some(false));
+    }
 
     #[test]
     fn count_occurrences_handles_empty_needle() {

@@ -9,10 +9,10 @@ import {
   formatExecutionTime,
   parseToolArguments,
   formatToolArgumentsSummary,
-  hasUIResource,
 } from '@/lib/tool-call-utils';
 import { AgentToolCallDetails } from './AgentToolCallDetails';
 import { useSettings } from '@/hooks/use-settings';
+import { resolveToolResultUiOverride } from './tool-structured/presentation';
 
 export interface ToolCallCompactItemProps {
   toolCall: ToolCall;
@@ -45,6 +45,51 @@ export const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
   return <CheckCircle className="w-3.5 h-3.5 text-success flex-shrink-0" />;
 };
 
+interface CompactHeaderRowProps {
+  toolResult?: Message;
+  hasError: boolean;
+  displayToolName: string;
+  paramSummary: string;
+  executionTime?: number;
+  showChevron?: boolean;
+  isExpanded?: boolean;
+}
+
+const CompactHeaderRow: React.FC<CompactHeaderRowProps> = ({
+  toolResult,
+  hasError,
+  displayToolName,
+  paramSummary,
+  executionTime,
+  showChevron = false,
+  isExpanded = false,
+}) => (
+  <div className="flex items-center gap-2">
+    <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
+    <span className="flex-shrink-0 font-medium">{displayToolName}</span>
+    {paramSummary ? (
+      <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
+        {paramSummary}
+      </span>
+    ) : (
+      <span className="flex-1" />
+    )}
+    {executionTime !== undefined ? (
+      <span className="text-xs text-muted-foreground flex-shrink-0">
+        {formatExecutionTime(executionTime)}
+      </span>
+    ) : null}
+    {showChevron ? (
+      <ChevronDown
+        className={cn(
+          'w-3.5 h-3.5 transition-transform flex-shrink-0 text-muted-foreground',
+          isExpanded && 'rotate-180',
+        )}
+      />
+    ) : null}
+  </div>
+);
+
 /**
  * Compact tool call item - no individual border, tight spacing.
  *
@@ -53,23 +98,24 @@ export const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
  *             no background colour change on error, no expand capability.
  * - 'developer': full detail view (current behaviour) with params summary,
  *               execution time, error details, and expand/collapse.
+ *
+ * Results with a UI override (MCP UI resource or structured tool UI) always
+ * show details and skip collapse — see {@link resolveToolResultUiOverride}.
  */
 const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   toolCall,
   toolResult,
-  isLast = false,
 }) => {
   const { t } = useTranslation('common');
   const {
     value: { display },
   } = useSettings();
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
+  const detailMode = isSimpleMode ? 'simple' : 'developer';
 
   const [isExpanded, setIsExpanded] = useState(false);
   const prevHasErrorRef = useRef(false);
-  const prevHasResourceRef = useRef(false);
 
-  // Parse tool name (remove server prefix)
   const toolName = useMemo(
     () => parseToolName(toolCall.function.name),
     [toolCall.function.name],
@@ -77,82 +123,98 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const displayToolName =
     toolName || t('agent.toolDetails.preparingTool', 'Preparing tool...');
 
-  // Parse arguments once to share between summary and details
   const parsedArgs = useMemo(
     () => parseToolArguments(toolCall.function.arguments),
     [toolCall.function.arguments],
   );
 
-  // Parse arguments for summary (developer mode only)
   const paramSummary = useMemo(
     () => formatToolArgumentsSummary(parsedArgs),
     [parsedArgs],
   );
 
-  // Check for error using utility function
   const hasError = hasToolCallError(toolResult);
-  const hasResource = hasUIResource(toolResult);
+  const uiOverride = resolveToolResultUiOverride(
+    toolCall.function.name,
+    toolResult,
+    detailMode,
+  );
+  const forceVisible = uiOverride?.alwaysVisible === true;
 
-  // Get execution time
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Auto-expand when an error first appears or a UI resource arrives (last item only).
-  // Tracks transitions using refs during render to avoid extra effect or state re-renders.
-  if (
-    !isSimpleMode &&
-    (hasError !== prevHasErrorRef.current ||
-      hasResource !== prevHasResourceRef.current)
-  ) {
+  // Auto-expand on error transition in developer mode (non-forced results only).
+  // Forced-visible results already mount details without expand state.
+  if (!isSimpleMode && !forceVisible && hasError !== prevHasErrorRef.current) {
     const errorBecameVisible = !prevHasErrorRef.current && hasError;
-    const resourceBecameVisible = !prevHasResourceRef.current && hasResource;
-
     prevHasErrorRef.current = hasError;
-    prevHasResourceRef.current = hasResource;
-
-    if (errorBecameVisible || (resourceBecameVisible && isLast)) {
+    if (errorBecameVisible) {
       setIsExpanded(true);
     }
+  } else if (hasError !== prevHasErrorRef.current) {
+    prevHasErrorRef.current = hasError;
   }
 
+  const details = toolResult ? (
+    <div id={detailsId} className="mt-2 pt-2 border-t border-muted/50 min-w-0">
+      <AgentToolCallDetails
+        toolCall={toolCall}
+        toolResult={toolResult}
+        hasError={hasError}
+        isLoading={false}
+        showDetails={true}
+        parsedArgs={parsedArgs}
+        hideParameters={uiOverride?.hideParameters ?? false}
+      />
+    </div>
+  ) : null;
+
   // ── Simple Mode ─────────────────────────────────────────────────────────
-  // Shows tool name + status + brief param summary. No expand, no execution
-  // time. UI Resources (e.g. circuit break) are always rendered inline so
-  // they are never hidden from the user.
   if (isSimpleMode) {
     return (
       <div
         className="rounded px-3 py-2 text-sm bg-background"
         style={{ overflowAnchor: 'none' }}
       >
-        <div className="flex items-center gap-2">
-          <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
-          <span className="font-medium flex-shrink-0">{displayToolName}</span>
-          {paramSummary && (
-            <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
-              {paramSummary}
-            </span>
-          )}
-        </div>
-        {/* Always show UI Resources inline (e.g. circuit break prompt) */}
-        {hasResource && toolResult && (
-          <div className="mt-2 pt-2 border-t border-muted/50">
-            <AgentToolCallDetails
-              toolCall={toolCall}
-              toolResult={toolResult}
-              hasError={hasError}
-              isLoading={false}
-              showDetails={true}
-              parsedArgs={parsedArgs}
-              hideParameters={true}
-            />
-          </div>
-        )}
+        <CompactHeaderRow
+          toolResult={toolResult}
+          hasError={hasError}
+          displayToolName={displayToolName}
+          paramSummary={paramSummary}
+        />
+        {forceVisible ? details : null}
       </div>
     );
   }
 
-  // ── Developer Mode ───────────────────────────────────────────────────────
+  // ── Developer Mode — forced visible (static header, no collapse) ────────
+  if (forceVisible) {
+    return (
+      <div
+        className={cn(
+          'rounded px-3 py-2 text-sm transition-colors',
+          hasError
+            ? 'bg-destructive/10 hover:bg-destructive/20'
+            : 'bg-background hover:bg-muted/50',
+        )}
+        style={{ overflowAnchor: 'none' }}
+      >
+        <CompactHeaderRow
+          toolResult={toolResult}
+          hasError={hasError}
+          displayToolName={displayToolName}
+          paramSummary={paramSummary}
+          executionTime={
+            typeof executionTime === 'number' ? executionTime : undefined
+          }
+        />
+        {details}
+      </div>
+    );
+  }
+
+  // ── Developer Mode — default expand/collapse ────────────────────────────
   return (
     <div
       className={cn(
@@ -163,7 +225,6 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
       )}
       style={{ overflowAnchor: 'none' }}
     >
-      {/* Collapsed header line */}
       <button
         type="button"
         className="w-full text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
@@ -176,39 +237,20 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
         )}
         onClick={() => setIsExpanded((prev) => !prev)}
       >
-        <div className="flex items-center gap-2">
-          <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
-
-          {/* Tool name */}
-          <span className="flex-shrink-0 font-medium">{displayToolName}</span>
-
-          {/* Params Summary */}
-          {paramSummary && (
-            <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
-              {paramSummary}
-            </span>
-          )}
-          {!paramSummary && <span className="flex-1" />}
-
-          {/* Execution time */}
-          {executionTime !== undefined && (
-            <span className="text-xs text-muted-foreground flex-shrink-0">
-              {formatExecutionTime(executionTime)}
-            </span>
-          )}
-
-          {/* Expand indicator */}
-          <ChevronDown
-            className={cn(
-              'w-3.5 h-3.5 transition-transform flex-shrink-0 text-muted-foreground',
-              isExpanded && 'rotate-180',
-            )}
-          />
-        </div>
+        <CompactHeaderRow
+          toolResult={toolResult}
+          hasError={hasError}
+          displayToolName={displayToolName}
+          paramSummary={paramSummary}
+          executionTime={
+            typeof executionTime === 'number' ? executionTime : undefined
+          }
+          showChevron
+          isExpanded={isExpanded}
+        />
       </button>
 
-      {/* Expanded details */}
-      {isExpanded && (
+      {isExpanded ? (
         <div
           id={detailsId}
           className="mt-3 pt-3 border-t border-muted/50 min-w-0"
@@ -222,23 +264,17 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
             parsedArgs={parsedArgs}
           />
         </div>
-      )}
+      ) : null}
     </div>
   );
 };
 
-// Custom comparison for React.memo
 function arePropsEqual(
   prev: ToolCallCompactItemProps,
   next: ToolCallCompactItemProps,
 ) {
-  // Check primitive props
   if (prev.isLast !== next.isLast) return false;
-
-  // Check toolResult reference equality (assuming stability from useMessageGrouping)
   if (prev.toolResult !== next.toolResult) return false;
-
-  // Check toolCall content deeply (id, function name, arguments)
   if (prev.toolCall.id !== next.toolCall.id) return false;
   if (prev.toolCall.function.name !== next.toolCall.function.name) return false;
   if (prev.toolCall.function.arguments !== next.toolCall.function.arguments)

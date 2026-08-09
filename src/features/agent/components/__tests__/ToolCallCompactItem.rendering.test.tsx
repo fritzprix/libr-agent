@@ -22,13 +22,20 @@ vi.mock('../AgentToolCallDetails', () => ({
   AgentToolCallDetails: () => <div data-testid="tool-details" />,
 }));
 
-const makeToolCall = (id: string): ToolCall => ({
+const makeToolCall = (
+  id: string,
+  name = 'test_tool',
+): ToolCall => ({
   id,
   type: 'function',
-  function: { name: 'test_tool', arguments: '{}' },
+  function: { name, arguments: '{}' },
 });
 
-const makeToolResult = (id: string, hasError = false): Message => ({
+const makeToolResult = (
+  id: string,
+  hasError = false,
+  overrides: Partial<Message> = {},
+): Message => ({
   id: `res-${id}`,
   sessionId: 'test-session',
   threadId: 'test-session',
@@ -42,6 +49,7 @@ const makeToolResult = (id: string, hasError = false): Message => ({
         recoverable: false,
       }
     : undefined,
+  ...overrides,
 });
 
 describe('ToolCallCompactItem Rendering and Transitions', () => {
@@ -53,17 +61,19 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
   it('auto-expands in developer mode when an error occurs', () => {
     mockDetailLevel = 'developer';
     const toolCall = makeToolCall('call-1');
-    
+
     // First render: no result
     const { rerender, queryByTestId } = render(
-      <ToolCallCompactItem toolCall={toolCall} />
+      <ToolCallCompactItem toolCall={toolCall} />,
     );
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
 
     // Second render: result with error
     const toolResultWithError = makeToolResult('call-1', true);
-    rerender(<ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />);
-    
+    rerender(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
+    );
+
     // Should be expanded now
     expect(queryByTestId('tool-details')).toBeInTheDocument();
   });
@@ -71,14 +81,16 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
   it('does NOT auto-expand in simple mode when an error occurs', () => {
     mockDetailLevel = 'simple';
     const toolCall = makeToolCall('call-2');
-    
+
     const { rerender, queryByTestId } = render(
-      <ToolCallCompactItem toolCall={toolCall} />
+      <ToolCallCompactItem toolCall={toolCall} />,
     );
 
     const toolResultWithError = makeToolResult('call-2', true);
-    rerender(<ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />);
-    
+    rerender(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
+    );
+
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
   });
 
@@ -87,18 +99,22 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
     mockDetailLevel = 'simple';
     const toolCall = makeToolCall('call-3');
     const { rerender, queryByTestId } = render(
-      <ToolCallCompactItem toolCall={toolCall} />
+      <ToolCallCompactItem toolCall={toolCall} />,
     );
 
     // 2. Simple mode, error occurs
     const toolResultWithError = makeToolResult('call-3', true);
-    rerender(<ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />);
+    rerender(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
+    );
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
 
     // 3. Switch to developer mode
     mockDetailLevel = 'developer';
-    rerender(<ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />);
-    
+    rerender(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
+    );
+
     // Critical: Should NOT be expanded because the sentinel synced during simple mode
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
   });
@@ -106,15 +122,17 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
   it('does NOT re-trigger expansion on subsequent renders if no new transition occurred', () => {
     mockDetailLevel = 'developer';
     const toolCall = makeToolCall('call-4');
-    
+
     // 1. Initial render
     const { rerender, queryByTestId, getByLabelText } = render(
-      <ToolCallCompactItem toolCall={toolCall} />
+      <ToolCallCompactItem toolCall={toolCall} />,
     );
 
     // 2. Error occurs -> auto-expand
     const toolResultWithError = makeToolResult('call-4', true);
-    rerender(<ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />);
+    rerender(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
+    );
     expect(queryByTestId('tool-details')).toBeInTheDocument();
 
     // 3. User manually collapses it
@@ -123,8 +141,10 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
 
     // 4. Rerender with same props (simulating parent update)
-    rerender(<ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />);
-    
+    rerender(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
+    );
+
     // Should stay collapsed (no new transition)
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
   });
@@ -137,7 +157,9 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
       function: { name: '', arguments: '' },
     };
 
-    const { getByText } = render(<ToolCallCompactItem toolCall={partialToolCall} />);
+    const { getByText } = render(
+      <ToolCallCompactItem toolCall={partialToolCall} />,
+    );
 
     expect(getByText('agent.toolDetails.preparingTool')).toBeInTheDocument();
   });
@@ -148,5 +170,99 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
     const { container } = render(<ToolCallCompactItem toolCall={toolCall} />);
 
     expect(container.firstElementChild).toHaveStyle({ overflowAnchor: 'none' });
+  });
+
+  it('shows structured UI details in simple mode without expand', () => {
+    mockDetailLevel = 'simple';
+    const toolCall = makeToolCall('call-7', 'workspace__writeFile');
+    const toolResult = makeToolResult('call-7', false, {
+      metadata: {
+        structuredContent: {
+          path: '/workspace/created.ts',
+          action: 'created',
+          bytes_written: 10,
+          lines: 1,
+        },
+      },
+    });
+
+    const { getByTestId, queryByLabelText } = render(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResult} />,
+    );
+
+    expect(getByTestId('tool-details')).toBeInTheDocument();
+    expect(
+      queryByLabelText('agentChat.toolDetails.toggleAriaLabel'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps non-UI structured content collapsed in simple mode', () => {
+    mockDetailLevel = 'simple';
+    const toolCall = makeToolCall('call-8', 'knowledge__searchKnowledge');
+    const toolResult = makeToolResult('call-8', false, {
+      metadata: {
+        structuredContent: { mode: 'semantic', results: [] },
+      },
+    });
+
+    const { queryByTestId } = render(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResult} />,
+    );
+
+    expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+  });
+
+  it('keeps invalid structured payloads collapsed in simple mode', () => {
+    mockDetailLevel = 'simple';
+    const toolCall = makeToolCall('call-9', 'workspace__writeFile');
+    const toolResult = makeToolResult('call-9', false, {
+      metadata: {
+        structuredContent: { action: 'created' },
+      },
+    });
+
+    const { queryByTestId } = render(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResult} />,
+    );
+
+    expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+  });
+
+  it('shows structured UI details in developer mode without a collapse control', () => {
+    mockDetailLevel = 'developer';
+    const toolCall = makeToolCall('call-10', 'workspace__strReplace');
+    const toolResult = makeToolResult('call-10', false, {
+      metadata: {
+        structuredContent: {
+          path: 'src/a.ts',
+          replacements: 1,
+          unified_diff: '-old\n+new\n',
+        },
+      },
+    });
+
+    const { getByTestId, queryByLabelText } = render(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResult} />,
+    );
+
+    expect(getByTestId('tool-details')).toBeInTheDocument();
+    expect(
+      queryByLabelText('agentChat.toolDetails.toggleAriaLabel'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps plain text developer results collapsed by default', () => {
+    mockDetailLevel = 'developer';
+    const toolCall = makeToolCall('call-11', 'workspace__readFile');
+    const toolResult = makeToolResult('call-11');
+
+    const { queryByTestId, getByLabelText } = render(
+      <ToolCallCompactItem toolCall={toolCall} toolResult={toolResult} />,
+    );
+
+    expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+    expect(
+      getByLabelText('agentChat.toolDetails.toggleAriaLabel'),
+    ).toBeInTheDocument();
   });
 });

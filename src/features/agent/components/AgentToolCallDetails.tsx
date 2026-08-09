@@ -2,9 +2,17 @@ import React, { useMemo } from 'react';
 import type { ToolCall, Message } from '@/models/chat';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 import { AlertCircle, Loader2 } from 'lucide-react';
-import { hasUIResource, parseToolArguments } from '@/lib/tool-call-utils';
+import {
+  getToolStructuredContent,
+  hasUIResource,
+  parseToolArguments,
+} from '@/lib/tool-call-utils';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
+import {
+  canRenderStructuredToolResult,
+  ToolStructuredResult,
+} from './tool-structured/ToolStructuredResult';
 
 interface AgentToolCallDetailsProps {
   toolCall: ToolCall;
@@ -41,6 +49,11 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
     [parsedArgs, toolCall.function.arguments],
   );
   const containsUIResource = hasUIResource(toolResult);
+  const structuredContent = getToolStructuredContent(toolResult);
+  const showStructuredResult =
+    !hasError &&
+    structuredContent !== undefined &&
+    canRenderStructuredToolResult(toolCall.function.name, structuredContent);
 
   if (!showDetails) return null;
 
@@ -92,14 +105,23 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
               data-testid="tool-call-result"
               className={cn(
                 'bg-background rounded border p-2',
-                !containsUIResource && 'max-h-96 overflow-y-auto',
+                !containsUIResource &&
+                  !showStructuredResult &&
+                  'max-h-96 overflow-y-auto',
               )}
             >
-              <AgentMessageRenderer
-                message={toolResult}
-                className="text-sm"
-                expandResources={true}
-              />
+              {showStructuredResult ? (
+                <ToolStructuredResult
+                  toolName={toolCall.function.name}
+                  data={structuredContent}
+                />
+              ) : (
+                <AgentMessageRenderer
+                  message={toolResult}
+                  className="text-sm"
+                  expandResources={true}
+                />
+              )}
             </div>
           )}
         </div>

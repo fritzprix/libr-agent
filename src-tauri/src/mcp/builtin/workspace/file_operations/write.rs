@@ -619,6 +619,7 @@ impl WorkspaceServer {
                         "lines_added": diff.stats.lines_added,
                         "lines_removed": diff.stats.lines_removed,
                     });
+                    structured["unified_diff"] = json!(diff.text);
                 }
 
                 Ok(hint.to_mcp_result_with_data(Some(structured)))
