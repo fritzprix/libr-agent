@@ -1,5 +1,5 @@
 import { createRef } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +20,7 @@ const createDraftChatState = () => ({
     description: 'Draft description',
     allowedBuiltInServiceAliases: [],
   },
+  setAssistant: vi.fn(),
   isLoadingAssistant: false,
   input: '@file:src',
   setInput: vi.fn(),
@@ -104,6 +105,27 @@ vi.mock('../components/AgentDraftWorkspacePreviewPanel', () => ({
   ),
 }));
 
+vi.mock('@/features/assistant/AssistantEditor', () => {
+  function MockAssistantEditor() {
+    return <div data-testid="assistant-editor" />;
+  }
+  function MockAssistantEditorDialog({
+    open,
+  }: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    initialTab?: string;
+  }) {
+    return open ? <div data-testid="assistant-editor-dialog" /> : null;
+  }
+  MockAssistantEditor.Dialog = MockAssistantEditorDialog;
+  return { default: MockAssistantEditor };
+});
+
+vi.mock('@/lib/backend/assistants', () => ({
+  updateAssistant: vi.fn(),
+}));
+
 describe('AgentDraftChatView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -161,5 +183,28 @@ describe('AgentDraftChatView', () => {
       kind: 'files',
       items: ['src/main.ts'],
     });
+  });
+
+  it('opens the assistant tools editor from + Add tools without leaving draft', () => {
+    mockUseAgentDraftChat.mockReturnValue({
+      ...createDraftChatState(),
+      workspaceOverride: null,
+      stage: { kind: 'idle' },
+      input: '',
+    });
+
+    render(
+      <MemoryRouter>
+        <AgentDraftChatView />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.queryByTestId('assistant-editor-dialog'),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add tools' }));
+
+    expect(screen.getByTestId('assistant-editor-dialog')).toBeInTheDocument();
   });
 });

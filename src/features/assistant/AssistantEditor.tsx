@@ -26,13 +26,21 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Settings, Wrench, Server } from 'lucide-react';
 
-export default function AssistantEditor() {
+export type AssistantEditorTab = 'general' | 'tools' | 'skills';
+
+type AssistantEditorProps = {
+  initialTab?: AssistantEditorTab;
+};
+
+export default function AssistantEditor({
+  initialTab = 'general',
+}: AssistantEditorProps) {
   const { draft, update } = useEditor<Assistant>();
   const { t } = useTranslation('common');
 
   return (
     <div className="w-full">
-      <Tabs defaultValue="general" className="w-full">
+      <Tabs key={initialTab} defaultValue={initialTab} className="w-full">
         <TabsList className="w-full grid grid-cols-3 mb-4">
           <TabsTrigger value="general" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
@@ -230,7 +238,14 @@ function MCPServersTab() {
   );
 }
 
-function AssistantDialog(props: DialogProps) {
+type AssistantDialogProps = DialogProps & {
+  initialTab?: AssistantEditorTab;
+};
+
+function AssistantDialog({
+  initialTab = 'general',
+  ...props
+}: AssistantDialogProps) {
   const { draft, commit, isLoading } = useEditor<Assistant>();
   const { t } = useTranslation('common');
 
@@ -266,7 +281,7 @@ function AssistantDialog(props: DialogProps) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto min-h-0">
-          <AssistantEditor />
+          {props.open ? <AssistantEditor initialTab={initialTab} /> : null}
         </div>
         <div className="flex-shrink-0 flex justify-end gap-2 px-6 py-4 border-t bg-muted/20">
           <Button variant="outline" onClick={handleCancel} disabled={isLoading}>
