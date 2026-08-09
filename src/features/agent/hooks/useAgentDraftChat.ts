@@ -583,6 +583,7 @@ export function useAgentDraftChat() {
 
   return {
     assistant,
+    setAssistant,
     isLoadingAssistant,
     input,
     setInput,
