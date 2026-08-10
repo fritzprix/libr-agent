@@ -69,11 +69,11 @@ MCP 설치 UI는 [Extensions](extensions.md) / [커스텀 MCP](custom-mcp.md)를
 
 ### UI에서 scope
 
-| 목적              | 어디                                                                   |
-| ----------------- | ---------------------------------------------------------------------- |
-| 로컬 스킬 폴더    | **Settings → General → Skills Directory** 또는 **Extensions → Skills** |
-| 어시스턴트별 스킬 | Assistants → **Skills** 탭                                             |
-| 파일로 배포       | 아래 skill-deployer                                                    |
+| 목적              | 어디                             |
+| ----------------- | -------------------------------- |
+| 로컬 스킬 폴더    | 사이드바 **Extensions → Skills** |
+| 어시스턴트별 스킬 | Assistants → **Skills** 탭       |
+| 파일로 배포       | 아래 skill-deployer              |
 
 ---
 

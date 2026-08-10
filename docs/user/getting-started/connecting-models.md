@@ -28,14 +28,15 @@ title: 모델 연결하기
 
 | 탭                 | 용도                                |
 | ------------------ | ----------------------------------- |
-| **General**        | 언어, 스킬 디렉터리 등              |
+| **General**        | 언어 및 기본 애플리케이션 설정      |
 | **AI & Models**    | API 키, 기본/대체 모델, Temperature |
-| **Chat Interface** | 채팅 UI·컨텍스트 관련               |
-| **System**         | 시스템 옵션                         |
+| **Chat Interface** | 채팅 UI·컨텍스트 설정               |
+| **System**         | 시스템 프로세스 및 권한 옵션        |
 | **Advanced**       | 고급 (셸 런타임 PATH 등)            |
-| **Experimental**   | 실험 기능                           |
+| **Experimental**   | 실험적 기능 옵션                    |
+| **Dev**            | 개발자 모드 (도구 테스트, 디버그)   |
 
-> **없는 이름**: 「LLM Provider」섹션, 「AI Models」(단독), 「Preferred Model」, Settings를 여는 “우측 상단 톱니” — 현재 UI와 맞지 않습니다.
+> **참고**: 스킬(Skills) 관리는 Settings가 아닌 사이드바 **Extensions** 메뉴에서 수행합니다.
 
 ![Settings → AI & Models](../assets/screenshots/getting-started/settings-ai-models.png)
 
@@ -45,11 +46,11 @@ title: 모델 연결하기
 
 1. **AI & Models** 탭을 엽니다.
 2. **Provider API Keys** 섹션에서 공급자 카드를 고릅니다.  
-   예: OpenAI, Anthropic, Google Gemini, Ollama, Groq, Fireworks AI, Cerebras, OpenRouter
-3. **API Key**에 키를 붙여넣습니다. (일부는 **Base URL**도 있습니다.)
+   예: OpenAI, Anthropic, Google Gemini, DeepSeek, Mistral AI, Ollama, Groq, Fireworks AI, Cerebras, OpenRouter
+3. **API Key**에 키를 붙여넣습니다. (필요 시 **Base URL**도 수정합니다.)
 4. **Save Changes**를 누릅니다.
 
-키는 앱 로컬에 저장됩니다. 채팅에 키를 붙여 넣지 마세요.
+키는 앱 로컬 보안 영역에 저장됩니다. 채팅 대화창에 키를 붙여 넣지 마세요.
 
 ### 키 발급
 
@@ -59,6 +60,7 @@ title: 모델 연결하기
 | OpenAI        | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | Google Gemini | [aistudio.google.com](https://aistudio.google.com/)                  |
 | Groq          | [console.groq.com/keys](https://console.groq.com/keys)               |
+| DeepSeek      | [platform.deepseek.com](https://platform.deepseek.com/)              |
 
 ---
 
@@ -66,11 +68,11 @@ title: 모델 연결하기
 
 같은 **AI & Models** 탭의 **Model Preferences**:
 
-| 필드                     | 의미                                                    |
-| ------------------------ | ------------------------------------------------------- |
-| **Default LLM**          | 새 세션에 쓰일 기본 Provider/모델                       |
-| **Fallback LLM**         | 기본 모델이 실패할 때 쓰는 대체                         |
-| **Override temperature** | 켜면 **Temperature**를 직접 지정 (끄면 Provider 기본값) |
+| 필드             | 의미                                                   |
+| ---------------- | ------------------------------------------------------ |
+| **Default LLM**  | 새 세션에 쓰일 기본 Provider/모델                      |
+| **Fallback LLM** | 기본 모델이 실패할 때 쓰는 대체 Provider/모델          |
+| **Temperature**  | AI 답변의 창의성/정확성 수치 조절 (0.0 ~ 2.0 슬라이더) |
 
 세션 중에도 Chat 화면의 **Provider** / **Model** 피커로 바꿀 수 있습니다. 그 변경은 **현재 세션**에만 적용됩니다.
 

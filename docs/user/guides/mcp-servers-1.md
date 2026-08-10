@@ -73,7 +73,7 @@ npm 패키지, GitHub 리포지토리, 또는 직접 설정 JSON을 입력합니
 
 Extensions 패널에서 각 서버의 상태 표시기를 확인합니다:
 
-- ✅ **연결됨** —正常使用 가능
+- ✅ **연결됨** — 정상 사용 가능
 - ⚠️ **경고** — 설정 확인 필요
 - ❌ **연결 실패** — 구성 재설정 필요
 
@@ -96,5 +96,5 @@ Extensions 패널에서 각 서버의 상태 표시기를 확인합니다:
 
 - [Extensions 관리](extensions.md) — 권장 확장 프로그램 목록
 - [커스텀 MCP 설치](custom-mcp.md) — 상세 설치 방법
-- [API 응답 스키마](../mcp/API_RESPONSE_SCHEMA_FOR_USER_ACTIVATED_MCPs.md) — 개발자용 API 레퍼런스
-- [Rust MCP 마이그레이션](../mcp/RUST_MCP_CONFIG_MIGRATION_STRATEGY.md) — 개발자용 구현 가이드
+- [API 응답 스키마](https://github.com/fritzprix/libr-agent/blob/main/docs/mcp/API_RESPONSE_SCHEMA_FOR_USER_ACTIVATED_MCPs.md) — 개발자용 API 레퍼런스
+- [Rust MCP 마이그레이션](https://github.com/fritzprix/libr-agent/blob/main/docs/mcp/RUST_MCP_CONFIG_MIGRATION_STRATEGY.md) — 개발자용 구현 가이드

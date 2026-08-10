@@ -44,6 +44,7 @@ const koSidebar = [
       { text: '내장 도구 레퍼런스', link: '/guides/builtin-tools' },
       { text: '커스텀 MCP', link: '/guides/custom-mcp' },
       { text: '세션', link: '/guides/sessions' },
+      { text: '네비게이션 가이드', link: '/guides/navigation-guide' },
       { text: '문제 해결', link: '/guides/troubleshooting' },
     ],
   },
@@ -61,6 +62,7 @@ const koSidebar = [
       { text: '조사·리포트', link: '/scenarios/research' },
       { text: '파일 처리', link: '/scenarios/file-management' },
       { text: '웹 브라우징', link: '/scenarios/web-browsing' },
+      { text: '자동화 워크플로우', link: '/scenarios/automation' },
     ],
   },
 ];
@@ -103,6 +105,16 @@ const enSidebar = [
       { text: 'Error codes', link: '/en/faq/error-codes' },
     ],
   },
+  {
+    text: 'Scenarios',
+    items: [
+      { text: 'Code Review', link: '/en/scenarios/code-review' },
+      { text: 'Research & Report', link: '/en/scenarios/research' },
+      { text: 'File Management', link: '/en/scenarios/file-management' },
+      { text: 'Web Browsing', link: '/en/scenarios/web-browsing' },
+      { text: 'Automation Workflow', link: '/en/scenarios/automation' },
+    ],
+  },
 ];
 
 export default defineConfig({
@@ -112,10 +124,10 @@ export default defineConfig({
   // Project Pages: https://fritzprix.github.io/libr-agent/
   base: '/libr-agent/',
   srcDir: '../docs/user',
-  srcExclude: ['**/README.md', '**/guides/navigation-guide.md'],
+  srcExclude: ['**/README.md'],
   cleanUrls: true,
   lastUpdated: true,
-  ignoreDeadLinks: true,
+  ignoreDeadLinks: false,
   head: [['meta', { name: 'theme-color', content: '#0f766e' }]],
   vite: {
     resolve: {
