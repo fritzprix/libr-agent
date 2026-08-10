@@ -31,7 +31,11 @@ pub fn extract_db_file_path(db_url: &str) -> Option<&str> {
         .and_then(|p| p.split('?').next())
 }
 
-pub(crate) fn register_sqlite_vec() {
+/// Register the sqlite-vec extension for virtual table migrations (`vec0`).
+///
+/// Safe to call from Windows-safe standalone integration tests that run
+/// `Migrator` without going through app startup.
+pub fn register_sqlite_vec() {
     static REGISTER_SQLITE_VEC: Once = Once::new();
 
     REGISTER_SQLITE_VEC.call_once(|| unsafe {

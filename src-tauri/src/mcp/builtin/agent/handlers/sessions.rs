@@ -10,7 +10,7 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::types::MCPResult;
 use crate::models::chat::MessageSource;
-use crate::repositories::SessionStatus;
+use crate::repositories::{AssistantRepository, SessionStatus};
 
 use super::super::AgentServer;
 use super::check_session::check_session;
@@ -97,10 +97,13 @@ async fn start_session_impl(
     };
 
     let explicit_org = caller_explicit_org.clone();
+    let assistant_id = read_required_string(&args, "agentId")?;
+    let task = read_required_string(&args, "task")?;
     let requested_workspace_override = args
         .get("workspaceOverride")
         .and_then(|v| v.as_str())
         .map(str::to_string);
+    let workspace_override_set = requested_workspace_override.is_some();
 
     let effective_workspace_path = if let Some(workspace_override) = requested_workspace_override {
         Some(workspace_override)
@@ -120,8 +123,8 @@ async fn start_session_impl(
 
     let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(json!({
         "parentSessionId": caller_session_id,
-        "assistantId": read_required_string(&args, "agentId")?,
-        "request": read_required_string(&args, "task")?,
+        "assistantId": assistant_id.clone(),
+        "request": task.clone(),
         "workspacePath": effective_workspace_path.as_deref(),
         "orgId": explicit_org.as_ref().map(|(org_id, _, _)| org_id.as_str()),
         "orgName": explicit_org.as_ref().map(|(_, org_name, _)| org_name.as_str()),
@@ -198,8 +201,37 @@ async fn start_session_impl(
     );
     response_data.insert("sessionId".to_string(), Value::String(display_id));
     response_data.insert("status".to_string(), Value::String("started".to_string()));
+    response_data.insert(
+        "assistantId".to_string(),
+        Value::String(assistant_id.clone()),
+    );
+    response_data.insert("task".to_string(), Value::String(task.clone()));
+    response_data.insert(
+        "workspaceOverride".to_string(),
+        Value::Bool(workspace_override_set),
+    );
     if let Some(workspace_path) = effective_workspace_path {
         response_data.insert("workspacePath".to_string(), Value::String(workspace_path));
+    }
+
+    // Human card identity: prefer assistant display name over session id.
+    {
+        match crate::state::get_assistant_repository()
+            .get_assistant(&assistant_id)
+            .await
+        {
+            Ok(Some(assistant)) => {
+                response_data.insert("assistantName".to_string(), Value::String(assistant.name));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                log::warn!(
+                    "agent__startSession: failed to resolve assistantName for {}: {}",
+                    assistant_id,
+                    error
+                );
+            }
+        }
     }
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
@@ -243,6 +275,7 @@ pub async fn message_to_session(
     };
     let session_id = target_session.id.clone();
     let display_id = crate::utils::session_id::display_session_id(&session_id);
+    let instruction_text = message_text.clone();
     let response = match crate::services::AgentService::send_message_to_session(
         manager,
         &session_id,
@@ -291,6 +324,35 @@ pub async fn message_to_session(
     response_data.insert("sessionId".to_string(), Value::String(display_id));
     response_data.insert("messageId".to_string(), Value::String(response.message_id));
     response_data.insert("status".to_string(), Value::String(response.status));
+    // Persist message body for human card (collapsed preview).
+    response_data.insert("instruction".to_string(), Value::String(instruction_text));
+
+    // Prefer assistant display name over opaque session id in the parent chat card.
+    {
+        if let Some(assistant_id) = target_session.assistant_id.as_deref() {
+            response_data.insert(
+                "assistantId".to_string(),
+                Value::String(assistant_id.to_string()),
+            );
+            match crate::state::get_assistant_repository()
+                .get_assistant(assistant_id)
+                .await
+            {
+                Ok(Some(assistant)) => {
+                    response_data
+                        .insert("assistantName".to_string(), Value::String(assistant.name));
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    log::warn!(
+                        "agent__messageToSession: failed to resolve assistantName for {}: {}",
+                        assistant_id,
+                        error
+                    );
+                }
+            }
+        }
+    }
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

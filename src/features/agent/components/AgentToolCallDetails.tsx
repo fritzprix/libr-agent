@@ -114,6 +114,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
                 <ToolStructuredResult
                   toolName={toolCall.function.name}
                   data={structuredContent}
+                  toolArgs={params}
                 />
               ) : (
                 <AgentMessageRenderer
