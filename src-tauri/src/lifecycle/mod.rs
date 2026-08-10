@@ -33,19 +33,26 @@ pub fn run_with_sqlite_sync(db_url: String) {
 
     // Run async initialization on Tauri's global async runtime
     tauri::async_runtime::block_on(async {
+        let backend_init_start = std::time::Instant::now();
         let session_manager = get_session_manager().expect("SessionManager not initialized");
 
+        let quarantine_start = std::time::Instant::now();
         if let Err(err) = database::maybe_restore_quarantined_database(&db_url).await {
             log::warn!(
                 "⚠️ Failed to inspect quarantined DB recovery candidates: {}",
                 err
             );
         }
+        crate::state::log_startup_phase(
+            "quarantine_inspect",
+            Some(quarantine_start.elapsed().as_millis()),
+        );
 
         // Initialize Database (now returns Result).
         // Strategy: if migration fails on an existing DB (e.g. schema mismatch from
         // an untracked legacy DB), rename it aside and retry with a fresh DB so the
         // app always starts. The old DB is preserved as *.incompatible for recovery.
+        let init_db_start = std::time::Instant::now();
         let db = match database::init_database(&db_url).await {
             Ok(connection) => connection,
             Err(first_err) => {
@@ -92,16 +99,31 @@ pub fn run_with_sqlite_sync(db_url: String) {
                 }
             }
         };
-
+        crate::state::log_startup_phase("init_database", Some(init_db_start.elapsed().as_millis()));
         // Initialize repositories required by app setup and command handlers.
+        let repos_start = std::time::Instant::now();
         repositories::init_repositories(&db).await;
+        crate::state::log_startup_phase(
+            "init_repositories",
+            Some(repos_start.elapsed().as_millis()),
+        );
 
         // Global MCPServerManager initialization is intentionally skipped.
         // Session-isolated MCP architecture uses MCPServiceProxyManager initialized in repositories.
         let _ = db;
         let _ = session_manager;
         info!("✅ Session-isolated MCP architecture initialized");
+        crate::state::log_startup_phase(
+            "backend_block_on_complete",
+            Some(backend_init_start.elapsed().as_millis()),
+        );
     });
     // Call the main run function
+    if let Some(elapsed_ms) = crate::state::startup_elapsed_ms() {
+        info!(
+            "⏱️ Startup metric: calling crate::run (window create) after {}ms",
+            elapsed_ms
+        );
+    }
     crate::run();
 }

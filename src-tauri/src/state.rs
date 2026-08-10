@@ -151,6 +151,32 @@ pub fn startup_elapsed_ms() -> Option<u128> {
         .map(|started_at| started_at.elapsed().as_millis())
 }
 
+/// Log a named startup phase duration plus elapsed time since `start_startup_timer()`.
+///
+/// Pass `Some(ms)` for measured work and `None` when the phase was intentionally skipped.
+/// Format is grep-friendly:
+/// - measured: `Startup phase: <name> took <ms>ms (t=<elapsed>ms)`
+/// - skipped:  `Startup phase: <name> skipped (t=<elapsed>ms)`
+///
+/// Also prints to stderr so phases that run before the file logger is installed remain visible.
+pub fn log_startup_phase(phase: &str, duration_ms: Option<u128>) {
+    let message = match (duration_ms, startup_elapsed_ms()) {
+        (Some(duration_ms), Some(elapsed_ms)) => format!(
+            "⏱️ Startup phase: {} took {}ms (t={}ms)",
+            phase, duration_ms, elapsed_ms
+        ),
+        (Some(duration_ms), None) => {
+            format!("⏱️ Startup phase: {} took {}ms", phase, duration_ms)
+        }
+        (None, Some(elapsed_ms)) => {
+            format!("⏱️ Startup phase: {} skipped (t={}ms)", phase, elapsed_ms)
+        }
+        (None, None) => format!("⏱️ Startup phase: {} skipped", phase),
+    };
+    eprintln!("{message}");
+    log::info!("{message}");
+}
+
 pub fn get_skills_catalog_revision() -> u64 {
     skills_catalog_revision().load(Ordering::Relaxed)
 }

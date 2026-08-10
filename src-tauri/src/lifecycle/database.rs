@@ -291,13 +291,49 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
 
     info!("✅ Database connected (WAL mode): {db_file_path}");
 
-    // Create backup before migration using VACUUM INTO (WAL-safe)
-    info!("📦 Creating backup before migration...");
-    let backup_path = backup_manager.create_backup(&migration_db).await.ok();
-
-    if let Some(ref path) = backup_path {
-        info!("✅ Backup created: {}", path.display());
+    // Pending migrations come from SeaORM's `seaql_migrations` tracking — not from
+    // `schema_version` (which is a secondary bookkeeping table and can lag or drift).
+    // Warm startups with zero pending migrations typically take ~0–1ms in Migrator::up;
+    // the expensive part is VACUUM INTO, so only back up when work is actually pending.
+    let (has_pending_migrations, pending_count_label) =
+        match Migrator::get_pending_migrations(&migration_db).await {
+            Ok(pending) => {
+                let count = pending.len();
+                (count > 0, count.to_string())
+            }
+            Err(e) => {
+                warn!(
+                    "⚠️ Could not list pending migrations (treating as pending): {}",
+                    e
+                );
+                (true, "unknown".to_string())
+            }
+        };
+    if has_pending_migrations {
+        info!("🧩 Pending migrations: {pending_count_label}");
     }
+
+    // Create backup before migration using VACUUM INTO (WAL-safe) — only when needed.
+    let backup_path = if has_pending_migrations {
+        info!("📦 Creating backup before migration...");
+        let backup_start = Instant::now();
+        let path = backup_manager.create_backup(&migration_db).await.ok();
+        crate::state::log_startup_phase(
+            "db_vacuum_backup",
+            Some(backup_start.elapsed().as_millis()),
+        );
+
+        if let Some(ref p) = path {
+            info!("✅ Backup created: {}", p.display());
+        } else {
+            warn!("⚠️ Backup skipped or failed (continuing startup)");
+        }
+        path
+    } else {
+        info!("⏭️ Skipping VACUUM INTO backup (no pending migrations)");
+        crate::state::log_startup_phase("db_vacuum_backup", None);
+        None
+    };
 
     // Verify migration file integrity before running.
     // NOTE: Migration .rs source files are only available in development builds.
@@ -320,6 +356,7 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
     let verifier = MigrationVerifier::new(migration_db.clone(), migration_dir);
 
     // Verify existing migrations (skip on first run or when source dir is absent)
+    let verify_start = Instant::now();
     match verifier.verify_all_migrations().await {
         Ok(()) => info!("✅ Migration integrity verified"),
         Err(verification_error) => {
@@ -344,17 +381,34 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
             }
         }
     }
+    crate::state::log_startup_phase(
+        "db_migration_verify",
+        Some(verify_start.elapsed().as_millis()),
+    );
 
-    // Run migrations with timing
-    info!("🚀 Running database migrations...");
+    // Always call Migrator::up — SeaORM applies only pending migrations via seaql_migrations.
+    // Do not skip based on schema_version count (that can hide real pending work).
+    if has_pending_migrations {
+        info!("🚀 Running database migrations...");
+    } else {
+        info!("✅ No pending migrations (Migrator::up is a no-op check)");
+    }
     let start = Instant::now();
     let migration_result = Migrator::up(&migration_db, None).await;
     let execution_time_ms = start.elapsed().as_millis() as i64;
+    crate::state::log_startup_phase("db_migrator_up", Some(execution_time_ms as u128));
 
     // Handle migration result
     let mut db = match migration_result {
         Ok(_) => {
-            info!("✅ Database migrations applied ({}ms)", execution_time_ms);
+            if has_pending_migrations {
+                info!("✅ Database migrations applied ({}ms)", execution_time_ms);
+            } else {
+                info!(
+                    "✅ Migration check complete ({}ms, no pending work)",
+                    execution_time_ms
+                );
+            }
 
             // Update schema version
             let version = env!("CARGO_PKG_VERSION");

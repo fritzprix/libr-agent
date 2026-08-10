@@ -168,13 +168,19 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let resource_dir = app.path().resource_dir()?;
 
     // Ensure default assistants are loaded from the resource directory (Fixes Correctness #2)
+    let assistants_start = std::time::Instant::now();
     if let Err(e) = tauri::async_runtime::block_on(
         crate::services::assistant_init::ensure_default_assistants(Some(&resource_dir)),
     ) {
         log::error!("❌ Failed to ensure default assistants from bundle: {}", e);
     }
+    crate::state::log_startup_phase(
+        "ensure_default_assistants",
+        Some(assistants_start.elapsed().as_millis()),
+    );
 
     let base_data_dir = session_manager.get_base_data_dir().clone();
+    let bundled_skills_start = std::time::Instant::now();
     if let Err(error) =
         tauri::async_runtime::block_on(sync_assistant_bundled_skills(&resource_dir, &base_data_dir))
     {
@@ -183,13 +189,22 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         crate::services::skill_service::invalidate_skill_scan_cache();
         info!("✅ Assistant bundled skills synchronized");
     }
+    crate::state::log_startup_phase(
+        "sync_assistant_bundled_skills",
+        Some(bundled_skills_start.elapsed().as_millis()),
+    );
 
     let bundled_skills_dir = resource_dir.join("bundled_skills");
     let system_skills_dir = base_data_dir.join(SYSTEM_SKILLS_DIR_NAME);
     let sync_handle = spawn_managed_skills_startup_work(bundled_skills_dir, system_skills_dir);
     app.manage(ManagedSkillsSyncHandle(sync_handle));
 
+    let settings_start = std::time::Instant::now();
     let startup_settings = tauri::async_runtime::block_on(load_startup_settings());
+    crate::state::log_startup_phase(
+        "load_startup_settings",
+        Some(settings_start.elapsed().as_millis()),
+    );
 
     // MCP HTTP endpoint is enabled via env var or --mcp CLI flag
     let mcp_enabled =
