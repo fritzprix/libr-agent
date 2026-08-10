@@ -269,7 +269,7 @@ Each stage below is broken into its constituent components with behavioral descr
   - `main()` (L14): Entry point — checks for browser sidecar mode, loads `.env` files, sets SQLite DB path, calls `run_with_sqlite_sync()`
   - Browser sidecar detection (L13-20): If `--browser-sidecar` flag present, runs `browser_sidecar::run_sidecar_mode()`
   - Environment loading (L31-73): Development loads `.env.dev` → `.env`; Production loads `.env` from CWD or executable directory
-  - SQLite path resolution (L76-87): Uses `LIBRAGENT_DB_PATH` env or default `~/.local/share/com.fritzprix.libragent/libragent_v2.db`
+  - SQLite path resolution: Uses `LIBRAGENT_DB_PATH` env, else debug → `libragent_v2.dev.db`, release → `libragent_v2.db` under the app data dir (so `tauri dev` never migrates the production DB by default)
 
 #### `lifecycle/app_setup.rs` — Application Setup
 
