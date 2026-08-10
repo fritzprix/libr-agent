@@ -1,7 +1,7 @@
 import type { Message } from '@/models/chat';
 import { getToolStructuredContent, hasUIResource } from '@/lib/tool-call-utils';
 import { canRenderStructuredToolResult } from './ToolStructuredResult';
-import { isCheckSessionWaitTool } from './types';
+import { isDelegatedSessionWaitTool } from './types';
 
 export type ToolResultDetailMode = 'simple' | 'developer';
 
@@ -20,7 +20,7 @@ export type ToolResultUiOverride = {
  * Resolves whether a tool result should override the default collapsed compact UI.
  *
  * Order:
- * 1. In-flight checkSession(wait=true) — waiting chrome + Stop
+ * 1. In-flight delegated wait (checkSession / messageToSession / startSession) — Stop chrome
  * 2. MCP UI resources (e.g. circuit-break widgets)
  * 3. Structured content with a registered renderer
  * Otherwise returns null → keep default collapse behavior.
@@ -36,7 +36,7 @@ export function resolveToolResultUiOverride(
   if (
     !toolResult &&
     parsedArgs &&
-    isCheckSessionWaitTool(toolName, parsedArgs)
+    isDelegatedSessionWaitTool(toolName, parsedArgs)
   ) {
     return { alwaysVisible: true, hideParameters };
   }

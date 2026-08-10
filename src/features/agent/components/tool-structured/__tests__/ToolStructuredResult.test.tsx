@@ -148,4 +148,39 @@ describe('ToolStructuredResult', () => {
     );
     expect(screen.getByText(/stopped by user/i)).toBeInTheDocument();
   });
+
+  it('renders messageToSession wait-complete card', () => {
+    render(
+      <MemoryRouter>
+        <ToolStructuredResult
+          toolName="agent__messageToSession"
+          data={{
+            sessionId: '272c7e19e8',
+            status: 'idle',
+            responseStatus: 'success',
+            result: 'Review complete.',
+            turnCount: 3,
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByTestId('tool-structured-check-session'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Review complete/)).toBeInTheDocument();
+  });
+
+  it('skips fire-and-forget messageToSession pending acks', () => {
+    const { container } = render(
+      <ToolStructuredResult
+        toolName="agent__messageToSession"
+        data={{
+          sessionId: '272c7e19e8',
+          status: 'queued',
+          responseStatus: 'pending',
+        }}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
 });

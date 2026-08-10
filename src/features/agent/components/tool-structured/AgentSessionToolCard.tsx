@@ -44,7 +44,8 @@ function resolveCardKind(
 }
 
 /**
- * Compact structured result card for agent__checkSession.
+ * Compact structured result card for delegated-session wait tools
+ * (checkSession / messageToSession / startSession after wait).
  * Default collapsed so parent chat is not flooded with child output.
  */
 export const AgentSessionToolCard: React.FC<AgentSessionToolCardProps> = ({

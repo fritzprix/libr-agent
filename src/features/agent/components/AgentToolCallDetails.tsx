@@ -15,7 +15,7 @@ import {
   ToolStructuredResult,
 } from './tool-structured/ToolStructuredResult';
 import { AgentSessionToolWaiting } from './tool-structured/AgentSessionToolWaiting';
-import { isCheckSessionWaitTool } from './tool-structured/types';
+import { isDelegatedSessionWaitTool } from './tool-structured/types';
 
 interface AgentToolCallDetailsProps {
   toolCall: ToolCall;
@@ -61,7 +61,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
   const showSessionWaiting =
     isLoading &&
     !toolResult &&
-    isCheckSessionWaitTool(toolCall.function.name, params);
+    isDelegatedSessionWaitTool(toolCall.function.name, params);
   const childSessionRef =
     typeof params.sessionId === 'string' ? params.sessionId : '';
 

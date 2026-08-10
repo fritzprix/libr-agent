@@ -125,6 +125,20 @@ describe('resolveToolResultUiOverride', () => {
     });
   });
 
+  it('returns alwaysVisible for in-flight messageToSession waits', () => {
+    expect(
+      resolveToolResultUiOverride(
+        'agent__messageToSession',
+        undefined,
+        'developer',
+        { sessionId: 'abc1234567', message: 'continue' },
+      ),
+    ).toEqual({
+      alwaysVisible: true,
+      hideParameters: false,
+    });
+  });
+
   it('does not force visibility for non-waiting checkSession', () => {
     expect(
       resolveToolResultUiOverride(
@@ -132,6 +146,21 @@ describe('resolveToolResultUiOverride', () => {
         undefined,
         'developer',
         { sessionId: 'abc1234567', wait: false },
+      ),
+    ).toBeNull();
+  });
+
+  it('does not force visibility when messageToSession disables wait', () => {
+    expect(
+      resolveToolResultUiOverride(
+        'agent__messageToSession',
+        undefined,
+        'simple',
+        {
+          sessionId: 'abc1234567',
+          message: 'ping',
+          waitForResponse: false,
+        },
       ),
     ).toBeNull();
   });

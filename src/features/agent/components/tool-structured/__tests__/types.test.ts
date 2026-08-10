@@ -3,8 +3,9 @@ import {
   canRenderStructuredToolResult,
 } from '../ToolStructuredResult';
 import {
-  isCheckSessionWaitTool,
+  isDelegatedSessionWaitTool,
   parseCheckSessionResult,
+  parseDelegatedSessionWaitResult,
   parseRunShellResult,
   parseStrReplaceResult,
   parseWriteFileResult,
@@ -98,6 +99,22 @@ describe('tool-structured types', () => {
         turnCount: 2,
       }),
     ).toBe(true);
+    expect(
+      canRenderStructuredToolResult('agent__messageToSession', {
+        sessionId: 'abc1234567',
+        status: 'idle',
+        responseStatus: 'success',
+        result: 'done',
+        turnCount: 2,
+      }),
+    ).toBe(true);
+    expect(
+      canRenderStructuredToolResult('agent__messageToSession', {
+        sessionId: 'abc1234567',
+        status: 'queued',
+        responseStatus: 'pending',
+      }),
+    ).toBe(false);
   });
 
   it('parseCheckSessionResult requires sessionId and status', () => {
@@ -116,21 +133,53 @@ describe('tool-structured types', () => {
     expect(parseCheckSessionResult({ status: 'idle' })).toBeNull();
   });
 
-  it('isCheckSessionWaitTool only matches blocking waits', () => {
+  it('parseDelegatedSessionWaitResult rejects fire-and-forget acks', () => {
     expect(
-      isCheckSessionWaitTool('agent__checkSession', {
+      parseDelegatedSessionWaitResult({
+        sessionId: 'abc1234567',
+        status: 'started',
+        responseStatus: 'pending',
+      }),
+    ).toBeNull();
+    expect(
+      parseDelegatedSessionWaitResult({
+        sessionId: 'abc1234567',
+        status: 'idle',
+        responseStatus: 'success',
+        turnCount: 1,
+        result: 'ok',
+      }),
+    ).not.toBeNull();
+  });
+
+  it('isDelegatedSessionWaitTool matches blocking checkSession and messageToSession', () => {
+    expect(
+      isDelegatedSessionWaitTool('agent__checkSession', {
         sessionId: 'abc',
         wait: true,
       }),
     ).toBe(true);
     expect(
-      isCheckSessionWaitTool('agent__checkSession', {
+      isDelegatedSessionWaitTool('agent__checkSession', {
         sessionId: 'abc',
         wait: false,
       }),
     ).toBe(false);
     expect(
-      isCheckSessionWaitTool('workspace__runShell', {
+      isDelegatedSessionWaitTool('agent__messageToSession', {
+        sessionId: 'abc',
+        message: 'hello',
+      }),
+    ).toBe(true);
+    expect(
+      isDelegatedSessionWaitTool('agent__messageToSession', {
+        sessionId: 'abc',
+        message: 'hello',
+        waitForResponse: false,
+      }),
+    ).toBe(false);
+    expect(
+      isDelegatedSessionWaitTool('workspace__runShell', {
         sessionId: 'abc',
         wait: true,
       }),

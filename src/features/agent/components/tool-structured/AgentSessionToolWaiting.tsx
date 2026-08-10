@@ -18,7 +18,8 @@ export interface AgentSessionToolWaitingProps {
 }
 
 /**
- * In-flight UI for agent__checkSession(wait=true): live status + Stop.
+ * In-flight UI for blocking delegated waits (checkSession / messageToSession /
+ * startSession): live status + Stop.
  * Lives outside ToolStructuredResult — there is no structured_content yet.
  */
 export const AgentSessionToolWaiting: React.FC<AgentSessionToolWaitingProps> = ({

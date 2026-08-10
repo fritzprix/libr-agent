@@ -100,20 +100,58 @@ export function parseCheckSessionResult(
   return parsed.success ? parsed.data : null;
 }
 
-/** True when a tool call is an in-flight delegated-session wait worth a Stop card. */
-export function isCheckSessionWaitTool(
+/**
+ * Wait-complete delegated-session payloads (checkSession / messageToSession /
+ * startSession after an internal wait). Excludes fire-and-forget acks
+ * (`responseStatus: pending`, `status: started`).
+ */
+export function parseDelegatedSessionWaitResult(
+  value: unknown,
+): CheckSessionResult | null {
+  const parsed = parseCheckSessionResult(value);
+  if (!parsed) return null;
+  if (parsed.responseStatus === 'pending') return null;
+  if (parsed.status.toLowerCase() === 'started') return null;
+  const hasWaitCompleteSignal =
+    typeof parsed.turnCount === 'number' ||
+    typeof parsed.result === 'string' ||
+    parsed.terminatedByUser === true;
+  return hasWaitCompleteSignal ? parsed : null;
+}
+
+function hasSessionIdArg(args: Record<string, unknown>): boolean {
+  const sessionId = args.sessionId;
+  return typeof sessionId === 'string' && sessionId.trim().length > 0;
+}
+
+/**
+ * True when a tool call is an in-flight delegated-session wait worth a Stop card.
+ * Covers checkSession(wait), messageToSession(waitForResponse), and
+ * startSession(waitForResult) when a child sessionId is already known in args.
+ */
+export function isDelegatedSessionWaitTool(
   toolName: string,
   args: Record<string, unknown>,
 ): boolean {
   const key = resolveStructuredToolKey(toolName);
-  if (key !== 'agent__checkSession') return false;
-  const sessionId = args.sessionId;
-  if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
-    return false;
+  if (!hasSessionIdArg(args)) return false;
+
+  switch (key) {
+    case 'agent__checkSession':
+      return args.wait === true;
+    case 'agent__messageToSession':
+      // Backend default is waitForResponse=true when omitted.
+      return args.waitForResponse !== false;
+    case 'agent__startSession':
+      // Child id is usually absent from start args; only match if present.
+      return args.waitForResult === true;
+    default:
+      return false;
   }
-  // Default wait is false in the backend; only show Stop for blocking waits.
-  return args.wait === true;
 }
+
+/** @deprecated Use {@link isDelegatedSessionWaitTool} */
+export const isCheckSessionWaitTool = isDelegatedSessionWaitTool;
 
 /** Canonical `service__tool` name used by the structured-result dispatcher. */
 export function resolveStructuredToolKey(toolName: string): string {
