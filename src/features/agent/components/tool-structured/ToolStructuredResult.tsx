@@ -2,6 +2,12 @@ import React from 'react';
 import { FileWriteActions } from './FileWriteActions';
 import { StrReplaceDiffView } from './StrReplaceDiffView';
 import { TerminalOutputBlock } from './TerminalOutputBlock';
+import { AgentSessionToolCard } from './AgentSessionToolCard';
+import {
+  classifyAgentSessionCard,
+  isAgentSessionStructuredTool,
+  parseAgentSessionToolResult,
+} from './agent-types';
 import {
   parseRunShellResult,
   parseStrReplaceResult,
@@ -12,6 +18,8 @@ import {
 export interface ToolStructuredResultProps {
   toolName: string;
   data: unknown;
+  /** Optional tool-call arguments (e.g. task / message for agent cards). */
+  toolArgs?: Record<string, unknown>;
 }
 
 /**
@@ -19,7 +27,7 @@ export interface ToolStructuredResultProps {
  * Returns null when the tool is unsupported or the payload fails validation.
  *
  * Extending for a new tool:
- * 1. Add a Zod schema + parse* helper in `./types`
+ * 1. Add a Zod schema + parse* helper in `./types` (or domain module)
  * 2. Add a `case` here that renders the view
  * 3. Register the same key in {@link canRenderStructuredToolResult}
  * Visibility override (always-visible compact UI) follows automatically via
@@ -28,6 +36,7 @@ export interface ToolStructuredResultProps {
 export const ToolStructuredResult: React.FC<ToolStructuredResultProps> = ({
   toolName,
   data,
+  toolArgs,
 }) => {
   const key = resolveStructuredToolKey(toolName);
 
@@ -43,6 +52,23 @@ export const ToolStructuredResult: React.FC<ToolStructuredResultProps> = ({
     case 'workspace__runShell': {
       const parsed = parseRunShellResult(data);
       return parsed ? <TerminalOutputBlock data={parsed} /> : null;
+    }
+    case 'agent__startSession':
+    case 'agent__messageToSession':
+    case 'agent__checkSession':
+    case 'agent__stopSession':
+    case 'agent__deleteSession': {
+      const parsed = parseAgentSessionToolResult(data);
+      if (!parsed || !classifyAgentSessionCard(toolName, parsed)) {
+        return null;
+      }
+      return (
+        <AgentSessionToolCard
+          toolName={toolName}
+          data={parsed}
+          toolArgs={toolArgs}
+        />
+      );
     }
     default:
       return null;
@@ -65,7 +91,12 @@ export function canRenderStructuredToolResult(
       return parseStrReplaceResult(data) !== null;
     case 'workspace__runShell':
       return parseRunShellResult(data) !== null;
-    default:
-      return false;
+    default: {
+      if (!isAgentSessionStructuredTool(toolName)) return false;
+      const parsed = parseAgentSessionToolResult(data);
+      return (
+        parsed !== null && classifyAgentSessionCard(toolName, parsed) !== null
+      );
+    }
   }
 }

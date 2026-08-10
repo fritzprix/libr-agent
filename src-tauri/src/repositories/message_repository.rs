@@ -285,36 +285,59 @@ impl SqliteMessageRepository {
 
     /// Rebuild UI-facing metadata / error fields from persisted columns.
     ///
-    /// `messages.metadata` is not a DB column. Tool failures are persisted as
-    /// `error: {"toolError": true}` (new) or legacy `content[].isError` in the
-    /// raw content JSON (old rows; the typed `MCPContent::Text` field is gone).
+    /// `messages.metadata` is not a DB column. Tool UI state is persisted in the
+    /// `error` column as a JSON envelope:
+    /// - `{"toolError": true}` — tool failure marker (also legacy `content[].isError`)
+    /// - `{"structuredContent": ...}` — MCP structured_content for chat UI cards
+    /// - both keys may appear together
+    ///
+    /// When the column only holds this envelope, `Message.error` stays `None`
+    /// (that field is reserved for LLM/service failure UI payloads).
     fn decode_persisted_tool_error(
         content_json: &str,
         error: Option<serde_json::Value>,
     ) -> (Option<serde_json::Value>, Option<serde_json::Value>) {
-        let tool_error_from_column = error
-            .as_ref()
-            .and_then(|value| value.get("toolError"))
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
         let tool_error_from_legacy_content =
             crate::mcp::types::raw_content_json_has_legacy_item_error(content_json);
+
+        let envelope = error.as_ref().and_then(|value| value.as_object());
+        let tool_error_from_column = envelope
+            .and_then(|object| object.get("toolError"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let structured_content = envelope
+            .and_then(|object| object.get("structuredContent"))
+            .cloned();
+        let is_ui_envelope = tool_error_from_column || structured_content.is_some();
+
         let tool_error = tool_error_from_column || tool_error_from_legacy_content;
 
-        let metadata = if tool_error {
-            Some(serde_json::json!({ "toolError": true }))
-        } else {
-            None
+        let metadata = {
+            let mut map = serde_json::Map::new();
+            if tool_error {
+                map.insert("toolError".to_string(), serde_json::Value::Bool(true));
+            }
+            if let Some(structured) = structured_content {
+                map.insert("structuredContent".to_string(), structured);
+            }
+            if map.is_empty() {
+                None
+            } else {
+                Some(serde_json::Value::Object(map))
+            }
         };
 
-        // Tool-error marker occupies the error column; do not expose it as Message.error
-        // (that field is reserved for LLM/service failure UI payloads).
-        let error = if tool_error_from_column { None } else { error };
+        // UI envelope occupies the error column; do not expose it as Message.error.
+        let error = if is_ui_envelope { None } else { error };
 
         (error, metadata)
     }
 
-    /// Encode in-memory `metadata.toolError` into the durable `error` column marker.
+    /// Encode in-memory tool UI metadata into the durable `error` column envelope.
+    ///
+    /// Persists `metadata.toolError` and/or `metadata.structuredContent` so chat
+    /// structured cards survive session reload. Falls back to `message.error` for
+    /// real LLM/service failure payloads when no UI envelope keys are present.
     fn encode_persisted_error(message: &Message) -> Option<serde_json::Value> {
         let tool_error = message
             .metadata
@@ -322,9 +345,21 @@ impl SqliteMessageRepository {
             .and_then(|metadata| metadata.get("toolError"))
             .and_then(|value| value.as_bool())
             .unwrap_or(false);
+        let structured_content = message
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("structuredContent"))
+            .cloned();
 
-        if tool_error {
-            return Some(serde_json::json!({ "toolError": true }));
+        if tool_error || structured_content.is_some() {
+            let mut map = serde_json::Map::new();
+            if tool_error {
+                map.insert("toolError".to_string(), serde_json::Value::Bool(true));
+            }
+            if let Some(structured) = structured_content {
+                map.insert("structuredContent".to_string(), structured);
+            }
+            return Some(serde_json::Value::Object(map));
         }
 
         message.error.clone()
@@ -858,6 +893,65 @@ mod tests {
         }
     }
 
+    #[test]
+    fn encode_decode_preserves_structured_content_envelope() {
+        let structured = serde_json::json!({
+            "sessionId": "a1b2c3d4e5",
+            "status": "started",
+            "responseStatus": "pending",
+        });
+        let mut message = create_dummy_message("tool-structured", "session1");
+        message.role = "tool".to_string();
+        message.metadata = Some(serde_json::json!({
+            "structuredContent": structured,
+        }));
+
+        let encoded = SqliteMessageRepository::encode_persisted_error(&message);
+        assert_eq!(
+            encoded
+                .as_ref()
+                .and_then(|value| value.get("structuredContent")),
+            Some(&structured)
+        );
+
+        let (error, metadata) = SqliteMessageRepository::decode_persisted_tool_error("[]", encoded);
+        assert!(error.is_none());
+        assert_eq!(
+            metadata
+                .as_ref()
+                .and_then(|value| value.get("structuredContent")),
+            Some(&structured)
+        );
+    }
+
+    #[test]
+    fn encode_decode_preserves_tool_error_and_structured_content() {
+        let structured = serde_json::json!({ "path": "a.txt", "action": "created" });
+        let mut message = create_dummy_message("tool-both", "session1");
+        message.metadata = Some(serde_json::json!({
+            "toolError": true,
+            "structuredContent": structured,
+        }));
+
+        let encoded = SqliteMessageRepository::encode_persisted_error(&message);
+        let (error, metadata) = SqliteMessageRepository::decode_persisted_tool_error("[]", encoded);
+
+        assert!(error.is_none());
+        assert_eq!(
+            metadata
+                .as_ref()
+                .and_then(|value| value.get("toolError"))
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            metadata
+                .as_ref()
+                .and_then(|value| value.get("structuredContent")),
+            Some(&structured)
+        );
+    }
+
     #[tokio::test]
     async fn test_insert_and_get_messages() {
         let repo = setup_test_db().await;
@@ -909,6 +1003,97 @@ mod tests {
             loaded.error.is_none(),
             "toolError marker must not surface as Message.error"
         );
+    }
+
+    #[tokio::test]
+    async fn test_reload_preserves_structured_content_in_error_column_envelope() {
+        let repo = setup_test_db().await;
+        create_test_session(&repo.db, "session1").await;
+
+        let structured = serde_json::json!({
+            "sessionId": "a1b2c3d4e5",
+            "status": "started",
+            "responseStatus": "pending",
+            "toolName": "startSession",
+        });
+
+        let mut message = create_dummy_message("tool-structured", "session1");
+        message.role = "tool".to_string();
+        message.tool_call_id = Some("call-spawn".to_string());
+        message.content = vec![MCPContent::Text {
+            text: "Session started successfully".to_string(),
+        }];
+        message.metadata = Some(serde_json::json!({
+            "structuredContent": structured,
+        }));
+
+        repo.insert(&message).await.expect("Failed to insert");
+
+        let loaded = repo
+            .get_by_id("tool-structured")
+            .await
+            .expect("Failed to get message")
+            .expect("message should exist");
+
+        assert_eq!(
+            loaded
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("structuredContent")),
+            Some(&structured),
+            "structuredContent must survive DB reload for structured tool cards"
+        );
+        assert!(
+            loaded.error.is_none(),
+            "structuredContent envelope must not surface as Message.error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reload_preserves_structured_content_with_tool_error() {
+        let repo = setup_test_db().await;
+        create_test_session(&repo.db, "session1").await;
+
+        let structured = serde_json::json!({
+            "path": "a.txt",
+            "action": "created",
+        });
+
+        let mut message = create_dummy_message("tool-both", "session1");
+        message.role = "tool".to_string();
+        message.tool_call_id = Some("call-both".to_string());
+        message.content = vec![MCPContent::Text {
+            text: "write failed".to_string(),
+        }];
+        message.metadata = Some(serde_json::json!({
+            "toolError": true,
+            "structuredContent": structured,
+        }));
+
+        repo.insert(&message).await.expect("Failed to insert");
+
+        let loaded = repo
+            .get_by_id("tool-both")
+            .await
+            .expect("Failed to get message")
+            .expect("message should exist");
+
+        assert_eq!(
+            loaded
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("toolError"))
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            loaded
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("structuredContent")),
+            Some(&structured)
+        );
+        assert!(loaded.error.is_none());
     }
 
     #[tokio::test]
