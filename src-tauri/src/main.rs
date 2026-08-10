@@ -6,7 +6,8 @@
 /// This function is responsible for:
 /// 1. Loading environment variables from .env file (development mode only)
 /// 2. Determining the path for the SQLite database. It prioritizes the `LIBRAGENT_DB_PATH`
-///    environment variable, falling back to a default location within the user's data directory.
+///    environment variable, falling back to `libragent_v2.dev.db` (debug) or
+///    `libragent_v2.db` (release) within the user's data directory.
 /// 3. Ensuring the directory for the database exists.
 /// 4. Constructing the final SQLite connection URL.
 /// 5. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
@@ -90,16 +91,20 @@ fn main() {
     }
 
     // Set the SQLite database path - stored in the user's data directory.
+    // Debug builds default to a separate file so `pnpm tauri dev` / migration
+    // experiments never mutate the production release DB. Override anytime with
+    // LIBRAGENT_DB_PATH (e.g. to intentionally reuse or inspect prod data).
     let db_path = std::env::var("LIBRAGENT_DB_PATH").unwrap_or_else(|_| {
-        // Default to storing in the user's data directory.
         let data_dir = dirs::data_dir()
             .expect("Failed to get data directory")
             .join("com.fritzprix.libragent");
-        // Use a different filename to avoid potential locking issues.
-        data_dir
-            .join("libragent_v2.db")
-            .to_string_lossy()
-            .to_string()
+
+        #[cfg(debug_assertions)]
+        let db_file = "libragent_v2.dev.db";
+        #[cfg(not(debug_assertions))]
+        let db_file = "libragent_v2.db";
+
+        data_dir.join(db_file).to_string_lossy().to_string()
     });
 
     // Check if the database directory exists and create it if it doesn't.
@@ -108,6 +113,13 @@ fn main() {
     }
 
     let db_url = tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url(&db_path);
+
+    #[cfg(debug_assertions)]
+    if std::env::var("LIBRAGENT_DB_PATH").is_err() {
+        println!(
+            "ℹ️  Debug build using isolated DB (set LIBRAGENT_DB_PATH to override): {db_path}"
+        );
+    }
 
     println!("🚀 Starting LibrAgent with SQLite database: {db_url}");
 
