@@ -55,6 +55,29 @@ export const RunShellResultSchema = z.object({
 
 export type RunShellResult = z.infer<typeof RunShellResultSchema>;
 
+/**
+ * Structured content from agent__checkSession (and wait-complete siblings).
+ * Field names mirror Rust `build_agent_session_tool_data` + enrichment.
+ */
+export const CheckSessionResultSchema = z
+  .object({
+    toolName: z.string().optional(),
+    sessionId: z.string(),
+    status: z.string(),
+    responseStatus: z.string().optional(),
+    turnCount: z.number().optional(),
+    message: z.string().optional(),
+    result: z.string().optional(),
+    assistantName: z.string().optional(),
+    assistantId: z.string().optional(),
+    terminatedByUser: z.boolean().optional(),
+    recoverable: z.boolean().optional(),
+    hasMoreDetail: z.boolean().optional(),
+  })
+  .passthrough();
+
+export type CheckSessionResult = z.infer<typeof CheckSessionResultSchema>;
+
 export function parseWriteFileResult(value: unknown): WriteFileResult | null {
   const parsed = WriteFileResultSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
@@ -68,6 +91,28 @@ export function parseStrReplaceResult(value: unknown): StrReplaceResult | null {
 export function parseRunShellResult(value: unknown): RunShellResult | null {
   const parsed = RunShellResultSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+export function parseCheckSessionResult(
+  value: unknown,
+): CheckSessionResult | null {
+  const parsed = CheckSessionResultSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/** True when a tool call is an in-flight delegated-session wait worth a Stop card. */
+export function isCheckSessionWaitTool(
+  toolName: string,
+  args: Record<string, unknown>,
+): boolean {
+  const key = resolveStructuredToolKey(toolName);
+  if (key !== 'agent__checkSession') return false;
+  const sessionId = args.sessionId;
+  if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+    return false;
+  }
+  // Default wait is false in the backend; only show Stop for blocking waits.
+  return args.wait === true;
 }
 
 /** Canonical `service__tool` name used by the structured-result dispatcher. */

@@ -2,6 +2,7 @@ use serde_json::json;
 use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
     build_paused_check_session_result_from_messages,
     build_terminal_check_session_result_from_messages,
+    build_user_stopped_check_session_result_from_messages,
 };
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
@@ -313,4 +314,51 @@ fn paused_check_session_result_includes_recovery_guidance() {
             .and_then(|value| value.as_bool()),
         Some(true)
     );
+}
+
+#[test]
+fn user_stopped_check_session_result_does_not_auto_recover() {
+    let result = build_user_stopped_check_session_result_from_messages(
+        "session-user-stop-123",
+        3,
+        &[json!({
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Still working on the delegated task."
+                }
+            ]
+        })],
+        None,
+    );
+
+    let text = extract_text(&result);
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+
+    assert!(text.contains("was stopped by the user"));
+    assert!(text.contains("Do not automatically resume"));
+    assert!(!text.contains("Wake the paused child session"));
+    assert_eq!(
+        structured
+            .get("responseStatus")
+            .and_then(|value| value.as_str()),
+        Some("cancelled")
+    );
+    assert_eq!(
+        structured
+            .get("terminatedByUser")
+            .and_then(|value| value.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        structured
+            .get("recoverable")
+            .and_then(|value| value.as_bool()),
+        Some(false)
+    );
+    assert!(structured.get("nextActions").is_none());
 }

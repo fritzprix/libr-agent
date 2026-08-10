@@ -138,8 +138,10 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
     toolCall.function.name,
     toolResult,
     detailMode,
+    parsedArgs,
   );
   const forceVisible = uiOverride?.alwaysVisible === true;
+  const showInFlightWaiting = forceVisible && !toolResult;
 
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
@@ -156,19 +158,20 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
     prevHasErrorRef.current = hasError;
   }
 
-  const details = toolResult ? (
-    <div id={detailsId} className="mt-2 pt-2 border-t border-muted/50 min-w-0">
-      <AgentToolCallDetails
-        toolCall={toolCall}
-        toolResult={toolResult}
-        hasError={hasError}
-        isLoading={false}
-        showDetails={true}
-        parsedArgs={parsedArgs}
-        hideParameters={uiOverride?.hideParameters ?? false}
-      />
-    </div>
-  ) : null;
+  const details =
+    toolResult || showInFlightWaiting ? (
+      <div id={detailsId} className="mt-2 pt-2 border-t border-muted/50 min-w-0">
+        <AgentToolCallDetails
+          toolCall={toolCall}
+          toolResult={toolResult}
+          hasError={hasError}
+          isLoading={!toolResult}
+          showDetails={true}
+          parsedArgs={parsedArgs}
+          hideParameters={uiOverride?.hideParameters ?? false}
+        />
+      </div>
+    ) : null;
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   if (isSimpleMode) {

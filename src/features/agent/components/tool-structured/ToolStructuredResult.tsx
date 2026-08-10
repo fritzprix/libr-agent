@@ -1,8 +1,10 @@
 import React from 'react';
+import { AgentSessionToolCard } from './AgentSessionToolCard';
 import { FileWriteActions } from './FileWriteActions';
 import { StrReplaceDiffView } from './StrReplaceDiffView';
 import { TerminalOutputBlock } from './TerminalOutputBlock';
 import {
+  parseCheckSessionResult,
   parseRunShellResult,
   parseStrReplaceResult,
   parseWriteFileResult,
@@ -44,6 +46,10 @@ export const ToolStructuredResult: React.FC<ToolStructuredResultProps> = ({
       const parsed = parseRunShellResult(data);
       return parsed ? <TerminalOutputBlock data={parsed} /> : null;
     }
+    case 'agent__checkSession': {
+      const parsed = parseCheckSessionResult(data);
+      return parsed ? <AgentSessionToolCard data={parsed} /> : null;
+    }
     default:
       return null;
   }
@@ -65,6 +71,8 @@ export function canRenderStructuredToolResult(
       return parseStrReplaceResult(data) !== null;
     case 'workspace__runShell':
       return parseRunShellResult(data) !== null;
+    case 'agent__checkSession':
+      return parseCheckSessionResult(data) !== null;
     default:
       return false;
   }

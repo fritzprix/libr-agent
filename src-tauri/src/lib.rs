@@ -31,8 +31,9 @@ pub use migration;
 pub use services::SecureFileManager;
 
 use commands::agent_commands::{
-    agent_add_attachment, agent_call_builtin_tool, agent_cancel_pending_prompt,
-    agent_cancel_workflow, agent_clear_all_sessions, agent_create_session,
+    agent_add_attachment, agent_call_builtin_tool, agent_cancel_delegated_workflow,
+    agent_cancel_pending_prompt, agent_cancel_workflow, agent_clear_all_sessions,
+    agent_create_session,
     agent_create_session_with_initial_message, agent_delete_attachment, agent_delete_session,
     agent_delete_session_only, agent_execute_command, agent_execute_ui_tauri_action,
     agent_factory_reset, agent_get_all_sessions, agent_get_available_tools,
@@ -285,6 +286,7 @@ pub fn run() {
                 agent_resume_workflow,
                 agent_terminate_workflow,
                 agent_cancel_workflow,
+                agent_cancel_delegated_workflow,
                 agent_call_builtin_tool,
                 agent_add_attachment,
                 agent_delete_attachment,

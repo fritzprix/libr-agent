@@ -110,4 +110,29 @@ describe('resolveToolResultUiOverride', () => {
       ),
     ).toBeNull();
   });
+
+  it('returns alwaysVisible for in-flight checkSession wait tools', () => {
+    expect(
+      resolveToolResultUiOverride(
+        'agent__checkSession',
+        undefined,
+        'simple',
+        { sessionId: 'abc1234567', wait: true },
+      ),
+    ).toEqual({
+      alwaysVisible: true,
+      hideParameters: true,
+    });
+  });
+
+  it('does not force visibility for non-waiting checkSession', () => {
+    expect(
+      resolveToolResultUiOverride(
+        'agent__checkSession',
+        undefined,
+        'developer',
+        { sessionId: 'abc1234567', wait: false },
+      ),
+    ).toBeNull();
+  });
 });

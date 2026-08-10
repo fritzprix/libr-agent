@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { ToolStructuredResult } from '../ToolStructuredResult';
@@ -103,5 +104,48 @@ describe('ToolStructuredResult', () => {
       />,
     );
     expect(invalid.firstChild).toBeNull();
+  });
+
+  it('renders checkSession completed card', () => {
+    render(
+      <MemoryRouter>
+        <ToolStructuredResult
+          toolName="agent__checkSession"
+          data={{
+            sessionId: 'abc1234567',
+            status: 'idle',
+            responseStatus: 'success',
+            assistantName: 'Researcher',
+            result: 'All subtasks completed successfully.',
+            turnCount: 4,
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByTestId('tool-structured-check-session'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Researcher/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/All subtasks completed successfully/),
+    ).toBeInTheDocument();
+  });
+
+  it('renders checkSession user-stopped card', () => {
+    render(
+      <MemoryRouter>
+        <ToolStructuredResult
+          toolName="agent__checkSession"
+          data={{
+            sessionId: 'abc1234567',
+            status: 'paused',
+            responseStatus: 'cancelled',
+            terminatedByUser: true,
+            result: 'Halfway done.',
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/stopped by user/i)).toBeInTheDocument();
   });
 });

@@ -279,3 +279,17 @@ export async function cancelInteractiveShellInput(
     },
   });
 }
+
+/**
+ * Soft-cancel a delegated child session from the parent chat Stop control.
+ * Resolves display tokens among the caller's descendants.
+ */
+export async function cancelDelegatedWorkflow(
+  callerSessionId: string,
+  targetSessionRef: string,
+): Promise<AgentResponse> {
+  return safeInvoke<AgentResponse>('agent_cancel_delegated_workflow', {
+    callerSessionId,
+    targetSessionRef,
+  });
+}

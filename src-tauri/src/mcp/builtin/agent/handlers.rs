@@ -613,6 +613,47 @@ pub async fn resolve_check_session_enrichment(meta: &SessionMetadata) -> CheckSe
     check_session_enrichment_from_metadata(meta, assistant_name)
 }
 
+/// Build a checkSession result when the child was soft-stopped by the user.
+///
+/// Unlike the paused recovery result, this explicitly tells the parent LLM not
+/// to auto-resume the child — the user requested termination via Stop.
+pub fn build_user_stopped_check_session_result_from_messages(
+    session_id: &str,
+    turn_count: usize,
+    messages_value: &[Value],
+    enrichment: Option<&CheckSessionEnrichment>,
+) -> MCPResult {
+    let display_id = crate::utils::session_id::display_session_id(session_id);
+    let latest_output = latest_session_output(messages_value);
+    let mut message = format!(
+        "Session {} was stopped by the user.\n\nLast known output:\n{}\n\nDo not automatically resume this child session. Ask the user whether they want to continue, change direction, or leave the work stopped.",
+        display_id, latest_output
+    );
+    if let Some(enrichment) = enrichment {
+        message = append_check_session_context_to_message(&message, enrichment);
+    }
+    let hint = SuccessHint::new(message.clone(), vec![]);
+    let mut response_data = build_agent_session_tool_data(
+        "agent__checkSession",
+        session_id,
+        &message,
+        "paused",
+        "cancelled",
+        turn_count,
+        vec![],
+    );
+    response_data.insert("result".to_string(), Value::String(latest_output));
+    response_data.insert("terminatedByUser".to_string(), Value::Bool(true));
+    response_data.insert("abnormalTermination".to_string(), Value::Bool(false));
+    response_data.insert("recoverable".to_string(), Value::Bool(false));
+    response_data.insert("hasMoreDetail".to_string(), Value::Bool(true));
+    if let Some(enrichment) = enrichment {
+        apply_check_session_enrichment(&mut response_data, enrichment);
+    }
+
+    hint.to_mcp_result_with_data(Some(Value::Object(response_data)))
+}
+
 /// Build a paused checkSession MCP result from pre-fetched messages.
 ///
 /// `session_id` must be the opaque storage key (`SessionMetadata.id`). It is
@@ -807,6 +848,15 @@ async fn build_paused_check_session_result(
     let messages_value =
         fetch_session_messages_for_result(storage_session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT)
             .await?;
+
+    if crate::state::take_session_user_stopped(storage_session_id.as_str()).await {
+        return Ok(build_user_stopped_check_session_result_from_messages(
+            storage_session_id.as_str(),
+            turn_count,
+            &messages_value,
+            Some(enrichment),
+        ));
+    }
 
     Ok(build_paused_check_session_result_from_messages(
         storage_session_id.as_str(),

@@ -244,6 +244,55 @@ pub async fn agent_cancel_workflow(
     })
 }
 
+/// Cancel a delegated child workflow from the parent chat Stop control.
+///
+/// Resolves `target_session_ref` among the caller's delegated descendants
+/// (display token or storage id), then soft-cancels that child so a waiting
+/// `agent__checkSession` unblocks with a user-stopped result.
+#[command]
+pub async fn agent_cancel_delegated_workflow(
+    manager: State<'_, AgentSessionManager>,
+    caller_session_id: String,
+    target_session_ref: String,
+) -> Result<AgentResponse, String> {
+    let target = crate::mcp::builtin::agent::handlers::load_accessible_delegated_session(
+        &manager,
+        &caller_session_id,
+        &target_session_ref,
+        "cancelDelegatedWorkflow",
+    )
+    .await
+    .map_err(|mcp_err| {
+        mcp_err
+            .content
+            .as_ref()
+            .and_then(|items| {
+                items.iter().find_map(|item| match item {
+                    crate::mcp::types::MCPContent::Text { text, .. } => Some(text.clone()),
+                    _ => None,
+                })
+            })
+            .unwrap_or_else(|| {
+                format!(
+                    "Delegated session '{}' is not accessible from caller '{}'",
+                    target_session_ref, caller_session_id
+                )
+            })
+    })?;
+
+    let session_id = target.id;
+    manager.cancel_workflow(session_id.clone()).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!(
+            "Delegated workflow cancel requested for session: {}",
+            session_id
+        ),
+        data: None,
+    })
+}
+
 /// Handle tool execution result from frontend (called by ToolBridgeProvider in TS)
 #[command]
 pub async fn agent_handle_tool_result(

@@ -9,10 +9,13 @@ import {
 } from '@/lib/tool-call-utils';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
+import { useAgentSessionState } from '@/context/AgentSessionContext';
 import {
   canRenderStructuredToolResult,
   ToolStructuredResult,
 } from './tool-structured/ToolStructuredResult';
+import { AgentSessionToolWaiting } from './tool-structured/AgentSessionToolWaiting';
+import { isCheckSessionWaitTool } from './tool-structured/types';
 
 interface AgentToolCallDetailsProps {
   toolCall: ToolCall;
@@ -44,6 +47,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
   hideParameters = false,
 }) => {
   const { t } = useTranslation('common');
+  const { session } = useAgentSessionState();
   const params = useMemo(
     () => parsedArgs || parseToolArguments(toolCall.function.arguments),
     [parsedArgs, toolCall.function.arguments],
@@ -54,6 +58,12 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
     !hasError &&
     structuredContent !== undefined &&
     canRenderStructuredToolResult(toolCall.function.name, structuredContent);
+  const showSessionWaiting =
+    isLoading &&
+    !toolResult &&
+    isCheckSessionWaitTool(toolCall.function.name, params);
+  const childSessionRef =
+    typeof params.sessionId === 'string' ? params.sessionId : '';
 
   if (!showDetails) return null;
 
@@ -74,6 +84,15 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
           </div>
         </div>
       )}
+
+      {/* In-flight delegated wait — before tool result exists */}
+      {showSessionWaiting && session?.id && childSessionRef ? (
+        <AgentSessionToolWaiting
+          callerSessionId={session.id}
+          childSessionRef={childSessionRef}
+          displayName={childSessionRef}
+        />
+      ) : null}
 
       {/* Result or Error section */}
       {toolResult && (
@@ -127,8 +146,8 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
         </div>
       )}
 
-      {/* Loading state */}
-      {isLoading && (
+      {/* Generic loading — skipped when specialized waiting chrome is shown */}
+      {isLoading && !showSessionWaiting && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" />
           <span>{t('agent.toolDetails.executing', 'Executing tool...')}</span>

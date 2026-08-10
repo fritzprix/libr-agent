@@ -3,6 +3,8 @@ import {
   canRenderStructuredToolResult,
 } from '../ToolStructuredResult';
 import {
+  isCheckSessionWaitTool,
+  parseCheckSessionResult,
   parseRunShellResult,
   parseStrReplaceResult,
   parseWriteFileResult,
@@ -85,6 +87,52 @@ describe('tool-structured types', () => {
     expect(
       canRenderStructuredToolResult('knowledge__searchKnowledge', {
         results: [],
+      }),
+    ).toBe(false);
+    expect(
+      canRenderStructuredToolResult('agent__checkSession', {
+        sessionId: 'abc1234567',
+        status: 'idle',
+        responseStatus: 'success',
+        result: 'done',
+        turnCount: 2,
+      }),
+    ).toBe(true);
+  });
+
+  it('parseCheckSessionResult requires sessionId and status', () => {
+    expect(
+      parseCheckSessionResult({
+        sessionId: 'abc1234567',
+        status: 'paused',
+        terminatedByUser: true,
+        responseStatus: 'cancelled',
+      }),
+    ).toMatchObject({
+      sessionId: 'abc1234567',
+      status: 'paused',
+      terminatedByUser: true,
+    });
+    expect(parseCheckSessionResult({ status: 'idle' })).toBeNull();
+  });
+
+  it('isCheckSessionWaitTool only matches blocking waits', () => {
+    expect(
+      isCheckSessionWaitTool('agent__checkSession', {
+        sessionId: 'abc',
+        wait: true,
+      }),
+    ).toBe(true);
+    expect(
+      isCheckSessionWaitTool('agent__checkSession', {
+        sessionId: 'abc',
+        wait: false,
+      }),
+    ).toBe(false);
+    expect(
+      isCheckSessionWaitTool('workspace__runShell', {
+        sessionId: 'abc',
+        wait: true,
       }),
     ).toBe(false);
   });

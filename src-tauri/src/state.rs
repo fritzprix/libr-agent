@@ -16,7 +16,7 @@ use crate::repositories::{
     SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
@@ -84,6 +84,11 @@ static CONCURRENCY_GATE: OnceLock<ConcurrencyGate> = OnceLock::new();
 /// Shared Arc from AgentSessionManager so external subsystems (e.g. builtin MCP tools)
 /// can read per-session cancellation tokens without going through Tauri managed state.
 static ACTIVE_SESSIONS: OnceLock<Arc<TokioRwLock<HashMap<String, AgentSession>>>> = OnceLock::new();
+
+/// Sessions soft-cancelled by the user (Stop / cancel_workflow). Consumed by
+/// `agent__checkSession` so parents receive a non-recovery "user stopped" result
+/// instead of the default paused recovery hints.
+static USER_STOPPED_SESSIONS: OnceLock<TokioRwLock<HashSet<String>>> = OnceLock::new();
 
 /// Shared clone of AgentSessionManager for native channel notification dispatch.
 static CHANNEL_DISPATCH_AGENT: OnceLock<AgentSessionManager> = OnceLock::new();
@@ -587,6 +592,28 @@ pub async fn get_session_cancel_pending(session_id: &str) -> Option<Arc<AtomicBo
     sessions.get(session_id).map(|s| s.cancel_pending.clone())
 }
 
+fn user_stopped_sessions() -> &'static TokioRwLock<HashSet<String>> {
+    USER_STOPPED_SESSIONS.get_or_init(|| TokioRwLock::new(HashSet::new()))
+}
+
+/// Mark that a session was soft-cancelled by the user (Stop button / cancel_workflow).
+pub async fn mark_session_user_stopped(session_id: &str) {
+    user_stopped_sessions()
+        .write()
+        .await
+        .insert(session_id.to_string());
+}
+
+/// Clear the user-stopped marker (e.g. when a new workflow starts on the session).
+pub async fn clear_session_user_stopped(session_id: &str) {
+    user_stopped_sessions().write().await.remove(session_id);
+}
+
+/// Take (and clear) the user-stopped marker for `session_id`.
+pub async fn take_session_user_stopped(session_id: &str) -> bool {
+    user_stopped_sessions().write().await.remove(session_id)
+}
+
 unsafe fn reset_lock<T>(lock: &OnceLock<T>) {
     let ptr = lock as *const OnceLock<T> as *mut OnceLock<T>;
     let _ = std::ptr::replace(ptr, OnceLock::new());
@@ -621,6 +648,7 @@ pub fn reset_state() {
         reset_lock(&SESSION_BUS);
         reset_lock(&CONCURRENCY_GATE);
         reset_lock(&ACTIVE_SESSIONS);
+        reset_lock(&USER_STOPPED_SESSIONS);
         reset_lock(&CHANNEL_DISPATCH_AGENT);
         reset_lock(&SKILLS_CATALOG_REVISION);
         reset_lock(&MANAGED_SKILLS_SYNC_STATE);

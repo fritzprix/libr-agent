@@ -240,6 +240,10 @@ pub async fn cancel_workflow(
         }
     }
 
+    // Parent checkSession(wait=true) should treat this as user Stop, not
+    // automatic paused-recovery guidance.
+    crate::state::mark_session_user_stopped(&session_id).await;
+
     abort_pending_tool_approvals(active_sessions, &session_id).await;
 
     // SP6: wake awaitAgent/pollProcess waiters suspended in this session's tools.

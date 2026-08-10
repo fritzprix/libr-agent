@@ -17,6 +17,7 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     *session.repeated_text_loop_retry_count.write().await = 0;
     *session.bad_tool_args_retry_count.write().await = 0;
     *session.bad_tool_args_incident_count.write().await = 0;
+    crate::state::clear_session_user_stopped(&session.metadata.id).await;
     // Safety valve: clear any stale in-flight compaction state before
     // explicitly starting or restarting a workflow from the current stack.
     session.compaction.clear_runtime_state(false).await;
