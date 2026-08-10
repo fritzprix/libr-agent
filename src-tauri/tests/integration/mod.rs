@@ -52,7 +52,6 @@ pub mod mcp_server_repository_tests;
 pub mod mcp_server_service_tests;
 pub mod mcp_tool_cache_refresh_tests;
 pub mod mcp_utils_tests;
-pub mod message_cursor_pagination_tests;
 pub mod message_dedup_tests;
 pub mod message_source_tests;
 pub mod migration_compatibility_tests;

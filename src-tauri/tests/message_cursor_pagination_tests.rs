@@ -1,11 +1,39 @@
-use crate::common;
+//! Windows-safe coverage for message repository slice pagination and
+//! error-column structuredContent envelope persistence.
+//!
+//! Standalone binary — does **not** pull `tauri::test::mock_app` / WebView into the
+//! link (those live in consolidated `tests/integration_tests.rs` and crash on
+//! Windows with STATUS_ENTRYPOINT_NOT_FOUND). Also avoids `reset_state()` /
+//! global AppHandle OnceLocks.
 
+use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
+use sea_orm_migration::MigratorTrait;
 use tauri_mcp_agent_lib::agent::ExecutionMode;
+use tauri_mcp_agent_lib::mcp::types::MCPContent;
+use tauri_mcp_agent_lib::migration::Migrator;
 use tauri_mcp_agent_lib::models::chat::Message;
+use tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode;
 use tauri_mcp_agent_lib::repositories::{
     DbError, MessageRepository, SessionMetadata, SessionRepository, SessionStatus,
     SqliteMessageRepository, SqliteSessionRepository,
 };
+
+async fn setup_isolated_db() -> DatabaseConnection {
+    tauri_mcp_agent_lib::lifecycle::database::register_sqlite_vec();
+    let db = Database::connect("sqlite::memory:")
+        .await
+        .expect("in-memory sqlite should connect");
+    db.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        "PRAGMA foreign_keys = ON".to_string(),
+    ))
+    .await
+    .expect("foreign_keys pragma should apply");
+    Migrator::up(&db, None)
+        .await
+        .expect("migrations should run");
+    db
+}
 
 fn build_session_metadata(session_id: &str) -> SessionMetadata {
     let now = chrono::Utc::now().timestamp_millis();
@@ -33,8 +61,7 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
         is_bookmarked: false,
         execution_mode: ExecutionMode::Normal,
         workspace_override: None,
-        workspace_isolation:
-            tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+        workspace_isolation: WorkspaceIsolationMode::Host,
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
@@ -65,11 +92,17 @@ fn build_message(session_id: &str, id: &str, created_at: i64) -> Message {
     }
 }
 
+async fn setup_repos() -> (SqliteSessionRepository, SqliteMessageRepository) {
+    let db = setup_isolated_db().await;
+    (
+        SqliteSessionRepository::new(db.clone()),
+        SqliteMessageRepository::new(db),
+    )
+}
+
 #[tokio::test]
 async fn message_history_pagination_uses_rowid_for_same_timestamp_ties() {
-    let db = common::setup_test_db_with_migrations().await;
-    let session_repo = SqliteSessionRepository::new(db.clone());
-    let message_repo = SqliteMessageRepository::new(db.clone());
+    let (session_repo, message_repo) = setup_repos().await;
     let session_id = format!("pagination-{}", uuid::Uuid::new_v4());
 
     session_repo
@@ -120,9 +153,7 @@ async fn message_history_pagination_uses_rowid_for_same_timestamp_ties() {
 
 #[tokio::test]
 async fn message_history_pagination_prefers_rowid_over_inverted_created_at() {
-    let db = common::setup_test_db_with_migrations().await;
-    let session_repo = SqliteSessionRepository::new(db.clone());
-    let message_repo = SqliteMessageRepository::new(db.clone());
+    let (session_repo, message_repo) = setup_repos().await;
     let session_id = format!("pagination-inverted-{}", uuid::Uuid::new_v4());
 
     session_repo
@@ -179,9 +210,7 @@ async fn message_history_pagination_prefers_rowid_over_inverted_created_at() {
 
 #[tokio::test]
 async fn message_slice_queries_reject_zero_limit() {
-    let db = common::setup_test_db_with_migrations().await;
-    let session_repo = SqliteSessionRepository::new(db.clone());
-    let message_repo = SqliteMessageRepository::new(db.clone());
+    let (session_repo, message_repo) = setup_repos().await;
     let session_id = format!("pagination-zero-{}", uuid::Uuid::new_v4());
 
     session_repo
@@ -204,4 +233,105 @@ async fn message_slice_queries_reject_zero_limit() {
         .await
         .expect_err("zero limit should be rejected for older slices");
     assert!(matches!(before_error, DbError::InvalidInput(_)));
+}
+
+#[tokio::test]
+async fn reload_preserves_structured_content_in_error_column_envelope() {
+    let (session_repo, message_repo) = setup_repos().await;
+    let session_id = format!("structured-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let structured = serde_json::json!({
+        "sessionId": "a1b2c3d4e5",
+        "status": "started",
+        "responseStatus": "pending",
+        "toolName": "startSession",
+    });
+
+    let mut message = build_message(&session_id, "tool-structured", 1_000);
+    message.role = "tool".to_string();
+    message.tool_call_id = Some("call-spawn".to_string());
+    message.content = vec![MCPContent::Text {
+        text: "Session started successfully".to_string(),
+    }];
+    message.metadata = Some(serde_json::json!({
+        "structuredContent": structured,
+    }));
+
+    message_repo
+        .insert(&message)
+        .await
+        .expect("insert should succeed");
+
+    let loaded = message_repo
+        .get_by_id("tool-structured")
+        .await
+        .expect("lookup should succeed")
+        .expect("message should exist");
+
+    assert_eq!(
+        loaded
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("structuredContent")),
+        Some(&structured),
+        "structuredContent must survive DB reload for structured tool cards"
+    );
+    assert!(
+        loaded.error.is_none(),
+        "structuredContent envelope must not surface as Message.error"
+    );
+}
+
+#[tokio::test]
+async fn reload_preserves_tool_error_and_structured_content_together() {
+    let (session_repo, message_repo) = setup_repos().await;
+    let session_id = format!("structured-err-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let structured = serde_json::json!({ "path": "a.txt", "action": "created" });
+    let mut message = build_message(&session_id, "tool-both", 1_000);
+    message.role = "tool".to_string();
+    message.tool_call_id = Some("call-both".to_string());
+    message.content = vec![MCPContent::Text {
+        text: "write failed".to_string(),
+    }];
+    message.metadata = Some(serde_json::json!({
+        "toolError": true,
+        "structuredContent": structured,
+    }));
+
+    message_repo
+        .insert(&message)
+        .await
+        .expect("insert should succeed");
+
+    let loaded = message_repo
+        .get_by_id("tool-both")
+        .await
+        .expect("lookup should succeed")
+        .expect("message should exist");
+
+    assert_eq!(
+        loaded
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("toolError"))
+            .and_then(|value| value.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        loaded
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("structuredContent")),
+        Some(&structured)
+    );
+    assert!(loaded.error.is_none());
 }
