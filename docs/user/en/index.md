@@ -37,7 +37,7 @@ Language: [한국어](/) · **English**
 3. MCP lives under **Extensions**
 4. Repeat work with **Playbooks** / **Scheduled Tasks**
 
-Screenshots: [assets/screenshots](../assets/screenshots/README.md). App UI language follows **Settings → General → Language**.
+Screenshots: [assets/screenshots](https://github.com/fritzprix/libr-agent/blob/main/docs/user/assets/screenshots/README.md). App UI language follows **Settings → General → Language**.
 
 ---
 

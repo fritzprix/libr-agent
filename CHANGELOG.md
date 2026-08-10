@@ -1,3 +1,21 @@
+## [0.9.1] - 2026-08-11
+
+### 🚀 Features
+
+- **Agent Session Result Cards**: Renders human-facing assistant name and mission/message context for `agent__*` session tool calls, persisting structured content across reloads with rich interactive cards.
+- **Startup Latency Optimization**: Warm starts now skip full SQLite `VACUUM` backups when no database migrations are pending, accelerating startup initialization.
+
+### 🐛 Fixes
+
+- **Sub-agent Scratchpad Isolation**: Standardized scratchpad tool definitions and prompt guidance to strictly scope scratchpad context within isolated session sub-agent handoffs.
+- **Debug SQLite Database Path**: Separated debug default SQLite database storage path from release database location to prevent environment overlap.
+- **Windows Integration Test Execution**: Exposed database migration setups to allow message repository tests to run in isolated CLI processes on Windows without requiring WebView initialization.
+
+### 🔧 Internal
+
+- **Message Repository Modularization**: Refactored monolithic `message_repository.rs` into modular sub-files (`types`, `index_meta`, `persist`, `sqlite`, `tests`).
+- **User Documentation Audit**: Audited VitePress user documentation, fixing link validation, updating built-in tool references, and adding missing workflow scenarios.
+
 ## [0.9.0] - 2026-08-09
 
 ### 🚀 Features

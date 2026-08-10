@@ -38,7 +38,7 @@ LibrAgent를 최대한 활용하는 방법을 배우세요. 이 문서는 개발
 3. MCP는 **Extensions**
 4. 반복 작업은 **Playbooks** / **Scheduled Tasks**
 
-스크린샷 계획: [assets/screenshots](assets/screenshots/README.md) — P0 가이드에 UI 스키마틱(SVG)이 포함되어 있습니다.
+스크린샷 계획: [assets/screenshots](https://github.com/fritzprix/libr-agent/blob/main/docs/user/assets/screenshots/README.md) — P0 가이드에 UI 스키마틱(SVG)이 포함되어 있습니다.
 
 ---
 
