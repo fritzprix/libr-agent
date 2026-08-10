@@ -4,8 +4,8 @@ use sea_orm::{
     EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Statement,
 };
 
-use crate::entity::prelude::Message as MessageEntity;
 use crate::entity::message;
+use crate::entity::prelude::Message as MessageEntity;
 use crate::models::chat::Message;
 use crate::utils::pagination::Page;
 

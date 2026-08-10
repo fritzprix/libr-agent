@@ -1,4 +1,6 @@
-use sea_orm::{sea_query::Expr, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryResult, Set};
+use sea_orm::{
+    sea_query::Expr, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryResult, Set,
+};
 
 use crate::entity::message;
 use crate::entity::session;
@@ -205,7 +207,8 @@ pub(super) fn encode_persisted_error(message: &Message) -> Option<serde_json::Va
 pub(super) fn model_to_message(model: message::Model) -> Message {
     let content: Vec<crate::mcp::types::MCPContent> = from_json_or_default(&model.content);
 
-    let tool_calls: Option<Vec<crate::agent::types::ToolCall>> = from_json_option(&model.tool_calls);
+    let tool_calls: Option<Vec<crate::agent::types::ToolCall>> =
+        from_json_option(&model.tool_calls);
 
     let attachments: Option<serde_json::Value> = from_json_option(&model.attachments);
 
@@ -242,9 +245,8 @@ pub(super) fn model_to_message(model: message::Model) -> Message {
 
 /// Convert Message type to SeaORM ActiveModel
 pub(crate) fn message_to_active_model(message: &Message) -> Result<message::ActiveModel, DbError> {
-    let content_json = serde_json::to_string(&message.content).map_err(|e| {
-        DbError::SerializationError(format!("Failed to serialize content: {}", e))
-    })?;
+    let content_json = serde_json::to_string(&message.content)
+        .map_err(|e| DbError::SerializationError(format!("Failed to serialize content: {}", e)))?;
 
     let tool_calls_json = to_json_option(&message.tool_calls).map_err(|e| {
         DbError::SerializationError(format!("Failed to serialize tool_calls: {}", e))
@@ -254,13 +256,11 @@ pub(crate) fn message_to_active_model(message: &Message) -> Result<message::Acti
         DbError::SerializationError(format!("Failed to serialize attachments: {}", e))
     })?;
 
-    let tool_use_json = to_json_option(&message.tool_use).map_err(|e| {
-        DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
-    })?;
+    let tool_use_json = to_json_option(&message.tool_use)
+        .map_err(|e| DbError::SerializationError(format!("Failed to serialize tool_use: {}", e)))?;
 
-    let error_json = to_json_option(&encode_persisted_error(message)).map_err(|e| {
-        DbError::SerializationError(format!("Failed to serialize error: {}", e))
-    })?;
+    let error_json = to_json_option(&encode_persisted_error(message))
+        .map_err(|e| DbError::SerializationError(format!("Failed to serialize error: {}", e)))?;
 
     let usage_json = to_json_option(&message.usage)
         .map_err(|e| DbError::SerializationError(format!("Failed to serialize usage: {}", e)))?;

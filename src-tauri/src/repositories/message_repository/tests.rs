@@ -9,7 +9,6 @@ use super::persist;
 use super::sqlite::SqliteMessageRepository;
 use super::types::MessageRepository;
 
-
 async fn setup_test_db() -> SqliteMessageRepository {
     crate::lifecycle::database::register_sqlite_vec();
     let db = sea_orm::Database::connect("sqlite::memory:")
