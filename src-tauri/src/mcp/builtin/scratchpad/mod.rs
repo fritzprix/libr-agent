@@ -36,7 +36,7 @@ impl ScratchpadServer {
     pub fn metadata_static() -> BuiltinServerMetadata {
         BuiltinServerMetadata {
             display_name: "Scratchpad".to_string(),
-            description: "Scratchpad notes and thinking tools".to_string(),
+            description: "Session-isolated scratchpad notes and thinking tools".to_string(),
             icon: None,
         }
     }
@@ -51,7 +51,7 @@ impl BuiltinMCPServer for ScratchpadServer {
     }
 
     fn description(&self) -> &str {
-        "Session-scoped scratchpad: notes, thinking, and reflection tools"
+        "Session-isolated scratchpad: notes and thinking for the current session only (not shared with parent/child sessions)"
     }
 
     fn tools(&self) -> Vec<MCPTool> {
@@ -96,7 +96,7 @@ impl BuiltinMCPServer for ScratchpadServer {
 
         if items.is_empty() {
             parts.push(
-                "No scratchpad notes. Use `scratchpad__create_note` to save temporary notes."
+                "No scratchpad notes. Use `scratchpad__addNote` to save temporary notes for this session only (not visible to parent/child sessions)."
                     .to_string(),
             );
         } else {

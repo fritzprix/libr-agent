@@ -40,9 +40,12 @@ Avoid delegation when the child must rely on live parent-only state, such as:
 - the parent's temporary workspace files
 - the parent's workspace `agents.md` / `CLAUDE.md` instructions
 - workspace-local `skills/` content from the parent's workspace
+- the parent's scratchpad notes (`scratchpad__*` is session-isolated; children cannot read them)
 - any behavior that assumes random parent context is implicitly copied into the child
 
 If the work depends on any of those, delegation is usually the wrong move unless you can explicitly recreate that context for the child.
+
+When the child finishes, require deliverables in its **final text response**. Parent recovery uses that text (`agent__checkSession` / `waitForResult`), not scratchpad IDs — child scratchpad notes are invisible to the parent.
 
 ## 2. Choose the Child's Effective Context
 

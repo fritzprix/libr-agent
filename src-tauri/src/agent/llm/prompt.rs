@@ -330,7 +330,7 @@ fn build_stable_prefix(
             identity.push_str(&format!(
                 "\n- Session Type: Sub-Agent (Depth: {})\n\
                 - Parent Session: {}\n\n\
-                ⚠️ You are running as a SUB-AGENT delegated by Parent Session `{}`. Focus strictly on your assigned task and return your results concisely to your parent agent.",
+                ⚠️ You are running as a SUB-AGENT delegated by Parent Session `{}`. Focus strictly on your assigned task and return deliverables in your final text response — that is what the parent receives via agent__checkSession / waitForResult. Scratchpad notes are private to this session only; do not hand off by scratchpad ID or assume the parent can read them.",
                 depth, display_parent, display_parent
             ));
         }

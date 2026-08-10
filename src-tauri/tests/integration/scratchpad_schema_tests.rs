@@ -75,6 +75,27 @@ fn scratchpad_read_schema_leaves_note_ids_unbounded() {
 }
 
 #[test]
+fn scratchpad_add_note_description_warns_session_isolation() {
+    let add_tool = scratchpad_tool("addNote");
+    assert!(
+        add_tool.description.contains("Session-isolated"),
+        "addNote should warn that notes are session-private"
+    );
+    assert!(
+        add_tool
+            .description
+            .contains("put deliverables in your final text response"),
+        "addNote should tell sub-agents not to hand off via scratchpad alone"
+    );
+    assert!(
+        !add_tool
+            .description
+            .contains("always visible in your context"),
+        "addNote must not imply cross-session visibility"
+    );
+}
+
+#[test]
 fn scratchpad_clear_schema_leaves_note_id_unbounded() {
     let clear_tool = scratchpad_tool("clearNote");
     let properties = object_properties(&clear_tool);
