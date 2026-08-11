@@ -43,56 +43,58 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 
 ## 🛠️ Built-in Tools Detailed Reference
 
-### 1. Workspace (`workspace__*`)
+### 1. Workspace (`workspace__*` & `runShell`)
 
-| Tool Name                    | Description                                       | Key Parameters                    |
-| :--------------------------- | :------------------------------------------------ | :-------------------------------- |
-| `workspace__read_file`       | Read file content with line slicing               | `path`, `start_line`, `end_line`  |
-| `workspace__write_file`      | Create or overwrite file                          | `path`, `content`                 |
-| `workspace__edit_file`       | Perform precise line-range edits                  | `path`, `edits`                   |
-| `workspace__list_directory`  | List directory contents                           | `path`                            |
-| `workspace__delete_file`     | Delete target file                                | `path`                            |
-| `workspace__execute_command` | Execute shell command (supports background async) | `command`, `cwd`, `is_background` |
+| Tool Name                               | Description                                       | Key Parameters                                      |
+| :-------------------------------------- | :------------------------------------------------ | :-------------------------------------------------- |
+| `workspace__readFile`                   | Read file content with line slicing               | `AbsolutePath`, `StartLine`, `EndLine`              |
+| `workspace__writeFile`                  | Create or overwrite file                          | `TargetFile`, `CodeContent`, `Overwrite`            |
+| `workspace__replace_file_content`       | Perform precise line-range edits                  | `TargetFile`, `TargetContent`, `ReplacementContent` |
+| `workspace__multi_replace_file_content` | Edit multiple non-adjacent line blocks            | `TargetFile`, `ReplacementChunks`                   |
+| `workspace__listDirectory`              | List directory contents                           | `DirectoryPath`                                     |
+| `workspace__runShell` / `runPowerShell` | Execute shell command (supports background async) | `CommandLine`, `Cwd`, `WaitMsBeforeAsync`           |
 
 ### 2. Media (`media__*`) 🎨 _(Optional)_
 
-| Tool Name              | Description                            | Key Parameters                  |
-| :--------------------- | :------------------------------------- | :------------------------------ |
-| `media__process_image` | Image analysis and metadata extraction | `image_path`                    |
-| `media__resize_image`  | Resize image resolution                | `image_path`, `width`, `height` |
-| `media__extract_text`  | Extract text/speech from images/audio  | `file_path`                     |
+| Tool Name              | Description                            | Key Parameters        |
+| :--------------------- | :------------------------------------- | :-------------------- |
+| `media__seeContent`    | Inspect and analyze image/visual media | `AbsolutePath`        |
+| `media__listenContent` | Parse and analyze audio media          | `AbsolutePath`        |
+| `generate_image`       | AI image generation and visual mockups | `Prompt`, `ImageName` |
 
-### 3. Interactive UI (`ui__*`)
+### 3. Interactive UI (`ask_question` / `ui__*`)
 
-| Tool Name                          | Description                                        |
-| :--------------------------------- | :------------------------------------------------- |
-| `ui__select_prompt`                | Render multi-choice selection buttons              |
-| `ui__text_prompt`                  | Render text input form                             |
-| `ui__line_chart` / `ui__bar_chart` | Render interactive data charts                     |
-| `ui__circuitBreak`                 | Loop detection card with `Resume Execution` button |
-| `ui__wait`                         | Pause execution for user input                     |
+| Tool Name      | Description                                     |
+| :------------- | :---------------------------------------------- |
+| `ask_question` | Render interactive multi-choice selection modal |
+| `ui__wait`     | Pause execution for user input                  |
 
 ### 4. Browser (`browser__*`) _(Optional)_
 
-| Tool Name             | Description                 |
-| :-------------------- | :-------------------------- |
-| `browser__navigate`   | Navigate to web URL         |
-| `browser__click`      | Click DOM element           |
-| `browser__type`       | Type text into web form     |
-| `browser__screenshot` | Capture web page screenshot |
+| Tool Name          | Description                |
+| :----------------- | :------------------------- |
+| `navigateToUrl`    | Navigate to target web URL |
+| `clickElement`     | Click DOM element          |
+| `inputText`        | Type text into web input   |
+| `scrollPage`       | Scroll web page view       |
+| `listInteractable` | Extract clickable elements |
+| `evaluateJS`       | Execute custom JS snippet  |
 
 ### 5. Planning & Reflection (`planning__*`) _(Optional)_
 
-| Tool Name               | Description                                           |
-| :---------------------- | :---------------------------------------------------- |
-| `planning__create_plan` | Create step-by-step plan for complex multi-step tasks |
-| `planning__update_plan` | Update step progress (`todo`, `in_progress`, `done`)  |
-| `planning__reflect`     | Generate structured reflection on tool failures       |
+| Tool Name              | Description                                     |
+| :--------------------- | :---------------------------------------------- |
+| `planning__createGoal` | Establish multi-step goals for complex tasks    |
+| `planning__updateGoal` | Update step progress and goal status            |
+| `planning__addTodo`    | Manage granular todo items                      |
+| `planning__reflect`    | Generate structured reflection on tool failures |
 
-### 6. Scheduled Tasks (`scheduled_task__*`)
+### 6. Attachments & Scheduled Tasks (`attachments__*` / `scheduled_task__*`)
 
 | Tool Name                         | Description                                      |
 | :-------------------------------- | :----------------------------------------------- |
+| `attachments__readAttachment`     | Read session attachment contents                 |
+| `attachments__searchAttachments`  | Search through uploaded attachments              |
 | `scheduled_task__create`          | Create one-shot timer or recurring Cron schedule |
 | `scheduled_task__list` / `delete` | Manage active scheduled tasks                    |
 

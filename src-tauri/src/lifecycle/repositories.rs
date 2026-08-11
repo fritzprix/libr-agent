@@ -68,16 +68,23 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
     info!("✅ Repository instances initialized");
 
     // Run alias migrations to clean up legacy data
+    let alias_start = std::time::Instant::now();
     crate::lifecycle::alias_migration::run_alias_migrations(db).await;
+    crate::state::log_startup_phase("alias_migrations", Some(alias_start.elapsed().as_millis()));
 
     // Initialize the MCP Service Proxy Manager for session-aware builtin tools
     // For shared ownership, MCPServiceProxyManager needs Arc-wrapped dependencies
     // We'll modify the state management to use Arc storage pattern
+    let proxy_start = std::time::Instant::now();
     let proxy_manager = MCPServiceProxyManager::new_from_static_refs();
 
     set_mcp_service_proxy_manager(Arc::new(proxy_manager));
 
     info!("✅ MCP Service Proxy Manager initialized");
+    crate::state::log_startup_phase(
+        "mcp_proxy_manager_init",
+        Some(proxy_start.elapsed().as_millis()),
+    );
 
     system_settings
 }

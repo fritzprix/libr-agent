@@ -37,4 +37,6 @@ async fn system_prompt_preserves_full_parent_session_id_for_sub_agents() {
 
     assert!(prompt.contains("Parent Session: a1b2c3d4e5"));
     assert!(prompt.contains("Parent Session `a1b2c3d4e5`"));
+    assert!(prompt.contains("return deliverables in your final text response"));
+    assert!(prompt.contains("Scratchpad notes are private to this session only"));
 }

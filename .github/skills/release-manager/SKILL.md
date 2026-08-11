@@ -39,6 +39,7 @@ git diff --shortstat ${LAST_TAG}..HEAD
 ```
 
 **Task**: Read the commit messages and diffs. Group them into:
+
 - **New Features & Capabilities**: New tools, assistants, UI features, slash commands.
 - **User-facing Fixes**: Bug fixes, reliability improvements.
 - **Internal / Refactoring**: Code cleanup, dev scripts, testing.
@@ -107,6 +108,7 @@ Finally, use the provided scripts to handle mechanical steps: tests, build check
 ## Merge Policy (Required)
 
 When merging a release PR (`dev/0.8.x` → `main`):
+
 - **Always** use **Create a merge commit**.
 - **Never** use squash merge — it breaks history alignment with the long-lived dev branch.
 - **After merge**, sync `main` back into `dev/0.8.x` (`git merge origin/main` + push).

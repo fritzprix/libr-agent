@@ -1,3 +1,42 @@
+## [0.9.1] - 2026-08-11
+
+### 🚀 Features
+
+- **Agent Session Result Cards**: Renders human-facing assistant name and mission/message context for `agent__*` session tool calls, persisting structured content across reloads with rich interactive cards.
+- **Startup Latency Optimization**: Warm starts now skip full SQLite `VACUUM` backups when no database migrations are pending, accelerating startup initialization.
+
+### 🐛 Fixes
+
+- **Sub-agent Scratchpad Isolation**: Standardized scratchpad tool definitions and prompt guidance to strictly scope scratchpad context within isolated session sub-agent handoffs.
+- **Debug SQLite Database Path**: Separated debug default SQLite database storage path from release database location to prevent environment overlap.
+- **Windows Integration Test Execution**: Exposed database migration setups to allow message repository tests to run in isolated CLI processes on Windows without requiring WebView initialization.
+
+### 🔧 Internal
+
+- **Message Repository Modularization**: Refactored monolithic `message_repository.rs` into modular sub-files (`types`, `index_meta`, `persist`, `sqlite`, `tests`).
+- **User Documentation Audit**: Audited VitePress user documentation, fixing link validation, updating built-in tool references, and adding missing workflow scenarios.
+
+## [0.9.0] - 2026-08-09
+
+### 🚀 Features
+
+- **MCP Structured Tool Result Rendering**: Renders structured tool outputs (file write actions, string replacement diffs, terminal execution outputs) directly with rich interactive components in chat UI.
+- **Multilingual User Documentation & VitePress Site**: Launched full user documentation site with English (`docs/user/en/`) and Korean (`docs/user/`) documentation, complete VitePress publishing pipeline, and live application screenshots.
+- **Enhanced App Screenshot Skill**: Expanded `app-screenshot` bundled skill with interactive UI clicking and control capabilities for automated visual testing and documentation workflows.
+
+### 🐛 Fixes
+
+- **Draft Chat & Assistant Tools Editor**: Opened assistant tools editor in-place from draft chat without disrupting current creation state.
+- **Session Cache Hydration**: Hydrates session cache prior to cold UI tool resumption.
+- **File Result Path Resolution**: Opens `writeFile` results via resolved absolute paths.
+- **MCP Discovery Loading Toast**: Automatically dismisses MCP discovery loading toasts when opening sessions that only use built-in tools.
+- **Harbor Diagnostic Trajectories**: Dumps diagnostic trajectory logs upon timeout or empty benchmark runs.
+
+### 🔧 Internal
+
+- **LLM Execution Modularization**: Extracted modular sub-services (`stream-accumulator`, `completion-validators`, `request-tracker`) from `useExecuteCompletion`.
+- **Release Manager Guidance**: Integrated user documentation and website synchronization steps directly into `release-manager` skill.
+
 ## [0.8.39] - 2026-08-08
 
 ### 🚀 Features

@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.8.39"
+version = "0.9.1"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -39,7 +39,7 @@ tokio-util = "0.7"
 futures = "0.3"
 rmcp = { version = "0.10.0", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "transport-sse-client-reqwest", "auth"] }
 oauth2 = "4.4"
-keyring = "3.0"
+keyring = "4.1"
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 tauri-plugin-log = "2"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
@@ -102,7 +102,7 @@ fastembed = "5.15.0"
 
 [target.'cfg(windows)'.dependencies]
 # Read HKCU/HKLM Path so GUI-launched isolation recovers user tool dirs (cargo, uv, npm, …)
-winreg = "0.55"
+winreg = "0.56"
 
 [features]
 default = ["workspace-str-replace"]

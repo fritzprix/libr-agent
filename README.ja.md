@@ -205,11 +205,10 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 **[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
 
 <!-- RELEASE_DOWNLOADS_START -->
-
-- **Windows:** [`LibrAgent_0.8.39_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_x64-setup.exe) · [`LibrAgent_0.8.39_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.39_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.39_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_amd64.AppImage) · [`LibrAgent_0.8.39_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent_0.8.39_amd64.deb) · [`LibrAgent-0.8.39-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.39/LibrAgent-0.8.39-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.39)
+- **Windows:** [`LibrAgent_0.9.1_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.1/LibrAgent_0.9.1_x64-setup.exe) · [`LibrAgent_0.9.1_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.1/LibrAgent_0.9.1_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.1_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.1/LibrAgent_0.9.1_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.1_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.1/LibrAgent_0.9.1_amd64.AppImage) · [`LibrAgent_0.9.1_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.1/LibrAgent_0.9.1_amd64.deb) · [`LibrAgent-0.9.1-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.1/LibrAgent-0.9.1-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.1)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **開発者セットアップ：**

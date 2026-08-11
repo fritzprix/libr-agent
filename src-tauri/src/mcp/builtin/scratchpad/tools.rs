@@ -19,7 +19,7 @@ fn add_tool() -> MCPTool {
         name: "addNote".to_string(),
         title: Some("Add Scratchpad Note".to_string()),
         description: tool_description(
-            "Add a note to the Working Scratchpad. Content here is always visible in your context — use it for findings, file paths, IDs, or intermediate results you reference often.",
+            "Add a note to the Working Scratchpad for this session only. Notes stay visible in your own context for findings, file paths, IDs, or intermediate results you reference often. Session-isolated: parent, child, and sibling sessions cannot read these notes — never hand off results by scratchpad ID alone; put deliverables in your final text response.",
             &["Scratchpad holds at most 10 items."],
             &[
                 "If at the limit, update or clear existing notes first.",
@@ -118,7 +118,7 @@ fn list_tool() -> MCPTool {
         name: "listNote".to_string(),
         title: Some("List Scratchpad Notes".to_string()),
         description: tool_description(
-            "List scratchpad notes with metadata (ID, title, tags) and content preview.",
+            "List scratchpad notes for this session only (ID, title, tags, content preview). Session-isolated: does not include notes from parent, child, or sibling sessions.",
             &[],
             &[
                 "Use pagination when many notes exist.",
@@ -157,8 +157,8 @@ fn read_tool() -> MCPTool {
         name: "readNote".to_string(),
         title: Some("Read Scratchpad Note".to_string()),
         description: tool_description(
-            "Read the full content of specific scratchpad notes by ID.",
-            &["Note IDs from scratchpad__listNote or system context."],
+            "Read the full content of specific scratchpad notes by ID in this session only. Session-isolated: IDs from another session (including a sub-agent) are not readable here.",
+            &["Note IDs from scratchpad__listNote or system context for the current session."],
             &[
                 "Pass one or more IDs in the ids array.",
                 "Use when previews from listNote are insufficient.",
@@ -226,7 +226,7 @@ fn think_tool() -> MCPTool {
             ],
             &[
                 "Execute the planned action with appropriate domain tools.",
-                "Capture durable findings with scratchpad__addNote.",
+                "Capture durable findings for this session with scratchpad__addNote (not a cross-session handoff).",
             ],
         ),
         input_schema: object_prop(

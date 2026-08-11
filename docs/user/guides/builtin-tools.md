@@ -43,56 +43,58 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 
 ## 🛠️ 내장 도구 상세 기능 레퍼런스
 
-### 1. Workspace (`workspace__*`)
+### 1. Workspace (`workspace__*` & `runShell`)
 
-| 도구 이름                    | 설명                             | 주요 파라미터                     |
-| :--------------------------- | :------------------------------- | :-------------------------------- |
-| `workspace__read_file`       | 파일 내용 읽기                   | `path`, `start_line`, `end_line`  |
-| `workspace__write_file`      | 파일 생성 및 전체 덮어쓰기       | `path`, `content`                 |
-| `workspace__edit_file`       | 라인 범위 지정 정교한 코드 편집  | `path`, `edits`                   |
-| `workspace__list_directory`  | 디렉토리 구조 조회               | `path`                            |
-| `workspace__delete_file`     | 파일 삭제                        | `path`                            |
-| `workspace__execute_command` | 터미널 명령어 실행 (비동기 지원) | `command`, `cwd`, `is_background` |
+| 도구 이름                               | 설명                                        | 주요 파라미터                                       |
+| :-------------------------------------- | :------------------------------------------ | :-------------------------------------------------- |
+| `workspace__readFile`                   | 파일 내용 읽기                              | `AbsolutePath`, `StartLine`, `EndLine`              |
+| `workspace__writeFile`                  | 파일 생성 및 전체 덮어쓰기                  | `TargetFile`, `CodeContent`, `Overwrite`            |
+| `workspace__replace_file_content`       | 라인 범위 지정 정교한 코드 편집             | `TargetFile`, `TargetContent`, `ReplacementContent` |
+| `workspace__multi_replace_file_content` | 복수 non-adjacent 영역 편집                 | `TargetFile`, `ReplacementChunks`                   |
+| `workspace__listDirectory`              | 디렉토리 구조 조회                          | `DirectoryPath`                                     |
+| `workspace__runShell` / `runPowerShell` | 터미널 명령어 실행 (비동기/백그라운드 지원) | `CommandLine`, `Cwd`, `WaitMsBeforeAsync`           |
 
-### 2. Media (`media__*`) 🎨 _(신규/선택)_
+### 2. Media (`media__*`) 🎨 _(선택)_
 
-| 도구 이름              | 설명                                 | 주요 파라미터                   |
-| :--------------------- | :----------------------------------- | :------------------------------ |
-| `media__process_image` | 이미지 분석, 색상 및 메타데이터 추출 | `image_path`                    |
-| `media__resize_image`  | 이미지 해상도 변경 및 리사이즈       | `image_path`, `width`, `height` |
-| `media__extract_text`  | 이미지/오디오 내 텍스트/음성 추출    | `file_path`                     |
+| 도구 이름              | 설명                                 | 주요 파라미터         |
+| :--------------------- | :----------------------------------- | :-------------------- |
+| `media__seeContent`    | 이미지/비주얼 매체 분석 및 조회      | `AbsolutePath`        |
+| `media__listenContent` | 오디오/음성 매체 파싱 및 분석        | `AbsolutePath`        |
+| `generate_image`       | AI 기반 이미지 생성 및 시각 프롬프트 | `Prompt`, `ImageName` |
 
-### 3. Interactive UI (`ui__*`)
+### 3. Interactive UI (`ask_question` / `ui__*`)
 
-| 도구 이름                          | 설명                                             |
-| :--------------------------------- | :----------------------------------------------- |
-| `ui__select_prompt`                | 사용자 다중 선택지 버튼 카드 렌더링              |
-| `ui__text_prompt`                  | 사용자 텍스트 입력 폼 렌더링                     |
-| `ui__line_chart` / `ui__bar_chart` | 데이터 시각화 차트 렌더링                        |
-| `ui__circuitBreak`                 | 반복 무한 루프 감지 및 일시정지/재개 카드 렌더링 |
-| `ui__wait`                         | 사용자 입력 및 외부 처리 휴식 대기               |
+| 도구 이름      | 설명                                      |
+| :------------- | :---------------------------------------- |
+| `ask_question` | 사용자 인터랙티브 다중 선택지 모달 렌더링 |
+| `ui__wait`     | 사용자 입력 및 외부 비동기 작업 대기      |
 
 ### 4. Browser (`browser__*`) _(선택)_
 
-| 도구 이름             | 설명                    |
-| :-------------------- | :---------------------- |
-| `browser__navigate`   | 웹페이지 이동           |
-| `browser__click`      | DOM 요소 클릭           |
-| `browser__type`       | 입력 양식 텍스트 타이핑 |
-| `browser__screenshot` | 웹페이지 화면 캡처      |
+| 도구 이름          | 설명                      |
+| :----------------- | :------------------------ |
+| `navigateToUrl`    | 대상 URL 웹페이지 이동    |
+| `clickElement`     | DOM 클릭 요소 상호작용    |
+| `inputText`        | 입력 양식 텍스트 타이핑   |
+| `scrollPage`       | 웹페이지 스크롤           |
+| `listInteractable` | 상호작용 가능한 요소 추출 |
+| `evaluateJS`       | JS 커스텀 스크립트 실행   |
 
 ### 5. Planning & Reflection (`planning__*`) _(선택)_
 
-| 도구 이름               | 설명                                                               |
-| :---------------------- | :----------------------------------------------------------------- |
-| `planning__create_plan` | 3단계 이상의 복잡한 멀티스텝 작업 계획 수립                        |
-| `planning__update_plan` | 작업 진척도 및 단계별 상태(`todo`, `in_progress`, `done`) 업데이트 |
-| `planning__reflect`     | 도구 에러 발생 시 원인 성찰(Critique) 및 교정 방안 수립            |
+| 도구 이름              | 설명                                                    |
+| :--------------------- | :------------------------------------------------------ |
+| `planning__createGoal` | 복잡한 멀티스텝 작업 목표 수립                          |
+| `planning__updateGoal` | 목표 진척도 및 단계별 상태 업데이트                     |
+| `planning__addTodo`    | 세부 할 일 항목 추가 및 상태 관리                       |
+| `planning__reflect`    | 도구 에러 발생 시 원인 성찰(Critique) 및 교정 방안 수립 |
 
-### 6. Scheduled Tasks (`scheduled_task__*`)
+### 6. Attachments & Scheduled Tasks (`attachments__*` / `scheduled_task__*`)
 
 | 도구 이름                         | 설명                            |
 | :-------------------------------- | :------------------------------ |
+| `attachments__readAttachment`     | 세션 첨부파일 내용 조회         |
+| `attachments__searchAttachments`  | 첨부파일 검색                   |
 | `scheduled_task__create`          | 타이머/Cron 정기 알림 예약 생성 |
 | `scheduled_task__list` / `delete` | 예약 작업 조회 및 취소          |
 

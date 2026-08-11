@@ -23,7 +23,7 @@ The skill content is added to context so the agent follows that procedure.
 | Built-in       | Shipped with LibrAgent                               |
 | User / project | Skills you add under the configured skills directory |
 
-Configure the skills folder in **Settings → General** (skills directory).
+Manage local skills folder in sidebar **Extensions → Skills**.
 
 ---
 
