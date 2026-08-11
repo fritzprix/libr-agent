@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { createId } from '@paralleldrive/cuid2';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -65,10 +65,17 @@ export function useChatSubmit({
   const { value: settings } = useSettings();
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Ref avoids stale closure and blocks nested `/clear` while invoke is in flight.
+  const isSubmittingRef = useRef(false);
 
   const handleSubmit = useCallback(
     async (e?: React.FormEvent<HTMLFormElement>) => {
       e?.preventDefault();
+
+      if (isSubmittingRef.current) {
+        logger.info('Submit ignored: already submitting');
+        return;
+      }
 
       const messageText = input.trim();
       const hasInput = messageText.length > 0 || pendingFiles.length > 0;
@@ -84,9 +91,17 @@ export function useChatSubmit({
 
       // Intercept CLI command execution (allowed before Session Ready)
       if (messageText.startsWith('/')) {
+        isSubmittingRef.current = true;
         setIsSubmitting(true);
         const currentInput = input;
         setInput(''); // Clear input immediately for better UX
+        // Optimistic UI clear: do not wait for invoke. Backend also emits
+        // resourceUpdated(clear); without this, a slow command looks like a
+        // failed clear and users re-issue `/clear` (nested reset race).
+        if (messageText === '/clear') {
+          onClearSession?.();
+          clearPendingFiles();
+        }
 
         try {
           const result = await safeInvoke<{
@@ -97,10 +112,8 @@ export function useChatSubmit({
             commandText: messageText,
           });
           if (result.success) {
-            clearPendingFiles();
-            if (messageText === '/clear') {
-              onClearSession?.();
-            } else {
+            if (messageText !== '/clear') {
+              clearPendingFiles();
               const permissionMode = parsePermissionCommand(messageText);
               if (permissionMode) {
                 onExecutionModeChange?.(permissionMode);
@@ -118,6 +131,7 @@ export function useChatSubmit({
           );
           setInput(currentInput); // Restore input on error
         } finally {
+          isSubmittingRef.current = false;
           setIsSubmitting(false);
         }
         return;
@@ -210,6 +224,7 @@ export function useChatSubmit({
       }
 
       setIsSubmitting(true);
+      isSubmittingRef.current = true;
       const currentInput = input;
       setInput(''); // Clear input immediately for better UX
       clearPendingFiles();
@@ -238,6 +253,7 @@ export function useChatSubmit({
         setInput(currentInput);
         logger.error('Failed to submit message:', err);
       } finally {
+        isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
     },
