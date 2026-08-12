@@ -32,9 +32,6 @@
           "workspace/**"
         ]
       }
-    },
-    "trayIcon": {
-      "iconPath": "icons/icon.png"
     }
   },
   "plugins": {

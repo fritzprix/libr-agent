@@ -360,6 +360,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Windows: keep minimize → taskbar behavior reliable (no orphan tray tool-window).
+    crate::lifecycle::windows_taskbar::ensure_main_window_taskbar_button(app.handle());
+
     info!("✅ LibrAgent setup completed successfully");
     Ok(())
 }
