@@ -200,6 +200,16 @@ describe('agent session structured types', () => {
     ).toBe('abc');
   });
 
+  it('resolveAgentSessionId prefers storageSessionId for Open navigation', () => {
+    expect(
+      resolveAgentSessionId({
+        sessionId: '6789012345',
+        storageSessionId: 'session-1735123456789012345',
+        resourceId: 'xyz',
+      }),
+    ).toBe('session-1735123456789012345');
+  });
+
   it('canRenderStructuredToolResult accepts agent session tools', () => {
     expect(
       canRenderStructuredToolResult('agent__checkSession', {

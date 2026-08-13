@@ -19,6 +19,11 @@ export const AgentSessionToolResultSchema = z
     message: z.string().optional(),
     responseStatus: z.string().optional(),
     sessionId: z.string().optional(),
+    /**
+     * Opaque DB/storage key for UI navigation. Prefer over `sessionId` when opening
+     * a session route — display tokens may differ from storage for legacy ids.
+     */
+    storageSessionId: z.string().optional(),
     status: z.string().optional(),
     turnCount: z.number().optional(),
     workspacePath: z.string().optional(),
@@ -161,7 +166,11 @@ export function classifyAgentSessionCard(
 export function resolveAgentSessionId(
   data: AgentSessionToolResult,
 ): string | null {
-  const id = data.sessionId?.trim() || data.resourceId?.trim();
+  // Prefer storage key for Open Session navigation; fall back to display/resource ids.
+  const id =
+    data.storageSessionId?.trim() ||
+    data.sessionId?.trim() ||
+    data.resourceId?.trim();
   return id && id.length > 0 ? id : null;
 }
 

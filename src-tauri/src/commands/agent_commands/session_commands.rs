@@ -11,11 +11,34 @@ use crate::repositories::SessionMetadata;
 use crate::services::agent_service::remove_lineage;
 use crate::services::AgentService;
 use crate::state::get_session_repository;
+use crate::utils::session_id::{resolve_session_id_among, SessionIdResolve};
 use std::collections::HashMap;
 use tauri::{command, AppHandle, State};
 
 const DEFAULT_SESSION_LIST_LIMIT: u64 = 20;
 const MAX_SESSION_LIST_LIMIT: u64 = 200;
+
+/// Resolve a UI/route session reference to the stored session id.
+///
+/// Accepts full storage ids, bare short tokens, or optional `session-{short}` forms
+/// (same contract as HTTP helpers / MCP tools).
+async fn resolve_tauri_session_ref(session_ref: &str) -> Result<String, String> {
+    let sessions = get_session_repository()
+        .get_all_sessions()
+        .await
+        .map_err(|e| format!("Failed to list sessions: {}", e))?;
+    let candidates: Vec<String> = sessions.into_iter().map(|session| session.id).collect();
+    let candidate_refs: Vec<&str> = candidates.iter().map(|id| id.as_str()).collect();
+
+    match resolve_session_id_among(candidate_refs, session_ref) {
+        SessionIdResolve::Unique(id) => Ok(id.to_string()),
+        SessionIdResolve::Missing => Err(format!("Session not found: {}", session_ref)),
+        SessionIdResolve::Ambiguous(count) => Err(format!(
+            "Ambiguous session reference '{}': matches {} sessions. Use the full storage id.",
+            session_ref, count
+        )),
+    }
+}
 
 /// Create a new agent session
 #[command]
@@ -43,6 +66,9 @@ pub async fn agent_open_session(
     initial_message_limit: Option<u64>,
 ) -> Result<AgentOpenSessionResponse, String> {
     const DEFAULT_INITIAL_MESSAGE_LIMIT: u64 = 40;
+
+    // Route / tool cards may pass a display alias; hydrate + resume need the storage key.
+    let session_id = resolve_tauri_session_ref(&session_id).await?;
 
     let session_manager = crate::session::get_session_manager()?;
     crate::session::hydrate_persisted_workspace_override_from_global(session_manager, &session_id)

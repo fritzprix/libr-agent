@@ -266,6 +266,23 @@ pub fn build_agent_tool_data(
     data
 }
 
+/// Insert agent-facing `sessionId` (display token) plus UI-only `storageSessionId`.
+///
+/// Agents must keep using the short display token. The desktop UI Open Session
+/// button must navigate with the opaque storage key so `agent_open_session` /
+/// event filters match DB rows (legacy `session-…` display ≠ storage).
+pub fn insert_agent_session_id_fields(
+    data: &mut serde_json::Map<String, Value>,
+    storage_session_id: &str,
+) {
+    let display_id = crate::utils::session_id::display_session_id(storage_session_id);
+    data.insert("sessionId".to_string(), Value::String(display_id));
+    data.insert(
+        "storageSessionId".to_string(),
+        Value::String(storage_session_id.to_string()),
+    );
+}
+
 pub fn build_agent_session_tool_data(
     tool_name: &str,
     session_id: &str,
@@ -285,7 +302,7 @@ pub fn build_agent_session_tool_data(
         response_status,
         next_actions,
     );
-    data.insert("sessionId".to_string(), Value::String(display_id));
+    insert_agent_session_id_fields(&mut data, session_id);
     data.insert(
         "status".to_string(),
         Value::String(session_status.to_string()),
@@ -702,6 +719,32 @@ mod tests {
             "role": "assistant",
             "content": [{"type": "text", "text": text}]
         })
+    }
+
+    #[test]
+    fn build_agent_session_tool_data_emits_display_and_storage_ids() {
+        let data = build_agent_session_tool_data(
+            "checkSession",
+            "session-1735123456789012345",
+            "ok",
+            "idle",
+            "success",
+            1,
+            vec![],
+        );
+
+        assert_eq!(
+            data.get("sessionId").and_then(|v| v.as_str()),
+            Some("6789012345")
+        );
+        assert_eq!(
+            data.get("storageSessionId").and_then(|v| v.as_str()),
+            Some("session-1735123456789012345")
+        );
+        assert_eq!(
+            data.get("resourceId").and_then(|v| v.as_str()),
+            Some("6789012345")
+        );
     }
 
     #[test]

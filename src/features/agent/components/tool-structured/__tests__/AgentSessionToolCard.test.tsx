@@ -200,6 +200,23 @@ describe('ToolStructuredResult agent session cards', () => {
     expect(navigateMock).toHaveBeenCalledWith('/agent/a1b2c3d4e5');
   });
 
+  it('navigates using storageSessionId when display token differs', () => {
+    navigateMock.mockClear();
+
+    renderAgentCard('agent__checkSession', {
+      sessionId: '6789012345',
+      storageSessionId: 'session-1735123456789012345',
+      status: 'idle',
+      responseStatus: 'success',
+      result: 'done',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /open session/i }));
+    expect(navigateMock).toHaveBeenCalledWith(
+      '/agent/session-1735123456789012345',
+    );
+  });
+
   it('hides open for deleted sessions', () => {
     renderAgentCard('agent__deleteSession', {
       sessionId: 'a1b2c3d4e5',
