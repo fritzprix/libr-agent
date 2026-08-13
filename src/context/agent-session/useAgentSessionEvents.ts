@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { listen } from '@tauri-apps/api/event';
 import { openAgentSession } from '@/lib/backend/agent-commands';
 import { getAssistant } from '@/lib/backend/assistants';
@@ -67,6 +68,7 @@ export function useAgentSessionEvents(
     clearStreamingMessage: (sessionId: string) => void;
   },
 ) {
+  const navigate = useNavigate();
   const { setters, refs } = stateProps;
   const clearStreamingOnInactive = () =>
     applyWorkflowInactiveCleanup({
@@ -341,6 +343,20 @@ export function useAgentSessionEvents(
         });
 
         const response = await openAgentSession(sessionId);
+        if (!isMounted) return;
+
+        // Events and further commands use storage ids. If the route still has a
+        // display alias, remount on the resolved storage key.
+        const resolvedSessionId = response.session.id;
+        if (resolvedSessionId !== sessionId) {
+          logger.info('Normalizing session route to storage id', {
+            from: sessionId,
+            to: resolvedSessionId,
+          });
+          navigate(`/agent/${resolvedSessionId}`, { replace: true });
+          return;
+        }
+
         const sessionMetadata = response.session;
 
         if (!isMounted) return;
@@ -419,7 +435,7 @@ export function useAgentSessionEvents(
       isMounted = false;
       if (unlisten) unlisten();
     };
-  }, [sessionId, actions.persistViewedAt, actions.clearStreamingMessage]);
+  }, [sessionId, navigate, actions.persistViewedAt, actions.clearStreamingMessage]);
 
   useEffect(() => {
     const markViewedOnReturn = () => {

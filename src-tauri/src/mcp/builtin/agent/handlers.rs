@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::utils::{
     build_agent_session_tool_data, build_agent_tool_data, fetch_session_messages_for_result,
-    latest_session_output, CHECK_SESSION_RESULT_MESSAGE_LIMIT,
+    insert_agent_session_id_fields, latest_session_output, CHECK_SESSION_RESULT_MESSAGE_LIMIT,
 };
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::{MCPContent, MCPResult};
@@ -426,12 +426,7 @@ pub async fn prepare_teamwork_workspace(
             }),
         ],
     );
-    response_data.insert(
-        "sessionId".to_string(),
-        Value::String(crate::utils::session_id::display_session_id(
-            caller_session_id,
-        )),
-    );
+    insert_agent_session_id_fields(&mut response_data, caller_session_id);
     response_data.insert("artifactPath".to_string(), Value::String(artifact_path));
     response_data.insert("mode".to_string(), Value::String("teamwork".to_string()));
 
