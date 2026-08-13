@@ -7,10 +7,7 @@
 //! This module re-asserts `WS_EX_APPWINDOW` (and clears `WS_EX_TOOLWINDOW`) and
 //! calls Tauri's `set_skip_taskbar(false)` after startup and around minimize.
 
-use log::{debug, warn};
-use tauri::{AppHandle, Manager, Runtime};
-
-const MAIN_WINDOW_LABEL: &str = "main";
+use tauri::{AppHandle, Runtime};
 
 /// Ensure the main window stays listed on the Windows taskbar.
 pub fn ensure_main_window_taskbar_button<R: Runtime>(app: &AppHandle<R>) {
@@ -21,6 +18,11 @@ pub fn ensure_main_window_taskbar_button<R: Runtime>(app: &AppHandle<R>) {
 
     #[cfg(windows)]
     {
+        use log::{debug, warn};
+        use tauri::Manager;
+
+        const MAIN_WINDOW_LABEL: &str = "main";
+
         let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
             debug!("Taskbar ensure skipped: main window not ready");
             return;
@@ -45,6 +47,7 @@ pub fn ensure_main_window_taskbar_button<R: Runtime>(app: &AppHandle<R>) {
 
 #[cfg(windows)]
 fn apply_appwindow_exstyle(hwnd: isize) {
+    use log::debug;
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
@@ -58,8 +61,7 @@ fn apply_appwindow_exstyle(hwnd: isize) {
     unsafe {
         let hwnd = hwnd as HWND;
         let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        let updated =
-            (current | WS_EX_APPWINDOW as isize) & !(WS_EX_TOOLWINDOW as isize);
+        let updated = (current | WS_EX_APPWINDOW as isize) & !(WS_EX_TOOLWINDOW as isize);
         if updated == current {
             return;
         }
