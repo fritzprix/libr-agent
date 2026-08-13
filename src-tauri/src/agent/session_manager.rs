@@ -875,10 +875,7 @@ impl AgentSessionManager {
                     .close_agent_browser_sessions(&browser_session_id)
                     .await
                 {
-                    log::warn!(
-                        "Failed to close browser session during reset: {}",
-                        e
-                    );
+                    log::warn!("Failed to close browser session during reset: {}", e);
                 }
             }
         });
