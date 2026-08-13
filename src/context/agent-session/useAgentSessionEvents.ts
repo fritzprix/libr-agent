@@ -435,7 +435,12 @@ export function useAgentSessionEvents(
       isMounted = false;
       if (unlisten) unlisten();
     };
-  }, [sessionId, navigate, actions.persistViewedAt, actions.clearStreamingMessage]);
+  }, [
+    sessionId,
+    navigate,
+    actions.persistViewedAt,
+    actions.clearStreamingMessage,
+  ]);
 
   useEffect(() => {
     const markViewedOnReturn = () => {
