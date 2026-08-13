@@ -9,6 +9,7 @@ pub mod repositories;
 pub mod retry_utils;
 pub mod schema_version; // Schema version tracking (matches migration #10 table layout)
 pub mod settings;
+pub mod windows_taskbar;
 
 use crate::session::get_session_manager;
 use crate::state::{set_sqlite_db_url, start_startup_timer};
