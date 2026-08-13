@@ -3,6 +3,7 @@ import { AIServiceProvider } from '../types';
 import {
   createCustomOpenAIProvider,
   isCustomOpenAIProviderId,
+  migrateLegacyOpenAICompatibleSettings,
   parseCustomProviderId,
   resolveDefaultModelForProviderChange,
   resolveProviderRuntimeConfig,
@@ -127,6 +128,78 @@ describe('custom provider helpers', () => {
     expect(resolved.baseUrl).toBeUndefined();
     expect(resolved.use3rdParty).toBe(true);
     expect(resolved.manualModels).toBeUndefined();
+  });
+
+  it('migrates legacy openai use3rdParty config into customProviders', () => {
+    const { settings, didMigrate } = migrateLegacyOpenAICompatibleSettings({
+      ...DEFAULT_SETTING,
+      serviceConfigs: {
+        ...DEFAULT_SETTING.serviceConfigs,
+        [AIServiceProvider.OpenAI]: {
+          apiKey: 'sk-local',
+          baseUrl: 'http://127.0.0.1:1234/v1',
+          use3rdParty: true,
+          customModelId: 'llama-local',
+        },
+      },
+      preferredModel: {
+        provider: AIServiceProvider.OpenAI,
+        model: 'llama-local',
+      },
+      customProviders: [],
+    });
+
+    expect(didMigrate).toBe(true);
+    expect(settings.serviceConfigs[AIServiceProvider.OpenAI]).toEqual({});
+    expect(settings.customProviders).toHaveLength(1);
+    expect(settings.customProviders[0]).toEqual(
+      expect.objectContaining({
+        name: '127.0.0.1:1234',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        apiKey: 'sk-local',
+        models: ['llama-local'],
+      }),
+    );
+    expect(settings.preferredModel).toEqual({
+      provider: `custom:${settings.customProviders[0].id}`,
+      model: 'llama-local',
+    });
+  });
+
+  it('does not duplicate custom providers when migrating the same base URL twice', () => {
+    const first = migrateLegacyOpenAICompatibleSettings({
+      ...DEFAULT_SETTING,
+      serviceConfigs: {
+        ...DEFAULT_SETTING.serviceConfigs,
+        [AIServiceProvider.OpenAI]: {
+          baseUrl: 'http://localhost:8000/v1',
+          use3rdParty: true,
+          customModelId: 'model-a',
+        },
+      },
+      customProviders: [],
+    });
+
+    const second = migrateLegacyOpenAICompatibleSettings({
+      ...first.settings,
+      serviceConfigs: {
+        ...first.settings.serviceConfigs,
+        [AIServiceProvider.OpenAI]: {
+          baseUrl: 'http://localhost:8000/v1',
+          use3rdParty: true,
+          customModelId: 'model-b',
+        },
+      },
+    });
+
+    expect(second.settings.customProviders).toHaveLength(1);
+    expect(second.settings.customProviders[0].models).toEqual([
+      'model-a',
+      'model-b',
+    ]);
+    expect(second.settings.serviceConfigs[AIServiceProvider.OpenAI]).toEqual(
+      {},
+    );
   });
 
   it('treats nullish provider ids as non-custom', () => {

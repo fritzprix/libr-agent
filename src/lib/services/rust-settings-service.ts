@@ -13,7 +13,10 @@ import {
   type ExperimentalSettings,
 } from './settings-service';
 import type { AIServiceProvider } from '@/lib/ai-service';
-import { normalizeCustomOpenAIProviders } from '@/lib/ai-service/custom-providers';
+import {
+  migrateLegacyOpenAICompatibleSettings,
+  normalizeCustomOpenAIProviders,
+} from '@/lib/ai-service/custom-providers';
 
 const logger = getLogger('RustSettingsService');
 
@@ -105,7 +108,10 @@ function isCustomOpenAIProviderArray(
   });
 }
 
-function mapDtosToSettings(dtos: SettingDto[]): Settings {
+function mapDtosToSettings(dtos: SettingDto[]): {
+  settings: Settings;
+  didMigrate: boolean;
+} {
   const settingsMap = new Map<string, SettingValue>();
   dtos.forEach((dto) => {
     settingsMap.set(dto.key, dto.value);
@@ -132,7 +138,7 @@ function mapDtosToSettings(dtos: SettingDto[]): Settings {
 
   const storedSystem = getTypedValue('systemSettings', DEFAULT_SETTING.system);
 
-  return {
+  const mapped: Settings = {
     ...DEFAULT_SETTING,
     serviceConfigs: {
       ...DEFAULT_SETTING.serviceConfigs,
@@ -198,6 +204,8 @@ function mapDtosToSettings(dtos: SettingDto[]): Settings {
       DEFAULT_SETTING.experimental,
     ),
   };
+
+  return migrateLegacyOpenAICompatibleSettings(mapped);
 }
 
 function invalidateSettingsCache() {
@@ -219,8 +227,27 @@ async function loadSettings(forceRefresh = false): Promise<Settings> {
 
   const requestGeneration = settingsCacheGeneration;
   const request = safeInvoke<SettingDto[]>('list_settings')
-    .then((dtos) => {
-      const settings = mapDtosToSettings(dtos);
+    .then(async (dtos) => {
+      const { settings, didMigrate } = mapDtosToSettings(dtos);
+
+      if (didMigrate) {
+        try {
+          await safeInvoke<SettingDto[]>('update_settings', {
+            settings: {
+              serviceConfigs: settings.serviceConfigs,
+              customProviders: settings.customProviders,
+              preferredModel: settings.preferredModel,
+              fallbackModel: settings.fallbackModel ?? null,
+            },
+          });
+        } catch (error) {
+          logger.warn(
+            'Failed to persist legacy OpenAI-compatible settings migration',
+            error,
+          );
+        }
+      }
+
       if (
         requestGeneration === settingsCacheGeneration &&
         cachedSettingsPromise === request

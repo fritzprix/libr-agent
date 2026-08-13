@@ -59,4 +59,25 @@ describe('ProviderCard', () => {
 
     expect(screen.getByDisplayValue('http://another-host:11434')).toBeVisible();
   });
+
+  it('does not show the legacy 3rd-party OpenAI-compatible checkbox', () => {
+    render(
+      <ProviderCard
+        provider={AIServiceProvider.OpenAI}
+        providerName="OpenAI"
+        apiKey=""
+        baseUrl=""
+        onPendingChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText('Use 3rd party OpenAI-compatible API'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'For vLLM, LM Studio, LocalAI, and other OpenAI-compatible servers, add a Custom OpenAI Provider below.',
+      ),
+    ).toBeVisible();
+  });
 });

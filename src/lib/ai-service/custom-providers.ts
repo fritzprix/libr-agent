@@ -292,3 +292,123 @@ export function listCustomProviderPickerOptions(
     value: toCustomProviderId(p.id),
   }));
 }
+
+function deriveMigratedProviderName(baseUrl: string): string {
+  const trimmed = baseUrl.trim();
+  if (!trimmed) {
+    return 'OpenAI-compatible';
+  }
+  try {
+    const host = new URL(trimmed).host;
+    return host || 'OpenAI-compatible';
+  } catch {
+    return 'OpenAI-compatible';
+  }
+}
+
+function remapModelChoiceProvider(
+  choice: Settings['preferredModel'] | Settings['fallbackModel'] | undefined,
+  fromProvider: string,
+  toProvider: string,
+  fallbackModelId?: string,
+): Settings['preferredModel'] | Settings['fallbackModel'] | undefined {
+  if (!choice || choice.provider !== fromProvider) {
+    return choice;
+  }
+  return {
+    provider: toProvider,
+    model: choice.model || fallbackModelId || '',
+  };
+}
+
+/**
+ * Moves the legacy builtin OpenAI `use3rdParty` / `customModelId` slot into
+ * `customProviders`, which is the canonical OpenAI-compatible configuration UI.
+ *
+ * Idempotent when an equivalent custom provider (same base URL) already exists.
+ */
+export function migrateLegacyOpenAICompatibleSettings(settings: Settings): {
+  settings: Settings;
+  didMigrate: boolean;
+} {
+  const openaiConfig = settings.serviceConfigs?.[AIServiceProvider.OpenAI];
+  if (!openaiConfig?.use3rdParty) {
+    return { settings, didMigrate: false };
+  }
+
+  const baseUrl = openaiConfig.baseUrl?.trim() ?? '';
+  const apiKey = openaiConfig.apiKey?.trim();
+  const customModelId = openaiConfig.customModelId?.trim();
+  const existingProviders = normalizeCustomOpenAIProviders(
+    settings.customProviders,
+  );
+
+  const existingMatch = baseUrl
+    ? existingProviders.find((provider) => provider.baseUrl === baseUrl)
+    : undefined;
+
+  let customProviders = existingProviders;
+  let migratedProviderId: string;
+
+  if (existingMatch) {
+    migratedProviderId = existingMatch.id;
+    if (customModelId) {
+      customProviders = existingProviders.map((provider) => {
+        if (provider.id !== existingMatch.id) {
+          return provider;
+        }
+        return normalizeCustomOpenAIProvider({
+          ...provider,
+          apiKey: provider.apiKey || apiKey,
+          models: normalizeManualModels([
+            ...(provider.models ?? []),
+            customModelId,
+          ]),
+        });
+      });
+    }
+  } else {
+    const created = createCustomOpenAIProvider({
+      name: deriveMigratedProviderName(baseUrl),
+      baseUrl: baseUrl || 'http://localhost:8000/v1',
+      apiKey,
+      models: customModelId ? [customModelId] : undefined,
+    });
+    migratedProviderId = created.id;
+    customProviders = [...existingProviders, created];
+  }
+
+  const cleanedOpenAI: ServiceConfig = {};
+  if (openaiConfig.safetySettings) {
+    cleanedOpenAI.safetySettings = openaiConfig.safetySettings;
+  }
+
+  const customProviderKey = toCustomProviderId(migratedProviderId);
+  const preferredModel =
+    remapModelChoiceProvider(
+      settings.preferredModel,
+      AIServiceProvider.OpenAI,
+      customProviderKey,
+      customModelId,
+    ) ?? settings.preferredModel;
+  const fallbackModel = remapModelChoiceProvider(
+    settings.fallbackModel,
+    AIServiceProvider.OpenAI,
+    customProviderKey,
+    customModelId,
+  );
+
+  return {
+    didMigrate: true,
+    settings: {
+      ...settings,
+      serviceConfigs: {
+        ...settings.serviceConfigs,
+        [AIServiceProvider.OpenAI]: cleanedOpenAI,
+      },
+      customProviders,
+      preferredModel,
+      fallbackModel,
+    },
+  };
+}

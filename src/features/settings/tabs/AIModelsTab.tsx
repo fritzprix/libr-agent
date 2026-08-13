@@ -74,7 +74,7 @@ function AIModelsTabComponent({
       ),
       description: t(
         `settings.aiModels.providers.${AIServiceProvider.OpenAI}.description`,
-        'GPT-4o, o3, o4-mini and more',
+        'GPT-4o, o3, o4-mini and more. Use Custom OpenAI Providers for compatible servers.',
       ),
     },
     [AIServiceProvider.Anthropic]: {
@@ -341,8 +341,6 @@ function AIModelsTabComponent({
                 description={meta?.description}
                 apiKey={cfg.apiKey || ''}
                 baseUrl={cfg.baseUrl}
-                use3rdParty={cfg.use3rdParty}
-                customModelId={cfg.customModelId}
                 onPendingChange={onPendingChange}
               />
             );
@@ -359,7 +357,7 @@ function AIModelsTabComponent({
             <p className="text-sm text-muted-foreground mt-1">
               {t(
                 'settings.customProviders.description',
-                'Register multiple OpenAI-compatible endpoints (vLLM, LM Studio, LocalAI, etc.) and select them in the model picker.',
+                'Register OpenAI-compatible endpoints (vLLM, LM Studio, LocalAI, etc.) with a base URL, optional API key, and optional manual model list. Select them in the model picker.',
               )}
             </p>
           </div>

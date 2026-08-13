@@ -388,7 +388,7 @@
       "providers": {
         "openai": {
           "name": "OpenAI",
-          "description": "GPT-4o, o3, o4-mini 등"
+          "description": "GPT-4o, o3, o4-mini 등. OpenAI 호환 서버는 아래 Custom OpenAI Providers를 사용하세요."
         },
         "anthropic": {
           "name": "Anthropic",
@@ -431,10 +431,8 @@
       "hideApiKey": "API 키 숨기기",
       "baseUrl": "기본 URL",
       "baseUrlPlaceholder": "http://localhost:11434",
-      "use3rdParty": "타사 OpenAI 호환 API 사용",
-      "customModelId": "사용자 지정 모델 ID",
-      "customModelIdPlaceholder": "예: llama-3.1-70b, mistral-large",
-      "customModelIdDescription": "타사 API에서 지원하는 모델 ID를 입력하세요 (예: LM Studio, LocalAI)"
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1 (선택적 프록시)",
+      "openaiBaseUrlHint": "vLLM, LM Studio, LocalAI 등 OpenAI 호환 서버는 아래 Custom OpenAI Provider를 추가하세요."
     },
     "chatInterface": {
       "diffContextLines": "Diff 컨텍스트 라인",
