@@ -1,4 +1,5 @@
 import { TEST_SESSION_ID, createDefaultWrapper, mockMarkSessionViewed, mockRefreshCompactedRange, listenMock, openAgentSessionMock, safeInvokeMock, createOpenSessionResponse, createReadyRuntimeState, buildTestMessage, OpenAgentSessionResponse } from "./agent-session-test-utils";
+import { clearOpenSessionViewCache } from '../agent-session/openSessionViewCache';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
@@ -10,6 +11,7 @@ describe('AgentSessionContext – Event Handling', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearOpenSessionViewCache();
     mockMarkSessionViewed.mockResolvedValue(undefined);
     mockRefreshCompactedRange.mockResolvedValue(undefined);
     listenMock.mockResolvedValue(mockUnlisten);

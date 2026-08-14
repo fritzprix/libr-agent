@@ -1,4 +1,5 @@
 import { TEST_SESSION_ID, SessionWrapper, mockMarkSessionViewed, mockRefreshCompactedRange, listenMock, openAgentSessionMock, safeInvokeMock, createOpenSessionResponse, createReadyRuntimeState, AgentSessionStateObserver, AgentSessionStateSnapshot, OpenAgentSessionResponse } from "./agent-session-test-utils";
+import { clearOpenSessionViewCache, putOpenSessionView } from '../agent-session/openSessionViewCache';
 import { render, renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
@@ -13,6 +14,7 @@ describe('AgentSessionContext (Local)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearOpenSessionViewCache();
     mockMarkSessionViewed.mockResolvedValue(undefined);
     mockRefreshCompactedRange.mockResolvedValue(undefined);
     listenMock.mockResolvedValue(mockUnlisten);
@@ -157,6 +159,88 @@ describe('AgentSessionContext (Local)', () => {
             'session-2',
             expect.any(Date)
         );
+    });
+
+    it('paints a warm cached session immediately without hydrating flash', async () => {
+        putOpenSessionView(
+            'session-warm',
+            createOpenSessionResponse('session-warm', {
+                session: { name: 'Warm Session' },
+                messages: [
+                    {
+                        id: 'cached-msg',
+                        sessionId: 'session-warm',
+                        threadId: 'session-warm',
+                        role: 'user',
+                        content: [{ type: 'text', text: 'Cached' }],
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                    },
+                ],
+            }),
+        );
+
+        let resolveOpen:
+            | ((value: OpenAgentSessionResponse) => void)
+            | undefined;
+        openAgentSessionMock.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolveOpen = resolve;
+                }),
+        );
+
+        let latestState: AgentSessionStateSnapshot | undefined;
+        const currentState = () => {
+            if (!latestState) {
+                throw new Error('Expected session state snapshot');
+            }
+            return latestState;
+        };
+
+        render(
+            <SessionWrapper sessionId="session-warm">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>,
+        );
+
+        await waitFor(() => {
+            expect(currentState().isSessionLoading).toBe(false);
+            expect(currentState().isProxyReady).toBe(true);
+            expect(currentState().session?.id).toBe('session-warm');
+            expect(currentState().messages[0]?.id).toBe('cached-msg');
+        });
+
+        await waitFor(() => {
+            expect(resolveOpen).toBeDefined();
+        });
+
+        await act(async () => {
+            resolveOpen?.(
+                createOpenSessionResponse('session-warm', {
+                    session: { name: 'Warm Session' },
+                    messages: [
+                        {
+                            id: 'fresh-msg',
+                            sessionId: 'session-warm',
+                            threadId: 'session-warm',
+                            role: 'user',
+                            content: [{ type: 'text', text: 'Fresh' }],
+                            createdAt: Date.now(),
+                            updatedAt: Date.now(),
+                        },
+                    ],
+                }),
+            );
+        });
+
+        await waitFor(() => {
+            expect(currentState().messages[0]?.id).toBe('fresh-msg');
+        });
     });
 
     it('keeps the previous session state visible while the next session hydrates', async () => {
