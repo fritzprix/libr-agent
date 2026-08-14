@@ -45,10 +45,7 @@ export function useMcpDiscoveryToasts({
 
   const hasServers = servers.length > 0;
   const showLoading =
-    hasSession &&
-    !isProxyReady &&
-    phase === 'initializing' &&
-    hasServers;
+    hasSession && !isProxyReady && phase === 'initializing' && hasServers;
   const discoveryFinished =
     isProxyReady || phase === 'failed' || initResult !== 'pending';
   const isTerminalPhase =

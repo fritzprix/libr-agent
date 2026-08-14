@@ -160,76 +160,80 @@ export function HttpForm({
       {!hideVariableDefinitions &&
         (server.metadata as MCPServerMetadata | undefined)
           ?.variableDefinitions && (
-        <div className="space-y-4 p-4 border rounded-md bg-muted/10">
-          <h4 className="text-sm font-medium">
-            {t('mcpServer.dialog.requiredConfig', 'Required Configuration')}
-          </h4>
-          {Object.entries(
-            (server.metadata as MCPServerMetadata).variableDefinitions || {},
-          ).map(([key, def]) => {
-            const target = def.target ?? 'env';
-            let currentValue = '';
-            if (target === 'bearer-token') {
-              currentValue = apiKey;
-            } else if (target === 'header') {
-              currentValue =
-                customHeaders.find((h) => h.key === key)?.value || '';
-            } else if (target === 'url-param') {
-              currentValue = urlParams[key] || '';
-            }
-            return (
-              <div key={key} className="space-y-2">
-                <Label
-                  htmlFor={`http-var-${key}`}
-                  className="flex gap-1 items-center"
-                >
-                  {def.label || key}
-                  {def.required && <span className="text-destructive">*</span>}
-                </Label>
-                <Input
-                  id={`http-var-${key}`}
-                  type={def.type === 'password' ? 'password' : 'text'}
-                  value={currentValue}
-                  placeholder={def.label}
-                  onChange={(e) => {
-                    if (target === 'bearer-token') {
-                      setApiKey(e.target.value);
-                    } else if (target === 'header') {
-                      const existing = customHeaders.find((h) => h.key === key);
-                      if (existing) {
-                        handleUpdateHeader(
-                          existing.id,
-                          'value',
-                          e.target.value,
+          <div className="space-y-4 p-4 border rounded-md bg-muted/10">
+            <h4 className="text-sm font-medium">
+              {t('mcpServer.dialog.requiredConfig', 'Required Configuration')}
+            </h4>
+            {Object.entries(
+              (server.metadata as MCPServerMetadata).variableDefinitions || {},
+            ).map(([key, def]) => {
+              const target = def.target ?? 'env';
+              let currentValue = '';
+              if (target === 'bearer-token') {
+                currentValue = apiKey;
+              } else if (target === 'header') {
+                currentValue =
+                  customHeaders.find((h) => h.key === key)?.value || '';
+              } else if (target === 'url-param') {
+                currentValue = urlParams[key] || '';
+              }
+              return (
+                <div key={key} className="space-y-2">
+                  <Label
+                    htmlFor={`http-var-${key}`}
+                    className="flex gap-1 items-center"
+                  >
+                    {def.label || key}
+                    {def.required && (
+                      <span className="text-destructive">*</span>
+                    )}
+                  </Label>
+                  <Input
+                    id={`http-var-${key}`}
+                    type={def.type === 'password' ? 'password' : 'text'}
+                    value={currentValue}
+                    placeholder={def.label}
+                    onChange={(e) => {
+                      if (target === 'bearer-token') {
+                        setApiKey(e.target.value);
+                      } else if (target === 'header') {
+                        const existing = customHeaders.find(
+                          (h) => h.key === key,
                         );
-                      } else {
-                        setCustomHeaders((prev) => [
+                        if (existing) {
+                          handleUpdateHeader(
+                            existing.id,
+                            'value',
+                            e.target.value,
+                          );
+                        } else {
+                          setCustomHeaders((prev) => [
+                            ...prev,
+                            {
+                              id: createId(),
+                              key,
+                              value: e.target.value,
+                            },
+                          ]);
+                        }
+                      } else if (target === 'url-param') {
+                        setUrlParams((prev) => ({
                           ...prev,
-                          {
-                            id: createId(),
-                            key,
-                            value: e.target.value,
-                          },
-                        ]);
+                          [key]: e.target.value,
+                        }));
                       }
-                    } else if (target === 'url-param') {
-                      setUrlParams((prev) => ({
-                        ...prev,
-                        [key]: e.target.value,
-                      }));
-                    }
-                  }}
-                />
-                {def.description && (
-                  <p className="text-xs text-muted-foreground">
-                    {def.description}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                    }}
+                  />
+                  {def.description && (
+                    <p className="text-xs text-muted-foreground">
+                      {def.description}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
       {/* Authentication Method Selector */}
       {!registryAuthDetailsOnly && (
@@ -299,7 +303,10 @@ export function HttpForm({
               {/* Client ID / Client Key */}
               <div className="space-y-2">
                 <Label htmlFor="oauth-client-id">
-                  {t('mcpServer.dialog.clientIdLabel', 'Client Key (Client ID)')}{' '}
+                  {t(
+                    'mcpServer.dialog.clientIdLabel',
+                    'Client Key (Client ID)',
+                  )}{' '}
                   <span className="text-destructive">*</span>
                 </Label>
                 <Input

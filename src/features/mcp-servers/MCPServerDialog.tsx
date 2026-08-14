@@ -458,7 +458,9 @@ function MCPServerDialogComponent({
                   ...saved,
                   metadata: {
                     ...saved.metadata,
-                    ...(isRegistryPreset ? { source: 'registry' as const } : {}),
+                    ...(isRegistryPreset
+                      ? { source: 'registry' as const }
+                      : {}),
                   },
                 });
               })

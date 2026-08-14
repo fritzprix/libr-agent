@@ -3,10 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Input, Label } from '@/components/ui';
 import { MCPServerEntity } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
-import {
-  KeyValuePair,
-  MCPServerMetadata,
-} from '../hooks/useMCPServerForm';
+import { KeyValuePair, MCPServerMetadata } from '../hooks/useMCPServerForm';
 import { isPrefilledVariableDefinition } from '../utils/preset-utils';
 
 interface PresetVariableFieldsProps {

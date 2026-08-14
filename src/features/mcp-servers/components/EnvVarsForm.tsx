@@ -37,9 +37,8 @@ export function EnvVarsForm({
 }: EnvVarsFormProps) {
   const { t } = useTranslation('common');
   const isAddingRef = useRef(false);
-  const variableDefinitions = (
-    server.metadata as MCPServerMetadata | undefined
-  )?.variableDefinitions;
+  const variableDefinitions = (server.metadata as MCPServerMetadata | undefined)
+    ?.variableDefinitions;
 
   return (
     <div className="space-y-4">

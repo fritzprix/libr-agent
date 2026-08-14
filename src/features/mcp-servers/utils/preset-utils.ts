@@ -132,10 +132,7 @@ export function resolveEntityVariableRawValue(
   const target = def.target ?? 'env';
   const transport = server.transport;
 
-  if (
-    (transport.type as string) === 'http' ||
-    transport.type === 'http-sse'
-  ) {
+  if ((transport.type as string) === 'http' || transport.type === 'http-sse') {
     const headers =
       'headers' in transport && transport.headers ? transport.headers : {};
 
