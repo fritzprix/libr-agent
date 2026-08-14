@@ -111,7 +111,24 @@ fn merge_json_objects(base: Option<Value>, overlay: Option<Value>) -> Option<Val
         }
         (Some(base), None) => Some(base),
         (None, Some(overlay)) => Some(overlay),
-        (Some(base), Some(_)) => Some(base),
+        (Some(base), Some(overlay)) => {
+            log::warn!(
+                "Ignoring non-object preset headers overlay (type={}); keeping base env object",
+                overlay_json_type_name(&overlay)
+            );
+            Some(base)
+        }
+    }
+}
+
+fn overlay_json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
     }
 }
 
@@ -164,5 +181,26 @@ mod tests {
                 p.name
             );
         }
+    }
+
+    /// Non-object headers overlay is ignored; base env is kept.
+    #[test]
+    fn test_merge_json_objects_drops_non_object_overlay() {
+        let base = Some(serde_json::json!({ "A": "1" }));
+        let overlay = Some(serde_json::json!("not-an-object"));
+        let merged = merge_json_objects(base, overlay);
+        assert_eq!(merged, Some(serde_json::json!({ "A": "1" })));
+    }
+
+    /// Object headers merge into env for HTTP presets (e.g. github Authorization).
+    #[test]
+    fn test_merge_json_objects_merges_header_map() {
+        let base = Some(serde_json::json!({ "A": "1" }));
+        let overlay = Some(serde_json::json!({ "Authorization": "Bearer x" }));
+        let merged = merge_json_objects(base, overlay);
+        assert_eq!(
+            merged,
+            Some(serde_json::json!({ "A": "1", "Authorization": "Bearer x" }))
+        );
     }
 }
