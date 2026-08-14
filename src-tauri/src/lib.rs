@@ -364,6 +364,33 @@ pub fn run() {
                 reset_assistant_skills,
             ])
             .setup(|app| lifecycle::app_setup::setup_app(app))
+            .on_window_event(|window, event| {
+                // Re-assert taskbar membership around minimize/focus changes on Windows.
+                // Native minimize can transiently drop the shell taskbar button when a
+                // tray host / tool-window style is also present in the process.
+                #[cfg(windows)]
+                {
+                    use tauri::WindowEvent;
+                    if window.label() != "main" {
+                        return;
+                    }
+                    let minimized = window.is_minimized().unwrap_or(false);
+                    let should_ensure = minimized
+                        || matches!(
+                            event,
+                            WindowEvent::Focused(true) | WindowEvent::ScaleFactorChanged { .. }
+                        );
+                    if should_ensure {
+                        lifecycle::windows_taskbar::ensure_main_window_taskbar_button(
+                            window.app_handle(),
+                        );
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = (window, event);
+                }
+            })
             .build(tauri::generate_context!())
             .expect("error while building tauri application")
             .run(|app_handle, event| {

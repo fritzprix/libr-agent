@@ -15,10 +15,22 @@ export const mockRenameSession = vi.fn();
 export const mockRefreshCompactedRange = vi.fn();
 export const mockClearStreamingMessage = vi.fn();
 export const mockCancelCompletionRequest = vi.fn();
+export const navigateMock = vi.fn();
 export const listenMock = listen as ReturnType<typeof vi.fn>;
 export const safeInvokeMock = safeInvoke as ReturnType<typeof vi.fn>;
 export const openAgentSessionMock =
   agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>;
+
+vi.mock('react-router-dom', async () => {
+  const actual =
+    await vi.importActual<typeof import('react-router-dom')>(
+      'react-router-dom',
+    );
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({

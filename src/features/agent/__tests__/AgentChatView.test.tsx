@@ -293,10 +293,7 @@ describe('AgentChatView', () => {
     expect(screen.getByText('mock-messages')).toBeInTheDocument();
     expect(screen.getByText('mock-header')).toBeInTheDocument();
     expect(screen.getByTestId('chat-provider')).toBeInTheDocument();
-    expect(toast.loading).toHaveBeenCalledWith(
-      'Opening session',
-      expect.objectContaining({ id: 'mcp-discovery:session-1' }),
-    );
+    expect(toast.loading).not.toHaveBeenCalled();
   });
 
   it('shows discovery loading toast during proxy initialization', () => {

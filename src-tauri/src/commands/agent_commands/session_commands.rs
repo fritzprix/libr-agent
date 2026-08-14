@@ -11,11 +11,34 @@ use crate::repositories::SessionMetadata;
 use crate::services::agent_service::remove_lineage;
 use crate::services::AgentService;
 use crate::state::get_session_repository;
+use crate::utils::session_id::{resolve_session_id_among, SessionIdResolve};
 use std::collections::HashMap;
 use tauri::{command, AppHandle, State};
 
 const DEFAULT_SESSION_LIST_LIMIT: u64 = 20;
 const MAX_SESSION_LIST_LIMIT: u64 = 200;
+
+/// Resolve a UI/route session reference to the stored session id.
+///
+/// Accepts full storage ids, bare short tokens, or optional `session-{short}` forms
+/// (same contract as HTTP helpers / MCP tools).
+async fn resolve_tauri_session_ref(session_ref: &str) -> Result<String, String> {
+    let sessions = get_session_repository()
+        .get_all_sessions()
+        .await
+        .map_err(|e| format!("Failed to list sessions: {}", e))?;
+    let candidates: Vec<String> = sessions.into_iter().map(|session| session.id).collect();
+    let candidate_refs: Vec<&str> = candidates.iter().map(|id| id.as_str()).collect();
+
+    match resolve_session_id_among(candidate_refs, session_ref) {
+        SessionIdResolve::Unique(id) => Ok(id.to_string()),
+        SessionIdResolve::Missing => Err(format!("Session not found: {}", session_ref)),
+        SessionIdResolve::Ambiguous(count) => Err(format!(
+            "Ambiguous session reference '{}': matches {} sessions. Use the full storage id.",
+            session_ref, count
+        )),
+    }
+}
 
 /// Create a new agent session
 #[command]
@@ -35,6 +58,8 @@ pub async fn agent_resume_session(
     manager.resume_session(&session_id).await
 }
 
+const DEFAULT_INITIAL_MESSAGE_LIMIT: u64 = 40;
+
 /// Resume a session and return only the recent transcript slice needed for initial UI rendering.
 #[command]
 pub async fn agent_open_session(
@@ -42,19 +67,66 @@ pub async fn agent_open_session(
     session_id: String,
     initial_message_limit: Option<u64>,
 ) -> Result<AgentOpenSessionResponse, String> {
-    const DEFAULT_INITIAL_MESSAGE_LIMIT: u64 = 40;
+    let message_limit = initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT);
+
+    // Warm reopen: session already active with a ready proxy. Skip alias resolve,
+    // workspace hydrate, and resume/proxy bootstrap — they are no-ops for UX and
+    // dominate switch latency when hopping between recently opened sessions.
+    if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
+        return Ok(warm);
+    }
+
+    // Route / tool cards may pass a display alias; hydrate + resume need the storage key.
+    let session_id = resolve_tauri_session_ref(&session_id).await?;
 
     let session_manager = crate::session::get_session_manager()?;
     crate::session::hydrate_persisted_workspace_override_from_global(session_manager, &session_id)
         .await?;
 
     let session = manager.resume_session(&session_id).await?;
+    build_open_session_response(&manager, session, &session_id, message_limit).await
+}
+
+/// Fast path when the storage id is already in the active map and MCP proxy is ready.
+async fn try_open_warm_session(
+    manager: &AgentSessionManager,
+    session_ref: &str,
+    message_limit: u64,
+) -> Result<Option<AgentOpenSessionResponse>, String> {
+    let runtime_state = manager.get_runtime_state(session_ref).await;
+    if !runtime_state.proxy.ready {
+        return Ok(None);
+    }
+
+    // SessionMetadata is a plain Clone snapshot (owned strings/ints/enums).
+    // Clone while the read lock is held so we never retain a map reference.
+    let session = {
+        let active = manager.active_sessions_arc();
+        let sessions = active.read().await;
+        let Some(active_session) = sessions.get(session_ref) else {
+            return Ok(None);
+        };
+        active_session.metadata.clone()
+    };
+
+    log::debug!(
+        "Opening warm session {} (skip resolve/hydrate/resume)",
+        session_ref
+    );
+    Ok(Some(
+        build_open_session_response(manager, session, session_ref, message_limit).await?,
+    ))
+}
+
+async fn build_open_session_response(
+    manager: &AgentSessionManager,
+    session: SessionMetadata,
+    session_id: &str,
+    message_limit: u64,
+) -> Result<AgentOpenSessionResponse, String> {
     let repo = crate::state::get_message_repository();
     let mut message_slice = repo
-        .get_recent_slice(
-            &session_id,
-            initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT),
-        )
+        .get_recent_slice(session_id, message_limit)
         .await
         .map_err(|e| format!("Failed to load recent session messages: {}", e))?;
 
@@ -65,7 +137,7 @@ pub async fn agent_open_session(
     let active = manager.active_sessions_arc();
     let (mut protect_ids, pending_approvals) = {
         let sessions = active.read().await;
-        if let Some(active_session) = sessions.get(&session_id) {
+        if let Some(active_session) = sessions.get(session_id) {
             let protect_ids = {
                 let messages = active_session.messages.read().await;
                 messages.iter().map(|m| m.id.clone()).collect()
@@ -101,12 +173,12 @@ pub async fn agent_open_session(
     }
 
     crate::agent::pending_queue::strip_pending_queue_messages_with_protect(
-        &session_id,
+        session_id,
         &mut message_slice.items,
         &protect_ids,
     )
     .await?;
-    let runtime_state = manager.get_runtime_state(&session_id).await;
+    let runtime_state = manager.get_runtime_state(session_id).await;
 
     Ok(AgentOpenSessionResponse {
         session,

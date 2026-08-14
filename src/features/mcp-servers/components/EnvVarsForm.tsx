@@ -22,6 +22,8 @@ interface EnvVarsFormProps {
     field: 'key' | 'value',
     value: string,
   ) => void;
+  /** Hide preset variableDefinitions block (shown elsewhere in simplified mode). */
+  hideVariableDefinitions?: boolean;
 }
 
 export function EnvVarsForm({
@@ -31,9 +33,12 @@ export function EnvVarsForm({
   handleAddEnvVar,
   handleRemoveEnvVar,
   handleUpdateEnvVar,
+  hideVariableDefinitions = false,
 }: EnvVarsFormProps) {
   const { t } = useTranslation('common');
   const isAddingRef = useRef(false);
+  const variableDefinitions = (server.metadata as MCPServerMetadata | undefined)
+    ?.variableDefinitions;
 
   return (
     <div className="space-y-4">
@@ -57,15 +62,12 @@ export function EnvVarsForm({
       </div>
 
       {/* Defined Variables (from Preset) */}
-      {(server.metadata as MCPServerMetadata | undefined)
-        ?.variableDefinitions && (
+      {!hideVariableDefinitions && variableDefinitions && (
         <div className="space-y-4 mb-4 p-4 border rounded-md bg-muted/10">
           <h4 className="text-sm font-medium mb-2">
             {t('mcpServer.dialog.requiredConfig', 'Required Configuration')}
           </h4>
-          {Object.entries(
-            (server.metadata as MCPServerMetadata).variableDefinitions || {},
-          ).map(([key, def]) => {
+          {Object.entries(variableDefinitions).map(([key, def]) => {
             const envVar = envVars.find((v) => v.key === key);
             const val = envVar?.value || '';
 
@@ -116,8 +118,7 @@ export function EnvVarsForm({
           !(server.metadata as MCPServerMetadata | undefined)
             ?.variableDefinitions?.[item.key],
       ).length === 0 ? (
-        !(server.metadata as MCPServerMetadata | undefined)
-          ?.variableDefinitions && (
+        !variableDefinitions && (
           <div className="text-xs text-muted-foreground italic py-2 border rounded-md border-dashed text-center bg-muted/20">
             {t(
               'mcpServer.dialog.noCustomEnv',

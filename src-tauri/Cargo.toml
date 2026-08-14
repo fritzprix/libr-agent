@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.9.1"
+version = "0.9.3"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -25,7 +25,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 agent-response-guards = { path = "agent-response-guards" }
-tauri = { version = "2", features = ["tray-icon", "protocol-asset", "test"] }
+tauri = { version = "2", features = ["protocol-asset", "test"] }
 tauri-plugin-opener = "2"
 
 serde = { version = "1", features = ["derive"] }
@@ -74,8 +74,14 @@ handlebars = "6.4"
 ammonia = "4.0"
 jsonschema = "0.49"
 
-# Windows-only: ANSI code-page decode for stdio; ExpandEnvironmentStrings for registry PATH
-windows-sys = { version = "0.59", features = ["Win32_Globalization", "Win32_System_Environment"] }
+# Windows-only: ANSI code-page decode for stdio; ExpandEnvironmentStrings for registry PATH;
+# taskbar visibility styles (APPWINDOW / TOOLWINDOW) for minimize behavior.
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_System_Environment",
+  "Win32_UI_WindowsAndMessaging",
+] }
 
 # File parsing dependencies
 docx-rs = "0.4"           # DOCX parsing

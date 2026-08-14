@@ -23,11 +23,17 @@ const AgentSessionActionsContext = createContext<
 interface AgentSessionProviderProps {
   children: React.ReactNode;
   sessionId: string;
+  /**
+   * When false, the provider stays mounted for keep-alive but suppresses
+   * user-visible side effects (toasts, viewed-at on focus, compacted refresh).
+   */
+  isActive?: boolean;
 }
 
 export function AgentSessionProvider({
   children,
   sessionId,
+  isActive = true,
 }: AgentSessionProviderProps) {
   const { markSessionViewed, clearPendingApproval, renameSession } =
     useAgentSessionListActions();
@@ -35,8 +41,11 @@ export function AgentSessionProvider({
   const stateProps = useAgentSessionStateLogic();
 
   React.useEffect(() => {
+    if (!isActive) {
+      return;
+    }
     void refreshCompactedRange(sessionId);
-  }, [refreshCompactedRange, sessionId]);
+  }, [refreshCompactedRange, sessionId, isActive]);
 
   const persistViewedAt = useCallback(
     async (viewedAt = new Date()) => {
@@ -56,9 +65,10 @@ export function AgentSessionProvider({
   useAgentSessionEvents(sessionId, stateProps, {
     persistViewedAt,
     clearStreamingMessage,
+    isActive,
   });
 
-  useMcpServerFailureToasts(sessionId, stateProps.state.runtimeState);
+  useMcpServerFailureToasts(sessionId, stateProps.state.runtimeState, isActive);
 
   const customActions = useAgentSessionActionsLogic(sessionId, stateProps, {
     acknowledgeSessionAttention,

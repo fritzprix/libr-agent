@@ -143,8 +143,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   );
 
   // Cancel is only for an active agent turn. Do NOT map slash-command
-  // `isSubmitting` (e.g. hung `/clear`) or session hydrate onto Cancel —
+  // `isSubmitting` (e.g. in-flight `/clear`) or session hydrate onto Cancel —
   // that falsely enables Cancel while workflowStatus is still idle.
+  // `/clear` itself must finish quickly on the backend (browser dispose is
+  // detached); FE also clears history optimistically and ignores nested submit.
   const isBusy = useMemo(() => {
     return (
       workflowStatus === 'busy' ||

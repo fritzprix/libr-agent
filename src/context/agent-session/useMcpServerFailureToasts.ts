@@ -18,6 +18,7 @@ export function mcpServerFailureToastId(
 export function useMcpServerFailureToasts(
   sessionId: string,
   runtimeState: SessionRuntimeState,
+  enabled = true,
 ): void {
   const { t } = useTranslation();
   const toastedKeysBySessionRef = useRef<Map<string, Set<string>>>(new Map());
@@ -33,7 +34,7 @@ export function useMcpServerFailureToasts(
   }, [sessionId]);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId || !enabled) {
       return;
     }
 
@@ -82,5 +83,5 @@ export function useMcpServerFailureToasts(
         );
       }
     }
-  }, [runtimeState.servers, sessionId, t]);
+  }, [runtimeState.servers, sessionId, t, enabled]);
 }

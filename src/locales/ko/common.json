@@ -388,7 +388,7 @@
       "providers": {
         "openai": {
           "name": "OpenAI",
-          "description": "GPT-4o, o3, o4-mini 등"
+          "description": "GPT-4o, o3, o4-mini 등. OpenAI 호환 서버는 아래 Custom OpenAI Providers를 사용하세요."
         },
         "anthropic": {
           "name": "Anthropic",
@@ -431,10 +431,8 @@
       "hideApiKey": "API 키 숨기기",
       "baseUrl": "기본 URL",
       "baseUrlPlaceholder": "http://localhost:11434",
-      "use3rdParty": "타사 OpenAI 호환 API 사용",
-      "customModelId": "사용자 지정 모델 ID",
-      "customModelIdPlaceholder": "예: llama-3.1-70b, mistral-large",
-      "customModelIdDescription": "타사 API에서 지원하는 모델 ID를 입력하세요 (예: LM Studio, LocalAI)"
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1 (선택적 프록시)",
+      "openaiBaseUrlHint": "vLLM, LM Studio, LocalAI 등 OpenAI 호환 서버는 아래 Custom OpenAI Provider를 추가하세요."
     },
     "chatInterface": {
       "diffContextLines": "Diff 컨텍스트 라인",
@@ -731,6 +729,7 @@
     },
     "dialog": {
       "titleNew": "확장 기능 추가",
+      "titleInstall": "확장 기능 설치: {{name}}",
       "titleEdit": "확장 기능 편집: {{name}}",
       "validationError": "필수 항목을 모두 입력해 주세요",
       "reservedNameError": "\"{{name}}\"은 내장 서비스 이름으로 예약되어 있습니다. 다른 이름을 사용해 주세요.",
@@ -751,6 +750,7 @@
       "envVarsLabel": "환경 변수",
       "addEnvVar": "변수 추가",
       "requiredConfig": "필수 설정",
+      "optionalConfig": "기본값이 있는 설정",
       "noCustomEnv": "사용자 지정 환경 변수가 없습니다.",
       "customVarsLabel": "사용자 지정 변수",
       "envVarKeyPlaceholder": "키 (예: API_KEY)",
@@ -764,6 +764,10 @@
       "apiKeyPlaceholder": "비밀 토큰",
       "apiKeyDesc": "자동으로 'Authorization: Bearer <token>' 헤더를 추가합니다.",
       "advancedSettings": "고급 설정",
+      "configuration": "설정",
+      "required": "필수",
+      "noUserConfigNeeded": "추가 설정이 필요하지 않습니다. 설치를 누르면 확장 기능이 추가됩니다.",
+      "oauthAdvancedHint": "엔드포인트, 스코프, PKCE는 고급 설정에서 확인할 수 있습니다.",
       "customHeadersLabel": "사용자 지정 헤더",
       "addHeader": "헤더 추가",
       "noCustomHeaders": "사용자 지정 헤더가 없습니다.",
@@ -776,11 +780,14 @@
       "sseLabel": "서버 전송 이벤트(SSE) 활성화",
       "sseDesc": "스트리밍 응답을 위해 활성화 상태를 유지하세요. 상태 비저장 HTTP에는 비활성화하세요.",
       "cancel": "취소",
+      "install": "설치",
+      "installing": "설치 중...",
       "save": "저장",
       "saving": "저장 중..."
     },
     "toasts": {
       "saved": "확장 기능이 저장되었습니다",
+      "installed": "확장 기능이 설치되었습니다",
       "saveFailed": "확장 기능 저장 실패: {{error}}",
       "deleted": "확장 기능이 삭제되었습니다",
       "deleteFailed": "확장 기능 삭제 실패: {{error}}",

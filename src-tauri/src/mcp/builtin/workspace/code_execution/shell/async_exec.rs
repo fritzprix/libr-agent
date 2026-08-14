@@ -8,7 +8,7 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHi
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::IsolatedProcessConfig;
 
-use super::super::super::{terminal_manager, utils, WorkspaceServer};
+use super::super::super::{terminal_manager, utils, workspace_server, WorkspaceServer};
 use super::super::{normalization, process};
 
 impl WorkspaceServer {
@@ -190,8 +190,12 @@ impl WorkspaceServer {
                 .insert(process_id.clone(), completion_notifier.clone());
         }
 
+        // Drop any cached "Running Processes: None" before the monitor task starts.
+        self.invalidate_context_cache().await;
+
         // Spawn monitoring task using hybrid streaming
         let registry = self.process_registry.clone();
+        let context_cache = self.context_cache.clone();
         let pid_copy = process_id.clone();
 
         tokio::spawn(async move {
@@ -291,6 +295,9 @@ impl WorkspaceServer {
             if let Some(n) = notifier {
                 n.notify_waiters();
             }
+
+            // Process left the active set — drop stale "Running Processes" context.
+            workspace_server::clear_context_cache(&context_cache).await;
         });
 
         // Wait briefly to detect immediate failures

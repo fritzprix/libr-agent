@@ -62,8 +62,6 @@ Tools 탭에서:
 - **context7** — 라이브러리 문서 (HTTP)
 - **serena** — 심볼 단위 코드 이해·편집
 - **jules** — Google Jules 코딩 에이전트
-- **benchmark** — GAIA 등 벤치
-- **fre4x-inspector-bridge** — 외부 MCP를 LibrAgent에 연결하는 브리지
 
 ### ai
 

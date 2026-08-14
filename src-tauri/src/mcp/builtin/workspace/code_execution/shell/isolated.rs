@@ -8,7 +8,9 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHi
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
-use super::super::super::{terminal_manager, WorkspaceServer, PERSISTENT_SHELL_TOOL};
+use super::super::super::{
+    terminal_manager, workspace_server, WorkspaceServer, PERSISTENT_SHELL_TOOL,
+};
 use super::super::{normalization, process, validation};
 use super::{format_command_io_message, format_duration_ms};
 
@@ -173,7 +175,12 @@ impl WorkspaceServer {
                 .insert(process_id.clone(), completion_notifier.clone());
         }
 
+        // Drop any cached "Running Processes: None" while the sync wait may overlap
+        // with another turn rebuilding service context.
+        self.invalidate_context_cache().await;
+
         let registry = self.process_registry.clone();
+        let context_cache = self.context_cache.clone();
         let pid_copy = process_id.clone();
         let stdout_path_for_task = stdout_path.clone();
         let stderr_path_for_task = stderr_path.clone();
@@ -260,6 +267,9 @@ impl WorkspaceServer {
             if let Some(notifier) = notifier {
                 notifier.notify_waiters();
             }
+
+            // Process left the active set — drop stale "Running Processes" context.
+            workspace_server::clear_context_cache(&context_cache).await;
         });
 
         let timeout_duration = Duration::from_secs(timeout_secs);
@@ -318,6 +328,8 @@ impl WorkspaceServer {
                     reg.completion_notifiers.remove(&process_id);
                     reg.streaming_handles.remove(&process_id);
                 }
+
+                self.invalidate_context_cache().await;
 
                 let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
 

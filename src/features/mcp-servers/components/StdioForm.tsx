@@ -21,6 +21,7 @@ interface StdioFormProps {
     field: 'key' | 'value',
     value: string,
   ) => void;
+  hideVariableDefinitions?: boolean;
 }
 
 export function StdioForm({
@@ -35,6 +36,7 @@ export function StdioForm({
   handleAddEnvVar,
   handleRemoveEnvVar,
   handleUpdateEnvVar,
+  hideVariableDefinitions = false,
 }: StdioFormProps) {
   const { t } = useTranslation('common');
 
@@ -107,6 +109,7 @@ export function StdioForm({
         handleAddEnvVar={handleAddEnvVar}
         handleRemoveEnvVar={handleRemoveEnvVar}
         handleUpdateEnvVar={handleUpdateEnvVar}
+        hideVariableDefinitions={hideVariableDefinitions}
       />
     </>
   );

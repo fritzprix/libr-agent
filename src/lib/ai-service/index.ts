@@ -38,5 +38,6 @@ export {
   resolveDefaultModelForProviderChange,
   listCustomProviderPickerOptions,
   findCustomOpenAIProvider,
+  migrateLegacyOpenAICompatibleSettings,
 } from './custom-providers';
 export type { ResolvedProviderRuntimeConfig } from './custom-providers';

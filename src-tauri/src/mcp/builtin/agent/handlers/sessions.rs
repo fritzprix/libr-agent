@@ -2,7 +2,8 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 use super::super::utils::{
-    build_agent_tool_data, check_session_next_actions, read_required_string,
+    build_agent_tool_data, check_session_next_actions, insert_agent_session_id_fields,
+    read_required_string,
 };
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_agent_config_error, missing_agent_session_error, ErrorCategory,
@@ -199,7 +200,7 @@ async fn start_session_impl(
         "pending",
         check_session_next_actions(&session_id),
     );
-    response_data.insert("sessionId".to_string(), Value::String(display_id));
+    insert_agent_session_id_fields(&mut response_data, &session_id);
     response_data.insert("status".to_string(), Value::String("started".to_string()));
     response_data.insert(
         "assistantId".to_string(),
@@ -321,7 +322,7 @@ pub async fn message_to_session(
         "pending",
         check_session_next_actions(&display_id),
     );
-    response_data.insert("sessionId".to_string(), Value::String(display_id));
+    insert_agent_session_id_fields(&mut response_data, &session_id);
     response_data.insert("messageId".to_string(), Value::String(response.message_id));
     response_data.insert("status".to_string(), Value::String(response.status));
     // Persist message body for human card (collapsed preview).
@@ -409,7 +410,7 @@ pub async fn stop_session(
             "noop",
             vec![],
         );
-        response_data.insert("sessionId".to_string(), Value::String(display_id));
+        insert_agent_session_id_fields(&mut response_data, &session_id);
         response_data.insert("stopped".to_string(), Value::Bool(false));
         response_data.insert("status".to_string(), Value::String(current_status));
 
@@ -436,7 +437,7 @@ pub async fn stop_session(
         "success",
         vec![],
     );
-    response_data.insert("sessionId".to_string(), Value::String(display_id));
+    insert_agent_session_id_fields(&mut response_data, &session_id);
     response_data.insert("stopped".to_string(), Value::Bool(true));
     response_data.insert(
         "status".to_string(),
@@ -553,7 +554,7 @@ pub async fn compact_session_context(
             "noop",
             check_session_next_actions(&display_id),
         );
-        response_data.insert("sessionId".to_string(), Value::String(display_id));
+        insert_agent_session_id_fields(&mut response_data, &session_id);
         response_data.insert("status".to_string(), Value::String("noop".to_string()));
         response_data.insert("compacted".to_string(), Value::Bool(false));
 
@@ -626,7 +627,7 @@ pub async fn compact_session_context(
         status,
         check_session_next_actions(&display_id),
     );
-    response_data.insert("sessionId".to_string(), Value::String(display_id));
+    insert_agent_session_id_fields(&mut response_data, &session_id);
     response_data.insert("status".to_string(), Value::String(status.to_string()));
     response_data.insert("compacted".to_string(), Value::Bool(!unchanged));
     response_data.insert("toId".to_string(), Value::String(compact_record.to_id));
@@ -719,7 +720,7 @@ pub async fn delete_session(
         "success",
         vec![],
     );
-    response_data.insert("sessionId".to_string(), Value::String(display_id));
+    insert_agent_session_id_fields(&mut response_data, &session_id);
     response_data.insert("deleted".to_string(), Value::Bool(true));
     response_data.insert(
         "descendantCount".to_string(),

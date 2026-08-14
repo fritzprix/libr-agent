@@ -27,6 +27,8 @@ struct RawPresetConfig {
     #[serde(default)]
     args: Vec<String>,
     env: Option<Value>,
+    #[serde(default)]
+    headers: Option<Value>,
     #[serde(default, rename = "variableDefinitions")]
     variable_definitions: Option<Value>,
     // http fields
@@ -71,7 +73,10 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
             ("stdio".to_string(), config.command, Some(config.args), None)
         };
 
-        // Merge headers into variableDefinitions for HTTP servers if needed
+        // HTTP presets store auth material under `headers`; fold into `env` so the
+        // frontend can treat both uniformly when building transport + defaults.
+        let env = merge_json_objects(config.env, config.headers);
+
         let variable_definitions = config.variable_definitions;
 
         presets.push(MCPServerPreset {
@@ -82,7 +87,7 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
             transport_type,
             command,
             args,
-            env: config.env,
+            env,
             variable_definitions,
             url,
             authentication: config.authentication,
@@ -93,6 +98,38 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
     presets.sort_by(|a, b| a.name.cmp(&b.name));
 
     presets
+}
+
+fn merge_json_objects(base: Option<Value>, overlay: Option<Value>) -> Option<Value> {
+    match (base, overlay) {
+        (None, None) => None,
+        (Some(Value::Object(mut base_map)), Some(Value::Object(overlay_map))) => {
+            for (key, value) in overlay_map {
+                base_map.insert(key, value);
+            }
+            Some(Value::Object(base_map))
+        }
+        (Some(base), None) => Some(base),
+        (None, Some(overlay)) => Some(overlay),
+        (Some(base), Some(overlay)) => {
+            log::warn!(
+                "Ignoring non-object preset headers overlay (type={}); keeping base env object",
+                overlay_json_type_name(&overlay)
+            );
+            Some(base)
+        }
+    }
+}
+
+fn overlay_json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
 }
 
 #[cfg(test)]
@@ -144,5 +181,26 @@ mod tests {
                 p.name
             );
         }
+    }
+
+    /// Non-object headers overlay is ignored; base env is kept.
+    #[test]
+    fn test_merge_json_objects_drops_non_object_overlay() {
+        let base = Some(serde_json::json!({ "A": "1" }));
+        let overlay = Some(serde_json::json!("not-an-object"));
+        let merged = merge_json_objects(base, overlay);
+        assert_eq!(merged, Some(serde_json::json!({ "A": "1" })));
+    }
+
+    /// Object headers merge into env for HTTP presets (e.g. github Authorization).
+    #[test]
+    fn test_merge_json_objects_merges_header_map() {
+        let base = Some(serde_json::json!({ "A": "1" }));
+        let overlay = Some(serde_json::json!({ "Authorization": "Bearer x" }));
+        let merged = merge_json_objects(base, overlay);
+        assert_eq!(
+            merged,
+            Some(serde_json::json!({ "A": "1", "Authorization": "Bearer x" }))
+        );
     }
 }

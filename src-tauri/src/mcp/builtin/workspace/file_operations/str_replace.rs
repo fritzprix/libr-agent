@@ -100,7 +100,9 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Provide the exact text to replace, copied from workspace__readFile output"
+                    "Provide the exact text CURRENTLY in the file, copied from a fresh workspace__readFile"
+                        .to_string(),
+                    "Do not reuse text from an earlier successful edit — that value is no longer on disk"
                         .to_string(),
                 ])
                 .to_mcp_result());
@@ -175,7 +177,9 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Use workspace__readFile on the target path and copy the exact text block to replace"
+                "Use workspace__readFile on the target path and copy the exact text CURRENTLY in the file"
+                    .to_string(),
+                "Do not reuse old_string from an earlier successful edit — that text is no longer on disk"
                     .to_string(),
                 "Check whitespace, indentation, and line endings — matching is exact".to_string(),
                 "For larger structural edits, split the change into smaller unique old_string values"
@@ -188,12 +192,13 @@ impl WorkspaceServer {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "old_string matched {occurrences} times in '{path_str}'. Set replace_all=true to replace every occurrence, or provide a more specific old_string."
+                    "old_string matched {occurrences} times in '{path_str}'. Set replace_all=true to replace every occurrence, or provide a more specific old_string from the current file contents."
                 ),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Include more surrounding context in old_string so only one match remains".to_string(),
+                "Include more surrounding context from the current file so only one match remains"
+                    .to_string(),
                 "Or pass \"replace_all\": true when every occurrence should change".to_string(),
             ])
             .to_mcp_result());

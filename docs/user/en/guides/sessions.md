@@ -8,10 +8,12 @@ title: Sessions
 
 ---
 
-## Find sessions
+## Find & Switch Sessions
 
 - Recent list on **Chat** / sidebar
 - Full list: **History**
+
+Recently active sessions are retained warm in memory, making switching between sessions instant without reload latency.
 
 ---
 

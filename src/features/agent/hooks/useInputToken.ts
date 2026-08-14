@@ -184,31 +184,30 @@ export function useInputToken(
     setState({ kind: 'idle' });
   }, [setState]);
 
-  // Filter type results
-  const typeResults =
-    stage.kind === 'typing-type'
-      ? BUILTIN_TOKEN_TYPES.filter((t) =>
-          t.name.startsWith(stage.query.toLowerCase()),
-        )
-      : [];
+  // Memoize filtered arrays so reference identity stays stable across parent
+  // re-renders (e.g. streaming). InputTokenDropdown passes these to
+  // useListNavigation as resetDependencies; a new array each render would
+  // reset the keyboard selection to the first item.
+  const typeResults = useMemo(() => {
+    if (stage.kind !== 'typing-type') return [];
+    return BUILTIN_TOKEN_TYPES.filter((t) =>
+      t.name.startsWith(stage.query.toLowerCase()),
+    );
+  }, [stage]);
 
-  // Filter skill results
-  const skillResults =
-    stage.kind === 'typing-arg' && stage.typeName === 'skill'
-      ? skills.filter((s) =>
-          s.name.toLowerCase().includes(stage.query.toLowerCase()),
-        )
-      : [];
+  const skillResults = useMemo(() => {
+    if (stage.kind !== 'typing-arg' || stage.typeName !== 'skill') return [];
+    return skills.filter((s) =>
+      s.name.toLowerCase().includes(stage.query.toLowerCase()),
+    );
+  }, [skills, stage]);
 
-  // Filter tool results
-  const toolResults =
-    stage.kind === 'typing-arg' && stage.typeName === 'tool'
-      ? tools
-          .filter((t) =>
-            t.name.toLowerCase().includes(stage.query.toLowerCase()),
-          )
-          .slice(0, 10)
-      : [];
+  const toolResults = useMemo(() => {
+    if (stage.kind !== 'typing-arg' || stage.typeName !== 'tool') return [];
+    return tools
+      .filter((t) => t.name.toLowerCase().includes(stage.query.toLowerCase()))
+      .slice(0, 10);
+  }, [tools, stage]);
 
   // Filter file results (pre-filtered by useWorkspaceFiles; just pass through as empty — handled by consumer)
   const fileResults: string[] = [];
