@@ -45,14 +45,13 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 
 ### 1. Workspace (`workspace__*` & `runShell`)
 
-| 도구 이름                               | 설명                                        | 주요 파라미터                                       |
-| :-------------------------------------- | :------------------------------------------ | :-------------------------------------------------- |
-| `workspace__readFile`                   | 파일 내용 읽기                              | `AbsolutePath`, `StartLine`, `EndLine`              |
-| `workspace__writeFile`                  | 파일 생성 및 전체 덮어쓰기                  | `TargetFile`, `CodeContent`, `Overwrite`            |
-| `workspace__replace_file_content`       | 라인 범위 지정 정교한 코드 편집             | `TargetFile`, `TargetContent`, `ReplacementContent` |
-| `workspace__multi_replace_file_content` | 복수 non-adjacent 영역 편집                 | `TargetFile`, `ReplacementChunks`                   |
-| `workspace__listDirectory`              | 디렉토리 구조 조회                          | `DirectoryPath`                                     |
-| `workspace__runShell` / `runPowerShell` | 터미널 명령어 실행 (비동기/백그라운드 지원) | `CommandLine`, `Cwd`, `WaitMsBeforeAsync`           |
+| 도구 이름                               | 설명                                        | 주요 파라미터                                     |
+| :-------------------------------------- | :------------------------------------------ | :------------------------------------------------ |
+| `workspace__readFile`                   | 파일 내용 읽기                              | `path`, `offset`, `size`                          |
+| `workspace__writeFile`                  | 파일 생성, 덮어쓰기, 또는 append            | `path`, `mode`, `content`                         |
+| `workspace__strReplace`                 | 기존 파일의 exact string 치환               | `path`, `old_string`, `new_string`, `replace_all` |
+| `workspace__listDirectory`              | 디렉토리 구조 조회                          | `path`, `limit`                                   |
+| `workspace__runShell` / `runPowerShell` | 터미널 명령어 실행 (비동기/백그라운드 지원) | `command`, `timeout`                              |
 
 ### 2. Media (`media__*`) 🎨 _(선택)_
 

@@ -102,6 +102,14 @@ async fn str_replace_rejects_ambiguous_match_without_replace_all() {
     );
     let text = extract_text_content(&result);
     assert!(text.contains("matched 3 times"), "{text}");
+    assert!(
+        text.contains("from the current file contents"),
+        "ambiguous-match error should require current file text: {text}"
+    );
+    assert!(
+        text.contains("from the current file so only one match remains"),
+        "ambiguous-match guidance should reference current file context: {text}"
+    );
     assert_eq!(std::fs::read_to_string(file_path).unwrap(), "foo foo foo\n");
 }
 
@@ -165,6 +173,14 @@ async fn str_replace_rejects_missing_old_string() {
     );
     let text = extract_text_content(&result);
     assert!(text.contains("old_string was not found"), "{text}");
+    assert!(
+        text.contains("Do not reuse old_string from an earlier successful edit"),
+        "not-found guidance should warn against stale previous-edit text: {text}"
+    );
+    assert!(
+        text.contains("CURRENTLY in the file"),
+        "not-found guidance should require current on-disk text: {text}"
+    );
 }
 
 #[tokio::test]

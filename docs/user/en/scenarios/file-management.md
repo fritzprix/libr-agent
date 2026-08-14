@@ -36,4 +36,4 @@ Convert the sales data in `./data/sales-2026.csv` into a formatted Markdown comp
 
 ### Step 3: Verify Output
 
-The agent automatically edits or creates target files using `workspace__writeFile` / `workspace__replace_file_content`.
+The agent automatically edits or creates target files using `workspace__writeFile` / `workspace__strReplace`.

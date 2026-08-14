@@ -335,7 +335,9 @@ pub fn create_str_replace_tool() -> MCPTool {
         string_prop(
             Some(1),
             None,
-            Some("Exact text to find in the file. Copy verbatim from workspace__readFile output, including whitespace and newlines."),
+            Some(
+                "Exact text CURRENTLY present in the file to replace. Copy verbatim from a fresh workspace__readFile of this path (whitespace and newlines must match). Do NOT reuse text from an earlier successful edit — that value is no longer on disk.",
+            ),
         ),
     );
     props.insert(
@@ -343,7 +345,7 @@ pub fn create_str_replace_tool() -> MCPTool {
         string_prop(
             Some(0),
             None,
-            Some("Replacement text. Use an empty string to delete the matched block."),
+            Some("Replacement text written in place of old_string. Use an empty string to delete the matched block."),
         ),
     );
 
@@ -352,7 +354,7 @@ pub fn create_str_replace_tool() -> MCPTool {
         title: Some("Replace Text in File".to_string()),
         description: "Perform exact string replacement in an existing file.
 
-PREREQUISITE: Use workspace__readFile first and copy the exact text block into old_string. Matching is literal — whitespace, indentation, and line endings must match.
+PREREQUISITE: Use workspace__readFile first and copy the exact text CURRENTLY in the file into old_string. Matching is literal — whitespace, indentation, and line endings must match. After any successful edit, re-read before the next strReplace if you need a new match; never reuse a previous old_string/new_string pair as the next old_string.
 
 - Single replacement (default): old_string must match exactly once unless replace_all=true.
 - replace_all=true: every occurrence of old_string is replaced.

@@ -30,7 +30,7 @@ pub fn read_file_tool_hint() -> &'static str {
     } else {
         // Kept in the tool schema (not success next-actions) so edit workflows
         // still see a minimal affordance without padding every read result.
-        "When editing afterward, copy the exact on-disk text into workspace__strReplace."
+        "When editing afterward, copy the exact on-disk text currently in the file into workspace__strReplace. Do not reuse text from an earlier successful edit."
     }
 }
 
@@ -60,7 +60,7 @@ pub fn search_inline_match_footer(show_hashes: bool) -> String {
         }
     } else {
         let _ = show_hashes;
-        "To edit a match, read the file and copy the exact on-disk text into workspace__strReplace.\n"
+        "To edit a match, read the file and copy the exact on-disk text currently in the file into workspace__strReplace.\n"
             .to_string()
     }
 }

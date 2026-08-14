@@ -45,14 +45,13 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 
 ### 1. Workspace (`workspace__*` & `runShell`)
 
-| Tool Name                               | Description                                       | Key Parameters                                      |
-| :-------------------------------------- | :------------------------------------------------ | :-------------------------------------------------- |
-| `workspace__readFile`                   | Read file content with line slicing               | `AbsolutePath`, `StartLine`, `EndLine`              |
-| `workspace__writeFile`                  | Create or overwrite file                          | `TargetFile`, `CodeContent`, `Overwrite`            |
-| `workspace__replace_file_content`       | Perform precise line-range edits                  | `TargetFile`, `TargetContent`, `ReplacementContent` |
-| `workspace__multi_replace_file_content` | Edit multiple non-adjacent line blocks            | `TargetFile`, `ReplacementChunks`                   |
-| `workspace__listDirectory`              | List directory contents                           | `DirectoryPath`                                     |
-| `workspace__runShell` / `runPowerShell` | Execute shell command (supports background async) | `CommandLine`, `Cwd`, `WaitMsBeforeAsync`           |
+| Tool Name                               | Description                                       | Key Parameters                                    |
+| :-------------------------------------- | :------------------------------------------------ | :------------------------------------------------ |
+| `workspace__readFile`                   | Read file content with line slicing               | `path`, `offset`, `size`                          |
+| `workspace__writeFile`                  | Create, overwrite, or append file                 | `path`, `mode`, `content`                         |
+| `workspace__strReplace`                 | Exact string replacement in an existing file      | `path`, `old_string`, `new_string`, `replace_all` |
+| `workspace__listDirectory`              | List directory contents                           | `path`, `limit`                                   |
+| `workspace__runShell` / `runPowerShell` | Execute shell command (supports background async) | `command`, `timeout`                              |
 
 ### 2. Media (`media__*`) 🎨 _(Optional)_
 
