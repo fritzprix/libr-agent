@@ -1,3 +1,9 @@
+## [0.9.3] - 2026-08-14
+
+### 🐛 Fixes
+
+- **Running Processes Context Accuracy**: Keeps workspace service-context process lists in sync by awaiting the process registry, invalidating on spawn/finish, and caching only idle snapshots so agents do not act on stale `Running Processes` state.
+
 ## [0.9.2] - 2026-08-14
 
 ### 🚀 Features
