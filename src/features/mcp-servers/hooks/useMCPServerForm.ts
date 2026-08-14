@@ -21,8 +21,14 @@ export interface KeyValuePair {
 }
 
 export interface MCPServerMetadata {
+  source?: 'registry' | 'custom';
   description?: string;
   logo?: string;
+  /**
+   * Meaningful preset defaults keyed by variableDefinition name.
+   * Drives Advanced vs main visibility for registry installs.
+   */
+  variableDefaults?: Record<string, string>;
   variableDefinitions?: Record<
     string,
     {

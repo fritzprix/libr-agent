@@ -27,6 +27,8 @@ struct RawPresetConfig {
     #[serde(default)]
     args: Vec<String>,
     env: Option<Value>,
+    #[serde(default)]
+    headers: Option<Value>,
     #[serde(default, rename = "variableDefinitions")]
     variable_definitions: Option<Value>,
     // http fields
@@ -71,7 +73,10 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
             ("stdio".to_string(), config.command, Some(config.args), None)
         };
 
-        // Merge headers into variableDefinitions for HTTP servers if needed
+        // HTTP presets store auth material under `headers`; fold into `env` so the
+        // frontend can treat both uniformly when building transport + defaults.
+        let env = merge_json_objects(config.env, config.headers);
+
         let variable_definitions = config.variable_definitions;
 
         presets.push(MCPServerPreset {
@@ -82,7 +87,7 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
             transport_type,
             command,
             args,
-            env: config.env,
+            env,
             variable_definitions,
             url,
             authentication: config.authentication,
@@ -93,6 +98,21 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
     presets.sort_by(|a, b| a.name.cmp(&b.name));
 
     presets
+}
+
+fn merge_json_objects(base: Option<Value>, overlay: Option<Value>) -> Option<Value> {
+    match (base, overlay) {
+        (None, None) => None,
+        (Some(Value::Object(mut base_map)), Some(Value::Object(overlay_map))) => {
+            for (key, value) in overlay_map {
+                base_map.insert(key, value);
+            }
+            Some(Value::Object(base_map))
+        }
+        (Some(base), None) => Some(base),
+        (None, Some(overlay)) => Some(overlay),
+        (Some(base), Some(_)) => Some(base),
+    }
 }
 
 #[cfg(test)]

@@ -7,18 +7,6 @@
       "command": "npx",
       "args": ["-y", "@fre4x/hn"]
     },
-
-    "fre4x-inspector-bridge": {
-      "category": "devtools",
-      "description": "MCP bridge — connect and use external MCP servers within LibrAgent.",
-      "command": "npx",
-      "args": [
-        "-y",
-        "--package",
-        "@fre4x/inspector-bridge",
-        "fre4x-inspector-bridge"
-      ]
-    },
     "yahoo-finance": {
       "category": "data",
       "description": "Get real-time stock prices, financials, options chains, and insider data. No API key required.",
@@ -256,8 +244,8 @@
       "args": ["-y", "@fre4x/huggingface"],
       "env": {
         "HF_TOKEN": "",
-        "HF_MODEL_CACHE_DIR": "",
-        "HF_LOCAL_MODEL_PATH": "",
+        "HF_MODEL_CACHE_DIR": "~/.cache/huggingface/hub",
+        "HF_LOCAL_MODEL_PATH": "~/.cache/huggingface",
         "HF_ALLOW_REMOTE_MODELS": "true"
       },
       "variableDefinitions": {
@@ -270,19 +258,19 @@
         "HF_MODEL_CACHE_DIR": {
           "required": false,
           "label": "Model Cache Directory",
-          "description": "Absolute path to Hugging Face cache",
+          "description": "Hugging Face hub cache. Default: ~/.cache/huggingface/hub",
           "type": "text"
         },
         "HF_LOCAL_MODEL_PATH": {
           "required": false,
           "label": "Local Model Path",
-          "description": "Absolute path to local models",
+          "description": "HF_HOME-style root for local assets. Default: ~/.cache/huggingface",
           "type": "text"
         },
         "HF_ALLOW_REMOTE_MODELS": {
           "required": false,
           "label": "Allow Remote Models",
-          "description": "Set to 'true' to allow downloading remote models",
+          "description": "Set to 'true' to allow downloading remote models (default: true)",
           "type": "text"
         }
       }
@@ -315,23 +303,6 @@
           "required": false,
           "label": "Allowed Telegram User ID",
           "description": "Telegram user ID allowed to interact with the bot.",
-          "type": "text"
-        }
-      }
-    },
-    "benchmark": {
-      "category": "devtools",
-      "description": "Run GAIA benchmark challenges to evaluate AI agent capabilities.",
-      "command": "npx",
-      "args": ["-y", "@fre4x/benchmark"],
-      "env": {
-        "BENCHMARK_GAIA_DATA_FILE": ""
-      },
-      "variableDefinitions": {
-        "BENCHMARK_GAIA_DATA_FILE": {
-          "required": true,
-          "label": "GAIA Data File Path",
-          "description": "Absolute path to the GAIA benchmark challenges JSON file",
           "type": "text"
         }
       }

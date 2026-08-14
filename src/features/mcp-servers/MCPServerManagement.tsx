@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Plus, Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { McpServerService } from '@/lib/services/mcp-server-service';
@@ -51,6 +51,11 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     handleToggleActive,
     mutateServers,
   } = useMCPServerManagement(service);
+
+  const registryPresetNames = useMemo(
+    () => new Set((presets ?? []).map((preset) => preset.name)),
+    [presets],
+  );
 
   return (
     <div className="space-y-10">
@@ -157,6 +162,10 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
           server={editingServer}
           onSave={handleSave}
           onCancel={() => setEditingServer(null)}
+          registryPresetNames={registryPresetNames}
+          isExisting={allServers.some(
+            (installed) => installed.id === editingServer.id,
+          )}
         />
       )}
 

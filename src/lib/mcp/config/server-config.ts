@@ -14,6 +14,17 @@ export interface ServerMetadata {
   logo?: string;
   vendor?: string;
   version?: string;
+  /**
+   * Origin of this server config.
+   * `registry` = installed/edited from mcp-server.json presets.
+   */
+  source?: 'registry' | 'custom';
+  /**
+   * Meaningful preset defaults keyed by variableDefinition name.
+   * Used to put prefilled fields under Advanced without per-MCP branching.
+   * Empty / YOUR_* placeholders are omitted (those stay on the main form).
+   */
+  variableDefaults?: Record<string, string>;
   variableDefinitions?: Record<
     string,
     {

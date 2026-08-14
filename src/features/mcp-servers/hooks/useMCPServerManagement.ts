@@ -136,6 +136,12 @@ export function useMCPServerManagement(service?: McpServerService) {
 
   const handleSave = useCallback(
     async (server: MCPServerEntity) => {
+      const isUpdate = allServers.some(
+        (installed) => installed.id === server.id,
+      );
+      const isRegistryInstall =
+        !isUpdate && server.metadata?.source === 'registry';
+
       try {
         await saveServer({
           ...server,
@@ -146,7 +152,12 @@ export function useMCPServerManagement(service?: McpServerService) {
         await mutateServers();
         setEditingServer(null);
         toast.success(
-          t('mcpServer.toasts.saved', 'Extension saved successfully'),
+          isRegistryInstall
+            ? t(
+                'mcpServer.toasts.installed',
+                'Extension installed successfully',
+              )
+            : t('mcpServer.toasts.saved', 'Extension saved successfully'),
         );
       } catch (error) {
         const message =
@@ -160,7 +171,7 @@ export function useMCPServerManagement(service?: McpServerService) {
         logger.error('Failed to save extension', error);
       }
     },
-    [saveServer, mutateServers, t],
+    [saveServer, mutateServers, t, allServers],
   );
 
   const handleDelete = useCallback((server: MCPServerEntity) => {
