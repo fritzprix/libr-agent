@@ -115,6 +115,41 @@ pub async fn build_workspace_live_state(
     }
 }
 
+/// Format the Running Processes section for the workspace service context.
+///
+/// Awaits the registry lock so lock contention never produces a false "None".
+pub async fn format_running_processes_text(
+    process_registry: &terminal_manager::ProcessRegistry,
+    session_id: &str,
+) -> String {
+    let reg = process_registry.read().await;
+    let mut running_processes: Vec<(String, String)> = reg
+        .entries
+        .values()
+        .filter(|e| e.session_id == session_id)
+        .filter(|e| terminal_manager::is_active_process_status(&e.status))
+        .map(|e| (e.id.clone(), e.command.clone()))
+        .collect();
+
+    running_processes.sort_by(|left, right| left.0.cmp(&right.0));
+    let running_count = running_processes.len();
+    let displayed_processes = running_processes.into_iter().take(5).collect::<Vec<_>>();
+
+    if running_count == 0 {
+        "None".to_string()
+    } else {
+        let process_list = displayed_processes
+            .iter()
+            .map(|(id, cmd)| {
+                let display_cmd = crate::utils::truncate_chars(cmd, 77);
+                format!("  • {} - {}", id, display_cmd)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{}\n{}", running_count, process_list)
+    }
+}
+
 /// Build the service context prompt text used in BuiltinMCPServer::get_service_context.
 pub async fn build_context_prompt(
     session_id: &str,
@@ -125,41 +160,7 @@ pub async fn build_context_prompt(
     let state = build_workspace_live_state(session_id, session_manager, shell_manager).await;
 
     // Running processes with IDs for AI visibility (finished-only totals omitted — no actionable IDs).
-    let running_processes_text = {
-        match process_registry.try_read() {
-            Ok(reg) => {
-                let mut running_processes: Vec<(String, String)> = reg
-                    .entries
-                    .values()
-                    .filter(|e| e.session_id == session_id)
-                    .filter(|e| terminal_manager::is_active_process_status(&e.status))
-                    .map(|e| (e.id.clone(), e.command.clone()))
-                    .collect();
-
-                running_processes.sort_by(|left, right| left.0.cmp(&right.0));
-                let running_count = running_processes.len();
-                let displayed_processes = running_processes.into_iter().take(5).collect::<Vec<_>>();
-
-                if running_count == 0 {
-                    "None".to_string()
-                } else {
-                    let process_list = displayed_processes
-                        .iter()
-                        .map(|(id, cmd)| {
-                            let display_cmd = crate::utils::truncate_chars(cmd, 77);
-                            format!("  • {} - {}", id, display_cmd)
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    format!("{}\n{}", running_count, process_list)
-                }
-            }
-            Err(_) => {
-                // Lock is held by another task, return defaults to avoid blocking
-                "None".to_string()
-            }
-        }
-    };
+    let running_processes_text = format_running_processes_text(process_registry, session_id).await;
 
     let file_tools_list = workspace_file_tools_context_list();
     let isolation_lines = if state.is_docker {

@@ -16,6 +16,15 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::info;
 
+/// Cached workspace service-context prompt text (TTL-managed in get_service_context).
+pub(crate) type ContextCache = Arc<tokio::sync::RwLock<Option<(String, std::time::Instant)>>>;
+
+/// Clear the workspace context cache. Safe to call from background process tasks.
+pub(crate) async fn clear_context_cache(cache: &ContextCache) {
+    *cache.write().await = None;
+    tracing::debug!("Workspace service context cache cleared");
+}
+
 #[derive(Debug)]
 pub struct WorkspaceServer {
     pub(crate) session_id: String,
@@ -26,7 +35,7 @@ pub struct WorkspaceServer {
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
     pub(crate) pending_executions: Arc<PendingExecutions>,
     pub(crate) shell_manager: Arc<persistent_shell::PersistentShellManager>,
-    pub(crate) context_cache: Arc<tokio::sync::RwLock<Option<(String, std::time::Instant)>>>,
+    pub(crate) context_cache: ContextCache,
     cleanup_shutdown: Arc<std::sync::atomic::AtomicBool>,
     cleanup_tasks: Vec<JoinHandle<()>>,
 }
@@ -80,15 +89,7 @@ impl WorkspaceServer {
 
     /// Invalidate the service context cache (call after state changes)
     pub(crate) async fn invalidate_context_cache(&self) {
-        match self.context_cache.try_write() {
-            Ok(mut guard) => {
-                *guard = None;
-                tracing::debug!("Workspace service context cache invalidated");
-            }
-            Err(_) => {
-                tracing::warn!("Failed to invalidate context cache - lock held by another task");
-            }
-        }
+        clear_context_cache(&self.context_cache).await;
     }
 
     /// Start background task to cleanup old processes (24-hour retention)
@@ -784,18 +785,13 @@ impl WorkspaceServer {
             }
         }
 
-        let context_prompt = context::build_context_prompt(
+        let mut context_prompt = context::build_context_prompt(
             &session_id,
             &self.session_manager,
             &self.process_registry,
             &self.shell_manager,
         )
         .await;
-
-        // Update cache
-        if let Ok(mut guard) = self.context_cache.try_write() {
-            *guard = Some((context_prompt.clone(), std::time::Instant::now()));
-        }
 
         let live_state = context::build_workspace_live_state(
             &session_id,
@@ -808,23 +804,51 @@ impl WorkspaceServer {
         let shell_cwd = live_state.shell_cwd;
         let platform = context::ExecutionPlatform::for_session(&session_id, live_state.is_docker);
 
-        let (running_count, total_count) = match self.process_registry.try_read() {
-            Ok(reg) => {
-                let running = reg
-                    .entries
-                    .values()
-                    .filter(|e| e.session_id == session_id)
-                    .filter(|e| super::terminal_manager::is_active_process_status(&e.status))
-                    .count();
-                let total = reg
-                    .entries
-                    .values()
-                    .filter(|e| e.session_id == session_id)
-                    .count();
-                (running, total)
-            }
-            Err(_) => (0, 0),
+        let count_processes = || async {
+            let reg = self.process_registry.read().await;
+            let running = reg
+                .entries
+                .values()
+                .filter(|e| e.session_id == session_id)
+                .filter(|e| super::terminal_manager::is_active_process_status(&e.status))
+                .count();
+            let total = reg
+                .entries
+                .values()
+                .filter(|e| e.session_id == session_id)
+                .count();
+            (running, total)
         };
+
+        let (mut running_count, mut total_count) = count_processes().await;
+
+        // Rebuild once if a process finished during prompt construction.
+        // Prevents returning/caching a stale "Running Processes: <id>" line when the
+        // process exited between the initial build and the count check.
+        // Only one rebuild: if state races again during rebuild, the next
+        // get_service_context call picks up the correct state (and we refuse to
+        // cache an inconsistent prompt below).
+        let prompt_lists_no_running = context_prompt.contains("- Running Processes: None");
+        if running_count == 0 && !prompt_lists_no_running {
+            context_prompt = context::build_context_prompt(
+                &session_id,
+                &self.session_manager,
+                &self.process_registry,
+                &self.shell_manager,
+            )
+            .await;
+            (running_count, total_count) = count_processes().await;
+        }
+
+        // Only cache a consistent idle snapshot. Active process lists must stay
+        // live — natural exit can change status without a tool call.
+        let prompt_is_idle = context_prompt.contains("- Running Processes: None");
+        if running_count == 0 && prompt_is_idle {
+            let mut guard = self.context_cache.write().await;
+            *guard = Some((context_prompt.clone(), std::time::Instant::now()));
+        } else {
+            clear_context_cache(&self.context_cache).await;
+        }
 
         ServiceContext::new(context_prompt)
             .with_structured_state(serde_json::json!({
