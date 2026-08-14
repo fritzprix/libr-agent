@@ -1,3 +1,19 @@
+## [0.9.2] - 2026-08-14
+
+### 🚀 Features
+
+- **Warm Session Retention**: Keeps recently active sessions warm in memory for instant session switching without reload or re-render latency.
+- **Preset Server Setup UX**: Simplified MCP server registry preset installation with prefilled inputs for advanced connection and environment variables.
+
+### 🐛 Fixes
+
+- **Stable Mention Dropdown**: Keeps `@mention` dropdown selection stable and uninterrupted during active stream responses.
+- **Child Session Storage IDs**: Properly resolves internal storage IDs when opening nested child/subagent sessions.
+- **Clear Session Stale Request Prevention**: Prevents session clearing from hanging or leaving pending requests stuck.
+- **Workspace Replacement Warnings**: Warns against reusing stale `old_string` replacements in `workspace__strReplace`.
+- **Custom Provider Migration**: Restructured OpenAI-compatible configurations into the custom providers settings framework.
+- **Windows Taskbar & Minimize**: Resolved taskbar visibility issues on Windows when minimizing or launching background tasks.
+
 ## [0.9.1] - 2026-08-11
 
 ### 🚀 Features
