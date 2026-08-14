@@ -286,7 +286,10 @@
     "emptyState": {
       "title": "Aucune session pour le moment",
       "subtitle": "Commencez une conversation pour créer votre première session"
-    }
+    },
+    "loadMore": "Charger plus",
+    "loadingMore": "Chargement...",
+    "moreAvailable": "plus disponibles"
   },
   "orgHistory": {
     "heading": "Vue organisationnelle",

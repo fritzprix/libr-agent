@@ -286,7 +286,10 @@
     "emptyState": {
       "title": "No hay sesiones todavía",
       "subtitle": "Inicie una conversación para crear su primera sesión"
-    }
+    },
+    "loadMore": "Cargar más",
+    "loadingMore": "Cargando más...",
+    "moreAvailable": "más disponibles"
   },
   "orgHistory": {
     "heading": "Vista de la organización",

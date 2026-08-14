@@ -285,7 +285,10 @@
       "name": "名前",
       "ascending": "昇順で並び替え",
       "descending": "降順で並び替え"
-    }
+    },
+    "loadMore": "さらに読み込む",
+    "loadingMore": "読み込み中...",
+    "moreAvailable": "さらにあり"
   },
   "settings": {
     "title": "設定",

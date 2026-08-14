@@ -290,7 +290,10 @@
     "emptyState": {
       "title": "No sessions yet",
       "subtitle": "Start a conversation to create your first session"
-    }
+    },
+    "loadMore": "Load more",
+    "loadingMore": "Loading more...",
+    "moreAvailable": "more available"
   },
   "orgHistory": {
     "heading": "Org View",

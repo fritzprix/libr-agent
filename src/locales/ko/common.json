@@ -289,7 +289,10 @@
     "emptyState": {
       "title": "아직 세션이 없습니다",
       "subtitle": "대화를 시작하여 첫 번째 세션을 만드세요"
-    }
+    },
+    "loadMore": "더 보기",
+    "loadingMore": "더 불러오는 중...",
+    "moreAvailable": "더 있음"
   },
   "orgHistory": {
     "heading": "조직 뷰",

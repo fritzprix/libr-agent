@@ -286,7 +286,10 @@
     "emptyState": {
       "title": "暂无会话",
       "subtitle": "开始对话以创建您的第一个会话"
-    }
+    },
+    "loadMore": "加载更多",
+    "loadingMore": "正在加载更多...",
+    "moreAvailable": "还有更多"
   },
   "orgHistory": {
     "heading": "组织视图",
