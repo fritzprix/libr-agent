@@ -1,6 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { AgentSessionProvider } from '@/context/AgentSessionContext';
-import AgentChatView from './AgentChatView';
+import { AgentSessionKeepAliveHost } from './AgentSessionKeepAliveHost';
 
 /**
  * Session route for /agent/:sessionId.
@@ -15,9 +14,5 @@ export default function AgentSessionRoute() {
     return null;
   }
 
-  return (
-    <AgentSessionProvider sessionId={sessionId}>
-      <AgentChatView />
-    </AgentSessionProvider>
-  );
+  return <AgentSessionKeepAliveHost activeSessionId={sessionId} />;
 }

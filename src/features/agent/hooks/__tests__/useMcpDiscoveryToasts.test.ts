@@ -35,7 +35,7 @@ describe('useMcpDiscoveryToasts', () => {
     vi.clearAllMocks();
   });
 
-  it('shows loading toast while proxy is not ready', () => {
+  it('shows loading toast immediately while external MCP is initializing', () => {
     renderHook(() =>
       useMcpDiscoveryToasts({
         hasSession: true,
@@ -51,6 +51,22 @@ describe('useMcpDiscoveryToasts', () => {
     expect(toast.loading).toHaveBeenCalledWith('Loading MCP: exa (0/1)', {
       id: 'mcp-discovery:s1',
     });
+  });
+
+  it('does not show loading toast during session hydration', () => {
+    renderHook(() =>
+      useMcpDiscoveryToasts({
+        hasSession: true,
+        isProxyReady: false,
+        phase: 'hydrating',
+        initResult: 'pending',
+        servers: [],
+        sessionId: 's-fast',
+        currentStep: 'Starting session...',
+      }),
+    );
+
+    expect(toast.loading).not.toHaveBeenCalled();
   });
 
   it('shows success toast with deterministic ID when discovery completes', () => {
@@ -72,7 +88,7 @@ describe('useMcpDiscoveryToasts', () => {
     );
   });
 
-  it('dismisses loading toast when builtin-only session becomes ready', () => {
+  it('does not toast for builtin-only sessions that become ready', () => {
     let isProxyReady = false;
     let phase: 'hydrating' | 'ready' = 'hydrating';
     let initResult: 'pending' | 'success' = 'pending';
@@ -89,17 +105,13 @@ describe('useMcpDiscoveryToasts', () => {
       }),
     );
 
-    expect(toast.loading).toHaveBeenCalledWith('Starting session...', {
-      id: 'mcp-discovery:s-builtin',
-    });
-    vi.clearAllMocks();
+    expect(toast.loading).not.toHaveBeenCalled();
 
     isProxyReady = true;
     phase = 'ready';
     initResult = 'success';
     rerender();
 
-    expect(toast.dismiss).toHaveBeenCalledWith('mcp-discovery:s-builtin');
     expect(toast.success).not.toHaveBeenCalled();
     expect(toast.warning).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();

@@ -26,8 +26,10 @@ function discoveryToastId(sessionId: string): string {
 }
 
 /**
- * Surfaces MCP discovery progress via Sonner instead of a chat-top banner.
- * Per-server failed/timed_out toasts remain in useMcpServerFailureToasts.
+ * Surfaces external MCP discovery via Sonner instead of a chat-top banner.
+ * Session hydration and builtin-only startups stay silent; the chat overlay
+ * and keep-alive host already cover that wait. Per-server failed/timed_out
+ * toasts remain in useMcpServerFailureToasts.
  */
 export function useMcpDiscoveryToasts({
   hasSession,
@@ -41,12 +43,16 @@ export function useMcpDiscoveryToasts({
   const { t } = useTranslation();
   const resultKeyBySessionRef = useRef<Map<string, string>>(new Map());
 
-  const showLoading = hasSession && !isProxyReady && phase !== 'failed';
+  const hasServers = servers.length > 0;
+  const showLoading =
+    hasSession &&
+    !isProxyReady &&
+    phase === 'initializing' &&
+    hasServers;
   const discoveryFinished =
     isProxyReady || phase === 'failed' || initResult !== 'pending';
   const isTerminalPhase =
     phase === 'ready' || phase === 'degraded' || phase === 'failed';
-  const hasServers = servers.length > 0;
 
   useEffect(() => {
     if (!sessionId || !hasSession) {
@@ -55,17 +61,16 @@ export function useMcpDiscoveryToasts({
 
     const id = discoveryToastId(sessionId);
 
-    if (showLoading) {
-      toast.loading(currentStep || t('agent.statusBar.loadingTools'), {
-        id,
-      });
+    if (!showLoading) {
+      // Session hydration and builtin-only startups stay silent. Dismiss so a
+      // previous MCP loading toast cannot linger after a fast switch.
+      toast.dismiss(id);
       return;
     }
 
-    // Always clear the loading toast once proxy init is no longer in progress.
-    // Builtin-only sessions (servers=[]) never show a result toast, so dismiss is
-    // required here. Sessions with external MCP reuse the same id for success/warn/error.
-    toast.dismiss(id);
+    toast.loading(currentStep || t('agent.statusBar.loadingTools'), {
+      id,
+    });
   }, [sessionId, hasSession, showLoading, currentStep, t]);
 
   useEffect(() => {
