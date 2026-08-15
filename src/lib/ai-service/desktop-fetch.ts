@@ -9,8 +9,10 @@
  * webview but hang or time out via reqwest. On transport-level failures,
  * fall back to globalThis.fetch and remember the working transport per origin.
  *
- * Native attempts are bounded by a short probe timeout so fallback can finish
- * inside callers' outer listModels budgets (typically withTimeout 20s).
+ * Native probe timeout applies only to short discovery-style requests
+ * (e.g. listModels). Long-running completion POSTs skip the probe so slow
+ * local prefills are not mistaken for a hung transport. When falling back,
+ * the native request is always aborted to avoid orphaned GPU work.
  */
 import { fetch as tauriPluginFetch } from '@tauri-apps/plugin-http';
 import { getLogger } from '@/lib/logger';
@@ -65,16 +67,77 @@ export function isTauriLlmFetchRuntime(
 }
 
 /**
+ * Base used when request URLs are relative (OpenAI SDK normally sends absolute
+ * URLs; this keeps pathname/origin parsing from throwing).
+ */
+function getUrlParseBase(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return 'http://localhost';
+}
+
+function parseLlmRequestUrl(input: RequestInfo | URL): URL {
+  return new URL(resolveRequestUrl(input), getUrlParseBase());
+}
+
+/**
  * Resolve the origin used for sticky transport selection.
  */
 export function resolveLlmFetchOrigin(input: RequestInfo | URL): string {
+  return parseLlmRequestUrl(input).origin;
+}
+
+function resolveRequestUrl(input: RequestInfo | URL): string {
   if (typeof input === 'string') {
-    return new URL(input).origin;
+    return input;
   }
   if (input instanceof URL) {
-    return input.origin;
+    return input.href;
   }
-  return new URL(input.url).origin;
+  return input.url;
+}
+
+function resolveRequestMethod(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): string {
+  if (init?.method) {
+    return init.method.toUpperCase();
+  }
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    return input.method.toUpperCase();
+  }
+  return 'GET';
+}
+
+/**
+ * Completion-style POSTs can take many minutes for large local prefills.
+ * A short transport probe must not treat slow TTFT as a hung connection.
+ */
+export function isLongRunningLlmRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): boolean {
+  const method = resolveRequestMethod(input, init);
+  if (method !== 'POST' && method !== 'PUT') {
+    return false;
+  }
+
+  let pathname: string;
+  try {
+    pathname = parseLlmRequestUrl(input).pathname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  return (
+    pathname.includes('/chat/completions') ||
+    pathname.includes('/completions') ||
+    pathname.endsWith('/messages') ||
+    pathname.includes('/api/generate') ||
+    pathname.includes('/api/chat')
+  );
 }
 
 /**
@@ -135,7 +198,7 @@ function splitRequestForRetry(input: RequestInfo | URL): {
 
 /**
  * Race a promise against a timeout without aborting the underlying work.
- * Used so a hanging plugin-http call cannot block browser fallback forever.
+ * Callers must abort the underlying request when falling back after a timeout.
  */
 export function raceWithTimeout<T>(
   promise: Promise<T>,
@@ -160,6 +223,34 @@ export function raceWithTimeout<T>(
   });
 }
 
+function mergeAbortSignals(upstream: AbortSignal | undefined): {
+  signal: AbortSignal;
+  abort: (reason?: unknown) => void;
+  cleanup: () => void;
+} {
+  const local = new AbortController();
+
+  const onUpstreamAbort = () => {
+    local.abort(upstream?.reason);
+  };
+
+  if (upstream) {
+    if (upstream.aborted) {
+      local.abort(upstream.reason);
+    } else {
+      upstream.addEventListener('abort', onUpstreamAbort);
+    }
+  }
+
+  return {
+    signal: local.signal,
+    abort: (reason?: unknown) => local.abort(reason),
+    cleanup: () => {
+      upstream?.removeEventListener('abort', onUpstreamAbort);
+    },
+  };
+}
+
 async function fetchWithNativeFallback(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
@@ -173,15 +264,29 @@ async function fetchWithNativeFallback(
   }
 
   const { nativeInput, browserInput } = splitRequestForRetry(input);
+  const { signal, abort, cleanup } = mergeAbortSignals(
+    init?.signal ?? undefined,
+  );
+  const nativeInit: RequestInit = { ...init, signal };
+  const skipProbe = isLongRunningLlmRequest(input, init);
 
   try {
-    const response = await raceWithTimeout(
-      tauriPluginFetch(nativeInput, init),
-      nativeProbeTimeoutMs,
-    );
+    const nativePromise = tauriPluginFetch(nativeInput, nativeInit);
+    const response = skipProbe
+      ? await nativePromise
+      : await raceWithTimeout(nativePromise, nativeProbeTimeoutMs);
     transportByOrigin.set(origin, 'native');
     return response;
   } catch (nativeError) {
+    // Always cancel native work before opening a second connection.
+    if (!signal.aborted) {
+      abort();
+    }
+
+    if (init?.signal?.aborted) {
+      throw nativeError;
+    }
+
     if (!isLlmTransportNetworkError(nativeError)) {
       throw nativeError;
     }
@@ -206,13 +311,15 @@ async function fetchWithNativeFallback(
       }
       throw browserError;
     }
+  } finally {
+    cleanup();
   }
 }
 
 /**
  * Returns fetch for LLM SDKs and raw provider calls.
- * Tauri → plugin-http first (bounded probe), webview fetch on transport failure.
- * Non-Tauri → globalThis.fetch.
+ * Tauri → plugin-http first (bounded probe for short requests), webview fetch
+ * on transport failure. Non-Tauri → globalThis.fetch.
  */
 export function createLlmFetch(
   options: {

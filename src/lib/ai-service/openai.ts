@@ -27,6 +27,7 @@ import {
   serializeToolCallArgumentDeltas,
 } from './stream-events';
 import { createLlmFetch } from './desktop-fetch';
+import { resolveSelfHostedLlmClientOptions } from './llm-host-policy';
 import { reportListModelsFallback } from './list-models-errors';
 import type {
   OpenAINonStreamingRequest,
@@ -102,12 +103,30 @@ export class OpenAIService extends BaseAIService<
    * @param config Optional configuration for the service.
    */
   constructor(apiKey: string, config?: AIServiceConfig) {
-    super(apiKey, config);
+    const selfHostedOptions = resolveSelfHostedLlmClientOptions(
+      config?.baseUrl,
+      config,
+    );
+    const resolvedConfig: AIServiceConfig | undefined = selfHostedOptions
+      ? {
+          ...config,
+          timeout: selfHostedOptions.timeout,
+          maxRetries: selfHostedOptions.maxRetries,
+        }
+      : config;
+
+    super(apiKey, resolvedConfig);
     this.openai = new OpenAI({
       apiKey: this.apiKey,
       baseURL: config?.baseUrl || undefined,
       dangerouslyAllowBrowser: true,
       fetch: createLlmFetch(),
+      ...(selfHostedOptions
+        ? {
+            timeout: selfHostedOptions.timeout,
+            maxRetries: selfHostedOptions.maxRetries,
+          }
+        : {}),
     });
     this.promptDiagnostics = new OpenAIPromptDiagnosticsTracker(this.logger);
   }
