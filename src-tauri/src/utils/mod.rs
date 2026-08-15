@@ -1,6 +1,7 @@
 pub mod env;
 pub mod fs;
 pub mod json;
+pub mod keep_awake;
 pub mod pagination;
 pub mod platform;
 pub mod security;

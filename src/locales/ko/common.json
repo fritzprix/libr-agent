@@ -554,6 +554,8 @@
       "maxScheduledTaskGroups": "최대 예약 작업 그룹 수",
       "maxScheduledTaskGroupsDescription": "반복되는 팀워크 자동화에서 허용되는 고유한 예약 작업 그룹의 최대 수입니다.",
       "backgroundTasks": "백그라운드 작업",
+      "preventSleepDuringAgentWork": "에이전트 작업 중 절전 방지",
+      "preventSleepDuringAgentWorkDescription": "세션이 Busy / Queued / Provisioning일 때 시스템이 유휴 절전으로 들어가지 않도록 합니다. 디스플레이를 강제로 켜 두지는 않습니다. 기본값은 켜짐입니다.",
       "searchIndexFrequency": "검색 인덱스 빈도 (분)",
       "searchIndexFrequencyDescription": "AI가 메모리 검색을 업데이트하는 빈도입니다. 업데이트가 빠를수록 검색 결과가 최신 상태로 유지되지만 배터리/CPU를 더 많이 사용합니다.",
       "webActionTimeout": "웹 작업 제한 시간 (초)",

@@ -352,6 +352,9 @@ pub async fn update_session_status_with_dispatcher(
         session.is_running = status == SessionStatus::Busy;
     }
     *transition_handle.write().await = None;
+
+    // Keep the machine awake only while any in-memory session is actively working.
+    crate::utils::keep_awake::sync_from_statuses(active.values().map(|s| &s.metadata.status));
     drop(active); // Release write lock before waking waiters.
 
     // SP1: Wake any tasks sleeping on this session's status change (e.g. awaitAgent).

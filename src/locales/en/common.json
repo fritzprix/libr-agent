@@ -555,6 +555,8 @@
       "maxScheduledTaskGroups": "Max Scheduled Task Groups",
       "maxScheduledTaskGroupsDescription": "Maximum number of distinct scheduled task groups allowed across recurring teamwork automation.",
       "backgroundTasks": "Background Tasks",
+      "preventSleepDuringAgentWork": "Prevent sleep during agent work",
+      "preventSleepDuringAgentWorkDescription": "Keep the system from idle-sleeping while sessions are Busy, Queued, or Provisioning. Does not force the display to stay on. Enabled by default.",
       "searchIndexFrequency": "Search Index Frequency (Min)",
       "searchIndexFrequencyDescription": "How often the AI updates its memory search. Faster updates keep search fresh but use more battery/CPU.",
       "webActionTimeout": "Web Action Timeout (Sec)",

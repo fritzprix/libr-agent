@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui';
+import { Switch } from '@/components/ui/switch';
 import { NumberSettingField } from '@/features/settings/components/NumberSettingField';
 import { parseIntegerInput } from '@/features/settings/components/settings-number-utils';
 import type { SystemPerformanceSettingsProps } from './types';
@@ -21,6 +22,33 @@ function SystemBackgroundTasksSectionComponent({
       <h4 className="text-sm font-medium text-foreground">
         {t('settings.system.backgroundTasks', 'Background Tasks')}
       </h4>
+
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <label
+            htmlFor="prevent-sleep-during-agent-work"
+            className="block text-muted-foreground font-medium"
+          >
+            {t(
+              'settings.system.preventSleepDuringAgentWork',
+              'Prevent sleep during agent work',
+            )}
+          </label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t(
+              'settings.system.preventSleepDuringAgentWorkDescription',
+              'Keep the system from idle-sleeping while sessions are Busy, Queued, or Provisioning. Does not force the display to stay on. Enabled by default.',
+            )}
+          </p>
+        </div>
+        <Switch
+          id="prevent-sleep-during-agent-work"
+          checked={localSystemSettings.preventSleepDuringAgentWork ?? true}
+          onCheckedChange={(checked) =>
+            onChange('preventSleepDuringAgentWork', checked)
+          }
+        />
+      </div>
 
       <NumberSettingField
         label={t(

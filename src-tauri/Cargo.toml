@@ -80,6 +80,7 @@ windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Globalization",
   "Win32_System_Environment",
+  "Win32_System_Power",
   "Win32_UI_WindowsAndMessaging",
 ] }
 

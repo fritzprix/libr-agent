@@ -62,6 +62,7 @@ pub async fn delete_session(
         for descendant_id in &descendant_ids {
             sessions.remove(descendant_id);
         }
+        crate::utils::keep_awake::sync_from_statuses(sessions.values().map(|s| &s.metadata.status));
     }
 
     // 3. Delete workspaces and DB cascade
@@ -108,7 +109,11 @@ pub async fn delete_session_only(
     .await;
 
     // 2. Remove from active sessions map
-    active_sessions.write().await.remove(&session_id);
+    {
+        let mut sessions = active_sessions.write().await;
+        sessions.remove(&session_id);
+        crate::utils::keep_awake::sync_from_statuses(sessions.values().map(|s| &s.metadata.status));
+    }
 
     // 3. Delete workspace and db
     let orphaned_ids =

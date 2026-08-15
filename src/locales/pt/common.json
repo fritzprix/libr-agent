@@ -542,6 +542,8 @@
       "maxScheduledTaskGroups": "Máximo de grupos de tarefas agendadas",
       "maxScheduledTaskGroupsDescription": "Número máximo de grupos distintos de tarefas agendadas permitidos na automação recorrente de trabalho em equipe.",
       "backgroundTasks": "Tarefas em Segundo Plano",
+      "preventSleepDuringAgentWork": "Impedir suspensão durante o trabalho do agente",
+      "preventSleepDuringAgentWorkDescription": "Evita que o sistema entre em suspensão ociosa enquanto as sessões estão Busy, Queued ou Provisioning. Não mantém a tela ligada à força. Ativado por padrão.",
       "searchIndexFrequency": "Frequência do Índice de Busca (Min)",
       "searchIndexFrequencyDescription": "Com que frequência a IA atualiza sua busca na memória. Atualizações mais rápidas mantêm a busca atualizada, mas usam mais bateria/CPU.",
       "webActionTimeout": "Tempo Limite de Ação na Web (Seg)",
