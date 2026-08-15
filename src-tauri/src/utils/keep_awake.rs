@@ -1,17 +1,14 @@
-//! Keep the machine from idle-sleeping while agent sessions are actively working.
+//! Keep the machine from idle-sleeping while LibrAgent is running.
 //!
-//! - Enabled only for Busy / Queued / Provisioning work (not app lifetime).
+//! - Active for the whole app lifetime when the user preference is on (default).
 //! - User preference (`preventSleepDuringAgentWork`, default on) can disable it.
 //! - Does not force the display to stay on.
-//! - Platform handles are cleared on disable and on process shutdown.
+//! - Platform handles are cleared when the preference is off and on process exit.
 
-use crate::repositories::SessionStatus;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
-/// True when at least one in-memory session needs the machine awake.
-static WORK_NEEDED: AtomicBool = AtomicBool::new(false);
-/// User setting: prevent sleep during agent work (default enabled).
+/// User setting: prevent sleep while the app is running (default enabled).
 static USER_ENABLED: AtomicBool = AtomicBool::new(true);
 /// What is currently applied to the OS.
 static PLATFORM_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -28,28 +25,10 @@ struct UnixInhibitState {
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 static UNIX_STATE: OnceLock<std::sync::Mutex<UnixInhibitState>> = OnceLock::new();
 
-fn status_needs_keep_awake(status: &SessionStatus) -> bool {
-    matches!(
-        status,
-        SessionStatus::Busy | SessionStatus::Queued | SessionStatus::Provisioning
-    )
-}
-
-/// Recompute keep-awake from the current in-memory session statuses.
-pub fn sync_from_statuses<'a>(statuses: impl IntoIterator<Item = &'a SessionStatus>) {
-    let needed = statuses.into_iter().any(status_needs_keep_awake);
-    set_active_work(needed);
-}
-
-/// Update whether any agent work currently needs keep-awake.
-pub fn set_active_work(needed: bool) {
-    WORK_NEEDED.store(needed, Ordering::SeqCst);
-    recompute();
-}
-
 /// Apply the user preference from Settings (`preventSleepDuringAgentWork`).
 ///
-/// Defaults to enabled when unset.
+/// Defaults to enabled when unset. When enabled, inhibit idle sleep for the
+/// whole time the app is running.
 pub fn set_user_preference(enabled: bool) {
     USER_ENABLED.store(enabled, Ordering::SeqCst);
     recompute();
@@ -58,14 +37,11 @@ pub fn set_user_preference(enabled: bool) {
 /// Release any keep-awake hold (call on app exit).
 pub fn shutdown() {
     SHUTDOWN.store(true, Ordering::SeqCst);
-    WORK_NEEDED.store(false, Ordering::SeqCst);
     recompute();
 }
 
 fn recompute() {
-    let effective = !SHUTDOWN.load(Ordering::SeqCst)
-        && USER_ENABLED.load(Ordering::SeqCst)
-        && WORK_NEEDED.load(Ordering::SeqCst);
+    let effective = !SHUTDOWN.load(Ordering::SeqCst) && USER_ENABLED.load(Ordering::SeqCst);
 
     let previous = PLATFORM_ACTIVE.swap(effective, Ordering::SeqCst);
     if previous == effective {
@@ -180,7 +156,6 @@ fn apply_macos(needed: bool) {
         }
 
         // -i: prevent idle sleep. -w <pid>: exit when LibrAgent exits (no orphan).
-        // Do not use -d (display) or bare indefinite caffeinate without -w.
         let mut command = std::process::Command::new("caffeinate");
         command
             .arg("-i")
@@ -212,12 +187,11 @@ fn apply_linux(needed: bool) {
             return;
         }
 
-        // Hold until killed; systemd-inhibit releases when the child exits.
         let mut command = std::process::Command::new("systemd-inhibit");
         command
             .arg("--what=idle:sleep")
             .arg("--who=LibrAgent")
-            .arg("--why=Agent session active")
+            .arg("--why=LibrAgent is running")
             .arg("--mode=block")
             .arg("sleep")
             .arg("infinity");

@@ -89,8 +89,8 @@ export interface SystemSettings {
   shellRuntimeBootstrap: boolean;
   skillsDirectory?: string;
   /**
-   * When true (default), inhibit system idle sleep while agent sessions are
-   * Busy / Queued / Provisioning. Does not keep the display forced on.
+   * When true (default), inhibit system idle sleep while LibrAgent is running.
+   * Does not keep the display forced on.
    */
   preventSleepDuringAgentWork: boolean;
 }

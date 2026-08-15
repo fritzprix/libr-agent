@@ -31,13 +31,13 @@ function SystemBackgroundTasksSectionComponent({
           >
             {t(
               'settings.system.preventSleepDuringAgentWork',
-              'Prevent sleep during agent work',
+              'Prevent sleep while app is running',
             )}
           </label>
           <p className="mt-1 text-xs text-muted-foreground">
             {t(
               'settings.system.preventSleepDuringAgentWorkDescription',
-              'Keep the system from idle-sleeping while sessions are Busy, Queued, or Provisioning. Does not force the display to stay on. Enabled by default.',
+              'Keep the system from idle-sleeping while LibrAgent is open. Does not force the display to stay on. Enabled by default.',
             )}
           </p>
         </div>
