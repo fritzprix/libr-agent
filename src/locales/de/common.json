@@ -286,7 +286,10 @@
     "emptyState": {
       "title": "Noch keine Sitzungen",
       "subtitle": "Starten Sie eine Konversation, um Ihre erste Sitzung zu erstellen"
-    }
+    },
+    "loadMore": "Mehr laden",
+    "loadingMore": "Weitere werden geladen...",
+    "moreAvailable": "weitere verfügbar"
   },
   "orgHistory": {
     "heading": "Organisationsansicht",
@@ -539,6 +542,8 @@
       "maxScheduledTaskGroups": "Maximale Anzahl geplanter Aufgabengruppen",
       "maxScheduledTaskGroupsDescription": "Maximale Anzahl unterschiedlicher geplanter Aufgabengruppen, die in wiederkehrender Teamwork-Automatisierung erlaubt sind.",
       "backgroundTasks": "Hintergrundaufgaben",
+      "preventSleepDuringAgentWork": "Ruhezustand verhindern, solange die App läuft",
+      "preventSleepDuringAgentWorkDescription": "Verhindert den Idle-Ruhezustand, solange LibrAgent geöffnet ist. Hält das Display nicht zwingend an. Standardmäßig aktiviert.",
       "searchIndexFrequency": "Suchindex-Frequenz (Min)",
       "searchIndexFrequencyDescription": "Wie oft die KI ihre Gedächtnissuche aktualisiert. Schnellere Updates halten die Suche aktuell, verbrauchen aber mehr Akku/CPU.",
       "webActionTimeout": "Web-Aktions-Timeout (Sek)",

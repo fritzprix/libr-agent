@@ -395,6 +395,7 @@ pub fn run() {
             .expect("error while building tauri application")
             .run(|app_handle, event| {
                 if let tauri::RunEvent::Exit = event {
+                    crate::utils::keep_awake::shutdown();
                     let app_handle_clone = app_handle.clone();
                     tauri::async_runtime::block_on(async move {
                         if let Some(browser_server) =

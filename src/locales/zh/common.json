@@ -286,7 +286,10 @@
     "emptyState": {
       "title": "暂无会话",
       "subtitle": "开始对话以创建您的第一个会话"
-    }
+    },
+    "loadMore": "加载更多",
+    "loadingMore": "正在加载更多...",
+    "moreAvailable": "还有更多"
   },
   "orgHistory": {
     "heading": "组织视图",
@@ -539,6 +542,8 @@
       "maxScheduledTaskGroups": "最大计划任务组数",
       "maxScheduledTaskGroupsDescription": "在重复团队协作自动化中允许的不同计划任务组的最大数量。",
       "backgroundTasks": "后台任务",
+      "preventSleepDuringAgentWork": "应用运行时防止休眠",
+      "preventSleepDuringAgentWorkDescription": "LibrAgent 打开期间防止系统空闲休眠。不会强制保持屏幕常亮。默认开启。",
       "searchIndexFrequency": "搜索索引频率 (分钟)",
       "searchIndexFrequencyDescription": "AI 更新其内存搜索的频率。更快的更新保持搜索新鲜，但会消耗更多电池/CPU。",
       "webActionTimeout": "Web 操作超时 (秒)",

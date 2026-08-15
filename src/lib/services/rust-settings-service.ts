@@ -198,6 +198,10 @@ function mapDtosToSettings(dtos: SettingDto[]): {
     system: {
       ...DEFAULT_SETTING.system,
       ...storedSystem,
+      preventSleepDuringAgentWork:
+        typeof storedSystem.preventSleepDuringAgentWork === 'boolean'
+          ? storedSystem.preventSleepDuringAgentWork
+          : DEFAULT_SETTING.system.preventSleepDuringAgentWork,
     },
     experimental: getTypedValue(
       'experimentalSettings',

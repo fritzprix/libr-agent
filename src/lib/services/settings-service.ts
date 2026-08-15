@@ -88,6 +88,11 @@ export interface SystemSettings {
   shellIsolationLevel: IsolationLevel;
   shellRuntimeBootstrap: boolean;
   skillsDirectory?: string;
+  /**
+   * When true (default), inhibit system idle sleep while LibrAgent is running.
+   * Does not keep the display forced on.
+   */
+  preventSleepDuringAgentWork: boolean;
 }
 
 export interface ExperimentalSettings {
@@ -180,6 +185,7 @@ export const DEFAULT_SETTING: Settings = {
     shellIsolationLevel: 'medium',
     shellRuntimeBootstrap: false,
     skillsDirectory: '',
+    preventSleepDuringAgentWork: true,
   },
   experimental: {
     inlineAudioAttachment: true,

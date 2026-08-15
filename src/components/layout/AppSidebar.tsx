@@ -466,14 +466,36 @@ export default function AppSidebar() {
                   )}
                 </SidebarMenu>
                 <div ref={loadMoreSentinelRef} className="h-px w-full" />
-                {isLoadingMoreSessions && (
-                  <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>
-                      {t('sessionHistory.loadingMore', 'Loading more...')}
-                    </span>
+                {hasMoreSessions ? (
+                  <div className="px-2 py-2">
+                    <button
+                      type="button"
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMoreSessions}
+                      className={cn(
+                        'flex w-full items-center justify-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground',
+                        'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                        'disabled:pointer-events-none disabled:opacity-50',
+                      )}
+                    >
+                      {isLoadingMoreSessions ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>
+                            {t(
+                              'sessionHistory.loadingMore',
+                              'Loading more...',
+                            )}
+                          </span>
+                        </>
+                      ) : (
+                        <span>
+                          {t('sessionHistory.loadMore', 'Load more')}
+                        </span>
+                      )}
+                    </button>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           </SidebarGroup>

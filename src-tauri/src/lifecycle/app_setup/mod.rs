@@ -56,6 +56,10 @@ async fn load_startup_settings() -> StartupSettingsSnapshot {
         _ => SystemSettings::default(),
     };
 
+    crate::utils::keep_awake::set_user_preference(
+        system_settings.prevent_sleep_during_agent_work_or_default(),
+    );
+
     let advanced_settings = match settings_repo.get("advancedSettings").await {
         Ok(Some(model)) => {
             serde_json::from_str::<serde_json::Value>(&model.value).unwrap_or_default()
