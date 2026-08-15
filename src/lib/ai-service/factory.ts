@@ -45,6 +45,7 @@ function buildConfigCacheKey(config?: AIServiceConfig): string {
     customModelId: config.customModelId ?? '',
     maxRetries: config.maxRetries ?? null,
     retryDelay: config.retryDelay ?? null,
+    timeout: config.timeout ?? null,
   });
 }
 

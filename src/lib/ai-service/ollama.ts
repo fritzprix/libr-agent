@@ -27,6 +27,10 @@ import {
   serializeDirectToolCalls,
 } from './stream-events';
 import { createLlmFetch } from './desktop-fetch';
+import {
+  SELF_HOSTED_LLM_MAX_RETRIES,
+  SELF_HOSTED_LLM_TIMEOUT_MS,
+} from './llm-host-policy';
 import { reportListModelsFallback } from './list-models-errors';
 
 const logger = getLogger('OllamaService');
@@ -101,11 +105,14 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
    * @param config Optional configuration for the service.
    */
   constructor(apiKey: string, config?: AIServiceConfig) {
-    // Local models can be slow, especially for initial loading or large context.
-    // We increase the default timeout to 5 minutes (300000ms) if not explicitly provided.
+    // Ollama is always treated as self-hosted: large prefills (e.g. ~128k at
+    // session start) commonly take 5–6+ minutes. Disable retries so a slow
+    // prefill is not duplicated onto another slot.
+    const timeout = config?.timeout ?? SELF_HOSTED_LLM_TIMEOUT_MS;
     super(apiKey, {
-      timeout: 300_000,
       ...config,
+      timeout,
+      maxRetries: SELF_HOSTED_LLM_MAX_RETRIES,
     });
     this.host = config?.baseUrl || 'http://127.0.0.1:11434';
 
@@ -116,6 +123,8 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
     });
     logger.info('Ollama service initialized', {
       host: this.host,
+      timeout,
+      maxRetries: SELF_HOSTED_LLM_MAX_RETRIES,
     });
   }
 

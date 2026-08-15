@@ -19,6 +19,7 @@ import {
   createLlmFetch,
   getLlmFetchTransportPreference,
   isLlmTransportNetworkError,
+  isLongRunningLlmRequest,
   isTauriLlmFetchRuntime,
   resolveLlmFetchOrigin,
 } from '../desktop-fetch';
@@ -99,7 +100,7 @@ describe('desktop-fetch', () => {
 
     expect(tauriPluginFetch).toHaveBeenCalledWith(
       'https://integrate.api.nvidia.com/v1/models',
-      { method: 'GET' },
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) }),
     );
     expect(
       getLlmFetchTransportPreference('https://integrate.api.nvidia.com'),
@@ -112,13 +113,19 @@ describe('desktop-fetch', () => {
 
     const url = new URL('https://example.com/v1/models');
     await llmFetch(url);
-    expect(tauriPluginFetch).toHaveBeenCalledWith(url, undefined);
+    expect(tauriPluginFetch).toHaveBeenCalledWith(
+      url,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
 
     const request = new Request('https://example.com/v1/chat');
     await llmFetch(request, { method: 'POST' });
     expect(tauriPluginFetch).toHaveBeenCalledWith(
       expect.any(Request),
-      { method: 'POST' },
+      expect.objectContaining({
+        method: 'POST',
+        signal: expect.any(AbortSignal),
+      }),
     );
   });
 
@@ -145,14 +152,45 @@ describe('desktop-fetch', () => {
     ).toBe('browser');
   });
 
+  it('isLongRunningLlmRequest detects completion POSTs only', () => {
+    expect(
+      isLongRunningLlmRequest('http://127.0.0.1:8080/v1/chat/completions', {
+        method: 'POST',
+      }),
+    ).toBe(true);
+    expect(
+      isLongRunningLlmRequest('http://127.0.0.1:11434/api/chat', {
+        method: 'POST',
+      }),
+    ).toBe(true);
+    expect(
+      isLongRunningLlmRequest('/v1/chat/completions', {
+        method: 'POST',
+      }),
+    ).toBe(true);
+    expect(
+      isLongRunningLlmRequest('http://127.0.0.1:8080/v1/models', {
+        method: 'GET',
+      }),
+    ).toBe(false);
+  });
+
+  it('resolveLlmFetchOrigin resolves relative paths against a base', () => {
+    expect(resolveLlmFetchOrigin('/v1/models')).toMatch(/^https?:\/\//);
+  });
+
   it('falls back when plugin-http hangs past native probe timeout', async () => {
     vi.useFakeTimers();
     const browserFetch = vi.fn().mockResolvedValue(new Response('browser-ok'));
     vi.stubGlobal('fetch', browserFetch);
+    const abortSignals: AbortSignal[] = [];
     // Never resolves — mimics corporate PAC hang via WinHTTP/reqwest.
-    vi.mocked(tauriPluginFetch).mockImplementation(
-      () => new Promise<Response>(() => {}),
-    );
+    vi.mocked(tauriPluginFetch).mockImplementation((_input, init) => {
+      if (init?.signal) {
+        abortSignals.push(init.signal);
+      }
+      return new Promise<Response>(() => {});
+    });
 
     const llmFetch = createLlmFetch({
       isTauri: true,
@@ -164,9 +202,44 @@ describe('desktop-fetch', () => {
 
     expect(await response.text()).toBe('browser-ok');
     expect(browserFetch).toHaveBeenCalledTimes(1);
+    expect(abortSignals[0]?.aborted).toBe(true);
     expect(
       getLlmFetchTransportPreference('http://175.115.246.118:4444'),
     ).toBe('browser');
+
+    vi.useRealTimers();
+  });
+
+  it('does not probe-timeout long-running chat completions', async () => {
+    vi.useFakeTimers();
+    const browserFetch = vi.fn();
+    vi.stubGlobal('fetch', browserFetch);
+    let resolveNative: ((value: Response) => void) | undefined;
+    vi.mocked(tauriPluginFetch).mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveNative = resolve;
+        }),
+    );
+
+    const llmFetch = createLlmFetch({
+      isTauri: true,
+      nativeProbeTimeoutMs: 100,
+    });
+    const pending = llmFetch('http://127.0.0.1:8080/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(browserFetch).not.toHaveBeenCalled();
+
+    resolveNative?.(new Response('native-ok'));
+    const response = await pending;
+    expect(await response.text()).toBe('native-ok');
+    expect(
+      getLlmFetchTransportPreference('http://127.0.0.1:8080'),
+    ).toBe('native');
 
     vi.useRealTimers();
   });
@@ -237,7 +310,7 @@ describe('desktop-fetch', () => {
     expect(await response.text()).toBe('browser-ok');
     expect(tauriPluginFetch).toHaveBeenCalledWith(
       expect.any(Request),
-      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(browserFetch).toHaveBeenCalledWith(request, undefined);
   });
