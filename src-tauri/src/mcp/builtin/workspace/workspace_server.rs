@@ -821,6 +821,8 @@ impl WorkspaceServer {
         };
 
         let (mut running_count, mut total_count) = count_processes().await;
+        let mut recent_finished_count =
+            context::count_recently_finished_processes(&self.process_registry, &session_id).await;
 
         // Rebuild once if a process finished during prompt construction.
         // Prevents returning/caching a stale "Running Processes: <id>" line when the
@@ -838,12 +840,16 @@ impl WorkspaceServer {
             )
             .await;
             (running_count, total_count) = count_processes().await;
+            recent_finished_count =
+                context::count_recently_finished_processes(&self.process_registry, &session_id)
+                    .await;
         }
 
-        // Only cache a consistent idle snapshot. Active process lists must stay
-        // live — natural exit can change status without a tool call.
-        let prompt_is_idle = context_prompt.contains("- Running Processes: None");
-        if running_count == 0 && prompt_is_idle {
+        // Only cache a consistent idle snapshot. Active or recently-finished lists
+        // must stay live — natural exit / handoff windows change without a tool call.
+        let prompt_is_idle = context_prompt.contains("- Running Processes: None")
+            && !context_prompt.contains("- Recently Finished:");
+        if running_count == 0 && recent_finished_count == 0 && prompt_is_idle {
             let mut guard = self.context_cache.write().await;
             *guard = Some((context_prompt.clone(), std::time::Instant::now()));
         } else {
@@ -859,6 +865,7 @@ impl WorkspaceServer {
                 "processes": {
                     "running": running_count,
                     "total": total_count,
+                    "recent_finished": recent_finished_count,
                 },
                 "shell_active": !shell_cwd.is_empty(),
                 "tools_count": Self::tools_static().len()
