@@ -31,6 +31,8 @@ error_*.txt
 .worktrees/
 .vscode
 .serena
+# FreeBuff local desktop DB / workspace (must not be committed)
+.freebuff/
 
 # 에이전트별 로컬 설정/캐시 무시하되 공유 스킬은 보존
 .agent/*
