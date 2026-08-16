@@ -46,7 +46,7 @@ impl BuiltinMCPServer for ToolServer {
             "registerServer" => operations::register_server(self, args).await,
             "updateServer" => operations::update_server(self, args).await,
             "deleteServer" => operations::delete_server(self, args).await,
-            "verifyServer" => operations::verify_server(self, args).await,
+            "verifyServer" => operations::verify_server(self, args, session_id.as_deref()).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
         .or_else(|e| {

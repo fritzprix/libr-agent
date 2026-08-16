@@ -231,8 +231,9 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
             name, id
         ),
         vec![
-            "Use tool__listServers to verify the registered server.".to_string(),
-            "To enable this server, add its Server ID to an agent using agent__updateAgent(id:\"<agentId>\", externalMcpServers:[...]).".to_string(),
+            "Use tool__listServers({\"availability\":\"inventory\"}) to confirm the registered server.".to_string(),
+            "Attach this Server ID to an agent config with agent__updateAgent(id:\"<agentId>\", externalMcpServers:[...]). That updates the template for future sessions only — it cannot add tools to your currently active session.".to_string(),
+            "Confirm what this session can call with tool__listServers({\"availability\":\"session\"}).".to_string(),
         ],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
@@ -464,7 +465,11 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
 }
 
 /// Verify server configuration and connectivity
-pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn verify_server(
+    _server: &ToolServer,
+    args: Value,
+    session_id: Option<&str>,
+) -> Result<MCPResult, String> {
     use crate::mcp::types::TransportConfig;
     use std::time::Instant;
 
@@ -478,6 +483,10 @@ pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         Some(details) => details,
         Option::None => return Ok(not_found_error("Server", name, ToolGroup::Tool)),
     };
+
+    let access = load_session_tool_access(session_id).await;
+    let (session_status, session_access_line) =
+        access.external_access_report(session_id, &id, name);
 
     // Determine transport type
     let (transport_type, transport_details) = match &config.transport {
@@ -525,23 +534,36 @@ pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResul
             }
 
             let result_text = format!(
-                "✓ Server '{}' (ID: {}) verification successful\n\n\
+                "✓ Server '{}' (ID: {}) connectivity verification successful\n\n\
                 Transport: {}\n\
                 {}\n\
                 Status: Connected and responsive\n\
-                Available tools: {} (cached — use tool__listServers to inspect inventory)\n\
-                Connection latency: {}ms\n\n\
-                The server is properly configured and ready to use.",
-                name, id, transport_type, transport_details, tool_count, latency_ms
+                Tools discovered: {} (cached metadata — not the same as session-callable access)\n\
+                Connection latency: {}ms\n\
+                {}\n\n\
+                Verification only confirms the server config can connect. It does not enable tools in your currently active session.",
+                name,
+                id,
+                transport_type,
+                transport_details,
+                tool_count,
+                latency_ms,
+                session_access_line
             );
 
             Ok(SuccessHint::new(
                 result_text,
-                vec!["Server configuration is valid and operational".to_string()],
+                vec![
+                    "Use tool__listServers({\"availability\":\"session\"}) to see tools callable in this session.".to_string(),
+                    "agent__updateAgent attaches servers to an agent template for future sessions only; start a new session (or agent__startSession) to run with that access.".to_string(),
+                ],
             )
-            .to_mcp_result_with_data(Some(
-                json!({ "name": name, "id": id, "toolCount": tool_count }),
-            )))
+            .to_mcp_result_with_data(Some(json!({
+                "name": name,
+                "id": id,
+                "toolCount": tool_count,
+                "sessionStatus": session_status,
+            }))))
         }
         Err(error) => {
             let error_msg = format!("✗ Server '{}' verification failed", name);
@@ -888,9 +910,10 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             .map(|(name, id)| format!("  • {} → \"{}\"", name, id))
             .collect();
         format!(
-            "\n\n---\n📌 To enable these external servers:\n\
+            "\n\n---\n📌 External server IDs (inventory only — not auto-enabled in this session):\n\
             Server IDs found:\n(this page only)\n{}\n\n\
-            To assign them to an agent, call:\n  agent__updateAgent(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
+            To attach them to an agent template for future sessions, call:\n  agent__updateAgent(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
+            Note: agent__updateAgent cannot add or modify tools in your currently active session. Active session tool access is fixed at session start. Use availability='session' to see what you can call right now; start a new session (or agent__startSession) to run with an updated config.\n\n\
             Use agent__listAgents(type: \"configs\") to find your target agent ID.",
             ids_list.join("\n")
         )
@@ -900,11 +923,11 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     let mut hints = if session_view {
         vec![
-            "Session mode shows whether the current session can actually call each tool. Use availability='inventory' to list all platform tools regardless of current access.".to_string(),
+            "Session mode shows whether the current session can actually call each tool. Use availability='inventory' to browse registered platform tools regardless of current access.".to_string(),
         ]
     } else {
         vec![
-            "Inventory mode shows all registered platform tools. Use availability='session' to see which ones are actively permitted in the current session.".to_string(),
+            "Inventory mode lists registered platform tools; listing or verifying a server does not make it callable here. Use availability='session' for tools permitted in the current session.".to_string(),
         ]
     };
     if !force_verify && include_external {

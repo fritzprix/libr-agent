@@ -146,9 +146,9 @@ pub fn register_server_tool() -> MCPTool {
                 "Configure transport (stdio, http, or http-sse) with required fields.",
             ],
             &[
-                "Verify connectivity with tool__verifyServer.",
-                "Attach the server ID to an agent via agent__updateAgent.",
-                "Discover available tools with tool__listServers.",
+                "Verify connectivity with tool__verifyServer (connectivity only — not session enablement).",
+                "Attach the server ID to an agent template via agent__updateAgent for future sessions; start a new session to use it.",
+                "Confirm callable tools with tool__listServers({\"availability\":\"session\"}).",
             ],
         ),
         input_schema: object_prop(
@@ -264,14 +264,14 @@ pub fn verify_server_tool() -> MCPTool {
         name: "verifyServer".to_string(),
         title: Some("Verify Server".to_string()),
         description: tool_description(
-            "Verify a saved external MCP server configuration and refresh its cached tools.",
+            "Verify a saved external MCP server can connect and refresh its cached tool metadata. This does not enable tools in the currently active session.",
             &["Server must already be registered via tool__registerServer."],
             &[
                 "Pass the server slug name.",
                 "Wait for connectivity check and tool cache refresh.",
             ],
             &[
-                "Browse refreshed tools with tool__listServers (scope='external').",
+                "Check session-callable tools with tool__listServers({\"availability\":\"session\"}).",
                 "Fix transport settings with tool__updateServer if verification fails.",
             ],
         ),
@@ -303,7 +303,7 @@ pub fn list_tools_tool() -> MCPTool {
             ],
             &[
                 "Register missing servers with tool__registerServer.",
-                "Attach external server IDs to agents via agent__updateAgent.",
+                "Attach external server IDs to agent templates via agent__updateAgent for future sessions only; active session tools stay fixed until a new session starts.",
             ],
         ),
         input_schema: object_prop(

@@ -176,6 +176,15 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
         "tool discovery guidance should point to canonical agent__updateAgent: {text}"
     );
     assert!(
+        text.contains("currently active session")
+            || text.contains("future sessions"),
+        "inventory guidance must state session immutability / future-session-only attachment: {text}"
+    );
+    assert!(
+        !text.contains("To enable these external servers:"),
+        "inventory guidance must not imply mid-session enablement: {text}"
+    );
+    assert!(
         !text.contains("updateAssistant("),
         "tool discovery guidance should not mention legacy updateAssistant alias: {text}"
     );
