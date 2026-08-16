@@ -56,6 +56,11 @@ pnpm bench:harbor
 
 # Harbor Index: full dataset (n-attempts defaults to 1; add --n-attempts 5 for official submission)
 pnpm bench:harbor:all
+
+# Upload latest job results to Harbor Hub (UTF-8 enabled automatically)
+pnpm bench:upload
+# Or upload a specific job folder:
+pnpm bench:upload jobs/2026-08-16__14-25-18
 ```
 
 `pnpm bench:*` dispatches via `scripts/run-harbor-bench.cjs` to PowerShell on Windows

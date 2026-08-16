@@ -83,6 +83,7 @@
     "bench:harbor": "node scripts/run-harbor-bench.cjs --preset harbor-index --n-tasks 1",
     "bench:harbor:all": "node scripts/run-harbor-bench.cjs --preset harbor-index",
     "bench:registry": "node scripts/run-harbor-bench.cjs --preset dataset",
+    "bench:upload": "node scripts/upload-harbor-bench.cjs",
     "bench:termial": "pnpm bench:terminal",
     "bench:termial:all": "pnpm bench:terminal:all"
   },
