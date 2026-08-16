@@ -122,5 +122,6 @@ kilo.json
 .tmp_*
 .slibragent/
 .vitest-*.txt
+.freebuff/
 
 ./attachments
