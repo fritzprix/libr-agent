@@ -1,6 +1,6 @@
 use serde_json::Value;
-use std::sync::atomic::Ordering;
 
+use crate::execution_mode::ExecutionMode;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
@@ -16,14 +16,14 @@ impl WorkspaceServer {
             return false;
         };
 
+        // Fail closed if the map is write-locked (e.g. mid set_execution_mode).
         let Ok(active) = active_sessions.try_read() else {
             return false;
         };
 
         active
             .get(&self.session_id)
-            .map(|session| session.unsafe_mode.load(Ordering::Relaxed))
-            .unwrap_or(false)
+            .is_some_and(|session| session.execution_mode() == ExecutionMode::Unsafe)
     }
 
     #[cfg(windows)]
@@ -406,8 +406,6 @@ mod tests {
             status_transition: Arc::new(RwLock::new(None)),
             transition_lock: Arc::new(tokio::sync::Mutex::new(())),
             cancellation_token: CancellationToken::new(),
-            yolo_mode: Arc::new(AtomicBool::new(false)),
-            unsafe_mode: Arc::new(AtomicBool::new(true)),
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
             messages: Arc::new(RwLock::new(Vec::new())),

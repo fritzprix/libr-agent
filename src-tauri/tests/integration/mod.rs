@@ -72,7 +72,6 @@ pub mod read_file_empty_file_tests;
 pub mod read_process_output_tests;
 pub mod reference_resolver_tests;
 pub mod repeated_thinking_recovery_tests;
-pub mod request_layout_checkpoint_tests;
 pub mod resume_proxy_rehydration_tests;
 pub mod runtime_state_sequence_tests;
 pub mod scheduled_task_policy_tests;

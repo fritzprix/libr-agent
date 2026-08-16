@@ -66,8 +66,6 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         status_transition: Arc::new(RwLock::new(None)),
         transition_lock: Arc::new(Mutex::new(())),
         cancellation_token: CancellationToken::new(),
-        yolo_mode: Arc::new(AtomicBool::new(false)),
-        unsafe_mode: Arc::new(AtomicBool::new(true)),
         cancel_pending: Arc::new(AtomicBool::new(false)),
         pending_execution: None,
         messages: Arc::new(RwLock::new(messages)),
