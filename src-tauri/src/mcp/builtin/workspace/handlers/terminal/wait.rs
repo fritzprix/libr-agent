@@ -107,6 +107,10 @@ impl WorkspaceServer {
                     | terminal_manager::ProcessStatus::Failed
                     | terminal_manager::ProcessStatus::Killed
             ) {
+                // Drop idle "Running Processes: None" cache so the next turn can
+                // pick up the Recently Finished window for this processId.
+                self.invalidate_context_cache().await;
+
                 let response = serde_json::json!({
                     "process_id": process_id,
                     "status": terminal_manager::process_status_label(&status),

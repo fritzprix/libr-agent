@@ -142,9 +142,45 @@ async fn workspace_service_context_running_processes_track_lifecycle() {
         after_finish.context_prompt
     );
     assert!(
-        !after_finish.context_prompt.contains(&process_id),
-        "finished process id must not remain listed as running: {}",
+        after_finish.context_prompt.contains(&process_id),
+        "recently finished handoff id must remain in Recently Finished: {}",
         after_finish.context_prompt
+    );
+    assert!(
+        after_finish.context_prompt.contains("- Recently Finished:"),
+        "must expose Recently Finished section after exit: {}",
+        after_finish.context_prompt
+    );
+    let recent_finished = after_finish
+        .structured_state
+        .as_ref()
+        .and_then(|state| state.get("processes"))
+        .and_then(|processes| processes.get("recent_finished"))
+        .and_then(|value| value.as_u64());
+    assert_eq!(
+        recent_finished,
+        Some(1),
+        "structured state should count the recent finished process: {:?}",
+        after_finish.structured_state
+    );
+
+    // Idle None must not be TTL-cached while a recently finished id is still queryable.
+    let second_look = server.get_service_context(None).await;
+    let was_cached = second_look
+        .structured_state
+        .as_ref()
+        .and_then(|state| state.get("cached"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    assert!(
+        !was_cached,
+        "must not cache idle context while Recently Finished is present: {:?}",
+        second_look.structured_state
+    );
+    assert!(
+        second_look.context_prompt.contains(&process_id),
+        "second look must still show the handoff id: {}",
+        second_look.context_prompt
     );
 }
 
