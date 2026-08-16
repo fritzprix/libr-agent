@@ -1,3 +1,15 @@
+## [0.9.4] - 2026-08-16
+
+### 🚀 Features
+
+- **Sidebar Pagination (Load More)**: Adds an explicit "Load more" button to recent sessions in the sidebar for in-place pagination without having to open History.
+- **Prevent System Idle Sleep During Agent Work**: Automatically prevents system idle sleep while agent sessions are actively running, queued, or provisioning, with a user setting in System & Background Tasks to toggle the behavior.
+
+### 🐛 Fixes
+
+- **LLM Request Orphan Prevention & Timeout Handling**: Aborts orphaned active LLM fetch requests when user stops or switches sessions, and relaxes self-hosted provider default timeouts for heavy operations.
+- **Handoff Process Visibility**: Preserves process IDs and status visibility in subagent handoff service contexts when terminal sync times out.
+
 ## [0.9.3] - 2026-08-14
 
 ### 🐛 Fixes

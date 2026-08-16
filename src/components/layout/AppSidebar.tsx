@@ -482,16 +482,11 @@ export default function AppSidebar() {
                         <>
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           <span>
-                            {t(
-                              'sessionHistory.loadingMore',
-                              'Loading more...',
-                            )}
+                            {t('sessionHistory.loadingMore', 'Loading more...')}
                           </span>
                         </>
                       ) : (
-                        <span>
-                          {t('sessionHistory.loadMore', 'Load more')}
-                        </span>
+                        <span>{t('sessionHistory.loadMore', 'Load more')}</span>
                       )}
                     </button>
                   </div>
