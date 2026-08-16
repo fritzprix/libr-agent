@@ -121,10 +121,10 @@ pub async fn missing_external_tool_result(
                 "Use tool__listServers({\"availability\":\"session\"}) to inspect the tools callable right now in this session.".to_string(),
                 "Use tool__listServers({\"availability\":\"inventory\"}) to inspect registered external servers, inventory, and Server IDs.".to_string(),
                 format!(
-                    "If this session should gain access, attach Server ID \"{}\" with agent__updateAgent(id:\"<agentId>\", externalMcpServers:[\"{}\", ...]).",
+                    "agent__updateAgent(id:\"<agentId>\", externalMcpServers:[\"{}\", ...]) attaches Server ID \"{}\" to an agent template for future sessions only — it cannot add tools to this already-running session.",
                     server.id, server.id
                 ),
-                "If changing the current agent is the wrong move, use agent__listAgents(type=\"configs\") to find a better-equipped agent and delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\").".to_string(),
+                "To use this server now, delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\") using a config that already includes it, or continue with tools shown by availability='session'.".to_string(),
             ],
         ),
         Ok(None) => external_tool_error_result(

@@ -474,8 +474,8 @@ impl SuccessHint {
                 "Use agent__startSession to begin work with this agent".to_string(),
             ],
             ("updateAgent", ToolGroup::Agent) => vec![
-                "Use agent__listAgents to verify the configuration updates".to_string(),
-                "Use agent__startSession to apply changes in a new session".to_string(),
+                "Use agent__listAgents to verify the template updates".to_string(),
+                "Start a new session (or agent__startSession) — updates do not change tools in already-running sessions".to_string(),
             ],
             ("startSession", ToolGroup::Agent) => vec![
                 "Use agent__messageToSession only for follow-up instructions after the session starts"

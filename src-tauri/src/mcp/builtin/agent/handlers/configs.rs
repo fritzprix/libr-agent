@@ -387,8 +387,8 @@ pub async fn update_agent(
                 )
                 .with_guidance(vec![
                     "This restriction prevents privilege escalation and identity drift during a session.".to_string(),
-                    "If this task requires a different configuration, delegate it using another agent configuration with the required permissions."
-                        .to_string(),
+                    "Active session tool access is fixed at session start; updating a template cannot inject tools into this running session.".to_string(),
+                    "If this task requires a different configuration, delegate it using another agent configuration with the required permissions.".to_string(),
                     "List available agent configurations, then start a new delegated session with one that can perform the change."
                         .to_string(),
                 ])
@@ -455,8 +455,9 @@ pub async fn update_agent(
                     &config,
                 ),
                 vec![
-                    "Inspect the configuration details to verify the changes".to_string(),
-                    "Start a new delegated session to apply the updated configuration".to_string(),
+                    "This updates the agent template only — it does not change tools in any currently running session.".to_string(),
+                    "Inspect the configuration details to verify the changes.".to_string(),
+                    "Start a new session (or agent__startSession with this config) to apply the updated tool access.".to_string(),
                 ],
             );
 

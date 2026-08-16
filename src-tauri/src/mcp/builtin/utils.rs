@@ -792,6 +792,35 @@ impl SessionToolAccess {
             }
         }
     }
+
+    /// Session-access label for verify/list reports.
+    ///
+    /// Without a session context, returns `"Unknown"` instead of `"Unsupported…"`,
+    /// so text and structured `sessionStatus` stay aligned and do not imply a deny decision.
+    pub fn external_access_report(
+        &self,
+        session_id: Option<&str>,
+        server_id: &str,
+        server_name: &str,
+    ) -> (&'static str, String) {
+        match session_id {
+            Some(sid) => {
+                let (status, _) = self.external_status(server_id, server_name);
+                (
+                    status,
+                    format!(
+                        "Session access for '{}': {} — verification does not grant tools to an already-running session.",
+                        sid, status
+                    ),
+                )
+            }
+            None => (
+                "Unknown",
+                "Session access: unknown (no session context) — verification only checks connectivity."
+                    .to_string(),
+            ),
+        }
+    }
 }
 
 pub async fn load_session_tool_access(session_id: Option<&str>) -> SessionToolAccess {
