@@ -40,24 +40,26 @@ impl ToolExecutionContext<'_> {
         }
     }
 
-    async fn current_yolo_mode(&self) -> bool {
+    async fn current_execution_mode(&self) -> crate::execution_mode::ExecutionMode {
         let active = self.active_sessions.read().await;
         active
             .get(self.session_id)
-            .map(|session| session.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
-            .unwrap_or(false)
+            .map(|session| session.execution_mode())
+            .unwrap_or(crate::execution_mode::ExecutionMode::Normal)
+    }
+
+    async fn current_yolo_mode(&self) -> bool {
+        matches!(
+            self.current_execution_mode().await,
+            crate::execution_mode::ExecutionMode::Yolo
+        )
     }
 
     async fn current_unsafe_mode(&self) -> bool {
-        let active = self.active_sessions.read().await;
-        active
-            .get(self.session_id)
-            .map(|session| {
-                session
-                    .unsafe_mode
-                    .load(std::sync::atomic::Ordering::Relaxed)
-            })
-            .unwrap_or(false)
+        matches!(
+            self.current_execution_mode().await,
+            crate::execution_mode::ExecutionMode::Unsafe
+        )
     }
 
     /// Best-effort lookup of the session's configured output-token budget.

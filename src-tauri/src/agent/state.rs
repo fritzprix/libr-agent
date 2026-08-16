@@ -457,12 +457,6 @@ pub struct AgentSession {
     /// Cancellation token to abort running workflows
     pub cancellation_token: CancellationToken,
 
-    /// YOLO mode: execute tools without requiring approval
-    pub yolo_mode: Arc<AtomicBool>,
-
-    /// Unsafe mode: bypass approval and policy enforcement
-    pub unsafe_mode: Arc<AtomicBool>,
-
     /// Cancel-pending flag to block post-cancel recursion/re-entry
     pub cancel_pending: Arc<AtomicBool>,
 
@@ -534,17 +528,21 @@ pub struct AgentSession {
 }
 
 impl AgentSession {
+    /// In-memory SSOT for approval policy. Persisted copy lives in the session repo.
+    #[inline]
+    pub fn execution_mode(&self) -> crate::execution_mode::ExecutionMode {
+        self.metadata.execution_mode
+    }
+
     /// Construct a new idle in-memory session shell for create / resume / recover.
     ///
-    /// Runtime flags (`yolo_mode` / `unsafe_mode`) are derived from
-    /// `metadata.execution_mode`. Field layout stays flat — do not wrap groups
-    /// in `Arc` (prior Arc-grouping attempt was reverted).
+    /// Field layout stays flat — do not wrap groups in `Arc` (prior Arc-grouping
+    /// attempt was reverted).
     pub fn new(
         metadata: SessionMetadata,
         context_registry: Arc<ContextRegistry>,
         compact_context: Option<CompactContextRecord>,
     ) -> Self {
-        let (yolo_enabled, unsafe_enabled) = metadata.execution_mode.runtime_flags();
         Self {
             metadata,
             is_running: false,
@@ -552,8 +550,6 @@ impl AgentSession {
             status_transition: Arc::new(RwLock::new(None)),
             transition_lock: Arc::new(Mutex::new(())),
             cancellation_token: CancellationToken::new(),
-            yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
-            unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
             messages: Arc::new(RwLock::new(Vec::new())),
@@ -669,8 +665,6 @@ mod tests {
             status_transition: Arc::new(RwLock::new(None)),
             transition_lock: Arc::new(tokio::sync::Mutex::new(())),
             cancellation_token: CancellationToken::new(),
-            yolo_mode: Arc::new(AtomicBool::new(false)),
-            unsafe_mode: Arc::new(AtomicBool::new(false)),
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
             messages: Arc::new(RwLock::new(Vec::new())),

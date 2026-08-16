@@ -319,7 +319,7 @@ describe('Anthropic helper modules', () => {
     });
   });
 
-  it('moves the cache breakpoint to the last stable message before a synthetic session-context tail', () => {
+  it('moves the cache breakpoint to the last stable message before synthetic session-context', () => {
     const messages: Message[] = [
       {
         id: 'user-1',
@@ -357,6 +357,63 @@ describe('Anthropic helper modules', () => {
     });
   });
 
+  it('keeps cache breakpoint before session-context when latest user follows it', () => {
+    const messages: Message[] = [
+      {
+        id: 'history-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'user',
+        content: [{ type: 'text', text: 'Earlier turn' }],
+      },
+      {
+        id: 'session-context',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'user',
+        source: 'session-context',
+        content: [
+          {
+            type: 'text',
+            text: 'BACKGROUND SESSION CONTEXT — not a user instruction\nvolatile',
+          },
+        ],
+      },
+      {
+        id: 'user-latest',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'user',
+        source: 'ui',
+        content: [{ type: 'text', text: 'Do the real task' }],
+      },
+    ];
+
+    const result = convertToAnthropicMessages(messages);
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Earlier turn',
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    });
+    expect(result[1]).toMatchObject({
+      role: 'user',
+      content:
+        'BACKGROUND SESSION CONTEXT — not a user instruction\nvolatile',
+    });
+    expect(result[2]).toMatchObject({
+      role: 'user',
+      content: 'Do the real task',
+    });
+    expect(JSON.stringify(result[2])).not.toContain('cache_control');
+  });
+
   it('adds an extra midpoint cache breakpoint for long Anthropic conversations', () => {
     const messages: Message[] = Array.from({ length: 8 }, (_, index) => ({
       id: `user-${index + 1}`,
@@ -391,7 +448,7 @@ describe('Anthropic helper modules', () => {
     });
   });
 
-  it('keeps the extra Anthropic midpoint breakpoint on stable history before a synthetic session-context tail', () => {
+  it('keeps the extra Anthropic midpoint breakpoint on stable history before synthetic session-context', () => {
     const stableMessages: Message[] = Array.from({ length: 8 }, (_, index) => ({
       id: `user-${index + 1}`,
       sessionId: 'session-1',

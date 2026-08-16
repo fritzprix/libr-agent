@@ -120,16 +120,19 @@ async fn try_open_warm_session(
 
 async fn build_open_session_response(
     manager: &AgentSessionManager,
-    session: SessionMetadata,
+    mut session: SessionMetadata,
     session_id: &str,
     message_limit: u64,
 ) -> Result<AgentOpenSessionResponse, String> {
+    // Open payloads must expose the live SSOT (active metadata, else DB), not a
+    // stale caller-provided SessionMetadata clone taken before a concurrent mode change.
+    session.execution_mode = manager.get_execution_mode(session_id).await;
+
     let repo = crate::state::get_message_repository();
     let mut message_slice = repo
         .get_recent_slice(session_id, message_limit)
         .await
         .map_err(|e| format!("Failed to load recent session messages: {}", e))?;
-
     // Pending prompts are stored in `messages` plus a `pending_queue` index.
     // Strip only true waiters (LayeredPendingQueue). Never strip:
     // - IDs already on the live active message stack (promoted / Idle path)
