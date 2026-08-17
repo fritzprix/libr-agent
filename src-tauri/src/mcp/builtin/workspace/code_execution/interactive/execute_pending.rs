@@ -6,7 +6,9 @@ use tracing::{error, warn};
 use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::workspace::code_execution::normalization;
-use crate::mcp::builtin::workspace::code_execution::shell::format_duration_ms;
+use crate::mcp::builtin::workspace::code_execution::shell::{
+    format_command_io_message, format_duration_ms,
+};
 use crate::mcp::builtin::workspace::{
     InteractiveShellInputType, PendingExecutionLookupError, PendingShellExecution,
     PendingShellInputResolution, WorkspaceServer, INTERACTIVE_SHELL_INPUT_MAX_BYTES,
@@ -296,10 +298,10 @@ impl WorkspaceServer {
 
         let text_message = if redact_output {
             format!("{header}\n\n{output_redacted_notice}\n\n{shell_state}{file_tools_warning}")
-        } else if !stdout.is_empty() {
-            format!("{header}\n\nCommand output:\n{stdout}\n\n{shell_state}{file_tools_warning}")
         } else {
-            format!("{header}\n\n{shell_state}{file_tools_warning}")
+            let io_message =
+                format_command_io_message(&header, "Command output", &stdout, "Stderr", &stderr);
+            format!("{io_message}\n\n{shell_state}{file_tools_warning}")
         };
 
         let hint = SuccessHint::new(

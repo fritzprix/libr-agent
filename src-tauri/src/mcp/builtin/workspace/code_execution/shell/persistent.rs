@@ -10,7 +10,7 @@ use crate::session_isolation::PathMappingLayer;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::normalization;
-use super::format_duration_ms;
+use super::{format_command_io_message, format_duration_ms};
 
 impl WorkspaceServer {
     /// Execute command using persistent shell
@@ -123,14 +123,15 @@ impl WorkspaceServer {
                         ""
                     };
 
-                    let text_message: String = if !stdout.is_empty() {
-                        format!(
-                            "{}\n\nCommand output:\n{}\n\n{}{}",
-                            header, stdout, shell_state, file_tools_warning
-                        )
-                    } else {
-                        format!("{}\n\n{}{}", header, shell_state, file_tools_warning)
-                    };
+                    let io_message = format_command_io_message(
+                        &header,
+                        "Command output",
+                        &stdout,
+                        "Stderr",
+                        &stderr,
+                    );
+                    let text_message =
+                        format!("{}\n\n{}{}", io_message, shell_state, file_tools_warning);
 
                     let next_actions = if display_cwd == "." {
                         vec![]

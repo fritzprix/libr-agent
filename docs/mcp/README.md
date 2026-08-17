@@ -28,6 +28,6 @@ This directory contains **developer-facing** documentation for MCP (Model Contex
 
 For end-user MCP documentation, see:
 
-- [MCP 서버 설정](../user/guides/mcp-servers.md) — 연결 및 사용 가이드
+- [내장 도구 레퍼런스](../user/guides/builtin-tools.md) — 내장 MCP 도구 가이드
 - [Extensions 관리](../user/guides/extensions.md) — 확장 프로그램 관리
 - [커스텀 MCP 설치](../user/guides/custom-mcp.md) — 커스텀 서버 설치
