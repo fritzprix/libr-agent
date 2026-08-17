@@ -91,6 +91,8 @@ const VIRTUOSO_COMPONENTS: Components<
   Scroller: AgentChatMessagesScroller,
 };
 
+const VIRTUOSO_INCREASE_VIEWPORT_BY = { top: 640, bottom: 960 } as const;
+
 // Re-export public functions to preserve the stable external API of the file
 export {
   shouldShowAnalysisLoader,
@@ -345,8 +347,13 @@ export function AgentChatMessages() {
     ],
   );
 
+  const scrollerContextValue = useMemo(
+    () => ({ setScrollerElement, logScrollState }),
+    [setScrollerElement, logScrollState],
+  );
+
   return (
-    <ScrollerContext.Provider value={{ setScrollerElement, logScrollState }}>
+    <ScrollerContext.Provider value={scrollerContextValue}>
       <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <Virtuoso
           key={session?.id ?? 'agent-chat'}
@@ -368,7 +375,7 @@ export function AgentChatMessages() {
           // scrolling up into never-measured variable-height rows briefly
           // paints those above-viewport bubbles then corrects (virtuoso#1096).
           skipAnimationFrameInResizeObserver
-          increaseViewportBy={{ top: 640, bottom: 960 }}
+          increaseViewportBy={VIRTUOSO_INCREASE_VIEWPORT_BY}
           startReached={handleReachTop}
           totalListHeightChanged={handleTotalListHeightChanged}
           itemContent={renderMessageGroup}
