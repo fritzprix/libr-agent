@@ -22,6 +22,7 @@ EXECUTION_MODE="${LIBRAGENT_EXECUTION_MODE:-unsafe}"
 # Set LIBRAGENT_* or pass CLI flags for local debugging only.
 TIMEOUT_MULTIPLIER="${LIBRAGENT_TIMEOUT_MULTIPLIER:-}"
 AGENT_TIMEOUT_MULTIPLIER="${LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER:-}"
+SMOKE_TIMEOUT="${LIBRAGENT_SMOKE_TIMEOUT:-300}"
 ASSISTANT_NAME="Coding Expert"
 SKIP_HEALTH=0
 DRY_RUN=0
@@ -53,6 +54,7 @@ Options:
   --execution-mode yolo|unsafe|normal  Default: unsafe (or LIBRAGENT_EXECUTION_MODE)
   --timeout-multiplier N               Local debug only (omitted by default; submissions must not set this)
   --agent-timeout-multiplier N         Local debug only (omitted by default; submissions must not set this)
+  --smoke-timeout SEC                  Smoke check timeout in seconds (default: 300 or LIBRAGENT_SMOKE_TIMEOUT)
   --verifier-env KEY=VALUE             Pass environment variable to verifier (repeatable)
   --skip-health-check
   --dry-run
@@ -76,6 +78,7 @@ while [[ $# -gt 0 ]]; do
     --execution-mode) EXECUTION_MODE="$2"; shift 2 ;;
     --timeout-multiplier) TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
     --agent-timeout-multiplier) AGENT_TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
+    --smoke-timeout) SMOKE_TIMEOUT="$2"; shift 2 ;;
     --verifier-env|--ve) VERIFIER_ENV+=("$2"); shift 2 ;;
     --skip-health-check) SKIP_HEALTH=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -259,7 +262,7 @@ PY
     echo "Smoke session did not start a workflow (status=idle with no messages)." >&2
     exit 1
   fi
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$SMOKE_TIMEOUT"); do
     if [[ "$STATUS" == "idle" || "$STATUS" == "error" || "$STATUS" == "paused" ]]; then
       break
     fi
@@ -269,7 +272,7 @@ PY
   done
   echo "  settled status=$STATUS"
   if [[ "$STATUS" != "idle" && "$STATUS" != "error" && "$STATUS" != "paused" ]]; then
-    echo "Smoke session did not settle within 90s (status=$STATUS)" >&2
+    echo "Smoke session did not settle within ${SMOKE_TIMEOUT}s (status=$STATUS)" >&2
     exit 1
   fi
   cleanup_smoke

@@ -29,6 +29,7 @@ const FLAG_TO_PS = {
   '--execution-mode': '-ExecutionMode',
   '--timeout-multiplier': '-TimeoutMultiplier',
   '--agent-timeout-multiplier': '-AgentTimeoutMultiplier',
+  '--smoke-timeout': '-SmokeTimeout',
   '--verifier-env': '-VerifierEnv',
   '--ve': '-VerifierEnv',
 };

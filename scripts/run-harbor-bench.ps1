@@ -67,6 +67,8 @@ param(
     if ($env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER } else { $null }
   ),
 
+  [int]$SmokeTimeout = $(if ($env:LIBRAGENT_SMOKE_TIMEOUT) { [int]$env:LIBRAGENT_SMOKE_TIMEOUT } else { 300 }),
+
   [string[]]$VerifierEnv,
 
   [string]$AssistantName = "Coding Expert",
@@ -231,7 +233,7 @@ function Test-LibrAgentApi {
       throw "Smoke session did not start a workflow (status=idle with no messages). CreateSessionRequest.request may have been ignored."
     }
 
-    $deadline = (Get-Date).AddSeconds(90)
+    $deadline = (Get-Date).AddSeconds($SmokeTimeout)
     while ((Get-Date) -lt $deadline) {
       if ($session.status -in @("idle", "error", "paused")) {
         break
@@ -241,7 +243,7 @@ function Test-LibrAgentApi {
     }
     Write-Host ("  settled status={0}" -f $session.status)
     if ($session.status -notin @("idle", "error", "paused")) {
-      throw "Smoke session did not settle within 90s (status='$($session.status)')."
+      throw "Smoke session did not settle within ${SmokeTimeout}s (status='$($session.status)')."
     }
   }
   finally {
