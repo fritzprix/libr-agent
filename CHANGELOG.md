@@ -1,3 +1,15 @@
+## [0.9.5] - 2026-08-17
+
+### 🚀 Features & Performance
+
+- **Lazy Interactive Shell Dialog & Render Optimization**: Defer `InteractiveShellPromptDialog` loading until a prompt is active (`React.lazy`) and memoize `ScrollerContext` to stabilize chat message list rendering and eliminate unnecessary component re-renders.
+- **Harbor Telemetry & Benchmark Automation**: Added live Harbor benchmark telemetry reporting and cross-platform benchmark uploads (`pnpm bench:upload`) with configurable timeouts.
+
+### 🐛 Fixes & Hardening
+
+- **Execution Mode & Context Hardening**: Unified execution-mode single source of truth (SSOT) and hardened session-context framing across agent runtimes.
+- **MCP Tool Discovery & File Operations**: Clarified `workspace__writeFile` creation redirect behavior and tool immutability guidance in tool discovery.
+
 ## [0.9.4] - 2026-08-16
 
 ### 🚀 Features
