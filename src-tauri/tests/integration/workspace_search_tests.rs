@@ -844,6 +844,10 @@ async fn write_file_create_redirects_to_suffixed_path_when_target_exists() {
         "response must show both requested and actual paths: {text}"
     );
     assert!(
+        text.contains("still use the previous file") && text.contains("Use `art-1.html`"),
+        "response must state that the requested path still holds the old file: {text}"
+    );
+    assert!(
         text.contains("mode\": \"overwrite\"") || text.contains("\"mode\": \"overwrite\""),
         "response must teach overwrite for intentional replace: {text}"
     );

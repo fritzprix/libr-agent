@@ -4,6 +4,8 @@ import json
 
 import pytest
 
+from harbor.models.agent.context import AgentContext
+
 from benchmarks.harbor.libragent_agent import (
     DEFAULT_EXECUTION_MODE,
     EmptyAgentWorkError,
@@ -11,18 +13,22 @@ from benchmarks.harbor.libragent_agent import (
     TrajectoryTelemetry,
     build_atif_trajectory,
     build_diagnostic_meta,
+    copy_telemetry_to_context,
     extract_model_name_from_assistant_payload,
     extract_model_name_from_session_payload,
     extract_trajectory_error,
+    extract_version_from_health_payload,
     format_harbor_model_name,
     is_workflow_complete,
     normalize_session_messages,
+    read_repo_package_version,
     resolve_container_workdir,
     resolve_execution_mode,
     resolve_poll_timeout_sec,
     sanitize_docker_compose_project_name,
     split_harbor_model_name,
     summarize_trajectory,
+    workspace_mode_name,
     write_atif_trajectory,
 )
 
@@ -539,6 +545,60 @@ def test_build_diagnostic_meta_includes_counts() -> None:
     assert meta["assistant_id"] == "asst-1"
 
 
+def test_read_repo_package_version_matches_package_json() -> None:
+    version = read_repo_package_version()
+    assert version is not None
+    assert version != "0.8.33"
+    assert version.count(".") >= 1
+
+
+def test_extract_version_from_health_payload() -> None:
+    assert extract_version_from_health_payload({"version": "0.9.4"}) == "0.9.4"
+    assert extract_version_from_health_payload({"version": "  1.2.3  "}) == "1.2.3"
+    assert extract_version_from_health_payload({"status": "ok"}) is None
+    assert extract_version_from_health_payload("ok") is None
+    assert extract_version_from_health_payload({"version": ""}) is None
+
+
+def test_workspace_mode_name() -> None:
+    assert workspace_mode_name(True) == "attach"
+    assert workspace_mode_name(False) == "host-sync"
+
+
+def test_copy_telemetry_to_context() -> None:
+    context = AgentContext()
+    telemetry = TrajectoryTelemetry(
+        n_input_tokens=100,
+        n_output_tokens=10,
+        n_cache_tokens=80,
+        n_turns=2,
+        tool_calls_count=3,
+        has_usage=True,
+        error=None,
+    )
+    copy_telemetry_to_context(context, telemetry)
+    assert context.n_input_tokens == 100
+    assert context.n_output_tokens == 10
+    assert context.n_cache_tokens == 80
+    assert context.cost_usd is None
+
+
+def test_adapter_version_reads_package_json_and_backfills_agent_info(
+    tmp_path,
+) -> None:
+    adapter = LibrAgentHarborAdapter(logs_dir=tmp_path / "agent")
+    package_version = read_repo_package_version()
+    info = adapter.to_agent_info()
+    assert adapter.version() == package_version
+    assert adapter.version() != "0.8.33"
+    assert info.version == package_version
+    assert adapter._apply_agent_version("9.9.9") is True
+    assert adapter.version() == "9.9.9"
+    assert info.version == "9.9.9"
+    assert adapter._apply_agent_version("9.9.9") is False
+    assert adapter._apply_agent_version(None) is False
+
+
 def test_adapter_write_diagnostic_meta(tmp_path) -> None:
     adapter = LibrAgentHarborAdapter(logs_dir=tmp_path / "agent")
     adapter._write_diagnostic_meta(
@@ -596,20 +656,29 @@ async def test_dump_incomplete_diagnostics_writes_trajectory_and_meta(
 
     monkeypatch.setattr(adapter, "_fetch_session_messages_best_effort", _fake_fetch)
 
+    context = AgentContext()
     await adapter._dump_incomplete_diagnostics(
         session_id="sess-timeout",
         last_status="busy",
         seen_non_idle=True,
         reason="harbor_cancelled",
         last_session_info={"model": "openai/gpt-5.4"},
+        workspace_mode="attach",
+        context=context,
     )
 
     traj = json.loads((tmp_path / "agent" / "trajectory.json").read_text(encoding="utf-8"))
     meta = json.loads((tmp_path / "agent" / "timeout_meta.json").read_text(encoding="utf-8"))
     assert traj["session_id"] == "sess-timeout"
+    assert traj["agent"]["version"] == adapter.version()
+    assert traj["agent"]["version"] != "0.8.33"
     assert meta["reason"] == "harbor_cancelled"
     assert meta["tool_calls_count"] == 1
     assert meta["last_status"] == "busy"
+    assert meta["workspaceMode"] == "attach"
+    assert context.n_input_tokens == 20
+    assert context.n_output_tokens == 4
+    assert context.cost_usd is None
 
 
 def test_empty_agent_work_error_is_runtime_error() -> None:

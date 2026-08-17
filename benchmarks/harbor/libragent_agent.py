@@ -55,6 +55,7 @@ TERMINAL_WORKFLOW_STATUSES = frozenset({"idle", "error"})
 DEFAULT_POLL_INTERVAL_SEC = 3.0
 MAIN_COMPOSE_SERVICE = "main"
 TRAJECTORY_MESSAGE_LIMIT = 10_000
+PACKAGE_JSON_PATH = Path(__file__).resolve().parents[2] / "package.json"
 
 
 @dataclass(frozen=True)
@@ -218,6 +219,43 @@ def extract_model_name_from_session_payload(payload: Any) -> str | None:
     """Build the Harbor model name from ``GET /sessions/:id`` JSON."""
     model, provider = extract_model_provider_from_session_payload(payload)
     return format_harbor_model_name(model, provider)
+
+
+def read_repo_package_version(path: Path | None = None) -> str | None:
+    """Read the repo ``package.json`` version used as the adapter fallback."""
+    package_path = path if path is not None else PACKAGE_JSON_PATH
+    try:
+        payload = json.loads(package_path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _string_field(payload, "version")
+
+
+def extract_version_from_health_payload(payload: Any) -> str | None:
+    """Read ``version`` from ``GET /api/health`` JSON."""
+    if not isinstance(payload, dict):
+        return None
+    return _string_field(payload, "version")
+
+
+def workspace_mode_name(use_attach: bool) -> str:
+    """Harbor-facing workspace mode label matching completed-trial metadata."""
+    return "attach" if use_attach else "host-sync"
+
+
+def copy_telemetry_to_context(
+    context: AgentContext, telemetry: TrajectoryTelemetry
+) -> None:
+    """Copy harvested token counts onto Harbor ``AgentContext``.
+
+    Harbor ``result.json`` / job stats read these top-level fields, not metadata.
+    """
+    context.n_input_tokens = telemetry.n_input_tokens
+    context.n_output_tokens = telemetry.n_output_tokens
+    context.n_cache_tokens = telemetry.n_cache_tokens
+    context.cost_usd = None
 
 
 def _format_message_error(error: Any) -> str | None:
@@ -872,6 +910,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         self.execution_mode = resolve_execution_mode(execution_mode)
         self.poll_timeout_sec = resolve_poll_timeout_sec(poll_timeout_sec)
         self.poll_interval_sec = float(poll_interval_sec)
+        self._resolved_version = read_repo_package_version()
         self._agent_info: AgentInfo | None = None
         super().__init__(
             logs_dir,
@@ -889,7 +928,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         return "LibrAgent"
 
     def version(self) -> str | None:
-        return "0.8.33"
+        return self._resolved_version
 
     def to_agent_info(self) -> AgentInfo:
         """Return one stable AgentInfo instance for the whole trial.
@@ -914,6 +953,15 @@ class LibrAgentHarborAdapter(BaseAgent):
             self._agent_info.model_info = super().to_agent_info().model_info
         return True
 
+    def _apply_agent_version(self, version: str | None) -> bool:
+        """Adopt a live binary version for Harbor reporting; True when it changed."""
+        if not version or version == self._resolved_version:
+            return False
+        self._resolved_version = version
+        if self._agent_info is not None:
+            self._agent_info.version = version
+        return True
+
     async def setup(self, environment: BaseEnvironment) -> None:
         """Validates connection and resolves Harbor model_info from the assistant."""
         _ = environment  # Harbor requires the arg; health/model lookup is API-only.
@@ -928,6 +976,16 @@ class LibrAgentHarborAdapter(BaseAgent):
                 if res.status_code != 200:
                     raise RuntimeError(
                         f"LibrAgent health check returned invalid status code: {res.status_code}"
+                    )
+                try:
+                    health_payload = res.json()
+                except Exception:
+                    health_payload = None
+                live_version = extract_version_from_health_payload(health_payload)
+                if self._apply_agent_version(live_version):
+                    print(
+                        f"[{self.name()}] Adopted agent version from health: "
+                        f"{live_version}"
                     )
             except Exception as e:
                 if isinstance(e, RuntimeError):
@@ -1140,6 +1198,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                                     extra={
                                         "poll_timeout_sec": self.poll_timeout_sec,
                                     },
+                                    workspace_mode=workspace_mode_name(use_attach),
+                                    context=context,
                                 )
                             )
                         await self._delete_session(session_id)
@@ -1214,6 +1274,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                             seen_non_idle=seen_non_idle,
                             reason="harbor_cancelled",
                             last_session_info=last_session_info,
+                            workspace_mode=workspace_mode_name(use_attach),
+                            context=context,
                         )
                     )
                 # Shielded delete re-raises CancelledError after teardown.
@@ -1294,12 +1356,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 break
 
             telemetry = summarize_trajectory(messages)
-            # Harbor result.json reads these top-level AgentContext fields — not metadata.
-            context.n_input_tokens = telemetry.n_input_tokens
-            context.n_output_tokens = telemetry.n_output_tokens
-            context.n_cache_tokens = telemetry.n_cache_tokens
-            # LibrAgent does not currently expose USD cost in message usage.
-            context.cost_usd = None
+            copy_telemetry_to_context(context, telemetry)
 
             # The session knows which model actually ran (assistants may inherit the
             # app default instead of pinning one). Adopt it so agent_info.model_info
@@ -1336,7 +1393,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                         completed=True,
                         extra={
                             "assistant_id": self.assistant_id,
-                            "workspaceMode": "attach" if use_attach else "host-sync",
+                            "workspaceMode": workspace_mode_name(use_attach),
                         },
                     )
                 )
@@ -1369,7 +1426,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "finalStatus": last_status,
                 "completed": True,
                 "attachContainer": attach_container_id,
-                "workspaceMode": "attach" if use_attach else "host-sync",
+                "workspaceMode": workspace_mode_name(use_attach),
                 "assistant_id": self.assistant_id,
                 "n_turns": telemetry.n_turns,
                 "tool_calls_count": telemetry.tool_calls_count,
@@ -1442,13 +1499,17 @@ class LibrAgentHarborAdapter(BaseAgent):
         reason: str,
         last_session_info: dict[str, Any] | None,
         extra: dict[str, Any] | None = None,
-    ) -> None:
+        workspace_mode: str | None = None,
+        context: AgentContext | None = None,
+    ) -> TrajectoryTelemetry:
         """Best-effort ATIF + timeout_meta dump for cancelled/incomplete runs."""
         session_model_name = extract_model_name_from_session_payload(last_session_info)
         self._apply_model_name(session_model_name)
 
         messages = await self._fetch_session_messages_best_effort(session_id)
         telemetry = summarize_trajectory(messages)
+        if context is not None:
+            copy_telemetry_to_context(context, telemetry)
         self._write_atif_trajectory(
             messages=messages,
             session_id=session_id,
@@ -1457,6 +1518,8 @@ class LibrAgentHarborAdapter(BaseAgent):
         meta_extra: dict[str, Any] = {"assistant_id": self.assistant_id}
         if extra:
             meta_extra.update(extra)
+        if workspace_mode:
+            meta_extra["workspaceMode"] = workspace_mode
         self._write_diagnostic_meta(
             build_diagnostic_meta(
                 reason=reason,
@@ -1474,6 +1537,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             f"messages={len(messages)}, turns={telemetry.n_turns}, "
             f"tools={telemetry.tool_calls_count}, status={last_status}"
         )
+        return telemetry
 
     def _write_diagnostic_meta(self, payload: dict[str, Any]) -> None:
         """Write ``timeout_meta.json`` under Harbor's agent logs dir."""
