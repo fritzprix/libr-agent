@@ -80,4 +80,28 @@ describe('ProviderCard', () => {
       ),
     ).toBeVisible();
   });
+
+  it('renders Advanced section and handles reasoning budget changes for OpenAI', () => {
+    const onPendingChange = vi.fn();
+
+    render(
+      <ProviderCard
+        provider={AIServiceProvider.OpenAI}
+        providerName="OpenAI"
+        apiKey=""
+        baseUrl=""
+        reasoningBudget={4096}
+        onPendingChange={onPendingChange}
+      />,
+    );
+
+    // Advanced section is auto-expanded on mount when reasoningBudget is configured
+    const budgetInput = screen.getByLabelText(/Reasoning budget/i);
+    expect(budgetInput).toHaveValue(4096);
+
+    fireEvent.change(budgetInput, { target: { value: '8192' } });
+    expect(onPendingChange).toHaveBeenCalledWith(AIServiceProvider.OpenAI, {
+      reasoningBudget: 8192,
+    });
+  });
 });

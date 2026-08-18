@@ -16,6 +16,17 @@ export interface ServiceConfig {
   safetySettings?: SafetySetting[];
   use3rdParty?: boolean;
   customModelId?: string;
+  /**
+   * Client-side cap on streamed thinking tokens for this endpoint.
+   * Unset or 0 means unlimited.
+   * Cross-reference: mapped to `AIServiceConfig.reasoningBudget` in `@/lib/ai-service/types`.
+   */
+  reasoningBudget?: number;
+  /**
+   * Instruction injected on the next turn after a client-side budget abort.
+   * Cross-reference: mapped to `AIServiceConfig.reasoningBudgetMessage` in `@/lib/ai-service/types`.
+   */
+  reasoningBudgetMessage?: string;
 }
 
 /** User-defined OpenAI-compatible endpoint (vLLM, LM Studio, LocalAI, etc.). */
@@ -37,11 +48,6 @@ export interface CustomOpenAIProvider {
   reasoningBudget?: number;
   /** Instruction injected on the next turn after a client-side budget abort. */
   reasoningBudgetMessage?: string;
-  /**
-   * When true, also send llama.cpp-style `reasoning_budget_tokens` fields.
-   * Off by default — unknown keys 400 on strict OpenAI-compatible hosts.
-   */
-  sendNativeReasoningBudget?: boolean;
 }
 
 export interface ModelChoice {

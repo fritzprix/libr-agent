@@ -348,5 +348,78 @@ describe('useSettingsForm', () => {
     expect(result.current.dirtyState['ai-models']).toBe(true);
     expect(result.current.isDirty).toBe(true);
   });
+
+  it('should update a custom provider while preserving other providers in the list', async () => {
+    const { result } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.updateCustomProviders([
+        {
+          id: 'p1',
+          name: 'Provider 1',
+          baseUrl: 'http://127.0.0.1:8000/v1',
+        },
+        {
+          id: 'p2',
+          name: 'Provider 2',
+          baseUrl: 'http://127.0.0.1:8001/v1',
+        },
+      ]);
+    });
+
+    // Update Provider 1 reasoning budget to 4096
+    act(() => {
+      result.current.updateCustomProvider('p1', { reasoningBudget: 4096 });
+    });
+
+    // Update Provider 2 reasoning budget to 2048
+    act(() => {
+      result.current.updateCustomProvider('p2', { reasoningBudget: 2048 });
+    });
+
+    expect(result.current.formState.customProviders).toEqual([
+      {
+        id: 'p1',
+        name: 'Provider 1',
+        baseUrl: 'http://127.0.0.1:8000/v1',
+        reasoningBudget: 4096,
+      },
+      {
+        id: 'p2',
+        name: 'Provider 2',
+        baseUrl: 'http://127.0.0.1:8001/v1',
+        reasoningBudget: 2048,
+      },
+    ]);
+  });
+
+  it('omits undefined keys when updating serviceConfigs to keep dirty comparison clean', () => {
+    const { result } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.updateServiceConfig(AIServiceProvider.OpenAI, {
+        apiKey: 'sk-test',
+        reasoningBudget: 2048,
+      });
+    });
+
+    expect(
+      result.current.formState.serviceConfigs[AIServiceProvider.OpenAI]
+        ?.reasoningBudget,
+    ).toBe(2048);
+
+    act(() => {
+      result.current.updateServiceConfig(AIServiceProvider.OpenAI, {
+        reasoningBudget: undefined,
+      });
+    });
+
+    const openaiConfig =
+      result.current.formState.serviceConfigs[AIServiceProvider.OpenAI];
+    expect(openaiConfig).toEqual({
+      apiKey: 'sk-test',
+    });
+    expect(openaiConfig).not.toHaveProperty('reasoningBudget');
+  });
 });
 

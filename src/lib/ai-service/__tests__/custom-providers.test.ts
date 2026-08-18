@@ -84,14 +84,13 @@ describe('custom provider helpers', () => {
     expect(JSON.parse(JSON.stringify(created))).toEqual(created);
   });
 
-  it('omits a zero reasoning budget even when native passthrough is requested', () => {
+  it('omits a zero reasoning budget', () => {
     const created = createCustomOpenAIProvider({
       id: 'zero-budget',
       name: 'Local',
       baseUrl: 'http://127.0.0.1:8000/v1',
       reasoningBudget: 0,
       reasoningBudgetMessage: '  ignored  ',
-      sendNativeReasoningBudget: true,
     });
 
     expect(created).toEqual({
@@ -100,17 +99,15 @@ describe('custom provider helpers', () => {
       baseUrl: 'http://127.0.0.1:8000/v1',
     });
     expect(created).not.toHaveProperty('reasoningBudget');
-    expect(created).not.toHaveProperty('sendNativeReasoningBudget');
   });
 
-  it('persists a positive reasoning budget and native opt-in on custom providers', () => {
+  it('persists a positive reasoning budget on custom providers', () => {
     const created = createCustomOpenAIProvider({
       id: 'budgeted',
       name: 'LM Studio',
       baseUrl: 'http://127.0.0.1:1234/v1',
       reasoningBudget: 512.9,
       reasoningBudgetMessage: '  stop thinking now  ',
-      sendNativeReasoningBudget: true,
     });
 
     expect(created).toEqual({
@@ -119,7 +116,6 @@ describe('custom provider helpers', () => {
       baseUrl: 'http://127.0.0.1:1234/v1',
       reasoningBudget: 512,
       reasoningBudgetMessage: 'stop thinking now',
-      sendNativeReasoningBudget: true,
     });
   });
 
@@ -140,12 +136,9 @@ describe('custom provider helpers', () => {
       use3rdParty: true,
     });
     expect(resolved.serviceConfig).not.toHaveProperty('reasoningBudget');
-    expect(resolved.serviceConfig).not.toHaveProperty(
-      'sendNativeReasoningBudget',
-    );
   });
 
-  it('copies reasoning budget fields onto custom provider runtime config only', () => {
+  it('copies reasoning budget fields onto custom provider runtime config', () => {
     const resolved = resolveProviderRuntimeConfig(
       'custom:abc123',
       settingsWithCustom({
@@ -158,7 +151,6 @@ describe('custom provider helpers', () => {
             models: ['llama-3.1-70b'],
             reasoningBudget: 256,
             reasoningBudgetMessage: 'wrap up',
-            sendNativeReasoningBudget: true,
           },
         ],
       }),
@@ -169,11 +161,36 @@ describe('custom provider helpers', () => {
       use3rdParty: true,
       reasoningBudget: 256,
       reasoningBudgetMessage: 'wrap up',
-      sendNativeReasoningBudget: true,
     });
   });
 
-  it('does not copy custom-provider budget fields onto builtin OpenAI', () => {
+  it('copies reasoning budget fields onto builtin OpenAI runtime config when configured', () => {
+    const resolved = resolveProviderRuntimeConfig(
+      AIServiceProvider.OpenAI,
+      settingsWithCustom({
+        serviceConfigs: {
+          ...DEFAULT_SETTING.serviceConfigs,
+          [AIServiceProvider.OpenAI]: {
+            apiKey: 'sk-openai',
+            baseUrl: 'https://api.openai.com/v1',
+            reasoningBudget: 1024,
+            reasoningBudgetMessage: 'wrap up quickly',
+          },
+        },
+      }),
+    );
+
+    expect(resolved.serviceConfig).toEqual({
+      baseUrl: 'https://api.openai.com/v1',
+      use3rdParty: undefined,
+      customModelId: undefined,
+      safetySettings: undefined,
+      reasoningBudget: 1024,
+      reasoningBudgetMessage: 'wrap up quickly',
+    });
+  });
+
+  it('does not leak custom-provider budget fields onto unconfigured builtin OpenAI', () => {
     const resolved = resolveProviderRuntimeConfig(
       AIServiceProvider.OpenAI,
       settingsWithCustom({
@@ -183,16 +200,12 @@ describe('custom provider helpers', () => {
             name: 'Local vLLM',
             baseUrl: 'http://192.168.1.10:8000/v1',
             reasoningBudget: 256,
-            sendNativeReasoningBudget: true,
           },
         ],
       }),
     );
 
     expect(resolved.serviceConfig).not.toHaveProperty('reasoningBudget');
-    expect(resolved.serviceConfig).not.toHaveProperty(
-      'sendNativeReasoningBudget',
-    );
   });
 
   it('resolves builtin providers from serviceConfigs', () => {

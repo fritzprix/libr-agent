@@ -1,12 +1,7 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Info } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
-import {
-  createCustomOpenAIProvider,
-  normalizeCustomOpenAIProvider,
-  toCustomProviderId,
-} from '@/lib/ai-service/custom-providers';
 import type {
   ServiceConfig,
   CustomOpenAIProvider,
@@ -39,7 +34,12 @@ interface AIModelsTabProps {
     provider: AIServiceProvider,
     patch: Partial<ServiceConfig>,
   ) => void;
-  onCustomProvidersChange: (providers: CustomOpenAIProvider[]) => void;
+  onCustomProviderChange: (
+    id: string,
+    patch: Partial<CustomOpenAIProvider>,
+  ) => void;
+  onAddCustomProvider: () => void;
+  onRemoveCustomProvider: (id: string) => void;
   onPreferredModelChange: (model: string, provider: string) => void;
   onFallbackModelChange: (model: string, provider: string) => void;
   onTemperatureOverrideEnabledChange: (enabled: boolean) => void;
@@ -55,7 +55,9 @@ function AIModelsTabComponent({
   temperatureOverrideEnabled,
   temperature,
   onPendingChange,
-  onCustomProvidersChange,
+  onCustomProviderChange,
+  onAddCustomProvider,
+  onRemoveCustomProvider,
   onPreferredModelChange,
   onFallbackModelChange,
   onTemperatureOverrideEnabledChange,
@@ -158,60 +160,6 @@ function AIModelsTabComponent({
       ),
     },
   };
-
-  const handleAddCustomProvider = useCallback(() => {
-    const next = createCustomOpenAIProvider({
-      name: '',
-      baseUrl: '',
-    });
-    onCustomProvidersChange([...providers, next]);
-  }, [providers, onCustomProvidersChange]);
-
-  const handleCustomProviderChange = useCallback(
-    (id: string, patch: Partial<CustomOpenAIProvider>) => {
-      onCustomProvidersChange(
-        providers.map((entry) =>
-          entry.id === id
-            ? normalizeCustomOpenAIProvider({ ...entry, ...patch })
-            : entry,
-        ),
-      );
-    },
-    [providers, onCustomProvidersChange],
-  );
-
-  const handleRemoveCustomProvider = useCallback(
-    (id: string) => {
-      const providerId = toCustomProviderId(id);
-      const confirmed = window.confirm(
-        t(
-          'settings.customProviders.removeConfirm',
-          'Remove this custom provider? Sessions using it will need a new model selection.',
-        ),
-      );
-      if (!confirmed) {
-        return;
-      }
-
-      onCustomProvidersChange(providers.filter((entry) => entry.id !== id));
-
-      if (localPreferredModel.provider === providerId) {
-        onPreferredModelChange('', AIServiceProvider.OpenAI);
-      }
-      if (localFallbackModel?.provider === providerId) {
-        onFallbackModelChange('', AIServiceProvider.OpenAI);
-      }
-    },
-    [
-      providers,
-      localFallbackModel?.provider,
-      localPreferredModel.provider,
-      onCustomProvidersChange,
-      onFallbackModelChange,
-      onPreferredModelChange,
-      t,
-    ],
-  );
 
   return (
     <div className="space-y-8">
@@ -341,6 +289,8 @@ function AIModelsTabComponent({
                 description={meta?.description}
                 apiKey={cfg.apiKey || ''}
                 baseUrl={cfg.baseUrl}
+                reasoningBudget={cfg.reasoningBudget}
+                reasoningBudgetMessage={cfg.reasoningBudgetMessage}
                 onPendingChange={onPendingChange}
               />
             );
@@ -365,7 +315,7 @@ function AIModelsTabComponent({
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleAddCustomProvider}
+            onClick={onAddCustomProvider}
             className="gap-1.5"
           >
             <Plus className="h-4 w-4" />
@@ -386,8 +336,8 @@ function AIModelsTabComponent({
               <CustomProviderCard
                 key={provider.id}
                 provider={provider}
-                onChange={handleCustomProviderChange}
-                onRemove={handleRemoveCustomProvider}
+                onChange={onCustomProviderChange}
+                onRemove={onRemoveCustomProvider}
               />
             ))}
           </div>

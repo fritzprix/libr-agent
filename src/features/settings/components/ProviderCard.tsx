@@ -14,6 +14,7 @@ import {
 } from '@/components/ui';
 import { Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { ReasoningBudgetAdvancedSection } from './ReasoningBudgetAdvancedSection';
 
 export interface ProviderCardProps {
   provider: AIServiceProvider;
@@ -22,6 +23,8 @@ export interface ProviderCardProps {
   description?: string;
   apiKey: string;
   baseUrl?: string;
+  reasoningBudget?: number;
+  reasoningBudgetMessage?: string;
   onPendingChange: (
     provider: AIServiceProvider,
     patch: Partial<ServiceConfig>,
@@ -34,6 +37,8 @@ function ProviderCardBase({
   description,
   apiKey,
   baseUrl,
+  reasoningBudget,
+  reasoningBudgetMessage,
   onPendingChange,
 }: ProviderCardProps) {
   const [showApiKey, setShowApiKey] = useState(false);
@@ -137,6 +142,15 @@ function ProviderCardBase({
             )}
           </div>
         )}
+
+        {provider === AIServiceProvider.OpenAI && (
+          <ReasoningBudgetAdvancedSection
+            idPrefix={provider}
+            reasoningBudget={reasoningBudget}
+            reasoningBudgetMessage={reasoningBudgetMessage}
+            onChange={(patch) => onPendingChange(provider, patch)}
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -144,9 +158,14 @@ function ProviderCardBase({
 
 export const ProviderCard = React.memo(ProviderCardBase, (prev, next) => {
   return (
+    prev.provider === next.provider &&
+    prev.providerName === next.providerName &&
     prev.apiKey === next.apiKey &&
     (prev.baseUrl || '') === (next.baseUrl || '') &&
     prev.description === next.description &&
-    prev.onPendingChange === next.onPendingChange // Critical: check callback stability
+    prev.reasoningBudget === next.reasoningBudget &&
+    (prev.reasoningBudgetMessage || '') ===
+      (next.reasoningBudgetMessage || '') &&
+    prev.onPendingChange === next.onPendingChange
   );
 });

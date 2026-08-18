@@ -457,12 +457,11 @@
       "advanced": "고급",
       "reasoningBudget": "추론 예산 (토큰)",
       "reasoningBudgetPlaceholder": "제한 없음",
-      "reasoningBudgetDescription": "스트리밍된 thinking에 대한 클라이언트 측 상한입니다(대략 글자 수 ÷ 4, 라틴 문자 기준 보수적 추정, CJK는 다를 수 있음). 비우면 제한이 없습니다. 한 번의 복구 재시도와 함께 thinking 중단 지시를 주입합니다.",
-      "reasoningBudgetMessage": "예산 초과 메시지",
+      "reasoningBudgetDescription": "AI가 너무 오래 생각(Thinking)에 빠지지 않도록 최대 토큰 수를 제한합니다. 비워두면 제한이 없습니다.",
+      "reasoningBudgetLearnMore": "추론 예산(Reasoning Budget) 자세히 알아보기",
+      "reasoningBudgetMessage": "예산 초과 시 지시 메시지",
       "reasoningBudgetMessagePlaceholder": "... I am thinking for too long -- let me gather more info about the task.",
-      "reasoningBudgetMessageDescription": "클라이언트가 thinking을 중단한 뒤 복구 재시도 때 한 번 주입됩니다.",
-      "sendNativeReasoningBudget": "llama.cpp reasoning_budget_tokens 필드를 네이티브로 전송",
-      "sendNativeReasoningBudgetDescription": "기본값은 꺼짐입니다. llama.cpp 호환 서버에서만 켜세요. 많은 OpenAI 호환 호스트는 알 수 없는 키에 HTTP 400을 반환합니다."
+      "reasoningBudgetMessageDescription": "생각 제한에 도달했을 때 AI가 생각을 멈추고 곧바로 답변을 작성하도록 주입하는 지시문입니다."
     },
     "chatInterface": {
       "diffContextLines": "Diff 컨텍스트 라인",

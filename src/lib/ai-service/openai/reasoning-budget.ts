@@ -1,18 +1,9 @@
-import { AIServiceProvider, type AIServiceConfig } from '../types';
-import { isOfficialOpenAIEndpoint } from './prompt-cache';
-
-/** Default first-person thinking continuation from llama.cpp (ggerganov). */
+/** Default first-person thinking continuation injected upon client-side budget exceeded. */
 export const DEFAULT_REASONING_BUDGET_MESSAGE =
   '... I am thinking for too long -- let me gather more info about the task.';
 
 /** Upper bound persisted on custom OpenAI providers (tokens, not characters). */
 export const MAX_REASONING_BUDGET_TOKENS = 1_000_000;
-
-export interface OpenAICompatibleReasoningBudgetFields {
-  reasoning_budget_tokens: number;
-  thinking_budget_tokens: number;
-  reasoning_budget_message: string;
-}
 
 /**
  * Approximate thinking tokens from streamed text.
@@ -56,47 +47,4 @@ export function normalizeReasoningBudgetMessage(
 ): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
-}
-
-/**
- * llama.cpp-style top-level request fields for OpenAI-compatible servers.
- *
- * Only returned when the caller opted in (`sendNativeReasoningBudget`) on a
- * third-party endpoint. Official OpenAI rejects unknown keys with HTTP 400.
- */
-export function buildOpenAICompatibleReasoningBudgetFields(
-  provider: AIServiceProvider,
-  config: AIServiceConfig,
-): OpenAICompatibleReasoningBudgetFields | undefined {
-  if (!config.use3rdParty || config.sendNativeReasoningBudget !== true) {
-    return undefined;
-  }
-  if (isOfficialOpenAIEndpoint(provider, config)) {
-    return undefined;
-  }
-
-  const tokens = normalizeReasoningBudgetTokens(config.reasoningBudget);
-  if (!tokens) {
-    return undefined;
-  }
-
-  return {
-    reasoning_budget_tokens: tokens,
-    thinking_budget_tokens: tokens,
-    reasoning_budget_message:
-      normalizeReasoningBudgetMessage(config.reasoningBudgetMessage) ??
-      DEFAULT_REASONING_BUDGET_MESSAGE,
-  };
-}
-
-export function withOpenAICompatibleReasoningBudget<T extends object>(
-  request: T,
-  provider: AIServiceProvider,
-  config: AIServiceConfig,
-): T {
-  const fields = buildOpenAICompatibleReasoningBudgetFields(provider, config);
-  if (!fields) {
-    return request;
-  }
-  return { ...request, ...fields };
 }

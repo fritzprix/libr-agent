@@ -136,7 +136,9 @@ describe('AIModelsTab', () => {
         }}
         localFallbackModel={undefined}
         onPendingChange={vi.fn()}
-        onCustomProvidersChange={vi.fn()}
+        onCustomProviderChange={vi.fn()}
+        onAddCustomProvider={vi.fn()}
+        onRemoveCustomProvider={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
         {...temperatureProps}
@@ -181,7 +183,9 @@ describe('AIModelsTab', () => {
       },
       localFallbackModel: undefined,
       onPendingChange,
-      onCustomProvidersChange: vi.fn(),
+      onCustomProviderChange: vi.fn(),
+      onAddCustomProvider: vi.fn(),
+      onRemoveCustomProvider: vi.fn(),
       onPreferredModelChange: vi.fn(),
       onFallbackModelChange: vi.fn(),
       ...temperatureProps,
@@ -218,8 +222,8 @@ describe('AIModelsTab', () => {
     expect(screen.getByDisplayValue('http://remote-host:11434')).toBeVisible();
   });
 
-  it('adds a custom OpenAI provider entry', () => {
-    const onCustomProvidersChange = vi.fn();
+  it('triggers onAddCustomProvider when clicking add button', () => {
+    const onAddCustomProvider = vi.fn();
     const serviceConfigs: Record<AIServiceProvider, ServiceConfig> = {
       [AIServiceProvider.Groq]: {},
       [AIServiceProvider.OpenAI]: {},
@@ -243,7 +247,9 @@ describe('AIModelsTab', () => {
         }}
         localFallbackModel={undefined}
         onPendingChange={vi.fn()}
-        onCustomProvidersChange={onCustomProvidersChange}
+        onCustomProviderChange={vi.fn()}
+        onAddCustomProvider={onAddCustomProvider}
+        onRemoveCustomProvider={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
         {...temperatureProps}
@@ -256,16 +262,7 @@ describe('AIModelsTab', () => {
       }),
     );
 
-    expect(onCustomProvidersChange).toHaveBeenCalledTimes(1);
-    const nextProviders = onCustomProvidersChange.mock.calls[0][0];
-    expect(nextProviders).toHaveLength(1);
-    expect(nextProviders[0]).toEqual(
-      expect.objectContaining({
-        name: '',
-        baseUrl: '',
-        id: expect.any(String),
-      }),
-    );
+    expect(onAddCustomProvider).toHaveBeenCalledTimes(1);
   });
 
   it('shows temperature field only when override is enabled', () => {
@@ -293,7 +290,9 @@ describe('AIModelsTab', () => {
         }}
         localFallbackModel={undefined}
         onPendingChange={vi.fn()}
-        onCustomProvidersChange={vi.fn()}
+        onCustomProviderChange={vi.fn()}
+        onAddCustomProvider={vi.fn()}
+        onRemoveCustomProvider={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
         temperatureOverrideEnabled={false}
@@ -321,7 +320,9 @@ describe('AIModelsTab', () => {
         }}
         localFallbackModel={undefined}
         onPendingChange={vi.fn()}
-        onCustomProvidersChange={vi.fn()}
+        onCustomProviderChange={vi.fn()}
+        onAddCustomProvider={vi.fn()}
+        onRemoveCustomProvider={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
         temperatureOverrideEnabled

@@ -39,7 +39,9 @@ const SettingsPage: FC = function SettingsPage() {
     dangerZoneProps,
     handleClose,
     handleContextStrategyChange,
-    handleCustomProvidersChange,
+    updateCustomProvider,
+    handleAddCustomProvider,
+    handleRemoveCustomProvider,
     handleDiscard,
     handleDiscardAndLeave,
     handleFallbackModelChange,
@@ -181,7 +183,9 @@ const SettingsPage: FC = function SettingsPage() {
                 }
                 temperature={formState.temperature}
                 onPendingChange={handlePendingChange}
-                onCustomProvidersChange={handleCustomProvidersChange}
+                onCustomProviderChange={updateCustomProvider}
+                onAddCustomProvider={handleAddCustomProvider}
+                onRemoveCustomProvider={handleRemoveCustomProvider}
                 onPreferredModelChange={handlePreferredModelChange}
                 onFallbackModelChange={handleFallbackModelChange}
                 onTemperatureOverrideEnabledChange={(enabled) =>

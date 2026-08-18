@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_REASONING_BUDGET_MESSAGE } from '@/lib/ai-service/openai/reasoning-budget';
 import type { MCPTool } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 
@@ -184,13 +183,12 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(request.reasoning_budget_message).toBeUndefined();
   });
 
-  it('sends native reasoning budget fields for opted-in OpenAI-compatible hosts', async () => {
+  it('does not send native reasoning budget fields in OpenAI requests (client-side only)', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test', {
       baseUrl: 'http://127.0.0.1:8080/v1',
       use3rdParty: true,
       reasoningBudget: 512,
-      sendNativeReasoningBudget: true,
     });
 
     for await (const chunk of service.streamChat([message], {
@@ -201,29 +199,9 @@ describe('OpenAIService prompt cache extensions', () => {
     }
 
     const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
-    expect(request.reasoning_budget_tokens).toBe(512);
-    expect(request.thinking_budget_tokens).toBe(512);
-    expect(request.reasoning_budget_message).toBe(DEFAULT_REASONING_BUDGET_MESSAGE);
-  });
-
-  it('does not send native reasoning budget fields to official OpenAI', async () => {
-    const { OpenAIService } = await import('../openai');
-    const service = new OpenAIService('sk-test', {
-      use3rdParty: true,
-      reasoningBudget: 512,
-      sendNativeReasoningBudget: true,
-    });
-
-    for await (const chunk of service.streamChat([message], {
-      modelName: 'gpt-4o',
-    })) {
-      void chunk;
-      break;
-    }
-
-    const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
     expect(request.reasoning_budget_tokens).toBeUndefined();
     expect(request.thinking_budget_tokens).toBeUndefined();
+    expect(request.reasoning_budget_message).toBeUndefined();
   });
 
   it('uses official OpenAI prompt cache routing fields for the default endpoint', async () => {

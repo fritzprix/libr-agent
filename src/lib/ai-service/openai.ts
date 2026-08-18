@@ -22,7 +22,6 @@ import {
   buildAutomaticPromptCacheKey,
   withPromptCaching,
 } from './openai/prompt-cache';
-import { withOpenAICompatibleReasoningBudget } from './openai/reasoning-budget';
 import {
   createSerializableToolCallArgumentDelta,
   serializeToolCallArgumentDeltas,
@@ -293,33 +292,29 @@ export class OpenAIService extends BaseAIService<
         config,
       });
 
-      const request = withOpenAICompatibleReasoningBudget(
-        withPromptCaching<OpenAIStreamingRequest>(
-          {
-            model: modelName,
-            messages: openaiMessages,
-            max_completion_tokens: config.maxTokens,
-            stream: true,
-            stream_options: { include_usage: true },
-            ...(config.temperature !== undefined && {
-              temperature: config.temperature,
-            }),
-            ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-            tools,
-            tool_choice: !options.availableTools?.length
-              ? undefined
-              : options.disableToolUse
-                ? 'none'
-                : options.forceToolUse
-                  ? 'required'
-                  : 'auto',
-          },
-          this.getProvider(),
-          config,
-          automaticPromptCacheKey,
-        ),
+      const request = withPromptCaching<OpenAIStreamingRequest>(
+        {
+          model: modelName,
+          messages: openaiMessages,
+          max_completion_tokens: config.maxTokens,
+          stream: true,
+          stream_options: { include_usage: true },
+          ...(config.temperature !== undefined && {
+            temperature: config.temperature,
+          }),
+          ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+          tools,
+          tool_choice: !options.availableTools?.length
+            ? undefined
+            : options.disableToolUse
+              ? 'none'
+              : options.forceToolUse
+                ? 'required'
+                : 'auto',
+        },
         this.getProvider(),
         config,
+        automaticPromptCacheKey,
       );
 
       const requestId = this.promptDiagnostics.createRequestId();
@@ -578,22 +573,18 @@ export class OpenAIService extends BaseAIService<
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
-    const request = withOpenAICompatibleReasoningBudget(
-      withPromptCaching<OpenAINonStreamingRequest>(
-        {
-          model,
-          stream: false,
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: s?.maxTokens ?? config.maxTokens,
-          temperature: s?.temperature ?? config.temperature,
-          top_p: s?.topP,
-          presence_penalty: s?.presencePenalty,
-          frequency_penalty: s?.frequencyPenalty,
-          stop: s?.stopSequences,
-        },
-        this.getProvider(),
-        config,
-      ),
+    const request = withPromptCaching<OpenAINonStreamingRequest>(
+      {
+        model,
+        stream: false,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: s?.maxTokens ?? config.maxTokens,
+        temperature: s?.temperature ?? config.temperature,
+        top_p: s?.topP,
+        presence_penalty: s?.presencePenalty,
+        frequency_penalty: s?.frequencyPenalty,
+        stop: s?.stopSequences,
+      },
       this.getProvider(),
       config,
     );

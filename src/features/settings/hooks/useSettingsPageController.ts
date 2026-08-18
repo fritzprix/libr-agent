@@ -6,11 +6,11 @@ import { toast } from 'sonner';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import i18n from '@/lib/i18n';
-import type {
-  ContextStrategy,
-  CustomOpenAIProvider,
-  ServiceConfig,
-} from '@/context/SettingsContext';
+import type { ContextStrategy, ServiceConfig } from '@/context/SettingsContext';
+import {
+  createCustomOpenAIProvider,
+  toCustomProviderId,
+} from '@/lib/ai-service/custom-providers';
 import { getLogger } from '@/lib/logger';
 import { dbUtils } from '@/lib/db/service';
 import { restartApp } from '@/lib/backend';
@@ -56,7 +56,9 @@ export function useSettingsPageController() {
     dirtyState,
     update,
     updateServiceConfig,
-    updateCustomProviders,
+    updateCustomProvider,
+    addCustomProvider,
+    removeCustomProvider,
     updateAdvanced,
     updateDisplay,
     updateSystem,
@@ -328,11 +330,49 @@ export function useSettingsPageController() {
     [update],
   );
 
-  const handleCustomProvidersChange = useCallback(
-    (providers: CustomOpenAIProvider[]) => {
-      updateCustomProviders(providers);
+  const handleAddCustomProvider = useCallback(() => {
+    const next = createCustomOpenAIProvider({
+      name: '',
+      baseUrl: '',
+    });
+    addCustomProvider(next);
+  }, [addCustomProvider]);
+
+  const handleRemoveCustomProvider = useCallback(
+    (id: string) => {
+      const providerId = toCustomProviderId(id);
+      const confirmed = window.confirm(
+        t(
+          'settings.customProviders.removeConfirm',
+          'Remove this custom provider? Sessions using it will need a new model selection.',
+        ),
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      removeCustomProvider(id);
+
+      if (formState.preferredModel.provider === providerId) {
+        update('preferredModel', {
+          provider: AIServiceProvider.OpenAI,
+          model: '',
+        });
+      }
+      if (formState.fallbackModel?.provider === providerId) {
+        update('fallbackModel', {
+          provider: AIServiceProvider.OpenAI,
+          model: '',
+        });
+      }
     },
-    [updateCustomProviders],
+    [
+      formState.fallbackModel?.provider,
+      formState.preferredModel.provider,
+      removeCustomProvider,
+      t,
+      update,
+    ],
   );
 
   const handleWindowSizeChange = useCallback(
@@ -433,7 +473,9 @@ export function useSettingsPageController() {
     formState,
     handleClose,
     handleContextStrategyChange,
-    handleCustomProvidersChange,
+    updateCustomProvider,
+    handleAddCustomProvider,
+    handleRemoveCustomProvider,
     handleDiscard,
     handleDiscardAndLeave,
     handleFallbackModelChange,

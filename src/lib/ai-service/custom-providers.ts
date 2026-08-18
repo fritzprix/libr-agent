@@ -103,9 +103,6 @@ export function normalizeCustomOpenAIProvider(
     if (reasoningBudgetMessage) {
       normalized.reasoningBudgetMessage = reasoningBudgetMessage;
     }
-    if (provider.sendNativeReasoningBudget === true) {
-      normalized.sendNativeReasoningBudget = true;
-    }
   }
   return normalized;
 }
@@ -134,7 +131,6 @@ export function createCustomOpenAIProvider(
     models: partial.models,
     reasoningBudget: partial.reasoningBudget,
     reasoningBudgetMessage: partial.reasoningBudgetMessage,
-    sendNativeReasoningBudget: partial.sendNativeReasoningBudget,
   });
 }
 
@@ -173,9 +169,6 @@ export function resolveProviderRuntimeConfig(
       ...(entry?.reasoningBudgetMessage
         ? { reasoningBudgetMessage: entry.reasoningBudgetMessage }
         : {}),
-      ...(entry?.sendNativeReasoningBudget
-        ? { sendNativeReasoningBudget: true }
-        : {}),
     };
 
     return {
@@ -197,6 +190,10 @@ export function resolveProviderRuntimeConfig(
     use3rdParty: cfg.use3rdParty,
     customModelId: cfg.customModelId,
     safetySettings: cfg.safetySettings,
+    ...(cfg.reasoningBudget ? { reasoningBudget: cfg.reasoningBudget } : {}),
+    ...(cfg.reasoningBudgetMessage
+      ? { reasoningBudgetMessage: cfg.reasoningBudgetMessage }
+      : {}),
   };
 
   return {

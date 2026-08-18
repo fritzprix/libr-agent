@@ -458,12 +458,11 @@
       "advanced": "Advanced",
       "reasoningBudget": "Reasoning budget (tokens)",
       "reasoningBudgetPlaceholder": "Unlimited",
-      "reasoningBudgetDescription": "Client-side cap on streamed thinking (approx. chars ÷ 4; conservative for Latin text, CJK may differ). Leave empty for unlimited. Triggers one recovery retry with a stop-thinking instruction.",
+      "reasoningBudgetDescription": "Limits how long the AI can think before giving an answer. Leave empty for unlimited.",
+      "reasoningBudgetLearnMore": "Learn more about reasoning budget",
       "reasoningBudgetMessage": "Budget exceeded message",
       "reasoningBudgetMessagePlaceholder": "... I am thinking for too long -- let me gather more info about the task.",
-      "reasoningBudgetMessageDescription": "Injected once on the recovery retry after the client aborts thinking.",
-      "sendNativeReasoningBudget": "Send native llama.cpp reasoning_budget_tokens fields",
-      "sendNativeReasoningBudgetDescription": "Off by default. Enable only for llama.cpp-compatible servers. Unknown keys return HTTP 400 on many OpenAI-compatible hosts."
+      "reasoningBudgetMessageDescription": "Prompt injected to make the AI start answering immediately when the thinking limit is reached."
     },
     "chatInterface": {
       "diffContextLines": "Diff Context Lines",

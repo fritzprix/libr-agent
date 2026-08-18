@@ -184,12 +184,15 @@ export function useSettingsForm() {
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
       updateFormStore((prev) => {
         const currentConfig = prev.serviceConfigs[provider] || {};
-        const newConfig = { ...currentConfig, ...patch };
+        const merged = { ...currentConfig, ...patch };
+        const cleaned = Object.fromEntries(
+          Object.entries(merged).filter(([, v]) => v !== undefined),
+        ) as ServiceConfig;
         return {
           ...prev,
           serviceConfigs: {
             ...prev.serviceConfigs,
-            [provider]: newConfig,
+            [provider]: cleaned,
           },
         };
       });
@@ -203,6 +206,52 @@ export function useSettingsForm() {
         ...prev,
         customProviders: normalizeCustomOpenAIProviders(customProviders),
       }));
+    },
+    [updateFormStore],
+  );
+
+  const updateCustomProvider = useCallback(
+    (id: string, patch: Partial<CustomOpenAIProvider>) => {
+      updateFormStore((prev) => {
+        const current = prev.customProviders ?? [];
+        return {
+          ...prev,
+          customProviders: normalizeCustomOpenAIProviders(
+            current.map((entry) =>
+              entry.id === id ? { ...entry, ...patch } : entry,
+            ),
+          ),
+        };
+      });
+    },
+    [updateFormStore],
+  );
+
+  const addCustomProvider = useCallback(
+    (provider: CustomOpenAIProvider) => {
+      updateFormStore((prev) => {
+        const current = prev.customProviders ?? [];
+        return {
+          ...prev,
+          customProviders: normalizeCustomOpenAIProviders([
+            ...current,
+            provider,
+          ]),
+        };
+      });
+    },
+    [updateFormStore],
+  );
+
+  const removeCustomProvider = useCallback(
+    (id: string) => {
+      updateFormStore((prev) => {
+        const current = prev.customProviders ?? [];
+        return {
+          ...prev,
+          customProviders: current.filter((entry) => entry.id !== id),
+        };
+      });
     },
     [updateFormStore],
   );
@@ -286,6 +335,9 @@ export function useSettingsForm() {
     update,
     updateServiceConfig,
     updateCustomProviders,
+    updateCustomProvider,
+    addCustomProvider,
+    removeCustomProvider,
     updateAdvanced,
     updateDisplay,
     updateSystem,

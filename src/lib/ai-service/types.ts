@@ -131,24 +131,17 @@ export interface AIServiceConfig {
 
   /**
    * Client-side cap on streamed thinking tokens (custom OpenAI-compatible
-   * providers). Unset or 0 means unlimited. Not sent as an OpenAI API field
-   * unless `sendNativeReasoningBudget` is also true.
+   * providers and OpenAI). Unset or 0 means unlimited.
+   * Cross-reference: mapped from `ServiceConfig.reasoningBudget` and `CustomOpenAIProvider.reasoningBudget`.
    */
   reasoningBudget?: number;
 
   /**
    * Instruction injected into the next-turn session context after a client-side
    * reasoning-budget abort.
+   * Cross-reference: mapped from `ServiceConfig.reasoningBudgetMessage` and `CustomOpenAIProvider.reasoningBudgetMessage`.
    */
   reasoningBudgetMessage?: string;
-
-  /**
-   * When true, also send llama.cpp-style top-level request fields
-   * (`reasoning_budget_tokens`, `thinking_budget_tokens`,
-   * `reasoning_budget_message`) on third-party OpenAI-compatible endpoints.
-   * Default off — official OpenAI and many strict proxies reject unknown keys.
-   */
-  sendNativeReasoningBudget?: boolean;
 }
 
 /**
