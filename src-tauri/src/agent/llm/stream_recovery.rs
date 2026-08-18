@@ -16,6 +16,12 @@ use tokio::sync::RwLock;
 pub const REPEATED_THINKING_MAX_RETRIES: u32 = 2;
 pub const REPEATED_TEXT_LOOP_MAX_RETRIES: u32 = 2;
 pub const BAD_TOOL_ARGS_MAX_RETRIES: u32 = 2;
+/// Client-side reasoning-budget abort: one recovery retry with a stop-thinking nudge.
+pub const REASONING_BUDGET_MAX_RETRIES: u32 = 1;
+/// Must match `DEFAULT_REASONING_BUDGET_MESSAGE` in the TypeScript helper.
+/// Mirrors Georgi Gerganov's llama.cpp example (first-person thinking continuation).
+pub const DEFAULT_REASONING_BUDGET_MESSAGE: &str =
+    "... I am thinking for too long -- let me gather more info about the task.";
 /// Max FallThrough incidents per workflow before hard-stopping. Bounds
 /// truncated-args loops where raw args (and thus loop-prevention signatures)
 /// change every attempt.
@@ -69,6 +75,13 @@ pub enum NonProductiveCompletionReason {
         /// Primary failure kind from the first invalid tool call (for logging).
         parse_kind: String,
     },
+    ReasoningBudgetExceeded {
+        response_message_id: String,
+        observed_tail_chars: usize,
+        reasoning_budget_tokens: usize,
+        estimated_thinking_tokens: usize,
+        nudge_message: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +89,7 @@ enum StreamingRecoveryCounter {
     Thinking,
     Text,
     BadToolArgs,
+    ReasoningBudget,
 }
 
 impl StreamingRecoveryCounter {
@@ -84,6 +98,7 @@ impl StreamingRecoveryCounter {
             Self::Thinking => REPEATED_THINKING_MAX_RETRIES,
             Self::Text => REPEATED_TEXT_LOOP_MAX_RETRIES,
             Self::BadToolArgs => BAD_TOOL_ARGS_MAX_RETRIES,
+            Self::ReasoningBudget => REASONING_BUDGET_MAX_RETRIES,
         }
     }
 
@@ -92,6 +107,7 @@ impl StreamingRecoveryCounter {
             Self::Thinking => *session.repeated_thinking_retry_count.read().await,
             Self::Text => *session.repeated_text_loop_retry_count.read().await,
             Self::BadToolArgs => *session.bad_tool_args_retry_count.read().await,
+            Self::ReasoningBudget => *session.reasoning_budget_retry_count.read().await,
         }
     }
 
@@ -105,6 +121,9 @@ impl StreamingRecoveryCounter {
             }
             Self::BadToolArgs => {
                 *session.bad_tool_args_retry_count.write().await = value;
+            }
+            Self::ReasoningBudget => {
+                *session.reasoning_budget_retry_count.write().await = value;
             }
         }
     }
@@ -148,6 +167,15 @@ pub fn evaluate_streaming_issue_action(
     }
 }
 
+fn reasoning_budget_nudge_text(nudge_message: &Option<String>) -> String {
+    let trimmed = nudge_message.as_deref().map(str::trim).unwrap_or("");
+    if trimmed.is_empty() {
+        DEFAULT_REASONING_BUDGET_MESSAGE.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 async fn handle_non_productive_completion(
     context: RecoveryContext<'_>,
     session_id: String,
@@ -164,6 +192,14 @@ async fn handle_non_productive_completion(
                 let active = context.active_sessions.read().await;
                 if let Some(session) = active.get(&session_id) {
                     counter.write_count(session, next_retry_count).await;
+                    if let NonProductiveCompletionReason::ReasoningBudgetExceeded {
+                        nudge_message,
+                        ..
+                    } = &reason
+                    {
+                        *session.pending_reasoning_budget_nudge.write().await =
+                            Some(reasoning_budget_nudge_text(nudge_message));
+                    }
                 }
             }
 
@@ -224,6 +260,24 @@ async fn handle_non_productive_completion(
                         assistant_message_id,
                         tool_names,
                         parse_kind,
+                        next_retry_count,
+                        max_retries
+                    );
+                }
+                NonProductiveCompletionReason::ReasoningBudgetExceeded {
+                    response_message_id,
+                    observed_tail_chars,
+                    reasoning_budget_tokens,
+                    estimated_thinking_tokens,
+                    ..
+                } => {
+                    log::warn!(
+                        "Reasoning budget exceeded for session {} response {} (thinking_chars={}, reasoning_budget_tokens={}, estimated_thinking_tokens={}). Retrying LLM turn ({}/{}).",
+                        session_id,
+                        response_message_id,
+                        observed_tail_chars,
+                        reasoning_budget_tokens,
+                        estimated_thinking_tokens,
                         next_retry_count,
                         max_retries
                     );
@@ -345,6 +399,27 @@ async fn handle_non_productive_completion(
                 NonProductiveCompletionReason::MalformedToolCallArguments { .. } => {
                     unreachable!("MalformedToolCallArguments Fail handled above")
                 }
+                NonProductiveCompletionReason::ReasoningBudgetExceeded {
+                    response_message_id,
+                    observed_tail_chars,
+                    reasoning_budget_tokens,
+                    estimated_thinking_tokens,
+                    nudge_message,
+                } => (
+                    format!(
+                        "The model exceeded the reasoning budget in session '{}' and already used the automatic recovery retry. Workflow stopped to prevent unbounded thinking.",
+                        session_name
+                    ),
+                    "REASONING_BUDGET_EXCEEDED",
+                    serde_json::json!({
+                        "responseMessageId": response_message_id,
+                        "observedTailChars": observed_tail_chars,
+                        "reasoningBudgetTokens": reasoning_budget_tokens,
+                        "estimatedThinkingTokens": estimated_thinking_tokens,
+                        "nudgeMessage": nudge_message,
+                        "maxRetries": max_retries,
+                    }),
+                ),
             };
 
             finalize_workflow_error_with_dispatcher(
@@ -438,6 +513,18 @@ async fn fallthrough_or_hard_fail_malformed_tool_args(
     Ok(StreamingIssueOutcome::FallThrough)
 }
 
+fn reasoning_budget_tokens_from_report(report: &StreamingIssueReport) -> usize {
+    report
+        .reasoning_budget_tokens
+        .unwrap_or(report.pattern_length)
+}
+
+fn estimated_thinking_tokens_from_report(report: &StreamingIssueReport) -> usize {
+    report
+        .estimated_thinking_tokens
+        .unwrap_or(report.repetition_count)
+}
+
 fn repeated_loop_reason_from_report(
     issue_kind: StreamingIssueKind,
     report: &StreamingIssueReport,
@@ -459,6 +546,15 @@ fn repeated_loop_reason_from_report(
                 repetition_count: report.repetition_count,
             })
         }
+        StreamingIssueKind::ReasoningBudgetExceeded => {
+            Some(NonProductiveCompletionReason::ReasoningBudgetExceeded {
+                response_message_id: report.response_message_id.clone(),
+                observed_tail_chars: report.observed_tail_chars,
+                reasoning_budget_tokens: reasoning_budget_tokens_from_report(report),
+                estimated_thinking_tokens: estimated_thinking_tokens_from_report(report),
+                nudge_message: report.nudge_message.clone(),
+            })
+        }
     }
 }
 
@@ -466,6 +562,7 @@ fn recovery_counter_for_issue(issue_kind: StreamingIssueKind) -> StreamingRecove
     match issue_kind {
         StreamingIssueKind::RepeatedThinkingLoop => StreamingRecoveryCounter::Thinking,
         StreamingIssueKind::RepeatedTextLoop => StreamingRecoveryCounter::Text,
+        StreamingIssueKind::ReasoningBudgetExceeded => StreamingRecoveryCounter::ReasoningBudget,
     }
 }
 
@@ -473,6 +570,7 @@ fn cancel_reason_for_issue(issue_kind: StreamingIssueKind) -> &'static str {
     match issue_kind {
         StreamingIssueKind::RepeatedThinkingLoop => "repeated-thinking-loop",
         StreamingIssueKind::RepeatedTextLoop => "repeated-text-loop",
+        StreamingIssueKind::ReasoningBudgetExceeded => "reasoning-budget-exceeded",
     }
 }
 
@@ -480,6 +578,7 @@ fn stale_report_log_label(issue_kind: StreamingIssueKind) -> &'static str {
     match issue_kind {
         StreamingIssueKind::RepeatedThinkingLoop => "repeated-thinking",
         StreamingIssueKind::RepeatedTextLoop => "repeated-text",
+        StreamingIssueKind::ReasoningBudgetExceeded => "reasoning-budget",
     }
 }
 

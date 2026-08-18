@@ -17,6 +17,8 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     *session.repeated_text_loop_retry_count.write().await = 0;
     *session.bad_tool_args_retry_count.write().await = 0;
     *session.bad_tool_args_incident_count.write().await = 0;
+    *session.reasoning_budget_retry_count.write().await = 0;
+    *session.pending_reasoning_budget_nudge.write().await = None;
     // Safety valve: clear any stale in-flight compaction state before
     // explicitly starting or restarting a workflow from the current stack.
     session.compaction.clear_runtime_state(false).await;

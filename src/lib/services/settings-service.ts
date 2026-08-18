@@ -30,6 +30,18 @@ export interface CustomOpenAIProvider {
   apiKey?: string;
   /** Optional manual model IDs when /v1/models is unavailable. */
   models?: string[];
+  /**
+   * Client-side cap on streamed thinking tokens for this endpoint.
+   * Unset or 0 means unlimited.
+   */
+  reasoningBudget?: number;
+  /** Instruction injected on the next turn after a client-side budget abort. */
+  reasoningBudgetMessage?: string;
+  /**
+   * When true, also send llama.cpp-style `reasoning_budget_tokens` fields.
+   * Off by default — unknown keys 400 on strict OpenAI-compatible hosts.
+   */
+  sendNativeReasoningBudget?: boolean;
 }
 
 export interface ModelChoice {

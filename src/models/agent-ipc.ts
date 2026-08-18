@@ -147,7 +147,8 @@ export interface AgentResponse<T = unknown> {
 
 export type StreamingIssueKind =
   | 'REPEATED_THINKING_LOOP'
-  | 'REPEATED_TEXT_LOOP';
+  | 'REPEATED_TEXT_LOOP'
+  | 'REASONING_BUDGET_EXCEEDED';
 
 export interface StreamingIssueReport {
   sessionId: string;
@@ -156,6 +157,12 @@ export interface StreamingIssueReport {
   observedTailChars: number;
   patternLength: number;
   repetitionCount: number;
+  /** Configured thinking token cap (REASONING_BUDGET_EXCEEDED only). */
+  reasoningBudgetTokens?: number;
+  /** Estimated thinking tokens at abort (REASONING_BUDGET_EXCEEDED only). */
+  estimatedThinkingTokens?: number;
+  /** Instruction to inject on the recovery retry after a budget abort. */
+  nudgeMessage?: string;
 }
 
 export interface CompletionCancelRequest {

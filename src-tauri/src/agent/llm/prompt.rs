@@ -124,7 +124,7 @@ pub(crate) async fn build_session_system_prompt_split(
     session_id: &str,
 ) -> Result<(String, Option<String>), String> {
     // --- Read session state under a short-lived read lock ---
-    let (session_metadata, context_registry, cached_stable_prompt_arc) = {
+    let (session_metadata, context_registry, cached_stable_prompt_arc, pending_nudge_arc) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
@@ -134,6 +134,7 @@ pub(crate) async fn build_session_system_prompt_split(
             session.metadata.clone(),
             session.context_registry.clone(),
             session.cached_stable_prompt.clone(),
+            session.pending_reasoning_budget_nudge.clone(),
         )
     };
 
@@ -196,13 +197,25 @@ pub(crate) async fn build_session_system_prompt_split(
         format!("{}\n{}", stable_prefix, cacheable_context)
     };
 
-    let session_context = if volatile.trim().is_empty() {
-        None
-    } else {
-        Some(volatile)
-    };
+    let reasoning_budget_nudge = pending_nudge_arc.write().await.take();
+    let session_context = merge_reasoning_budget_nudge(volatile, reasoning_budget_nudge);
 
     Ok((stable_prompt, session_context))
+}
+
+fn merge_reasoning_budget_nudge(volatile: String, nudge: Option<String>) -> Option<String> {
+    let nudge_block = nudge
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("## Reasoning budget\n{}", value));
+
+    match (volatile.trim().is_empty(), nudge_block) {
+        (true, None) => None,
+        (true, Some(block)) => Some(block),
+        (false, None) => Some(volatile),
+        (false, Some(block)) => Some(format!("{}\n\n{}", volatile, block)),
+    }
 }
 
 async fn build_and_cache_stable_prefix(

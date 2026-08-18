@@ -156,6 +156,10 @@ export function useExecuteCompletion({
           responseMessageId,
           settingsRef,
           startTime,
+          {
+            reasoningBudget: config.reasoningBudget,
+            reasoningBudgetMessage: config.reasoningBudgetMessage,
+          },
         );
 
         const streamGenerator = service.streamChat(enrichedMessages, {

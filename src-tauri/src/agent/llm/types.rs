@@ -123,6 +123,7 @@ pub struct CompletionRequest {
 pub enum StreamingIssueKind {
     RepeatedThinkingLoop,
     RepeatedTextLoop,
+    ReasoningBudgetExceeded,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,6 +135,12 @@ pub struct StreamingIssueReport {
     pub observed_tail_chars: usize,
     pub pattern_length: usize,
     pub repetition_count: usize,
+    #[serde(default)]
+    pub reasoning_budget_tokens: Option<usize>,
+    #[serde(default)]
+    pub estimated_thinking_tokens: Option<usize>,
+    #[serde(default)]
+    pub nudge_message: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

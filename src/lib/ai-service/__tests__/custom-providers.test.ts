@@ -84,6 +84,45 @@ describe('custom provider helpers', () => {
     expect(JSON.parse(JSON.stringify(created))).toEqual(created);
   });
 
+  it('omits a zero reasoning budget even when native passthrough is requested', () => {
+    const created = createCustomOpenAIProvider({
+      id: 'zero-budget',
+      name: 'Local',
+      baseUrl: 'http://127.0.0.1:8000/v1',
+      reasoningBudget: 0,
+      reasoningBudgetMessage: '  ignored  ',
+      sendNativeReasoningBudget: true,
+    });
+
+    expect(created).toEqual({
+      id: 'zero-budget',
+      name: 'Local',
+      baseUrl: 'http://127.0.0.1:8000/v1',
+    });
+    expect(created).not.toHaveProperty('reasoningBudget');
+    expect(created).not.toHaveProperty('sendNativeReasoningBudget');
+  });
+
+  it('persists a positive reasoning budget and native opt-in on custom providers', () => {
+    const created = createCustomOpenAIProvider({
+      id: 'budgeted',
+      name: 'LM Studio',
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      reasoningBudget: 512.9,
+      reasoningBudgetMessage: '  stop thinking now  ',
+      sendNativeReasoningBudget: true,
+    });
+
+    expect(created).toEqual({
+      id: 'budgeted',
+      name: 'LM Studio',
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      reasoningBudget: 512,
+      reasoningBudgetMessage: 'stop thinking now',
+      sendNativeReasoningBudget: true,
+    });
+  });
+
   it('resolves custom providers to OpenAI factory routing', () => {
     const resolved = resolveProviderRuntimeConfig(
       'custom:abc123',
@@ -100,6 +139,60 @@ describe('custom provider helpers', () => {
       baseUrl: 'http://192.168.1.10:8000/v1',
       use3rdParty: true,
     });
+    expect(resolved.serviceConfig).not.toHaveProperty('reasoningBudget');
+    expect(resolved.serviceConfig).not.toHaveProperty(
+      'sendNativeReasoningBudget',
+    );
+  });
+
+  it('copies reasoning budget fields onto custom provider runtime config only', () => {
+    const resolved = resolveProviderRuntimeConfig(
+      'custom:abc123',
+      settingsWithCustom({
+        customProviders: [
+          {
+            id: 'abc123',
+            name: 'Local vLLM',
+            baseUrl: 'http://192.168.1.10:8000/v1',
+            apiKey: 'local-key',
+            models: ['llama-3.1-70b'],
+            reasoningBudget: 256,
+            reasoningBudgetMessage: 'wrap up',
+            sendNativeReasoningBudget: true,
+          },
+        ],
+      }),
+    );
+
+    expect(resolved.serviceConfig).toEqual({
+      baseUrl: 'http://192.168.1.10:8000/v1',
+      use3rdParty: true,
+      reasoningBudget: 256,
+      reasoningBudgetMessage: 'wrap up',
+      sendNativeReasoningBudget: true,
+    });
+  });
+
+  it('does not copy custom-provider budget fields onto builtin OpenAI', () => {
+    const resolved = resolveProviderRuntimeConfig(
+      AIServiceProvider.OpenAI,
+      settingsWithCustom({
+        customProviders: [
+          {
+            id: 'abc123',
+            name: 'Local vLLM',
+            baseUrl: 'http://192.168.1.10:8000/v1',
+            reasoningBudget: 256,
+            sendNativeReasoningBudget: true,
+          },
+        ],
+      }),
+    );
+
+    expect(resolved.serviceConfig).not.toHaveProperty('reasoningBudget');
+    expect(resolved.serviceConfig).not.toHaveProperty(
+      'sendNativeReasoningBudget',
+    );
   });
 
   it('resolves builtin providers from serviceConfigs', () => {

@@ -8,6 +8,10 @@ import { AIServiceProvider, type AIServiceConfig } from './types';
 import { getLastSelectedModel } from './last-selected-model-storage';
 import { getStoredModelCache } from './model-cache-storage';
 import { llmConfigManager } from '@/lib/llm-config-manager';
+import {
+  normalizeReasoningBudgetMessage,
+  normalizeReasoningBudgetTokens,
+} from './openai/reasoning-budget';
 
 export const CUSTOM_PROVIDER_PREFIX = 'custom:';
 
@@ -88,6 +92,21 @@ export function normalizeCustomOpenAIProvider(
   if (models) {
     normalized.models = models;
   }
+  const reasoningBudget = normalizeReasoningBudgetTokens(
+    provider.reasoningBudget,
+  );
+  if (reasoningBudget) {
+    normalized.reasoningBudget = reasoningBudget;
+    const reasoningBudgetMessage = normalizeReasoningBudgetMessage(
+      provider.reasoningBudgetMessage,
+    );
+    if (reasoningBudgetMessage) {
+      normalized.reasoningBudgetMessage = reasoningBudgetMessage;
+    }
+    if (provider.sendNativeReasoningBudget === true) {
+      normalized.sendNativeReasoningBudget = true;
+    }
+  }
   return normalized;
 }
 
@@ -113,6 +132,9 @@ export function createCustomOpenAIProvider(
     baseUrl: partial.baseUrl,
     apiKey: partial.apiKey,
     models: partial.models,
+    reasoningBudget: partial.reasoningBudget,
+    reasoningBudgetMessage: partial.reasoningBudgetMessage,
+    sendNativeReasoningBudget: partial.sendNativeReasoningBudget,
   });
 }
 
@@ -145,6 +167,15 @@ export function resolveProviderRuntimeConfig(
     const serviceConfig: AIServiceConfig = {
       baseUrl: baseUrl || undefined,
       use3rdParty: true,
+      ...(entry?.reasoningBudget
+        ? { reasoningBudget: entry.reasoningBudget }
+        : {}),
+      ...(entry?.reasoningBudgetMessage
+        ? { reasoningBudgetMessage: entry.reasoningBudgetMessage }
+        : {}),
+      ...(entry?.sendNativeReasoningBudget
+        ? { sendNativeReasoningBudget: true }
+        : {}),
     };
 
     return {

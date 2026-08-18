@@ -5,6 +5,12 @@ import {
   parseStreamChunk,
 } from '@/lib/ai-service/stream-events';
 import { reportLLMStreamingIssue } from '@/lib/backend/agent-commands';
+import {
+  DEFAULT_REASONING_BUDGET_MESSAGE,
+  estimateThinkingTokens,
+  normalizeReasoningBudgetMessage,
+  normalizeReasoningBudgetTokens,
+} from '@/lib/ai-service/openai/reasoning-budget';
 import type {
   MCPContent,
   MCPTextContent,
@@ -44,6 +50,11 @@ export interface StreamAccumulatorState {
   currentStreamingText: string;
 }
 
+export interface StreamAccumulatorOptions {
+  reasoningBudget?: number;
+  reasoningBudgetMessage?: string;
+}
+
 export class StreamAccumulator {
   public content: MCPContent[] = [];
   public activeToolCallIndices = new Map<number, number>();
@@ -64,6 +75,9 @@ export class StreamAccumulator {
   private hasToolCallInStream = false;
   private repeatedTextIssueReported = false;
   private repeatedTextCheckCounter = 0;
+  private reasoningBudgetIssueReported = false;
+  private reasoningBudget?: number;
+  private reasoningBudgetMessage: string;
 
   private sessionId: string;
   private responseMessageId: string;
@@ -75,11 +89,18 @@ export class StreamAccumulator {
     responseMessageId: string,
     settingsRef: React.MutableRefObject<Settings>,
     startTime: number,
+    options?: StreamAccumulatorOptions,
   ) {
     this.sessionId = sessionId;
     this.responseMessageId = responseMessageId;
     this.settingsRef = settingsRef;
     this.startTime = startTime;
+    this.reasoningBudget = normalizeReasoningBudgetTokens(
+      options?.reasoningBudget,
+    );
+    this.reasoningBudgetMessage =
+      normalizeReasoningBudgetMessage(options?.reasoningBudgetMessage) ??
+      DEFAULT_REASONING_BUDGET_MESSAGE;
   }
 
   private getThinkingConfig(): RepeatedTailDetectorConfig {
@@ -186,7 +207,9 @@ export class StreamAccumulator {
           ? `${this.currentThinkingText}\n${chunk.thinking}`
           : chunk.thinking;
 
-      if (!this.repeatedThinkingIssueReported) {
+      if (this.tryReportReasoningBudgetExceeded()) {
+        // Budget abort takes precedence over thinking-loop detection.
+      } else if (!this.repeatedThinkingIssueReported) {
         this.repeatedThinkingCheckCounter += 1;
         const thinkingConfig = this.getThinkingConfig();
         const detection =
@@ -382,5 +405,49 @@ export class StreamAccumulator {
       ? STREAMING_TOOL_CALL_THROTTLE_MS
       : STREAMING_TEXT_THROTTLE_MS;
     return shouldFlushToolCallImmediately || nowMs - lastUpdateMs >= throttleMs;
+  }
+
+  private tryReportReasoningBudgetExceeded(): boolean {
+    if (
+      !this.reasoningBudget ||
+      this.reasoningBudgetIssueReported ||
+      this.hasToolCallInStream
+    ) {
+      return false;
+    }
+
+    const thinkingText = this.currentThinkingText ?? '';
+    const estimatedTokens = estimateThinkingTokens(thinkingText);
+    if (estimatedTokens < this.reasoningBudget) {
+      return false;
+    }
+
+    this.reasoningBudgetIssueReported = true;
+    this.repeatedThinkingIssueReported = true;
+    logger.warn('Reasoning budget exceeded during streaming', {
+      sessionId: this.sessionId,
+      responseMessageId: this.responseMessageId,
+      reasoningBudget: this.reasoningBudget,
+      estimatedTokens,
+      thinkingChars: thinkingText.length,
+    });
+    void reportLLMStreamingIssue({
+      sessionId: this.sessionId,
+      responseMessageId: this.responseMessageId,
+      issueKind: 'REASONING_BUDGET_EXCEEDED',
+      observedTailChars: thinkingText.length,
+      patternLength: this.reasoningBudget,
+      repetitionCount: estimatedTokens,
+      reasoningBudgetTokens: this.reasoningBudget,
+      estimatedThinkingTokens: estimatedTokens,
+      nudgeMessage: this.reasoningBudgetMessage,
+    }).catch((error: unknown) => {
+      logger.warn('Failed to report reasoning budget exceeded', {
+        sessionId: this.sessionId,
+        responseMessageId: this.responseMessageId,
+        error,
+      });
+    });
+    return true;
   }
 }

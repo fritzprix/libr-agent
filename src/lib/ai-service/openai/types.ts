@@ -111,6 +111,9 @@ export type OpenAIStreamingRequest =
     prompt_cache_key?: string;
     prompt_cache_retention?: 'in_memory' | '24h';
     extra_body?: Record<string, unknown>;
+    reasoning_budget_tokens?: number;
+    thinking_budget_tokens?: number;
+    reasoning_budget_message?: string;
   };
 
 export type OpenAINonStreamingRequest =
@@ -118,6 +121,9 @@ export type OpenAINonStreamingRequest =
     prompt_cache_key?: string;
     prompt_cache_retention?: 'in_memory' | '24h';
     extra_body?: Record<string, unknown>;
+    reasoning_budget_tokens?: number;
+    thinking_budget_tokens?: number;
+    reasoning_budget_message?: string;
   };
 
 export interface OpenAILoggerLike {

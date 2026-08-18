@@ -11,10 +11,16 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
+  Checkbox,
 } from '@/components/ui';
-import { Eye, EyeOff, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { normalizeManualModels } from '@/lib/ai-service/custom-providers';
+import {
+  DEFAULT_REASONING_BUDGET_MESSAGE,
+  MAX_REASONING_BUDGET_TOKENS,
+  parseReasoningBudgetInput,
+} from '@/lib/ai-service/openai/reasoning-budget';
 
 export interface CustomProviderCardProps {
   provider: CustomOpenAIProvider;
@@ -40,7 +46,14 @@ function CustomProviderCardBase({
   onRemove,
 }: CustomProviderCardProps) {
   const [showApiKey, setShowApiKey] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(
+    () =>
+      provider.reasoningBudget != null ||
+      Boolean(provider.reasoningBudgetMessage) ||
+      provider.sendNativeReasoningBudget === true,
+  );
   const { t } = useTranslation('common');
+  const hasReasoningBudget = provider.reasoningBudget != null;
 
   return (
     <Card className="bg-background border shadow-sm min-w-0 w-full">
@@ -172,6 +185,144 @@ function CustomProviderCardBase({
             )}
           </p>
         </div>
+
+        <div className="min-w-0 border-t pt-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full justify-between px-0 text-sm font-medium text-foreground hover:bg-transparent"
+            onClick={() => setAdvancedOpen((open) => !open)}
+            aria-expanded={advancedOpen}
+          >
+            {t('settings.customProviders.advanced', 'Advanced')}
+            {advancedOpen ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </Button>
+
+          {advancedOpen ? (
+            <div className="mt-3 space-y-3">
+              <div className="min-w-0">
+                <label
+                  htmlFor={`reasoning-budget-${provider.id}`}
+                  className="block text-muted-foreground mb-2 text-sm font-medium"
+                >
+                  {t(
+                    'settings.customProviders.reasoningBudget',
+                    'Reasoning budget (tokens)',
+                  )}
+                </label>
+                <Input
+                  id={`reasoning-budget-${provider.id}`}
+                  type="number"
+                  min={1}
+                  max={MAX_REASONING_BUDGET_TOKENS}
+                  step={1}
+                  placeholder={t(
+                    'settings.customProviders.reasoningBudgetPlaceholder',
+                    'Unlimited',
+                  )}
+                  value={provider.reasoningBudget ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (raw === '') {
+                      onChange(provider.id, {
+                        reasoningBudget: undefined,
+                        sendNativeReasoningBudget: undefined,
+                      });
+                      return;
+                    }
+                    const parsed = parseReasoningBudgetInput(raw);
+                    if (parsed == null) {
+                      return;
+                    }
+                    onChange(provider.id, {
+                      reasoningBudget: parsed,
+                    });
+                  }}
+                  className="bg-background border text-foreground w-full"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.customProviders.reasoningBudgetDescription',
+                    'Client-side cap on streamed thinking (approx. chars/4; may underestimate CJK). Leave empty for unlimited. Triggers one recovery retry with a stop-thinking instruction.',
+                  )}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <label
+                  htmlFor={`reasoning-budget-message-${provider.id}`}
+                  className="block text-muted-foreground mb-2 text-sm font-medium"
+                >
+                  {t(
+                    'settings.customProviders.reasoningBudgetMessage',
+                    'Budget exceeded message',
+                  )}
+                </label>
+                <Textarea
+                  id={`reasoning-budget-message-${provider.id}`}
+                  placeholder={t(
+                    'settings.customProviders.reasoningBudgetMessagePlaceholder',
+                    DEFAULT_REASONING_BUDGET_MESSAGE,
+                  )}
+                  value={provider.reasoningBudgetMessage ?? ''}
+                  onChange={(e) =>
+                    onChange(provider.id, {
+                      reasoningBudgetMessage: e.target.value || undefined,
+                    })
+                  }
+                  className="bg-background border text-foreground w-full min-h-[72px]"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.customProviders.reasoningBudgetMessageDescription',
+                    'Injected once on the recovery retry after the client aborts thinking.',
+                  )}
+                </p>
+              </div>
+
+              <div className="flex items-start space-x-2">
+                <Checkbox
+                  id={`send-native-reasoning-budget-${provider.id}`}
+                  checked={provider.sendNativeReasoningBudget === true}
+                  disabled={!hasReasoningBudget}
+                  onCheckedChange={(checked) =>
+                    onChange(provider.id, {
+                      sendNativeReasoningBudget:
+                        checked === true ? true : undefined,
+                    })
+                  }
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 space-y-1">
+                  <label
+                    htmlFor={`send-native-reasoning-budget-${provider.id}`}
+                    className={`text-sm font-medium ${
+                      hasReasoningBudget
+                        ? 'cursor-pointer text-muted-foreground'
+                        : 'text-muted-foreground/70'
+                    }`}
+                  >
+                    {t(
+                      'settings.customProviders.sendNativeReasoningBudget',
+                      'Send native llama.cpp reasoning_budget_tokens fields',
+                    )}
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'settings.customProviders.sendNativeReasoningBudgetDescription',
+                      'Off by default. Enable only for llama.cpp-compatible servers. Unknown keys return HTTP 400 on many OpenAI-compatible hosts.',
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );
@@ -187,7 +338,13 @@ export const CustomProviderCard = React.memo(
       prev.provider.name === next.provider.name &&
       prev.provider.baseUrl === next.provider.baseUrl &&
       (prev.provider.apiKey || '') === (next.provider.apiKey || '') &&
-      modelsToText(prev.provider.models) === modelsToText(next.provider.models)
+      modelsToText(prev.provider.models) ===
+        modelsToText(next.provider.models) &&
+      prev.provider.reasoningBudget === next.provider.reasoningBudget &&
+      (prev.provider.reasoningBudgetMessage || '') ===
+        (next.provider.reasoningBudgetMessage || '') &&
+      prev.provider.sendNativeReasoningBudget ===
+        next.provider.sendNativeReasoningBudget
     );
   },
 );
