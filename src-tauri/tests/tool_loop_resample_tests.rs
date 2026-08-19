@@ -729,6 +729,9 @@ mod settings_mutation_tests {
         SETTINGS_REPO
             .get_or_init(|| async {
                 reset_state();
+                // Migrations create sqlite-vec virtual tables; register vec0 first
+                // (same pattern as message_cursor_pagination_tests).
+                tauri_mcp_agent_lib::lifecycle::database::register_sqlite_vec();
                 let db_id = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
                 let database_url =
                     format!("sqlite::file:tool_loop_resample_{db_id}?mode=memory&cache=shared");
