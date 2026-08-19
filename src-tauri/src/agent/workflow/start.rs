@@ -20,6 +20,8 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     // Safety valve: clear any stale in-flight compaction state before
     // explicitly starting or restarting a workflow from the current stack.
     session.compaction.clear_runtime_state(false).await;
+    session.tool_loop_resample_attempts.write().await.clear();
+    session.tool_poll_trackers.write().await.clear();
 }
 
 pub async fn start_workflow(

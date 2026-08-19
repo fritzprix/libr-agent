@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
+use crate::agent::poll_tracker::PollTracker;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::IsolatedProcessConfig;
@@ -175,7 +176,7 @@ impl WorkspaceServer {
             // Initialize poll tracking fields
             last_poll_at: None,
             poll_count: 0,
-            consecutive_running_polls: 0,
+            poll_tracker: PollTracker::default(),
             first_running_poll_at: None,
         };
 

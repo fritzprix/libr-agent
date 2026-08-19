@@ -117,6 +117,7 @@ impl AttachmentsServer {
                 input_schema: schemas::tool_list_content_schema(),
                 output_schema: Option::None,
                 annotations: Option::None,
+                libragent_wait: None,
             },
             MCPTool {
                 name: "readAttachment".to_string(),
@@ -136,6 +137,7 @@ impl AttachmentsServer {
                 input_schema: schemas::tool_read_content_schema(),
                 output_schema: Option::None,
                 annotations: Option::None,
+                libragent_wait: None,
             },
             MCPTool {
                 name: "searchAttachments".to_string(),
@@ -169,6 +171,7 @@ impl AttachmentsServer {
                 })).unwrap(),
                 output_schema: None,
                 annotations: None,
+                libragent_wait: None,
             },
         ]
     }

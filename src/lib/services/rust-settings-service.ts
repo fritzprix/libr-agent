@@ -34,6 +34,7 @@ type SettingValue =
   | DisplaySettings // displaySettings
   | SystemSettings // systemSettings
   | ExperimentalSettings // experimentalSettings
+  | Partial<ExperimentalSettings> // experimentalSettings (partial DB blob)
   | undefined; // agentHubUrl can be undefined
 
 interface SettingDto {
@@ -203,10 +204,13 @@ function mapDtosToSettings(dtos: SettingDto[]): {
           ? storedSystem.preventSleepDuringAgentWork
           : DEFAULT_SETTING.system.preventSleepDuringAgentWork,
     },
-    experimental: getTypedValue(
-      'experimentalSettings',
-      DEFAULT_SETTING.experimental,
-    ),
+    experimental: {
+      ...DEFAULT_SETTING.experimental,
+      ...getTypedValue<Partial<ExperimentalSettings>>(
+        'experimentalSettings',
+        DEFAULT_SETTING.experimental,
+      ),
+    },
   };
 
   return migrateLegacyOpenAICompatibleSettings(mapped);

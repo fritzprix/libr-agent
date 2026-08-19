@@ -20,6 +20,25 @@ export interface MCPToolAnnotations {
 }
 
 /**
+ * Declarative wait/poll contract for loop-recovery (`x-libragent-wait`).
+ */
+export interface LibragentWaitExtension {
+  resourceIdParam: string;
+  waitParam?: string;
+  timeoutParam?: string;
+  snapshotMode: {
+    wait?: boolean;
+    timeout?: number;
+  };
+  blockingMode: {
+    wait?: boolean;
+    timeout?: number;
+  };
+  loopFingerprintField?: string;
+  pollTrackerScope: 'session' | 'processRegistry';
+}
+
+/**
  * Represents a tool that can be invoked through the MCP.
  */
 export interface MCPTool {
@@ -37,4 +56,6 @@ export interface MCPTool {
   annotations?: MCPToolAnnotations;
   /** Specifies where the tool is executed. */
   backend?: 'tauri' | 'webworker';
+  /** Declarative wait/poll contract for loop-recovery integration. */
+  'x-libragent-wait'?: LibragentWaitExtension;
 }

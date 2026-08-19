@@ -1,6 +1,7 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
+use crate::agent::poll_tracker::PollTracker;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
@@ -525,6 +526,14 @@ pub struct AgentSession {
     /// Last raw input message ID included in the most recent emitted completion request.
     /// Used to persist provider-reported prompt tokens onto the correct checkpoint message.
     pub last_submitted_input_message_id: Arc<RwLock<Option<String>>>,
+
+    /// Session-scoped resample attempt counter keyed by loop fingerprint
+    /// (single-tool signature or batch fingerprint). Independent of DB history
+    /// length so resample budget survives discarded assistant turns.
+    pub tool_loop_resample_attempts: Arc<RwLock<HashMap<String, usize>>>,
+
+    /// In-band poll snapshot trackers keyed by `{tool}:{resource_id}`.
+    pub tool_poll_trackers: Arc<RwLock<HashMap<String, PollTracker>>>,
 }
 
 impl AgentSession {
@@ -568,6 +577,8 @@ impl AgentSession {
             cached_stable_prompt: Arc::new(RwLock::new(None)),
             last_completion_request: Arc::new(RwLock::new(None)),
             last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+            tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
+            tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -584,6 +595,8 @@ impl AgentSession {
         *self.expected_response_id.write().await = None;
         *self.last_completion_request.write().await = None;
         *self.last_submitted_input_message_id.write().await = None;
+        self.tool_loop_resample_attempts.write().await.clear();
+        self.tool_poll_trackers.write().await.clear();
     }
 }
 
@@ -683,6 +696,8 @@ mod tests {
             cached_stable_prompt: Arc::new(RwLock::new(None)),
             last_completion_request: Arc::new(RwLock::new(None)),
             last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+            tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
+            tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 

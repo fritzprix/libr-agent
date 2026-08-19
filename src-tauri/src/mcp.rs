@@ -23,6 +23,7 @@ pub mod session_isolation;
 pub mod session_isolation_config;
 pub mod types;
 pub mod utils;
+pub mod wait_extension;
 
 #[cfg(test)]
 mod integration_tests;

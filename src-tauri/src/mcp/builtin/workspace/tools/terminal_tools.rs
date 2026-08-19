@@ -1,4 +1,7 @@
-use crate::mcp::{schema::SchemaProperties, utils::schema_builder::*, MCPTool};
+use crate::mcp::{
+    schema::SchemaProperties, utils::schema_builder::*, wait_extension::LibragentWaitExtension,
+    MCPTool,
+};
 
 const PROCESS_ID_PROP: &str = "Process ID from workspace__spawnProcess, a sync-timeout handoff response, or workspace__listProcesses. Never invent an ID.";
 
@@ -42,6 +45,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["processId".to_string(), "stream".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -73,6 +77,7 @@ pub fn create_wait_for_process_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: Some(LibragentWaitExtension::wait_for_process()),
     }
 }
 
@@ -96,6 +101,7 @@ pub fn create_list_processes_tool() -> MCPTool {
         input_schema: object_schema(props, vec![]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -116,5 +122,6 @@ pub fn create_stop_process_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

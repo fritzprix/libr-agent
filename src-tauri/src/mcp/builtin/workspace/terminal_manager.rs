@@ -1,3 +1,4 @@
+use crate::agent::poll_tracker::PollTracker;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -40,7 +41,7 @@ pub struct ProcessEntry {
     #[serde(default)]
     pub poll_count: u32,
     #[serde(default)]
-    pub consecutive_running_polls: u32,
+    pub poll_tracker: PollTracker,
     #[serde(default)]
     pub first_running_poll_at: Option<DateTime<Utc>>,
 }
@@ -531,12 +532,12 @@ mod tests {
             stderr_size: 0,
             last_poll_at: None,
             poll_count: 0,
-            consecutive_running_polls: 0,
+            poll_tracker: PollTracker::default(),
             first_running_poll_at: None,
         };
 
         assert_eq!(entry.poll_count, 0);
-        assert_eq!(entry.consecutive_running_polls, 0);
+        assert_eq!(entry.poll_tracker.consecutive_identical(), 0);
         assert!(entry.last_poll_at.is_none());
         assert!(entry.first_running_poll_at.is_none());
     }
@@ -559,7 +560,13 @@ mod tests {
             stderr_size: 50,
             last_poll_at: Some(Utc::now()),
             poll_count: 5,
-            consecutive_running_polls: 3,
+            poll_tracker: {
+                let mut tracker = PollTracker::default();
+                for _ in 0..3 {
+                    tracker.observe("running", 99);
+                }
+                tracker
+            },
             first_running_poll_at: Some(Utc::now()),
         };
 
@@ -570,8 +577,8 @@ mod tests {
         assert_eq!(entry.id, deserialized.id);
         assert_eq!(entry.poll_count, deserialized.poll_count);
         assert_eq!(
-            entry.consecutive_running_polls,
-            deserialized.consecutive_running_polls
+            entry.poll_tracker.consecutive_identical(),
+            deserialized.poll_tracker.consecutive_identical()
         );
         assert!(deserialized.last_poll_at.is_some());
         assert!(deserialized.first_running_poll_at.is_some());
@@ -600,7 +607,7 @@ mod tests {
 
         assert_eq!(entry.id, "test-789");
         assert_eq!(entry.poll_count, 0); // Default value
-        assert_eq!(entry.consecutive_running_polls, 0); // Default value
+        assert_eq!(entry.poll_tracker.consecutive_identical(), 0); // Default value
         assert!(entry.last_poll_at.is_none()); // Default value
         assert!(entry.first_running_poll_at.is_none()); // Default value
     }

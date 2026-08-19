@@ -1,3 +1,8 @@
+//! Circuit-breaker preprocessing for assistant tool-call batches.
+//!
+//! Evaluates loop-prevention and experimental resample-then-break policy before
+//! assistant messages are cached, persisted, or executed.
+
 use crate::agent::events::AgentEvent;
 use crate::agent::llm::circuit_breaker;
 use crate::agent::llm::completion::load_context_management_settings;
@@ -15,6 +20,7 @@ use crate::agent::tools::{
 };
 use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::models::chat::Message;
+use crate::repositories::settings_repository::SettingsRepository;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -26,6 +32,12 @@ const TOOL_LOOP_FENCE_RESULT_FILLER: &str = "x";
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CircuitBreakerPreprocessResult {
     pub loop_prevention_short_circuits: HashMap<String, LoopPreventionShortCircuit>,
+    /// Experimental resample-then-break decision for repeated tool-loop signatures.
+    ///
+    /// When set, the response layer will trigger a bounded "clean resample"
+    /// completion retry and skip tool execution (so no intrusive loop-prevention
+    /// guidance gets injected as tool-error text).
+    pub tool_loop_resample: Option<ToolLoopResampleDecision>,
     pub forced_stop: Option<ForcedCircuitBreakStop>,
 }
 
@@ -39,6 +51,107 @@ pub enum ForcedCircuitBreakStop {
     TextOnly,
 }
 
+/// Plan for a bounded resample retry instead of injecting loop-prevention
+/// guidance as tool-error text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolLoopResampleDecision {
+    pub tool_name: String,
+    pub kind: LoopPreventionKind,
+    /// Session-scoped resample attempt index for this loop fingerprint.
+    pub attempt_index: usize,
+    pub count: usize,
+    pub max_retries: usize,
+    /// Key into `AgentSession.tool_loop_resample_attempts`.
+    pub budget_key: String,
+    pub args: String,
+}
+
+fn resample_budget_key(
+    short_circuit: &LoopPreventionShortCircuit,
+    current_tool_calls: &[ToolCall],
+) -> String {
+    match short_circuit.kind {
+        LoopPreventionKind::RepeatedBatchSequence
+        | LoopPreventionKind::RepeatedBatchSequenceEscalate => format!(
+            "batch:{}",
+            circuit_breaker::batch_fingerprint(current_tool_calls)
+        ),
+        _ => format!(
+            "{}:{}",
+            short_circuit.tool_name,
+            circuit_breaker::normalize_tool_arguments(&short_circuit.args)
+        ),
+    }
+}
+
+async fn session_resample_attempts(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    budget_key: &str,
+) -> usize {
+    let active = active_sessions.read().await;
+    let Some(session) = active.get(session_id) else {
+        return 0;
+    };
+    let attempts = session.tool_loop_resample_attempts.read().await;
+    *attempts.get(budget_key).unwrap_or(&0)
+}
+
+pub(crate) async fn increment_tool_loop_resample_attempt(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    budget_key: &str,
+) {
+    let active = active_sessions.read().await;
+    if let Some(session) = active.get(session_id) {
+        let mut attempts = session.tool_loop_resample_attempts.write().await;
+        *attempts.entry(budget_key.to_string()).or_insert(0) += 1;
+    }
+}
+
+async fn load_tool_loop_resample_settings() -> (bool, usize) {
+    // Default policy: clean resample (no intrusive guidance injection).
+    // Legacy guidance is opt-in via `toolLoopLegacyGuidanceEnabled`.
+    let default_resample_enabled = true;
+    let default_max_retries = 2usize;
+
+    let Some(settings_repo) = crate::state::try_get_settings_repository() else {
+        return (default_resample_enabled, default_max_retries);
+    };
+
+    match settings_repo.get("experimentalSettings").await {
+        Ok(Some(model)) => {
+            let parsed = match serde_json::from_str::<serde_json::Value>(&model.value) {
+                Ok(value) => value,
+                Err(error) => {
+                    log::warn!(
+                        "Malformed experimentalSettings JSON; using tool-loop resample defaults: {}",
+                        error
+                    );
+                    serde_json::Value::Null
+                }
+            };
+
+            let resample_enabled = parsed
+                .get("toolLoopLegacyGuidanceEnabled")
+                .and_then(|v| v.as_bool())
+                .map(|legacy| !legacy)
+                .unwrap_or(default_resample_enabled);
+
+            // Allow 0 for "no resamples" (immediate circuit breaker at attempt_index=0).
+            let max_retries = parsed
+                .get("toolLoopMaxResampleRetries")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(default_max_retries)
+                .clamp(0, 20);
+
+            (resample_enabled, max_retries)
+        }
+        _ => (default_resample_enabled, default_max_retries),
+    }
+}
+
 pub(crate) async fn preprocess_assistant_tool_calls(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -46,10 +159,13 @@ pub(crate) async fn preprocess_assistant_tool_calls(
 ) -> CircuitBreakerPreprocessResult {
     let mut forced_circuit_break_message = None;
     let mut loop_prevention_short_circuits = HashMap::new();
+    let mut tool_loop_resample: Option<ToolLoopResampleDecision> = None;
 
     if let Some(tool_calls) = &assistant_message.tool_calls {
         let (loop_threshold, loop_break_offset) =
             circuit_breaker::load_loop_prevention_settings().await;
+        let (tool_loop_resample_enabled, tool_loop_max_resample_retries) =
+            load_tool_loop_resample_settings().await;
 
         let (session_metadata, hard_break) = {
             let sessions = active_sessions.read().await;
@@ -81,19 +197,49 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                             circuit_breaker::CircuitBreakerAction::RepeatedBatchSequence {
                                 count,
                                 tool_name,
-                                ..
+                                args,
                             } => {
-                                // Identical batch fingerprint ⇒ every call is part of
-                                // the repeated sequence; short-circuit the whole batch.
-                                for tool_call in tool_calls.iter() {
-                                    loop_prevention_short_circuits.insert(
-                                        tool_call.id.clone(),
-                                        LoopPreventionShortCircuit {
-                                            kind: LoopPreventionKind::RepeatedBatchSequence,
-                                            tool_name: tool_name.clone(),
-                                            count,
-                                        },
-                                    );
+                                let attempt_index = count.saturating_sub(loop_threshold);
+                                if tool_loop_resample_enabled
+                                    && attempt_index >= tool_loop_max_resample_retries
+                                {
+                                    hard_break = Some((0, count, tool_name, args));
+                                } else {
+                                    for tool_call in tool_calls.iter() {
+                                        loop_prevention_short_circuits.insert(
+                                            tool_call.id.clone(),
+                                            LoopPreventionShortCircuit {
+                                                kind: LoopPreventionKind::RepeatedBatchSequence,
+                                                tool_name: tool_name.clone(),
+                                                count,
+                                                args: args.clone(),
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                            circuit_breaker::CircuitBreakerAction::RepeatedBatchSequenceEscalate {
+                                count,
+                                tool_name,
+                                args,
+                            } => {
+                                let attempt_index = count.saturating_sub(loop_threshold);
+                                if tool_loop_resample_enabled
+                                    && attempt_index >= tool_loop_max_resample_retries
+                                {
+                                    hard_break = Some((0, count, tool_name, args));
+                                } else {
+                                    for tool_call in tool_calls.iter() {
+                                        loop_prevention_short_circuits.insert(
+                                            tool_call.id.clone(),
+                                            LoopPreventionShortCircuit {
+                                                kind: LoopPreventionKind::RepeatedBatchSequenceEscalate,
+                                                tool_name: tool_name.clone(),
+                                                count,
+                                                args: args.clone(),
+                                            },
+                                        );
+                                    }
                                 }
                             }
                             _ => {}
@@ -107,7 +253,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                         for (index, tool_call) in tool_calls.iter().enumerate() {
                             if let Some(circuit_breaker::CircuitBreakerAction::DuplicateInBatch {
                                 tool_name,
-                                ..
+                                args,
                             }) = intra_batch_duplicates.get(&tool_call.id)
                             {
                                 loop_prevention_short_circuits.insert(
@@ -116,6 +262,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                         kind: LoopPreventionKind::DuplicateInBatch,
                                         tool_name: tool_name.clone(),
                                         count: 2,
+                                        args: args.clone(),
                                     },
                                 );
                                 continue;
@@ -143,42 +290,66 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                 circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
                                     count,
                                     tool_name,
-                                    ..
+                                    args,
                                 } => {
+                                    let attempt_index = count.saturating_sub(loop_threshold);
+                                    if tool_loop_resample_enabled
+                                        && attempt_index >= tool_loop_max_resample_retries
+                                    {
+                                        hard_break = Some((index, count, tool_name, args));
+                                        break;
+                                    }
                                     loop_prevention_short_circuits.insert(
                                         tool_call.id.clone(),
                                         LoopPreventionShortCircuit {
                                             kind: LoopPreventionKind::RepeatedErrorOutcome,
                                             tool_name,
                                             count,
+                                            args,
                                         },
                                     );
                                 }
                                 circuit_breaker::CircuitBreakerAction::NaturalRecoveryErrorEscalate {
                                     count,
                                     tool_name,
-                                    ..
+                                    args,
                                 } => {
+                                    let attempt_index = count.saturating_sub(loop_threshold);
+                                    if tool_loop_resample_enabled
+                                        && attempt_index >= tool_loop_max_resample_retries
+                                    {
+                                        hard_break = Some((index, count, tool_name, args));
+                                        break;
+                                    }
                                     loop_prevention_short_circuits.insert(
                                         tool_call.id.clone(),
                                         LoopPreventionShortCircuit {
                                             kind: LoopPreventionKind::RepeatedErrorEscalate,
                                             tool_name,
                                             count,
+                                            args,
                                         },
                                     );
                                 }
                                 circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
                                     count,
                                     tool_name,
-                                    ..
+                                    args,
                                 } => {
+                                    let attempt_index = count.saturating_sub(loop_threshold);
+                                    if tool_loop_resample_enabled
+                                        && attempt_index >= tool_loop_max_resample_retries
+                                    {
+                                        hard_break = Some((index, count, tool_name, args));
+                                        break;
+                                    }
                                     loop_prevention_short_circuits.insert(
                                         tool_call.id.clone(),
                                         LoopPreventionShortCircuit {
                                             kind: LoopPreventionKind::RepeatedSuccessOutcome,
                                             tool_name,
                                             count,
+                                            args,
                                         },
                                     );
                                 }
@@ -252,6 +423,36 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                 }
             }
         } else if !loop_prevention_short_circuits.is_empty() {
+            if tool_loop_resample_enabled {
+                let repeated_candidates = loop_prevention_short_circuits.values().filter(|sc| {
+                    matches!(
+                        sc.kind,
+                        LoopPreventionKind::RepeatedErrorOutcome
+                            | LoopPreventionKind::RepeatedErrorEscalate
+                            | LoopPreventionKind::RepeatedSuccessOutcome
+                            | LoopPreventionKind::RepeatedBatchSequence
+                            | LoopPreventionKind::RepeatedBatchSequenceEscalate
+                    )
+                });
+
+                if let Some(best) = repeated_candidates.max_by_key(|sc| sc.count) {
+                    let budget_key = resample_budget_key(best, tool_calls);
+                    let session_attempts =
+                        session_resample_attempts(active_sessions, session_id, &budget_key).await;
+                    if session_attempts < tool_loop_max_resample_retries {
+                        tool_loop_resample = Some(ToolLoopResampleDecision {
+                            tool_name: best.tool_name.clone(),
+                            kind: best.kind.clone(),
+                            attempt_index: session_attempts,
+                            count: best.count,
+                            max_retries: tool_loop_max_resample_retries,
+                            budget_key,
+                            args: best.args.clone(),
+                        });
+                    }
+                }
+            }
+
             for short_circuit in loop_prevention_short_circuits.values() {
                 let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(
                     &short_circuit.tool_name,
@@ -263,12 +464,14 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                     short_circuit.count,
                     short_circuit.kind
                 );
-                emit_circuit_breaker_triggered(
-                    session_id,
-                    &short_circuit.tool_name,
-                    short_circuit.count,
-                    circuit_breaker_action_label(&short_circuit.kind),
-                );
+                if tool_loop_resample.is_none() {
+                    emit_circuit_breaker_triggered(
+                        session_id,
+                        &short_circuit.tool_name,
+                        short_circuit.count,
+                        circuit_breaker_action_label(&short_circuit.kind),
+                    );
+                }
             }
         }
     }
@@ -278,11 +481,14 @@ pub(crate) async fn preprocess_assistant_tool_calls(
         assistant_message.content = vec![circuit_break_message.clone()];
         return CircuitBreakerPreprocessResult {
             loop_prevention_short_circuits: HashMap::new(),
+            tool_loop_resample: None,
             forced_stop: Some(ForcedCircuitBreakStop::TextOnly),
         };
     }
 
-    apply_tool_loop_token_fence(active_sessions, session_id, assistant_message).await;
+    if tool_loop_resample.is_none() {
+        apply_tool_loop_token_fence(active_sessions, session_id, assistant_message).await;
+    }
 
     let forced_stop = if hard_break_applied_ui_circuit_break(assistant_message) {
         Some(ForcedCircuitBreakStop::InteractiveCircuitBreak)
@@ -292,6 +498,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
 
     CircuitBreakerPreprocessResult {
         loop_prevention_short_circuits,
+        tool_loop_resample,
         forced_stop,
     }
 }
@@ -330,6 +537,7 @@ fn circuit_breaker_action_label(kind: &LoopPreventionKind) -> &'static str {
         }
         LoopPreventionKind::RepeatedErrorEscalate => "errorEscalate",
         LoopPreventionKind::RepeatedBatchSequence => "repeatedBatch",
+        LoopPreventionKind::RepeatedBatchSequenceEscalate => "repeatedBatchEscalate",
         LoopPreventionKind::DuplicateInBatch => "duplicateInBatch",
     }
 }

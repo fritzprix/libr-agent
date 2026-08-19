@@ -695,6 +695,19 @@
       "inlineAudioAttachment": {
         "title": "Inline Audio Attachments",
         "description": "Convert attached audio files into base64 inline content for LLM requests. Disabling this saves significant context window tokens by keeping audio files as workspace-only references."
+      },
+      "toolLoopRecoveryPolicy": {
+        "title": "Tool-loop recovery",
+        "description": "By default, repeated tool loops trigger a clean resample without injecting guidance text into tool errors. When the retry budget is exhausted, the circuit breaker stops the run."
+      },
+      "toolLoopMaxResampleRetries": {
+        "title": "Max resample retries",
+        "description": "How many clean resample attempts to make when a repeated tool-loop signature is detected, before hard-stopping.",
+        "placeholder": "e.g., 2"
+      },
+      "toolLoopLegacyGuidanceEnabled": {
+        "title": "Show loop warnings in tool results (legacy)",
+        "description": "Off by default. When enabled, injects loop-prevention guidance as tool errors instead of silently retrying with a clean resample."
       }
     }
   },

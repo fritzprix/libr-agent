@@ -56,6 +56,7 @@ pub fn create_read_file_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -100,6 +101,7 @@ Returns names and types (file/directory). Use workspace__globFiles when you need
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -149,6 +151,7 @@ pub fn create_glob_files_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -209,6 +212,7 @@ pub fn create_grep_files_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["path".to_string(), "query".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -277,5 +281,6 @@ pub fn create_search_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

@@ -142,10 +142,10 @@ impl WorkspaceServer {
                 }
                 // Log poll statistics for monitoring
                 tracing::info!(
-                    "Cleaned up old process: {} (polls: {}, consecutive_running_polls: {})",
+                    "Cleaned up old process: {} (polls: {}, poll_streak: {})",
                     id,
                     entry.poll_count,
-                    entry.consecutive_running_polls
+                    entry.poll_tracker.consecutive_identical()
                 );
             }
         }

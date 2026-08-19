@@ -229,10 +229,134 @@ fn polling_outcome_progress_resets_trailing_streak() {
 }
 
 #[test]
+fn structured_loop_fingerprint_drives_outcome_signature() {
+    let repeated_args = r#"{"sessionId":"abc","wait":false}"#;
+    let current_call = test_tool_call("tc-3", "agent__checkSession", repeated_args);
+    let structured = |status: &str, turn: u64| {
+        Some(serde_json::json!({
+            "structuredContent": {
+                "loopFingerprint": format!("{status}:{turn}"),
+                "status": status,
+                "turnCount": turn,
+            }
+        }))
+    };
+
+    let messages = vec![
+        test_message(
+            "assistant-1",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-1",
+                "agent__checkSession",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-1",
+            "tool",
+            None,
+            Some("tc-1"),
+            structured("busy", 1),
+            "ignored text body",
+            Some(false),
+        ),
+        test_message(
+            "assistant-2",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-2",
+                "agent__checkSession",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-2",
+            "tool",
+            None,
+            Some("tc-2"),
+            structured("busy", 2),
+            "ignored text body",
+            Some(false),
+        ),
+    ];
+
+    assert_eq!(
+        evaluate(&messages, &current_call, 3),
+        None,
+        "changing structured loopFingerprint must reset the trailing streak"
+    );
+
+    let messages_identical = vec![
+        test_message(
+            "assistant-1",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-1",
+                "agent__checkSession",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-1",
+            "tool",
+            None,
+            Some("tc-1"),
+            structured("busy", 1),
+            "ignored text body",
+            Some(false),
+        ),
+        test_message(
+            "assistant-2",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-2",
+                "agent__checkSession",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-2",
+            "tool",
+            None,
+            Some("tc-2"),
+            structured("busy", 1),
+            "ignored text body",
+            Some(false),
+        ),
+    ];
+
+    assert!(
+        matches!(
+            evaluate(&messages_identical, &current_call, 3),
+            Some(CircuitBreakerAction::NaturalRecoverySuccess { .. })
+        ),
+        "identical structured loopFingerprint must accumulate toward threshold"
+    );
+}
+
+#[test]
 fn success_track_guidance_recommends_blocking_wait() {
     let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
         kind: LoopPreventionKind::RepeatedSuccessOutcome,
         tool_name: "workspace__waitForProcess".to_string(),
+        args: "{}".to_string(),
         count: 3,
     });
 

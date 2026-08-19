@@ -122,6 +122,45 @@ pub trait BuiltinMCPServer {
 - State must be encapsulated in `Arc<RwLock<T>>`.
 - Resources (browsers, file handles) must be keyed by `agent_session_id`. **Never** leak state between parallel agent sessions.
 
+### 2.4 Wait-Capable Tool Contract (`x-libragent-wait`)
+
+**Rule:** Tools that poll long-running work (session status, background processes) must declare wait semantics in the tool schema so loop-recovery, PollTracker, and authors share one contract.
+
+Add the tool-level extension on `MCPTool`:
+
+```json
+{
+  "name": "checkSession",
+  "x-libragent-wait": {
+    "resourceIdParam": "sessionId",
+    "waitParam": "wait",
+    "timeoutParam": "timeout",
+    "snapshotMode": { "wait": false },
+    "blockingMode": { "wait": true },
+    "loopFingerprintField": "loopFingerprint",
+    "pollTrackerScope": "session"
+  }
+}
+```
+
+| Field                        | Purpose                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| `resourceIdParam`            | Input field identifying the polled entity (`sessionId`, `processId`, …)         |
+| `waitParam` / `timeoutParam` | Blocking vs snapshot controls (omit when timeout-only)                          |
+| `snapshotMode`               | Literal match for discouraged snapshot polling (e.g. `wait=false`, `timeout=0`) |
+| `blockingMode`               | Preferred blocking pattern (e.g. `wait=true`, or any `timeout>0`)               |
+| `loopFingerprintField`       | structuredContent key for circuit-breaker outcome signatures                    |
+| `pollTrackerScope`           | `session` (caller session map) or `processRegistry` (ProcessEntry)              |
+
+**Implementation checklist for wait-capable tools:**
+
+1. Declare `x-libragent-wait` on the tool definition (`LibragentWaitExtension` in Rust).
+2. Emit `loopFingerprint` (or canonical status fields) in structuredContent on every poll response.
+3. Wire in-band `PollTracker` guidance for snapshot mode before the global circuit breaker fires.
+4. Document blocking wait in the tool description (`wait=true` / non-zero timeout).
+
+Reference implementations: `agent__checkSession`, `workspace__waitForProcess`. See also [tool-loop-recovery.md](../architecture/tool-loop-recovery.md).
+
 ---
 
 ## 3. Schema & Data Integrity (The "Zero Trust" Rules)
@@ -438,3 +477,4 @@ Before deploying a tool, validation against these checks is mandatory:
 - [ ] **Channel Separation:** Success hints only appear after confirmed operation success, never in error responses.
 - [ ] **Vocabulary:** Descriptions use "Extract/Target" instead of "Copy/Click".
 - [ ] **Testing:** Unit tests exist for Error Guidance formatting.
+- [ ] **Wait contract:** Polling/wait tools declare `x-libragent-wait`, emit `loopFingerprint`, and wire PollTracker for snapshot mode.

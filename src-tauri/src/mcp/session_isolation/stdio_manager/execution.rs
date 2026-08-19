@@ -228,6 +228,7 @@ impl SessionMCPManager {
                         input_schema: structured_schema,
                         output_schema: None,
                         annotations: None,
+                        libragent_wait: None,
                     };
 
                     tools.push(mcp_tool);
