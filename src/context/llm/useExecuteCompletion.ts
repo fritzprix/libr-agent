@@ -21,6 +21,7 @@ import {
   StreamAccumulator,
   validateAndFinalizeMessage,
 } from './execute-completion';
+import { providerSupportsReasoningBudgetCap } from '@/lib/ai-service/openai/reasoning-budget';
 
 const logger = getLogger('useExecuteCompletion');
 
@@ -114,12 +115,13 @@ export function useExecuteCompletion({
       };
 
       try {
+        const resolvedMaxTokens =
+          maxTokens ||
+          settingsRef.current.advanced?.defaultMaxOutputTokens ||
+          8192;
         const config: AIServiceConfig = {
           ...runtimeConfig,
-          maxTokens:
-            maxTokens ||
-            settingsRef.current.advanced?.defaultMaxOutputTokens ||
-            8192,
+          maxTokens: resolvedMaxTokens,
         };
 
         const safeMessages = MessageNormalizer.sanitizeMessagesForService(
@@ -156,6 +158,9 @@ export function useExecuteCompletion({
           responseMessageId,
           settingsRef,
           startTime,
+          providerSupportsReasoningBudgetCap(provider)
+            ? { reasoningBudgetMaxTokens: resolvedMaxTokens }
+            : undefined,
         );
 
         const streamGenerator = service.streamChat(enrichedMessages, {

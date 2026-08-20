@@ -15,6 +15,10 @@ import type { ToolCall } from '@/models/chat';
 import type { Settings } from '@/lib/services/settings-service';
 import { getLogger } from '@/lib/logger';
 import {
+  estimateThinkingTokens,
+  reasoningBudgetThresholdTokens,
+} from '@/lib/ai-service/openai/reasoning-budget';
+import {
   detectRepeatedThinkingLoop,
   REPEATED_THINKING_TAIL_CHARS,
   REPEATED_THINKING_MIN_PATTERN_LENGTH,
@@ -30,6 +34,11 @@ const logger = getLogger('stream-accumulator');
 const STREAMING_TEXT_THROTTLE_MS = 50;
 const STREAMING_TOOL_CALL_THROTTLE_MS = 100;
 const REPEATED_TAIL_CHECK_INTERVAL = 5;
+
+export interface StreamAccumulatorOptions {
+  /** When set, abort+retry once thinking reaches 90% of this value. */
+  reasoningBudgetMaxTokens?: number;
+}
 
 export interface StreamAccumulatorState {
   content: MCPContent[];
@@ -64,6 +73,8 @@ export class StreamAccumulator {
   private hasToolCallInStream = false;
   private repeatedTextIssueReported = false;
   private repeatedTextCheckCounter = 0;
+  private reasoningBudgetIssueReported = false;
+  private readonly reasoningBudgetThreshold?: number;
 
   private sessionId: string;
   private responseMessageId: string;
@@ -75,11 +86,62 @@ export class StreamAccumulator {
     responseMessageId: string,
     settingsRef: React.MutableRefObject<Settings>,
     startTime: number,
+    options?: StreamAccumulatorOptions,
   ) {
     this.sessionId = sessionId;
     this.responseMessageId = responseMessageId;
     this.settingsRef = settingsRef;
     this.startTime = startTime;
+    if (
+      options?.reasoningBudgetMaxTokens != null &&
+      Number.isFinite(options.reasoningBudgetMaxTokens) &&
+      options.reasoningBudgetMaxTokens >= 1
+    ) {
+      this.reasoningBudgetThreshold = reasoningBudgetThresholdTokens(
+        options.reasoningBudgetMaxTokens,
+      );
+    }
+  }
+
+  private tryReportReasoningBudgetExceeded(): boolean {
+    if (
+      this.reasoningBudgetIssueReported ||
+      this.reasoningBudgetThreshold == null
+    ) {
+      return false;
+    }
+
+    const thinkingText = this.currentThinkingText ?? '';
+    const estimatedTokens = estimateThinkingTokens(thinkingText);
+    if (estimatedTokens < this.reasoningBudgetThreshold) {
+      return false;
+    }
+
+    this.reasoningBudgetIssueReported = true;
+    // Suppress loop detector noise once budget abort owns recovery.
+    this.repeatedThinkingIssueReported = true;
+    logger.warn('Reasoning budget exceeded during streaming', {
+      sessionId: this.sessionId,
+      responseMessageId: this.responseMessageId,
+      thinkingChars: thinkingText.length,
+      estimatedThinkingTokens: estimatedTokens,
+      reasoningBudgetThreshold: this.reasoningBudgetThreshold,
+    });
+    void reportLLMStreamingIssue({
+      sessionId: this.sessionId,
+      responseMessageId: this.responseMessageId,
+      issueKind: 'REASONING_BUDGET_EXCEEDED',
+      observedTailChars: thinkingText.length,
+      patternLength: this.reasoningBudgetThreshold,
+      repetitionCount: estimatedTokens,
+    }).catch((error: unknown) => {
+      logger.warn('Failed to report reasoning budget exceeded', {
+        sessionId: this.sessionId,
+        responseMessageId: this.responseMessageId,
+        error,
+      });
+    });
+    return true;
   }
 
   private getThinkingConfig(): RepeatedTailDetectorConfig {
@@ -186,7 +248,9 @@ export class StreamAccumulator {
           ? `${this.currentThinkingText}\n${chunk.thinking}`
           : chunk.thinking;
 
-      if (!this.repeatedThinkingIssueReported) {
+      if (this.tryReportReasoningBudgetExceeded()) {
+        // Budget abort takes precedence over thinking-loop detection.
+      } else if (!this.repeatedThinkingIssueReported) {
         this.repeatedThinkingCheckCounter += 1;
         const thinkingConfig = this.getThinkingConfig();
         const detection =

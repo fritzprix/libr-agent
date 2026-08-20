@@ -16,6 +16,8 @@ use tokio::sync::RwLock;
 pub const REPEATED_THINKING_MAX_RETRIES: u32 = 2;
 pub const REPEATED_TEXT_LOOP_MAX_RETRIES: u32 = 2;
 pub const BAD_TOOL_ARGS_MAX_RETRIES: u32 = 2;
+/// Client-side reasoning-budget abort: one clean resample, no prompt nudge.
+pub const REASONING_BUDGET_MAX_RETRIES: u32 = 1;
 /// Max FallThrough incidents per workflow before hard-stopping. Bounds
 /// truncated-args loops where raw args (and thus loop-prevention signatures)
 /// change every attempt.
@@ -69,6 +71,13 @@ pub enum NonProductiveCompletionReason {
         /// Primary failure kind from the first invalid tool call (for logging).
         parse_kind: String,
     },
+    ReasoningBudgetExceeded {
+        response_message_id: String,
+        observed_tail_chars: usize,
+        /// floor(max_tokens * 0.9) from the frontend report.
+        reasoning_budget_tokens: usize,
+        estimated_thinking_tokens: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +85,7 @@ enum StreamingRecoveryCounter {
     Thinking,
     Text,
     BadToolArgs,
+    ReasoningBudget,
 }
 
 impl StreamingRecoveryCounter {
@@ -84,6 +94,7 @@ impl StreamingRecoveryCounter {
             Self::Thinking => REPEATED_THINKING_MAX_RETRIES,
             Self::Text => REPEATED_TEXT_LOOP_MAX_RETRIES,
             Self::BadToolArgs => BAD_TOOL_ARGS_MAX_RETRIES,
+            Self::ReasoningBudget => REASONING_BUDGET_MAX_RETRIES,
         }
     }
 
@@ -92,6 +103,7 @@ impl StreamingRecoveryCounter {
             Self::Thinking => *session.repeated_thinking_retry_count.read().await,
             Self::Text => *session.repeated_text_loop_retry_count.read().await,
             Self::BadToolArgs => *session.bad_tool_args_retry_count.read().await,
+            Self::ReasoningBudget => *session.reasoning_budget_retry_count.read().await,
         }
     }
 
@@ -105,6 +117,9 @@ impl StreamingRecoveryCounter {
             }
             Self::BadToolArgs => {
                 *session.bad_tool_args_retry_count.write().await = value;
+            }
+            Self::ReasoningBudget => {
+                *session.reasoning_budget_retry_count.write().await = value;
             }
         }
     }
@@ -228,6 +243,23 @@ async fn handle_non_productive_completion(
                         max_retries
                     );
                 }
+                NonProductiveCompletionReason::ReasoningBudgetExceeded {
+                    response_message_id,
+                    observed_tail_chars,
+                    reasoning_budget_tokens,
+                    estimated_thinking_tokens,
+                } => {
+                    log::warn!(
+                        "Reasoning budget exceeded for session {} response {} (thinking_chars={}, reasoning_budget_tokens={}, estimated_thinking_tokens={}). Retrying LLM turn ({}/{}).",
+                        session_id,
+                        response_message_id,
+                        observed_tail_chars,
+                        reasoning_budget_tokens,
+                        estimated_thinking_tokens,
+                        next_retry_count,
+                        max_retries
+                    );
+                }
             }
 
             let recovery_result = request_llm_completion_with_recovery(
@@ -345,6 +377,25 @@ async fn handle_non_productive_completion(
                 NonProductiveCompletionReason::MalformedToolCallArguments { .. } => {
                     unreachable!("MalformedToolCallArguments Fail handled above")
                 }
+                NonProductiveCompletionReason::ReasoningBudgetExceeded {
+                    response_message_id,
+                    observed_tail_chars,
+                    reasoning_budget_tokens,
+                    estimated_thinking_tokens,
+                } => (
+                    format!(
+                        "The model exceeded the reasoning budget in session '{}' and already used the automatic recovery retry. Workflow stopped to prevent unbounded thinking.",
+                        session_name
+                    ),
+                    "REASONING_BUDGET_EXCEEDED",
+                    serde_json::json!({
+                        "responseMessageId": response_message_id,
+                        "observedTailChars": observed_tail_chars,
+                        "reasoningBudgetTokens": reasoning_budget_tokens,
+                        "estimatedThinkingTokens": estimated_thinking_tokens,
+                        "maxRetries": max_retries,
+                    }),
+                ),
             };
 
             finalize_workflow_error_with_dispatcher(
@@ -459,6 +510,14 @@ fn repeated_loop_reason_from_report(
                 repetition_count: report.repetition_count,
             })
         }
+        StreamingIssueKind::ReasoningBudgetExceeded => {
+            Some(NonProductiveCompletionReason::ReasoningBudgetExceeded {
+                response_message_id: report.response_message_id.clone(),
+                observed_tail_chars: report.observed_tail_chars,
+                reasoning_budget_tokens: report.pattern_length,
+                estimated_thinking_tokens: report.repetition_count,
+            })
+        }
     }
 }
 
@@ -466,6 +525,7 @@ fn recovery_counter_for_issue(issue_kind: StreamingIssueKind) -> StreamingRecove
     match issue_kind {
         StreamingIssueKind::RepeatedThinkingLoop => StreamingRecoveryCounter::Thinking,
         StreamingIssueKind::RepeatedTextLoop => StreamingRecoveryCounter::Text,
+        StreamingIssueKind::ReasoningBudgetExceeded => StreamingRecoveryCounter::ReasoningBudget,
     }
 }
 
@@ -473,6 +533,7 @@ fn cancel_reason_for_issue(issue_kind: StreamingIssueKind) -> &'static str {
     match issue_kind {
         StreamingIssueKind::RepeatedThinkingLoop => "repeated-thinking-loop",
         StreamingIssueKind::RepeatedTextLoop => "repeated-text-loop",
+        StreamingIssueKind::ReasoningBudgetExceeded => "reasoning-budget-exceeded",
     }
 }
 
@@ -480,6 +541,7 @@ fn stale_report_log_label(issue_kind: StreamingIssueKind) -> &'static str {
     match issue_kind {
         StreamingIssueKind::RepeatedThinkingLoop => "repeated-thinking",
         StreamingIssueKind::RepeatedTextLoop => "repeated-text",
+        StreamingIssueKind::ReasoningBudgetExceeded => "reasoning-budget",
     }
 }
 
@@ -735,5 +797,20 @@ mod tests {
     fn bad_tool_args_incident_cap_is_positive() {
         assert!(BAD_TOOL_ARGS_MAX_INCIDENTS >= 1);
         assert!(BAD_TOOL_ARGS_MAX_RETRIES >= 1);
+    }
+
+    #[test]
+    fn reasoning_budget_retries_once() {
+        assert_eq!(REASONING_BUDGET_MAX_RETRIES, 1);
+        assert_eq!(
+            evaluate_non_productive_completion_action(0, REASONING_BUDGET_MAX_RETRIES),
+            NonProductiveCompletionAction::Retry {
+                next_retry_count: 1
+            }
+        );
+        assert_eq!(
+            evaluate_non_productive_completion_action(1, REASONING_BUDGET_MAX_RETRIES),
+            NonProductiveCompletionAction::Fail
+        );
     }
 }

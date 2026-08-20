@@ -147,14 +147,17 @@ export interface AgentResponse<T = unknown> {
 
 export type StreamingIssueKind =
   | 'REPEATED_THINKING_LOOP'
-  | 'REPEATED_TEXT_LOOP';
+  | 'REPEATED_TEXT_LOOP'
+  | 'REASONING_BUDGET_EXCEEDED';
 
 export interface StreamingIssueReport {
   sessionId: string;
   responseMessageId: string;
   issueKind: StreamingIssueKind;
   observedTailChars: number;
+  /** For reasoning-budget: threshold tokens (floor(maxTokens * 0.9)). */
   patternLength: number;
+  /** For reasoning-budget: estimated thinking tokens at abort. */
   repetitionCount: number;
 }
 

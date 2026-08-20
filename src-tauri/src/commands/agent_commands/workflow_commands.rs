@@ -139,6 +139,10 @@ pub async fn agent_report_llm_streaming_issue(
                     "repeated text loop",
                     crate::agent::llm::REPEATED_TEXT_LOOP_MAX_RETRIES,
                 ),
+                crate::agent::llm::types::StreamingIssueKind::ReasoningBudgetExceeded => (
+                    "reasoning budget exceeded",
+                    crate::agent::llm::REASONING_BUDGET_MAX_RETRIES,
+                ),
             };
             (
                 format!(
@@ -155,6 +159,9 @@ pub async fn agent_report_llm_streaming_issue(
                 }
                 crate::agent::llm::types::StreamingIssueKind::RepeatedTextLoop => {
                     "repeated text loop"
+                }
+                crate::agent::llm::types::StreamingIssueKind::ReasoningBudgetExceeded => {
+                    "reasoning budget exceeded"
                 }
             };
             (

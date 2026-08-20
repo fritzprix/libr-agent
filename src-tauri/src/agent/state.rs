@@ -492,6 +492,11 @@ pub struct AgentSession {
     /// workflow. Hard-stops after a fixed cap to bound unbounded truncated loops.
     pub bad_tool_args_incident_count: Arc<RwLock<u32>>,
 
+    /// Counts Rust-owned recovery retries after client-side reasoning-budget
+    /// aborts (thinking reached ~90% of max output tokens). Independent from
+    /// repeated-thinking / text-loop counters. No prompt nudge is injected.
+    pub reasoning_budget_retry_count: Arc<RwLock<u32>>,
+
     /// Pending events (messages, approvals, etc.) waiting for workflow processing
     pub pending_events: Arc<RwLock<PendingEventManager>>,
 
@@ -559,6 +564,7 @@ impl AgentSession {
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
+            reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry,
@@ -674,6 +680,7 @@ mod tests {
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
+            reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),
