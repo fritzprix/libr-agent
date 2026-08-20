@@ -709,101 +709,54 @@ async fn session_resample_budget_blocks_resample_when_history_count_stays_at_thr
 #[cfg(not(windows))]
 mod settings_mutation_tests {
     use super::*;
-    use std::sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    };
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    use sea_orm::Database;
+    use sea_orm::{ConnectionTrait, Database, DatabaseBackend, Statement};
     use sea_orm_migration::MigratorTrait;
     use tauri_mcp_agent_lib::migration::Migrator;
     use tauri_mcp_agent_lib::repositories::{SettingsRepository, SqliteSettingsRepository};
     use tauri_mcp_agent_lib::{reset_state, set_settings_repository};
-    use tokio::sync::OnceCell;
 
     static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    async fn ensure_settings_repo() -> SqliteSettingsRepository {
-        static SETTINGS_REPO: OnceCell<SqliteSettingsRepository> = OnceCell::const_new();
+    /// Fresh migrated DB per call.
+    ///
+    /// Do not reuse a OnceCell-backed in-memory pool across tests: sqlx may close the
+    /// idle connection and SQLite then destroys the shared-memory database, leaving
+    /// later tests with `no such table: settings`.
+    async fn install_experimental_settings(experimental: serde_json::Value) {
+        reset_state();
+        tauri_mcp_agent_lib::lifecycle::database::register_sqlite_vec();
 
-        SETTINGS_REPO
-            .get_or_init(|| async {
-                reset_state();
-                // Migrations create sqlite-vec virtual tables; register vec0 first
-                // (same pattern as message_cursor_pagination_tests).
-                tauri_mcp_agent_lib::lifecycle::database::register_sqlite_vec();
-                let db_id = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-                let database_url =
-                    format!("sqlite::file:tool_loop_resample_{db_id}?mode=memory&cache=shared");
-                let mut opt = sea_orm::ConnectOptions::new(database_url);
-                opt.max_connections(1)
-                    .min_connections(1)
-                    .sqlx_logging(false);
-                let db = Database::connect(opt)
-                    .await
-                    .expect("Failed to create in-memory database");
-                Migrator::up(&db, None)
-                    .await
-                    .expect("Migrations should run");
-                let repo = SqliteSettingsRepository::new(db);
-                set_settings_repository(repo.clone());
-                repo
-            })
+        let db_id = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let database_url =
+            format!("sqlite::file:tool_loop_resample_{db_id}?mode=memory&cache=shared");
+        let mut opt = sea_orm::ConnectOptions::new(database_url);
+        opt.max_connections(1)
+            .min_connections(1)
+            .sqlx_logging(false);
+        let db = Database::connect(opt)
             .await
-            .clone()
-    }
-
-    async fn reset_experimental_settings() {
-        let repo = ensure_settings_repo().await;
-        repo.set(
-            "experimentalSettings",
-            serde_json::json!({
-                "toolLoopLegacyGuidanceEnabled": false,
-                "toolLoopMaxResampleRetries": 2,
-                "inlineAudioAttachment": true
-            }),
-        )
+            .expect("Failed to create in-memory database");
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "PRAGMA foreign_keys = ON".to_string(),
+        ))
         .await
-        .expect("reset experimentalSettings");
+        .expect("Failed to enable SQLite foreign_keys");
+        Migrator::up(&db, None)
+            .await
+            .expect("Migrations should run");
+
+        let repo = SqliteSettingsRepository::new(db);
+        set_settings_repository(repo.clone());
+        repo.set("experimentalSettings", experimental)
+            .await
+            .expect("set experimentalSettings");
     }
 
-    async fn configure_default_resample(max_retries: usize) {
-        let repo = ensure_settings_repo().await;
-        repo.set(
-            "experimentalSettings",
-            serde_json::json!({
-                "toolLoopLegacyGuidanceEnabled": false,
-                "toolLoopMaxResampleRetries": max_retries,
-                "inlineAudioAttachment": true
-            }),
-        )
-        .await
-        .expect("set experimentalSettings");
-    }
-
-    async fn configure_legacy_guidance(enabled: bool) {
-        let repo = ensure_settings_repo().await;
-        repo.set(
-            "experimentalSettings",
-            serde_json::json!({
-                "toolLoopLegacyGuidanceEnabled": enabled,
-                "toolLoopMaxResampleRetries": 2,
-                "inlineAudioAttachment": true
-            }),
-        )
-        .await
-        .expect("set experimentalSettings legacy");
-    }
-
-    #[tokio::test]
-    async fn legacy_guidance_enabled_skips_resample_decision() {
-        let _guard = TEST_GUARD.lock().await;
-        configure_legacy_guidance(true).await;
-
-        let session_id = "tool-loop-legacy-guidance-session";
-        let repeated_args = r#"{"path":"src/main.ts"}"#;
-        let repeated_error = "Error: file not found";
-        let history = vec![
+    fn repeated_error_history(repeated_args: &str, repeated_error: &str) -> Vec<Message> {
+        vec![
             test_message(
                 "assistant-1",
                 "assistant",
@@ -848,13 +801,28 @@ mod settings_mutation_tests {
                 repeated_error,
                 Some(true),
             ),
-        ];
+        ]
+    }
+
+    #[tokio::test]
+    async fn legacy_guidance_enabled_skips_resample_decision() {
+        let _guard = TEST_GUARD.lock().await;
+        install_experimental_settings(serde_json::json!({
+            "toolLoopLegacyGuidanceEnabled": true,
+            "toolLoopMaxResampleRetries": 2,
+            "inlineAudioAttachment": true
+        }))
+        .await;
+
+        let session_id = "tool-loop-legacy-guidance-session";
+        let repeated_args = r#"{"path":"src/main.ts"}"#;
+        let repeated_error = "Error: file not found";
 
         let active_sessions = ensure_active_sessions();
         let (preprocess_result, _) = run_preprocess(
             &active_sessions,
             session_id,
-            history,
+            repeated_error_history(repeated_args, repeated_error),
             vec![test_tool_call("tc-3", "workspace__readFile", repeated_args)],
         )
         .await;
@@ -862,69 +830,29 @@ mod settings_mutation_tests {
         assert!(preprocess_result.tool_loop_resample.is_none());
         assert!(!preprocess_result.loop_prevention_short_circuits.is_empty());
 
-        reset_experimental_settings().await;
+        // Drop global settings so later default-policy tests are not poisoned.
+        reset_state();
     }
 
     #[tokio::test]
     async fn zero_resample_retries_promotes_to_hard_break_at_threshold() {
         let _guard = TEST_GUARD.lock().await;
-        configure_default_resample(0).await;
+        install_experimental_settings(serde_json::json!({
+            "toolLoopLegacyGuidanceEnabled": false,
+            "toolLoopMaxResampleRetries": 0,
+            "inlineAudioAttachment": true
+        }))
+        .await;
 
         let session_id = "tool-loop-zero-resample-session";
         let repeated_args = r#"{"path":"src/main.ts"}"#;
         let repeated_error = "Error: file not found";
-        let history = vec![
-            test_message(
-                "assistant-1",
-                "assistant",
-                Some(vec![test_tool_call(
-                    "tc-1",
-                    "workspace__readFile",
-                    repeated_args,
-                )]),
-                None,
-                None,
-                "",
-                None,
-            ),
-            test_message(
-                "tool-1",
-                "tool",
-                None,
-                Some("tc-1"),
-                Some(serde_json::json!({ "toolError": true })),
-                repeated_error,
-                Some(true),
-            ),
-            test_message(
-                "assistant-2",
-                "assistant",
-                Some(vec![test_tool_call(
-                    "tc-2",
-                    "workspace__readFile",
-                    repeated_args,
-                )]),
-                None,
-                None,
-                "",
-                None,
-            ),
-            test_message(
-                "tool-2",
-                "tool",
-                None,
-                Some("tc-2"),
-                Some(serde_json::json!({ "toolError": true })),
-                repeated_error,
-                Some(true),
-            ),
-        ];
 
         let active_sessions = ensure_active_sessions();
         let (preprocess_result, _) = run_preprocess(
             &active_sessions,
             session_id,
-            history,
+            repeated_error_history(repeated_args, repeated_error),
             vec![test_tool_call("tc-3", "workspace__readFile", repeated_args)],
         )
         .await;
@@ -932,6 +860,6 @@ mod settings_mutation_tests {
         assert!(preprocess_result.tool_loop_resample.is_none());
         assert!(preprocess_result.forced_stop.is_some());
 
-        reset_experimental_settings().await;
+        reset_state();
     }
 }
