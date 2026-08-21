@@ -155,9 +155,9 @@ export interface StreamingIssueReport {
   responseMessageId: string;
   issueKind: StreamingIssueKind;
   observedTailChars: number;
-  /** For reasoning-budget: threshold tokens (floor(maxTokens * 0.9)). */
+  /** For reasoning/output-budget: threshold tokens (floor(maxTokens * 0.9)). */
   patternLength: number;
-  /** For reasoning-budget: estimated thinking tokens at abort. */
+  /** For reasoning/output-budget: estimated non-tool output tokens at abort. */
   repetitionCount: number;
 }
 

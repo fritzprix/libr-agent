@@ -221,6 +221,10 @@ export function useExecuteCompletion({
           }
         }
 
+        // Catch content-only max-output burn when usage arrives on the last chunk
+        // or chars/4 underestimated denser provider tokenization.
+        accumulator.finalizeOutputBudgetCheck();
+
         // Always flush final streaming state after loop ends
         tracker.lastStreamingUpdateRef.current.delete(sessionId);
         const streamingToolCalls = accumulator.getStreamingToolCalls();
