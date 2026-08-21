@@ -1078,3 +1078,62 @@ async fn test_create_proxy_overlapping_destroy_proxy() {
     assert!(!manager.has_http_manager_for_test(session_id).await);
     assert!(!manager.has_creation_guard_for_test(session_id).await);
 }
+
+#[test]
+fn test_promote_builtin_reuse_runtime_state() {
+    use crate::agent::runtime_state::SessionRuntimeState;
+    use super::creation::promote_builtin_reuse_runtime_state;
+
+    let not_ready = SessionRuntimeState::default();
+    assert!(!not_ready.proxy.ready);
+    let promoted = promote_builtin_reuse_runtime_state(not_ready, false);
+    assert!(promoted.proxy.ready);
+
+    let ready = SessionRuntimeState::builtin_ready();
+    let kept = promote_builtin_reuse_runtime_state(ready.clone(), false);
+    assert_eq!(kept, ready);
+
+    let external_unready = SessionRuntimeState::default();
+    let unchanged = promote_builtin_reuse_runtime_state(external_unready.clone(), true);
+    assert_eq!(unchanged, external_unready);
+}
+
+/// Reuse after ensure_builtin must promote a non-ready store back to ready so
+/// open()/FE can leave Hydrating when the lazy path wrote ready without emit.
+#[tokio::test]
+async fn test_reuse_after_lazy_builtin_promotes_unready_runtime_state() {
+    use crate::agent::runtime_state::SessionRuntimeState;
+
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "reuse-promote-unready-runtime";
+
+    insert_test_session(manager, session_id).await;
+
+    let lazy_proxy = manager.ensure_builtin_proxy(session_id).await.unwrap();
+    let tool_ids = lazy_proxy.builtin_tool_ids();
+    assert!(
+        manager.get_runtime_state(session_id).await.proxy.ready,
+        "ensure_builtin_proxy must leave ready=true"
+    );
+
+    // Simulate lost/incomplete runtime snapshot while the proxy Arc remains.
+    manager
+        .set_runtime_state(session_id, SessionRuntimeState::default(), None)
+        .await;
+    assert!(!manager.get_runtime_state(session_id).await.proxy.ready);
+
+    let reused = manager
+        .create_proxy(session_id.to_string(), tool_ids, vec![], None)
+        .await
+        .unwrap();
+    assert!(
+        Arc::ptr_eq(&lazy_proxy, &reused),
+        "matching builtin-only create_proxy must Reuse the lazy proxy"
+    );
+    assert!(
+        manager.get_runtime_state(session_id).await.proxy.ready,
+        "Reuse must promote builtin-only sessions to ready"
+    );
+}
+

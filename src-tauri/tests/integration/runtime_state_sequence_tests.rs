@@ -58,3 +58,53 @@ async fn reusing_builtin_only_proxy_keeps_runtime_state_sequence_stable() {
     );
     assert_eq!(reused_state, first_state);
 }
+
+/// ensure_builtin_proxy writes ready without AppHandle emit; a subsequent matching
+/// create_proxy Reuse must keep ready=true (FE depends on open()/force-emit).
+#[tokio::test]
+async fn reuse_after_ensure_builtin_keeps_ready_runtime_state() {
+    let db = Arc::new(setup_test_db_with_migrations().await);
+    set_mcp_server_repository(SqliteMCPServerRepository::new((*db).clone()));
+    set_session_repository(SqliteSessionRepository::new((*db).clone()));
+    let temp_dir = TempDir::new().expect("temp dir");
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(temp_dir.path().join("session-root"))
+            .expect("session manager"),
+    );
+    let manager = MCPServiceProxyManager::new(db, session_manager);
+    let session_id = "reuse-after-lazy-builtin".to_string();
+
+    let lazy_proxy = manager
+        .ensure_builtin_proxy(&session_id)
+        .await
+        .expect("lazy builtin proxy");
+    let after_lazy = manager.get_runtime_state(&session_id).await;
+    assert!(
+        after_lazy.proxy.ready,
+        "ensure_builtin_proxy must leave ready=true"
+    );
+
+    let reused = manager
+        .create_proxy(
+            session_id.clone(),
+            lazy_proxy.builtin_tool_ids(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .expect("reuse create_proxy");
+    let after_reuse = manager.get_runtime_state(&session_id).await;
+
+    assert!(
+        Arc::ptr_eq(&lazy_proxy, &reused),
+        "matching create_proxy must Reuse the lazy proxy"
+    );
+    assert!(
+        after_reuse.proxy.ready,
+        "Reuse must keep builtin-only sessions ready"
+    );
+    assert_eq!(
+        after_reuse.sequence, after_lazy.sequence,
+        "already-ready Reuse must not bump sequence"
+    );
+}
