@@ -150,6 +150,7 @@ async fn reset_streaming_recovery_retry_counts(
     if let Some(session) = active.get(session_id) {
         *session.repeated_thinking_retry_count.write().await = 0;
         *session.repeated_text_loop_retry_count.write().await = 0;
+        *session.reasoning_budget_retry_count.write().await = 0;
         // bad_tool_args_* counters are intentionally NOT reset here — they only
         // clear on workflow start or when a fully valid tool-call batch is admitted
         // (see reset_bad_tool_args_recovery_counts).
