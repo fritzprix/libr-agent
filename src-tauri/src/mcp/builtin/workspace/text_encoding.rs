@@ -126,8 +126,8 @@ fn looks_like_utf16le(bytes: &[u8]) -> bool {
 fn decode_utf16_le(bytes: &[u8]) -> String {
     let u16_len = bytes.len() / 2;
     let mut wide = Vec::with_capacity(u16_len);
-    for chunk in bytes.chunks_exact(2) {
-        wide.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+    for chunk in bytes.as_chunks::<2>().0 {
+        wide.push(u16::from_le_bytes(*chunk));
     }
     String::from_utf16_lossy(&wide)
 }
@@ -135,8 +135,8 @@ fn decode_utf16_le(bytes: &[u8]) -> String {
 fn decode_utf16_be(bytes: &[u8]) -> String {
     let u16_len = bytes.len() / 2;
     let mut wide = Vec::with_capacity(u16_len);
-    for chunk in bytes.chunks_exact(2) {
-        wide.push(u16::from_be_bytes([chunk[0], chunk[1]]));
+    for chunk in bytes.as_chunks::<2>().0 {
+        wide.push(u16::from_be_bytes(*chunk));
     }
     String::from_utf16_lossy(&wide)
 }

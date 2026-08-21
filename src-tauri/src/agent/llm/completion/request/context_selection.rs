@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType, CompactionParentRequest};
 use crate::agent::state::AgentSession;
 use crate::models::chat::Message;

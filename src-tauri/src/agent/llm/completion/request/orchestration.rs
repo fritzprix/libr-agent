@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
