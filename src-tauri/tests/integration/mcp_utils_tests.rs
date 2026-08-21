@@ -18,6 +18,7 @@ fn make_tool(name: &str, description: &str) -> MCPTool {
         input_schema: JSONSchema::null(),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 

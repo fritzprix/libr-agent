@@ -30,6 +30,8 @@ LLM provider setup: [llm-services/provider-setup.md](./llm-services/provider-set
 - **[Session Lineage & Tree UI](./architecture/session-lineage-and-tree-ui.md)**: Design and implementation status for nested sessions, `session_api` MCP integration, and tree-based session UX.
 - **[Agent Vibe Charter](./architecture/agent-vibe-charter.md)**: The operating personality and decision rules for this workspace's agent behavior.
 - **[AI Soul Manifesto](./architecture/ai-soul-manifesto.md)**: Autonomy-first operating doctrine, mission rituals, and recovery principles for agent teams.
+- **[Text Loop Recovery](./architecture/text-loop-recovery.md)**: Streaming text repetition detection and cancel-and-retry.
+- **[Tool Loop Recovery](./architecture/tool-loop-recovery.md)**: Repeated tool-call detection, experimental resample-then-break policy, and circuit breaker escalation.
 - **[Soul Lounge Recovery Loop (Experimental)](./architecture/soul-lounge-recovery-loop.md)**: Server-driven loop detection, recovery pacing, re-entry anchors, and one-time override policy.
 - **[Open Source Launch Manifesto](./architecture/open-source-launch-manifesto.md)**: Public-facing engineering ethos, quality bar, and collaboration contract for contributors.
 - **[Contributing](./contributing/coding-standards.md)**: Guidelines for contributing to the project, including coding standards, testing, and the release process.

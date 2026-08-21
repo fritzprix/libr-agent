@@ -695,6 +695,19 @@
       "inlineAudioAttachment": {
         "title": "인라인 오디오 첨부",
         "description": "첨부된 오디오 파일을 LLM 요청용 base64 인라인 콘텐츠로 변환합니다. 이 기능을 비활성화하면 오디오 파일이 워크스페이스 전용 참조로 유지되어 대규모 컨텍스트 토큰을 절약할 수 있습니다."
+      },
+      "toolLoopRecoveryPolicy": {
+        "title": "툴 루프 복구",
+        "description": "기본적으로 반복 툴 루프가 감지되면 툴 오류에 안내 문구를 주입하지 않고 깨끗한 재샘플링을 시도합니다. 재시도 예산이 소진되면 서킷 브레이커로 중단합니다."
+      },
+      "toolLoopMaxResampleRetries": {
+        "title": "최대 재샘플 횟수",
+        "description": "동일 툴 루프 패턴이 반복될 때 하드 스톱 전까지 시도할 깨끗한 재샘플 횟수입니다.",
+        "placeholder": "예: 2"
+      },
+      "toolLoopLegacyGuidanceEnabled": {
+        "title": "툴 결과에 루프 경고 표시 (레거시)",
+        "description": "기본값은 꺼짐. 켜면 깨끗한 재샘플링 대신 루프 방지 안내 문구를 툴 오류로 주입합니다."
       }
     }
   },

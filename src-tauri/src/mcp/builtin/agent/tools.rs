@@ -1,4 +1,5 @@
 use crate::mcp::builtin::tool_description::tool_description;
+use crate::mcp::wait_extension::LibragentWaitExtension;
 use serde_json::json;
 
 use crate::mcp::utils::schema_builder::*;
@@ -51,6 +52,7 @@ fn create_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -110,6 +112,7 @@ fn list_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -156,6 +159,7 @@ fn update_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -179,6 +183,7 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -224,6 +229,7 @@ fn start_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -253,6 +259,7 @@ fn create_org_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -286,6 +293,7 @@ fn get_org_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -348,6 +356,7 @@ fn message_to_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -391,6 +400,7 @@ fn check_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: Some(LibragentWaitExtension::check_session()),
     }
 }
 
@@ -422,6 +432,7 @@ fn stop_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -462,6 +473,7 @@ fn compact_session_context_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -490,5 +502,6 @@ fn delete_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

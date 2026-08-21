@@ -11,12 +11,17 @@ pub enum LoopPreventionKind {
     DuplicateInBatch,
     /// The whole tool_calls batch fingerprint repeated across consecutive turns.
     RepeatedBatchSequence,
+    /// Last soft batch intervention before hard break: nudge strategy reset via reflect.
+    RepeatedBatchSequenceEscalate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopPreventionShortCircuit {
     pub kind: LoopPreventionKind,
     pub tool_name: String,
+    /// Canonicalized tool args string used to detect loop signatures and
+    /// (when needed) parameterize the circuit breaker UI.
+    pub args: String,
     pub count: usize,
 }
 
@@ -59,6 +64,13 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
             Change at least one tool or its arguments, or choose a different approach based on results you already have.",
             short_circuit.tool_name, short_circuit.count
         ),
+        LoopPreventionKind::RepeatedBatchSequenceEscalate => format!(
+            "Loop prevention: the same tool-call batch (including '{}') was repeated {} times across consecutive turns.\n\n\
+            This call was blocked. Another identical batch will trigger a hard circuit break.\n\n\
+            Before continuing, call planning__reflect: critique why this loop failed, reflect on what you learned, \
+            and set one concrete nextAction that uses a different approach. Then proceed from that nextAction.",
+            short_circuit.tool_name, short_circuit.count
+        ),
     }
 }
 
@@ -86,6 +98,7 @@ mod tests {
         let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
             kind: LoopPreventionKind::RepeatedSuccessOutcome,
             tool_name: "workspace__readFile".to_string(),
+            args: "{}".to_string(),
             count: 3,
         });
 
@@ -100,6 +113,7 @@ mod tests {
         let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
             kind: LoopPreventionKind::RepeatedErrorEscalate,
             tool_name: "workspace__readFile".to_string(),
+            args: "{}".to_string(),
             count: 3,
         });
 
@@ -110,10 +124,25 @@ mod tests {
     }
 
     #[test]
+    fn batch_escalate_guidance_recommends_reflect() {
+        let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+            kind: LoopPreventionKind::RepeatedBatchSequenceEscalate,
+            tool_name: "workspace__readFile".to_string(),
+            args: r#"{"path":"a.ts"}"#.to_string(),
+            count: 4,
+        });
+
+        assert!(guidance.contains("blocked"));
+        assert!(guidance.contains("planning__reflect"));
+        assert!(guidance.contains("hard circuit break"));
+    }
+
+    #[test]
     fn soft_error_guidance_does_not_require_reflect() {
         let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
             kind: LoopPreventionKind::RepeatedErrorOutcome,
             tool_name: "workspace__readFile".to_string(),
+            args: "{}".to_string(),
             count: 3,
         });
 

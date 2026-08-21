@@ -88,6 +88,8 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         cached_stable_prompt: Arc::new(RwLock::new(None)),
         last_completion_request: Arc::new(RwLock::new(None)),
         last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+        tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
+        tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
     }
 }
 
@@ -176,6 +178,64 @@ fn mixed_batch_history() -> Vec<Message> {
             Some(false),
         ),
     ]
+}
+
+fn mixed_batch_history_three_turns() -> Vec<Message> {
+    let mut history = mixed_batch_history();
+    history.extend([
+        test_message(
+            "assistant-3",
+            "assistant",
+            Some(mixed_batch(["tc-3a", "tc-3b", "tc-3c"], "")),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-3a",
+            "tool",
+            None,
+            Some("tc-3a"),
+            None,
+            "ok a",
+            Some(false),
+        ),
+        test_message(
+            "tool-3b",
+            "tool",
+            None,
+            Some("tc-3b"),
+            None,
+            "ok b",
+            Some(false),
+        ),
+        test_message(
+            "tool-3c",
+            "tool",
+            None,
+            Some("tc-3c"),
+            None,
+            "ok c",
+            Some(false),
+        ),
+    ]);
+    history
+}
+
+#[test]
+fn mixed_batch_escalates_before_hard_break_when_offset_allows_gap() {
+    let messages = mixed_batch_history_three_turns();
+    let current = mixed_batch(["tc-4a", "tc-4b", "tc-4c"], "");
+
+    assert_eq!(
+        evaluate_batch_circuit_breaker(&messages, &current, 3, 2),
+        Some(CircuitBreakerAction::RepeatedBatchSequenceEscalate {
+            count: 4,
+            tool_name: "workspace__readFile".to_string(),
+            args: r#"{"path":"a.ts"}"#.to_string(),
+        })
+    );
 }
 
 #[test]

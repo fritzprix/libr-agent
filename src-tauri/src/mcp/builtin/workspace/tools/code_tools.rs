@@ -43,6 +43,7 @@ pub fn create_run_shell_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -121,6 +122,7 @@ pub fn create_run_persistent_shell_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -162,6 +164,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -210,6 +213,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -283,6 +287,7 @@ pub fn create_run_persistent_powershell_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -324,6 +329,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 

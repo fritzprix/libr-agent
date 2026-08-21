@@ -112,6 +112,7 @@ pub fn record_knowledge_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -162,6 +163,7 @@ pub fn search_knowledge_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -205,6 +207,7 @@ pub fn explore_context_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -244,6 +247,7 @@ pub fn prune_knowledge_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 

@@ -37,6 +37,7 @@ async fn persist_tool_cache_refreshes_cached_tools_and_tool_count() {
             input_schema: Default::default(),
             output_schema: None,
             annotations: None,
+            libragent_wait: None,
         },
         MCPTool {
             name: "list_models".to_string(),
@@ -45,6 +46,7 @@ async fn persist_tool_cache_refreshes_cached_tools_and_tool_count() {
             input_schema: Default::default(),
             output_schema: None,
             annotations: None,
+            libragent_wait: None,
         },
         MCPTool {
             name: "generate_image".to_string(),
@@ -53,6 +55,7 @@ async fn persist_tool_cache_refreshes_cached_tools_and_tool_count() {
             input_schema: Default::default(),
             output_schema: None,
             annotations: None,
+            libragent_wait: None,
         },
         MCPTool {
             name: "generate_video".to_string(),
@@ -61,6 +64,7 @@ async fn persist_tool_cache_refreshes_cached_tools_and_tool_count() {
             input_schema: Default::default(),
             output_schema: None,
             annotations: None,
+            libragent_wait: None,
         },
         MCPTool {
             name: "get_video_status".to_string(),
@@ -69,6 +73,7 @@ async fn persist_tool_cache_refreshes_cached_tools_and_tool_count() {
             input_schema: Default::default(),
             output_schema: None,
             annotations: None,
+            libragent_wait: None,
         },
     ];
 

@@ -97,6 +97,15 @@ export interface SystemSettings {
 
 export interface ExperimentalSettings {
   inlineAudioAttachment: boolean;
+  /**
+   * Opt-in legacy loop recovery: inject loop-prevention guidance as intrusive
+   * tool-error text. Default off — the system uses clean resample-then-break
+   * without OOD meta-text unless this is enabled.
+   */
+  toolLoopLegacyGuidanceEnabled: boolean;
+
+  /** Max clean resample retries before promoting to circuit breaker. */
+  toolLoopMaxResampleRetries: number;
 }
 
 export interface Settings {
@@ -189,6 +198,8 @@ export const DEFAULT_SETTING: Settings = {
   },
   experimental: {
     inlineAudioAttachment: true,
+    toolLoopLegacyGuidanceEnabled: false,
+    toolLoopMaxResampleRetries: 2,
   },
 };
 

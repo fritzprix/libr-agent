@@ -17,6 +17,7 @@ fn create_tool_def(
         title: Some(title.to_string()),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 

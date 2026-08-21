@@ -3,6 +3,7 @@
 //! Avoids constructing WorkspaceServer (full Tauri/WebView link path can fail to
 //! start on Windows with STATUS_ENTRYPOINT_NOT_FOUND).
 
+use tauri_mcp_agent_lib::agent::poll_tracker::PollTracker;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::context::{
     count_recently_finished_processes, format_recently_finished_processes_text,
     format_running_processes_text,
@@ -28,7 +29,7 @@ fn sample_entry(id: &str, session_id: &str, status: ProcessStatus) -> ProcessEnt
         stderr_size: 0,
         last_poll_at: None,
         poll_count: 0,
-        consecutive_running_polls: 0,
+        poll_tracker: PollTracker::default(),
         first_running_poll_at: None,
     }
 }

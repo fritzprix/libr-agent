@@ -29,5 +29,6 @@ pub fn create_export_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["paths".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

@@ -110,6 +110,7 @@ fn degrade_tools_for_overflow_recovery(tools: &[MCPTool]) -> Vec<MCPTool> {
             input_schema: crate::mcp::schema::MCPToolInputSchema::default(),
             output_schema: None,
             annotations: tool.annotations.clone(),
+            libragent_wait: tool.libragent_wait.clone(),
         })
         .collect()
 }

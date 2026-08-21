@@ -358,6 +358,7 @@ pub async fn handle_llm_response(
     )
     .await;
     let loop_prevention_short_circuits = circuit_breaker_preprocess.loop_prevention_short_circuits;
+    let tool_loop_resample = circuit_breaker_preprocess.tool_loop_resample;
 
     // Check if content is also empty (abnormal empty response).
     // Note: A message with tool calls but no content is VALID and normal.
@@ -418,6 +419,58 @@ pub async fn handle_llm_response(
         } else {
             return Err(format!("Session not found: {}", session_id));
         }
+    }
+
+    // Experimental resample: discard the looped assistant payload and request a
+    // fresh completion without caching, emitting, or persisting a phantom tool call.
+    if let Some(resample_decision) = tool_loop_resample {
+        if let Some(prompt_tokens) = extract_prompt_tokens(&assistant_message) {
+            persist_prompt_token_checkpoint(active_sessions, &session_id, prompt_tokens).await;
+        }
+
+        reset_streaming_recovery_retry_counts(active_sessions, &session_id).await;
+
+        log::warn!(
+            "Tool-loop resample triggered for session {} tool {} (count={}, kind={:?}, attempt_index={}, max_retries={})",
+            session_id,
+            resample_decision.tool_name,
+            resample_decision.count,
+            resample_decision.kind,
+            resample_decision.attempt_index,
+            resample_decision.max_retries
+        );
+
+        // Queued user messages are promoted inside request_llm_completion
+        // (process_pending_messages → claim_all_pending_messages).
+        if let Err(e) = crate::agent::llm::request_llm_completion_with_recovery(
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+            session_id.clone(),
+        )
+        .await
+        {
+            log::error!(
+                "Failed to request LLM completion after tool-loop resample: {}",
+                e
+            );
+            return Err(format!(
+                "Failed to request LLM completion after tool-loop resample: {}",
+                e
+            ));
+        }
+
+        // Count the resample only after a replacement completion was successfully
+        // scheduled — failed retries must not consume the session budget.
+        response_circuit_breaker::increment_tool_loop_resample_attempt(
+            active_sessions,
+            &session_id,
+            &resample_decision.budget_key,
+        )
+        .await;
+
+        return Ok(());
     }
 
     if let Some(prompt_tokens) = extract_prompt_tokens(&assistant_message) {

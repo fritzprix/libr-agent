@@ -35,6 +35,7 @@ pub fn create_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -72,6 +73,7 @@ Behavior:
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -92,6 +94,7 @@ pub fn navigate_back_tool() -> MCPTool {
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -112,6 +115,7 @@ pub fn navigate_forward_tool() -> MCPTool {
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -132,6 +136,7 @@ pub fn get_current_url_tool() -> MCPTool {
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -152,6 +157,7 @@ pub fn get_page_title_tool() -> MCPTool {
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -196,6 +202,7 @@ Call `browser__getPageContent({})` again after any navigation."
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -226,6 +233,7 @@ pub fn click_element_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -259,6 +267,7 @@ pub fn input_text_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -295,6 +304,7 @@ pub fn scroll_page_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -332,6 +342,7 @@ Prefer this over browser__getPageContent when you only need to find elements for
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -348,6 +359,7 @@ starting over with `browser__createSession` after closing is the recommended rec
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -389,6 +401,7 @@ pub fn fetch_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["url".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -444,6 +457,7 @@ pub fn evaluate_js_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -478,5 +492,6 @@ pub fn get_console_logs_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

@@ -5,7 +5,9 @@ use super::super::utils::{
     extract_session_status, handle_wait_timeout_result, is_terminal_status, read_required_string,
     wait_until_session_terminal,
 };
+use crate::agent::poll_tracker::{poll_tracker_key, PollTrackerVerdict};
 use crate::mcp::builtin::error_guidance::SuccessHint;
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 
 use super::super::AgentServer;
@@ -128,8 +130,17 @@ pub async fn check_session(
 
     let status = current_status;
     let turn_count = current_turn_count;
+    let loop_fingerprint = format!("{status}:{turn_count}");
 
     if is_terminal_status(&status) {
+        if let Some(sessions) = crate::state::try_get_active_sessions() {
+            let active = sessions.read().await;
+            if let Some(caller) = active.get(caller_session_id) {
+                let key = poll_tracker_key("agent__checkSession", &display_id);
+                caller.tool_poll_trackers.write().await.remove(&key);
+            }
+        }
+
         return build_terminal_check_session_result(
             &storage_session_id,
             &status,
@@ -137,6 +148,37 @@ pub async fn check_session(
             &enrichment,
         )
         .await;
+    }
+
+    let threshold = crate::config::poll_threshold();
+    let excessive = if let Some(sessions) = crate::state::try_get_active_sessions() {
+        let active = sessions.read().await;
+        if let Some(caller) = active.get(caller_session_id) {
+            let key = poll_tracker_key("agent__checkSession", &display_id);
+            let mut trackers = caller.tool_poll_trackers.write().await;
+            let tracker = trackers.entry(key).or_default();
+            tracker.observe(&loop_fingerprint, threshold) == PollTrackerVerdict::Excessive
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if excessive {
+        return Ok(guided_error(
+            ErrorCategory::InvalidState,
+            "Excessive polling detected".to_string(),
+            ToolGroup::Agent,
+        )
+        .guidance(vec![
+            "Wait a few seconds before checking again".to_string(),
+            format!(
+                "Or use agent__checkSession(\"{}\", wait=true) to wait for completion",
+                display_id
+            ),
+        ])
+        .to_mcp_result());
     }
 
     let next_steps = vec![format!(
@@ -161,6 +203,10 @@ pub async fn check_session(
         check_session_next_actions(&display_id),
     );
     apply_check_session_enrichment(&mut response_data, &enrichment);
+    response_data.insert(
+        "loopFingerprint".to_string(),
+        Value::String(loop_fingerprint),
+    );
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

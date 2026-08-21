@@ -31,6 +31,12 @@ pub enum CircuitBreakerAction {
         tool_name: String,
         args: String,
     },
+    /// Pre-hard-break escalation for repeated identical batches.
+    RepeatedBatchSequenceEscalate {
+        count: usize,
+        tool_name: String,
+        args: String,
+    },
     HardBreak {
         count: usize,
         tool_name: String,
@@ -218,7 +224,51 @@ fn normalize_text_signature(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn canonical_structured_field(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn extract_structured_loop_fingerprint(message: &Message) -> Option<String> {
+    let structured = message.metadata.as_ref()?.get("structuredContent")?;
+
+    if let Some(fingerprint) = structured
+        .get("loopFingerprint")
+        .and_then(|value| value.as_str())
+    {
+        let trimmed = fingerprint.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    let mut parts = Vec::new();
+    for key in [
+        "status",
+        "turnCount",
+        "responseStatus",
+        "process_id",
+        "processId",
+    ] {
+        if let Some(value) = structured.get(key) {
+            parts.push(format!("{key}={}", canonical_structured_field(value)));
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("|"))
+    }
+}
+
 fn build_tool_result_signature(message: &Message) -> String {
+    if let Some(fingerprint) = extract_structured_loop_fingerprint(message) {
+        return fingerprint;
+    }
+
     let text_signature = message
         .content
         .iter()
@@ -551,14 +601,23 @@ pub fn evaluate_batch_circuit_breaker(
             tool_name: first.function.name.clone(),
             args: first.function.arguments.clone(),
         })
-    } else if total_count >= threshold {
-        Some(CircuitBreakerAction::RepeatedBatchSequence {
-            count: total_count,
-            tool_name: first.function.name.clone(),
-            args: first.function.arguments.clone(),
-        })
     } else {
-        None
+        let pre_hard_count = hard_break_at.saturating_sub(1);
+        if total_count > threshold && total_count == pre_hard_count && hard_break_offset >= 2 {
+            Some(CircuitBreakerAction::RepeatedBatchSequenceEscalate {
+                count: total_count,
+                tool_name: first.function.name.clone(),
+                args: first.function.arguments.clone(),
+            })
+        } else if total_count >= threshold {
+            Some(CircuitBreakerAction::RepeatedBatchSequence {
+                count: total_count,
+                tool_name: first.function.name.clone(),
+                args: first.function.arguments.clone(),
+            })
+        } else {
+            None
+        }
     }
 }
 

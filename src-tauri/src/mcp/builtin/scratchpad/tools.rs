@@ -67,6 +67,7 @@ fn add_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -110,6 +111,7 @@ fn update_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -149,6 +151,7 @@ fn list_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -181,6 +184,7 @@ fn read_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -210,6 +214,7 @@ fn clear_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -253,5 +258,6 @@ fn think_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
