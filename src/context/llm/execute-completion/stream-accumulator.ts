@@ -15,7 +15,7 @@ import type { ToolCall } from '@/models/chat';
 import type { Settings } from '@/lib/services/settings-service';
 import { getLogger } from '@/lib/logger';
 import {
-  estimateThinkingTokens,
+  estimateOutputBudgetTokens,
   reasoningBudgetThresholdTokens,
 } from '@/lib/ai-service/openai/reasoning-budget';
 import {
@@ -36,7 +36,10 @@ const STREAMING_TOOL_CALL_THROTTLE_MS = 100;
 const REPEATED_TAIL_CHECK_INTERVAL = 5;
 
 export interface StreamAccumulatorOptions {
-  /** When set, abort+retry once thinking reaches 90% of this value. */
+  /**
+   * When set, abort+retry once non-tool output (thinking and/or content, or
+   * provider completion_tokens) reaches 90% of this value with no tool calls.
+   */
   reasoningBudgetMaxTokens?: number;
 }
 
@@ -103,16 +106,27 @@ export class StreamAccumulator {
     }
   }
 
+  /**
+   * Abort when non-tool output burns ~90% of maxTokens.
+   * Covers thinking-channel dumps and content-only runaways (common on some
+   * OpenAI-compatible hosts). Skips once any tool call appears in the stream.
+   */
   private tryReportReasoningBudgetExceeded(): boolean {
     if (
       this.reasoningBudgetIssueReported ||
-      this.reasoningBudgetThreshold == null
+      this.reasoningBudgetThreshold == null ||
+      this.hasToolCallInStream
     ) {
       return false;
     }
 
     const thinkingText = this.currentThinkingText ?? '';
-    const estimatedTokens = estimateThinkingTokens(thinkingText);
+    const contentText = this.currentStreamingText;
+    const estimatedTokens = estimateOutputBudgetTokens({
+      thinkingText,
+      contentText,
+      completionTokens: this.finalUsage?.completionTokens,
+    });
     if (estimatedTokens < this.reasoningBudgetThreshold) {
       return false;
     }
@@ -120,28 +134,40 @@ export class StreamAccumulator {
     this.reasoningBudgetIssueReported = true;
     // Suppress loop detector noise once budget abort owns recovery.
     this.repeatedThinkingIssueReported = true;
-    logger.warn('Reasoning budget exceeded during streaming', {
+    this.repeatedTextIssueReported = true;
+    const observedTailChars = Math.max(thinkingText.length, contentText.length);
+    logger.warn('Output/reasoning budget exceeded during streaming', {
       sessionId: this.sessionId,
       responseMessageId: this.responseMessageId,
       thinkingChars: thinkingText.length,
-      estimatedThinkingTokens: estimatedTokens,
+      contentChars: contentText.length,
+      completionTokens: this.finalUsage?.completionTokens ?? null,
+      estimatedOutputTokens: estimatedTokens,
       reasoningBudgetThreshold: this.reasoningBudgetThreshold,
     });
     void reportLLMStreamingIssue({
       sessionId: this.sessionId,
       responseMessageId: this.responseMessageId,
       issueKind: 'REASONING_BUDGET_EXCEEDED',
-      observedTailChars: thinkingText.length,
+      observedTailChars,
       patternLength: this.reasoningBudgetThreshold,
       repetitionCount: estimatedTokens,
     }).catch((error: unknown) => {
-      logger.warn('Failed to report reasoning budget exceeded', {
+      logger.warn('Failed to report output/reasoning budget exceeded', {
         sessionId: this.sessionId,
         responseMessageId: this.responseMessageId,
         error,
       });
     });
     return true;
+  }
+
+  /**
+   * End-of-stream / usage gate: catch denser tokenization than chars/4 after
+   * the provider reports completion_tokens.
+   */
+  public finalizeOutputBudgetCheck(): boolean {
+    return this.tryReportReasoningBudgetExceeded();
   }
 
   private getThinkingConfig(): RepeatedTailDetectorConfig {
@@ -189,7 +215,9 @@ export class StreamAccumulator {
 
       this.currentStreamingText += chunk.content;
 
-      if (!this.hasToolCallInStream && !this.repeatedTextIssueReported) {
+      if (this.tryReportReasoningBudgetExceeded()) {
+        // Budget abort takes precedence over text-loop detection.
+      } else if (!this.hasToolCallInStream && !this.repeatedTextIssueReported) {
         this.repeatedTextCheckCounter += 1;
         const textDetection =
           this.repeatedTextCheckCounter % REPEATED_TAIL_CHECK_INTERVAL === 0 &&
@@ -421,6 +449,8 @@ export class StreamAccumulator {
           details: incomingUsage.details,
         };
       }
+      // Provider usage often arrives on the final chunk after content/thinking.
+      this.tryReportReasoningBudgetExceeded();
     }
 
     if (this.finalUsage) {
