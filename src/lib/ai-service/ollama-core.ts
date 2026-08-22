@@ -13,6 +13,9 @@ export {
   type OllamaToolCallAccumulator,
   type ProcessedChunk,
   type SimpleOllamaMessage,
+  type ThinkTagFeedResult,
+  type ThinkTagStreamMode,
+  type ThinkTagStreamState,
 } from './ollama-core-types';
 export {
   convertAssistantMessage,
@@ -24,3 +27,8 @@ export {
 } from './ollama-message-converter';
 export { processChunk } from './ollama-chunk-processor';
 export { determineThinkParam, getModelToolSupport } from './ollama-model-utils';
+export {
+  createThinkTagStreamState,
+  feedThinkTagDelta,
+  flushThinkTagStream,
+} from './think-tag-stream-parser';
