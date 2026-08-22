@@ -14,11 +14,11 @@ signatures and intervenes before runaway execution.
 
 Configured under **Settings → Experimental → Tool-loop recovery**.
 
-| Setting                         | Default | Behavior                                                                                                                                             |
-| ------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toolLoopLegacyGuidanceEnabled` | `false` | **Clean resample** — discard the looping assistant turn and request a fresh LLM completion without injecting loop-prevention text into tool results. |
-| `toolLoopMaxResampleRetries`    | `2`     | Resample attempts allowed while count stays in `[threshold, hard_break)`.                                                                            |
-| (legacy ON)                     | —       | Restores previous behavior: loop-prevention guidance is injected as tool-error text.                                                                 |
+| Setting                      | Default             | Behavior                                                                                                                                             |
+| ---------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toolLoopRecoveryPolicy`     | `resampleThenBreak` | **Clean resample** — discard the looping assistant turn and request a fresh LLM completion without injecting loop-prevention text into tool results. |
+| `toolLoopMaxResampleRetries` | `2`                 | Resample attempts allowed while count stays in `[threshold, hard_break)`.                                                                            |
+| `legacyGuidance` policy      | —                   | Opt-in: restores previous behavior — loop-prevention guidance is injected as tool-error text.                                                        |
 
 Advanced loop thresholds live under **Settings → Advanced**:
 

@@ -95,18 +95,35 @@ export interface SystemSettings {
   preventSleepDuringAgentWork: boolean;
 }
 
+/** Canonical tool-loop recovery policy stored in experimentalSettings. */
+export type ToolLoopRecoveryPolicy = 'resampleThenBreak' | 'legacyGuidance';
+
+export function isToolLoopRecoveryPolicy(
+  value: unknown,
+): value is ToolLoopRecoveryPolicy {
+  return value === 'resampleThenBreak' || value === 'legacyGuidance';
+}
+
 export interface ExperimentalSettings {
   inlineAudioAttachment: boolean;
   /**
-   * Opt-in legacy loop recovery: inject loop-prevention guidance as intrusive
-   * tool-error text. Default off — the system uses clean resample-then-break
-   * without OOD meta-text unless this is enabled.
+   * Default `resampleThenBreak`: discard the looping assistant turn and
+   * request a fresh completion. `legacyGuidance` injects loop-prevention
+   * text into tool errors (opt-in).
    */
-  toolLoopLegacyGuidanceEnabled: boolean;
+  toolLoopRecoveryPolicy: ToolLoopRecoveryPolicy;
 
   /** Max clean resample retries before promoting to circuit breaker. */
   toolLoopMaxResampleRetries: number;
 }
+
+/**
+ * Partial / legacy DB blob for `experimentalSettings`.
+ * `toolLoopLegacyGuidanceEnabled` is read-only migration input.
+ */
+export type StoredExperimentalSettings = Partial<ExperimentalSettings> & {
+  toolLoopLegacyGuidanceEnabled?: boolean;
+};
 
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
@@ -198,10 +215,61 @@ export const DEFAULT_SETTING: Settings = {
   },
   experimental: {
     inlineAudioAttachment: true,
-    toolLoopLegacyGuidanceEnabled: false,
+    toolLoopRecoveryPolicy: 'resampleThenBreak',
     toolLoopMaxResampleRetries: 2,
   },
 };
+
+/**
+ * Canonicalize experimental settings from a DB blob.
+ * Maps deprecated `toolLoopLegacyGuidanceEnabled` → `toolLoopRecoveryPolicy`
+ * and drops the legacy key from the returned object.
+ */
+export function normalizeExperimentalSettings(
+  stored: unknown,
+  defaults: ExperimentalSettings = DEFAULT_SETTING.experimental,
+): { experimental: ExperimentalSettings; didMigrate: boolean } {
+  const blob =
+    typeof stored === 'object' && stored !== null
+      ? (stored as StoredExperimentalSettings)
+      : {};
+
+  const hasLegacyKey = Object.prototype.hasOwnProperty.call(
+    blob,
+    'toolLoopLegacyGuidanceEnabled',
+  );
+
+  let policy = defaults.toolLoopRecoveryPolicy;
+  if (isToolLoopRecoveryPolicy(blob.toolLoopRecoveryPolicy)) {
+    policy = blob.toolLoopRecoveryPolicy;
+  } else if (
+    hasLegacyKey &&
+    typeof blob.toolLoopLegacyGuidanceEnabled === 'boolean'
+  ) {
+    policy = blob.toolLoopLegacyGuidanceEnabled
+      ? 'legacyGuidance'
+      : 'resampleThenBreak';
+  }
+
+  const maxRetries =
+    typeof blob.toolLoopMaxResampleRetries === 'number' &&
+    Number.isFinite(blob.toolLoopMaxResampleRetries)
+      ? Math.min(20, Math.max(0, Math.trunc(blob.toolLoopMaxResampleRetries)))
+      : defaults.toolLoopMaxResampleRetries;
+
+  return {
+    experimental: {
+      inlineAudioAttachment:
+        typeof blob.inlineAudioAttachment === 'boolean'
+          ? blob.inlineAudioAttachment
+          : defaults.inlineAudioAttachment,
+      toolLoopRecoveryPolicy: policy,
+      toolLoopMaxResampleRetries: maxRetries,
+    },
+    // Persist rewrite whenever the deprecated key is still present in DB JSON.
+    didMigrate: hasLegacyKey,
+  };
+}
 
 export interface ISettingsService {
   getSettings(): Promise<Settings>;
