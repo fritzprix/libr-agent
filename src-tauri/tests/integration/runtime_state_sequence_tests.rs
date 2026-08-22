@@ -7,12 +7,33 @@
 use crate::common;
 
 use common::setup_test_db_with_migrations;
+use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use std::sync::Arc;
+use tauri_mcp_agent_lib::entity::session;
 use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
 use tauri_mcp_agent_lib::repositories::{SqliteMCPServerRepository, SqliteSessionRepository};
 use tauri_mcp_agent_lib::session::SessionManager;
 use tauri_mcp_agent_lib::{set_mcp_server_repository, set_session_repository};
 use tempfile::TempDir;
+
+async fn insert_test_session(db: &DatabaseConnection, session_id: &str) {
+    let model = session::ActiveModel {
+        id: Set(session_id.to_string()),
+        status: Set("idle".to_string()),
+        model: Set("gpt-4".to_string()),
+        provider: Set("openai".to_string()),
+        created_at: Set(1_234_567_890),
+        updated_at: Set(1_234_567_890),
+        is_bookmarked: Set(false),
+        execution_mode: Set("normal".to_string()),
+        workspace_isolation: Set("host".to_string()),
+        ..Default::default()
+    };
+    session::Entity::insert(model)
+        .exec(db)
+        .await
+        .expect("Failed to insert test session");
+}
 
 #[tokio::test]
 async fn reusing_builtin_only_proxy_keeps_runtime_state_sequence_stable() {
@@ -71,8 +92,10 @@ async fn reuse_after_ensure_builtin_keeps_ready_runtime_state() {
         SessionManager::new_with_base_dir(temp_dir.path().join("session-root"))
             .expect("session manager"),
     );
-    let manager = MCPServiceProxyManager::new(db, session_manager);
+    let manager = MCPServiceProxyManager::new(Arc::clone(&db), session_manager);
     let session_id = "reuse-after-lazy-builtin".to_string();
+    // ensure_builtin_proxy resolves workspace via the session repository.
+    insert_test_session(db.as_ref(), &session_id).await;
 
     let lazy_proxy = manager
         .ensure_builtin_proxy(&session_id)
