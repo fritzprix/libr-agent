@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { buildServiceRuntimeConfig } from './service-runtime-config';
 import { toAgentRuntimeError } from './listener-utils';
 import type { CompactRequest, CompactedRange } from './types';
+import { compactSessionToastId } from './compact-toast-id';
 
 const logger = getLogger('compact-listener');
 const compactionRetrySessions = new Set<string>();
@@ -226,7 +227,7 @@ export async function setupCompactStateListener({
         phase,
         error,
       } = event.payload;
-      const toastId = `compact-${sessionId}`;
+      const toastId = compactSessionToastId(sessionId);
       const description = sessionName ?? sessionId.slice(0, 8);
 
       setCompactingFromEvent(sessionId, compacting);

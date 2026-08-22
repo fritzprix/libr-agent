@@ -1,5 +1,9 @@
 import type { CompactedRange } from './types';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { compactSessionToastId } from './compact-toast-id';
+
+export { compactSessionToastId } from './compact-toast-id';
 
 export function useLLMExecutionState() {
   // Tracks which sessions have an async compaction in-flight
@@ -12,8 +16,15 @@ export function useLLMExecutionState() {
   const [awaitingCompactMap, setAwaitingCompactMap] = useState<
     ReadonlyMap<string, boolean>
   >(new Map());
+  // Sessions that may still show a `duration: Infinity` compact loading toast.
+  const compactToastSessionsRef = useRef(new Set<string>());
 
   const setCompacting = useCallback((sessionId: string, value: boolean) => {
+    if (value) {
+      compactToastSessionsRef.current.add(sessionId);
+    } else {
+      compactToastSessionsRef.current.delete(sessionId);
+    }
     setCompactingMap((prev) => {
       const next = new Map(prev);
       if (value) {
@@ -56,6 +67,9 @@ export function useLLMExecutionState() {
   );
 
   const clearSessionState = useCallback((sessionId: string) => {
+    // Delete/reset never emit SUCCEEDED/FAILED; dismiss the immortal loading toast.
+    toast.dismiss(compactSessionToastId(sessionId));
+    compactToastSessionsRef.current.delete(sessionId);
     setCompactingMap((prev) => {
       const next = new Map(prev);
       next.delete(sessionId);
@@ -78,6 +92,10 @@ export function useLLMExecutionState() {
    * Called when the global context strategy changes.
    */
   const clearAllCompactState = useCallback(() => {
+    for (const sessionId of compactToastSessionsRef.current) {
+      toast.dismiss(compactSessionToastId(sessionId));
+    }
+    compactToastSessionsRef.current.clear();
     setCompactingMap(new Map());
     setCompactedRangeMap(new Map());
     setAwaitingCompactMap(new Map());
