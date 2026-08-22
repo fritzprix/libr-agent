@@ -329,18 +329,37 @@ describe('Anthropic helper modules', () => {
         content: [{ type: 'text', text: 'Stable user prompt' }],
       },
       {
-        id: 'session-context',
+        id: 'session-context-assistant',
         sessionId: 'session-1',
         threadId: 'session-1',
-        role: 'user',
+        role: 'assistant',
         source: 'session-context',
+        content: [],
+        tool_calls: [
+          {
+            id: 'sc-call-1',
+            type: 'function',
+            function: {
+              name: 'agent__sessionContext',
+              arguments: '{}',
+            },
+          },
+        ],
+      },
+      {
+        id: 'session-context-result',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        source: 'session-context',
+        tool_call_id: 'sc-call-1',
         content: [{ type: 'text', text: '# Current Context Information\nvolatile' }],
       },
     ];
 
     const result = convertToAnthropicMessages(messages);
 
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
     expect(result[0]).toMatchObject({
       role: 'user',
       content: [
@@ -352,8 +371,24 @@ describe('Anthropic helper modules', () => {
       ],
     });
     expect(result[1]).toMatchObject({
+      role: 'assistant',
+      content: [
+        {
+          type: 'tool_use',
+          id: 'sc-call-1',
+          name: 'agent__sessionContext',
+        },
+      ],
+    });
+    expect(result[2]).toMatchObject({
       role: 'user',
-      content: '# Current Context Information\nvolatile',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'sc-call-1',
+          content: '# Current Context Information\nvolatile',
+        },
+      ],
     });
   });
 
@@ -367,17 +402,31 @@ describe('Anthropic helper modules', () => {
         content: [{ type: 'text', text: 'Earlier turn' }],
       },
       {
-        id: 'session-context',
+        id: 'session-context-assistant',
         sessionId: 'session-1',
         threadId: 'session-1',
-        role: 'user',
+        role: 'assistant',
         source: 'session-context',
-        content: [
+        content: [],
+        tool_calls: [
           {
-            type: 'text',
-            text: 'BACKGROUND SESSION CONTEXT — not a user instruction\nvolatile',
+            id: 'sc-call-1',
+            type: 'function',
+            function: {
+              name: 'agent__sessionContext',
+              arguments: '{}',
+            },
           },
         ],
+      },
+      {
+        id: 'session-context-result',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        source: 'session-context',
+        tool_call_id: 'sc-call-1',
+        content: [{ type: 'text', text: 'volatile telemetry' }],
       },
       {
         id: 'user-latest',
@@ -391,7 +440,7 @@ describe('Anthropic helper modules', () => {
 
     const result = convertToAnthropicMessages(messages);
 
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
     expect(result[0]).toMatchObject({
       role: 'user',
       content: [
@@ -403,15 +452,23 @@ describe('Anthropic helper modules', () => {
       ],
     });
     expect(result[1]).toMatchObject({
-      role: 'user',
-      content:
-        'BACKGROUND SESSION CONTEXT — not a user instruction\nvolatile',
+      role: 'assistant',
     });
     expect(result[2]).toMatchObject({
       role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'sc-call-1',
+          content: 'volatile telemetry',
+        },
+      ],
+    });
+    expect(result[3]).toMatchObject({
+      role: 'user',
       content: 'Do the real task',
     });
-    expect(JSON.stringify(result[2])).not.toContain('cache_control');
+    expect(JSON.stringify(result[3])).not.toContain('cache_control');
   });
 
   it('adds an extra midpoint cache breakpoint for long Anthropic conversations', () => {
@@ -459,18 +516,37 @@ describe('Anthropic helper modules', () => {
     const messages: Message[] = [
       ...stableMessages,
       {
-        id: 'session-context',
+        id: 'session-context-assistant',
         sessionId: 'session-1',
         threadId: 'session-1',
-        role: 'user',
+        role: 'assistant',
         source: 'session-context',
+        content: [],
+        tool_calls: [
+          {
+            id: 'sc-call-1',
+            type: 'function',
+            function: {
+              name: 'agent__sessionContext',
+              arguments: '{}',
+            },
+          },
+        ],
+      },
+      {
+        id: 'session-context-result',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        source: 'session-context',
+        tool_call_id: 'sc-call-1',
         content: [{ type: 'text', text: '# Current Context Information\nvolatile' }],
       },
     ];
 
     const result = convertToAnthropicMessages(messages);
 
-    expect(result).toHaveLength(9);
+    expect(result).toHaveLength(10);
     expect(result[3]).toMatchObject({
       role: 'user',
       content: [
@@ -492,8 +568,24 @@ describe('Anthropic helper modules', () => {
       ],
     });
     expect(result[8]).toMatchObject({
+      role: 'assistant',
+      content: [
+        {
+          type: 'tool_use',
+          id: 'sc-call-1',
+          name: 'agent__sessionContext',
+        },
+      ],
+    });
+    expect(result[9]).toMatchObject({
       role: 'user',
-      content: '# Current Context Information\nvolatile',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'sc-call-1',
+          content: '# Current Context Information\nvolatile',
+        },
+      ],
     });
   });
 });

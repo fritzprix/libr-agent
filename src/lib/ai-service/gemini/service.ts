@@ -49,7 +49,7 @@ function summarizeLibrAgentMessages(messages: Message[]): {
     if (isCompactSummaryMessage(message)) {
       compactSummaryCount += 1;
     }
-    if (message.id.startsWith('gemini-session-context-')) {
+    if (message.id.includes('session-context')) {
       syntheticSessionContextCount += 1;
     }
     const text = Array.isArray(message.content)

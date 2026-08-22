@@ -1,17 +1,12 @@
+use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::mcp::types::MCPContent;
 use crate::models::chat::{Message, MessageSource};
 
-/// XML tag wrapper to isolate volatile session context (planning, workspace state, etc.)
-/// within a synthetic user message for LLMs. This is cleaner than HTML comments for parsing,
-/// prevents cache churn in system prompts, and clearly scopes background reference context.
-const SESSION_CONTEXT_BACKGROUND_HEADER: &str = "<session-context>";
-const SESSION_CONTEXT_BACKGROUND_FOOTER: &str = "</session-context>";
+/// Qualified tool name used for runtime-injected session context (matches builtin prefixing).
+pub const SESSION_CONTEXT_TOOL_NAME: &str = "agent__sessionContext";
 
-/// Explicit non-intent framing shown to the model inside the injected block.
-const SESSION_CONTEXT_DISCLAIMER: &str =
-    "BACKGROUND SESSION CONTEXT — environment telemetry and tool state only. \
-This is NOT a user instruction or preference. Follow the latest real user request \
-(or your assigned sub-agent task); use this block only as passive reference.";
+/// Local builtin tool name (before `agent__` prefix).
+pub const SESSION_CONTEXT_TOOL_LOCAL_NAME: &str = "sessionContext";
 
 #[derive(Debug, Clone)]
 pub struct RequestLayout {
@@ -34,10 +29,6 @@ pub fn provider_uses_synthetic_session_context(provider: &str) -> bool {
         )
 }
 
-fn provider_uses_background_reference_wrapper(provider: &str) -> bool {
-    !matches!(provider, "anthropic")
-}
-
 fn synthetic_session_context_id_prefix(provider: &str) -> &str {
     if is_custom_openai_compatible_provider(provider) {
         return "custom-openai-session-context";
@@ -50,19 +41,6 @@ fn synthetic_session_context_id_prefix(provider: &str) -> &str {
         "gemini" => "gemini-session-context",
         "ollama" => "ollama-session-context",
         _ => "session-context",
-    }
-}
-
-fn format_session_context_text(provider: &str, session_context: &str) -> String {
-    let body = format!("{}\n\n{}", SESSION_CONTEXT_DISCLAIMER, session_context);
-    if provider_uses_background_reference_wrapper(provider) {
-        format!(
-            "{}\n\n{}\n\n{}",
-            SESSION_CONTEXT_BACKGROUND_HEADER, body, SESSION_CONTEXT_BACKGROUND_FOOTER
-        )
-    } else {
-        // Anthropic historically omitted XML wrappers; keep the disclaimer either way.
-        body
     }
 }
 
@@ -84,6 +62,72 @@ fn synthetic_session_context_insert_index(messages: &[Message]) -> usize {
     }
 
     insert_idx
+}
+
+fn build_session_context_tool_pair(
+    provider: &str,
+    session_id: &str,
+    reference_message_id: &str,
+    session_context: &str,
+) -> (Message, Message) {
+    let now = chrono::Utc::now().timestamp_millis();
+    let id_prefix = synthetic_session_context_id_prefix(provider);
+    let tool_call_id = format!("{id_prefix}-call-{reference_message_id}");
+
+    let assistant_msg = Message {
+        id: format!("{id_prefix}-assistant-{reference_message_id}"),
+        session_id: session_id.to_string(),
+        role: "assistant".to_string(),
+        content: vec![],
+        tool_calls: Some(vec![ToolCall {
+            id: tool_call_id.clone(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: SESSION_CONTEXT_TOOL_NAME.to_string(),
+                arguments: "{}".to_string(),
+            },
+        }]),
+        tool_call_id: None,
+        is_streaming: None,
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at: now,
+        updated_at: now,
+        source: Some(MessageSource::SessionContext),
+        error: None,
+        metadata: None,
+    };
+
+    let tool_result_msg = Message {
+        id: format!("{id_prefix}-result-{reference_message_id}"),
+        session_id: session_id.to_string(),
+        role: "tool".to_string(),
+        content: vec![MCPContent::Text {
+            text: session_context.to_string(),
+        }],
+        tool_calls: None,
+        tool_call_id: Some(tool_call_id),
+        is_streaming: None,
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at: now,
+        updated_at: now,
+        source: Some(MessageSource::SessionContext),
+        error: None,
+        metadata: None,
+    };
+
+    (assistant_msg, tool_result_msg)
 }
 
 pub fn build_request_layout(
@@ -111,69 +155,37 @@ pub fn build_request_layout(
             } else {
                 "system"
             };
-        let now = chrono::Utc::now().timestamp_millis();
-        let session_context_msg = Message {
-            id: format!(
-                "{}-{}",
-                synthetic_session_context_id_prefix(provider),
-                reference_message_id
-            ),
-            session_id: session_id.to_string(),
-            role: "user".to_string(),
-            content: vec![MCPContent::Text {
-                text: format_session_context_text(provider, &session_context),
-            }],
-            tool_calls: None,
-            tool_call_id: None,
-            is_streaming: None,
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: None,
-            attachments: None,
-            tool_use: None,
-            usage: None,
-            prompt_tokens: None,
-            created_at: now,
-            updated_at: now,
-            source: Some(MessageSource::SessionContext),
-            error: None,
-            metadata: None,
-        };
 
-        messages.insert(insert_idx, session_context_msg);
+        let (assistant_msg, tool_result_msg) = build_session_context_tool_pair(
+            provider,
+            session_id,
+            reference_message_id,
+            &session_context,
+        );
+
+        messages.insert(insert_idx, assistant_msg);
+        messages.insert(insert_idx + 1, tool_result_msg);
 
         RequestLayout {
             system_prompt,
             messages,
         }
     } else {
-        let framed_context = format_session_context_text(provider, &session_context);
-        let mut merged = false;
-        for message in messages.iter_mut().rev() {
-            if message.role == "user" && !message.is_internal_synthetic_user_message() {
-                let mut new_content = vec![MCPContent::Text {
-                    text: framed_context.clone(),
-                }];
-                new_content.append(&mut message.content);
-                message.content = new_content;
-                merged = true;
-                break;
-            }
-        }
-
-        let system_prompt = if !merged {
-            Some(
-                [system_prompt, Some(framed_context)]
-                    .into_iter()
-                    .flatten()
-                    .filter(|part| !part.is_empty())
-                    .collect::<Vec<_>>()
-                    .join("\n\n"),
-            )
-            .filter(|prompt| !prompt.is_empty())
-        } else {
-            system_prompt
-        };
+        // Providers without synthetic tool-pair support: keep volatile out of the
+        // user channel by appending a labeled block to the system prompt only.
+        let framed = format!(
+            "## Runtime Session Context (telemetry)\n\n{}",
+            session_context
+        );
+        let system_prompt = Some(
+            [system_prompt, Some(framed)]
+                .into_iter()
+                .flatten()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        )
+        .filter(|prompt| !prompt.is_empty());
 
         RequestLayout {
             system_prompt,
@@ -186,7 +198,10 @@ pub fn select_last_submitted_input_message_id(messages: &[Message]) -> Option<St
     messages
         .iter()
         .rev()
-        .find(|message| !message.is_internal_synthetic_user_message())
+        .find(|message| {
+            !message.is_request_layout_scaffolding_message()
+                && !message.is_internal_synthetic_user_message()
+        })
         .or_else(|| messages.last())
         .map(|message| message.id.clone())
 }

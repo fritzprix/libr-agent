@@ -38,7 +38,16 @@ function contentToFingerprintString(content: unknown): string {
 function classifyMessageContentTag(
   role: string,
   content: string,
+  toolCallId?: string,
 ): OpenAIMessageFingerprint['contentTag'] {
+  if (
+    role === 'tool' &&
+    typeof toolCallId === 'string' &&
+    toolCallId.includes('session-context')
+  ) {
+    return 'session_context';
+  }
+
   if (
     role === 'user' &&
     content.startsWith('[Current session context — background reference only')
@@ -62,7 +71,11 @@ export function fingerprintOpenAIMessage(
       role: message.role,
       contentLength: content.length,
       contentHash: stableHashKeyPart(content),
-      contentTag: classifyMessageContentTag(message.role, content),
+      contentTag: classifyMessageContentTag(
+        message.role,
+        content,
+        message.tool_call_id,
+      ),
       toolCallCount: 0,
       toolCallId: message.tool_call_id,
       toolCallIdHash: stableHashKeyPart(message.tool_call_id ?? ''),

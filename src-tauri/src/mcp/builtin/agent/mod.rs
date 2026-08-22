@@ -107,6 +107,7 @@ impl BuiltinMCPServer for AgentServer {
             "compactSessionContext" => {
                 handlers::compact_session_context(self, args, &session_id).await
             }
+            "sessionContext" => handlers::session_context(self, args, &session_id).await,
             "stopSession" => handlers::stop_session(self, args, &session_id).await,
             "deleteSession" => handlers::delete_session(self, args, &session_id).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),

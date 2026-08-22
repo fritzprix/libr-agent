@@ -738,3 +738,36 @@ pub async fn delete_session(
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
+
+/// Idempotent snapshot of volatile session context (same class of data runtime injects).
+/// Models should not call this; if they do, return a fresh snapshot without side effects.
+pub async fn session_context(
+    server: &AgentServer,
+    _args: Value,
+    session_id: &str,
+) -> Result<MCPResult, String> {
+    let snapshot = match server.get_manager() {
+        Some(manager) => manager
+            .build_volatile_session_context(session_id)
+            .await?
+            .unwrap_or_else(|| {
+                "(no volatile session context for this turn — environment idle)".to_string()
+            }),
+        None => {
+            "(session context unavailable — agent manager not attached to this server instance)"
+                .to_string()
+        }
+    };
+
+    let message = format!(
+        "Runtime already injects agent__sessionContext each turn. \
+This call is unnecessary; prefer the latest injected tool result in the transcript.\n\n{}",
+        snapshot
+    );
+
+    Ok(MCPResult {
+        content: Some(vec![crate::mcp::types::MCPContent::Text { text: message }]),
+        structured_content: None,
+        is_error: Some(false),
+    })
+}

@@ -20,7 +20,7 @@ const logger = getLogger('AnthropicMessageConverter');
 const MIN_STABLE_MESSAGES_FOR_EXTRA_BREAKPOINT = 8;
 
 function isAnthropicSyntheticSessionContextMessage(message: Message): boolean {
-  return message.role === 'user' && message.source === 'session-context';
+  return message.source === 'session-context';
 }
 
 function applyCacheBreakpoint(
@@ -198,6 +198,18 @@ export function convertToAnthropicMessages(
     }
 
     if (effectiveRole === 'assistant') {
+      if (isAnthropicSyntheticSessionContextMessage(message)) {
+        if (!sawSyntheticSessionContext) {
+          sawSyntheticSessionContext = true;
+          if (anthropicMessages.length > 0) {
+            lastStableBeforeSessionContext = anthropicMessages.length - 1;
+            applyCacheBreakpoint(
+              anthropicMessages[lastStableBeforeSessionContext],
+            );
+          }
+        }
+      }
+
       flushPendingToolResults();
       const hasContent = message.content && message.content.length > 0;
       const hasToolCalls = message.tool_calls && message.tool_calls.length > 0;

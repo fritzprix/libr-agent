@@ -87,16 +87,39 @@ function createUserMessage(text: string): Message {
   };
 }
 
-function createSessionContextMessage(text: string): Message {
-  return {
-    id: 'ollama-session-context-msg-hello',
-    sessionId: 'session-1',
-    threadId: 'thread-1',
-    role: 'user',
-    source: 'session-context',
-    content: [{ type: 'text', text }],
-    createdAt: new Date('2026-04-04T10:00:00.000Z'),
-  };
+function createSessionContextToolPair(text: string): Message[] {
+  const callId = 'ollama-session-context-call-hello';
+  return [
+    {
+      id: 'ollama-session-context-assistant-hello',
+      sessionId: 'session-1',
+      threadId: 'thread-1',
+      role: 'assistant',
+      source: 'session-context',
+      content: [],
+      tool_calls: [
+        {
+          id: callId,
+          type: 'function',
+          function: {
+            name: 'agent__sessionContext',
+            arguments: '{}',
+          },
+        },
+      ],
+      createdAt: new Date('2026-04-04T10:00:00.000Z'),
+    },
+    {
+      id: 'ollama-session-context-result-hello',
+      sessionId: 'session-1',
+      threadId: 'thread-1',
+      role: 'tool',
+      source: 'session-context',
+      tool_call_id: callId,
+      content: [{ type: 'text', text }],
+      createdAt: new Date('2026-04-04T10:00:00.000Z'),
+    },
+  ];
 }
 
 const alphaTool: MCPTool = {
@@ -130,7 +153,7 @@ describe('OllamaService prompt layout', () => {
     chatMock.mockResolvedValue(createEmptyStream());
   });
 
-  it('keeps a Rust-prepared synthetic session-context tail in Ollama requests', async () => {
+  it('keeps a Rust-prepared synthetic session-context tool pair in Ollama requests', async () => {
     const { OllamaService } = await import('../ollama');
     const service = new OllamaService('ollama-local');
 
@@ -138,8 +161,8 @@ describe('OllamaService prompt layout', () => {
       service.streamChat(
         [
           createUserMessage('hello'),
-          createSessionContextMessage(
-            '<session-context>\n\n# Current Context Information\nvolatile bits\n\n</session-context>',
+          ...createSessionContextToolPair(
+            '# Current Context Information\nvolatile bits',
           ),
         ],
         {
@@ -151,21 +174,32 @@ describe('OllamaService prompt layout', () => {
     );
 
     const request = chatMock.mock.calls[0]?.[0] as {
-      messages?: Array<{ role?: string; content?: string }>;
+      messages?: Array<{
+        role?: string;
+        content?: string;
+        tool_calls?: unknown;
+        tool_call_id?: string;
+      }>;
       tools?: Array<{ function?: { name?: string } }>;
       keep_alive?: string;
     };
 
     expect(request.keep_alive).toBe('5m');
-    expect(request.messages).toEqual([
-      { role: 'system', content: 'Stable system prompt' },
-      { role: 'user', content: 'hello' },
-      {
-        role: 'user',
-        content:
-          '<session-context>\n\n# Current Context Information\nvolatile bits\n\n</session-context>',
-      },
-    ]);
+    expect(request.messages?.[0]).toEqual({
+      role: 'system',
+      content: 'Stable system prompt',
+    });
+    expect(request.messages?.[1]).toEqual({
+      role: 'user',
+      content: 'hello',
+    });
+    expect(request.messages?.[2]?.role).toBe('assistant');
+    expect(request.messages?.[2]?.tool_calls).toBeDefined();
+    expect(request.messages?.[3]).toMatchObject({
+      role: 'tool',
+      tool_call_id: 'ollama-session-context-call-hello',
+      content: '# Current Context Information\nvolatile bits',
+    });
     expect(request.tools?.map((tool) => tool.function?.name)).toEqual([
       'alpha_tool',
       'beta_tool',
@@ -180,8 +214,8 @@ describe('OllamaService prompt layout', () => {
       service.streamChat(
         [
           createUserMessage('summarize this'),
-          createSessionContextMessage(
-            '<session-context>\n\n# Current Context Information\nvolatile bits\n\n</session-context>',
+          ...createSessionContextToolPair(
+            '# Current Context Information\nvolatile bits',
           ),
         ],
         {

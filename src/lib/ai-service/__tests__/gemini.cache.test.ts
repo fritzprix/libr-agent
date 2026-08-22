@@ -83,15 +83,37 @@ function createUserMessage(text: string): Message {
   };
 }
 
-function createSessionContextMessage(text: string): Message {
-  return {
-    id: 'gemini-session-context-msg-hello',
-    sessionId: 'session-1',
-    threadId: 'thread-1',
-    role: 'user',
-    source: 'session-context',
-    content: [{ type: 'text', text }],
-  };
+function createSessionContextToolPair(text: string): Message[] {
+  const callId = 'gemini-session-context-call-hello';
+  return [
+    {
+      id: 'gemini-session-context-assistant-hello',
+      sessionId: 'session-1',
+      threadId: 'thread-1',
+      role: 'assistant',
+      source: 'session-context',
+      content: [],
+      tool_calls: [
+        {
+          id: callId,
+          type: 'function',
+          function: {
+            name: 'agent__sessionContext',
+            arguments: '{}',
+          },
+        },
+      ],
+    },
+    {
+      id: 'gemini-session-context-result-hello',
+      sessionId: 'session-1',
+      threadId: 'thread-1',
+      role: 'tool',
+      source: 'session-context',
+      tool_call_id: callId,
+      content: [{ type: 'text', text }],
+    },
+  ];
 }
 
 function createAssistantMessage(id: string, text: string): Message {
@@ -265,15 +287,15 @@ describe('GeminiService request assembly', () => {
     );
   });
 
-  it('keeps Gemini session context as a synthetic tail message in the provider request', async () => {
+  it('keeps Gemini session context as a synthetic tool pair in the provider request', async () => {
     const service = new GeminiService('test-key');
 
     await consumeStream(
       service.streamChat(
         [
           createUserMessage('hello'),
-          createSessionContextMessage(
-            `<session-context>\n\n# Current Context Information\nvolatile bits\n\n</session-context>`,
+          ...createSessionContextToolPair(
+            '# Current Context Information\nvolatile bits',
           ),
         ],
         {
@@ -288,26 +310,37 @@ describe('GeminiService request assembly', () => {
         cachedContent?: string;
         systemInstruction?: Array<{ text: string }>;
       };
-      contents?: Array<{ role?: string; parts?: Array<{ text?: string }> }>;
+      contents?: Array<{
+        role?: string;
+        parts?: Array<{
+          text?: string;
+          functionCall?: { name?: string };
+          functionResponse?: { name?: string };
+        }>;
+      }>;
     };
 
     expect(request.config?.cachedContent).toBeUndefined();
     expect(request.config?.systemInstruction).toEqual([
       { text: 'Stable system prompt' },
     ]);
-    expect(request.contents).toHaveLength(2);
+    expect(request.contents).toHaveLength(3);
     expect(request.contents?.[0]).toMatchObject({
       role: 'user',
       parts: [{ text: 'hello' }],
     });
-    expect(request.contents?.[1]).toMatchObject({
-      role: 'user',
-      parts: [
-        {
-          text: '<session-context>\n\n# Current Context Information\nvolatile bits\n\n</session-context>',
-        },
-      ],
-    });
+    expect(request.contents?.[1]?.role).toBe('model');
+    expect(
+      request.contents?.[1]?.parts?.some(
+        (part) => part.functionCall?.name === 'agent__sessionContext',
+      ),
+    ).toBe(true);
+    expect(request.contents?.[2]?.role).toBe('user');
+    expect(
+      request.contents?.[2]?.parts?.some(
+        (part) => part.functionResponse?.name === 'agent__sessionContext',
+      ),
+    ).toBe(true);
   });
 
   it('keeps tool-loop turns in the same request body without explicit cachedContent', async () => {

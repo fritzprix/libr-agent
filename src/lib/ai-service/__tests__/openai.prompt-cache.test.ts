@@ -75,16 +75,42 @@ const message: Message = {
   createdAt: new Date(),
 };
 
-function createSessionContextMessage(id: string, text: string): Message {
-  return {
-    id,
-    sessionId: 's1',
-    threadId: 't1',
-    role: 'user',
-    source: 'session-context',
-    content: [{ type: 'text', text }],
-    createdAt: new Date(),
-  };
+function createSessionContextToolPair(
+  idPrefix: string,
+  text: string,
+): Message[] {
+  const callId = `${idPrefix}-call`;
+  return [
+    {
+      id: `${idPrefix}-assistant`,
+      sessionId: 's1',
+      threadId: 't1',
+      role: 'assistant',
+      source: 'session-context',
+      content: [],
+      tool_calls: [
+        {
+          id: callId,
+          type: 'function',
+          function: {
+            name: 'agent__sessionContext',
+            arguments: '{}',
+          },
+        },
+      ],
+      createdAt: new Date(),
+    },
+    {
+      id: `${idPrefix}-result`,
+      sessionId: 's1',
+      threadId: 't1',
+      role: 'tool',
+      source: 'session-context',
+      tool_call_id: callId,
+      content: [{ type: 'text', text }],
+      createdAt: new Date(),
+    },
+  ];
 }
 
 const alphaTool: MCPTool = {
@@ -290,9 +316,9 @@ describe('OpenAIService prompt cache extensions', () => {
     for await (const chunk of service.streamChat(
       [
         message,
-        createSessionContextMessage(
+        ...createSessionContextToolPair(
           'openai-session-context-m1',
-          '<session-context>\n\n# Current Context Information\nfirst state\n\n</session-context>',
+          '# Current Context Information\nfirst state',
         ),
       ],
       {
@@ -311,9 +337,9 @@ describe('OpenAIService prompt cache extensions', () => {
     for await (const chunk of service.streamChat(
       [
         message,
-        createSessionContextMessage(
+        ...createSessionContextToolPair(
           'openai-session-context-m1',
-          '<session-context>\n\n# Current Context Information\nsecond state\n\n</session-context>',
+          '# Current Context Information\nsecond state',
         ),
       ],
       {
@@ -332,8 +358,8 @@ describe('OpenAIService prompt cache extensions', () => {
         mode: 'stream',
         model: 'gpt-4o',
         firstDivergenceComponent: 'messages',
-        firstDivergenceIndex: 2,
-        commonPrefixMessages: 2,
+        firstDivergenceIndex: 3,
+        commonPrefixMessages: 3,
       }),
     );
   });

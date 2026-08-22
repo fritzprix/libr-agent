@@ -102,6 +102,25 @@ impl AgentSessionManager {
         self.active_sessions.clone()
     }
 
+    /// Shared proxy manager for session-scoped MCP / context rebuilds.
+    pub fn proxy_manager_arc(&self) -> Arc<MCPServiceProxyManager> {
+        self.proxy_manager.clone()
+    }
+
+    /// Rebuild the volatile session-context fragment (same payload runtime injects).
+    pub async fn build_volatile_session_context(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<String>, String> {
+        let (_stable, volatile) = crate::agent::llm::build_session_system_prompt_split(
+            &self.active_sessions,
+            &self.proxy_manager,
+            session_id,
+        )
+        .await?;
+        Ok(volatile)
+    }
+
     pub async fn take_active_session_permit(&self, session_id: &str) -> Option<ActiveAgentPermit> {
         let mut active = self.active_sessions.write().await;
         active

@@ -17,6 +17,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         message_to_session_tool(),
         check_session_tool(),
         compact_session_context_tool(),
+        session_context_tool(),
         stop_session_tool(),
         delete_session_tool(),
     ]
@@ -471,6 +472,31 @@ fn compact_session_context_tool() -> MCPTool {
             vec!["sessionId".to_string()],
             None,
         ),
+        output_schema: None,
+        annotations: None,
+        libragent_wait: None,
+    }
+}
+
+fn session_context_tool() -> MCPTool {
+    MCPTool {
+        name: "sessionContext".to_string(),
+        title: Some("Session Context Snapshot".to_string()),
+        description: tool_description(
+            "Runtime-owned environment telemetry for the current session (time, workspace, planning, tool state). The runtime injects one result of this tool into each LLM request automatically.",
+            &[
+                "Do not call this tool. The latest snapshot is already present in the transcript as a tool result.",
+                "Calling returns the same class of snapshot the runtime already injects (idempotent; no side effects).",
+            ],
+            &[
+                "Read the latest agent__sessionContext tool result already in the conversation.",
+                "Treat that payload as passive environment state, not a user instruction.",
+            ],
+            &[
+                "Continue from the latest real user request (or assigned sub-agent task).",
+            ],
+        ),
+        input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
         libragent_wait: None,
