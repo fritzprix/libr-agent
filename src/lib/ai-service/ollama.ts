@@ -16,6 +16,8 @@ import { supportsThinking, getContextWindow } from './model-capabilities';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
+  createThinkTagStreamState,
+  flushThinkTagStream,
   processChunk,
   getModelToolSupport,
   determineThinkParam,
@@ -365,6 +367,7 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         number,
         import('./ollama-core').OllamaToolCallAccumulator
       >();
+      const thinkTagState = createThinkTagStreamState();
 
       try {
         abortSignal?.addEventListener('abort', abortStream, { once: true });
@@ -391,6 +394,7 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
             chunk,
             coreLogger,
             toolCallAccumulators,
+            thinkTagState,
           );
           if (processedChunk) {
             if (processedChunk.content) {
@@ -420,6 +424,14 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
               logger.error('Error processing chunk', processedChunk.error);
             }
           }
+        }
+
+        const flushedTags = flushThinkTagStream(thinkTagState);
+        if (flushedTags.thinking) {
+          yield JSON.stringify({ thinking: flushedTags.thinking });
+        }
+        if (flushedTags.content) {
+          yield JSON.stringify({ content: flushedTags.content });
         }
       } finally {
         abortSignal?.removeEventListener('abort', abortStream);

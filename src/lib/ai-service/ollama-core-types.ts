@@ -63,3 +63,9 @@ export interface OllamaToolCallAccumulator {
   yielded: boolean;
   lastChunkTime: number;
 }
+
+export type {
+  ThinkTagFeedResult,
+  ThinkTagStreamMode,
+  ThinkTagStreamState,
+} from './think-tag-stream-parser';
