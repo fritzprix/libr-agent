@@ -1082,7 +1082,7 @@ async fn test_create_proxy_overlapping_destroy_proxy() {
 #[test]
 fn test_promote_builtin_reuse_runtime_state() {
     use crate::agent::runtime_state::SessionRuntimeState;
-    use super::creation::promote_builtin_reuse_runtime_state;
+    use super::promote_builtin_reuse_runtime_state;
 
     let not_ready = SessionRuntimeState::default();
     assert!(!not_ready.proxy.ready);

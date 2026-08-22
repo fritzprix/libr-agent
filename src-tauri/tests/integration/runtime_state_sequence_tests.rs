@@ -7,33 +7,12 @@
 use crate::common;
 
 use common::setup_test_db_with_migrations;
-use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use std::sync::Arc;
-use tauri_mcp_agent_lib::entity::session;
 use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
 use tauri_mcp_agent_lib::repositories::{SqliteMCPServerRepository, SqliteSessionRepository};
 use tauri_mcp_agent_lib::session::SessionManager;
 use tauri_mcp_agent_lib::{set_mcp_server_repository, set_session_repository};
 use tempfile::TempDir;
-
-async fn insert_test_session(db: &DatabaseConnection, session_id: &str) {
-    let model = session::ActiveModel {
-        id: Set(session_id.to_string()),
-        status: Set("idle".to_string()),
-        model: Set("gpt-4".to_string()),
-        provider: Set("openai".to_string()),
-        created_at: Set(1_234_567_890),
-        updated_at: Set(1_234_567_890),
-        is_bookmarked: Set(false),
-        execution_mode: Set("normal".to_string()),
-        workspace_isolation: Set("host".to_string()),
-        ..Default::default()
-    };
-    session::Entity::insert(model)
-        .exec(db)
-        .await
-        .expect("Failed to insert test session");
-}
 
 #[tokio::test]
 async fn reusing_builtin_only_proxy_keeps_runtime_state_sequence_stable() {
@@ -80,10 +59,10 @@ async fn reusing_builtin_only_proxy_keeps_runtime_state_sequence_stable() {
     assert_eq!(reused_state, first_state);
 }
 
-/// ensure_builtin_proxy writes ready without AppHandle emit; a subsequent matching
-/// create_proxy Reuse must keep ready=true (FE depends on open()/force-emit).
+/// Reuse must promote an incomplete (ready=false) snapshot back to ready so FE
+/// remounts can leave Hydrating when a prior path wrote ready without emit.
 #[tokio::test]
-async fn reuse_after_ensure_builtin_keeps_ready_runtime_state() {
+async fn reuse_promotes_unready_runtime_state_to_ready() {
     let db = Arc::new(setup_test_db_with_migrations().await);
     set_mcp_server_repository(SqliteMCPServerRepository::new((*db).clone()));
     set_session_repository(SqliteSessionRepository::new((*db).clone()));
@@ -92,42 +71,38 @@ async fn reuse_after_ensure_builtin_keeps_ready_runtime_state() {
         SessionManager::new_with_base_dir(temp_dir.path().join("session-root"))
             .expect("session manager"),
     );
-    let manager = MCPServiceProxyManager::new(Arc::clone(&db), session_manager);
-    let session_id = "reuse-after-lazy-builtin".to_string();
-    // ensure_builtin_proxy resolves workspace via the session repository.
-    insert_test_session(db.as_ref(), &session_id).await;
+    let manager = MCPServiceProxyManager::new(db, session_manager);
+    let session_id = "reuse-promote-unready".to_string();
 
-    let lazy_proxy = manager
-        .ensure_builtin_proxy(&session_id)
+    let first_proxy = manager
+        .create_proxy(session_id.clone(), Vec::new(), Vec::new(), None)
         .await
-        .expect("lazy builtin proxy");
-    let after_lazy = manager.get_runtime_state(&session_id).await;
+        .expect("initial create_proxy");
     assert!(
-        after_lazy.proxy.ready,
-        "ensure_builtin_proxy must leave ready=true"
+        manager.get_runtime_state(&session_id).await.proxy.ready,
+        "initial create must leave ready=true"
+    );
+
+    manager
+        .force_runtime_proxy_not_ready_for_test(&session_id)
+        .await;
+    assert!(
+        !manager.get_runtime_state(&session_id).await.proxy.ready,
+        "test helper must clear ready for the promotion scenario"
     );
 
     let reused = manager
-        .create_proxy(
-            session_id.clone(),
-            lazy_proxy.builtin_tool_ids(),
-            Vec::new(),
-            None,
-        )
+        .create_proxy(session_id.clone(), Vec::new(), Vec::new(), None)
         .await
         .expect("reuse create_proxy");
     let after_reuse = manager.get_runtime_state(&session_id).await;
 
     assert!(
-        Arc::ptr_eq(&lazy_proxy, &reused),
-        "matching create_proxy must Reuse the lazy proxy"
+        Arc::ptr_eq(&first_proxy, &reused),
+        "matching empty create_proxy must Reuse the existing proxy"
     );
     assert!(
         after_reuse.proxy.ready,
-        "Reuse must keep builtin-only sessions ready"
-    );
-    assert_eq!(
-        after_reuse.sequence, after_lazy.sequence,
-        "already-ready Reuse must not bump sequence"
+        "Reuse must promote builtin-only sessions back to ready"
     );
 }

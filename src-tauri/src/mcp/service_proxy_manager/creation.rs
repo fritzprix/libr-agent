@@ -44,7 +44,7 @@ fn describe_panic_payload(payload: &(dyn Any + Send)) -> String {
 
 /// On Reuse for builtin-only sessions, ensure the store reports ready even if a
 /// prior path left an incomplete snapshot (proxy exists, ready=false).
-pub(super) fn promote_builtin_reuse_runtime_state(
+pub fn promote_builtin_reuse_runtime_state(
     current: SessionRuntimeState,
     has_external_servers: bool,
 ) -> SessionRuntimeState {
