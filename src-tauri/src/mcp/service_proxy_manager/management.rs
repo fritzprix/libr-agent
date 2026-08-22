@@ -533,7 +533,8 @@ impl MCPServiceProxyManager {
 #[cfg(test)]
 impl MCPServiceProxyManager {
     pub(crate) async fn mark_runtime_proxy_not_ready_for_test(&self, session_id: &str) {
-        self.force_runtime_proxy_not_ready_for_test(session_id).await;
+        self.force_runtime_proxy_not_ready_for_test(session_id)
+            .await;
     }
 }
 

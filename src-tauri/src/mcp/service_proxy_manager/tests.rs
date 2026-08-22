@@ -1081,8 +1081,8 @@ async fn test_create_proxy_overlapping_destroy_proxy() {
 
 #[test]
 fn test_promote_builtin_reuse_runtime_state() {
-    use crate::agent::runtime_state::SessionRuntimeState;
     use super::promote_builtin_reuse_runtime_state;
+    use crate::agent::runtime_state::SessionRuntimeState;
 
     let not_ready = SessionRuntimeState::default();
     assert!(!not_ready.proxy.ready);
@@ -1136,4 +1136,3 @@ async fn test_reuse_after_lazy_builtin_promotes_unready_runtime_state() {
         "Reuse must promote builtin-only sessions to ready"
     );
 }
-
