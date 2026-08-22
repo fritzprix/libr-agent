@@ -42,6 +42,19 @@ fn describe_panic_payload(payload: &(dyn Any + Send)) -> String {
     "unknown panic payload".to_string()
 }
 
+/// On Reuse for builtin-only sessions, ensure the store reports ready even if a
+/// prior path left an incomplete snapshot (proxy exists, ready=false).
+pub fn promote_builtin_reuse_runtime_state(
+    current: SessionRuntimeState,
+    has_external_servers: bool,
+) -> SessionRuntimeState {
+    if !has_external_servers && !current.proxy.ready {
+        SessionRuntimeState::builtin_ready()
+    } else {
+        current
+    }
+}
+
 struct CreateProxyMetrics<'a> {
     session_id: &'a str,
     outcome: &'a str,
@@ -268,12 +281,26 @@ impl MCPServiceProxyManager {
                     } else {
                         log::debug!("Proxy already exists for session: {}", session_id);
                     }
-                    let runtime_state = self.get_runtime_state(&session_id).await;
+                    // Lazy ensure_builtin_proxy writes ready with no AppHandle (no emit).
+                    // On Reuse, promote incomplete snapshots and force-emit the store's
+                    // authoritative state so FE remounts leave Hydrating.
+                    let runtime_state = promote_builtin_reuse_runtime_state(
+                        self.get_runtime_state(&session_id).await,
+                        loaded.has_external_servers(),
+                    );
                     let update_result = self
                         .set_runtime_state(&session_id, runtime_state, app_handle.as_ref())
                         .await;
                     if update_result.emitted {
                         runtime_state_emits += 1;
+                    } else if let Some(app) = app_handle.as_ref() {
+                        if super::runtime_updates::emit_runtime_state(
+                            &session_id,
+                            &update_result.runtime_state,
+                            Some(app),
+                        ) {
+                            runtime_state_emits += 1;
+                        }
                     }
                     log_create_proxy_metrics(&CreateProxyMetrics {
                         session_id: &session_id,

@@ -25,6 +25,7 @@ mod test_helpers;
 mod tests;
 
 pub use caching::{persist_tool_cache_for_server, spawn_tool_cache_update};
+pub use creation::promote_builtin_reuse_runtime_state;
 pub use management::{decide_proxy_readiness_state, ProxyReadinessEntry, ProxyReadinessState};
 pub use proxy_config::{decide_existing_proxy_disposition, ExistingProxyDisposition};
 

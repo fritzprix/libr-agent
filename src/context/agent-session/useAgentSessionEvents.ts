@@ -33,6 +33,9 @@ import {
   isInactiveWorkflowStatus,
   stripMessageStreamingFlags,
 } from './workflow-inactive-cleanup';
+import {
+  pickRuntimeState,
+} from './runtimeStateApply';
 
 const logger = getLogger('AgentSessionEvents');
 
@@ -69,13 +72,6 @@ function createRuntimeFailureState(errorMessage: string): SessionRuntimeState {
   };
 }
 
-function shouldApplyRuntimeState(
-  currentState: SessionRuntimeState,
-  nextState: SessionRuntimeState,
-): boolean {
-  return nextState.sequence >= currentState.sequence;
-}
-
 type SessionStateSetters = ReturnType<typeof useAgentSessionState>['setters'];
 
 function applyOpenSessionPayload(
@@ -88,7 +84,7 @@ function applyOpenSessionPayload(
     /** When true, preserve event-arrived rows that the open snapshot missed. */
     mergeWithLiveState?: boolean;
   },
-): void {
+): SessionRuntimeState {
   const sessionMetadata = response.session;
   const sessionData = mapSessionMetadataToAgentSession(
     sessionMetadata,
@@ -125,13 +121,17 @@ function applyOpenSessionPayload(
   setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
 
   const nextRuntimeState = response.runtimeState ?? HYDRATING_RUNTIME_STATE;
+  // useState updaters run synchronously — capture the reconciled value for the
+  // open-view cache so remounts paint Ready when events already advanced past open().
   let previousRuntimeState: SessionRuntimeState | null = null;
+  let appliedRuntimeState = nextRuntimeState;
   setters.setRuntimeState((currentState) => {
-    if (shouldApplyRuntimeState(currentState, nextRuntimeState)) {
+    const picked = pickRuntimeState(currentState, nextRuntimeState);
+    if (picked === nextRuntimeState) {
       previousRuntimeState = currentState;
-      return nextRuntimeState;
     }
-    return currentState;
+    appliedRuntimeState = picked;
+    return picked;
   });
   if (previousRuntimeState) {
     notifyRuntimeStateErrors(
@@ -140,6 +140,7 @@ function applyOpenSessionPayload(
       options.sessionIdForErrors,
     );
   }
+  return appliedRuntimeState;
 }
 
 export function useAgentSessionEvents(
@@ -206,17 +207,15 @@ export function useAgentSessionEvents(
             switch (payload.type) {
               case 'sessionRuntimeStateUpdated': {
                 const nextState = payload.runtimeState;
-                let applied = false;
                 let previousState: SessionRuntimeState | null = null;
                 setters.setRuntimeState((currentState) => {
-                  if (!shouldApplyRuntimeState(currentState, nextState)) {
-                    return currentState;
+                  const picked = pickRuntimeState(currentState, nextState);
+                  if (picked === nextState && currentState !== nextState) {
+                    previousState = currentState;
                   }
-                  previousState = currentState;
-                  applied = true;
-                  return nextState;
+                  return picked;
                 });
-                if (applied && previousState) {
+                if (previousState) {
                   notifyRuntimeStateErrors(previousState, nextState, sessionId);
                 }
                 break;
@@ -469,7 +468,13 @@ export function useAgentSessionEvents(
             from: sessionId,
             to: resolvedSessionId,
           });
-          putOpenSessionView(resolvedSessionId, response);
+          // Cache under the storage id so the remount can warm-paint Ready when
+          // open() already returned a ready snapshot (alias listeners drop
+          // storage-id runtime events).
+          putOpenSessionView(resolvedSessionId, {
+            ...response,
+            runtimeState: response.runtimeState ?? HYDRATING_RUNTIME_STATE,
+          });
           navigate(`/agent/${resolvedSessionId}`, { replace: true });
           return;
         }
@@ -481,7 +486,7 @@ export function useAgentSessionEvents(
           : undefined;
         if (!isMounted) return;
 
-        applyOpenSessionPayload(response, setters, {
+        const appliedRuntimeState = applyOpenSessionPayload(response, setters, {
           assistant,
           clearStreamingOnInactive,
           sessionIdForErrors: sessionId,
@@ -489,7 +494,10 @@ export function useAgentSessionEvents(
           // otherwise replace so warm-cache paint can be fully reconciled from DB.
           mergeWithLiveState: liveMutationEpoch !== mutationEpochAtOpen,
         });
-        putOpenSessionView(sessionId, response);
+        putOpenSessionView(sessionId, {
+          ...response,
+          runtimeState: appliedRuntimeState,
+        });
 
         void actions.persistViewedAt().catch((err) => {
           logger.error(

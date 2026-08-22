@@ -533,6 +533,17 @@ impl MCPServiceProxyManager {
 #[cfg(test)]
 impl MCPServiceProxyManager {
     pub(crate) async fn mark_runtime_proxy_not_ready_for_test(&self, session_id: &str) {
+        self.force_runtime_proxy_not_ready_for_test(session_id)
+            .await;
+    }
+}
+
+impl MCPServiceProxyManager {
+    /// Integration-test helper: clear `proxy.ready` without destroying the proxy Arc.
+    ///
+    /// Used to reproduce the Hydrating stuck case where a proxy exists but the
+    /// runtime snapshot still reports not-ready (e.g. lost emit after lazy init).
+    pub async fn force_runtime_proxy_not_ready_for_test(&self, session_id: &str) {
         let mut state = self.get_runtime_state(session_id).await;
         state.proxy.ready = false;
         self.set_runtime_state(session_id, state, None).await;
