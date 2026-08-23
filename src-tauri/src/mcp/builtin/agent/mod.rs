@@ -161,4 +161,3 @@ impl BuiltinMCPServer for AgentServer {
         ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Volatile)
     }
 }
-

@@ -173,10 +173,7 @@ fn tool_loop_tail_injects_session_context_tool_pair() {
     assert!(layout.messages[3].is_request_layout_scaffolding_message());
     assert!(layout.messages[4].is_request_layout_scaffolding_message());
     assert_eq!(
-        layout.messages[3]
-            .tool_calls
-            .as_ref()
-            .unwrap()[0]
+        layout.messages[3].tool_calls.as_ref().unwrap()[0]
             .function
             .name,
         SESSION_CONTEXT_TOOL_NAME
@@ -341,10 +338,7 @@ fn non_synthetic_provider_uses_tool_pair_after_tool_turn() {
     assert_eq!(layout.messages.len(), 5);
     assert!(layout.messages[3].is_request_layout_scaffolding_message());
     assert_eq!(
-        layout.messages[3]
-            .tool_calls
-            .as_ref()
-            .unwrap()[0]
+        layout.messages[3].tool_calls.as_ref().unwrap()[0]
             .function
             .name,
         SESSION_CONTEXT_TOOL_NAME

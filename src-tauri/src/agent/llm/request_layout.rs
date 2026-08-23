@@ -73,7 +73,8 @@ fn synthetic_session_context_insert_index(messages: &[Message]) -> usize {
 pub fn should_inject_session_context_tool_pair(messages: &[Message], insert_idx: usize) -> bool {
     let prefix = messages.get(..insert_idx).unwrap_or(&[]);
     for message in prefix.iter().rev() {
-        if message.is_compaction_overlay_message() || message.is_request_layout_scaffolding_message()
+        if message.is_compaction_overlay_message()
+            || message.is_request_layout_scaffolding_message()
         {
             continue;
         }
