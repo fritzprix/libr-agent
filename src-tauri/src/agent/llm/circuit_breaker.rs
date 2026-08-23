@@ -2,8 +2,22 @@ use crate::agent::types::ToolCall;
 use crate::agent::AgentConfig;
 use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
+use once_cell::sync::Lazy;
+use regex::{Captures, Regex};
 use serde_json::Value;
 use std::collections::BTreeMap;
+
+/// Shell / interactive success (and failure) headers embed wall-clock duration; spill
+/// notices embed per-call UUIDs. Both must be stabilized so RepeatedSuccessOutcome
+/// streaks can match semantically identical successes (#1776).
+static OUTCOME_COMMAND_DURATION_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)((?:Interactive )?command (?:executed|failed) in )(?:<\s*1|\d+)\s*ms")
+        .expect("valid command-duration outcome regex")
+});
+static OUTCOME_TOOL_RESULT_SPILL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\.libragent/tool-results/[A-Za-z0-9._-]+\.txt")
+        .expect("valid tool-result spill path outcome regex")
+});
 
 #[derive(Debug, PartialEq)]
 pub enum CircuitBreakerAction {
@@ -220,10 +234,6 @@ enum RepeatedOutcome {
     Error { signature: String },
 }
 
-fn normalize_text_signature(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 fn canonical_structured_field(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(text) => text.clone(),
@@ -244,6 +254,14 @@ fn extract_structured_loop_fingerprint(message: &Message) -> Option<String> {
         }
     }
 
+    // Shell / runCommand payloads carry `duration_ms` and a coarse `status`
+    // (finished|failed). Prefer stabilized text so ephemeral duration/spill
+    // paths participate in the fingerprint, and so distinct stdout still breaks
+    // streaks (unlike bare status=finished).
+    if structured.get("duration_ms").is_some() {
+        return None;
+    }
+
     let mut parts = Vec::new();
     for key in [
         "status",
@@ -262,6 +280,24 @@ fn extract_structured_loop_fingerprint(message: &Message) -> Option<String> {
     } else {
         Some(parts.join("|"))
     }
+}
+
+/// Strip ephemeral per-call metadata from tool-result text before fingerprinting.
+///
+/// Does not change what the model sees — only the loop-prevention outcome signature.
+fn stabilize_ephemeral_outcome_text(text: &str) -> String {
+    let without_duration = OUTCOME_COMMAND_DURATION_RE
+        .replace_all(text, |caps: &Captures| format!("{}<duration>", &caps[1]));
+    OUTCOME_TOOL_RESULT_SPILL_RE
+        .replace_all(&without_duration, ".libragent/tool-results/<spill>.txt")
+        .into_owned()
+}
+
+fn normalize_text_signature(text: &str) -> String {
+    stabilize_ephemeral_outcome_text(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn build_tool_result_signature(message: &Message) -> String {
