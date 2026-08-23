@@ -38,7 +38,10 @@ pub fn format_child_sessions_context(children: &[SessionMetadata]) -> Option<Str
     Some(parts.join("\n"))
 }
 
-/// Formats a notice listing active sessions available for reuse via messageToSession.
+/// Formats a compact status inventory of child sessions (IDs retained for targeting).
+///
+/// Descriptive only — no imperative reuse/start copy — so the block stays safe inside
+/// synthetic `<session-context>` user messages.
 pub fn format_active_sessions_notice(children: &[SessionMetadata]) -> Option<String> {
     if children.is_empty() {
         return None;
@@ -61,59 +64,22 @@ pub fn format_active_sessions_notice(children: &[SessionMetadata]) -> Option<Str
     }
 
     let total_count = children.len();
-    let mut parts = vec![
-        format!("### Sub-Agent Sessions ({} total, reuse via messageToSession)", total_count),
-        String::new(),
-        "⚠️ **Reuse Existing Sessions First**: Avoid `startSession` — reuse idle/paused/failed sessions via `messageToSession(sessionId)` to preserve context.".to_string(),
-        String::new(),
-    ];
+    let mut parts = vec![format!("### Sub-Agents ({total_count})")];
 
     let limit_per_group = 5;
 
-    // Ready to Reuse (Idle)
-    format_group_notice(
-        &mut parts,
-        "Ready to Reuse (Idle):",
-        "These sessions are idle and ready for new instructions. Send a message to assign a new task.",
-        &idle_sessions,
-        limit_per_group,
-    );
-
-    // Suspended (Paused)
-    format_group_notice(
-        &mut parts,
-        "Suspended (Paused):",
-        "These sessions were suspended (e.g. waiting for input or approval). Send a message to resume them.",
-        &paused_sessions,
-        limit_per_group,
-    );
-
-    // Failed (Error)
-    format_group_notice(
-        &mut parts,
-        "Failed (Error):",
-        "These sessions encountered an error. Send a message to retry or recover them.",
-        &error_sessions,
-        limit_per_group,
-    );
-
-    // Running (Busy)
-    format_group_notice(
-        &mut parts,
-        "Running (Busy):",
-        "These sessions are currently executing a task. Do NOT send messages to them unless necessary; wait for them to finish.",
-        &busy_sessions,
-        limit_per_group,
-    );
+    format_group_notice(&mut parts, "Idle", &idle_sessions, limit_per_group);
+    format_group_notice(&mut parts, "Paused", &paused_sessions, limit_per_group);
+    format_group_notice(&mut parts, "Error", &error_sessions, limit_per_group);
+    format_group_notice(&mut parts, "Busy", &busy_sessions, limit_per_group);
 
     Some(parts.join("\n"))
 }
 
-/// Helper function to format a single session status group in the reuse notice.
+/// Helper: one status line with short ids (and optional truncated names).
 fn format_group_notice(
     parts: &mut Vec<String>,
-    title: &str,
-    description: &str,
+    status_label: &str,
     sessions: &[&SessionMetadata],
     limit: usize,
 ) {
@@ -121,22 +87,28 @@ fn format_group_notice(
         return;
     }
 
-    parts.push(format!("- **{}**", title));
-    parts.push(format!("  {}", description));
-    for child in sessions.iter().take(limit) {
-        let name_str = child.name.as_deref().unwrap_or("");
-        let short_name = if name_str.chars().count() > 35 {
-            format!("{}...", name_str.chars().take(32).collect::<String>())
-        } else {
-            name_str.to_string()
-        };
-        let display_id = crate::utils::session_id::display_session_id(&child.id);
-        parts.push(format!("  - `{}` (name: \"{}\")", display_id, short_name));
-    }
+    let mut entries: Vec<String> = sessions
+        .iter()
+        .take(limit)
+        .map(|child| {
+            let display_id = crate::utils::session_id::display_session_id(&child.id);
+            let name_str = child.name.as_deref().unwrap_or("").trim();
+            if name_str.is_empty() {
+                format!("`{display_id}`")
+            } else {
+                let short_name = if name_str.chars().count() > 28 {
+                    format!("{}...", name_str.chars().take(25).collect::<String>())
+                } else {
+                    name_str.to_string()
+                };
+                format!("`{display_id}` \"{short_name}\"")
+            }
+        })
+        .collect();
+
     if sessions.len() > limit {
-        parts.push(format!(
-            "  - ... {} more sessions in this group",
-            sessions.len() - limit,
-        ));
+        entries.push(format!("+{} more", sessions.len() - limit));
     }
+
+    parts.push(format!("- {status_label}: {}", entries.join(", ")));
 }

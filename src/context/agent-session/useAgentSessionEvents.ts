@@ -33,9 +33,7 @@ import {
   isInactiveWorkflowStatus,
   stripMessageStreamingFlags,
 } from './workflow-inactive-cleanup';
-import {
-  pickRuntimeState,
-} from './runtimeStateApply';
+import { pickRuntimeState } from './runtimeStateApply';
 
 const logger = getLogger('AgentSessionEvents');
 

@@ -98,16 +98,15 @@ impl BuiltinMCPServer for ScheduledTaskServer {
         });
 
         if tasks.is_empty() {
-            return ServiceContext::new(
-                "## Scheduled Tasks\n\nNo scheduled tasks configured. Create one with `scheduled_task__createScheduledTask`.",
-            )
-            .with_structured_state(json!({
-                "total": 0,
-                "enabled": 0,
-                "disabled": 0,
-                "tasks": []
-            }))
-            .with_volatility(ContextVolatility::Volatile);
+            // Idle: omit prompt text so volatile SC stays lean.
+            return ServiceContext::new("")
+                .with_structured_state(json!({
+                    "total": 0,
+                    "enabled": 0,
+                    "disabled": 0,
+                    "tasks": []
+                }))
+                .with_volatility(ContextVolatility::Volatile);
         }
 
         let enabled_count = tasks.iter().filter(|task| task.enabled).count();
