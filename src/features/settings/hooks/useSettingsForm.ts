@@ -95,8 +95,7 @@ function getAdvancedComparableState(settings: SettingsFormState) {
 function getExperimentalComparableState(settings: SettingsFormState) {
   return {
     inlineAudioAttachment: settings.experimental.inlineAudioAttachment,
-    toolLoopLegacyGuidanceEnabled:
-      settings.experimental.toolLoopLegacyGuidanceEnabled,
+    toolLoopRecoveryPolicy: settings.experimental.toolLoopRecoveryPolicy,
     toolLoopMaxResampleRetries:
       settings.experimental.toolLoopMaxResampleRetries,
   };

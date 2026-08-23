@@ -809,7 +809,7 @@ mod settings_mutation_tests {
     async fn legacy_guidance_enabled_skips_resample_decision() {
         let _guard = TEST_GUARD.lock().await;
         install_experimental_settings(serde_json::json!({
-            "toolLoopLegacyGuidanceEnabled": true,
+            "toolLoopRecoveryPolicy": "legacyGuidance",
             "toolLoopMaxResampleRetries": 2,
             "inlineAudioAttachment": true
         }))
@@ -836,10 +836,40 @@ mod settings_mutation_tests {
     }
 
     #[tokio::test]
+    async fn legacy_boolean_key_still_enables_legacy_guidance() {
+        let _guard = TEST_GUARD.lock().await;
+        // Read-compat for pre-canonicalize DB blobs.
+        install_experimental_settings(serde_json::json!({
+            "toolLoopLegacyGuidanceEnabled": true,
+            "toolLoopMaxResampleRetries": 2,
+            "inlineAudioAttachment": true
+        }))
+        .await;
+
+        let session_id = "tool-loop-legacy-boolean-compat-session";
+        let repeated_args = r#"{"path":"src/main.ts"}"#;
+        let repeated_error = "Error: file not found";
+
+        let active_sessions = ensure_active_sessions();
+        let (preprocess_result, _) = run_preprocess(
+            &active_sessions,
+            session_id,
+            repeated_error_history(repeated_args, repeated_error),
+            vec![test_tool_call("tc-3", "workspace__readFile", repeated_args)],
+        )
+        .await;
+
+        assert!(preprocess_result.tool_loop_resample.is_none());
+        assert!(!preprocess_result.loop_prevention_short_circuits.is_empty());
+
+        reset_state();
+    }
+
+    #[tokio::test]
     async fn zero_resample_retries_promotes_to_hard_break_at_threshold() {
         let _guard = TEST_GUARD.lock().await;
         install_experimental_settings(serde_json::json!({
-            "toolLoopLegacyGuidanceEnabled": false,
+            "toolLoopRecoveryPolicy": "resampleThenBreak",
             "toolLoopMaxResampleRetries": 0,
             "inlineAudioAttachment": true
         }))

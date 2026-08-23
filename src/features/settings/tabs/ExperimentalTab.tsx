@@ -98,14 +98,21 @@ function ExperimentalTabComponent({
           </div>
           <Switch
             id="tool-loop-legacy-guidance"
-            checked={localExperimentalSettings.toolLoopLegacyGuidanceEnabled}
+            checked={
+              localExperimentalSettings.toolLoopRecoveryPolicy ===
+              'legacyGuidance'
+            }
             onCheckedChange={(checked) =>
-              onChange('toolLoopLegacyGuidanceEnabled', checked)
+              onChange(
+                'toolLoopRecoveryPolicy',
+                checked ? 'legacyGuidance' : 'resampleThenBreak',
+              )
             }
           />
         </div>
 
-        {!localExperimentalSettings.toolLoopLegacyGuidanceEnabled ? (
+        {localExperimentalSettings.toolLoopRecoveryPolicy ===
+        'resampleThenBreak' ? (
           <div className="mt-4">
             <NumberSettingField
               label={t(

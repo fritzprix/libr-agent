@@ -19,6 +19,7 @@ import {
   ContextStrategy,
   ExperimentalSettings,
   DEFAULT_SETTING,
+  type ToolLoopRecoveryPolicy,
 } from '@/lib/services/settings-service';
 import { markStartupMilestone } from '@/lib/performance/startup-metrics';
 import i18n from '@/lib/i18n';
@@ -35,6 +36,7 @@ export type {
   SystemSettings,
   ContextStrategy,
   ExperimentalSettings,
+  ToolLoopRecoveryPolicy,
 };
 export { DEFAULT_SETTING };
 

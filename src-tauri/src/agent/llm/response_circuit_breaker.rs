@@ -111,7 +111,7 @@ pub(crate) async fn increment_tool_loop_resample_attempt(
 
 async fn load_tool_loop_resample_settings() -> (bool, usize) {
     // Default policy: clean resample (no intrusive guidance injection).
-    // Legacy guidance is opt-in via `toolLoopLegacyGuidanceEnabled`.
+    // Legacy guidance is opt-in via `toolLoopRecoveryPolicy: "legacyGuidance"`.
     let default_resample_enabled = true;
     let default_max_retries = 2usize;
 
@@ -132,11 +132,21 @@ async fn load_tool_loop_resample_settings() -> (bool, usize) {
                 }
             };
 
-            let resample_enabled = parsed
-                .get("toolLoopLegacyGuidanceEnabled")
-                .and_then(|v| v.as_bool())
-                .map(|legacy| !legacy)
-                .unwrap_or(default_resample_enabled);
+            let resample_enabled = match parsed
+                .get("toolLoopRecoveryPolicy")
+                .and_then(|v| v.as_str())
+            {
+                Some("legacyGuidance") => false,
+                Some("resampleThenBreak") => true,
+                _ => {
+                    // Read-compat: deprecated boolean (inverted: true = legacy guidance).
+                    parsed
+                        .get("toolLoopLegacyGuidanceEnabled")
+                        .and_then(|v| v.as_bool())
+                        .map(|legacy| !legacy)
+                        .unwrap_or(default_resample_enabled)
+                }
+            };
 
             // Allow 0 for "no resamples" (immediate circuit breaker at attempt_index=0).
             let max_retries = parsed
