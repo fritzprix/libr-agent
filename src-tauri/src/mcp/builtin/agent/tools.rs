@@ -483,13 +483,13 @@ fn session_context_tool() -> MCPTool {
         name: "sessionContext".to_string(),
         title: Some("Session Context Snapshot".to_string()),
         description: tool_description(
-            "Runtime-owned environment telemetry for the current session (time, workspace, planning, tool state). The runtime injects one result of this tool into each LLM request automatically.",
+            "Runtime-owned environment telemetry for the current session (time, workspace, planning, tool state). The runtime may inject one result of this tool during tool-loop continuations.",
             &[
-                "Redundant to call: the latest snapshot is already present as a tool result.",
+                "Redundant to call when a snapshot is already present as a tool result.",
                 "If called anyway, returns an idempotent fresh snapshot (no side effects).",
             ],
             &[
-                "Use the latest agent__sessionContext tool result already in the conversation as status reference.",
+                "Use the latest agent__sessionContext tool result already in the conversation as status reference when present.",
             ],
             &[
                 "Continue from the latest real user request (or assigned sub-agent task).",

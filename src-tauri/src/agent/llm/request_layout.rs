@@ -64,6 +64,38 @@ fn synthetic_session_context_insert_index(messages: &[Message]) -> usize {
     insert_idx
 }
 
+/// Inject the runtime `agent__sessionContext` tool pair only when the transcript
+/// prefix already contains a tool turn (tool result, or assistant tool_calls).
+///
+/// Fresh user turns and text-only assistant→user turns skip injection so we never
+/// lead with `assistant` (strict provider gate) and never shove volatile telemetry
+/// into the system prompt (prefix-cache churn).
+pub fn should_inject_session_context_tool_pair(messages: &[Message], insert_idx: usize) -> bool {
+    let prefix = messages.get(..insert_idx).unwrap_or(&[]);
+    for message in prefix.iter().rev() {
+        if message.is_compaction_overlay_message() || message.is_request_layout_scaffolding_message()
+        {
+            continue;
+        }
+
+        if message.role == "tool" {
+            return true;
+        }
+
+        if message.role == "assistant" {
+            let has_tool_calls = message
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.is_empty());
+            return has_tool_calls || message.tool_use.is_some();
+        }
+
+        return false;
+    }
+
+    false
+}
+
 fn build_session_context_tool_pair(
     provider: &str,
     session_id: &str,
@@ -144,53 +176,46 @@ pub fn build_request_layout(
         };
     };
 
-    if provider_uses_synthetic_session_context(provider) {
-        let insert_idx = synthetic_session_context_insert_index(&messages);
-
-        let reference_message_id =
-            if insert_idx < messages.len() && messages[insert_idx].is_external_request_message() {
-                messages[insert_idx].id.as_str()
-            } else if insert_idx > 0 {
-                messages[insert_idx - 1].id.as_str()
-            } else {
-                "system"
-            };
-
-        let (assistant_msg, tool_result_msg) = build_session_context_tool_pair(
-            provider,
-            session_id,
-            reference_message_id,
-            &session_context,
-        );
-
-        messages.insert(insert_idx, assistant_msg);
-        messages.insert(insert_idx + 1, tool_result_msg);
-
-        RequestLayout {
+    let insert_idx = synthetic_session_context_insert_index(&messages);
+    if !should_inject_session_context_tool_pair(&messages, insert_idx) {
+        // No prior tool turn: omit volatile telemetry for this request (keeps
+        // system prefix cache-stable; avoids assistant-leading first turns).
+        return RequestLayout {
             system_prompt,
             messages,
-        }
+        };
+    }
+
+    let reference_message_id =
+        if insert_idx < messages.len() && messages[insert_idx].is_external_request_message() {
+            messages[insert_idx].id.as_str()
+        } else if insert_idx > 0 {
+            messages[insert_idx - 1].id.as_str()
+        } else {
+            "system"
+        };
+
+    let id_provider = if provider_uses_synthetic_session_context(provider) {
+        provider
     } else {
-        // Providers without synthetic tool-pair support: keep volatile out of the
-        // user channel by appending a labeled block to the system prompt only.
-        let framed = format!(
-            "## Runtime Session Context (telemetry)\n\n{}",
-            session_context
-        );
-        let system_prompt = Some(
-            [system_prompt, Some(framed)]
-                .into_iter()
-                .flatten()
-                .filter(|part| !part.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n\n"),
-        )
-        .filter(|prompt| !prompt.is_empty());
+        // Unknown providers still use the tool-pair channel when eligible —
+        // never the system prompt (prefix-cache churn).
+        "session-context"
+    };
 
-        RequestLayout {
-            system_prompt,
-            messages,
-        }
+    let (assistant_msg, tool_result_msg) = build_session_context_tool_pair(
+        id_provider,
+        session_id,
+        reference_message_id,
+        &session_context,
+    );
+
+    messages.insert(insert_idx, assistant_msg);
+    messages.insert(insert_idx + 1, tool_result_msg);
+
+    RequestLayout {
+        system_prompt,
+        messages,
     }
 }
 

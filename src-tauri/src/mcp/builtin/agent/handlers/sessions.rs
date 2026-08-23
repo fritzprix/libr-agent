@@ -760,7 +760,7 @@ pub async fn session_context(
     };
 
     let message = format!(
-        "Duplicate snapshot (runtime already injects agent__sessionContext each turn).\n\n{}",
+        "Duplicate snapshot (runtime may inject agent__sessionContext on tool-loop turns).\n\n{}",
         snapshot
     );
 
