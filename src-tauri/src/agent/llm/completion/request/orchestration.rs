@@ -135,13 +135,49 @@ pub async fn request_llm_completion(
         }
     }
 
-    let request_layout = crate::agent::llm::build_request_layout(
-        &snapshot.provider,
-        &session_id,
-        system_prompt,
-        session_context,
-        final_messages,
-    );
+    let inject_state = {
+        let active = active_sessions.read().await;
+        let session = active.get(&session_id);
+        let (previous, turns_since_force_fresh) = if let Some(session) = session {
+            (
+                session.last_session_context_snapshot.read().await.clone(),
+                *session.session_context_turns_since_force_fresh.read().await,
+            )
+        } else {
+            (None, 0)
+        };
+        crate::agent::llm::SessionContextInjectState {
+            current: session_context,
+            previous,
+            turns_since_force_fresh,
+        }
+    };
+
+    let (request_layout, inject_outcome) =
+        crate::agent::llm::build_request_layout_with_inject_state(
+            &snapshot.provider,
+            &session_id,
+            system_prompt,
+            inject_state,
+            final_messages,
+        );
+
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            *session.last_session_context_snapshot.write().await = inject_outcome.next_previous;
+            let mut turns = session
+                .session_context_turns_since_force_fresh
+                .write()
+                .await;
+            *turns = if inject_outcome.force_fresh {
+                0
+            } else {
+                turns.saturating_add(1)
+            };
+        }
+    }
+
     let token_counts = compute_prompt_tokens(&request_layout.system_prompt, &tools_json);
     let system_prompt_tokens = token_counts.system_prompt_tokens;
     let tools_tokens = token_counts.tools_tokens;
