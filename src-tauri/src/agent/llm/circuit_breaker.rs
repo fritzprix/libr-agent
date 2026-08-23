@@ -286,9 +286,8 @@ fn extract_structured_loop_fingerprint(message: &Message) -> Option<String> {
 ///
 /// Does not change what the model sees — only the loop-prevention outcome signature.
 fn stabilize_ephemeral_outcome_text(text: &str) -> String {
-    let without_duration = OUTCOME_COMMAND_DURATION_RE.replace_all(text, |caps: &Captures| {
-        format!("{}<duration>", &caps[1])
-    });
+    let without_duration = OUTCOME_COMMAND_DURATION_RE
+        .replace_all(text, |caps: &Captures| format!("{}<duration>", &caps[1]));
     OUTCOME_TOOL_RESULT_SPILL_RE
         .replace_all(&without_duration, ".libragent/tool-results/<spill>.txt")
         .into_owned()
