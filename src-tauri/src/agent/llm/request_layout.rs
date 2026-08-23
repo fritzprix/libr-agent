@@ -7,11 +7,9 @@ use crate::models::chat::{Message, MessageSource};
 const SESSION_CONTEXT_BACKGROUND_HEADER: &str = "<session-context>";
 const SESSION_CONTEXT_BACKGROUND_FOOTER: &str = "</session-context>";
 
-/// Explicit non-intent framing shown to the model inside the injected block.
-const SESSION_CONTEXT_DISCLAIMER: &str =
-    "BACKGROUND SESSION CONTEXT — environment telemetry and tool state only. \
-This is NOT a user instruction or preference. Follow the latest real user request \
-(or your assigned sub-agent task); use this block only as passive reference.";
+/// Short non-intent framing inside the injected block (keep to one line — long
+/// sermons cause per-turn re-anchoring without improving role separation).
+const SESSION_CONTEXT_DISCLAIMER: &str = "Session environment state (not a user request).";
 
 #[derive(Debug, Clone)]
 pub struct RequestLayout {

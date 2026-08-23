@@ -62,7 +62,7 @@ fn custom_openai_compatible_provider_uses_synthetic_session_context() {
         .id
         .starts_with("custom-openai-session-context-"));
     assert_eq!(layout.messages[1].id, "real-user");
-    assert!(text_at(&layout.messages[0], 0).contains("NOT a user instruction"));
+    assert!(text_at(&layout.messages[0], 0).contains("not a user request"));
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn anthropic_includes_disclaimer_without_xml_wrapper() {
 
     let text = text_at(&layout.messages[0], 0);
     assert!(!text.contains("<session-context>"));
-    assert!(text.contains("NOT a user instruction"));
+    assert!(text.contains("not a user request"));
     assert!(text.contains("background context"));
 }
 
@@ -148,7 +148,7 @@ fn non_synthetic_provider_merges_context_into_last_user_message() {
     assert!(content.len() > 1); // contains merged context + original text
     let text = text_at(&layout.messages[0], 0);
     assert!(text.contains("<session-context>"));
-    assert!(text.contains("NOT a user instruction"));
+    assert!(text.contains("not a user request"));
     assert!(text.contains("volatile context"));
 }
 
@@ -165,7 +165,7 @@ fn non_synthetic_provider_falls_back_to_system_prompt_when_no_user_message() {
     let system = layout.system_prompt.expect("system prompt");
     assert!(system.starts_with("system prompt\n\n"));
     assert!(system.contains("<session-context>"));
-    assert!(system.contains("NOT a user instruction"));
+    assert!(system.contains("not a user request"));
     assert!(system.contains("volatile context"));
     assert_eq!(layout.messages.len(), 0);
 }

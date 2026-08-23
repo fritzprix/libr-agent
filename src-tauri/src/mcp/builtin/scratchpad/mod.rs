@@ -92,25 +92,27 @@ impl BuiltinMCPServer for ScratchpadServer {
                 Vec::new()
             });
 
-        let mut parts = vec!["## Scratchpad".to_string(), String::new()];
-
         if items.is_empty() {
-            parts.push(
-                "No scratchpad notes. Use `scratchpad__addNote` to save temporary notes for this session only (not visible to parent/child sessions)."
-                    .to_string(),
-            );
-        } else {
-            for item in &items {
-                let content = item.content.replace(['\n', '\r'], " ");
-                let summary = if content.chars().count() > 50 {
-                    let s: String = content.chars().take(47).collect();
-                    format!("{}...", s)
-                } else {
-                    content
-                };
-                let title = item.title.as_deref().unwrap_or("Note");
-                parts.push(format!("- **[ID: {}] {}**: {}", item.id, title, summary));
-            }
+            // Idle: omit prompt text so volatile SC stays lean.
+            return ServiceContext::new("")
+                .with_structured_state(json!({
+                    "items": [],
+                    "count": 0
+                }))
+                .with_volatility(ContextVolatility::Volatile);
+        }
+
+        let mut parts = vec!["## Scratchpad".to_string(), String::new()];
+        for item in &items {
+            let content = item.content.replace(['\n', '\r'], " ");
+            let summary = if content.chars().count() > 50 {
+                let s: String = content.chars().take(47).collect();
+                format!("{}...", s)
+            } else {
+                content
+            };
+            let title = item.title.as_deref().unwrap_or("Note");
+            parts.push(format!("- **[ID: {}] {}**: {}", item.id, title, summary));
         }
 
         let structured_state = json!({
