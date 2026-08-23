@@ -60,13 +60,12 @@ async fn compose_service_context_prompt(
     repo: &InMemorySessionRepository,
     session_id: &str,
 ) -> String {
-    let mut context_prompt = AGENT_DELEGATION_HEADER.to_string();
+    let mut live_parts: Vec<String> = Vec::new();
 
     if let Ok(Some(session)) = repo.get_session(session_id).await {
         if let Ok(children) = repo.get_child_sessions(session_id).await {
             if let Some(active_notice) = format_active_sessions_notice(&children) {
-                context_prompt.push('\n');
-                context_prompt.push_str(&active_notice);
+                live_parts.push(active_notice);
             }
         }
 
@@ -74,12 +73,21 @@ async fn compose_service_context_prompt(
             if let Ok(Some(org_layer_context)) =
                 build_explicit_org_layer_context(repo, &session).await
             {
-                context_prompt.push('\n');
-                context_prompt.push_str(&org_layer_context);
+                live_parts.push(org_layer_context);
             }
         }
     }
 
+    if live_parts.is_empty() {
+        return AGENT_DELEGATION_HEADER.to_string();
+    }
+
+    // Live path uses the compact prefix (same idea as AgentServer).
+    let mut context_prompt = String::from(
+        "## Agent Delegation\n\nTools: `agent__messageToSession`, `agent__startSession`, `agent__checkSession`, `agent__compactSessionContext`.\n",
+    );
+    context_prompt.push('\n');
+    context_prompt.push_str(&live_parts.join("\n\n"));
     context_prompt
 }
 
@@ -306,9 +314,8 @@ async fn service_context_composes_child_and_org_context() {
 
     // Agent-facing ids are short tokens only (no `session-` prefix).
     // Fixture `child-org-session` (17 chars) → last 10: `rg-session`.
-    assert!(prompt.contains("### Sub-Agent Sessions (1 total, reuse via messageToSession)"));
-    assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
-    assert!(prompt.contains("  - `rg-session` (name: \"Child Analyst\")"));
+    assert!(prompt.contains("### Sub-Agent Sessions (1 total)"));
+    assert!(prompt.contains("- Idle: `rg-session` \"Child Analyst\""));
     assert!(prompt.contains("### Explicit Org Layer"));
     assert!(prompt.contains("- Org: Beta Org (ID: org-beta)"));
     assert!(prompt.contains("## Agent Delegation"));
@@ -424,24 +431,15 @@ async fn service_context_includes_active_sessions_notice() {
     // `get_service_context` only appends the active-sessions notice (no ## Child Sessions).
     assert!(!prompt.contains("## Child Sessions"));
 
-    assert!(prompt.contains("### Sub-Agent Sessions (3 total, reuse via messageToSession)"));
-    assert!(prompt.contains("⚠️ **Reuse Existing Sessions First**:"));
+    assert!(prompt.contains("### Sub-Agent Sessions (3 total)"));
+    assert!(prompt.contains("Status inventory (sessionId → `agent__messageToSession`)."));
+    assert!(!prompt.contains("Reuse Existing Sessions First"));
+    assert!(!prompt.contains("Avoid `startSession`"));
+    assert!(!prompt.contains("Do NOT send"));
 
-    assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
-    assert!(prompt.contains("  These sessions are idle and ready for new instructions."));
     // Agent-facing ids are short tokens only (no `session-` prefix).
     //   child-idle (10) → child-idle; child-paused (12) → ild-paused; child-error (11) → hild-error
-    assert!(prompt.contains("  - `child-idle` (name: \"Active Child 1\")"));
-
-    assert!(prompt.contains("- **Suspended (Paused):**"));
-    assert!(
-        prompt.contains("  These sessions were suspended (e.g. waiting for input or approval).")
-    );
-    assert!(prompt.contains("  - `ild-paused` (name: \"Active Child 2\")"));
-
-    assert!(prompt.contains("- **Failed (Error):**"));
-    assert!(prompt.contains(
-        "  These sessions encountered an error. Send a message to retry or recover them."
-    ));
-    assert!(prompt.contains("  - `hild-error` (name: \"Error Child\")"));
+    assert!(prompt.contains("- Idle: `child-idle` \"Active Child 1\""));
+    assert!(prompt.contains("- Paused: `ild-paused` \"Active Child 2\""));
+    assert!(prompt.contains("- Error: `hild-error` \"Error Child\""));
 }

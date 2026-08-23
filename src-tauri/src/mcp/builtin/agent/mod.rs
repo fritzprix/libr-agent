@@ -70,6 +70,12 @@ pub const AGENT_DELEGATION_HEADER: &str = concat!(
     "- `agent__compactSessionContext` refreshes another session's stored compact summary before more work.\n",
 );
 
+/// Compact header used with live child/org inventory (Volatile path).
+const AGENT_DELEGATION_LIVE_PREFIX: &str = concat!(
+    "## Agent Delegation\n\n",
+    "Tools: `agent__messageToSession`, `agent__startSession`, `agent__checkSession`, `agent__compactSessionContext`.\n",
+);
+
 #[async_trait]
 impl BuiltinMCPServer for AgentServer {
     fn name(&self) -> &str {
@@ -122,31 +128,37 @@ impl BuiltinMCPServer for AgentServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        let mut context_prompt = AGENT_DELEGATION_HEADER.to_string();
-
-        let volatility = ContextVolatility::Volatile;
+        // Static tool catalogue → Stable (cacheable prefix). Live child/org inventory →
+        // Volatile so it only appears in the runtime-injected tool result.
+        let mut live_parts: Vec<String> = Vec::new();
 
         let repo = SqliteSessionRepository::new(self.get_db().clone());
         if let Ok(Some(session)) = repo.get_session(&self.session_id).await {
-            // Fetch child sessions once
             if let Ok(children) = repo.get_child_sessions(&self.session_id).await {
                 if let Some(active_notice) = format_active_sessions_notice(&children) {
-                    context_prompt.push('\n');
-                    context_prompt.push_str(&active_notice);
+                    live_parts.push(active_notice);
                 }
             }
 
-            // Build org layer context (only if organization metadata exists on the session)
             if session.org_id.is_some() {
                 if let Ok(Some(org_layer_context)) =
                     build_explicit_org_layer_context(&repo, &session).await
                 {
-                    context_prompt.push('\n');
-                    context_prompt.push_str(&org_layer_context);
+                    live_parts.push(org_layer_context);
                 }
             }
         }
 
-        ServiceContext::new(context_prompt).with_volatility(volatility)
+        if live_parts.is_empty() {
+            return ServiceContext::new(AGENT_DELEGATION_HEADER.to_string())
+                .with_volatility(ContextVolatility::Stable);
+        }
+
+        let mut context_prompt = AGENT_DELEGATION_LIVE_PREFIX.to_string();
+        context_prompt.push('\n');
+        context_prompt.push_str(&live_parts.join("\n\n"));
+
+        ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Volatile)
     }
 }
+

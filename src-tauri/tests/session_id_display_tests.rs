@@ -154,6 +154,10 @@ fn active_sessions_notice_uses_short_tokens_for_legacy_and_short_ids() {
     );
     assert!(!notice.contains("`session-a1b2c3d4e5`"));
     assert!(!notice.contains("`session-` (name:"));
+    assert!(notice.contains("### Sub-Agent Sessions (2 total)"));
+    assert!(notice.contains("- Idle:"));
+    assert!(notice.contains("- Paused:"));
+    assert!(!notice.contains("Reuse Existing"));
 }
 
 #[test]
