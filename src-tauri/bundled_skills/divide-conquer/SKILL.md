@@ -34,7 +34,7 @@ The Divide-Conquer pattern splits a complex task into independent subtasks, dele
 
 1. **Decomposition**: Divide the task into non-overlapping, independent units. See [decomposition-rules.md](references/decomposition-rules.md).
 2. **Assignment**: Assign subtasks to suitable assistants (homogeneous or heterogeneous).
-3. **Workspace Strategy**: Decide whether children share the parent workspace (`workspaceOverride`) or use isolated workspaces (default: shared).
+3. **Workspace Strategy**: Decide whether children share the parent workspace (`workspaceOverride`) or use isolated workspaces (**default: isolated** for plain `startSession`; org members inherit the org root unless overridden).
 4. **Spawn & Monitor**: Spawn sessions in batches respecting the concurrency limit (default: `maxConcurrentActiveSessions` is 4).
 5. **Merge**: Assemble output artifacts based on merge patterns. See [merge-patterns.md](references/merge-patterns.md).
 6. **Verify**: Run build/tests to ensure integration integrity. Retries failed subtasks if needed.

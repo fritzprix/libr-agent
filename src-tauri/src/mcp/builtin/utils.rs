@@ -358,6 +358,29 @@ pub fn path_starts_with(path: &Path, base: &Path) -> bool {
     relative_path_under_base(path, base).is_some()
 }
 
+/// Strip Windows extended-length (`\\?\`) prefix for display / docker / agent Metadata.
+///
+/// Leaves `\\?\UNC\...` unchanged (network paths need the verbatim form).
+pub fn strip_windows_verbatim_prefix(path: &str) -> &str {
+    match path.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with(r"UNC\") => rest,
+        _ => path,
+    }
+}
+
+/// Human-facing workspace path: strip Windows verbatim prefix, keep the rest.
+pub fn display_workspace_path(path: &Path) -> String {
+    strip_windows_verbatim_prefix(&path.to_string_lossy()).to_string()
+}
+
+/// True when two paths refer to the same directory (Windows verbatim/case aware).
+pub fn workspace_paths_equivalent(left: &Path, right: &Path) -> bool {
+    matches!(
+        relative_path_under_base(left, right),
+        Some(rel) if rel.as_os_str().is_empty()
+    )
+}
+
 /// Return the relative suffix of `path` under `base`, or `None` if `path` is not under `base`.
 ///
 /// Handles Windows verbatim vs normal drive prefixes and case-insensitive component matching.

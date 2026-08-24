@@ -47,6 +47,8 @@ If the work depends on any of those, delegation is usually the wrong move unless
 
 When the child finishes, require deliverables in its **final text response**. Parent recovery uses that text (`agent__checkSession` / `waitForResult`), not scratchpad IDs — child scratchpad notes are invisible to the parent.
 
+After `agent__checkSession`, read the Metadata `workspace:` line: `SHARED with caller` means relative paths in the parent root are safe; `ISOLATED` means use the absolute path from Metadata or rely on Result text — do not assume sibling sessions share a workspace.
+
 ## 2. Choose the Child's Effective Context
 
 Assume these rules:
