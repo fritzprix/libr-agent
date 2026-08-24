@@ -445,6 +445,22 @@ fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> 
     })
 }
 
+/// Whether the child session workspace matches the caller's effective workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceRelation {
+    Shared,
+    Isolated,
+}
+
+impl WorkspaceRelation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Isolated => "isolated",
+        }
+    }
+}
+
 /// Session context fields attached to every successful `agent__checkSession` response.
 ///
 /// Session `name` / task title is intentionally omitted: it often reflects a past
@@ -453,7 +469,10 @@ fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> 
 pub struct CheckSessionEnrichment {
     pub assistant_id: Option<String>,
     pub assistant_name: Option<String>,
+    /// Display path (verbatim `\\?\` stripped). Prefer absolute path for file access.
     pub workspace_path: Option<String>,
+    /// Present when caller workspace could be compared (`shared` / `isolated`).
+    pub workspace_relation: Option<WorkspaceRelation>,
     /// Present in structured content only; omitted from the text Metadata block
     /// (low routing signal, adds noise for the parent agent).
     pub created_at: Option<i64>,
@@ -475,21 +494,112 @@ fn sanitize_check_session_metadata_field(value: &str) -> Option<String> {
     }
 }
 
-/// Build enrichment fields from session metadata (assistant name resolved separately).
-pub fn check_session_enrichment_from_metadata(
+fn display_sanitize_workspace_path(raw: &str) -> Option<String> {
+    let cleaned = sanitize_check_session_metadata_field(raw)?;
+    Some(crate::mcp::builtin::utils::display_workspace_path(
+        std::path::Path::new(&cleaned),
+    ))
+}
+
+/// Raw child workspace from persisted metadata only (no session-manager fallback).
+fn workspace_raw_from_metadata(meta: &SessionMetadata) -> Option<String> {
+    optional_nonempty(meta.workspace_override.as_deref())
+        .or_else(|| optional_nonempty(meta.docker_host_workspace_path.as_deref()))
+}
+
+/// Effective child workspace: override / docker host / default session workspace dir.
+fn resolve_child_workspace_raw(meta: &SessionMetadata) -> Option<String> {
+    if let Some(path) = workspace_raw_from_metadata(meta) {
+        return Some(path);
+    }
+    crate::session::get_session_manager().ok().map(|manager| {
+        manager
+            .get_session_workspace_dir_by_id(&meta.id)
+            .to_string_lossy()
+            .into_owned()
+    })
+}
+
+fn resolve_caller_workspace_raw(caller_session_id: &str) -> Option<String> {
+    crate::session::get_session_manager().ok().map(|manager| {
+        manager
+            .get_session_workspace_dir_by_id(caller_session_id)
+            .to_string_lossy()
+            .into_owned()
+    })
+}
+
+fn classify_workspace_relation(
+    child_raw: &str,
+    caller_raw: Option<&str>,
+) -> Option<WorkspaceRelation> {
+    let caller_raw = caller_raw?;
+    let child = std::path::Path::new(child_raw);
+    let caller = std::path::Path::new(caller_raw);
+    if crate::mcp::builtin::utils::workspace_paths_equivalent(child, caller) {
+        Some(WorkspaceRelation::Shared)
+    } else {
+        Some(WorkspaceRelation::Isolated)
+    }
+}
+
+/// Format one-line workspace Metadata value (path + optional SHARED/ISOLATED tag).
+pub fn format_workspace_metadata_line(
+    workspace_path: &str,
+    relation: Option<WorkspaceRelation>,
+) -> String {
+    match relation {
+        Some(WorkspaceRelation::Shared) => {
+            format!("workspace: {} (SHARED with caller)", workspace_path)
+        }
+        Some(WorkspaceRelation::Isolated) => format!(
+            "workspace: {} (ISOLATED — different from caller; use absolute path or Result text)",
+            workspace_path
+        ),
+        None => format!("workspace: {}", workspace_path),
+    }
+}
+
+/// Short startSession / messageToSession hint fragment.
+pub fn format_workspace_status_note(workspace_path: &str, relation: WorkspaceRelation) -> String {
+    match relation {
+        WorkspaceRelation::Shared => format!(" [SHARED] workspace: {}.", workspace_path),
+        WorkspaceRelation::Isolated => format!(" [ISOLATED] workspace: {}.", workspace_path),
+    }
+}
+
+/// Build enrichment from metadata + optional caller workspace for relation tagging.
+///
+/// When `child_workspace_raw` is `None`, uses override/docker fields only (no runtime dir).
+/// Pass an explicit child path to test relation / display without SessionManager.
+pub fn check_session_enrichment_from_metadata_with_caller(
     meta: &SessionMetadata,
     assistant_name: Option<String>,
+    child_workspace_raw: Option<String>,
+    caller_workspace_raw: Option<&str>,
 ) -> CheckSessionEnrichment {
-    let workspace_path = optional_nonempty(meta.workspace_override.as_deref())
-        .or_else(|| optional_nonempty(meta.docker_host_workspace_path.as_deref()));
+    let raw = child_workspace_raw.or_else(|| workspace_raw_from_metadata(meta));
+    let workspace_relation = raw
+        .as_deref()
+        .and_then(|child| classify_workspace_relation(child, caller_workspace_raw));
+    let workspace_path = raw.as_deref().and_then(display_sanitize_workspace_path);
 
     CheckSessionEnrichment {
         assistant_id: optional_nonempty(meta.assistant_id.as_deref()),
         assistant_name: optional_nonempty(assistant_name.as_deref()),
         workspace_path,
+        workspace_relation,
         created_at: Some(meta.created_at),
         org_id: optional_nonempty(meta.org_id.as_deref()),
     }
+}
+
+/// Build enrichment fields from session metadata (assistant name resolved separately).
+pub fn check_session_enrichment_from_metadata(
+    meta: &SessionMetadata,
+    assistant_name: Option<String>,
+) -> CheckSessionEnrichment {
+    check_session_enrichment_from_metadata_with_caller(meta, assistant_name, None, None)
 }
 
 /// Insert `agent__checkSession` context metadata into structured response data (camelCase keys).
@@ -513,6 +623,12 @@ pub fn apply_check_session_enrichment(
         data.insert(
             "workspacePath".to_string(),
             Value::String(workspace_path.clone()),
+        );
+    }
+    if let Some(relation) = enrichment.workspace_relation {
+        data.insert(
+            "workspaceRelation".to_string(),
+            Value::String(relation.as_str().to_string()),
         );
     }
     if let Some(created_at) = enrichment.created_at {
@@ -539,7 +655,10 @@ pub fn format_check_session_context_text(enrichment: &CheckSessionEnrichment) ->
         (None, None) => {}
     }
     if let Some(workspace_path) = enrichment.workspace_path.as_ref() {
-        lines.push(format!("workspace: {}", workspace_path));
+        lines.push(format_workspace_metadata_line(
+            workspace_path,
+            enrichment.workspace_relation,
+        ));
     }
     if let Some(org_id) = enrichment.org_id.as_ref() {
         lines.push(format!("orgId: {}", org_id));
@@ -580,8 +699,11 @@ pub fn append_check_session_context_to_message(
     format!("{}\n\n{}", message.trim_end(), context)
 }
 
-/// Resolve assistant display name and build enrichment for a delegated session.
-pub async fn resolve_check_session_enrichment(meta: &SessionMetadata) -> CheckSessionEnrichment {
+/// Resolve assistant display name and effective workspace enrichment for a delegated session.
+pub async fn resolve_check_session_enrichment(
+    meta: &SessionMetadata,
+    caller_session_id: &str,
+) -> CheckSessionEnrichment {
     use crate::repositories::AssistantRepository;
 
     let assistant_name = match optional_nonempty(meta.assistant_id.as_deref()) {
@@ -605,7 +727,14 @@ pub async fn resolve_check_session_enrichment(meta: &SessionMetadata) -> CheckSe
         None => None,
     };
 
-    check_session_enrichment_from_metadata(meta, assistant_name)
+    let child_raw = resolve_child_workspace_raw(meta);
+    let caller_raw = resolve_caller_workspace_raw(caller_session_id);
+    check_session_enrichment_from_metadata_with_caller(
+        meta,
+        assistant_name,
+        child_raw,
+        caller_raw.as_deref(),
+    )
 }
 
 /// Build a paused checkSession MCP result from pre-fetched messages.

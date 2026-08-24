@@ -27,9 +27,11 @@ The Hub-and-Spoke pattern designates a central Coordinator session (Hub) to mana
 2. **Task Planning**: The Hub analyzes the goal, creates a task dependency list, and allocates work.
 3. **Execution Routing**:
    - The Hub spawns Spokes asynchronously using `agent__startSession(waitForResult=false)`.
-   - Spokes work in isolation. If inter-spoke coordination is needed, the Hub routes messages. See [routing.md](references/routing.md).
-4. **Monitoring**: The Hub polls Spoke statuses via `agent__checkSession`.
-5. **Synthesis**: The Hub merges all finished spoke artifacts and runs integration checks.
+   - Plain spokes get **isolated** workspaces by default. For repo/code work, pass `workspaceOverride` to the Hub's workspace (or a spoke-specific subdir). For research/write-ups, require the primary deliverable in the spoke's final text (`Result:`), not only a relative file path.
+   - When sharing a workspace across parallel spokes, use unique filenames or per-spoke subdirectories to avoid collisions.
+   - If inter-spoke coordination is needed, the Hub routes messages. See [routing.md](references/routing.md).
+4. **Monitoring**: The Hub polls Spoke statuses via `agent__checkSession` and reads the Metadata `workspace` line (`SHARED` vs `ISOLATED`) before assuming files exist in the Hub root.
+5. **Synthesis**: The Hub merges all finished spoke artifacts (from Result text and/or absolute paths from Metadata) and runs integration checks.
 
 ## 🛠️ MCP Tools Guide
 

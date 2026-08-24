@@ -45,7 +45,8 @@ pub async fn check_session(
     let storage_session_id =
         crate::utils::session_id::StorageSessionId::from_resolved(session_id.clone());
     let display_id = crate::utils::session_id::display_session_id(&session_id);
-    let enrichment = resolve_check_session_enrichment(&current_session_meta).await;
+    let enrichment =
+        resolve_check_session_enrichment(&current_session_meta, caller_session_id).await;
     let current_status = format!("{:?}", current_session_meta.status).to_lowercase();
     let current_turn_count = count_session_turns(&session_id).await;
 

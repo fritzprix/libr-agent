@@ -370,6 +370,7 @@ fn check_session_tool() -> MCPTool {
             &[
                 "Call with wait=false for a snapshot or wait=true to block until terminal state.",
                 "After the status line (before Result), a fenced Metadata block adds identity/routing only (assistant, workspace) — not the child's answer. Session title/name is omitted.",
+                "workspace is tagged SHARED with caller or ISOLATED (different from caller). Isolated child files are not in the caller root — use the absolute path or Result text.",
                 "Paused or error sessions need recovery via agent__messageToSession.",
             ],
             &[
