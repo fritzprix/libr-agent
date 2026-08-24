@@ -1,3 +1,19 @@
+## [0.9.6] - 2026-08-25
+
+### 🚀 Features & Performance
+
+- **Adaptive Tool-Loop Recovery Policy**: Introduces experimental resample-then-break tool-loop recovery (`tool_loop_recovery_policy`), configurable in Settings > Experimental. When an agent encounters repetitive tool calls or outcome streaks, it first attempts natural resample recovery before breaking or short-circuiting.
+- **Reasoning & Output Budget Early Abort & Clean Retry**: Automatically detects runaway thinking/reasoning (for OpenAI reasoning and general LLM outputs) reaching 90% of `maxTokens` budget, aborting early and cleanly retrying to prevent truncated responses or wasted context.
+- **Prompt Architecture & Session Context Optimization**: Streamlined volatile session context noise (Phase 1) and repositioned session context ahead of previous assistant responses (Phase 2) to maximize KV cache reuse and reduce prompt jitter.
+
+### 🐛 Fixes & Hardening
+
+- **Delegated Session Workspace Signaling**: Explicitly surfaces `SHARED` vs `ISOLATED` workspace relation badges for delegated child sessions and sanitized newline display paths in `agent__startSession`.
+- **Streaming `<think>` Tag Parser**: Improved stateful `<think>` tag streaming parser (Ollama/DeepSeek models) to properly classify unclosed thinking tags as thought content instead of leaking raw text.
+- **Session Reset & UI Toast Hygiene**: Instantly dismisses compaction toast notifications when clearing an agent session.
+- **Runtime State Resumption**: Force-emits ready runtime states upon built-in service proxy reuse to prevent stale hydrating state indicators on session reactivation.
+- **Consensus Delegation Assistant Reuse**: Updated consensus delegation workflows to prefer reusing existing assistants rather than creating redundant session instances.
+
 ## [0.9.5] - 2026-08-17
 
 ### 🚀 Features & Performance
