@@ -494,7 +494,7 @@ fn sanitize_check_session_metadata_field(value: &str) -> Option<String> {
     }
 }
 
-fn display_sanitize_workspace_path(raw: &str) -> Option<String> {
+pub(super) fn display_sanitize_workspace_path(raw: &str) -> Option<String> {
     let cleaned = sanitize_check_session_metadata_field(raw)?;
     Some(crate::mcp::builtin::utils::display_workspace_path(
         std::path::Path::new(&cleaned),

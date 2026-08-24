@@ -27,17 +27,9 @@ fn resolve_spawned_workspace_signal(
     intended_workspace: Option<String>,
 ) -> (Option<String>, Option<WorkspaceRelation>) {
     let Ok(session_manager) = crate::session::get_session_manager() else {
-        let display = intended_workspace.and_then(|path| {
-            let cleaned = path.replace(['\n', '\r'], "");
-            let trimmed = cleaned.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(crate::mcp::builtin::utils::display_workspace_path(
-                    std::path::Path::new(trimmed),
-                ))
-            }
-        });
+        let display = intended_workspace
+            .as_deref()
+            .and_then(super::display_sanitize_workspace_path);
         return (display, None);
     };
 
@@ -60,9 +52,10 @@ fn resolve_spawned_workspace_signal(
     } else {
         WorkspaceRelation::Isolated
     };
-    let display =
-        crate::mcp::builtin::utils::display_workspace_path(std::path::Path::new(&child_raw));
-    (Some(display), Some(relation))
+    // Strip newlines before display — workspaceOverride is user-controlled and this
+    // path lands in the plain-text startSession note (not only the Metadata fence).
+    let display = super::display_sanitize_workspace_path(&child_raw);
+    (display, Some(relation))
 }
 
 fn self_target_session_action_result(
