@@ -88,6 +88,8 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         cached_stable_prompt: Arc::new(RwLock::new(None)),
         last_completion_request: Arc::new(RwLock::new(None)),
         last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+        last_session_context_snapshot: Arc::new(RwLock::new(None)),
+        session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
         tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
         tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
     }

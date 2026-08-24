@@ -11,10 +11,35 @@ const SESSION_CONTEXT_BACKGROUND_FOOTER: &str = "</session-context>";
 /// sermons cause per-turn re-anchoring without improving role separation).
 const SESSION_CONTEXT_DISCLAIMER: &str = "Session environment state (not a user request).";
 
+/// Re-inject current SC (instead of lagged tn−1 snapshot) at least this often.
+pub const SESSION_CONTEXT_HEARTBEAT_TURNS: u32 = 8;
+
 #[derive(Debug, Clone)]
 pub struct RequestLayout {
     pub system_prompt: Option<String>,
     pub messages: Vec<Message>,
+}
+
+/// Inputs for ephemeral synthetic-user session-context injection (Phase 2).
+#[derive(Debug, Clone, Default)]
+pub struct SessionContextInjectState {
+    /// Volatile SC built for this request (state @ tn).
+    pub current: Option<String>,
+    /// Snapshot stored after the previous request (state @ tn−1), when available.
+    pub previous: Option<String>,
+    /// Completions since the last force-fresh inject (heartbeat).
+    pub turns_since_force_fresh: u32,
+}
+
+/// Result of resolving what to inject and what to persist for the next turn.
+#[derive(Debug, Clone)]
+pub struct SessionContextInjectOutcome {
+    /// Text body to place in the synthetic user message (None → do not inject).
+    pub inject_text: Option<String>,
+    /// Snapshot to store as `previous` for the next request (usually `current`).
+    pub next_previous: Option<String>,
+    /// Reset heartbeat counter when true; otherwise increment.
+    pub force_fresh: bool,
 }
 
 /// OpenAI-compatible custom providers use the `custom:<id>` session provider id.
@@ -64,86 +89,214 @@ fn format_session_context_text(provider: &str, session_context: &str) -> String 
     }
 }
 
-/// Choose where to inject synthetic session context.
+/// End index of the durable conversation window, excluding trailing compaction overlays.
+fn conversation_end_excluding_compaction_overlays(messages: &[Message]) -> usize {
+    let mut end = messages.len();
+    while end > 0 && messages[end - 1].is_compaction_overlay_message() {
+        end -= 1;
+    }
+    end
+}
+
+/// Choose where to inject synthetic session context (Phase 2).
 ///
 /// Priority:
 /// 1. Keep compaction overlays last (instruction attention).
-/// 2. Place context immediately before the latest external user request so that
-///    real user intent retains recency over environment telemetry.
-/// 3. Otherwise append at the (pre-compaction) tail — e.g. tool-result continuations.
-fn synthetic_session_context_insert_index(messages: &[Message]) -> usize {
-    let mut insert_idx = messages.len();
-    if insert_idx > 0 && messages[insert_idx - 1].is_compaction_overlay_message() {
-        insert_idx -= 1;
+/// 2. Place context **immediately before** the latest assistant message
+///    (`response(tn−1)` / in-flight tool-calling assistant) so that response
+///    retains higher recency than environment telemetry.
+/// 3. If there is no prior assistant (first user turn), place immediately before
+///    the latest external user request so real user intent stays last.
+/// 4. Otherwise append at the (pre-compaction) tail.
+pub fn synthetic_session_context_insert_index(messages: &[Message]) -> usize {
+    let end = conversation_end_excluding_compaction_overlays(messages);
+    let window = &messages[..end];
+
+    if let Some(assistant_idx) = window
+        .iter()
+        .rposition(|message| message.role == "assistant")
+    {
+        return assistant_idx;
     }
 
-    if insert_idx > 0 && messages[insert_idx - 1].is_external_request_message() {
-        insert_idx -= 1;
+    if end > 0 && messages[end - 1].is_external_request_message() {
+        return end - 1;
     }
 
-    insert_idx
+    end
 }
 
+/// Whether this request should inject current SC instead of the lagged snapshot.
+pub fn should_force_fresh_session_context(
+    messages: &[Message],
+    previous: Option<&str>,
+    turns_since_force_fresh: u32,
+) -> bool {
+    if previous.is_none() {
+        return true;
+    }
+    if !messages.iter().any(|message| message.role == "assistant") {
+        return true;
+    }
+    if messages
+        .last()
+        .is_some_and(|message| message.is_compaction_overlay_message())
+    {
+        return true;
+    }
+    turns_since_force_fresh >= SESSION_CONTEXT_HEARTBEAT_TURNS
+}
+
+/// Resolve inject text + next snapshot from current/previous SC and message shape.
+pub fn resolve_session_context_inject(
+    messages: &[Message],
+    state: &SessionContextInjectState,
+) -> SessionContextInjectOutcome {
+    let Some(current) = state
+        .current
+        .as_ref()
+        .map(|text| text.trim())
+        .filter(|text| !text.is_empty())
+        .map(|text| text.to_string())
+    else {
+        return SessionContextInjectOutcome {
+            inject_text: None,
+            next_previous: None,
+            force_fresh: true,
+        };
+    };
+
+    let force_fresh = should_force_fresh_session_context(
+        messages,
+        state.previous.as_deref(),
+        state.turns_since_force_fresh,
+    );
+
+    let inject_text = if force_fresh {
+        current.clone()
+    } else if let Some(previous) = state
+        .previous
+        .as_ref()
+        .map(|text| text.trim())
+        .filter(|text| !text.is_empty())
+    {
+        previous.to_string()
+    } else {
+        current.clone()
+    };
+
+    SessionContextInjectOutcome {
+        inject_text: Some(inject_text),
+        next_previous: Some(current),
+        force_fresh,
+    }
+}
+
+fn build_synthetic_session_context_message(
+    provider: &str,
+    session_id: &str,
+    session_context: &str,
+    reference_message_id: &str,
+) -> Message {
+    let now = chrono::Utc::now().timestamp_millis();
+    Message {
+        id: format!(
+            "{}-{}",
+            synthetic_session_context_id_prefix(provider),
+            reference_message_id
+        ),
+        session_id: session_id.to_string(),
+        role: "user".to_string(),
+        content: vec![MCPContent::Text {
+            text: format_session_context_text(provider, session_context),
+        }],
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: None,
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at: now,
+        updated_at: now,
+        source: Some(MessageSource::SessionContext),
+        error: None,
+        metadata: None,
+    }
+}
+
+/// Build the provider request layout. Uses **current** SC only (no lag cache).
+/// Prefer [`build_request_layout_with_inject_state`] from the live completion path.
 pub fn build_request_layout(
     provider: &str,
     session_id: &str,
     system_prompt: Option<String>,
     session_context: Option<String>,
-    mut messages: Vec<Message>,
+    messages: Vec<Message>,
 ) -> RequestLayout {
-    let Some(session_context) = session_context else {
-        return RequestLayout {
-            system_prompt,
-            messages,
-        };
+    build_request_layout_with_inject_state(
+        provider,
+        session_id,
+        system_prompt,
+        SessionContextInjectState {
+            current: session_context,
+            previous: None,
+            turns_since_force_fresh: 0,
+        },
+        messages,
+    )
+    .0
+}
+
+/// Build request layout and return inject outcome for session persistence.
+pub fn build_request_layout_with_inject_state(
+    provider: &str,
+    session_id: &str,
+    system_prompt: Option<String>,
+    inject_state: SessionContextInjectState,
+    mut messages: Vec<Message>,
+) -> (RequestLayout, SessionContextInjectOutcome) {
+    let outcome = resolve_session_context_inject(&messages, &inject_state);
+    let Some(session_context) = outcome.inject_text.clone() else {
+        return (
+            RequestLayout {
+                system_prompt,
+                messages,
+            },
+            outcome,
+        );
     };
 
     if provider_uses_synthetic_session_context(provider) {
         let insert_idx = synthetic_session_context_insert_index(&messages);
 
-        let reference_message_id =
-            if insert_idx < messages.len() && messages[insert_idx].is_external_request_message() {
-                messages[insert_idx].id.as_str()
-            } else if insert_idx > 0 {
-                messages[insert_idx - 1].id.as_str()
-            } else {
-                "system"
-            };
-        let now = chrono::Utc::now().timestamp_millis();
-        let session_context_msg = Message {
-            id: format!(
-                "{}-{}",
-                synthetic_session_context_id_prefix(provider),
-                reference_message_id
-            ),
-            session_id: session_id.to_string(),
-            role: "user".to_string(),
-            content: vec![MCPContent::Text {
-                text: format_session_context_text(provider, &session_context),
-            }],
-            tool_calls: None,
-            tool_call_id: None,
-            is_streaming: None,
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: None,
-            attachments: None,
-            tool_use: None,
-            usage: None,
-            prompt_tokens: None,
-            created_at: now,
-            updated_at: now,
-            source: Some(MessageSource::SessionContext),
-            error: None,
-            metadata: None,
+        let reference_message_id = if insert_idx < messages.len() {
+            messages[insert_idx].id.as_str()
+        } else if insert_idx > 0 {
+            messages[insert_idx - 1].id.as_str()
+        } else {
+            "system"
         };
+
+        let session_context_msg = build_synthetic_session_context_message(
+            provider,
+            session_id,
+            &session_context,
+            reference_message_id,
+        );
 
         messages.insert(insert_idx, session_context_msg);
 
-        RequestLayout {
-            system_prompt,
-            messages,
-        }
+        (
+            RequestLayout {
+                system_prompt,
+                messages,
+            },
+            outcome,
+        )
     } else {
         let framed_context = format_session_context_text(provider, &session_context);
         let mut merged = false;
@@ -173,10 +326,13 @@ pub fn build_request_layout(
             system_prompt
         };
 
-        RequestLayout {
-            system_prompt,
-            messages,
-        }
+        (
+            RequestLayout {
+                system_prompt,
+                messages,
+            },
+            outcome,
+        )
     }
 }
 

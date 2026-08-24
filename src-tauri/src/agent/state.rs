@@ -532,6 +532,13 @@ pub struct AgentSession {
     /// Used to persist provider-reported prompt tokens onto the correct checkpoint message.
     pub last_submitted_input_message_id: Arc<RwLock<Option<String>>>,
 
+    /// Previous-turn volatile session-context snapshot for Phase 2 lagged inject
+    /// (`SC(state @ tn−1)` before `response(tn−1)`). Ephemeral — not persisted to DB.
+    pub last_session_context_snapshot: Arc<RwLock<Option<String>>>,
+
+    /// Completions since the last force-fresh SC inject (heartbeat).
+    pub session_context_turns_since_force_fresh: Arc<RwLock<u32>>,
+
     /// Session-scoped resample attempt counter keyed by loop fingerprint
     /// (single-tool signature or batch fingerprint). Independent of DB history
     /// length so resample budget survives discarded assistant turns.
@@ -583,6 +590,8 @@ impl AgentSession {
             cached_stable_prompt: Arc::new(RwLock::new(None)),
             last_completion_request: Arc::new(RwLock::new(None)),
             last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+            last_session_context_snapshot: Arc::new(RwLock::new(None)),
+            session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
             tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
             tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -601,6 +610,8 @@ impl AgentSession {
         *self.expected_response_id.write().await = None;
         *self.last_completion_request.write().await = None;
         *self.last_submitted_input_message_id.write().await = None;
+        *self.last_session_context_snapshot.write().await = None;
+        *self.session_context_turns_since_force_fresh.write().await = 0;
         self.tool_loop_resample_attempts.write().await.clear();
         self.tool_poll_trackers.write().await.clear();
     }
@@ -703,6 +714,8 @@ mod tests {
             cached_stable_prompt: Arc::new(RwLock::new(None)),
             last_completion_request: Arc::new(RwLock::new(None)),
             last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+            last_session_context_snapshot: Arc::new(RwLock::new(None)),
+            session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
             tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
             tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
         }
