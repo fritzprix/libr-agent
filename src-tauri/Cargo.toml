@@ -104,7 +104,7 @@ migration = { path = "migration" }
 libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 tauri-plugin-mcp-bridge = "0.12.0"
 sqlite-vec = "0.1.9"
-fastembed = "5.15.0"
+fastembed = "6.0.0"
 
 [target.'cfg(windows)'.dependencies]
 # Read HKCU/HKLM Path so GUI-launched isolation recovers user tool dirs (cargo, uv, npm, …)
