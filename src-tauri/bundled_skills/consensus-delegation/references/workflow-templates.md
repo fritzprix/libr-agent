@@ -25,6 +25,7 @@ Rule: if a section is empty, the reviewer must write `None` explicitly so the pa
 ## Panel Handoff Wrapper
 
 Use the same wrapper for each child; change only `[PERSPECTIVE]` and optional lens-specific instructions.
+This is how you get independent lenses **without** `agent__createAgent` — reuse existing configs and let the task set the persona for that run.
 
 ```text
 You are reviewing as: [PERSPECTIVE — e.g. security reviewer, performance reviewer]

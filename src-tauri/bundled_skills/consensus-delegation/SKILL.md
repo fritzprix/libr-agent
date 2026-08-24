@@ -30,11 +30,16 @@ Define before spawning anything:
 - the output sections every child must return
 - what counts as agreement vs material disagreement
 
-### 2. Pick specialists
+### 2. Pick specialists (reuse first)
+
+Default: **reuse existing assistants** and put the review lens in the handoff task. Do **not** `agent__createAgent` just to bake a perspective into the system prompt when a capable generalist already exists.
 
 - `agent__listAgents(type="configs")` to discover assistants; use returned IDs in `agent__startSession`
-- Prefer assistants whose system prompts or assistant-scoped skills match each perspective
-- If no suitable assistant exists, `agent__createAgent` a config first, then spawn with the new ID
+- Match on **capability**, not perfect persona: any assistant that can read the repo / reason about the artifact is eligible. Coding, research, and general review configs are fine for security / correctness / coverage lenses when the task text states the lens
+- Differ perspectives via the shared handoff wrapper (`You are reviewing as: [PERSPECTIVE]`) and lens-specific bullets — see `references/workflow-templates.md`
+- Prefer distinct existing configs when available (e.g. coding + research) so sessions are not identical clones of the parent; still inject the lens in the task
+- `agent__createAgent` is allowed when **no existing config can do the work** (empty list, or none with the needed tools/skills). Create one reusable generalist (or the minimum set), then inject lenses in the handoff — do not create one config per panel seat
+- If the user asks to keep a durable named specialist for future runs, create that with their confirmation
 - Keep the panel small (usually 2-4). More reviewers add noise and hit fanout/concurrency limits
 
 ### 3. Prepare identical handoffs
@@ -102,7 +107,7 @@ Do not present a single child's output as the final answer without comparison.
 | Step | Tool |
 | --- | --- |
 | Discover assistants | `agent__listAgents(type="configs")` |
-| Create missing specialist | `agent__createAgent(...)` |
+| Create specialist | `agent__createAgent(...)` — when no usable existing config; not one config per lens |
 | Spawn reviewer | `agent__startSession(..., waitForResult=false)` |
 | Inspect children | `agent__listAgents(type="sessions")` — IDs and status only |
 | Poll or wait | `agent__checkSession(sessionId)` / `agent__checkSession(sessionId, wait=true)` — results |
@@ -112,6 +117,8 @@ Do not present a single child's output as the final answer without comparison.
 
 ## Common Mistakes
 
+- **Creating one config per lens** — pollutes the assistant list; reuse configs and inject the lens in the task
+- **Treating "no exact persona" as "must create"** — if a generalist exists, a clear PERSPECTIVE handoff is enough; create only when nothing usable exists
 - **Different scopes per child** — comparisons become meaningless; keep scope identical
 - **Assuming shared workspace without `workspaceOverride`** — reviewers inspect different files
 - **Expecting children to respond to each other** — repackage opposing views in the parent message
