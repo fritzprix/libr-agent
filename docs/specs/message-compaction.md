@@ -339,7 +339,8 @@ Required request shape:
 4. **Compaction instruction is a single synthetic user message at the tail**
    (`MessageSource::CompactionInstruction`). Contaminated-summary retries append
    guidance to that tail message only — never to the system prompt and never by
-   stripping tool schemas.
+   stripping tool schemas. If the instruction marker is missing, append a new
+   synthetic tail user message; never mutate real conversation history.
 
 Recovery ladder preference for fitting the summarizer payload:
 

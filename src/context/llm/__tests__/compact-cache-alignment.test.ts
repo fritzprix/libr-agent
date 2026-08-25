@@ -77,4 +77,24 @@ describe('applyCompactionRetryTailInstruction', () => {
       1,
     );
   });
+
+  it('appends a synthetic tail when no compaction-instruction marker exists', () => {
+    const messages = [
+      makeMessage('u1', 'user', 'do the work', 'ui'),
+      makeMessage('a1', 'assistant', 'working'),
+    ];
+
+    const next = applyCompactionRetryTailInstruction(messages);
+
+    expect(next).toHaveLength(3);
+    expect(next[0].content).toEqual(messages[0].content);
+    expect(next[1].content).toEqual(messages[1].content);
+    expect(next[2].source).toBe('compaction-instruction');
+    expect(next[2].id.startsWith('compaction-instruction-retry-')).toBe(true);
+    expect(next[2].role).toBe('user');
+    const text = next[2].content
+      .map((part) => (part.type === 'text' ? part.text : ''))
+      .join('');
+    expect(text).toBe(COMPACTION_RETRY_NO_TOOL_NOTE);
+  });
 });

@@ -42,9 +42,25 @@ function appendRetryNoteToContent(content: MCPContent[]): MCPContent[] {
   ];
 }
 
+function buildSyntheticRetryInstruction(template: Message): Message {
+  const createdAt = Date.now();
+  return {
+    id: `compaction-instruction-retry-${createdAt}`,
+    sessionId: template.sessionId,
+    threadId: template.threadId,
+    role: 'user',
+    content: [{ type: 'text', text: COMPACTION_RETRY_NO_TOOL_NOTE }],
+    createdAt: new Date(createdAt),
+    source: 'compaction-instruction',
+  };
+}
+
 /**
  * Keep system prompt + tool schemas identical to the parent turn; only extend the
  * synthetic compaction-instruction user message at the tail.
+ *
+ * If no compaction-instruction marker is present, append a new synthetic tail
+ * message instead of mutating real conversation history (keeps the prefix intact).
  */
 export function applyCompactionRetryTailInstruction(
   messages: Message[],
@@ -60,8 +76,12 @@ export function applyCompactionRetryTailInstruction(
       break;
     }
   }
+
   if (targetIdx < 0) {
-    targetIdx = messages.length - 1;
+    return [
+      ...messages,
+      buildSyntheticRetryInstruction(messages[messages.length - 1]),
+    ];
   }
 
   return messages.map((message, index) => {
