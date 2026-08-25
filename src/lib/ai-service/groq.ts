@@ -96,6 +96,8 @@ export class GroqService extends BaseAIService<
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
+      forceToolUse?: boolean;
+      disableToolUse?: boolean;
       signal?: AbortSignal;
     } = {},
   ): AsyncGenerator<string, void, void> {
@@ -116,6 +118,14 @@ export class GroqService extends BaseAIService<
         options.modelName || config.defaultModel || 'llama-3.1-8b-instant',
       );
 
+      const toolChoice = !options.availableTools?.length
+        ? undefined
+        : options.disableToolUse
+          ? 'none'
+          : options.forceToolUse
+            ? 'required'
+            : 'auto';
+
       const chatCompletion = await this.withRetry(
         () =>
           this.groq.chat.completions.create(
@@ -132,7 +142,7 @@ export class GroqService extends BaseAIService<
               reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
               stream: true,
               tools: tools,
-              tool_choice: options.availableTools ? 'auto' : undefined,
+              tool_choice: toolChoice,
             },
             {
               signal: abortSignal,
