@@ -1,6 +1,6 @@
 ---
 name: agent-init
-description: "Analyze a workspace and generate or maintain a modular project documentation setup with a lean, concise agents.md entrypoint. Governs user directives, precautions, and desired persona, while providing selective on-demand reading of detailed guide files and immediate on-the-fly updates when code or rules change. Triggers: 'agent init', 'agents.md 생성', '워크스페이스 분석', 'agent guideline 생성', 'agents.md 모듈화', 'agent-init'."
+description: "Analyze a workspace and generate or maintain a modular project documentation setup with a lean, concise agents.md entrypoint. Governs user directives, precautions, and desired persona, while providing selective on-demand reading of detailed guide files and immediate on-the-fly updates when code or rules change. Triggers: 'agent init', 'agents.md 생성', '워크스페이스 분석', 'agent guideline 생성', 'agents.md 모듈화', 'agent-init'. Not for LibrAgent runtime/harness facts (use libragent-harness-reference)."
 ---
 
 # Agent Init: Modular Guidelines & Persona Governance
@@ -8,6 +8,8 @@ description: "Analyze a workspace and generate or maintain a modular project doc
 This skill analyzes a workspace and establishes or updates a **modular documentation structure** with a **lean `agents.md` entrypoint**.
 
 It manages user directives, strict precautions, and agent persona while keeping `agents.md` lightweight to minimize system prompt context bloat.
+
+For how LibrAgent loads `agents.md` / `SOUL.md`, tool naming, and session isolation, use **libragent-harness-reference** instead of baking that into `agents.md`.
 
 ---
 
