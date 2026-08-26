@@ -20,6 +20,8 @@ interface StreamChatOptions {
   systemPrompt?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
+  forceToolUse?: boolean;
+  disableToolUse?: boolean;
   signal?: AbortSignal;
 }
 /** @internal */
@@ -156,6 +158,13 @@ export class CerebrasService extends BaseAIService<
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
       const abortSignal = options.signal;
+      const toolChoice = !tools?.length
+        ? undefined
+        : options.disableToolUse
+          ? 'none'
+          : options.forceToolUse
+            ? 'required'
+            : 'auto';
 
       const stream = await this.withRetry(
         async (): Promise<AsyncIterable<unknown>> => {
@@ -172,7 +181,7 @@ export class CerebrasService extends BaseAIService<
                 temperature: config.temperature,
               }),
               tools: tools,
-              tool_choice: tools ? 'auto' : undefined,
+              tool_choice: toolChoice,
             },
             { signal: abortSignal },
           );

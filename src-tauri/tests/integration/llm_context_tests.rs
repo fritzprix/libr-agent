@@ -509,6 +509,36 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
 }
 
 #[test]
+fn test_build_compaction_request_payload_places_instruction_as_final_tail_message() {
+    let user = TestMessageBuilder::new("m0", "user")
+        .text("Please finish the report.")
+        .source(MessageSource::Ui)
+        .build();
+    let assistant = make_message("m1", "assistant", "Drafting the report.");
+
+    let payload = build_compaction_request_payload_for_testing(
+        TEST_SESSION_ID,
+        &[user, assistant],
+        2,
+        None,
+        789,
+    )
+    .expect("payload should be built");
+
+    assert_eq!(payload.message_count, 3);
+    assert!(
+        !payload.instruction_text.is_empty(),
+        "compaction instruction must be present as the synthetic tail user turn"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Even if tool definitions are visible, ignore them"),
+        "tail instruction must keep tools visible while forbidding tool use"
+    );
+}
+
+#[test]
 fn test_preflight_compactable_end_ignores_unresolved_tool_chain_before_to_id() {
     let mut older_assistant = make_message("m0", "assistant", "Older unresolved tool call");
     older_assistant.tool_calls = Some(vec![AgentToolCall {

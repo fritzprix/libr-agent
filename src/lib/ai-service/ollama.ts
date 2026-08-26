@@ -283,6 +283,9 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
+      // Ollama's native /api/chat has no reliable tool_choice=none. Omitting tools
+      // is the only way to disable function calling (unlike OpenAI/Anthropic/Gemini).
+      // This trades prompt-prefix alignment for correct no-tool compaction behavior.
       const shouldIncludeTools = !options.disableToolUse;
       const requestTools = shouldIncludeTools ? ollamaTools : undefined;
       const abortSignal = options.signal;
