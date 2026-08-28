@@ -36,11 +36,11 @@ Usage: scripts/run-harbor-bench.sh [options]
 Options:
   --preset hello|terminal-bench|harbor-index|path|dataset
                                        Default: hello
-  --dataset NAME                       Default depends on preset
-                                       (terminal-bench/terminal-bench-2-1 or
-                                       harbor-index/harbor-index-1.0).
-                                       Required for preset=dataset; omitting
-                                       --preset with --dataset selects dataset.
+  --dataset NAME                       Default depends on preset:
+                                       terminal-bench/terminal-bench-2-1 (terminal-bench),
+                                       harbor-index/harbor-index-1.0 (harbor-index), or
+                                       NovitaAI/tb21-file-recovery (dataset).
+                                       Omitting --preset with --dataset selects dataset.
   --path DIR                           Local task/dataset path (preset=path)
   --include GLOB                       Include task name pattern (-i)
   --n-tasks N                          Max tasks (-l)
@@ -52,6 +52,10 @@ Options:
                                        global preferredModel via GET /api/settings/preferredModel
                                        (or LIBRAGENT_MODEL / LIBRAGENT_HARBOR_MODEL)
   --execution-mode yolo|unsafe|normal  Default: unsafe (or LIBRAGENT_EXECUTION_MODE)
+  --agent NAME                         Agent to run (default: libragent or pass hermes, etc.)
+  --base-url / --openai-base-url URL   OpenAI base URL for external agent
+  --openai-api-key KEY                 OpenAI API key (default: sk-dummy)
+  --env-file PATH                      Path to .env file for Harbor
   --timeout-multiplier N               Local debug only (omitted by default; submissions must not set this)
   --agent-timeout-multiplier N         Local debug only (omitted by default; submissions must not set this)
   --smoke-timeout SEC                  Smoke check timeout in seconds (default: 300 or LIBRAGENT_SMOKE_TIMEOUT)
@@ -62,6 +66,10 @@ Options:
   -h, --help
 EOF
 }
+
+AGENT="${LIBRAGENT_BENCH_AGENT:-libragent}"
+OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-sk-dummy}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -76,6 +84,11 @@ while [[ $# -gt 0 ]]; do
     --assistant-id) ASSISTANT_ID="$2"; shift 2 ;;
     --model) HARBOR_MODEL="$2"; shift 2 ;;
     --execution-mode) EXECUTION_MODE="$2"; shift 2 ;;
+    --agent) AGENT="$2"; shift 2 ;;
+    --base-url|--openai-base-url) OPENAI_BASE_URL="$2"; shift 2 ;;
+    --api-key|--openai-api-key) OPENAI_API_KEY="$2"; shift 2 ;;
+    --env-file) ENV_FILE="$2"; shift 2 ;;
+    --config-file|--bench-config) CONFIG_FILE="$2"; shift 2 ;;
     --timeout-multiplier) TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
     --agent-timeout-multiplier) AGENT_TIMEOUT_MULTIPLIER="$2"; shift 2 ;;
     --smoke-timeout) SMOKE_TIMEOUT="$2"; shift 2 ;;
@@ -87,6 +100,8 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+CONFIG_FILE="${CONFIG_FILE:-}"
 
 # Convenience: if --dataset is set without an explicit --preset, treat as dataset preset.
 if [[ "$PRESET_EXPLICIT" -eq 0 && "$DATASET_EXPLICIT" -eq 1 ]]; then
@@ -115,6 +130,39 @@ resolve_python() {
 }
 
 PYTHON="$(resolve_python)"
+
+# Auto-discover bench_config.json
+RESOLVED_CFG=""
+for cand in "$CONFIG_FILE" "$REPO_ROOT/bench_config.json" "$REPO_ROOT/.bench_config.json" "$REPO_ROOT/benchmarks/harbor/bench_config.json"; do
+  if [[ -n "$cand" && -f "$cand" ]]; then
+    RESOLVED_CFG="$cand"
+    break
+  fi
+done
+
+if [[ -n "$RESOLVED_CFG" ]]; then
+  cfg_raw="$("$PYTHON" - "$RESOLVED_CFG" <<'PY' 2>/dev/null || true
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        d = json.load(f)
+    print(d.get("base_url") or d.get("baseUrl") or d.get("openai_base_url") or d.get("openaiBaseUrl") or "")
+    print(d.get("api_key") or d.get("apiKey") or d.get("openai_api_key") or d.get("openaiApiKey") or "")
+    print(d.get("model") or d.get("model_name") or d.get("modelName") or "")
+except Exception:
+    pass
+PY
+)"
+  if [[ -n "$cfg_raw" ]]; then
+    CFG_BASE_URL="$(printf '%s\n' "$cfg_raw" | sed -n '1p')"
+    CFG_API_KEY="$(printf '%s\n' "$cfg_raw" | sed -n '2p')"
+    CFG_MODEL="$(printf '%s\n' "$cfg_raw" | sed -n '3p')"
+    echo "Loaded benchmark config from $RESOLVED_CFG"
+    [[ -z "$OPENAI_BASE_URL" && -n "$CFG_BASE_URL" ]] && OPENAI_BASE_URL="$CFG_BASE_URL"
+    [[ ("$OPENAI_API_KEY" == "sk-dummy" || -z "$OPENAI_API_KEY") && -n "$CFG_API_KEY" ]] && OPENAI_API_KEY="$CFG_API_KEY"
+    [[ -z "$HARBOR_MODEL" && -n "$CFG_MODEL" ]] && HARBOR_MODEL="$CFG_MODEL"
+  fi
+fi
 
 ensure_harbor() {
   if command -v harbor >/dev/null 2>&1; then
@@ -146,7 +194,6 @@ ensure_harbor() {
   echo "==> harbor successfully bootstrapped and ready!"
 }
 
-need curl
 ensure_harbor
 
 resolve_assistant_id() {
@@ -169,9 +216,6 @@ if match is None:
 print(match["id"])
 PY
 }
-
-ASSISTANT_ID="$(resolve_assistant_id)"
-echo "Using assistantId=$ASSISTANT_ID"
 
 resolve_harbor_model() {
   if [[ -n "$HARBOR_MODEL" ]]; then
@@ -221,18 +265,27 @@ print(
 PY
 }
 
-HARBOR_MODEL="$(resolve_harbor_model)"
-echo "Using Harbor model (-m)=$HARBOR_MODEL"
+if [[ -n "$OPENAI_BASE_URL" ]]; then
+  export OPENAI_BASE_URL="$OPENAI_BASE_URL"
+fi
+if [[ -n "$OPENAI_API_KEY" ]]; then
+  export OPENAI_API_KEY="$OPENAI_API_KEY"
+fi
 
-if [[ "$SKIP_HEALTH" -eq 0 ]]; then
-  echo "==> Checking $API_URL/health"
-  curl -fsS "$API_URL/health" >/dev/null
-  echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify mode → await idle → delete)"
-  # Start a real turn so we verify the session can run, but wait for idle before
-  # cleanup — deleting ~0.5s into an LLM turn aborts the reply mid-flight.
-  CREATE=$(curl -fsS -X POST "$API_URL/sessions" \
-    -H 'Content-Type: application/json' \
-    -d "$("$PYTHON" - <<PY
+if [[ "$AGENT" == "libragent" || "$AGENT" == "benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter" ]]; then
+  need curl
+  ASSISTANT_ID="$(resolve_assistant_id)"
+  echo "Using assistantId=$ASSISTANT_ID"
+  HARBOR_MODEL="$(resolve_harbor_model)"
+  echo "Using Harbor model (-m)=$HARBOR_MODEL"
+
+  if [[ "$SKIP_HEALTH" -eq 0 ]]; then
+    echo "==> Checking $API_URL/health"
+    curl -fsS "$API_URL/health" >/dev/null
+    echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify mode → await idle → delete)"
+    CREATE=$(curl -fsS -X POST "$API_URL/sessions" \
+      -H 'Content-Type: application/json' \
+      -d "$("$PYTHON" - <<PY
 import json
 print(json.dumps({
   "assistantId": "$ASSISTANT_ID",
@@ -243,52 +296,71 @@ print(json.dumps({
 }))
 PY
 )")
-  SID=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$CREATE")
-  cleanup_smoke() {
-    curl -fsS -X DELETE "$API_URL/sessions/$SID" >/dev/null 2>&1 || true
-    echo "  smoke session deleted ($SID)"
-  }
-  trap cleanup_smoke EXIT
-  SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")
-  MODE=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("executionMode"))' <<<"$SESSION_JSON")
-  STATUS=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("status"))' <<<"$SESSION_JSON")
-  LAST_MSG=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("lastMessageAt"))' <<<"$SESSION_JSON")
-  echo "  session=$SID executionMode=$MODE status=$STATUS"
-  if [[ "$EXECUTION_MODE" != "normal" && "$MODE" != "$EXECUTION_MODE" ]]; then
-    echo "API did not apply executionMode=$EXECUTION_MODE (got $MODE)" >&2
-    exit 1
-  fi
-  if [[ "$STATUS" == "idle" && "$LAST_MSG" == "None" ]]; then
-    echo "Smoke session did not start a workflow (status=idle with no messages)." >&2
-    exit 1
-  fi
-  for _ in $(seq 1 "$SMOKE_TIMEOUT"); do
-    if [[ "$STATUS" == "idle" || "$STATUS" == "error" || "$STATUS" == "paused" ]]; then
-      break
-    fi
-    sleep 1
+    SID=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$CREATE")
+    cleanup_smoke() {
+      curl -fsS -X DELETE "$API_URL/sessions/$SID" >/dev/null 2>&1 || true
+      echo "  smoke session deleted ($SID)"
+    }
+    trap cleanup_smoke EXIT
     SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")
+    MODE=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("executionMode"))' <<<"$SESSION_JSON")
     STATUS=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("status"))' <<<"$SESSION_JSON")
-  done
-  echo "  settled status=$STATUS"
-  if [[ "$STATUS" != "idle" && "$STATUS" != "error" && "$STATUS" != "paused" ]]; then
-    echo "Smoke session did not settle within ${SMOKE_TIMEOUT}s (status=$STATUS)" >&2
-    exit 1
+    LAST_MSG=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("lastMessageAt"))' <<<"$SESSION_JSON")
+    echo "  session=$SID executionMode=$MODE status=$STATUS"
+    if [[ "$EXECUTION_MODE" != "normal" && "$MODE" != "$EXECUTION_MODE" ]]; then
+      echo "API did not apply executionMode=$EXECUTION_MODE (got $MODE)" >&2
+      exit 1
+    fi
+    if [[ "$STATUS" == "idle" && "$LAST_MSG" == "None" ]]; then
+      echo "Smoke session did not start a workflow (status=idle with no messages)." >&2
+      exit 1
+    fi
+    for _ in $(seq 1 "$SMOKE_TIMEOUT"); do
+      if [[ "$STATUS" == "idle" || "$STATUS" == "error" || "$STATUS" == "paused" ]]; then
+        break
+      fi
+      sleep 1
+      SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")
+      STATUS=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("status"))' <<<"$SESSION_JSON")
+    done
+    echo "  settled status=$STATUS"
+    if [[ "$STATUS" != "idle" && "$STATUS" != "error" && "$STATUS" != "paused" ]]; then
+      echo "Smoke session did not settle within ${SMOKE_TIMEOUT}s (status=$STATUS)" >&2
+      exit 1
+    fi
+    cleanup_smoke
+    trap - EXIT
   fi
-  cleanup_smoke
-  trap - EXIT
-fi
 
-ARGS=(
-  run
-  -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter
-  -m "$HARBOR_MODEL"
-  --ak "api_url=$API_URL"
-  --ak "assistant_id=$ASSISTANT_ID"
-  --ak "execution_mode=$EXECUTION_MODE"
-  -n "$CONCURRENT"
-  -k "$N_ATTEMPTS"
-)
+  ARGS=(
+    run
+    -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter
+    -m "$HARBOR_MODEL"
+    --ak "api_url=$API_URL"
+    --ak "assistant_id=$ASSISTANT_ID"
+    --ak "execution_mode=$EXECUTION_MODE"
+    -n "$CONCURRENT"
+    -k "$N_ATTEMPTS"
+  )
+else
+  if [[ -n "$HARBOR_MODEL" ]]; then
+    RESOLVED_MODEL="$HARBOR_MODEL"
+  else
+    RESOLVED_MODEL="openai/qwen-3.6-35b"
+  fi
+  echo "==> Running agent '$AGENT' with model '$RESOLVED_MODEL'"
+  [[ -n "$OPENAI_BASE_URL" ]] && echo "  OPENAI_BASE_URL=$OPENAI_BASE_URL"
+  ARGS=(
+    run
+    -a "$AGENT"
+    -m "$RESOLVED_MODEL"
+    -n "$CONCURRENT"
+    -k "$N_ATTEMPTS"
+  )
+fi
+if [[ -n "$ENV_FILE" ]]; then
+  ARGS+=(--env-file "$ENV_FILE")
+fi
 if [[ -n "$TIMEOUT_MULTIPLIER" ]]; then
   ARGS+=(--timeout-multiplier "$TIMEOUT_MULTIPLIER")
 fi
@@ -310,6 +382,9 @@ case "$PRESET" in
     fi
     ;;
   terminal-bench)
+    if [[ "$DATASET_EXPLICIT" -eq 0 ]]; then
+      DATASET="terminal-bench/terminal-bench-2-1"
+    fi
     echo "==> Preset: Terminal-Bench ($DATASET)"
     ARGS+=(-d "$DATASET")
     [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
@@ -331,10 +406,9 @@ case "$PRESET" in
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;
   dataset)
-    [[ "$DATASET_EXPLICIT" -eq 1 ]] || {
-      echo "--dataset required for preset=dataset (e.g. --dataset swe-bench/swe-bench-verified-1.0)" >&2
-      exit 1
-    }
+    if [[ "$DATASET_EXPLICIT" -eq 0 ]]; then
+      DATASET="NovitaAI/tb21-file-recovery"
+    fi
     echo "==> Preset: dataset ($DATASET)"
     ARGS+=(-d "$DATASET")
     [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")

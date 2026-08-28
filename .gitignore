@@ -101,6 +101,11 @@ test_results_*.txt
 harbor-workspace-*/
 *.ctrf.json
 .home/
+bench_config.json
+.bench_config.json
+benchmarks/harbor/bench_config.json
+*bench_config*.json
+!bench_config.example.json
 
 # LibrAgent internal marketing & research docs (not for public repo)
 docs/marketing/

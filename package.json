@@ -85,7 +85,13 @@
     "bench:registry": "node scripts/run-harbor-bench.cjs --preset dataset",
     "bench:upload": "node scripts/upload-harbor-bench.cjs",
     "bench:termial": "pnpm bench:terminal",
-    "bench:termial:all": "pnpm bench:terminal:all"
+    "bench:termial:all": "pnpm bench:terminal:all",
+    "xbench:registry": "node scripts/run-harbor-bench.cjs --agent hermes --preset dataset",
+    "xbench:terminal": "node scripts/run-harbor-bench.cjs --agent hermes --preset terminal-bench --n-tasks 1",
+    "xbench:terminal:all": "node scripts/run-harbor-bench.cjs --agent hermes --preset terminal-bench",
+    "xbench:harbor": "node scripts/run-harbor-bench.cjs --agent hermes --preset harbor-index --n-tasks 1",
+    "xbench:harbor:all": "node scripts/run-harbor-bench.cjs --agent hermes --preset harbor-index",
+    "bench:hermes:registry": "node scripts/run-harbor-bench.cjs --agent hermes --preset dataset"
   },
   "pnpm": {
     "overrides": {

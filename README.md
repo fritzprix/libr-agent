@@ -211,6 +211,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 Download the latest installer for your platform from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.9.6_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.6/LibrAgent_0.9.6_x64-setup.exe) · [`LibrAgent_0.9.6_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.6/LibrAgent_0.9.6_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.9.6_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.6/LibrAgent_0.9.6_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.9.6_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.6/LibrAgent_0.9.6_amd64.AppImage) · [`LibrAgent_0.9.6_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.6/LibrAgent_0.9.6_amd64.deb) · [`LibrAgent-0.9.6-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.6/LibrAgent-0.9.6-1.x86_64.rpm)
@@ -225,6 +226,16 @@ cd libr-agent
 pnpm install
 pnpm tauri dev
 ```
+
+**Benchmarking (Harbor & Terminal-Bench):**
+
+```bash
+pnpm bench:registry    # Run evaluation on default dataset (NovitaAI/tb21-file-recovery)
+pnpm xbench:registry   # Run comparative evaluation with Hermes Agent
+pnpm bench:terminal    # Run Terminal-Bench 2.1 evaluation
+```
+
+See the [Harbor Benchmarking Guide](benchmarks/harbor/README.md) for custom registry datasets (`--dataset`) and comparative metrics.
 
 ### The 5-Minute Onboarding Path
 

@@ -96,14 +96,13 @@ Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
 
 Use `--dataset <org/name-version>` to run any dataset from the
 [Harbor Hub registry](https://harbor.laude-institute.org) without touching the scripts.
-Omitting `--preset` when `--dataset` is supplied automatically selects the `dataset` preset.
-`pnpm bench:registry` is a shortcut for `--preset dataset` — always pass `--dataset`
-(pnpm 9+ forwards unknown script flags without requiring `--`):
+`pnpm bench:registry` (and `pnpm xbench:registry` for Hermes) is a shortcut for `--preset dataset` — defaults to `NovitaAI/tb21-file-recovery`, or pass `--dataset` to run any other registry dataset (pnpm 9+ forwards unknown script flags without requiring `--`):
 
 ```sh
+pnpm bench:registry                                            # runs default dataset: NovitaAI/tb21-file-recovery
+pnpm xbench:registry                                           # runs Hermes on default dataset: NovitaAI/tb21-file-recovery
 pnpm bench:registry --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
 pnpm bench:registry --dataset aider-bench/aider-bench-1.0
-pnpm bench:registry --dataset NovitaAI/tb21-file-recovery
 ```
 
 ```sh
