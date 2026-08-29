@@ -97,6 +97,28 @@ async fn wait_for_terminal_state(server: &WorkspaceServer, process_id: &str, ses
     );
 }
 
+async fn read_process_output_page(
+    server: &WorkspaceServer,
+    process_id: &str,
+    session_id: &str,
+    offset: usize,
+) -> MCPResult {
+    server
+        .call_tool(
+            "readProcessOutput",
+            json!({
+                "processId": process_id,
+                "stream": "stdout",
+                "mode": "head",
+                "offset": offset,
+                "lines": 100
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readProcessOutput should succeed")
+}
+
 #[tokio::test]
 async fn read_process_output_both_returns_both_sections_and_structured_outputs() {
     ensure_settings_repository().await;
@@ -233,26 +255,9 @@ async fn read_process_output_paginates_long_output_without_overlap() {
 
     wait_for_terminal_state(&server, &process_id, session_id).await;
 
-    let read_page = |offset: usize| async move {
-        server
-            .call_tool(
-                "readProcessOutput",
-                json!({
-                    "processId": process_id,
-                    "stream": "stdout",
-                    "mode": "head",
-                    "offset": offset,
-                    "lines": 100
-                }),
-                Some(session_id.to_string()),
-            )
-            .await
-            .expect("readProcessOutput should succeed")
-    };
-
-    let first_page = read_page(0).await;
-    let second_page = read_page(100).await;
-    let final_page = read_page(200).await;
+    let first_page = read_process_output_page(&server, &process_id, session_id, 0).await;
+    let second_page = read_process_output_page(&server, &process_id, session_id, 100).await;
+    let final_page = read_process_output_page(&server, &process_id, session_id, 200).await;
 
     let first = first_page
         .structured_content
