@@ -233,7 +233,7 @@ async fn read_process_output_paginates_long_output_without_overlap() {
 
     wait_for_terminal_state(&server, &process_id, session_id).await;
 
-    let read_page = |offset: usize| async {
+    let read_page = |offset: usize| async move {
         server
             .call_tool(
                 "readProcessOutput",
