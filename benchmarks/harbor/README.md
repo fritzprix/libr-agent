@@ -63,6 +63,13 @@ pnpm bench:upload
 pnpm bench:upload jobs/2026-08-16__14-25-18
 ```
 
+Before uploading, `bench:upload` normalizes Hermes trial metadata to the stable
+release line (for example, `Hermes Agent v0.19.0`). Hermes includes its install
+path and Python version in the raw version output, but Harbor uses the complete
+version string as the agent identity. Removing those environment-specific
+details keeps all trials from one Hermes release in a single Harbor Hub result
+group.
+
 `pnpm bench:*` dispatches via `scripts/run-harbor-bench.cjs` to PowerShell on Windows
 and bash on Linux/macOS. Defaults omit Harbor timeout/resource overrides so runs match
 official submission rules (`submissions may not modify timeouts or resources`).

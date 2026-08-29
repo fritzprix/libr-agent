@@ -14,6 +14,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { normalizeHermesJob } = require('./normalize-harbor-agent-metadata.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const jobsDir = path.join(repoRoot, 'jobs');
@@ -108,6 +109,14 @@ const resolvedPath = path.isAbsolute(targetJob)
 if (!fs.existsSync(resolvedPath)) {
   console.error(`Error: Specified job path does not exist: ${resolvedPath}`);
   process.exit(1);
+}
+
+const normalizedFiles = normalizeHermesJob(resolvedPath);
+if (normalizedFiles > 0) {
+  console.log(
+    `[bench:upload] Normalized ${normalizedFiles} Hermes metadata file(s) ` +
+      'to a stable release version.',
+  );
 }
 
 console.log(`[bench:upload] Uploading ${targetJob}...`);
