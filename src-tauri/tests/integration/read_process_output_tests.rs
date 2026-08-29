@@ -1,6 +1,6 @@
 use crate::common;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri_mcp_agent_lib::agent::concurrency::{
     ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
@@ -61,6 +61,16 @@ fn dual_stream_command() -> &'static str {
 #[cfg(windows)]
 fn dual_stream_command() -> &'static str {
     "Write-Output 'stdout line 1'; Write-Output 'stdout line 2'; [Console]::Error.WriteLine('stderr line 1'); [Console]::Error.WriteLine('stderr line 2')"
+}
+
+#[cfg(unix)]
+fn paginated_output_command() -> &'static str {
+    "i=1; while [ \"$i\" -le 205 ]; do printf 'line %s\\n' \"$i\"; i=$((i + 1)); done"
+}
+
+#[cfg(windows)]
+fn paginated_output_command() -> &'static str {
+    "1..205 | ForEach-Object { Write-Output \"line $_\" }"
 }
 
 async fn wait_for_terminal_state(server: &WorkspaceServer, process_id: &str, session_id: &str) {
@@ -198,6 +208,98 @@ async fn read_process_output_both_returns_both_sections_and_structured_outputs()
     assert!(
         std::path::Path::new(stderr_path).exists(),
         "stderr output path should exist: {stderr_path}"
+    );
+}
+
+#[tokio::test]
+async fn read_process_output_paginates_long_output_without_overlap() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-process-output-pagination";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let spawn_result = server
+        .handle_spawn_process(json!({ "command": paginated_output_command() }), session_id)
+        .await
+        .expect("spawnProcess should succeed");
+    let process_id = spawn_result
+        .structured_content
+        .as_ref()
+        .and_then(|data| data.get("process_id"))
+        .and_then(|value| value.as_str())
+        .expect("spawnProcess should return process_id")
+        .to_string();
+
+    wait_for_terminal_state(&server, &process_id, session_id).await;
+
+    let read_page = |offset: usize| async {
+        server
+            .call_tool(
+                "readProcessOutput",
+                json!({
+                    "processId": process_id,
+                    "stream": "stdout",
+                    "mode": "head",
+                    "offset": offset,
+                    "lines": 100
+                }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("readProcessOutput should succeed")
+    };
+
+    let first_page = read_page(0).await;
+    let second_page = read_page(100).await;
+    let final_page = read_page(200).await;
+
+    let first = first_page
+        .structured_content
+        .as_ref()
+        .expect("first page structured content expected");
+    let second = second_page
+        .structured_content
+        .as_ref()
+        .expect("second page structured content expected");
+    let final_page_data = final_page
+        .structured_content
+        .as_ref()
+        .expect("final page structured content expected");
+
+    assert_eq!(first["outputs"]["stdout"]["total_lines"], json!(205));
+    assert_eq!(first["outputs"]["stdout"]["lines_returned"], json!(100));
+    assert_eq!(first["next_offset"], json!(100));
+    assert_eq!(second["next_offset"], json!(200));
+    assert_eq!(
+        final_page_data["next_offset"],
+        Value::Null,
+        "final page should not advertise another page"
+    );
+
+    let all_lines = [first, second, final_page_data]
+        .into_iter()
+        .flat_map(|page| {
+            page["outputs"]["stdout"]["content"]
+                .as_array()
+                .expect("stdout content array expected")
+                .iter()
+                .map(|line| {
+                    line.as_str()
+                        .expect("output line should be text")
+                        .to_string()
+                })
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(all_lines.len(), 205);
+    assert_eq!(all_lines.first(), Some(&"line 1".to_string()));
+    assert_eq!(all_lines.last(), Some(&"line 205".to_string()));
+    assert_eq!(
+        all_lines,
+        (1..=205)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -479,4 +581,32 @@ async fn test_read_process_output_not_found_guidance_is_accurate() {
         text.contains("listProcesses"),
         "should point to listProcesses: {text}"
     );
+}
+
+#[tokio::test]
+async fn read_process_output_reports_invalid_mode_before_pagination_errors() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-process-output-invalid-mode";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .call_tool(
+            "readProcessOutput",
+            json!({
+                "processId": "missing-id",
+                "stream": "stdout",
+                "mode": "invalid",
+                "offset": 0
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("call_tool should return MCP result");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text_content(&result);
+    assert!(text.contains("Invalid mode 'invalid'"));
+    assert!(!text.contains("offset can only be used with mode"));
 }
