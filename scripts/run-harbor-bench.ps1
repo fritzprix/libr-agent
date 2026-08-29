@@ -576,6 +576,16 @@ switch ($Preset) {
   }
 }
 
+$env:LIBRAGENT_HARBOR_DATASET = if ($Preset -in @("terminal-bench", "harbor-index", "dataset")) { $Dataset } else { "" }
+$env:LIBRAGENT_HARBOR_INCLUDE = if ($Include) { $Include -join "," } else { "" }
+$env:LIBRAGENT_HARBOR_N_TASKS = if ($NTasks -gt 0) { [string]$NTasks } else { "" }
+$env:LIBRAGENT_HARBOR_N_ATTEMPTS = [string]$NAttempts
+$env:LIBRAGENT_HARBOR_CONCURRENT = [string]$Concurrent
+$env:LIBRAGENT_HARBOR_AGENT = [string]$Agent
+$env:LIBRAGENT_HARBOR_TIMEOUT_MULTIPLIER = if ($null -ne $TimeoutMultiplier) { [string]$TimeoutMultiplier } else { "" }
+$env:LIBRAGENT_HARBOR_AGENT_TIMEOUT_MULTIPLIER = if ($null -ne $AgentTimeoutMultiplier) { [string]$AgentTimeoutMultiplier } else { "" }
+$env:LIBRAGENT_HARBOR_VERIFIER_ENV_CONFIGURED = if ($VerifierEnv) { "1" } else { "0" }
+
 if ($DebugHarbor) {
   $harborArgs += @("--debug")
 }

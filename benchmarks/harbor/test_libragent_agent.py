@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from harbor.models.agent.context import AgentContext
 
 from benchmarks.harbor.libragent_agent import (
+    CompletionTelemetry,
     DEFAULT_EXECUTION_MODE,
     EmptyAgentWorkError,
     LibrAgentHarborAdapter,
@@ -27,7 +29,9 @@ from benchmarks.harbor.libragent_agent import (
     resolve_poll_timeout_sec,
     sanitize_docker_compose_project_name,
     split_harbor_model_name,
+    summarize_completion_telemetry,
     summarize_trajectory,
+    _task_identity_from_logs_dir,
     workspace_mode_name,
     write_atif_trajectory,
 )
@@ -543,6 +547,179 @@ def test_build_diagnostic_meta_includes_counts() -> None:
     assert meta["n_turns"] == 2
     assert meta["tool_calls_count"] == 3
     assert meta["assistant_id"] == "asst-1"
+    assert meta["last_tool_call"] is None
+    assert meta["last_successful_file_mutation"] is None
+    assert meta["terminal_reported"] is False
+    assert meta["terminal_report_result_received"] is False
+    assert meta["successful_tool_results"] == 0
+    assert meta["failed_tool_results"] == 0
+    assert meta["unresolved_tool_results"] == 0
+    assert meta["elapsed_wall_clock_sec"] is None
+    assert meta["harbor_cancelled_at"] is not None
+
+
+def test_summarize_completion_telemetry_tracks_mutation_and_terminal_report() -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "toolCalls": [
+                {
+                    "id": "write-1",
+                    "type": "function",
+                    "function": {
+                        "name": "workspace__writeFile",
+                        "arguments": '{"path": "/app/out.txt"}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "toolCallId": "write-1",
+            "content": [{"type": "text", "text": "File written successfully"}],
+        },
+        {
+            "role": "assistant",
+            "toolCalls": [
+                {
+                    "id": "report-1",
+                    "type": "function",
+                    "function": {
+                        "name": "ui__reportResult",
+                        "arguments": '{"result": "done"}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "toolCallId": "report-1",
+            "content": [{"type": "text", "text": "Final result reported"}],
+        },
+    ]
+
+    telemetry = summarize_completion_telemetry(messages)
+
+    assert isinstance(telemetry, CompletionTelemetry)
+    assert telemetry.last_tool_call == {
+        "tool_call_id": "report-1",
+        "function_name": "ui__reportResult",
+    }
+    assert telemetry.last_successful_file_mutation == {
+        "tool_call_id": "write-1",
+        "function_name": "workspace__writeFile",
+        "path": "/app/out.txt",
+    }
+    assert telemetry.terminal_reported is True
+    assert telemetry.terminal_report_result_received is True
+    assert telemetry.successful_tool_results == 2
+    assert telemetry.failed_tool_results == 0
+    assert telemetry.unresolved_tool_results == 0
+
+
+def test_summarize_completion_telemetry_prefers_structured_tool_error() -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "toolCalls": [
+                {
+                    "id": "failed-1",
+                    "function": {
+                        "name": "workspace__writeFile",
+                        "arguments": '{"path": "/app/out.txt"}',
+                    },
+                },
+                {
+                    "id": "success-1",
+                    "function": {
+                        "name": "workspace__writeFile",
+                        "arguments": '{"path": "/app/out.txt"}',
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "toolCallId": "failed-1",
+            "content": [{"type": "text", "text": "Operation completed"}],
+            "metadata": {"toolError": True},
+        },
+        {
+            "role": "tool",
+            "toolCallId": "success-1",
+            "content": [{"type": "text", "text": "Operation failed to find marker"}],
+            "metadata": {"toolError": False},
+        },
+    ]
+
+    telemetry = summarize_completion_telemetry(messages)
+
+    assert telemetry.last_successful_file_mutation == {
+        "tool_call_id": "success-1",
+        "function_name": "workspace__writeFile",
+        "path": "/app/out.txt",
+    }
+    assert telemetry.successful_tool_results == 1
+    assert telemetry.failed_tool_results == 1
+    assert telemetry.unresolved_tool_results == 0
+
+
+def test_adapter_writes_benchmark_contract(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LIBRAGENT_HARBOR_DATASET", "terminal-bench/example")
+    monkeypatch.setenv("LIBRAGENT_HARBOR_N_ATTEMPTS", "5")
+    monkeypatch.setenv("LIBRAGENT_HARBOR_CONCURRENT", "2")
+    monkeypatch.setenv("LIBRAGENT_HARBOR_VERIFIER_ENV_CONFIGURED", "1")
+    adapter = LibrAgentHarborAdapter(
+        logs_dir=tmp_path / "example-task__trial-1" / "agent",
+        model_name="NovitaAI/Qwen3.6",
+        assistant_id="assistant-1",
+    )
+
+    adapter._write_benchmark_contract(
+        task_id="example-task",
+        session_id="session-1",
+        container_id="container-1",
+        container_workdir="/app",
+        workspace_mode="attach",
+        started_at="2026-08-28T00:00:00+00:00",
+        session_info={
+            "status": "busy",
+            "model": "Qwen3.6",
+            "provider": "openai",
+        },
+    )
+
+    payload = json.loads(
+        (
+            tmp_path
+            / "example-task__trial-1"
+            / "agent"
+            / "benchmark_contract.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert payload["task_id"] == "example-task"
+    assert payload["trial_id"] == "example-task__trial-1"
+    assert payload["assistant"]["id"] == "assistant-1"
+    assert payload["model"] == {
+        "harbor_reported": "NovitaAI/Qwen3.6",
+        "session_effective": "openai/Qwen3.6",
+    }
+    assert payload["execution"]["workspace_mode"] == "attach"
+    assert payload["harbor"]["n_attempts"] == "5"
+    assert payload["harbor"]["concurrency"] == "2"
+    assert payload["harbor"]["verifier_env_configured"] is True
+    assert payload["session"] == {"id": "session-1", "status": "busy"}
+
+
+def test_task_identity_from_logs_dir() -> None:
+    task_id, trial_id = _task_identity_from_logs_dir(
+        Path("/jobs/regex-log__abc123/agent")
+    )
+
+    assert task_id == "regex-log"
+    assert trial_id == "regex-log__abc123"
 
 
 def test_read_repo_package_version_matches_package_json() -> None:
@@ -676,6 +853,15 @@ async def test_dump_incomplete_diagnostics_writes_trajectory_and_meta(
     assert meta["tool_calls_count"] == 1
     assert meta["last_status"] == "busy"
     assert meta["workspaceMode"] == "attach"
+    assert meta["last_tool_call"] == {
+        "tool_call_id": "c1",
+        "function_name": "workspace__runShell",
+    }
+    assert meta["last_successful_file_mutation"] is None
+    assert meta["terminal_reported"] is False
+    assert meta["terminal_report_result_received"] is False
+    assert meta["elapsed_wall_clock_sec"] is None
+    assert meta["harbor_cancelled_at"] is not None
     assert context.n_input_tokens == 20
     assert context.n_output_tokens == 4
     assert context.cost_usd is None
