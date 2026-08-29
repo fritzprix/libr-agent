@@ -4,6 +4,7 @@ import { getLogger } from './logger';
 import { stringToMCPContentArray } from './utils';
 import type { AttachmentAgentAccess, AttachmentReference } from '@/models/chat';
 import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
+import { normalizeMaxRecentMediaMessages } from './media-settings';
 
 const logger = getLogger('message-preprocessor');
 const ATTACHMENT_PREVIEW_CHAR_LIMIT = 500;
@@ -603,15 +604,26 @@ ${guidance}
   }
 }
 
+export interface PrepareMessagesOptions {
+  /**
+   * Number of recent messages containing media that retain their full payload.
+   * This counts Message records, not grouped conversational turns.
+   */
+  maxRecentMediaMessages?: number;
+}
+
 /**
  * Preprocesses an array of messages for consumption by an LLM.
  * It iterates through the messages and applies the `prepareMessageForLLM` function to each one.
  *
  * @param messages The array of messages to preprocess.
+ * @param options Controls how many recent media-containing messages retain their
+ *                materialized media payload.
  * @returns A promise that resolves to an array of processed messages.
  */
 export async function prepareMessagesForLLM(
   messages: Message[],
+  options?: PrepareMessagesOptions,
 ): Promise<Message[]> {
   // IMPORTANT: Do NOT filter out error messages!
   // Tool execution errors (Message.error) contain valuable context for the LLM
@@ -619,15 +631,21 @@ export async function prepareMessagesForLLM(
   // The error field is metadata; the content field contains the actual error message
   // that should be sent to the LLM.
   // ⚡ Bolt: Single O(N) backwards pass to compute all metadata in one scan
-  let latestMediaMessageIndex = -1;
+  const maxRecentMediaMessages = normalizeMaxRecentMediaMessages(
+    options?.maxRecentMediaMessages,
+  );
+  const recentMediaMessageIndices = new Set<number>();
   let attachmentCount = 0;
   let errorMessageCount = 0;
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
 
-    if (latestMediaMessageIndex === -1 && messageHasMedia(msg)) {
-      latestMediaMessageIndex = i;
+    if (
+      recentMediaMessageIndices.size < maxRecentMediaMessages &&
+      messageHasMedia(msg)
+    ) {
+      recentMediaMessageIndices.add(i);
     }
 
     attachmentCount += msg.attachments?.length || 0;
@@ -640,7 +658,7 @@ export async function prepareMessagesForLLM(
   const processedMessages = await Promise.all(
     messages.map((message, index) =>
       prepareMessageForLLM(message, {
-        includeLatestMediaPayload: index === latestMediaMessageIndex,
+        includeLatestMediaPayload: recentMediaMessageIndices.has(index),
       }),
     ),
   );
@@ -650,7 +668,8 @@ export async function prepareMessagesForLLM(
       totalMessages: messages.length,
       totalAttachments: attachmentCount,
       errorMessages: errorMessageCount,
-      latestMediaMessageIndex,
+      maxRecentMediaMessages,
+      recentMediaMessageIndices: [...recentMediaMessageIndices],
     });
   }
 

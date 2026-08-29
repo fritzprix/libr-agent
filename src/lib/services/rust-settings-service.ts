@@ -19,6 +19,7 @@ import {
   migrateLegacyOpenAICompatibleSettings,
   normalizeCustomOpenAIProviders,
 } from '@/lib/ai-service/custom-providers';
+import { normalizeMaxRecentMediaMessages } from '@/lib/media-settings';
 
 const logger = getLogger('RustSettingsService');
 
@@ -79,6 +80,7 @@ function isPartialAdvancedSettings(
     'loopPreventionHardBreakOffset',
     'thinkingLoopMinPatternLength',
     'thinkingLoopMinRepetitions',
+    'maxRecentMediaMessages',
   ];
   return keys.every((key) => {
     const value = obj[key];
@@ -141,6 +143,11 @@ function mapDtosToSettings(dtos: SettingDto[]): {
   };
 
   const storedSystem = getTypedValue('systemSettings', DEFAULT_SETTING.system);
+  const storedAdvanced = getTypedValue<Partial<AdvancedSettings>>(
+    'advancedSettings',
+    {},
+    isPartialAdvancedSettings,
+  );
 
   const { experimental, didMigrate: didMigrateExperimental } =
     normalizeExperimentalSettings(settingsMap.get('experimentalSettings'));
@@ -195,10 +202,9 @@ function mapDtosToSettings(dtos: SettingDto[]): {
     agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
     advanced: {
       ...DEFAULT_SETTING.advanced,
-      ...getTypedValue<Partial<AdvancedSettings>>(
-        'advancedSettings',
-        {},
-        isPartialAdvancedSettings,
+      ...storedAdvanced,
+      maxRecentMediaMessages: normalizeMaxRecentMediaMessages(
+        storedAdvanced.maxRecentMediaMessages,
       ),
     },
     display: getTypedValue('displaySettings', DEFAULT_SETTING.display),

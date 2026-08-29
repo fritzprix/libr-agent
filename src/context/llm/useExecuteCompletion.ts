@@ -133,7 +133,11 @@ export function useExecuteCompletion({
           safeCount: safeMessages.length,
         });
 
-        const enrichedMessages = await prepareMessagesForLLM(safeMessages);
+        const maxRecentMediaMessages =
+          settingsRef.current.advanced?.maxRecentMediaMessages;
+        const enrichedMessages = await prepareMessagesForLLM(safeMessages, {
+          maxRecentMediaMessages,
+        });
 
         // ── Execute Stream ───────────────────────────────────────────────────
         updateSessionStatus(sessionId, 'streaming');

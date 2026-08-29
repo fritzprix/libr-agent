@@ -595,6 +595,101 @@ describe('message-preprocessor', () => {
       });
     });
 
+    it('keeps the latest N media messages materialized', async () => {
+      const messages = ['oldest', 'middle', 'latest'].map((id) =>
+        createMessage({
+          id,
+          content: [
+            { type: 'text', text: id },
+            {
+              type: 'image',
+              data: `${id}-image`,
+              mimeType: 'image/png',
+            },
+          ],
+        }),
+      );
+
+      const processed = await prepareMessagesForLLM(messages, {
+        maxRecentMediaMessages: 2,
+      });
+
+      expect(processed[0].content.filter((c) => c.type === 'image')).toHaveLength(0);
+      expect(processed[1].content.filter((c) => c.type === 'image')).toHaveLength(1);
+      expect(processed[2].content.filter((c) => c.type === 'image')).toHaveLength(1);
+    });
+
+    it('keeps all available media messages when fewer than N exist', async () => {
+      const messages = [
+        createMessage({
+          id: 'text',
+          content: [{ type: 'text', text: 'text only' }],
+        }),
+        createMessage({
+          id: 'image',
+          content: [
+            { type: 'text', text: 'image' },
+            { type: 'image', data: 'image-data', mimeType: 'image/png' },
+          ],
+        }),
+      ];
+
+      const processed = await prepareMessagesForLLM(messages, {
+        maxRecentMediaMessages: 5,
+      });
+
+      expect(processed[1].content.filter((c) => c.type === 'image')).toHaveLength(1);
+    });
+
+    it('keeps every media item in a retained message', async () => {
+      const message = createMessage({
+        content: [
+          { type: 'text', text: 'two images' },
+          { type: 'image', data: 'first', mimeType: 'image/png' },
+          { type: 'image', data: 'second', mimeType: 'image/jpeg' },
+        ],
+      });
+
+      const [processed] = await prepareMessagesForLLM([message], {
+        maxRecentMediaMessages: 1,
+      });
+
+      expect(processed.content.filter((c) => c.type === 'image')).toHaveLength(2);
+    });
+
+    it.each([
+      { value: 0, expectedRetainedImages: 1 },
+      { value: 2.9, expectedRetainedImages: 2 },
+      { value: 99, expectedRetainedImages: 5 },
+      { value: Number.NaN, expectedRetainedImages: 1 },
+    ])(
+      'normalizes invalid recent media message count $value',
+      async ({ value, expectedRetainedImages }) => {
+        const messages = Array.from({ length: 5 }, (_, index) =>
+          createMessage({
+            id: `image-${index}`,
+            content: [
+              { type: 'text', text: `image-${index}` },
+              {
+                type: 'image',
+                data: `image-data-${index}`,
+                mimeType: 'image/png',
+              },
+            ],
+          }),
+        );
+
+        const processed = await prepareMessagesForLLM(messages, {
+          maxRecentMediaMessages: value,
+        });
+
+        const retainedImages = processed.filter((message) =>
+          message.content.some((content) => content.type === 'image'),
+        );
+        expect(retainedImages).toHaveLength(expectedRetainedImages);
+      },
+    );
+
     it('materializes latest file URIs through the backend instead of fetch(file://)', async () => {
       vi.mocked(readLocalFileAsBase64).mockResolvedValue('ZmlsZS1ieXRlcw==');
       const fetchSpy = vi.spyOn(globalThis, 'fetch');
