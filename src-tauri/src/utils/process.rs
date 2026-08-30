@@ -88,7 +88,7 @@ pub(crate) fn force_kill_process_tree(pid: u32) -> io::Result<()> {
         }
         Err(io::Error::other(format!(
             "failed to kill process {pid}: {status}"
-        )));
+        )))
     }
 
     #[cfg(windows)]
