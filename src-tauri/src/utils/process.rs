@@ -86,7 +86,7 @@ pub(crate) fn force_kill_process_tree(pid: u32) -> io::Result<()> {
         if status.success() || !process_is_alive(pid)? {
             return Ok(());
         }
-        return Err(io::Error::other(format!(
+        Err(io::Error::other(format!(
             "failed to kill process {pid}: {status}"
         )));
     }
