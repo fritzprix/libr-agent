@@ -42,6 +42,49 @@ impl OutputSelection {
     }
 }
 
+fn parse_offset(args: &Value) -> Result<Option<usize>, MCPResult> {
+    let Some(value) = args.get("offset") else {
+        return Ok(None);
+    };
+
+    match value {
+        Value::Null => Ok(None),
+        Value::Number(number) => match number.as_u64() {
+            Some(offset) => usize::try_from(offset).map(Some).map_err(|_| {
+                guided_error(
+                    ErrorCategory::InvalidInput,
+                    "Invalid offset: value is too large",
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Use a non-negative line offset that fits the platform".to_string(),
+                ])
+                .to_mcp_result()
+            }),
+            None => Err(guided_error(
+                ErrorCategory::InvalidInput,
+                "Invalid offset: expected a non-negative integer",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use offset=0 for the first page".to_string(),
+                "Use the returned next_offset for the following page".to_string(),
+            ])
+            .to_mcp_result()),
+        },
+        _ => Err(guided_error(
+            ErrorCategory::InvalidInput,
+            "Invalid offset: expected a non-negative integer",
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Use offset=0 for the first page".to_string(),
+            "Use the returned next_offset for the following page".to_string(),
+        ])
+        .to_mcp_result()),
+    }
+}
+
 fn status_label(status: &terminal_manager::ProcessStatus) -> String {
     terminal_manager::process_status_label(status)
 }
@@ -224,7 +267,6 @@ impl WorkspaceServer {
         };
 
         let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("tail");
-        let lines = args.get("lines").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
         if !matches!(mode, "tail" | "head") {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
@@ -237,7 +279,40 @@ impl WorkspaceServer {
             ])
             .to_mcp_result());
         }
-
+        let lines = args
+            .get("lines")
+            .and_then(|v| v.as_u64())
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(20)
+            .min(100);
+        if lines == 0 {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "lines must be greater than zero",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use lines between 1 and 100".to_string(),
+                "Use the returned next_offset to continue pagination".to_string(),
+            ])
+            .to_mcp_result());
+        }
+        let offset = match parse_offset(&args) {
+            Ok(offset) => offset,
+            Err(error) => return Ok(error),
+        };
+        if offset.is_some() && mode != "head" {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "offset can only be used with mode=\"head\"",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use mode=\"head\" with offset=0 for the first page".to_string(),
+                "Omit offset to preserve the default tail behavior".to_string(),
+            ])
+            .to_mcp_result());
+        }
         // Get process entry + live streaming handle (if registered)
         let registry = self.process_registry.read().await;
         let entry = match registry.entries.get(process_id) {
@@ -296,40 +371,68 @@ impl WorkspaceServer {
         let mut outputs = serde_json::Map::new();
         let mut output_paths = serde_json::Map::new();
         let mut output_path_lines = Vec::new();
+        let mut next_offset = None;
 
         for stream_name in selection.stream_names() {
             let file_path = stream_file_path(&entry, stream_name);
-            let content = match read_stream_prefer_live(
-                streaming.as_ref(),
-                &file_path,
-                stream_name,
-                mode,
-                lines,
-            )
-            .await
+            let (content, total_lines, truncated, stream_next_offset) = if let Some(offset) = offset
             {
-                Ok(content) => content,
-                Err(error) => {
-                    return Ok(build_read_error(process_id, stream_name, &error));
-                }
+                let page = match terminal_manager::read_lines_page(&file_path, offset, lines).await
+                {
+                    Ok(page) => page,
+                    Err(error) => {
+                        return Ok(build_read_error(process_id, stream_name, &error));
+                    }
+                };
+                let next = if offset.saturating_add(lines) < page.total_lines {
+                    Some(offset.saturating_add(lines))
+                } else {
+                    None
+                };
+                (page.lines, Some(page.total_lines), page.truncated, next)
+            } else {
+                let content = match read_stream_prefer_live(
+                    streaming.as_ref(),
+                    &file_path,
+                    stream_name,
+                    mode,
+                    lines,
+                )
+                .await
+                {
+                    Ok(content) => content,
+                    Err(error) => {
+                        return Ok(build_read_error(process_id, stream_name, &error));
+                    }
+                };
+                (content, None, false, None)
             };
             let lines_returned = content.len();
             let file_path_string = file_path.to_string_lossy().to_string();
 
+            if let Some(stream_next_offset) = stream_next_offset {
+                next_offset = Some(next_offset.unwrap_or(0).max(stream_next_offset));
+            }
+
             stream_sections.push(format_stream_section(stream_name, &content));
             output_paths.insert((*stream_name).to_string(), json!(file_path_string));
             output_path_lines.push(format!("- {}: {}", stream_name, file_path_string));
-            outputs.insert(
-                (*stream_name).to_string(),
-                json!({
-                    "content": content,
-                    "lines_returned": lines_returned,
-                    "total_size_bytes": terminal_manager::get_file_size(&file_path).await,
-                }),
-            );
+            let mut output = serde_json::Map::from_iter([
+                ("content".to_string(), json!(content)),
+                ("lines_returned".to_string(), json!(lines_returned)),
+                (
+                    "total_size_bytes".to_string(),
+                    json!(terminal_manager::get_file_size(&file_path).await),
+                ),
+            ]);
+            if let Some(total_lines) = total_lines {
+                output.insert("total_lines".to_string(), json!(total_lines));
+                output.insert("truncated".to_string(), json!(truncated));
+            }
+            outputs.insert((*stream_name).to_string(), Value::Object(output));
         }
 
-        let text = format!(
+        let mut text = format!(
             "Read output from process {} (stream: {}, mode: {}, status: {})\n\nInternal output files (absolute paths, not workspace-relative):\n{}\n\n{}",
             process_id,
             selection.as_str(),
@@ -338,8 +441,20 @@ impl WorkspaceServer {
             output_path_lines.join("\n"),
             stream_sections.join("\n\n")
         );
+        if let Some(offset) = offset {
+            let pagination_note = match next_offset {
+                Some(next_offset) => format!(
+                    "\n\nPagination: page starts at offset {offset}. Read the next page with offset={next_offset}."
+                ),
+                None if is_process_running => format!(
+                    "\n\nPagination: no more output is available now at offset {offset}. The process is still running; retry with offset={offset} after it produces more output."
+                ),
+                None => "\n\nPagination: this is the final page.".to_string(),
+            };
+            text.push_str(&pagination_note);
+        }
 
-        let response = serde_json::Map::from_iter([
+        let mut response = serde_json::Map::from_iter([
             ("process_id".to_string(), json!(process_id)),
             ("stream".to_string(), json!(selection.as_str())),
             ("mode".to_string(), json!(mode)),
@@ -355,6 +470,10 @@ impl WorkspaceServer {
                 ),
             ),
         ]);
+        if let Some(offset) = offset {
+            response.insert("offset".to_string(), json!(offset));
+            response.insert("next_offset".to_string(), json!(next_offset));
+        }
 
         // Finished reads already include the captured output — no patronizing follow-ups.
         let next_actions = if is_process_running {
