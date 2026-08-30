@@ -6,6 +6,10 @@ import {
   parseIntegerInput,
   parseKilobytesInputToBytes,
 } from '@/features/settings/components/settings-number-utils';
+import {
+  DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
+  MAX_RECENT_MEDIA_MESSAGES,
+} from '@/lib/media-settings';
 import type { AdvancedSettingsSectionProps } from './types';
 
 function AdvancedPerformanceSectionComponent({
@@ -139,6 +143,36 @@ function AdvancedPerformanceSectionComponent({
             })
           }
           onValueChange={(value) => onChange('maxSuspendedProcesses', value)}
+        />
+
+        <NumberSettingField
+          label={t(
+            'settings.advanced.maxRecentMediaMessages',
+            'Recent Media Payload Messages',
+          )}
+          description={t(
+            'settings.advanced.maxRecentMediaMessagesDescription',
+            'Number of recent messages containing images or audio that keep their full payload in LLM requests. Higher values increase context usage.',
+          )}
+          placeholder={t(
+            'settings.advanced.maxRecentMediaMessagesPlaceholder',
+            'e.g., 1',
+          )}
+          min={DEFAULT_MAX_RECENT_MEDIA_MESSAGES}
+          max={MAX_RECENT_MEDIA_MESSAGES}
+          step={1}
+          value={
+            localAdvancedSettings.maxRecentMediaMessages ??
+            DEFAULT_MAX_RECENT_MEDIA_MESSAGES
+          }
+          parseValue={(rawValue) =>
+            parseIntegerInput(rawValue, {
+              fallback: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
+              min: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
+              max: MAX_RECENT_MEDIA_MESSAGES,
+            })
+          }
+          onValueChange={(value) => onChange('maxRecentMediaMessages', value)}
         />
 
         <NumberSettingField

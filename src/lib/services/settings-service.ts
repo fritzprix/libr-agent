@@ -4,6 +4,7 @@ import {
   REPEATED_THINKING_MIN_PATTERN_LENGTH,
   REPEATED_THINKING_MIN_REPETITIONS,
 } from '@/context/llm/repeatedTailDetector';
+import { DEFAULT_MAX_RECENT_MEDIA_MESSAGES } from '@/lib/media-settings';
 
 export interface SafetySetting {
   category: string;
@@ -56,6 +57,8 @@ export interface AdvancedSettings {
   loopPreventionHardBreakOffset: number;
   thinkingLoopMinPatternLength: number; // default 256 — minimum repeating sequence length for thinking loops
   thinkingLoopMinRepetitions: number; // default 4 — minimum repetitions for thinking loops
+  /** Number of recent media-containing messages that retain full payloads. */
+  maxRecentMediaMessages: number;
 }
 
 export interface DisplaySettings {
@@ -190,6 +193,7 @@ export const DEFAULT_SETTING: Settings = {
     loopPreventionHardBreakOffset: 2,
     thinkingLoopMinPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
     thinkingLoopMinRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
+    maxRecentMediaMessages: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
   },
   display: {
     metricDisplayMode: 'inline',
