@@ -652,12 +652,17 @@ fn agent_session_tools_describe_reuse_and_reset_boundaries() {
         .expect("startSession tool must exist")
         .description
         .as_str();
-    let message_description = tools
+    let message_tool = tools
         .iter()
         .find(|tool| tool.name == "messageToSession")
-        .expect("messageToSession tool must exist")
-        .description
-        .as_str();
+        .expect("messageToSession tool must exist");
+    let message_description = message_tool.description.as_str();
+    let message_properties =
+        extract_object_properties(&message_tool.input_schema, "messageToSession");
+    let reset_description = message_properties
+        .get("reset")
+        .and_then(|schema| schema.description.as_deref())
+        .expect("messageToSession reset schema must have a description");
 
     assert!(start_description.contains("no suitable existing session"));
     assert!(start_description.contains("agent__messageToSession"));
@@ -665,7 +670,7 @@ fn agent_session_tools_describe_reuse_and_reset_boundaries() {
     assert!(message_description.contains("same assistant configuration"));
     assert!(message_description.contains("does not clean workspace files"));
     assert!(message_description.contains("may be queued"));
-    assert!(message_description.contains("closes the target browser session"));
+    assert!(reset_description.contains("closes the target browser session"));
 }
 
 #[test]
