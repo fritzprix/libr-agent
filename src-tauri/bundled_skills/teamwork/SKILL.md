@@ -78,6 +78,8 @@ Keep these separate:
 - **Session schedules** are for in-conversation delays and session-scoped recurrence, not teamwork groups.
 - A recurring task group may wake a coordinator session, but that does not make the scheduled group an org.
 
+Before creating a new member for a later task, inspect `agent__listAgents(type="sessions")` and reuse an Idle child with the same assistant ID and compatible workspace through `agent__messageToSession`. Set `reset=true` only for a fresh assignment; create a new member when the role, workspace, or required parallel capacity differs.
+
 ### 2.6 Route to the specialist skill
 
 After choosing the execution substrate, route to the matching specialist skill:

@@ -6,6 +6,7 @@ Use this file when you need concrete task wording or when a delegated child sess
 
 | Need | Safe with normal `agent__startSession`? | What to do |
 | --- | --- | --- |
+| Existing Idle child has the same assistant and compatible workspace | Prefer reuse | Inspect with `agent__listAgents(type="sessions")`, then use `agent__messageToSession`; add `reset=true` only for a fresh assignment |
 | Child runs a bounded task with its own workspace | Yes | Delegate normally |
 | Child sees parent workspace files automatically | No | Put required content in the task, or keep the work in the parent |
 | Child inherits parent workspace `agents.md` / `CLAUDE.md` | No | Copy critical rules into the handoff |
@@ -21,9 +22,10 @@ Use for code reading, trace analysis, or investigations where the child can work
 Suggested flow:
 
 1. Pick the most relevant assistant.
-2. Write a task that includes the exact question, output shape, and any hard constraints.
-3. Start the child session asynchronously.
-4. Keep working in the parent or poll later.
+2. Inspect existing child sessions and reuse a suitable Idle matching-role child with `agent__messageToSession` when its workspace is compatible.
+3. Write a task that includes the exact question, output shape, and any hard constraints.
+4. Start a new child asynchronously with `agent__startSession` only when no suitable child exists or a distinct role, workspace, or parallel slot is needed.
+5. Keep working in the parent or poll later.
 
 Task template:
 

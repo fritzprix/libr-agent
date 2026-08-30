@@ -7,8 +7,9 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 | Need | Tool / action |
 | --- | --- |
 | Create the org (once, from root session) | `agent__createOrg(name="...")` |
-| Spawn an org-visible child session | `agent__startSession(agentId, task)` from a session already in the org |
-| Delegate outside Org view | `agent__startSession(agentId, task)` from a session that is not in an explicit org |
+| Assign an existing org-visible child | `agent__messageToSession(sessionId, message)` when an Idle child has the same `assistantId` and compatible workspace |
+| Spawn an org-visible child | `agent__startSession(agentId, task)` from a session already in the org when no suitable child exists or isolation/capacity requires it |
+| Delegate outside Org view | Reuse a matching Idle child with `agent__messageToSession`, or use `agent__startSession(agentId, task)` from a session that is not in an explicit org |
 | Identify the org root session | Read `orgLineage.rootSessionId` from `.libragent/teamwork.json` |
 | Resume org work | Resume the session matching `orgLineage.rootSessionId`, not a child |
 | Inspect org membership | `agent__getOrg(orgId)` if available |
@@ -36,12 +37,17 @@ agent__createOrg(
 // executionSubstrate.orgLineage.orgName = "Research Strike Team"
 // executionSubstrate.orgLineage.rootSessionId = <returned orgRootSessionId>
 
-// Step 3 — spawn an org-visible researcher
+// Step 3 — first member has no existing child to reuse, so spawn it
 agent__startSession(
   agentId: "<researcher-assistant-id>",
   task: "..."
 )
 ```
+
+For later assignments, inspect `agent__listAgents(type="sessions")` first. Reuse a
+matching Idle member with `agent__messageToSession`; pass `reset=true` when the
+new assignment must discard its previous conversation and runtime state. A reset
+keeps workspace files and closes the browser session.
 
 ## Pattern: Resume From Org Root
 
@@ -60,6 +66,10 @@ Do not resume a child session directly and treat it as the org coordinator. Chil
 ## Pattern: Keep Workspace Shared
 
 Org-visible children should inherit the parent effective workspace unless there is a concrete reason to diverge.
+
+For an existing child, `agent__messageToSession` preserves that child's current
+workspace; verify it matches the intended org workspace before reuse. For a new
+child, inheritance is automatic when it is started from the org root:
 
 ```
 agent__startSession(agentId: "...", task: "...")

@@ -13,6 +13,7 @@ Worker sessions (Spokes) must never communicate with each other directly. All me
 
 3. **Bridge Routing**
    - When Spoke A finishes, the Hub catches the event, collects the output files, and triggers Spoke B with `agent__messageToSession` containing instructions like: "Spoke A has completed its task. Please read `/workspace/output_A.json` and proceed."
+   - Before starting a new spoke for later work, inspect the live child inventory and reuse an Idle spoke with the same `assistantId` when its workspace is compatible. Use `reset=true` for a genuinely fresh assignment; otherwise preserve the existing conversation.
 
 ---
 
