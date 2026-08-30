@@ -57,8 +57,8 @@ After choosing the coordination model, choose the execution substrate explicitly
 
 | Execution need | Use this substrate | Then follow | Why |
 | --- | --- | --- | --- |
-| One-off specialist delegation | `agent__startSession(...)` | `delegate` | Lightweight child session without org coupling |
-| Org-visible lineage under a governing teamwork session | `agent__prepareTeamworkWorkspace()`, then `agent__createOrg(...)`, then `agent__startSession(...)` | `org` | Preserves explicit org membership, Org view semantics, and parent-workspace inheritance while keeping teamwork artifacts in app-local storage |
+| One-off specialist delegation | `agent__listAgents(type="sessions")` + `agent__messageToSession(...)` when a matching Idle child exists; otherwise `agent__startSession(...)` | `delegate` | Lightweight child session without org coupling |
+| Org-visible lineage under a governing teamwork session | `agent__prepareTeamworkWorkspace()`, then `agent__createOrg(...)`, then reuse with `agent__messageToSession(...)` or create with `agent__startSession(...)` | `org` | Preserves explicit org membership, Org view semantics, and parent-workspace inheritance while keeping teamwork artifacts in app-local storage |
 | Recurring, cron, heartbeat, or resumable automation | Scheduled task groups via `scheduled_task__createScheduledTask(...)` and related `scheduled_task` tools | `schedule` | Keeps recurring collaboration separate from org lineage and under policy control |
 | Delay or recurrence inside the current conversation | `scheduled_task__scheduleCallback(...)` | `session-schedule` | Session-bound follow-ups without teamwork scaffolding or global task groups |
 
@@ -67,6 +67,7 @@ After choosing the coordination model, choose the execution substrate explicitly
 - Do not use explicit org lineage just because work is recurring.
 - Do not use scheduled task groups just because there are multiple roles.
 - Do not add redundant org-specific spawn wrappers. `agent__startSession(...)` is the primitive; explicit org inheritance is automatic under an org root.
+- Before creating a child, match an Idle session by `assistantId` and workspace contract. Use `reset=true` only when the previous conversation and runtime state should be discarded; use a new session for a different role, workspace, or parallel capacity.
 - Do not invent a separate org-only workspace unless the task has a concrete reason to use a different `workspaceOverride`.
 - Do not keep execution-specific org and scheduled-task operating rules mixed together once the substrate is chosen. Route to the specialist skill.
 - If the user wants an org chart, root-session resume, or explicit lineage visibility, choose explicit org lineage.

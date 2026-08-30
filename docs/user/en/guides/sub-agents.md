@@ -17,7 +17,7 @@ title: Sub-agents & orchestration
 | **Is not**        | A clone of the parent runtime. Workspace, local skills, and `agents.md` are **not** copied automatically.      |
 | **Who drives it** | Usually you attach `@skill:delegate` (etc.) so the agent manages spawn / poll / merge — not manual tool calls. |
 
-Parents typically **start → poll/`checkSession` → correct with `messageToSession` → merge results**.  
+Parents should first inspect existing children for a suitable **Idle session with the same assistant configuration** and reuse it with `messageToSession` when possible. When no suitable session exists, or a different role, parallel work, or isolated workspace is needed, they **start → poll/`checkSession` → correct with `messageToSession` → merge results**.
 Sibling sessions do not talk to each other (the parent hub relays).
 
 ### Where it shows in the UI
@@ -39,6 +39,7 @@ Children use their **own workspace** by default.
 - **Assistant**-scoped skills follow the assistant chosen for the child.
 - **Global** skills are available to parent and child.
 - To share a folder, skills/agents set `workspaceOverride` (not an automatic copy).
+- `messageToSession(reset=true)` clears the previous conversation, planning, pending messages, and runtime state but does not delete workspace files. It also closes the browser session, so use `reset=false` when browser state must be preserved.
 
 If the child “assumes” parent-only files, local `skills/`, or workspace rules, delegation fails. Put **goal, scope, output format, required paths** in the handoff, or use a shared workspace / `workspaceOverride`.
 

@@ -26,7 +26,8 @@ The Hub-and-Spoke pattern designates a central Coordinator session (Hub) to mana
 1. **Role Definition**: Spawn a dedicated Coordinator session (Hub) and define specialized Spoke Worker configs.
 2. **Task Planning**: The Hub analyzes the goal, creates a task dependency list, and allocates work.
 3. **Execution Routing**:
-   - The Hub spawns Spokes asynchronously using `agent__startSession(waitForResult=false)`.
+   - Before spawning, inspect `agent__listAgents(type="sessions")` for an Idle child with the same assistant ID and a compatible workspace contract. Route new work to a suitable child with `agent__messageToSession`; use `reset=true` only when its previous conversation and runtime state should be discarded.
+   - The Hub spawns a new Spoke asynchronously using `agent__startSession(waitForResult=false)` only when no suitable child exists, a different role or workspace isolation is needed, or another parallel capacity slot is required.
    - Plain spokes get **isolated** workspaces by default. For repo/code work, pass `workspaceOverride` to the Hub's workspace (or a spoke-specific subdir). For research/write-ups, require the primary deliverable in the spoke's final text (`Result:`), not only a relative file path.
    - When sharing a workspace across parallel spokes, use unique filenames or per-spoke subdirectories to avoid collisions.
    - If inter-spoke coordination is needed, the Hub routes messages. See [routing.md](references/routing.md).
@@ -35,6 +36,7 @@ The Hub-and-Spoke pattern designates a central Coordinator session (Hub) to mana
 
 ## 🛠️ MCP Tools Guide
 
+- **Session Reuse**: Match on `assistantId`, status, and workspace compatibility before creating a Spoke. A reset reuses the session's identity and workspace files but closes its browser session; do not reuse a child whose prior workspace or runtime state is incompatible.
 - **Context Management**: Do not let the Hub read all conversation logs from all Spokes to prevent context overflow. Instruct the Hub to only request **summarized status reports and file list results**.
 - **Message Bridging**: If Worker B depends on Worker A's output, the Hub collects the artifact details from A and injects them to B via `agent__messageToSession`.
 

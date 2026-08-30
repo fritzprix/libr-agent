@@ -35,10 +35,18 @@ Do not restart prior work; extend or refine only.
 ## Sequential spawn pattern
 
 ```text
-sessionA = startSession(..., waitForResult=true)
+agent__listAgents(type="sessions")
+sessionA = agent__messageToSession(sessionId=idle_matching_id, ..., reset=true)
+           or agent__startSession(..., waitForResult=true)
 handover = extract Stage Complete from A
-sessionB = startSession(task=handover + criteria, waitForResult=true)
+agent__listAgents(type="sessions")
+sessionB = agent__messageToSession(sessionId=idle_matching_id, ..., reset=true)
+           or agent__startSession(task=handover + criteria, waitForResult=true)
 ```
+
+Reuse only when the child has the same assistant configuration and a compatible
+workspace. Create a new session when the next stage needs a different role,
+workspace isolation, or additional parallel capacity.
 
 ## Context filtering rule
 

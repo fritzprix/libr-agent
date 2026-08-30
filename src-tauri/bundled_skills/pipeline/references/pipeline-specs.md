@@ -12,7 +12,7 @@ Clear handover rules prevent information loss and context bloat across pipeline 
    - Provide a brief summary of what was completed and list outstanding checklist items (TODOs) for the next stage.
 
 3. **State Isolation**
-   - Each stage runs in an isolated session to prevent prompt memory cross-contamination. Only share physical files and summary prompts.
+   - Each stage runs with isolated conversation/runtime state to prevent prompt memory cross-contamination. An Idle child with the same assistant configuration may be reused with `reset=true`; only share physical files and summary prompts.
 
 ---
 

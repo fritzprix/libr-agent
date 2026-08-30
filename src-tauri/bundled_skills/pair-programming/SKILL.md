@@ -27,13 +27,14 @@ The Pair Programming pattern binds two sessions to a shared workspace (`workspac
 
 ## 5-Stage Workflow
 
-1. **Workspace Configuration**: Ensure both sessions share the exact same `workspaceOverride` directory.
-2. **Assign Roles**: Allocate the Driver role to a code-generation model and the Navigator role to an analysis-focused model.
-3. **Turn-based Interaction**:
+1. **Session Selection**: Inspect existing child sessions and reuse an Idle Driver/Navigator session with the matching assistant ID and exact workspace contract through `agent__messageToSession`. Use `reset=true` when beginning a fresh pairing task. Start a new session only when no compatible pair member exists or the required role/workspace differs.
+2. **Workspace Configuration**: Ensure both sessions share the exact same `workspaceOverride` directory.
+3. **Assign Roles**: Allocate the Driver role to a code-generation model and the Navigator role to an analysis-focused model.
+4. **Turn-based Interaction**:
    - The Driver implements a section of code and writes a summary of the edits for the Navigator.
    - The Navigator runs `view_file` or `git diff` on the workspace, checks for issues, and sends feedback/next instructions to the Driver.
-4. **Role Rotation**: Swap roles when moving between tasks (e.g., swapping to write test suites). See [role-rotation.md](references/role-rotation.md).
-5. **Validation**: Run the final project test pipeline to verify correctness.
+5. **Role Rotation**: Swap roles when moving between tasks (e.g., swapping to write test suites). See [role-rotation.md](references/role-rotation.md).
+6. **Validation**: Run the final project test pipeline to verify correctness.
 
 ---
 

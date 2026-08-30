@@ -124,6 +124,8 @@ Record the `id` for `agent__startSession`. If the user names a custom assistant,
 
 For each problem, spawn a child session. Construct the child's `task` prompt dynamically based on the available fields in the problem definition. Do not include static setup or verification headers if those fields are empty, as this will confuse the child worker.
 
+**Benchmark isolation exception:** Do not reuse an existing child session for a benchmark problem. Each problem must start with a fresh session so prior conversation, runtime state, pending messages, and workspace artifacts cannot contaminate the result. Use `agent__startSession` even when an Idle session has the same assistant configuration.
+
 #### Task Formulation Guidelines:
 - Include the `Problem ID`, `Task` description, `Repository` path, and `Expected output` (if they exist in the problem definition).
 - Conditionally add sequential steps to the instructions:

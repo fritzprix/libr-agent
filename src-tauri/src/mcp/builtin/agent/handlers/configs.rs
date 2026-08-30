@@ -732,15 +732,16 @@ async fn list_delegated_sessions(
             paged_results.push(json!({
                 "id": crate::utils::session_id::display_session_id(&child_id),
                 "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
-                "status": status
+                "status": status,
+                "assistantId": child_data.assistant_id,
             }));
         }
     }
 
     let mut message = format!("Found {} sub-agent sessions.\n\n", total);
     if !paged_results.is_empty() {
-        message.push_str("| Name | Session ID | Status |\n");
-        message.push_str("|---|---|---|\n");
+        message.push_str("| Name | Session ID | Assistant ID | Status |\n");
+        message.push_str("|---|---|---|---|\n");
         for result in &paged_results {
             let name_clean = result["name"]
                 .as_str()
@@ -752,14 +753,19 @@ async fn list_delegated_sessions(
                 .unwrap_or("")
                 .replace('|', "\\|")
                 .replace('\n', " ");
+            let assistant_id_clean = result["assistantId"]
+                .as_str()
+                .unwrap_or("[unbound]")
+                .replace('|', "\\|")
+                .replace('\n', " ");
             let status_clean = result["status"]
                 .as_str()
                 .unwrap_or("")
                 .replace('|', "\\|")
                 .replace('\n', " ");
             message.push_str(&format!(
-                "| {} | `{}` | {} |\n",
-                name_clean, id_clean, status_clean
+                "| {} | `{}` | `{}` | {} |\n",
+                name_clean, id_clean, assistant_id_clean, status_clean
             ));
         }
     } else if total > 0 {

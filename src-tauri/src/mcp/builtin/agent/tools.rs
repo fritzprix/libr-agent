@@ -192,7 +192,7 @@ fn start_session_tool() -> MCPTool {
         name: "startSession".to_string(),
         title: Some("Start Agent Session".to_string()),
         description: tool_description(
-            "Spawn a new child agent session to delegate a specific task.",
+            "Start a new sub-agent session when no suitable existing session is available, or when a distinct role, parallel capacity, or isolated workspace is needed. Reuse a suitable idle session with the same assistant configuration via agent__messageToSession when possible.",
             &["Agent configuration ID from agent__listAgents(type='configs')."],
             &[
                 "Pass agentId (config ID, not name) and a clear task description.",
@@ -302,13 +302,14 @@ fn message_to_session_tool() -> MCPTool {
         name: "messageToSession".to_string(),
         title: Some("Message Agent Session".to_string()),
         description: tool_description(
-            "Send a follow-up message to an existing sub-agent session to continue or recover the conversation.",
+            "Send new work or follow-up instructions to an existing delegated session. Reuse a suitable idle session with the same assistant configuration when possible.",
             &["Session ID from agent__startSession or agent__listAgents(type='sessions')."],
             &[
                 "Pass sessionId and the message or instruction.",
-                "Use to wake paused or error sessions and retry from the latest stable state.",
+                "Use to continue ongoing work, assign new work to an idle matching-role session, or recover a paused or error session.",
                 "Set waitForResponse=false to send without blocking.",
-                "Set reset=true to clear the target session's message history and planning/compaction state before injecting the new message (defaults to false).",
+                "Set reset=true only when the previous conversation and runtime state should be discarded. This clears messages, planning/compaction state, and pending messages, but does not clean workspace files (defaults to false).",
+                "Messages sent to a busy session may be queued until its current work finishes.",
             ],
             &[
                 "Check outcome with agent__checkSession(wait=true).",
@@ -345,7 +346,7 @@ fn message_to_session_tool() -> MCPTool {
                 (
                     "reset".to_string(),
                     {
-                        let mut schema = boolean_prop(Some("If true, clear/reset the target session's message history and planning/compaction state before injecting the new message (preserving active browser session state for continuation). Defaults to false."));
+                        let mut schema = boolean_prop(Some("If true, discard the target session's messages, planning/compaction state, pending messages, and runtime state before injecting the new message. This does not clean workspace files and closes the target browser session. Defaults to false."));
                         schema.default = Some(json!(false));
                         schema
                     },

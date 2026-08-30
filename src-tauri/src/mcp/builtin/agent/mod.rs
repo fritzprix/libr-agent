@@ -65,8 +65,8 @@ pub const NAME: &str = "agent";
 pub const AGENT_DELEGATION_HEADER: &str = concat!(
     "## Agent Delegation\n\n",
     "- `agent__prepareTeamworkWorkspace` returns an app-local teamwork artifact directory for orchestration files without changing the current session workspace.\n",
-    "- `agent__startSession` starts delegated work.\n",
-    "- `agent__messageToSession` resumes or retries an existing delegated session.\n",
+    "- `agent__messageToSession` sends follow-up or new work to an existing delegated session; reuse a suitable idle session with the same assistant configuration when possible.\n",
+    "- `agent__startSession` starts delegated work when no suitable session exists or separate role, parallel, or workspace isolation is needed.\n",
     "- `agent__compactSessionContext` refreshes another session's stored compact summary before more work.\n",
 );
 

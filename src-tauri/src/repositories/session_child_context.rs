@@ -25,7 +25,12 @@ pub fn format_child_sessions_context(children: &[SessionMetadata]) -> Option<Str
 
     for child in &children[..render_count] {
         let label = format_session_label(child);
-        parts.push(format!("- {} (status: {})", label, child.status.as_str()));
+        parts.push(format!(
+            "- {} {} (status: {})",
+            format_assistant_tag(child),
+            label,
+            child.status.as_str()
+        ));
     }
 
     if children.len() > max_render {
@@ -40,8 +45,8 @@ pub fn format_child_sessions_context(children: &[SessionMetadata]) -> Option<Str
 
 /// Formats a compact status inventory of child sessions (IDs retained for targeting).
 ///
-/// Descriptive only — no imperative reuse/start copy — so the block stays safe inside
-/// synthetic `<session-context>` user messages.
+/// Keeps the routing guidance compact because the block is injected into synthetic
+/// `<session-context>` user messages on every turn with live child sessions.
 pub fn format_active_sessions_notice(children: &[SessionMetadata]) -> Option<String> {
     if children.is_empty() {
         return None;
@@ -64,7 +69,9 @@ pub fn format_active_sessions_notice(children: &[SessionMetadata]) -> Option<Str
     }
 
     let total_count = children.len();
-    let mut parts = vec![format!("### Sub-Agents ({total_count})")];
+    let mut parts = vec![format!(
+        "### Sub-Agents ({total_count}) — Reuse suitable idle sessions with the same assistant configuration via agent__messageToSession; use agent__startSession when no suitable session exists or separate parallel/isolation is needed."
+    )];
 
     let limit_per_group = 5;
 
@@ -93,15 +100,16 @@ fn format_group_notice(
         .map(|child| {
             let display_id = crate::utils::session_id::display_session_id(&child.id);
             let name_str = child.name.as_deref().unwrap_or("").trim();
+            let role_tag = format_assistant_tag(child);
             if name_str.is_empty() {
-                format!("`{display_id}`")
+                format!("`{display_id}` {role_tag}")
             } else {
                 let short_name = if name_str.chars().count() > 28 {
                     format!("{}...", name_str.chars().take(25).collect::<String>())
                 } else {
                     name_str.to_string()
                 };
-                format!("`{display_id}` \"{short_name}\"")
+                format!("`{display_id}` {role_tag} \"{short_name}\"")
             }
         })
         .collect();
@@ -111,4 +119,16 @@ fn format_group_notice(
     }
 
     parts.push(format!("- {status_label}: {}", entries.join(", ")));
+}
+
+fn format_assistant_tag(session: &SessionMetadata) -> String {
+    match session
+        .assistant_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|assistant_id| !assistant_id.is_empty())
+    {
+        Some(assistant_id) => format!("[assistant:{assistant_id}]"),
+        None => "[unbound]".to_string(),
+    }
 }
