@@ -18,11 +18,12 @@ Read `references/delegation-patterns.md` when you need concrete handoff template
 ## Delegation Workflow
 
 1. Decide whether delegation is appropriate.
-2. Choose the child's effective context.
-3. Prepare a handoff that includes everything the child actually needs.
-4. Start the child session.
-5. Monitor or steer it with follow-up messages.
-6. Merge the result back into the parent flow.
+2. Inspect existing child sessions and reuse a suitable idle session with the same assistant configuration when possible.
+3. Choose the child's effective context.
+4. Prepare a handoff that includes everything the child actually needs.
+5. Start a new child only when no suitable session exists or separate role, parallel, or workspace isolation is needed.
+6. Monitor or steer it with follow-up messages.
+7. Merge the result back into the parent flow.
 
 ## 1. Decide Whether to Delegate
 
@@ -101,13 +102,13 @@ Say "use the same workspace as this session" only when you intentionally started
 Use the builtin agent tools deliberately:
 
 - `agent__listAgents(type="configs")` to find the right assistant and prefer its returned ID
+- `agent__listAgents(type="sessions")` or the live sub-agent inventory to find an existing child with a matching assistant ID
+- `agent__messageToSession(sessionId="...", message="...")` to continue work or assign new work to a suitable idle matching-role child
+- Set `reset=true` only when the previous conversation and runtime state should be discarded. This resets messages, planning/compaction state, and pending messages but does not clean workspace files.
 - `agent__startSession(agentId="...", task="...", waitForResult=false)` when you have the ID
 - `agent__startSession(agentId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
 - `agent__checkSession(sessionId)` to poll
 - `agent__checkSession(sessionId, wait=true)` when you want to block until a terminal result
-- `agent__messageToSession(sessionId, message)` to correct course or provide more input
-- `agent__listAgents(type="sessions")` to inspect delegated children of the current session
-
 Default to `waitForResult=false` unless the parent truly has nothing useful to do while waiting.
 
 ## 5. Review the Result Like an Adult

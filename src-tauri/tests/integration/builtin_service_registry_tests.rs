@@ -644,6 +644,31 @@ fn message_to_session_tool_schema_supports_inline_waiting() {
 }
 
 #[test]
+fn agent_session_tools_describe_reuse_and_reset_boundaries() {
+    let tools = agent_tools::all_tools();
+    let start_description = tools
+        .iter()
+        .find(|tool| tool.name == "startSession")
+        .expect("startSession tool must exist")
+        .description
+        .as_str();
+    let message_description = tools
+        .iter()
+        .find(|tool| tool.name == "messageToSession")
+        .expect("messageToSession tool must exist")
+        .description
+        .as_str();
+
+    assert!(start_description.contains("no suitable existing session"));
+    assert!(start_description.contains("agent__messageToSession"));
+    assert!(message_description.contains("assign new work"));
+    assert!(message_description.contains("same assistant configuration"));
+    assert!(message_description.contains("does not clean workspace files"));
+    assert!(message_description.contains("may be queued"));
+    assert!(message_description.contains("closes the target browser session"));
+}
+
+#[test]
 fn delete_session_tool_schema_is_exposed() {
     let delete_tool = agent_tools::all_tools()
         .into_iter()
