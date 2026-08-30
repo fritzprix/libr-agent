@@ -105,7 +105,7 @@ export function PendingApprovalWidget({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (submittingIdRef.current !== null) {
+      if (event.defaultPrevented || submittingIdRef.current !== null) {
         return;
       }
       if (isTypingTarget(event.target)) {
@@ -119,12 +119,14 @@ export function PendingApprovalWidget({
 
       if (event.key === 'Enter') {
         event.preventDefault();
+        event.stopImmediatePropagation();
         void handleResponse(target.toolCallId, true);
         return;
       }
 
       if (event.key === 'Escape') {
         event.preventDefault();
+        event.stopImmediatePropagation();
         void handleResponse(target.toolCallId, false);
       }
     };

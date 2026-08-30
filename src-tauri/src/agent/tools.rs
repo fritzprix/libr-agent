@@ -1,4 +1,5 @@
 use crate::agent::state::AgentSession;
+use crate::commands::agent_commands::ToolCancellation;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::{Message, MessageSource};
@@ -298,6 +299,72 @@ fn build_tool_message_metadata(
     } else {
         Some(serde_json::Value::Object(metadata))
     }
+}
+
+fn add_cancellation_metadata(
+    structured_content: Option<serde_json::Value>,
+    cancellation: Option<&ToolCancellation>,
+) -> Option<serde_json::Value> {
+    let Some(cancellation) = cancellation else {
+        return structured_content;
+    };
+    let cancellation_value = serde_json::json!({
+        "status": "cancelled",
+        "cancelledBy": cancellation.cancelled_by_label(),
+    });
+
+    Some(match structured_content {
+        Some(serde_json::Value::Object(mut object)) => {
+            object.insert("cancellation".to_string(), cancellation_value);
+            serde_json::Value::Object(object)
+        }
+        Some(value) => serde_json::json!({
+            "toolResult": value,
+            "cancellation": cancellation_value,
+        }),
+        None => serde_json::json!({
+            "cancellation": cancellation_value,
+        }),
+    })
+}
+
+fn append_cancellation_note(
+    content: &mut Vec<MCPContent>,
+    cancellation: Option<&ToolCancellation>,
+) {
+    let Some(cancellation) = cancellation else {
+        return;
+    };
+
+    let note = cancellation.display_message();
+    let already_present = content
+        .iter()
+        .any(|item| matches!(item, MCPContent::Text { text } if text.contains(note)));
+    if !already_present {
+        content.push(MCPContent::Text {
+            text: format!("Note: {note}"),
+        });
+    }
+}
+
+fn append_cancellation_note_to_error(
+    error_message: &str,
+    cancellation: Option<&ToolCancellation>,
+) -> String {
+    let Some(cancellation) = cancellation else {
+        return error_message.to_string();
+    };
+
+    let note = cancellation.display_message();
+    if error_message.contains(note)
+        || error_message
+            .to_ascii_lowercase()
+            .contains("cancelled by user")
+    {
+        return error_message.to_string();
+    }
+
+    format!("{error_message}\n\nNote: {note}")
 }
 
 /// Convert MCP response result to agent MCPContent
@@ -722,11 +789,13 @@ pub async fn handle_tool_result(
         structured_content,
         error,
         is_error,
+        cancellation,
     } = result;
     let mcp_content = match mcp_content {
         Some(content) => Some(externalize_media_content_for_storage(&session_id, content).await?),
         None => None,
     };
+    let structured_content = add_cancellation_metadata(structured_content, cancellation.as_ref());
 
     log::debug!(
         "Tool result received for session {}, tool_call_id: {}",
@@ -763,7 +832,8 @@ pub async fn handle_tool_result(
 
                 // Create Tool Message using helper methods
                 let message = if is_error {
-                    if let Some(mcp_content) = mcp_content {
+                    if let Some(mut mcp_content) = mcp_content {
+                        append_cancellation_note(&mut mcp_content, cancellation.as_ref());
                         // Prefer structured content (guided_error) over bare error string —
                         // the content array carries the full diagnosis the agent needs.
                         create_tool_result_message_with_content(
@@ -774,12 +844,16 @@ pub async fn handle_tool_result(
                             true,
                         )
                     } else {
-                        create_error_tool_result(
-                            &session_id,
-                            &tool_call_id,
+                        let error_message = append_cancellation_note_to_error(
                             error
                                 .as_deref()
                                 .unwrap_or("Tool execution failed without error message"),
+                            cancellation.as_ref(),
+                        );
+                        create_error_tool_result(
+                            &session_id,
+                            &tool_call_id,
+                            &error_message,
                             structured_content.clone(),
                         )
                     }
@@ -912,5 +986,46 @@ mod tests {
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
+    }
+
+    #[test]
+    fn cancellation_metadata_preserves_tool_error_details() {
+        let cancellation = ToolCancellation::user();
+        let structured = add_cancellation_metadata(
+            Some(serde_json::json!({
+                "error": {
+                    "message": "Command failed with exit code: -1"
+                }
+            })),
+            Some(&cancellation),
+        )
+        .expect("cancellation metadata should be present");
+
+        assert_eq!(
+            structured["error"]["message"],
+            "Command failed with exit code: -1"
+        );
+        assert_eq!(structured["cancellation"]["status"], "cancelled");
+        assert_eq!(structured["cancellation"]["cancelledBy"], "user");
+    }
+
+    #[test]
+    fn cancellation_note_is_added_without_replacing_tool_output() {
+        let cancellation = ToolCancellation::user();
+        let mut content = vec![MCPContent::Text {
+            text: "Command failed with exit code: -1".to_string(),
+        }];
+
+        append_cancellation_note(&mut content, Some(&cancellation));
+
+        assert_eq!(content.len(), 2);
+        assert!(matches!(
+            &content[0],
+            MCPContent::Text { text } if text.contains("Command failed with exit code: -1")
+        ));
+        assert!(matches!(
+            &content[1],
+            MCPContent::Text { text } if text.contains("cancelled by the user")
+        ));
     }
 }

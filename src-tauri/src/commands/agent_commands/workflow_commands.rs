@@ -242,12 +242,15 @@ pub async fn agent_cancel_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    manager.cancel_workflow(session_id.clone()).await?;
+    let cancellation_result = manager.cancel_workflow(session_id.clone()).await?;
 
     Ok(AgentResponse {
         success: true,
         message: format!("Workflow cancel requested for session: {}", session_id),
-        data: None,
+        data: Some(
+            serde_json::to_value(cancellation_result)
+                .map_err(|error| format!("Failed to serialize cancellation result: {error}"))?,
+        ),
     })
 }
 

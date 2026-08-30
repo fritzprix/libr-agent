@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  createUnexpectedCompletionAbortError,
   isAbortError,
   isSupersededRequestError,
   isWorkflowCancelledError,
@@ -156,17 +157,18 @@ describe('cancel status transition: abort → idle, real error → error', () =>
 });
 
 // ---------------------------------------------------------------------------
-// Rust invoke NOT called on abort (guards the race condition in useLLMListener)
+// Rust invoke is skipped only for intentional aborts
 // ---------------------------------------------------------------------------
 
-describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
+describe('useLLMListener: unexpected aborts must be reported', () => {
   /**
    * Regression guard for the race condition:
-   *   cancelCompletionRequest() → AbortError thrown
-   *   → useLLMListener catch → handleLLMError(sessionId, String(error))  ← BUG
-   *   → Rust: Idle (from cancel) then Error (stale abort) — wrong order
+   *   An AbortError can be raised by a transport without an AbortController
+   *   cancellation. Treating every AbortError as benign leaves Rust Busy
+   *   forever, so useExecuteCompletion wraps unmarked aborts before they reach
+   *   this listener.
    *
-   * The correct behaviour: if isAbortError, return early and never invoke Rust.
+   * Intentional aborts are still skipped to avoid the stale Idle → Error race.
    */
   const mockHandleLLMError = vi.fn();
 
@@ -178,9 +180,10 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
   const handleCatchInListener = async (
     error: unknown,
     sessionId: string,
+    intentionallyAborted = false,
   ) => {
     if (
-      isAbortError(error) ||
+      (isAbortError(error) && intentionallyAborted) ||
       isSupersededRequestError(error) ||
       isWorkflowCancelledError(error)
     ) {
@@ -191,14 +194,32 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
 
   it('does NOT call handleLLMError when aborted', async () => {
     const err = new DOMException('aborted', 'AbortError');
-    await handleCatchInListener(err, 'session-1');
+    await handleCatchInListener(err, 'session-1', true);
     expect(mockHandleLLMError).not.toHaveBeenCalled();
   });
 
-  it('does NOT call handleLLMError for "Request aborted" (regression)', async () => {
-    // Some fetch implementations throw a generic error with this message on abort
+  it('reports an unmarked Request aborted error', async () => {
     const err = new Error('Request aborted');
     await handleCatchInListener(err, 'session-2');
+    expect(mockHandleLLMError).toHaveBeenCalledWith(
+      'session-2',
+      'Error: Request aborted',
+    );
+  });
+
+  it('creates a reportable error for an unmarked abort', async () => {
+    const err = createUnexpectedCompletionAbortError();
+    expect(isAbortError(err)).toBe(true);
+    await handleCatchInListener(err, 'session-2');
+    expect(mockHandleLLMError).toHaveBeenCalledWith(
+      'session-2',
+      'AbortError: LLM completion aborted unexpectedly',
+    );
+  });
+
+  it('still skips a deliberately cancelled request', async () => {
+    const err = new DOMException('aborted', 'AbortError');
+    await handleCatchInListener(err, 'session-2', true);
     expect(mockHandleLLMError).not.toHaveBeenCalled();
   });
 

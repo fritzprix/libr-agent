@@ -890,6 +890,19 @@
       "loadingOlder": "Loading older messages...",
       "scrollToLoadOlder": "Scroll up to load older messages"
     },
+    "approval": {
+      "hardTitle": "Hard Approval Required",
+      "title": "Approval Required",
+      "hardDescriptionYolo": "YOLO mode is on, but this high-risk action still requires manual approval.",
+      "hardDescription": "This high-risk action requires explicit approval.",
+      "description": "The agent wants to execute this tool.",
+      "hardBadge": "Hard approval",
+      "standardBadge": "Standard approval",
+      "arguments": "Arguments",
+      "reject": "Reject",
+      "hardApprove": "Approve high-risk action",
+      "approve": "Approve"
+    },
     "draft": {
       "send": "Send message",
       "attachFiles": "Attach files",
@@ -1077,6 +1090,11 @@
       "cancelAriaLabel": "Cancel request",
       "cancellingTooltip": "Cancelling...",
       "cancelTooltip": "Cancel",
+      "cancelOutcome": {
+        "processStopped": "Stopped {{count}} workspace process(es). The workflow will continue.",
+        "workflowPaused": "Workflow cancelled and paused.",
+        "noActiveWork": "There was no active workflow to cancel."
+      },
       "resumeAriaLabel": "Resume workflow",
       "resumeTooltip": "Resume",
       "sendAriaLabel": "Send message",

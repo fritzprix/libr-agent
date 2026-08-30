@@ -1,6 +1,7 @@
 use crate::agent::llm::types::CompletionCancelRequest;
 use crate::agent::state::AgentSession;
 use crate::agent::tauri_events::emit_completion_cancel;
+use crate::commands::agent_commands::{CancelWorkflowOutcome, CancelWorkflowResult};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
@@ -13,6 +14,9 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancelStrategy {
+    /// An active workspace process was stopped. Keep the workflow alive so
+    /// the failed tool result can drive the next LLM/tool step.
+    CancelProcessThenContinue,
     /// Tool batch is in flight: cancel the token immediately and keep
     /// `cancel_pending` set so awaitAgent / tool loop can short-circuit, then
     /// pause at the message boundary once remaining tools are tombstoned.
@@ -21,8 +25,13 @@ pub enum CancelStrategy {
     StopImmediately,
 }
 
-pub fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
-    if has_pending_execution {
+pub fn classify_cancel_strategy(
+    has_pending_execution: bool,
+    has_active_processes: bool,
+) -> CancelStrategy {
+    if has_active_processes {
+        CancelStrategy::CancelProcessThenContinue
+    } else if has_pending_execution {
         CancelStrategy::CancelToolsThenPause
     } else {
         CancelStrategy::StopImmediately
@@ -31,6 +40,17 @@ pub fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
 
 pub fn should_consume_cancel_at_message_boundary(cancel_pending: bool) -> bool {
     cancel_pending
+}
+
+/// A cancelled token alone can represent a stale result from a reset workflow.
+/// A pending cancel, however, must be consumed at the message boundary first
+/// so the session can transition to Paused instead of discarding the result
+/// while it is still marked Busy.
+pub fn should_discard_workflow_before_continuation(
+    token_cancelled: bool,
+    cancel_pending: bool,
+) -> bool {
+    token_cancelled && !cancel_pending
 }
 
 /// Drop every pending approval waiter so `request_approval` unblocks on cancel.
@@ -190,14 +210,15 @@ pub async fn terminate_session(
 pub async fn cancel_workflow(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    _proxy_manager: &Arc<MCPServiceProxyManager>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<CancelWorkflowResult, String> {
     log::info!("Cancelling workflow for session: {}", session_id);
 
     // Determine whether tools are mid-batch (pause after tombstones) or idle
-    // (pause immediately). Cancellation is always signaled up front.
+    // (pause immediately). An active workspace process is handled separately
+    // so its failure can return to the workflow and trigger the next step.
     let (has_pending_execution, current_status) = {
         let active = active_sessions.read().await;
         let session = active
@@ -226,12 +247,46 @@ pub async fn cancel_workflow(
             session_id,
             current_status
         );
-        return Ok(());
+        return Ok(CancelWorkflowResult {
+            outcome: CancelWorkflowOutcome::NoActiveWork,
+            stopped_resources: 0,
+        });
     }
 
-    // Always signal cancel immediately — including mid tool-batch.
-    // Previously the "defer" path only set cancel_pending and left the token
-    // live, so execute_tool_calls kept running every remaining tool.
+    // Stop session-owned workspace resources first. If a process was active,
+    // this is a process-only cancel: let its failed result return to the
+    // workflow instead of cancelling the workflow token.
+    let killed_resources = match proxy_manager.kill_session_processes(&session_id).await {
+        Ok(count) => count,
+        Err(error) => {
+            log::warn!(
+                "Failed to clean up resources for cancelled session {}: {}",
+                session_id,
+                error
+            );
+            0
+        }
+    };
+
+    if classify_cancel_strategy(has_pending_execution, killed_resources > 0)
+        == CancelStrategy::CancelProcessThenContinue
+    {
+        if has_pending_execution {
+            proxy_manager.mark_process_cancel_pending(&session_id).await;
+        }
+        log::info!(
+            "Cancelled {} active workspace resource(s) for session {}; workflow continues",
+            killed_resources,
+            session_id
+        );
+        return Ok(CancelWorkflowResult {
+            outcome: CancelWorkflowOutcome::ProcessStopped,
+            stopped_resources: killed_resources,
+        });
+    }
+
+    // No active workspace process was found, so this is a workflow cancel.
+    // Signal cancellation immediately, including mid tool-batch.
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
@@ -253,7 +308,9 @@ pub async fn cancel_workflow(
     )
     .await;
 
-    if classify_cancel_strategy(has_pending_execution) == CancelStrategy::CancelToolsThenPause {
+    if classify_cancel_strategy(has_pending_execution, false)
+        == CancelStrategy::CancelToolsThenPause
+    {
         log::info!(
             "Cancel requested for session {} during tool batch — token cancelled; remaining tools will be tombstoned",
             session_id
@@ -262,7 +319,10 @@ pub async fn cancel_workflow(
         // continue_workflow_after_tool can pause at the message boundary after
         // execute_tool_calls injects cancel tombstones for unfinished calls.
         // Waiting prompts stay in the durable FIFO queue.
-        return Ok(());
+        return Ok(CancelWorkflowResult {
+            outcome: CancelWorkflowOutcome::WorkflowPaused,
+            stopped_resources: 0,
+        });
     }
 
     // No in-flight tool-call batch: stop immediately and leave the workflow paused
@@ -292,7 +352,10 @@ pub async fn cancel_workflow(
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Cancelled workflow for session: {}", session_id);
-    Ok(())
+    Ok(CancelWorkflowResult {
+        outcome: CancelWorkflowOutcome::WorkflowPaused,
+        stopped_resources: killed_resources,
+    })
 }
 
 pub(crate) async fn discard_pending_events(

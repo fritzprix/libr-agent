@@ -145,6 +145,16 @@ export interface AgentResponse<T = unknown> {
   data?: T;
 }
 
+export type CancelWorkflowOutcome =
+  | 'processStopped'
+  | 'workflowPaused'
+  | 'noActiveWork';
+
+export interface CancelWorkflowResult {
+  outcome: CancelWorkflowOutcome;
+  stoppedResources: number;
+}
+
 export type StreamingIssueKind =
   | 'REPEATED_THINKING_LOOP'
   | 'REPEATED_TEXT_LOOP'
@@ -262,8 +272,12 @@ export interface ToolExecutionResult {
   success: boolean;
   content: string;
   mcpContent?: MCPContent[];
+  structuredContent?: unknown;
   error?: string;
   isError: boolean;
+  cancellation?: {
+    cancelledBy: 'user' | 'timeout' | 'system';
+  };
 }
 
 /**

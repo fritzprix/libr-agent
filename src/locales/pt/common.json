@@ -848,6 +848,19 @@
       "loadingOlder": "Carregando mensagens antigas...",
       "scrollToLoadOlder": "Role para cima para carregar mensagens antigas"
     },
+    "approval": {
+      "hardTitle": "Aprovação reforçada necessária",
+      "title": "Aprovação necessária",
+      "hardDescriptionYolo": "O modo YOLO está ativado, mas esta ação de alto risco ainda requer aprovação manual.",
+      "hardDescription": "Esta ação de alto risco requer aprovação explícita.",
+      "description": "O agente deseja executar esta ferramenta.",
+      "hardBadge": "Aprovação reforçada",
+      "standardBadge": "Aprovação padrão",
+      "arguments": "Argumentos",
+      "reject": "Rejeitar",
+      "hardApprove": "Aprovar ação de alto risco",
+      "approve": "Aprovar"
+    },
     "draft": {
       "send": "Enviar mensagem",
       "attachFiles": "Anexar arquivos",
@@ -1015,6 +1028,11 @@
       "cancelAriaLabel": "Cancelar solicitação",
       "cancellingTooltip": "Cancelando...",
       "cancelTooltip": "Cancelar",
+      "cancelOutcome": {
+        "processStopped": "{{count}} processo(s) do workspace foram interrompidos. O fluxo continuará.",
+        "workflowPaused": "O fluxo foi cancelado e pausado.",
+        "noActiveWork": "Não havia um fluxo ativo para cancelar."
+      },
       "resumeAriaLabel": "Retomar fluxo de trabalho",
       "resumeTooltip": "Retomar",
       "sendAriaLabel": "Enviar mensagem",

@@ -19,6 +19,7 @@ import type {
 } from './types';
 import {
   isAbortError,
+  isUnexpectedCompletionAbortError,
   isSupersededRequestError,
   isWorkflowCancelledError,
 } from './types';
@@ -332,7 +333,11 @@ export function useLLMListener({
             const isAborted = isAbortError(error);
             const isSuperseded = isSupersededRequestError(error);
             const isWorkflowCancelled = isWorkflowCancelledError(error);
-            if (isAborted || isSuperseded || isWorkflowCancelled) {
+            if (
+              (isAborted && !isUnexpectedCompletionAbortError(error)) ||
+              isSuperseded ||
+              isWorkflowCancelled
+            ) {
               logger.info('Skipping benign LLM request error report to Rust', {
                 sessionId,
                 reason: isAborted

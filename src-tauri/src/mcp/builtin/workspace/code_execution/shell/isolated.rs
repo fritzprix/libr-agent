@@ -194,7 +194,9 @@ impl WorkspaceServer {
             {
                 let mut reg = registry.write().await;
                 if let Some(entry) = reg.entries.get_mut(&pid_copy) {
-                    entry.status = terminal_manager::ProcessStatus::Running;
+                    if entry.status == terminal_manager::ProcessStatus::Starting {
+                        entry.status = terminal_manager::ProcessStatus::Running;
+                    }
                 }
             }
 
@@ -202,10 +204,21 @@ impl WorkspaceServer {
                 let registry = registry.clone();
                 let pid_copy = pid_copy.clone();
                 tokio::spawn(async move {
-                    if let Ok(pid) = pid_rx.await {
+                    if let Ok(Some(pid)) = pid_rx.await {
                         let mut reg = registry.write().await;
-                        if let Some(entry) = reg.entries.get_mut(&pid_copy) {
-                            entry.pid = pid;
+                        let killed = if let Some(entry) = reg.entries.get_mut(&pid_copy) {
+                            entry.pid = Some(pid);
+                            entry.status == terminal_manager::ProcessStatus::Killed
+                        } else {
+                            false
+                        };
+                        drop(reg);
+
+                        if killed {
+                            let _ = tokio::task::spawn_blocking(move || {
+                                crate::utils::process::force_kill_process_tree(pid)
+                            })
+                            .await;
                         }
                     }
                 });
@@ -321,8 +334,9 @@ impl WorkspaceServer {
                 let actual_exit_code = entry.exit_code.unwrap_or(-1);
                 let success = entry.status == terminal_manager::ProcessStatus::Finished
                     && actual_exit_code == 0;
+                let retain_killed_process = entry.status == terminal_manager::ProcessStatus::Killed;
 
-                {
+                if !retain_killed_process {
                     let mut reg = self.process_registry.write().await;
                     reg.entries.remove(&process_id);
                     reg.cancellation_tokens.remove(&process_id);
@@ -332,7 +346,9 @@ impl WorkspaceServer {
 
                 self.invalidate_context_cache().await;
 
-                let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
+                if !retain_killed_process {
+                    let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
+                }
 
                 let stdout = match stdout_result {
                     Ok(stdout) => stdout,

@@ -5,7 +5,7 @@ use crate::agent::state::AgentSession;
 use crate::agent::state::PendingApprovalKind;
 use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
 use crate::agent::types::{ToolCall, ToolCallFunction};
-use crate::commands::agent_commands::ToolExecutionResult;
+use crate::commands::agent_commands::{ToolCancellation, ToolExecutionResult};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::SessionRepository;
 use std::collections::HashMap;
@@ -269,6 +269,7 @@ impl ToolExecutionContext<'_> {
                     error: error_msg,
                     is_error,
                     mcp_content,
+                    cancellation: None,
                 }
             }
             Err(error) => ToolExecutionResult {
@@ -278,6 +279,7 @@ impl ToolExecutionContext<'_> {
                 error: Some(error),
                 is_error: true,
                 mcp_content: None,
+                cancellation: None,
             },
         }
     }
@@ -401,6 +403,7 @@ fn args_parse_error_result(
         structured_content: Some(structured),
         error: Some(message),
         is_error: true,
+        cancellation: None,
     }
 }
 
@@ -413,11 +416,14 @@ fn error_result(message: impl Into<String>) -> ToolExecutionResult {
         error: Some(message),
         is_error: true,
         mcp_content: None,
+        cancellation: None,
     }
 }
 
 fn cancelled_tool_result() -> ToolExecutionResult {
-    error_result("Tool call cancelled by user.")
+    let mut result = error_result("Tool call cancelled by user.");
+    result.cancellation = Some(ToolCancellation::user());
+    result
 }
 
 async fn session_cancel_requested(
@@ -619,7 +625,41 @@ pub async fn execute_tool_calls(
             }
         }
 
-        let result = context.execute_tool(tool_name, args).await;
+        if proxy_manager
+            .process_cancel_retry_exhausted(&session_id, tool_name, args_str)
+            .await
+        {
+            let mut result = error_result(
+                "The same tool call was already cancelled once; stopping the workflow to avoid a retry loop.",
+            );
+            result.cancellation = Some(ToolCancellation::user());
+            cancellation_token.cancel();
+            if let Some(session) = active_sessions.write().await.get_mut(&session_id) {
+                session.cancel_pending.store(true, Ordering::Release);
+            }
+            context
+                .continue_after_tool(tool_call_id, result, "cancelled tool retry limit")
+                .await;
+            break;
+        }
+
+        let mut result = context.execute_tool(tool_name, args).await;
+        let process_was_cancelled = proxy_manager.take_process_cancel_pending(&session_id).await;
+        if process_was_cancelled {
+            proxy_manager
+                .record_process_cancelled_tool(&session_id, tool_name, args_str)
+                .await;
+        }
+        proxy_manager
+            .clear_process_cancel_retry_after_tool(&session_id, process_was_cancelled)
+            .await;
+        if result.is_error
+            && (process_was_cancelled
+                || session_cancel_requested(&active_sessions, &session_id, &cancellation_token)
+                    .await)
+        {
+            result.cancellation = Some(ToolCancellation::user());
+        }
         context
             .continue_after_tool(tool_call_id, result, "tool execution")
             .await;

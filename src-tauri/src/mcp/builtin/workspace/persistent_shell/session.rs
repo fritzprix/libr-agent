@@ -78,6 +78,14 @@ pub struct PersistentShell {
 }
 
 impl PersistentShell {
+    /// Return the operating-system process ID without requiring mutable access.
+    ///
+    /// The persistent shell manager uses this to terminate a shell while its
+    /// command mutex is held by an in-flight command.
+    pub fn process_id(&self) -> Option<u32> {
+        self.child.id()
+    }
+
     /// Create a new persistent shell session
     ///
     /// # Arguments
@@ -138,6 +146,7 @@ impl PersistentShell {
         {
             cmd.arg("--norc");
             cmd.arg("--noprofile");
+            cmd.process_group(0); // Keep shell descendants in a private group for cancellation.
 
             // Fix: Add ~/.local/bin to PATH as it's often missing in non-interactive shells
             // This is critical for pip installed binaries

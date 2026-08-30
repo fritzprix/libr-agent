@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tauri_mcp_agent_lib::agent::state::{PendingEvent, PendingEventManager};
 use tauri_mcp_agent_lib::agent::workflow::{
     classify_cancel_strategy, is_inactive_cancel_noop, should_consume_cancel_at_message_boundary,
-    CancelStrategy,
+    should_discard_workflow_before_continuation, CancelStrategy,
 };
 use tauri_mcp_agent_lib::repositories::SessionStatus;
 use tokio_util::sync::CancellationToken;
@@ -21,20 +21,39 @@ use tokio_util::sync::CancellationToken;
 
 #[test]
 fn test_classify_cancel_strategy_keeps_boundary_pause_when_pending_execution_exists() {
-    let strategy = classify_cancel_strategy(true);
+    let strategy = classify_cancel_strategy(true, false);
     assert_eq!(strategy, CancelStrategy::CancelToolsThenPause);
 }
 
 #[test]
 fn test_classify_cancel_strategy_stops_immediately_without_pending_execution() {
-    let strategy = classify_cancel_strategy(false);
+    let strategy = classify_cancel_strategy(false, false);
     assert_eq!(strategy, CancelStrategy::StopImmediately);
+}
+
+#[test]
+fn test_classify_cancel_strategy_continues_after_stopping_active_process() {
+    let strategy = classify_cancel_strategy(true, true);
+    assert_eq!(strategy, CancelStrategy::CancelProcessThenContinue);
 }
 
 #[test]
 fn test_should_consume_cancel_at_message_boundary_only_when_pending_flag_set() {
     assert!(should_consume_cancel_at_message_boundary(true));
     assert!(!should_consume_cancel_at_message_boundary(false));
+}
+
+#[test]
+fn test_pending_cancel_is_consumed_before_cancelled_token_is_discarded() {
+    assert!(
+        !should_discard_workflow_before_continuation(true, true),
+        "a pending cancel must reach the message boundary so the session can pause"
+    );
+    assert!(
+        should_discard_workflow_before_continuation(true, false),
+        "a cancelled token without a pending cancel is a stale workflow result"
+    );
+    assert!(!should_discard_workflow_before_continuation(false, false));
 }
 
 #[test]

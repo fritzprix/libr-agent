@@ -890,6 +890,19 @@
       "loadingOlder": "이전 메시지를 불러오는 중...",
       "scrollToLoadOlder": "위로 스크롤하여 이전 메시지 불러오기"
     },
+    "approval": {
+      "hardTitle": "강력한 승인 필요",
+      "title": "승인 필요",
+      "hardDescriptionYolo": "YOLO 모드가 켜져 있지만 이 고위험 작업은 수동 승인이 필요합니다.",
+      "hardDescription": "이 고위험 작업은 명시적인 승인이 필요합니다.",
+      "description": "에이전트가 이 도구를 실행하려고 합니다.",
+      "hardBadge": "강력한 승인",
+      "standardBadge": "일반 승인",
+      "arguments": "인자",
+      "reject": "거부",
+      "hardApprove": "고위험 작업 승인",
+      "approve": "승인"
+    },
     "draft": {
       "send": "메시지 보내기",
       "attachFiles": "파일 첨부",
@@ -1077,6 +1090,11 @@
       "cancelAriaLabel": "요청 취소",
       "cancellingTooltip": "취소 중...",
       "cancelTooltip": "취소",
+      "cancelOutcome": {
+        "processStopped": "워크스페이스 프로세스 {{count}}개를 종료했습니다. 워크플로는 계속 진행됩니다.",
+        "workflowPaused": "워크플로를 취소하고 일시중지했습니다.",
+        "noActiveWork": "취소할 활성 워크플로가 없습니다."
+      },
       "resumeAriaLabel": "워크플로 재개",
       "resumeTooltip": "재개",
       "sendAriaLabel": "메시지 보내기",

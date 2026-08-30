@@ -69,4 +69,8 @@ impl BuiltinMCPServer for WorkspaceServer {
     ) -> Result<MCPResult, String> {
         self.call_tool(tool_name, args, session_id).await
     }
+
+    async fn kill_session_processes(&self, session_id: &str) -> Result<usize, String> {
+        WorkspaceServer::kill_session_processes(self, session_id).await
+    }
 }

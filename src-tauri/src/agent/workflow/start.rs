@@ -115,6 +115,9 @@ pub async fn start_workflow(
             reset_session_execution_state(session).await;
         }
     }
+    proxy_manager
+        .clear_process_cancel_pending(&session_id)
+        .await;
 
     // --- STANDARD START WORKFLOW (Idle/Paused) ---
 

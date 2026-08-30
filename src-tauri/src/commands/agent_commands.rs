@@ -13,11 +13,12 @@ pub use compaction_commands::{
     agent_get_compact_context, agent_handle_compact_error, agent_handle_compact_response,
 };
 pub use contracts::{
-    AgentOpenSessionResponse, AgentResponse, AgentSessionListResponse, CreateAgentSessionRequest,
-    CreateAgentSessionWithMessageRequest, ExecuteUiTauriActionRequest,
-    InjectChannelMessageAutoRequest, InjectChannelMessageRequest, InjectMessagesRequest,
-    ListAgentSessionsRequest, PendingApprovalSnapshot, RespondChannelPermissionRequest,
-    SendUserMessageRequest, SessionListCursorDto, ToolExecutionResult, UpdateAgentConfigRequest,
+    AgentOpenSessionResponse, AgentResponse, AgentSessionListResponse, CancelWorkflowOutcome,
+    CancelWorkflowResult, CreateAgentSessionRequest, CreateAgentSessionWithMessageRequest,
+    ExecuteUiTauriActionRequest, InjectChannelMessageAutoRequest, InjectChannelMessageRequest,
+    InjectMessagesRequest, ListAgentSessionsRequest, PendingApprovalSnapshot,
+    RespondChannelPermissionRequest, SendUserMessageRequest, SessionListCursorDto,
+    ToolCancellation, ToolExecutionResult, UpdateAgentConfigRequest,
 };
 pub use session_commands::{
     agent_add_attachment, agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session,

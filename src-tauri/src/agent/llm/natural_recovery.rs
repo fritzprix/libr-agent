@@ -86,6 +86,7 @@ pub fn loop_prevention_tool_result(guidance: &str) -> ToolExecutionResult {
         mcp_content: Some(vec![MCPContent::Text {
             text: guidance.to_string(),
         }]),
+        cancellation: None,
     }
 }
 

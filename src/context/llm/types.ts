@@ -20,6 +20,39 @@ export function isAbortError(error: unknown): boolean {
   );
 }
 
+/**
+ * Make an unexpected completion abort observable to the Rust workflow.
+ *
+ * AbortError is normally reserved for an intentional user cancellation, but
+ * browser transports and local OpenAI-compatible servers can also terminate a
+ * request with the same error shape. Those failures must not be silently
+ * discarded by the LLM listener because Rust would otherwise remain Busy.
+ */
+export class UnexpectedCompletionAbortError extends Error {
+  readonly unexpectedCompletionAbort = true;
+
+  constructor() {
+    super('LLM completion aborted unexpectedly');
+    this.name = 'AbortError';
+  }
+}
+
+export function createUnexpectedCompletionAbortError(): Error {
+  return new UnexpectedCompletionAbortError();
+}
+
+export function isUnexpectedCompletionAbortError(
+  error: unknown,
+): error is UnexpectedCompletionAbortError {
+  return (
+    error instanceof UnexpectedCompletionAbortError ||
+    (error != null &&
+      typeof error === 'object' &&
+      'unexpectedCompletionAbort' in error &&
+      error.unexpectedCompletionAbort === true)
+  );
+}
+
 export function isSupersededRequestError(error: unknown): boolean {
   if (error == null || typeof error !== 'object') return false;
   const e = error as Record<string, unknown>;

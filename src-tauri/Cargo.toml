@@ -6,6 +6,7 @@ authors = ["fritzprix"]
 license = "MIT"
 repository = "https://github.com/fritzprix/libr-agent.git"
 edition = "2021"
+rust-version = "1.88"
 keywords = ["ai", "agent", "multi-agent", "orchestration", "mcp", "model-context-protocol", "react", "desktop", "shareable-config"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -81,6 +82,7 @@ windows-sys = { version = "0.59", features = [
   "Win32_Globalization",
   "Win32_System_Environment",
   "Win32_System_Power",
+  "Win32_System_Threading",
   "Win32_UI_WindowsAndMessaging",
 ] }
 
