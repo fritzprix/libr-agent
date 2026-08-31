@@ -12,7 +12,10 @@ use tauri_mcp_agent_lib::agent::workflow::{
     classify_cancel_strategy, is_inactive_cancel_noop, should_consume_cancel_at_message_boundary,
     should_discard_workflow_before_continuation, CancelStrategy,
 };
+use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
 use tauri_mcp_agent_lib::repositories::SessionStatus;
+use tauri_mcp_agent_lib::session::SessionManager;
+use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 // -----------------------------------------------------------------------
@@ -323,5 +326,36 @@ fn test_tool_batch_cancel_cancels_token_immediately() {
     assert!(
         !token.is_cancelled(),
         "workflow must be startable after tool-batch cancel"
+    );
+}
+
+#[tokio::test]
+async fn test_process_cancel_retry_state_survives_unrelated_batch_tool() {
+    let db = Arc::new(crate::common::setup_test_db_with_migrations().await);
+    let session_root = TempDir::new().expect("session root");
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(session_root.path().join("sessions"))
+            .expect("session manager"),
+    );
+    let manager = MCPServiceProxyManager::new(db, session_manager);
+
+    manager
+        .record_process_cancelled_tool("retry-session", "workspace__execute", "{}")
+        .await;
+    manager
+        .clear_process_cancel_retry_after_tool("retry-session", false, true)
+        .await;
+
+    assert!(
+        !manager
+            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
+            .await,
+        "the cancelled tool should receive its single retry"
+    );
+    assert!(
+        manager
+            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
+            .await,
+        "the same cancelled tool must be blocked after its retry"
     );
 }

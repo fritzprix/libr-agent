@@ -32,17 +32,21 @@ fn process_is_alive(pid: u32) -> io::Result<bool> {
 #[cfg(windows)]
 fn process_is_alive(pid: u32) -> io::Result<bool> {
     use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
 
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
         return Ok(false);
     }
 
+    let mut exit_code = 0;
+    let is_alive = unsafe { GetExitCodeProcess(handle, &mut exit_code) != 0 && exit_code == 259 };
     unsafe {
         CloseHandle(handle);
     }
-    Ok(true)
+    Ok(is_alive)
 }
 
 #[cfg(unix)]

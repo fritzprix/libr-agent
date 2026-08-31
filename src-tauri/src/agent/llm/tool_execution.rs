@@ -496,6 +496,7 @@ pub async fn execute_tool_calls(
     // tombstone `tool_calls[index..]` and break without consuming the iterator.
     // Every continue/success path must bump `index` before the next check.
     let mut index = 0;
+    let mut process_was_cancelled_in_batch = false;
     while index < tool_calls.len() {
         if session_cancel_requested(&active_sessions, &session_id, &cancellation_token).await {
             inject_cancel_tombstones_for_remaining(&context, &tool_calls[index..]).await;
@@ -625,9 +626,10 @@ pub async fn execute_tool_calls(
             }
         }
 
-        if proxy_manager
-            .process_cancel_retry_exhausted(&session_id, tool_name, args_str)
-            .await
+        if !process_was_cancelled_in_batch
+            && proxy_manager
+                .process_cancel_retry_exhausted(&session_id, tool_name, args_str)
+                .await
         {
             let mut result = error_result(
                 "The same tool call was already cancelled once; stopping the workflow to avoid a retry loop.",
@@ -640,18 +642,24 @@ pub async fn execute_tool_calls(
             context
                 .continue_after_tool(tool_call_id, result, "cancelled tool retry limit")
                 .await;
+            inject_cancel_tombstones_for_remaining(&context, &tool_calls[index + 1..]).await;
             break;
         }
 
         let mut result = context.execute_tool(tool_name, args).await;
         let process_was_cancelled = proxy_manager.take_process_cancel_pending(&session_id).await;
         if process_was_cancelled {
+            process_was_cancelled_in_batch = true;
             proxy_manager
                 .record_process_cancelled_tool(&session_id, tool_name, args_str)
                 .await;
         }
         proxy_manager
-            .clear_process_cancel_retry_after_tool(&session_id, process_was_cancelled)
+            .clear_process_cancel_retry_after_tool(
+                &session_id,
+                process_was_cancelled,
+                process_was_cancelled_in_batch,
+            )
             .await;
         if result.is_error
             && (process_was_cancelled

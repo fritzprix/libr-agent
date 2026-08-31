@@ -224,13 +224,15 @@ impl MCPServiceProxyManager {
         false
     }
 
-    /// Clear retry state when a tool execution was not stopped by process cancel.
+    /// Clear retry state when a tool execution was not stopped by process
+    /// cancel and no earlier tool in the same batch was process-cancelled.
     pub async fn clear_process_cancel_retry_after_tool(
         &self,
         session_id: &str,
         process_was_cancelled: bool,
+        process_was_cancelled_in_batch: bool,
     ) {
-        if !process_was_cancelled {
+        if !process_was_cancelled && !process_was_cancelled_in_batch {
             self.clear_process_cancel_retry_state(session_id).await;
         }
     }
