@@ -44,6 +44,10 @@ impl WorkspaceServer {
 
         // Track execution time
         let execution_start = std::time::Instant::now();
+        let cancellation_generation = self
+            .shell_manager
+            .cancellation_generation(&session_id)
+            .await;
 
         // Execute with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
@@ -176,6 +180,20 @@ impl WorkspaceServer {
             }
 
             Ok(Err(e)) => {
+                if self
+                    .shell_manager
+                    .cancellation_generation(&session_id)
+                    .await
+                    != cancellation_generation
+                {
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        "Command cancelled with the workflow.".to_string(),
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+
                 // Execution error - shell crashed or command failed
                 warn!(
                     "Persistent shell execution failed for session {}: {}. Falling back to one-shot.",

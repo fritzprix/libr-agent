@@ -151,70 +151,152 @@ impl WorkspaceServer {
         }
     }
 
+    /// Cancel active resources owned by a session while retaining process
+    /// metadata and output files for the Process Panel.
+    pub async fn kill_session_processes(&self, session_id: &str) -> Result<usize, String> {
+        let mut process_ids = Vec::new();
+        let mut process_pids = Vec::new();
+        let mut completion_notifiers = Vec::new();
+
+        {
+            let mut registry = self.process_registry.write().await;
+            let finished_at = chrono::Utc::now();
+            let active_process_ids: Vec<String> = registry
+                .entries
+                .values()
+                .filter(|entry| {
+                    entry.session_id == session_id
+                        && terminal_manager::is_active_process_status(&entry.status)
+                })
+                .map(|entry| entry.id.clone())
+                .collect();
+
+            for process_id in active_process_ids {
+                if let Some(entry) = registry.entries.get_mut(&process_id) {
+                    entry.status = terminal_manager::ProcessStatus::Killed;
+                    entry.finished_at = Some(finished_at);
+                    if let Some(pid) = entry.pid {
+                        process_pids.push(pid);
+                    }
+                    process_ids.push(process_id.clone());
+                }
+
+                if let Some(token) = registry.cancellation_tokens.get(&process_id) {
+                    token.cancel();
+                }
+                if let Some(notifier) = registry.completion_notifiers.get(&process_id) {
+                    completion_notifiers.push(notifier.clone());
+                }
+            }
+        }
+
+        for notifier in completion_notifiers {
+            notifier.notify_waiters();
+        }
+
+        if !process_pids.is_empty() {
+            let kill_result = tokio::task::spawn_blocking(move || {
+                for pid in process_pids {
+                    if let Err(error) = crate::utils::process::force_kill_process_tree(pid) {
+                        tracing::warn!("Failed to kill cancelled process {pid}: {error}");
+                    }
+                }
+            })
+            .await;
+
+            if let Err(error) = kill_result {
+                tracing::warn!(
+                    "Process cancellation task failed: {}",
+                    crate::utils::process::describe_join_error(error)
+                );
+            }
+        }
+
+        for pending in self.pending_executions.remove_for_session(session_id) {
+            if let Some(response_tx) = pending.response_tx {
+                let _ = response_tx.send(PendingShellInputResolution::Cancelled);
+            }
+        }
+
+        let persistent_shell_killed = match self.shell_manager.force_kill_shell(session_id).await {
+            Ok(killed) => killed,
+            Err(error) => {
+                tracing::warn!(
+                    "Failed to terminate persistent shell for cancelled session {}: {}",
+                    session_id,
+                    error
+                );
+                false
+            }
+        };
+
+        self.invalidate_context_cache().await;
+
+        let killed_resource_count = process_ids.len() + usize::from(persistent_shell_killed);
+        info!(
+            "Cancelled {} active workspace resource(s) for session {}",
+            killed_resource_count, session_id
+        );
+        Ok(killed_resource_count)
+    }
+
     /// Session cleanup: terminate and clean up all processes for a session
     #[allow(dead_code)] // Will be called by session manager
     pub async fn on_session_end(&self, session_id: &str) {
         info!("Cleaning up processes for session: {}", session_id);
-        let mut reg = self.process_registry.write().await;
+        let session_entries = {
+            let mut reg = self.process_registry.write().await;
 
-        // Get all processes for this session
-        let session_processes: Vec<String> = reg
-            .entries
-            .values()
-            .filter(|e| e.session_id == session_id)
-            .map(|e| e.id.clone())
-            .collect();
+            let session_process_ids: Vec<String> = reg
+                .entries
+                .values()
+                .filter(|entry| entry.session_id == session_id)
+                .map(|entry| entry.id.clone())
+                .collect();
 
-        let process_count = session_processes.len();
+            session_process_ids
+                .into_iter()
+                .filter_map(|id| {
+                    if let Some(token) = reg.cancellation_tokens.get(&id) {
+                        token.cancel();
+                    }
 
-        for id in session_processes {
-            // Cancel process via token first
-            if let Some(token) = reg.cancellation_tokens.get(&id) {
-                token.cancel();
-            }
+                    let entry = reg.entries.remove(&id)?;
+                    reg.cancellation_tokens.remove(&id);
+                    reg.completion_notifiers.remove(&id);
+                    Some((id, entry))
+                })
+                .collect::<Vec<_>>()
+        };
 
-            if let Some(entry) = reg.entries.remove(&id) {
-                // Remove cancellation token and completion notifier
-                reg.cancellation_tokens.remove(&id);
-                reg.completion_notifiers.remove(&id);
-
-                // Kill running processes
-                if let Some(pid) = entry.pid {
-                    if terminal_manager::is_active_process_status(&entry.status) {
-                        info!("Killing running process {} (PID {})", id, pid);
-
-                        #[cfg(unix)]
-                        {
-                            // Unix: send SIGTERM
-                            use std::process::Command;
-                            let mut cmd = Command::new("kill");
-                            cmd.arg("-TERM").arg(pid.to_string());
-                            crate::utils::env::apply_isolated_env(&mut cmd);
-                            let _ = cmd.output();
-                        }
-
-                        #[cfg(windows)]
-                        {
-                            // Windows: use taskkill
-                            use std::os::windows::process::CommandExt;
-                            use std::process::Command;
-                            let mut cmd = Command::new("taskkill");
-                            cmd.args(["/PID", &pid.to_string(), "/F"]);
-                            crate::utils::env::apply_isolated_env(&mut cmd);
-                            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-                            let _ = cmd.output();
-                        }
+        let process_count = session_entries.len();
+        for (id, entry) in session_entries {
+            if let Some(pid) = entry.pid {
+                if terminal_manager::is_active_process_status(&entry.status) {
+                    info!("Killing process tree {} (PID {})", id, pid);
+                    if let Err(error) = tokio::task::spawn_blocking(move || {
+                        crate::utils::process::force_kill_process_tree(pid)
+                    })
+                    .await
+                    .map_err(crate::utils::process::describe_join_error)
+                    .and_then(|result| result.map_err(|error| error.to_string()))
+                    {
+                        tracing::warn!(
+                            "Failed to kill process tree {} (PID {}): {}",
+                            id,
+                            pid,
+                            error
+                        );
                     }
                 }
+            }
 
-                // Remove output directory
-                let output_dir = std::path::PathBuf::from(&entry.stdout_path)
-                    .parent()
-                    .map(|p| p.to_path_buf());
-                if let Some(dir) = output_dir {
-                    let _ = tokio::fs::remove_dir_all(&dir).await;
-                    info!("Removed output directory for process: {}", id);
-                }
+            let output_dir = std::path::PathBuf::from(&entry.stdout_path)
+                .parent()
+                .map(|path| path.to_path_buf());
+            if let Some(dir) = output_dir {
+                let _ = tokio::fs::remove_dir_all(&dir).await;
+                info!("Removed output directory for process: {}", id);
             }
         }
 
@@ -887,6 +969,139 @@ impl Drop for WorkspaceServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::builtin::workspace::{
+        InteractiveShellInputType, PendingShellExecution, StdinDelivery,
+    };
+
+    #[tokio::test]
+    async fn kill_session_processes_marks_only_owned_processes_and_retains_output() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let session_id = "cancel-session";
+        let other_session_id = "other-session";
+        let session_manager = Arc::new(
+            crate::session::SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+
+        let retained_output = temp_dir.path().join("cancel-session").join("stdout.log");
+        std::fs::create_dir_all(retained_output.parent().expect("output parent"))
+            .expect("output directory");
+        std::fs::write(&retained_output, "partial output").expect("output file");
+
+        let process_entry =
+            |id: &str, owner: &str, stdout_path: &Path| terminal_manager::ProcessEntry {
+                id: id.to_string(),
+                name: None,
+                session_id: owner.to_string(),
+                command: "long-running-command".to_string(),
+                status: terminal_manager::ProcessStatus::Running,
+                pid: None,
+                exit_code: None,
+                started_at: chrono::Utc::now(),
+                finished_at: None,
+                stdout_path: stdout_path.to_string_lossy().to_string(),
+                stderr_path: stdout_path.to_string_lossy().to_string(),
+                stdout_size: 0,
+                stderr_size: 0,
+                last_poll_at: None,
+                poll_count: 0,
+                poll_tracker: crate::agent::poll_tracker::PollTracker::default(),
+                first_running_poll_at: None,
+            };
+
+        let other_output = temp_dir.path().join("other").join("stdout.log");
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        {
+            let mut registry = server.process_registry.write().await;
+            registry.entries.insert(
+                "owned-process".to_string(),
+                process_entry("owned-process", session_id, &retained_output),
+            );
+            let mut starting_process =
+                process_entry("owned-starting", session_id, &retained_output);
+            starting_process.status = terminal_manager::ProcessStatus::Starting;
+            registry
+                .entries
+                .insert("owned-starting".to_string(), starting_process);
+            registry.entries.insert(
+                "foreign-process".to_string(),
+                process_entry("foreign-process", other_session_id, &other_output),
+            );
+        }
+        server.pending_executions.insert(PendingShellExecution {
+            execution_id: "interactive-1".to_string(),
+            session_id: session_id.to_string(),
+            executable_command: "read-host".to_string(),
+            display_command: "read-host".to_string(),
+            run_mode: "sync".to_string(),
+            timeout: 30,
+            created_at: chrono::Utc::now(),
+            prompt: "Input".to_string(),
+            input_type: InteractiveShellInputType::Text,
+            stdin_delivery: StdinDelivery::Host,
+            response_tx: Some(response_tx),
+        });
+
+        assert_eq!(
+            server
+                .kill_session_processes(session_id)
+                .await
+                .expect("cancel resources"),
+            2
+        );
+
+        let registry = server.process_registry.read().await;
+        let owned = registry
+            .entries
+            .get("owned-process")
+            .expect("owned process");
+        assert_eq!(owned.status, terminal_manager::ProcessStatus::Killed);
+        assert!(owned.finished_at.is_some());
+        assert_eq!(
+            registry
+                .entries
+                .get("owned-starting")
+                .expect("starting process")
+                .status,
+            terminal_manager::ProcessStatus::Killed
+        );
+        assert_eq!(
+            registry
+                .entries
+                .get("foreign-process")
+                .expect("foreign process")
+                .status,
+            terminal_manager::ProcessStatus::Running
+        );
+        drop(registry);
+
+        assert!(retained_output.exists());
+        assert!(matches!(
+            response_rx.await.expect("pending response"),
+            PendingShellInputResolution::Cancelled
+        ));
+    }
+
+    #[tokio::test]
+    async fn force_kills_persistent_shell_without_leaving_manager_entry() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let workspace_path = temp_dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace_path).expect("workspace directory");
+        let manager = persistent_shell::PersistentShellManager::new();
+
+        manager
+            .get_or_create_shell("persistent-cancel".to_string(), workspace_path)
+            .await
+            .expect("persistent shell");
+        assert_eq!(manager.shell_count().await, 1);
+
+        assert!(manager
+            .force_kill_shell("persistent-cancel")
+            .await
+            .expect("force kill shell"));
+        assert_eq!(manager.shell_count().await, 0);
+    }
 
     #[test]
     fn test_extract_teamwork_alias_relative_path() {

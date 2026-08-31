@@ -89,6 +89,30 @@ describe('PendingApprovalWidget', () => {
     });
   });
 
+  it('does not respond when another Escape consumer already prevented the event', async () => {
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+    const preventEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', preventEscape);
+    render(
+      <PendingApprovalWidget
+        approvals={[standardApproval]}
+        executionMode="normal"
+        onRespond={onRespond}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onRespond).not.toHaveBeenCalled();
+    window.removeEventListener('keydown', preventEscape);
+  });
+
   it('ignores Enter while typing in an input', async () => {
     const onRespond = vi.fn().mockResolvedValue(undefined);
 

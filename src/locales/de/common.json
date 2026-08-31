@@ -848,6 +848,19 @@
       "loadingOlder": "Ältere Nachrichten werden geladen...",
       "scrollToLoadOlder": "Nach oben scrollen, um ältere Nachrichten zu laden"
     },
+    "approval": {
+      "hardTitle": "Erweiterte Genehmigung erforderlich",
+      "title": "Genehmigung erforderlich",
+      "hardDescriptionYolo": "Der YOLO-Modus ist aktiviert, aber diese risikoreiche Aktion erfordert weiterhin eine manuelle Genehmigung.",
+      "hardDescription": "Diese risikoreiche Aktion erfordert eine ausdrückliche Genehmigung.",
+      "description": "Der Agent möchte dieses Tool ausführen.",
+      "hardBadge": "Erweiterte Genehmigung",
+      "standardBadge": "Standardgenehmigung",
+      "arguments": "Argumente",
+      "reject": "Ablehnen",
+      "hardApprove": "Risikoreiche Aktion genehmigen",
+      "approve": "Genehmigen"
+    },
     "draft": {
       "send": "Nachricht senden",
       "attachFiles": "Dateien anhängen",
@@ -1015,6 +1028,11 @@
       "cancelAriaLabel": "Anfrage abbrechen",
       "cancellingTooltip": "Wird abgebrochen...",
       "cancelTooltip": "Abbrechen",
+      "cancelOutcome": {
+        "processStopped": "{{count}} Workspace-Prozess(e) wurden beendet. Der Workflow wird fortgesetzt.",
+        "workflowPaused": "Der Workflow wurde abgebrochen und pausiert.",
+        "noActiveWork": "Es gab keinen aktiven Workflow zum Abbrechen."
+      },
       "resumeAriaLabel": "Workflow fortsetzen",
       "resumeTooltip": "Fortsetzen",
       "sendAriaLabel": "Nachricht senden",

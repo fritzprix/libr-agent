@@ -848,6 +848,19 @@
       "loadingOlder": "Cargando mensajes anteriores...",
       "scrollToLoadOlder": "Desplácese hacia arriba para cargar mensajes anteriores"
     },
+    "approval": {
+      "hardTitle": "Se requiere aprobación reforzada",
+      "title": "Se requiere aprobación",
+      "hardDescriptionYolo": "El modo YOLO está activado, pero esta acción de alto riesgo aún requiere aprobación manual.",
+      "hardDescription": "Esta acción de alto riesgo requiere aprobación explícita.",
+      "description": "El agente quiere ejecutar esta herramienta.",
+      "hardBadge": "Aprobación reforzada",
+      "standardBadge": "Aprobación estándar",
+      "arguments": "Argumentos",
+      "reject": "Rechazar",
+      "hardApprove": "Aprobar acción de alto riesgo",
+      "approve": "Aprobar"
+    },
     "draft": {
       "send": "Enviar mensaje",
       "attachFiles": "Adjuntar archivos",
@@ -1015,6 +1028,11 @@
       "cancelAriaLabel": "Cancelar solicitud",
       "cancellingTooltip": "Cancelando...",
       "cancelTooltip": "Cancelar",
+      "cancelOutcome": {
+        "processStopped": "Se detuvieron {{count}} proceso(s) del espacio de trabajo. El flujo continuará.",
+        "workflowPaused": "El flujo se canceló y se pausó.",
+        "noActiveWork": "No había ningún flujo activo que cancelar."
+      },
       "resumeAriaLabel": "Reanudar flujo de trabajo",
       "resumeTooltip": "Reanudar",
       "sendAriaLabel": "Enviar mensaje",

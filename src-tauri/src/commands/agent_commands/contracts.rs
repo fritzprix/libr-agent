@@ -119,6 +119,23 @@ pub struct AgentResponse {
     pub data: Option<serde_json::Value>,
 }
 
+/// Describes which scope was affected by a workflow cancel request.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CancelWorkflowOutcome {
+    ProcessStopped,
+    WorkflowPaused,
+    NoActiveWork,
+}
+
+/// Result returned after handling a workflow cancel request.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelWorkflowResult {
+    pub outcome: CancelWorkflowOutcome,
+    pub stopped_resources: usize,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentOpenSessionResponse {
@@ -155,6 +172,48 @@ pub struct ToolExecutionResult {
     pub structured_content: Option<serde_json::Value>,
     pub error: Option<String>,
     pub is_error: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancellation: Option<ToolCancellation>,
+}
+
+/// Describes why a tool result was cancelled.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCancellation {
+    pub cancelled_by: ToolCancellationSource,
+}
+
+impl ToolCancellation {
+    pub fn user() -> Self {
+        Self {
+            cancelled_by: ToolCancellationSource::User,
+        }
+    }
+
+    pub fn display_message(&self) -> &'static str {
+        match self.cancelled_by {
+            ToolCancellationSource::User => "The operation was cancelled by the user.",
+            ToolCancellationSource::Timeout => "The operation was cancelled because it timed out.",
+            ToolCancellationSource::System => "The operation was cancelled by the system.",
+        }
+    }
+
+    pub fn cancelled_by_label(&self) -> &'static str {
+        match self.cancelled_by {
+            ToolCancellationSource::User => "user",
+            ToolCancellationSource::Timeout => "timeout",
+            ToolCancellationSource::System => "system",
+        }
+    }
+}
+
+/// Source of a tool cancellation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolCancellationSource {
+    User,
+    Timeout,
+    System,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -989,6 +989,11 @@
       "cancelAriaLabel": "リクエストをキャンセル",
       "cancellingTooltip": "キャンセル中...",
       "cancelTooltip": "キャンセル",
+      "cancelOutcome": {
+        "processStopped": "ワークスペースのプロセス {{count}} 件を停止しました。ワークフローは続行されます。",
+        "workflowPaused": "ワークフローをキャンセルして一時停止しました。",
+        "noActiveWork": "キャンセルできるアクティブなワークフローはありません。"
+      },
       "resumeAriaLabel": "ワークフローを再開",
       "resumeTooltip": "再開",
       "sendAriaLabel": "メッセージを送信",
@@ -1098,6 +1103,19 @@
     "messages": {
       "loadingOlder": "過去のメッセージを読み込み中...",
       "scrollToLoadOlder": "上にスクロールして過去のメッセージを読み込む"
+    },
+    "approval": {
+      "hardTitle": "強力な承認が必要です",
+      "title": "承認が必要です",
+      "hardDescriptionYolo": "YOLO モードが有効ですが、この高リスク操作には手動承認が必要です。",
+      "hardDescription": "この高リスク操作には明示的な承認が必要です。",
+      "description": "エージェントがこのツールを実行しようとしています。",
+      "hardBadge": "強力な承認",
+      "standardBadge": "標準承認",
+      "arguments": "引数",
+      "reject": "拒否",
+      "hardApprove": "高リスク操作を承認",
+      "approve": "承認"
     },
     "start": {
       "assistantNotFound": "アシスタントが見つかりません",

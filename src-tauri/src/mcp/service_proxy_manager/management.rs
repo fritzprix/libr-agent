@@ -121,6 +121,122 @@ impl MCPServiceProxyManager {
         self.proxies.read().await.get(session_id).cloned()
     }
 
+    /// Cancel resources owned by a session without destroying its proxy.
+    ///
+    /// Soft workflow cancellation keeps the proxy alive so the session can be
+    /// resumed, therefore resource cleanup must be routed through the existing
+    /// session-bound builtin server instances.
+    pub async fn kill_session_processes(&self, session_id: &str) -> Result<usize, String> {
+        let Some(proxy) = self.get_proxy(session_id).await else {
+            log::debug!(
+                "No MCP proxy found while cancelling resources for session {}",
+                session_id
+            );
+            return Ok(0);
+        };
+
+        proxy.kill_session_processes().await
+    }
+
+    /// Mark that a user cancel stopped a foreground process. The next tool
+    /// result consumes this marker so the workflow can continue normally.
+    pub async fn mark_process_cancel_pending(&self, session_id: &str) {
+        self.process_cancel_pending
+            .lock()
+            .await
+            .insert(session_id.to_string());
+    }
+
+    /// Consume the foreground-process cancellation marker for a session.
+    pub async fn take_process_cancel_pending(&self, session_id: &str) -> bool {
+        self.process_cancel_pending.lock().await.remove(session_id)
+    }
+
+    /// Clear any stale process-only cancellation marker before a new workflow.
+    pub async fn clear_process_cancel_pending(&self, session_id: &str) {
+        self.process_cancel_pending.lock().await.remove(session_id);
+        self.clear_process_cancel_retry_state(session_id).await;
+    }
+
+    /// Clear the process-cancellation retry budget after a non-cancelled tool
+    /// execution or when a session starts a new workflow.
+    pub async fn clear_process_cancel_retry_state(&self, session_id: &str) {
+        self.process_cancel_retry_states
+            .lock()
+            .await
+            .remove(session_id);
+        self.process_cancel_retry_counts
+            .lock()
+            .await
+            .remove(session_id);
+    }
+
+    /// Remember which exact tool call was interrupted by process cancellation
+    /// without retaining potentially sensitive raw arguments.
+    pub async fn record_process_cancelled_tool(
+        &self,
+        session_id: &str,
+        tool_name: &str,
+        arguments: &str,
+    ) {
+        self.process_cancel_retry_states.lock().await.insert(
+            session_id.to_string(),
+            super::ProcessCancelRetryState {
+                tool_name: tool_name.to_string(),
+                arguments_digest: super::process_cancel_arguments_digest(arguments),
+            },
+        );
+    }
+
+    /// Consume the session's single retry for a previously cancelled tool.
+    ///
+    /// The tool name and argument fingerprint are retained for diagnostics, but
+    /// the session-wide counter also blocks a retry that changes arguments to
+    /// bypass the exact-match check.
+    pub async fn process_cancel_retry_exhausted(
+        &self,
+        session_id: &str,
+        tool_name: &str,
+        arguments: &str,
+    ) -> bool {
+        let exact_match = {
+            let states = self.process_cancel_retry_states.lock().await;
+            let Some(state) = states.get(session_id) else {
+                return false;
+            };
+            state.tool_name == tool_name
+                && state.arguments_digest == super::process_cancel_arguments_digest(arguments)
+        };
+
+        let mut retry_counts = self.process_cancel_retry_counts.lock().await;
+        let retry_count = retry_counts.entry(session_id.to_string()).or_default();
+        if *retry_count >= super::MAX_PROCESS_CANCEL_RETRIES {
+            return true;
+        }
+
+        *retry_count += 1;
+        if !exact_match {
+            log::warn!(
+                "Process-cancel retry changed tool or arguments for session {}; consuming session retry budget",
+                session_id
+            );
+        }
+        false
+    }
+
+    /// Clear retry state when a tool execution was not stopped by process
+    /// cancel and no earlier tool in the same batch was process-cancelled.
+    pub async fn clear_process_cancel_retry_after_tool(
+        &self,
+        session_id: &str,
+        process_was_cancelled: bool,
+        process_was_cancelled_in_batch: bool,
+    ) {
+        if !process_was_cancelled && !process_was_cancelled_in_batch {
+            self.clear_process_cancel_retry_state(session_id).await;
+        }
+    }
+
     /// Per-session creation mutex used by create / ensure_builtin / destroy.
     ///
     /// The outer `creation_guards` map lock is held only long enough to insert or look up
@@ -153,6 +269,15 @@ impl MCPServiceProxyManager {
         // 2. Cleanup readiness signal (drops Sender, waking any waiters with RecvError)
         self.proxy_readiness.write().await.remove(session_id);
         self.runtime_states.write().await.remove(session_id);
+        self.process_cancel_pending.lock().await.remove(session_id);
+        self.process_cancel_retry_states
+            .lock()
+            .await
+            .remove(session_id);
+        self.process_cancel_retry_counts
+            .lock()
+            .await
+            .remove(session_id);
 
         // 3. Shutdown stdio processes
         if let Some(stdio_mgr) = self.session_stdio_managers.write().await.remove(session_id) {

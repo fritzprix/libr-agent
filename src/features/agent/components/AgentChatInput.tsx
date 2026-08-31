@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui';
 import { Send, Square, Loader2, Play } from 'lucide-react';
+import { toast } from 'sonner';
 import type { AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
@@ -48,8 +49,14 @@ interface AgentChatInputProps {
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
-  const { session, messages, executionMode, isProxyReady } =
-    useAgentSessionState();
+  const {
+    session,
+    messages,
+    executionMode,
+    isProxyReady,
+    pendingApprovals,
+    pendingInteractiveShellPrompt,
+  } = useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
   const {
     submit,
@@ -62,6 +69,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   } = useAgentChat();
   const { isCompacting } = useLLMService();
   const [pendingCancel, setPendingCancel] = useState(false);
+  const pendingCancelRef = useRef(false);
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
   );
@@ -155,6 +163,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     );
   }, [workflowStatus, session?.id, isCompacting]);
 
+  const isWorkflowActive =
+    workflowStatus === 'busy' || workflowStatus === 'queued';
+  const isCompactionOnly =
+    !isWorkflowActive && Boolean(session?.id && isCompacting(session.id));
   const isPaused = workflowStatus === 'paused' && !isBusy;
 
   const isSendDisabled = useMemo(() => {
@@ -268,20 +280,93 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       toolResults.length,
       fileResults.length,
       playbookResults.length,
+      commandResults.length,
     ],
   );
 
   const handleCancel = useCallback(async () => {
+    if (pendingCancelRef.current) {
+      return;
+    }
+
+    pendingCancelRef.current = true;
     setPendingCancel(true);
     try {
-      await cancel();
-      logger.info('Workflow cancelled successfully');
+      const cancellationResult = await cancel();
+      if (cancellationResult) {
+        switch (cancellationResult.outcome) {
+          case 'processStopped':
+            toast.info(
+              t('agent.input.cancelOutcome.processStopped', {
+                count: cancellationResult.stoppedResources,
+              }),
+            );
+            break;
+          case 'workflowPaused':
+            toast.info(t('agent.input.cancelOutcome.workflowPaused'));
+            break;
+          case 'noActiveWork':
+            logger.info('Cancellation request found no active workflow');
+            break;
+        }
+        logger.info('Cancellation request completed', cancellationResult);
+      } else {
+        logger.info('Cancellation request completed without outcome data');
+      }
     } catch (err) {
       logger.error('Failed to cancel workflow:', err);
     } finally {
+      pendingCancelRef.current = false;
       setPendingCancel(false);
     }
-  }, [cancel]);
+  }, [cancel, t]);
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key !== 'Escape' ||
+        event.defaultPrevented ||
+        pendingCancelRef.current ||
+        !isWorkflowActive ||
+        isCompactionOnly ||
+        pendingApprovals.length > 0 ||
+        Boolean(pendingInteractiveShellPrompt)
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target !== textareaRef.current &&
+        (target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+          target.closest('[role="dialog"], [role="alertdialog"]'))
+      ) {
+        return;
+      }
+
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]):not([data-state="closed"]), [role="alertdialog"]:not([aria-hidden="true"]):not([data-state="closed"])',
+        )
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleCancel();
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, [
+    handleCancel,
+    isCompactionOnly,
+    isWorkflowActive,
+    pendingApprovals.length,
+    pendingInteractiveShellPrompt,
+  ]);
 
   const handleResume = useCallback(async () => {
     try {

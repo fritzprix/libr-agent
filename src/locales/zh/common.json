@@ -848,6 +848,19 @@
       "loadingOlder": "正在加载更早的消息...",
       "scrollToLoadOlder": "向上滚动以加载更早的消息"
     },
+    "approval": {
+      "hardTitle": "需要高级审批",
+      "title": "需要审批",
+      "hardDescriptionYolo": "YOLO 模式已开启，但此高风险操作仍需要手动审批。",
+      "hardDescription": "此高风险操作需要明确审批。",
+      "description": "代理希望执行此工具。",
+      "hardBadge": "高级审批",
+      "standardBadge": "标准审批",
+      "arguments": "参数",
+      "reject": "拒绝",
+      "hardApprove": "批准高风险操作",
+      "approve": "批准"
+    },
     "draft": {
       "send": "发送消息",
       "attachFiles": "附加文件",
@@ -1015,6 +1028,11 @@
       "cancelAriaLabel": "取消请求",
       "cancellingTooltip": "正在取消...",
       "cancelTooltip": "取消",
+      "cancelOutcome": {
+        "processStopped": "已停止 {{count}} 个工作区进程。工作流将继续。",
+        "workflowPaused": "工作流已取消并暂停。",
+        "noActiveWork": "没有可取消的活动工作流。"
+      },
       "resumeAriaLabel": "恢复工作流",
       "resumeTooltip": "恢复",
       "sendAriaLabel": "发送消息",

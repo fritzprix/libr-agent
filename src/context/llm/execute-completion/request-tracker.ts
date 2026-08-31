@@ -157,6 +157,11 @@ export function useSessionRequestTracker(): UseSessionRequestTrackerReturn {
       const previousRequestId = activeRequestIdsRef.current.get(sessionId);
       const previousController = abortControllersRef.current.get(sessionId);
       if (previousController && previousRequestId) {
+        logger.info('Superseding active completion request', {
+          sessionId,
+          previousResponseMessageId: previousRequestId,
+          nextResponseMessageId: responseMessageId,
+        });
         terminatedRequestsRef.current.set(
           getRequestKey(sessionId, previousRequestId),
           'superseded',

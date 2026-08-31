@@ -405,7 +405,10 @@ impl AgentSessionManager {
     }
 
     /// Cancel a running workflow
-    pub async fn cancel_workflow(&self, session_id: String) -> Result<(), String> {
+    pub async fn cancel_workflow(
+        &self,
+        session_id: String,
+    ) -> Result<crate::commands::agent_commands::CancelWorkflowResult, String> {
         crate::agent::workflow::cancel_workflow(
             &self.session_repo,
             &self.active_sessions,

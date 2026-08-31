@@ -23,13 +23,13 @@ def run_git_command(args, cwd):
         res = subprocess.run(["git"] + args, cwd=cwd, capture_output=True, text=True, check=True, encoding='utf-8', errors='replace')
         return res.stdout.strip()
     except Exception:
-        return ""
+        return None
 
 def get_git_diff_files(since_ref, cwd):
     cmd = ["diff", "--name-status", since_ref, "HEAD"]
     out = run_git_command(cmd, cwd)
-    if not out:
-        out = run_git_command(["diff", "--name-status", "HEAD~1", "HEAD"], cwd)
+    if out is None:
+        out = run_git_command(["diff", "--name-status", "HEAD~1", "HEAD"], cwd) or ""
     
     status_map = {}
     for line in out.splitlines():

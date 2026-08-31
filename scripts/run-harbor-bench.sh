@@ -28,6 +28,7 @@ SKIP_HEALTH=0
 DRY_RUN=0
 DEBUG_HARBOR=0
 VERIFIER_ENV=()
+ENV_FILE=""
 
 usage() {
   cat <<'EOF'

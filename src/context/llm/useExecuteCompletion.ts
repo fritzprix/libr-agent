@@ -10,7 +10,11 @@ import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
 import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
-import { isAbortError, isSupersededRequestError } from './types';
+import {
+  createUnexpectedCompletionAbortError,
+  isAbortError,
+  isSupersededRequestError,
+} from './types';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/lib/services/settings-service';
@@ -49,6 +53,24 @@ export function useExecuteCompletion({
     const terminatedRequests = tracker.terminatedRequestsRef;
 
     return () => {
+      const activeRequests = Array.from(
+        abortControllers.current?.keys() ?? [],
+      ).map((sessionId) => ({
+        sessionId,
+        responseMessageId: activeRequestIds.current?.get(sessionId),
+      }));
+      logger.info('LLM completion context cleanup started', {
+        activeRequestCount: activeRequests.length,
+        activeRequests,
+      });
+      if (activeRequests.length > 0) {
+        logger.warn(
+          'Aborting active completion requests during context cleanup',
+          {
+            activeRequests,
+          },
+        );
+      }
       abortControllers.current?.forEach((controller) => controller.abort());
       abortControllers.current?.clear();
 
@@ -329,12 +351,28 @@ export function useExecuteCompletion({
       } catch (error) {
         const isAborted = isAbortError(error);
         const isSuperseded = isSupersededRequestError(error);
+        const terminationReason = tracker.getRequestTerminationReason(
+          sessionId,
+          responseMessageId,
+        );
+        const isIntentionallyTerminated =
+          terminationReason === 'aborted' || terminationReason === 'superseded';
+        const isUnexpectedAbort = isAborted && !isIntentionallyTerminated;
+        const activeRequestId =
+          tracker.activeRequestIdsRef.current.get(sessionId);
 
         if (isAborted || isSuperseded) {
           logger.info('Completion request ended without surfacing an error', {
             sessionId,
             responseMessageId,
             reason: isSuperseded ? 'superseded' : 'aborted',
+            terminationReason: terminationReason ?? 'not-marked',
+            activeRequestId,
+            abortSignalAborted: abortController.signal.aborted,
+            activeControllerMatches:
+              tracker.abortControllersRef.current.get(sessionId) ===
+              abortController,
+            isUnexpectedAbort,
           });
         } else {
           logger.error('Completion request failed', error);
@@ -343,7 +381,9 @@ export function useExecuteCompletion({
         if (tracker.isCurrentRequest(sessionId, responseMessageId)) {
           updateSessionStatus(
             sessionId,
-            isAborted || isSuperseded ? 'idle' : 'error',
+            (isAborted && !isUnexpectedAbort) || isSuperseded
+              ? 'idle'
+              : 'error',
           );
 
           setStreamingMessages((prev) => {
@@ -368,7 +408,9 @@ export function useExecuteCompletion({
           tracker.getRequestKey(sessionId, responseMessageId),
         );
 
-        throw error;
+        throw isUnexpectedAbort
+          ? createUnexpectedCompletionAbortError()
+          : error;
       }
     },
     [tracker, settingsRef, updateSessionStatus, setStreamingMessages],

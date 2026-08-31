@@ -368,6 +368,17 @@ impl MCPServiceProxy {
         self.builtin_servers.len()
     }
 
+    /// Cancel session-owned resources in every builtin server for this proxy.
+    pub async fn kill_session_processes(&self) -> Result<usize, String> {
+        let mut killed_count = 0;
+
+        for server in self.builtin_servers.values() {
+            killed_count += server.kill_session_processes(&self.session_id).await?;
+        }
+
+        Ok(killed_count)
+    }
+
     /// Get tools from a specific builtin server
     pub fn get_builtin_server_tools(&self, server_id: &str) -> Vec<super::types::MCPTool> {
         self.builtin_servers

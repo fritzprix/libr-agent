@@ -210,10 +210,18 @@ impl WorkspaceServer {
             {
                 let mut reg = registry.write().await;
                 if let Some(entry) = reg.entries.get_mut(&pid_copy) {
-                    entry.status = terminal_manager::ProcessStatus::Running;
+                    if entry.status == terminal_manager::ProcessStatus::Starting {
+                        entry.status = terminal_manager::ProcessStatus::Running;
+                    }
                 }
-                reg.streaming_handles
-                    .insert(pid_copy.clone(), streaming.clone());
+                if reg
+                    .entries
+                    .get(&pid_copy)
+                    .is_some_and(|entry| terminal_manager::is_active_process_status(&entry.status))
+                {
+                    reg.streaming_handles
+                        .insert(pid_copy.clone(), streaming.clone());
+                }
             }
 
             // Update OS PID as soon as the child is spawned (for stopProcess).
@@ -221,10 +229,21 @@ impl WorkspaceServer {
                 let registry = registry.clone();
                 let pid_copy = pid_copy.clone();
                 tokio::spawn(async move {
-                    if let Ok(pid) = pid_rx.await {
+                    if let Ok(Some(pid)) = pid_rx.await {
                         let mut reg = registry.write().await;
-                        if let Some(entry) = reg.entries.get_mut(&pid_copy) {
-                            entry.pid = pid;
+                        let killed = if let Some(entry) = reg.entries.get_mut(&pid_copy) {
+                            entry.pid = Some(pid);
+                            entry.status == terminal_manager::ProcessStatus::Killed
+                        } else {
+                            false
+                        };
+                        drop(reg);
+
+                        if killed {
+                            let _ = tokio::task::spawn_blocking(move || {
+                                crate::utils::process::force_kill_process_tree(pid)
+                            })
+                            .await;
                         }
                     }
                 });

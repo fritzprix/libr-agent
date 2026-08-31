@@ -201,6 +201,9 @@ impl MCPServiceProxyManager {
             proxy_readiness: Arc::new(RwLock::new(HashMap::new())),
             creation_guards: Arc::new(Mutex::new(HashMap::new())),
             runtime_states: Arc::new(RwLock::new(HashMap::new())),
+            process_cancel_pending: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            process_cancel_retry_states: Arc::new(Mutex::new(HashMap::new())),
+            process_cancel_retry_counts: Arc::new(Mutex::new(HashMap::new())),
         };
 
         manager.start_cleanup_task();

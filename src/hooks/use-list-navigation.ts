@@ -62,6 +62,14 @@ export function useListNavigation({
     if (itemCount === 0) return;
 
     const handler = (e: KeyboardEvent) => {
+      if (
+        e.defaultPrevented ||
+        (e.target instanceof HTMLElement &&
+          e.target.closest('[role="dialog"], [role="alertdialog"]'))
+      ) {
+        return;
+      }
+
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setActiveIndex((index) => index + 1);

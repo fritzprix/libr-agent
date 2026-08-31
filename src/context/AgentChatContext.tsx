@@ -19,7 +19,11 @@ import {
   useAgentSessionState,
 } from '@/context/AgentSessionContext';
 import type { AgentEventPayload } from '@/context/agent-session/types';
-import type { AgentResponse, InjectMessagesRequest } from '@/models/agent-ipc';
+import type {
+  AgentResponse,
+  CancelWorkflowResult,
+  InjectMessagesRequest,
+} from '@/models/agent-ipc';
 import type { Message, MessageError, RustMessage } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
 import type { ServiceContext } from '@/models/service-context';
@@ -83,7 +87,7 @@ interface AgentChatActionsContextValue {
   /**
    * Cancel the current workflow
    */
-  cancel: () => Promise<void>;
+  cancel: () => Promise<CancelWorkflowResult | undefined>;
 
   /**
    * Cancel a single waiting prompt without aborting the active turn.
@@ -433,9 +437,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     clearStreamingMessage(session.id);
 
     try {
-      await safeInvoke<AgentResponse>('agent_cancel_workflow', {
-        sessionId: session.id,
-      });
+      const response = await safeInvoke<AgentResponse<CancelWorkflowResult>>(
+        'agent_cancel_workflow',
+        {
+          sessionId: session.id,
+        },
+      );
+      return response.data;
     } catch (err) {
       logger.error('Failed to cancel workflow', err);
       const errorMessage = err instanceof Error ? err.message : String(err);

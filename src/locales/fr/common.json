@@ -848,6 +848,19 @@
       "loadingOlder": "Chargement des anciens messages...",
       "scrollToLoadOlder": "Faites défiler vers le haut pour charger les anciens messages"
     },
+    "approval": {
+      "hardTitle": "Approbation renforcée requise",
+      "title": "Approbation requise",
+      "hardDescriptionYolo": "Le mode YOLO est activé, mais cette action à haut risque nécessite toujours une approbation manuelle.",
+      "hardDescription": "Cette action à haut risque nécessite une approbation explicite.",
+      "description": "L’agent souhaite exécuter cet outil.",
+      "hardBadge": "Approbation renforcée",
+      "standardBadge": "Approbation standard",
+      "arguments": "Arguments",
+      "reject": "Refuser",
+      "hardApprove": "Approuver l’action à haut risque",
+      "approve": "Approuver"
+    },
     "draft": {
       "send": "Envoyer le message",
       "attachFiles": "Joindre des fichiers",
@@ -1015,6 +1028,11 @@
       "cancelAriaLabel": "Annuler la requête",
       "cancellingTooltip": "Annulation...",
       "cancelTooltip": "Annuler",
+      "cancelOutcome": {
+        "processStopped": "{{count}} processus de l’espace de travail ont été arrêtés. Le workflow va continuer.",
+        "workflowPaused": "Le workflow a été annulé et mis en pause.",
+        "noActiveWork": "Aucun workflow actif à annuler."
+      },
       "resumeAriaLabel": "Reprendre le workflow",
       "resumeTooltip": "Reprendre",
       "sendAriaLabel": "Envoyer le message",
