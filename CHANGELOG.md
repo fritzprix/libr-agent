@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### 🐛 Fixes & Hardening
+
+- **Session Context Prompt-Cache Slot (Option B)**: Anchor synthetic `<session-context>` at the **first** assistant after the latest external user (`[u, SC, a1, t1, a2, …]`) instead of before the *latest* assistant. Multi-step tool loops no longer migrate the SC slot each `aN`, which was collapsing the shared message prefix and tanking prompt-cache hit rates after 0.9.6 Phase 2. Absolute-tail SC remains ruled out (TB2.1 BM).
+
 ## [0.9.6] - 2026-08-25
 
 ### 🚀 Features & Performance

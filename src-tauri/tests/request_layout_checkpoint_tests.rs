@@ -143,13 +143,14 @@ fn synthetic_session_context_is_placed_before_latest_external_user_on_first_turn
 }
 
 #[test]
-fn synthetic_session_context_is_placed_before_previous_assistant() {
+fn synthetic_session_context_is_placed_before_latest_external_user_when_awaiting_reply() {
+    // Latest `u` has no assistant after it yet → SC before that `u` (not absolute tail).
     let messages = vec![
         make_user_message("user-1", Some(MessageSource::Ui)),
         make_assistant_message("assistant-1"),
         make_user_message("user-2", Some(MessageSource::Ui)),
     ];
-    assert_eq!(synthetic_session_context_insert_index(&messages), 1);
+    assert_eq!(synthetic_session_context_insert_index(&messages), 2);
 
     let layout = build_request_layout(
         "openai",
@@ -160,13 +161,10 @@ fn synthetic_session_context_is_placed_before_previous_assistant() {
     );
 
     assert_eq!(layout.messages.len(), 4);
-    assert!(layout.messages[1].is_request_layout_scaffolding_message());
-    assert_eq!(layout.messages[2].id, "assistant-1");
+    assert_eq!(layout.messages[0].id, "user-1");
+    assert_eq!(layout.messages[1].id, "assistant-1");
+    assert!(layout.messages[2].is_request_layout_scaffolding_message());
     assert_eq!(layout.messages[3].id, "user-2");
-    assert_eq!(
-        layout.messages.last().map(|m| m.role.as_str()),
-        Some("user")
-    );
     assert!(!layout
         .messages
         .last()
@@ -175,7 +173,7 @@ fn synthetic_session_context_is_placed_before_previous_assistant() {
 }
 
 #[test]
-fn synthetic_session_context_is_placed_before_assistant_in_tool_loop() {
+fn synthetic_session_context_is_placed_before_first_assistant_in_tool_loop() {
     let messages = vec![
         make_user_message("user-1", Some(MessageSource::Ui)),
         make_assistant_message("assistant-1"),
@@ -198,6 +196,46 @@ fn synthetic_session_context_is_placed_before_assistant_in_tool_loop() {
         layout.messages.last().map(|m| m.role.as_str()),
         Some("tool")
     );
+}
+
+#[test]
+fn synthetic_session_context_stays_fixed_across_multi_assistant_tool_loop() {
+    // Regression: latest-assistant anchoring moved SC every aN and collapsed cache.
+    let step1 = vec![
+        make_user_message("user-1", Some(MessageSource::Ui)),
+        make_assistant_message("assistant-1"),
+        make_tool_message("tool-1", "call-1"),
+    ];
+    let step2 = vec![
+        make_user_message("user-1", Some(MessageSource::Ui)),
+        make_assistant_message("assistant-1"),
+        make_tool_message("tool-1", "call-1"),
+        make_assistant_message("assistant-2"),
+        make_tool_message("tool-2", "call-2"),
+    ];
+    let step3 = vec![
+        make_user_message("user-1", Some(MessageSource::Ui)),
+        make_assistant_message("assistant-1"),
+        make_tool_message("tool-1", "call-1"),
+        make_assistant_message("assistant-2"),
+        make_tool_message("tool-2", "call-2"),
+        make_assistant_message("assistant-3"),
+    ];
+
+    assert_eq!(synthetic_session_context_insert_index(&step1), 1);
+    assert_eq!(synthetic_session_context_insert_index(&step2), 1);
+    assert_eq!(synthetic_session_context_insert_index(&step3), 1);
+
+    let layout = build_request_layout(
+        "openai",
+        "session-1",
+        Some("system".to_string()),
+        Some("background context".to_string()),
+        step2,
+    );
+    assert!(layout.messages[1].is_request_layout_scaffolding_message());
+    assert_eq!(layout.messages[2].id, "assistant-1");
+    assert_eq!(layout.messages[4].id, "assistant-2");
 }
 
 #[test]
@@ -228,7 +266,7 @@ fn synthetic_session_context_stays_before_compaction_overlay() {
 }
 
 #[test]
-fn synthetic_session_context_before_assistant_keeps_compaction_overlay_last() {
+fn synthetic_session_context_before_latest_user_keeps_compaction_overlay_last() {
     let messages = vec![
         make_user_message("user-1", Some(MessageSource::Ui)),
         make_assistant_message("assistant-1"),
@@ -238,7 +276,7 @@ fn synthetic_session_context_before_assistant_keeps_compaction_overlay_last() {
             Some(MessageSource::CompactionInstruction),
         ),
     ];
-    assert_eq!(synthetic_session_context_insert_index(&messages), 1);
+    assert_eq!(synthetic_session_context_insert_index(&messages), 2);
 
     let layout = build_request_layout(
         "openai",
@@ -248,8 +286,9 @@ fn synthetic_session_context_before_assistant_keeps_compaction_overlay_last() {
         messages,
     );
 
-    assert!(layout.messages[1].is_request_layout_scaffolding_message());
-    assert_eq!(layout.messages[2].id, "assistant-1");
+    assert_eq!(layout.messages[1].id, "assistant-1");
+    assert!(layout.messages[2].is_request_layout_scaffolding_message());
+    assert_eq!(layout.messages[3].id, "user-2");
     assert!(layout
         .messages
         .last()
@@ -281,8 +320,10 @@ fn lagged_snapshot_is_used_when_previous_assistant_exists() {
         state,
         messages,
     );
-    assert!(text_at(&layout.messages[1], 0).contains("previous-sc"));
-    assert!(!text_at(&layout.messages[1], 0).contains("current-sc"));
+    // Awaiting reply to user-2 → SC immediately before that user.
+    assert!(layout.messages[2].is_request_layout_scaffolding_message());
+    assert!(text_at(&layout.messages[2], 0).contains("previous-sc"));
+    assert!(!text_at(&layout.messages[2], 0).contains("current-sc"));
 }
 
 #[test]

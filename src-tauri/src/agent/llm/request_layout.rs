@@ -98,29 +98,46 @@ fn conversation_end_excluding_compaction_overlays(messages: &[Message]) -> usize
     end
 }
 
-/// Choose where to inject synthetic session context (Phase 2).
+/// Choose where to inject synthetic session context (Phase 2 / Option B).
+///
+/// Absolute tail is ruled out (TB2.1 BM: SC reads as user intent). Tracking the
+/// *latest* assistant is also wrong: each new `aN` in a tool loop moves SC and
+/// collapses the prompt-cache prefix.
 ///
 /// Priority:
 /// 1. Keep compaction overlays last (instruction attention).
-/// 2. Place context **immediately before** the latest assistant message
-///    (`response(tn−1)` / in-flight tool-calling assistant) so that response
-///    retains higher recency than environment telemetry.
-/// 3. If there is no prior assistant (first user turn), place immediately before
-///    the latest external user request so real user intent stays last.
-/// 4. Otherwise append at the (pre-compaction) tail.
+/// 2. Anchor to the latest **external** user request `u`:
+///    - If a response chain already exists after `u`, insert immediately before
+///      the **first** assistant after that `u` (`[u, SC, a1, t1, a2, …]`).
+///      The slot stays fixed for the whole tool loop.
+///    - If no assistant follows `u` yet, insert immediately before `u` so the
+///      real user request stays last (`[…, SC, u]` — not absolute tail when
+///      prior history exists).
+/// 3. No external user: before latest assistant, else pre-compaction tail.
 pub fn synthetic_session_context_insert_index(messages: &[Message]) -> usize {
     let end = conversation_end_excluding_compaction_overlays(messages);
     let window = &messages[..end];
+
+    if let Some(user_idx) = window
+        .iter()
+        .rposition(|message| message.is_external_request_message())
+    {
+        if let Some(offset) = window[user_idx + 1..]
+            .iter()
+            .position(|message| message.role == "assistant")
+        {
+            // Before first assistant of this user turn's response chain.
+            return user_idx + 1 + offset;
+        }
+        // Awaiting first completion for this user: keep real request last.
+        return user_idx;
+    }
 
     if let Some(assistant_idx) = window
         .iter()
         .rposition(|message| message.role == "assistant")
     {
         return assistant_idx;
-    }
-
-    if end > 0 && messages[end - 1].is_external_request_message() {
-        return end - 1;
     }
 
     end
