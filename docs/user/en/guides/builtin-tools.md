@@ -69,14 +69,25 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 
 ### 4. Browser (`browser__*`) _(Optional)_
 
-| Tool Name                   | Description                |
-| :-------------------------- | :------------------------- |
-| `browser__navigateToUrl`    | Navigate to target web URL |
-| `browser__clickElement`     | Click DOM element          |
-| `browser__inputText`        | Type text into web input   |
-| `browser__scrollPage`       | Scroll web page view       |
-| `browser__listInteractable` | Extract clickable elements |
-| `browser__evaluateJS`       | Execute custom JS snippet  |
+| Tool Name                   | Description                 |
+| :-------------------------- | :-------------------------- |
+| `browser__createSession`    | Start the browser session   |
+| `browser__closeSession`     | Close the browser session   |
+| `browser__navigateToUrl`    | Navigate to target web URL  |
+| `browser__getCurrentUrl`    | Get the current page URL    |
+| `browser__getPageTitle`     | Get the current page title  |
+| `browser__getPageContent`   | Extract page content        |
+| `browser__fetchUrl`         | Fetch URL without a session |
+| `browser__clickElement`     | Click DOM element           |
+| `browser__inputText`        | Type text into web input    |
+| `browser__scrollPage`       | Scroll web page view        |
+| `browser__listInteractable` | Extract clickable elements  |
+| `browser__takeScreenshot`   | Capture the page as a PNG   |
+| `browser__evaluateJS`       | Execute custom JS snippet   |
+
+`browser__takeScreenshot` accepts an optional `fullPage` boolean. It captures the
+current viewport by default; set `fullPage` to `true` to capture the entire page
+within the 64-million-pixel and 8 MiB PNG limits.
 
 ### 5. Planning & Reflection (`planning__*`) _(Optional)_
 

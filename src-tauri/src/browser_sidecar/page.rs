@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat;
+use chromiumoxide::page::ScreenshotParams;
 use chromiumoxide::Page;
 use log::warn;
 use serde::de::DeserializeOwned;
@@ -10,6 +12,8 @@ use super::contracts::{HistoryNavigationStatus, PageClassification, PageState};
 
 const HISTORY_NAVIGATION_TIMEOUT: Duration = Duration::from_secs(4);
 const HISTORY_NAVIGATION_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const MAX_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_FULL_PAGE_PIXELS: f64 = 64_000_000.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +49,48 @@ pub(crate) fn serialize_evaluation_result(
     result: chromiumoxide::js::EvaluationResult,
 ) -> Result<String, String> {
     serialize_browser_result_value(result.value().cloned())
+}
+
+pub(crate) async fn capture_screenshot(page: &Page, full_page: bool) -> Result<Vec<u8>, String> {
+    if full_page {
+        let metrics = page
+            .layout_metrics()
+            .await
+            .map_err(|e| format!("Failed to measure page for full-page screenshot: {e}"))?;
+        let size = metrics.css_content_size;
+        let width = size.width.max(0.0);
+        let height = size.height.max(0.0);
+        let pixel_count = width * height;
+        if !width.is_finite() || !height.is_finite() || !pixel_count.is_finite() {
+            return Err("Full-page screenshot dimensions are invalid".to_string());
+        }
+        if pixel_count > MAX_FULL_PAGE_PIXELS {
+            return Err(format!(
+                "Full-page screenshot is too large: {:.0} pixels exceeds the limit of {:.0}",
+                pixel_count, MAX_FULL_PAGE_PIXELS
+            ));
+        }
+    }
+
+    let screenshot = page
+        .screenshot(
+            ScreenshotParams::builder()
+                .format(CaptureScreenshotFormat::Png)
+                .full_page(full_page)
+                .build(),
+        )
+        .await
+        .map_err(|e| format!("Failed to capture browser screenshot: {e}"))?;
+
+    if screenshot.len() > MAX_SCREENSHOT_BYTES {
+        return Err(format!(
+            "Screenshot is too large: {} bytes exceeds the limit of {} bytes",
+            screenshot.len(),
+            MAX_SCREENSHOT_BYTES
+        ));
+    }
+
+    Ok(screenshot)
 }
 
 async fn snapshot_navigation_state(page: &Page) -> Result<NavigationSnapshot, String> {

@@ -161,6 +161,39 @@ pub fn get_page_title_tool() -> MCPTool {
     }
 }
 
+/// Capture a screenshot of the active browser page
+pub fn take_screenshot_tool() -> MCPTool {
+    MCPTool {
+        name: "takeScreenshot".to_string(),
+        title: Some("Take Screenshot".to_string()),
+        description: tool_description(
+            "Capture the active browser page as a PNG image for visual inspection.",
+            &["Active browser session from browser__createSession."],
+            &[
+                "By default, capture the current viewport.",
+                "Set fullPage to true to capture the entire page when it is within the 64-million-pixel and 8 MiB PNG limits.",
+            ],
+            &[
+                "Use browser__getPageContent for text extraction.",
+                "Use browser__scrollPage before a viewport capture when you need a specific visible region.",
+            ],
+        ),
+        input_schema: object_prop(
+            vec![(
+                "fullPage".to_string(),
+                boolean_prop(Some(
+                    "Capture the entire page instead of only the current viewport. Defaults to false.",
+                )),
+            )],
+            vec![],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+        libragent_wait: None,
+    }
+}
+
 /// Get page content — fresh extraction or cached page read
 pub fn get_page_content_tool() -> MCPTool {
     MCPTool {
@@ -416,6 +449,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         navigate_forward_tool(),
         get_current_url_tool(),
         get_page_title_tool(),
+        take_screenshot_tool(),
         // Interaction
         click_element_tool(),
         input_text_tool(),

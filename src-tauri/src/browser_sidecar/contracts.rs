@@ -70,6 +70,14 @@ pub(crate) struct EvaluateParams {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct TakeScreenshotParams {
+    pub(crate) session_id: String,
+    #[serde(default)]
+    pub(crate) full_page: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetConsoleLogsParams {
     pub session_id: String,
     pub max_entries: Option<u32>,
