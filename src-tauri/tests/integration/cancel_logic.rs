@@ -342,6 +342,11 @@ async fn test_process_cancel_retry_state_survives_unrelated_batch_tool() {
     manager
         .record_process_cancelled_tool("retry-session", "workspace__execute", "{}")
         .await;
+    // The cancelled tool itself must retain its retry state.
+    manager
+        .clear_process_cancel_retry_after_tool("retry-session", true, true)
+        .await;
+    // A normal follow-up tool in the same batch must not clear it either.
     manager
         .clear_process_cancel_retry_after_tool("retry-session", false, true)
         .await;

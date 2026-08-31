@@ -112,7 +112,7 @@ impl PersistentShellManager {
         };
 
         let shell_arc = Arc::new(Mutex::new(shell));
-        let shell_pid = shell_arc.lock().await.process_id();
+        let shell_pid = shell_arc.lock().await.pid();
         let mut shells = self.shells.lock().await;
         if let Some(existing) = shells.get(&session_id) {
             let existing_shell = existing.shell.clone();
@@ -287,6 +287,13 @@ impl PersistentShellManager {
         self.shells.lock().await.remove(session_id)
     }
 
+    async fn force_kill_pid(pid: u32) -> Result<(), String> {
+        tokio::task::spawn_blocking(move || crate::utils::process::force_kill_process(pid))
+            .await
+            .map_err(crate::utils::process::describe_join_error)?
+            .map_err(|error| error.to_string())
+    }
+
     /// Force-kill and remove a session's persistent shell without waiting for
     /// its command mutex. This is used by workflow cancellation.
     pub async fn force_kill_shell(&self, session_id: &str) -> Result<bool, String> {
@@ -308,11 +315,7 @@ impl PersistentShellManager {
 
         // Prefer the live child handle. If an in-flight command owns the mutex,
         // use the PID captured at registration rather than waiting for it.
-        let live_pid = managed
-            .shell
-            .try_lock()
-            .ok()
-            .and_then(|shell| shell.process_id());
+        let live_pid = managed.shell.try_lock().ok().and_then(|shell| shell.pid());
         let pid = live_pid.or(managed.pid);
         let Some(pid) = pid else {
             let mut shell = managed.shell.lock().await;
@@ -323,12 +326,9 @@ impl PersistentShellManager {
             return Ok(true);
         };
 
-        tokio::task::spawn_blocking(move || crate::utils::process::force_kill_process(pid))
-            .await
-            .map_err(crate::utils::process::describe_join_error)?
-            .map_err(|error| {
-                format!("Failed to force-kill persistent shell for session {session_id}: {error}")
-            })?;
+        Self::force_kill_pid(pid).await.map_err(|error| {
+            format!("Failed to force-kill persistent shell for session {session_id}: {error}")
+        })?;
 
         info!(
             "Force-killed persistent shell for session {} (PID {})",
@@ -341,14 +341,15 @@ impl PersistentShellManager {
     ///
     /// Gracefully terminates and removes the shell instance.
     pub async fn terminate_shell(&self, session_id: &str) -> Result<(), String> {
+        let termination_generation = self.cancellation_generation(session_id).await;
         let managed = self.shells.lock().await.remove(session_id);
-        if let Some(managed) = managed {
+        let has_managed_shell = managed.is_some();
+        let result = if let Some(managed) = managed {
             info!("Terminating persistent shell for session: {}", session_id);
             if let Some(pid) = managed.pid {
-                tokio::task::spawn_blocking(move || crate::utils::process::force_kill_process(pid))
+                Self::force_kill_pid(pid)
                     .await
-                    .map_err(crate::utils::process::describe_join_error)?
-                    .map_err(|error| format!("Failed to terminate shell: {error}"))?;
+                    .map_err(|error| format!("Failed to terminate shell: {error}"))
             } else {
                 managed
                     .shell
@@ -356,10 +357,19 @@ impl PersistentShellManager {
                     .await
                     .terminate()
                     .await
-                    .map_err(|e| format!("Failed to terminate shell: {e}"))?;
+                    .map_err(|e| format!("Failed to terminate shell: {e}"))
+            }
+        } else {
+            Ok(())
+        };
+
+        if has_managed_shell {
+            let mut generations = self.cancellation_generations.lock().await;
+            if generations.get(session_id).copied() == Some(termination_generation) {
+                generations.remove(session_id);
             }
         }
-        Ok(())
+        result
     }
 
     /// Terminates all active shells. Used during shutdown and integration tests.
@@ -376,15 +386,10 @@ impl PersistentShellManager {
         for (session_id, managed) in shells {
             debug!("Terminating shell for session: {}", session_id);
             if let Some(pid) = managed.pid {
-                if let Err(error) = tokio::task::spawn_blocking(move || {
-                    crate::utils::process::force_kill_process(pid)
-                })
-                .await
-                {
+                if let Err(error) = Self::force_kill_pid(pid).await {
                     warn!(
                         "Failed to terminate persistent shell for session {}: {}",
-                        session_id,
-                        crate::utils::process::describe_join_error(error)
+                        session_id, error
                     );
                 }
             } else {
