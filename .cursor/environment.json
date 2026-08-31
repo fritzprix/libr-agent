@@ -1,0 +1,10 @@
+{
+  "name": "LibrAgent",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "vite-dev-server",
+      "command": "pnpm dev"
+    }
+  ]
+}
