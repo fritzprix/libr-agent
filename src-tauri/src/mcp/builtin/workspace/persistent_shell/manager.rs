@@ -323,7 +323,7 @@ impl PersistentShellManager {
             return Ok(true);
         };
 
-        tokio::task::spawn_blocking(move || crate::utils::process::force_kill_process_tree(pid))
+        tokio::task::spawn_blocking(move || crate::utils::process::force_kill_process(pid))
             .await
             .map_err(crate::utils::process::describe_join_error)?
             .map_err(|error| {
@@ -345,12 +345,10 @@ impl PersistentShellManager {
         if let Some(managed) = managed {
             info!("Terminating persistent shell for session: {}", session_id);
             if let Some(pid) = managed.pid {
-                tokio::task::spawn_blocking(move || {
-                    crate::utils::process::force_kill_process_tree(pid)
-                })
-                .await
-                .map_err(crate::utils::process::describe_join_error)?
-                .map_err(|error| format!("Failed to terminate shell: {error}"))?;
+                tokio::task::spawn_blocking(move || crate::utils::process::force_kill_process(pid))
+                    .await
+                    .map_err(crate::utils::process::describe_join_error)?
+                    .map_err(|error| format!("Failed to terminate shell: {error}"))?;
             } else {
                 managed
                     .shell
@@ -379,7 +377,7 @@ impl PersistentShellManager {
             debug!("Terminating shell for session: {}", session_id);
             if let Some(pid) = managed.pid {
                 if let Err(error) = tokio::task::spawn_blocking(move || {
-                    crate::utils::process::force_kill_process_tree(pid)
+                    crate::utils::process::force_kill_process(pid)
                 })
                 .await
                 {

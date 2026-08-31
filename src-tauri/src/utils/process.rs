@@ -67,6 +67,13 @@ fn process_group_id(pid: u32) -> Option<u32> {
 /// Callers must provide a session-owned PID; detached processes outside that
 /// tree are not guaranteed to be reachable by this function.
 pub(crate) fn force_kill_process_tree(pid: u32) -> io::Result<()> {
+    #[cfg(unix)]
+    if pid <= 1 {
+        return Err(io::Error::other(format!(
+            "refusing to kill protected process {pid}"
+        )));
+    }
+
     #[cfg(windows)]
     if pid <= 4 {
         return Ok(());
@@ -97,6 +104,63 @@ pub(crate) fn force_kill_process_tree(pid: u32) -> io::Result<()> {
 
         let mut command = Command::new("taskkill");
         command.args(["/PID", &pid.to_string(), "/T", "/F"]);
+        crate::utils::env::apply_isolated_env(&mut command);
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let output = command.output()?;
+        if output.status.success() || !process_is_alive(pid)? {
+            return Ok(());
+        }
+        Err(io::Error::other(format!(
+            "failed to kill process {pid}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )))
+    }
+}
+
+/// Kill only the supplied process.
+///
+/// Persistent shells are not allowed to rely on process-group ownership during
+/// cleanup because they may have been created by a caller with an inherited
+/// process group. Killing a negative PID in that situation can terminate the
+/// caller, the test runner, or the desktop session.
+pub(crate) fn force_kill_process(pid: u32) -> io::Result<()> {
+    #[cfg(unix)]
+    if pid <= 1 {
+        return Err(io::Error::other(format!(
+            "refusing to kill protected process {pid}"
+        )));
+    }
+
+    #[cfg(windows)]
+    if pid <= 4 {
+        return Err(io::Error::other(format!(
+            "refusing to kill protected process {pid}"
+        )));
+    }
+
+    if !process_is_alive(pid)? {
+        return Ok(());
+    }
+
+    #[cfg(unix)]
+    {
+        let status = Command::new("kill")
+            .args(["-KILL", &pid.to_string()])
+            .status()?;
+        if status.success() || !process_is_alive(pid)? {
+            return Ok(());
+        }
+        Err(io::Error::other(format!(
+            "failed to kill process {pid}: {status}"
+        )))
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &pid.to_string(), "/F"]);
         crate::utils::env::apply_isolated_env(&mut command);
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
         let output = command.output()?;

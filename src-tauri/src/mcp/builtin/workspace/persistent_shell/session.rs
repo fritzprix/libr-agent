@@ -146,7 +146,6 @@ impl PersistentShell {
         {
             cmd.arg("--norc");
             cmd.arg("--noprofile");
-            cmd.process_group(0); // Keep shell descendants in a private group for cancellation.
 
             // Fix: Add ~/.local/bin to PATH as it's often missing in non-interactive shells
             // This is critical for pip installed binaries
