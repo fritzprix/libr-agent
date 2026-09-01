@@ -3,18 +3,39 @@ import '@testing-library/jest-dom';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { encodeModelChoice } from '@/lib/ai-service/model-choice-encoding';
 import { AgentModelPicker } from '../AgentModelPicker';
 
-const mockUseAgentModelsState = vi.hoisted(() => ({
-  availableModels: {
-    'model-1': {
-      name: 'Model 1',
+const mockGroupedModelsState = vi.hoisted(() => ({
+  groupedModels: [
+    {
+      providerId: 'ollama',
+      label: 'Ollama',
+      models: {
+        'model-1': {
+          id: 'model-1',
+          name: 'Model 1',
+          contextWindow: 128000,
+          supportReasoning: true,
+          supportTools: true,
+          supportStreaming: true,
+          cost: { input: 0, output: 0 },
+          description: 'Test model',
+        },
+      },
     },
-  },
+    {
+      providerId: 'custom:local1',
+      label: 'Local vLLM',
+      models: {},
+    },
+  ],
+  hasConfiguredProviders: true,
   isRefreshing: false,
   refreshModels: vi.fn().mockResolvedValue(undefined),
   canRefresh: true,
   refreshBlockedReason: 'allowed',
+  getModelInfo: vi.fn(() => undefined),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -41,25 +62,24 @@ vi.mock('@/components/ui/select', () => ({
     value?: string;
     onValueChange?: (value: string) => void;
   }) => (
-    <div data-testid="select" data-value={value ?? ''}>
+    <div data-testid="model-select" data-value={value ?? ''}>
       <button
         type="button"
-        data-testid="select-trigger"
+        data-testid="model-select-trigger"
         onClick={() => undefined}
       >
         {value}
       </button>
-      <div
-        data-testid="select-options"
-        data-on-change={onValueChange ? 'yes' : 'no'}
-      >
+      <div data-testid="model-select-options">
         {children}
       </div>
       {onValueChange ? (
         <button
           type="button"
-          data-testid={`select-set-${value || 'empty'}`}
-          onClick={() => onValueChange('custom:local1')}
+          data-testid="model-select-pick-custom"
+          onClick={() =>
+            onValueChange(encodeModelChoice('custom:local1', 'local-model'))
+          }
         >
           pick-custom
         </button>
@@ -67,7 +87,7 @@ vi.mock('@/components/ui/select', () => ({
       {onValueChange ? (
         <button
           type="button"
-          data-testid="select-emit-empty"
+          data-testid="model-select-emit-empty"
           onClick={() => onValueChange('')}
         >
           emit-empty
@@ -76,6 +96,7 @@ vi.mock('@/components/ui/select', () => ({
     </div>
   ),
   SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  SelectGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SelectItem: ({
     children,
     value,
@@ -83,14 +104,31 @@ vi.mock('@/components/ui/select', () => ({
     children: ReactNode;
     value: string;
   }) => <div data-value={value}>{children}</div>,
+  SelectLabel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SelectTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SelectValue: ({ placeholder }: { placeholder?: string }) => (
     <span>{placeholder}</span>
   ),
 }));
 
-vi.mock('../../hooks/useAgentModels', () => ({
-  useAgentModels: () => mockUseAgentModelsState,
+vi.mock('@/features/settings/components/ThinkingEffortControl', () => ({
+  ThinkingEffortControl: ({
+    onThinkingEffortChange,
+  }: {
+    onThinkingEffortChange: (effort: string) => void;
+  }) => (
+    <button
+      type="button"
+      data-testid="thinking-effort-control"
+      onClick={() => onThinkingEffortChange('high')}
+    >
+      effort
+    </button>
+  ),
+}));
+
+vi.mock('../../hooks/useGroupedAgentModels', () => ({
+  useGroupedAgentModels: () => mockGroupedModelsState,
 }));
 
 vi.mock('@/hooks/use-settings', () => ({
@@ -104,6 +142,9 @@ vi.mock('@/hooks/use-settings', () => ({
         },
       ],
       serviceConfigs: {},
+      advanced: {
+        thinkingEffort: 'medium',
+      },
     },
   }),
 }));
@@ -111,12 +152,10 @@ vi.mock('@/hooks/use-settings', () => ({
 describe('AgentModelPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseAgentModelsState.availableModels = {
-      'model-1': { name: 'Model 1' },
-    };
-    mockUseAgentModelsState.isRefreshing = false;
-    mockUseAgentModelsState.canRefresh = true;
-    mockUseAgentModelsState.refreshBlockedReason = 'allowed';
+    mockGroupedModelsState.isRefreshing = false;
+    mockGroupedModelsState.canRefresh = true;
+    mockGroupedModelsState.refreshBlockedReason = 'allowed';
+    mockGroupedModelsState.getModelInfo = vi.fn(() => undefined);
   });
 
   it('revalidates models when refresh is available', () => {
@@ -130,13 +169,13 @@ describe('AgentModelPicker', () => {
 
     fireEvent.click(refreshButton);
 
-    expect(mockUseAgentModelsState.refreshModels).toHaveBeenCalledTimes(1);
+    expect(mockGroupedModelsState.refreshModels).toHaveBeenCalledTimes(1);
     expect(refreshButton).toBeEnabled();
   });
 
   it('keeps the refresh button visible but disabled when an API key is required', () => {
-    mockUseAgentModelsState.canRefresh = false;
-    mockUseAgentModelsState.refreshBlockedReason = 'missing-api-key';
+    mockGroupedModelsState.canRefresh = false;
+    mockGroupedModelsState.refreshBlockedReason = 'missing-api-key';
 
     render(
       <AgentModelPicker currentModel="model-1" currentProvider="anthropic" />,
@@ -154,8 +193,8 @@ describe('AgentModelPicker', () => {
   });
 
   it('hides refresh when custom openai model discovery is intentionally disabled', () => {
-    mockUseAgentModelsState.canRefresh = false;
-    mockUseAgentModelsState.refreshBlockedReason = 'custom-openai-model';
+    mockGroupedModelsState.canRefresh = false;
+    mockGroupedModelsState.refreshBlockedReason = 'custom-openai-model';
 
     render(
       <AgentModelPicker currentModel="model-1" currentProvider="openai" />,
@@ -168,7 +207,7 @@ describe('AgentModelPicker', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('clears foreign model ids when switching to a custom provider', () => {
+  it('updates provider and model atomically from grouped selection', () => {
     const onConfigUpdate = vi.fn();
 
     render(
@@ -179,14 +218,28 @@ describe('AgentModelPicker', () => {
       />,
     );
 
-    // First Select is the provider picker
-    const pickCustomButtons = screen.getAllByText('pick-custom');
-    fireEvent.click(pickCustomButtons[0]);
+    fireEvent.click(screen.getByTestId('model-select-pick-custom'));
 
-    expect(onConfigUpdate).toHaveBeenCalledWith('', 'custom:local1');
+    expect(onConfigUpdate).toHaveBeenCalledWith('local-model', 'custom:local1');
 
     onConfigUpdate.mockClear();
-    fireEvent.click(screen.getAllByTestId('select-emit-empty')[0]);
+    fireEvent.click(screen.getByTestId('model-select-emit-empty'));
     expect(onConfigUpdate).not.toHaveBeenCalled();
+  });
+
+  it('renders thinking effort control when enabled', () => {
+    const onThinkingEffortChange = vi.fn();
+
+    render(
+      <AgentModelPicker
+        currentModel="model-1"
+        currentProvider="ollama"
+        showThinkingEffort
+        onThinkingEffortChange={onThinkingEffortChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('thinking-effort-control'));
+    expect(onThinkingEffortChange).toHaveBeenCalledWith('high');
   });
 });

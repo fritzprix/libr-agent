@@ -1,19 +1,24 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Info } from 'lucide-react';
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
-import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui';
+import {
+  THINKING_EFFORT_VALUES,
+  type ThinkingEffort,
+} from '@/lib/ai-service/thinking-effort-mapping';
 
-const THINKING_EFFORT_PRESETS: ReadonlyArray<{
-  label: string;
-  value: ThinkingEffort;
-}> = [
-  { label: 'Off', value: 'off' },
-  { label: 'Low', value: 'low' },
-  { label: 'Medium', value: 'medium' },
-  { label: 'High', value: 'high' },
-  { label: 'Auto', value: 'auto' },
-];
+const THINKING_EFFORT_LABELS: Record<ThinkingEffort, string> = {
+  off: 'Off',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  auto: 'Auto',
+};
 
 export interface ThinkingEffortSectionProps {
   thinkingEffort: ThinkingEffort;
@@ -63,15 +68,15 @@ function ThinkingEffortSectionComponent({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {THINKING_EFFORT_PRESETS.map((preset) => (
+        {THINKING_EFFORT_VALUES.map((preset) => (
           <Button
-            key={preset.value}
+            key={preset}
             type="button"
-            variant={preset.value === thinkingEffort ? 'default' : 'outline'}
+            variant={preset === thinkingEffort ? 'default' : 'outline'}
             className="h-8 px-3 text-xs"
-            onClick={() => onThinkingEffortChange(preset.value)}
+            onClick={() => onThinkingEffortChange(preset)}
           >
-            {preset.label}
+            {THINKING_EFFORT_LABELS[preset]}
           </Button>
         ))}
       </div>

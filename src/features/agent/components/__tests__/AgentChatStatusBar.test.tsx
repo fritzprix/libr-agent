@@ -118,11 +118,15 @@ vi.mock('@/context/AgentSessionListContext', () => ({
   }),
 }));
 
-vi.mock('@/context/SettingsContext', () => ({
+vi.mock('@/hooks/use-settings', () => ({
   useSettings: () => ({
     value: {
       contextStrategy: 'default',
+      advanced: {
+        thinkingEffort: 'medium',
+      },
     },
+    update: vi.fn(),
   }),
 }));
 

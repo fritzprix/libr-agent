@@ -154,6 +154,7 @@ describe('AIModelsTab', () => {
       expect.objectContaining({
         currentModel: 'gpt-4o',
         currentProvider: AIServiceProvider.OpenAI,
+        serviceConfigs: expect.any(Object),
       }),
     );
   });

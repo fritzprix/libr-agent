@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Badge,
@@ -7,6 +8,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui';
 import { AgentModelPicker } from './AgentModelPicker';
+import { useSettings } from '@/hooks/use-settings';
+import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 import type { Assistant } from '@/models/chat';
 import {
   enforceRuntimeBuiltinAliases,
@@ -25,7 +28,6 @@ import type {
   BuiltinServerInfo,
   MCPServerDto,
 } from '../hooks/useAgentDraftChat';
-import { useState } from 'react';
 import { ChevronDown, ChevronUp, Shield } from 'lucide-react';
 
 import { WorkspaceIsolationSettings } from './WorkspaceIsolationSettings';
@@ -84,6 +86,19 @@ export function DraftCapabilitiesSection({
 }: DraftCapabilitiesSectionProps) {
   const { t } = useTranslation();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const { value: settings, update: updateSettings } = useSettings();
+
+  const handleThinkingEffortChange = useCallback(
+    async (effort: ThinkingEffort) => {
+      await updateSettings({
+        advanced: {
+          ...settings.advanced,
+          thinkingEffort: effort,
+        },
+      });
+    },
+    [settings.advanced, updateSettings],
+  );
 
   const effectiveBuiltinAliases = enforceRuntimeBuiltinAliases(
     assistant.allowedBuiltInServiceAliases,
@@ -194,6 +209,11 @@ export function DraftCapabilitiesSection({
           currentProvider={currentProvider}
           onConfigUpdate={onConfigUpdate}
           className="w-full max-w-xs shadow-sm"
+          showThinkingEffort
+          thinkingEffort={settings.advanced.thinkingEffort}
+          onThinkingEffortChange={(effort) => {
+            void handleThinkingEffortChange(effort);
+          }}
         />
 
         {/* Collapsible Advanced Configuration Section */}

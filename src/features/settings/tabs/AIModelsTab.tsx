@@ -233,6 +233,7 @@ function AIModelsTabComponent({
             currentModel={localPreferredModel.model}
             currentProvider={localPreferredModel.provider}
             customProviders={providers}
+            serviceConfigs={serviceConfigs}
             onConfigUpdate={onPreferredModelChange}
             className="w-full max-w-sm"
           />
@@ -248,6 +249,7 @@ function AIModelsTabComponent({
               localFallbackModel?.provider ?? localPreferredModel.provider
             }
             customProviders={providers}
+            serviceConfigs={serviceConfigs}
             onConfigUpdate={onFallbackModelChange}
             className="w-full max-w-sm"
           />
