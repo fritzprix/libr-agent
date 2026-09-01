@@ -181,6 +181,32 @@ impl InteractiveBrowserServer {
         self.client.get_console_logs(session_id, max_entries).await
     }
 
+    /// Capture the active browser page as a Base64-encoded PNG.
+    pub async fn take_screenshot(
+        &self,
+        session_id: &str,
+        full_page: bool,
+    ) -> Result<String, String> {
+        let session = self.get_session(session_id)?;
+        match &session.status {
+            SessionStatus::Active => {}
+            SessionStatus::Error(message) => {
+                return Err(format!(
+                    "Browser session {} is in an error state: {}. Close the session or create a new one.",
+                    session_id, message
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "Browser session {} is not ready for screenshot capture",
+                    session_id
+                ));
+            }
+        }
+
+        self.client.take_screenshot(session_id, full_page).await
+    }
+
     pub fn list_sessions(&self) -> Vec<BrowserSession> {
         match self.sessions.read() {
             Ok(sessions) => sessions

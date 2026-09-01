@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use base64::Engine;
 use chromiumoxide::cdp::browser_protocol::target::{
     CreateBrowserContextParams, CreateTargetParams,
 };
@@ -12,10 +13,11 @@ use tokio::task::JoinSet;
 
 use super::contracts::{
     ConsoleEntry, CreateSessionParams, EvaluateParams, GetConsoleLogsParams, NavigateParams,
-    SessionIdParams, SidecarRequest, SidecarResponse,
+    SessionIdParams, SidecarRequest, SidecarResponse, TakeScreenshotParams,
 };
 use super::page::{
-    navigate_back, navigate_forward, serialize_evaluation_result, snapshot_page_state,
+    capture_screenshot, navigate_back, navigate_forward, serialize_evaluation_result,
+    snapshot_page_state,
 };
 use super::runtime::{
     cleanup_failed_context_launch, cleanup_session_resources, shutdown_runtime,
@@ -121,6 +123,7 @@ impl BrowserSidecarServer {
             "goBack" => self.go_back(request.params).await,
             "goForward" => self.go_forward(request.params).await,
             "evaluate" => self.evaluate(request.params).await,
+            "takeScreenshot" => self.take_screenshot(request.params).await,
             "getState" => self.get_state(request.params).await,
             "getConsoleLogs" => self.get_console_logs(request.params).await,
             _ => Err(format!(
@@ -371,6 +374,16 @@ impl BrowserSidecarServer {
         let page = self.get_session_page(&params.session_id).await?;
         let state = snapshot_page_state(&page).await?;
         serde_json::to_value(state).map_err(|e| format!("Failed to serialize getState result: {e}"))
+    }
+
+    async fn take_screenshot(&self, params: Value) -> Result<Value, String> {
+        let params: TakeScreenshotParams = serde_json::from_value(params)
+            .map_err(|e| format!("Invalid takeScreenshot params: {e}"))?;
+        let page = self.get_session_page(&params.session_id).await?;
+        let screenshot = capture_screenshot(&page, params.full_page).await?;
+        Ok(Value::String(
+            base64::engine::general_purpose::STANDARD.encode(screenshot),
+        ))
     }
 
     async fn close_existing_session_if_present(&self, session_id: &str) -> Result<(), String> {

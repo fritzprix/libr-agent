@@ -69,14 +69,25 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 
 ### 4. Browser (`browser__*`) _(선택)_
 
-| 도구 이름                   | 설명                      |
-| :-------------------------- | :------------------------ |
-| `browser__navigateToUrl`    | 대상 URL 웹페이지 이동    |
-| `browser__clickElement`     | DOM 클릭 요소 상호작용    |
-| `browser__inputText`        | 입력 양식 텍스트 타이핑   |
-| `browser__scrollPage`       | 웹페이지 스크롤           |
-| `browser__listInteractable` | 상호작용 가능한 요소 추출 |
-| `browser__evaluateJS`       | JS 커스텀 스크립트 실행   |
+| 도구 이름                   | 설명                       |
+| :-------------------------- | :------------------------- |
+| `browser__createSession`    | 브라우저 세션 시작         |
+| `browser__closeSession`     | 브라우저 세션 종료         |
+| `browser__navigateToUrl`    | 대상 URL 웹페이지 이동     |
+| `browser__getCurrentUrl`    | 현재 페이지 URL 조회       |
+| `browser__getPageTitle`     | 현재 페이지 제목 조회      |
+| `browser__getPageContent`   | 페이지 콘텐츠 추출         |
+| `browser__fetchUrl`         | 세션 없이 URL 가져오기     |
+| `browser__clickElement`     | DOM 클릭 요소 상호작용     |
+| `browser__inputText`        | 입력 양식 텍스트 타이핑    |
+| `browser__scrollPage`       | 웹페이지 스크롤            |
+| `browser__listInteractable` | 상호작용 가능한 요소 추출  |
+| `browser__takeScreenshot`   | 페이지를 PNG 이미지로 캡처 |
+| `browser__evaluateJS`       | JS 커스텀 스크립트 실행    |
+
+`browser__takeScreenshot`은 선택적 `fullPage` 불리언 매개변수를 받습니다. 기본값은
+현재 뷰포트를 캡처하며, `fullPage`를 `true`로 설정하면 6,400만 픽셀 및 8 MiB PNG
+제한 내에서 전체 페이지를 캡처합니다.
 
 ### 5. Planning & Reflection (`planning__*`) _(선택)_
 

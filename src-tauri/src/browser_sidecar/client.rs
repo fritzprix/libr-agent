@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use super::contracts::{
     ConsoleEntry, CreateSessionParams, EvaluateParams, GetConsoleLogsParams, NavigateParams,
-    PageState, SessionIdParams, SidecarRequest, SidecarResponse,
+    PageState, SessionIdParams, SidecarRequest, SidecarResponse, TakeScreenshotParams,
 };
 use super::BROWSER_SIDECAR_FLAG;
 
@@ -149,6 +149,22 @@ impl BrowserAutomationClient {
             "getState",
             SessionIdParams {
                 session_id: session_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// Capture the active page as a Base64-encoded PNG.
+    pub async fn take_screenshot(
+        &self,
+        session_id: &str,
+        full_page: bool,
+    ) -> Result<String, String> {
+        self.request(
+            "takeScreenshot",
+            TakeScreenshotParams {
+                session_id: session_id.to_string(),
+                full_page,
             },
         )
         .await

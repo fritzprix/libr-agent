@@ -15,6 +15,7 @@ mod content;
 mod evaluate;
 mod interaction;
 mod navigation;
+mod screenshot;
 mod session;
 mod tools;
 
@@ -294,6 +295,7 @@ impl BuiltinMCPServer for BrowserServer {
             "getCurrentUrl" => navigation::get_current_url(self, args).await,
             "getPageTitle" => navigation::get_page_title(self, args).await,
             "getPageContent" => content::smart_content(self, args).await,
+            "takeScreenshot" => screenshot::take_screenshot(self, args).await,
             "clickElement" => interaction::click_element(self, args).await,
             "inputText" => interaction::input_text(self, args).await,
             "scrollPage" => interaction::scroll_page(self, args).await,
