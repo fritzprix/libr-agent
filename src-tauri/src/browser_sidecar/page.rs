@@ -154,13 +154,11 @@ async fn capture_full_page_screenshot(page: &Page) -> Result<Vec<u8>, String> {
         .execute(ClearDeviceMetricsOverrideParams::default())
         .await
     {
-        warn!(
-            "Failed to clear device metrics override after full-page screenshot: {clear_error}"
-        );
+        warn!("Failed to clear device metrics override after full-page screenshot: {clear_error}");
     }
 
-    let screenshot = capture_result
-        .map_err(|e| format!("Failed to capture browser screenshot: {e}"))?;
+    let screenshot =
+        capture_result.map_err(|e| format!("Failed to capture browser screenshot: {e}"))?;
     validate_screenshot_png_bytes(&screenshot)?;
     Ok(screenshot)
 }
