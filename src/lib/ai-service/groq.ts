@@ -11,6 +11,7 @@ import {
 import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 import {
   createSerializableToolCallArgumentDelta,
   serializeToolCallArgumentDeltas,
@@ -126,6 +127,15 @@ export class GroqService extends BaseAIService<
             ? 'required'
             : 'auto';
 
+      const thinkingParams = mapThinkingEffort(
+        AIServiceProvider.Groq,
+        config.thinkingEffort,
+      );
+      const reasoningFormat =
+        thinkingParams.enabled && model?.supportReasoning
+          ? ('parsed' as const)
+          : undefined;
+
       const chatCompletion = await this.withRetry(
         () =>
           this.groq.chat.completions.create(
@@ -139,7 +149,7 @@ export class GroqService extends BaseAIService<
               ...(config.temperature !== undefined && {
                 temperature: config.temperature,
               }),
-              reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
+              ...(reasoningFormat && { reasoning_format: reasoningFormat }),
               stream: true,
               tools: tools,
               tool_choice: toolChoice,

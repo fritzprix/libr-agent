@@ -3,15 +3,12 @@ import { ModelInfo, llmConfigManager } from '../../llm-config-manager';
 import { AIServiceConfig } from '../types';
 
 /**
- * Check if a model supports thinking mode
- * @param modelId The ID of the model.
- * @param modelCache The cache object containing model properties.
+ * Check if a model supports thinking mode.
  */
 export async function checkThinkingSupport(
   modelId: string,
   modelCache?: ModelInfo[],
 ): Promise<boolean> {
-  // Check cache first
   if (modelCache) {
     const cachedModel = modelCache.find((m) => m.id === modelId);
     if (cachedModel) {
@@ -19,13 +16,11 @@ export async function checkThinkingSupport(
     }
   }
 
-  // Check static config
   const staticModel = llmConfigManager.getModel('gemini', modelId);
   if (staticModel?.supportReasoning !== undefined) {
     return staticModel.supportReasoning;
   }
 
-  // Fallback to pattern matching
   return /gemini-2\.[5-9]|gemini-[3-9]/.test(modelId);
 }
 

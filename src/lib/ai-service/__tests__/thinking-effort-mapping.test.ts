@@ -1,86 +1,75 @@
 import { describe, expect, it } from 'vitest';
-import { mapThinkingBudget } from '../thinking-effort-mapping';
+import {
+  mapThinkingEffort,
+  normalizeThinkingEffort,
+} from '../thinking-effort-mapping';
 import { AIServiceProvider } from '../types';
 
-describe('mapThinkingBudget', () => {
-  it('returns disabled for undefined and zero budgets', () => {
-    expect(mapThinkingBudget(AIServiceProvider.OpenAI, undefined)).toEqual({
+describe('normalizeThinkingEffort', () => {
+  it('passes through valid effort values', () => {
+    expect(normalizeThinkingEffort('medium')).toBe('medium');
+    expect(normalizeThinkingEffort('auto')).toBe('auto');
+  });
+
+  it('migrates legacy numeric budgets', () => {
+    expect(normalizeThinkingEffort(undefined, 0)).toBe('off');
+    expect(normalizeThinkingEffort(undefined, -1)).toBe('auto');
+    expect(normalizeThinkingEffort(undefined, 1024)).toBe('low');
+    expect(normalizeThinkingEffort(undefined, 8192)).toBe('medium');
+    expect(normalizeThinkingEffort(undefined, 24576)).toBe('high');
+  });
+
+  it('defaults unknown values to off', () => {
+    expect(normalizeThinkingEffort('invalid')).toBe('off');
+  });
+});
+
+describe('mapThinkingEffort', () => {
+  it('returns disabled for off and undefined', () => {
+    expect(mapThinkingEffort(AIServiceProvider.OpenAI, 'off')).toEqual({
       enabled: false,
     });
-    expect(mapThinkingBudget(AIServiceProvider.Gemini, 0)).toEqual({
+    expect(mapThinkingEffort(AIServiceProvider.Gemini, undefined)).toEqual({
       enabled: false,
     });
   });
 
-  it('maps dynamic budget (-1) for thinking-capable providers', () => {
-    expect(mapThinkingBudget(AIServiceProvider.OpenAI, -1)).toEqual({
-      enabled: true,
-      reasoningEffort: 'medium',
-    });
-    expect(mapThinkingBudget(AIServiceProvider.Anthropic, -1)).toEqual({
-      enabled: true,
-      extendedThinking: true,
-    });
-    expect(mapThinkingBudget(AIServiceProvider.Gemini, -1)).toEqual({
-      enabled: true,
-      thinkingBudget: -1,
-    });
-    expect(mapThinkingBudget(AIServiceProvider.Ollama, -1)).toEqual({
-      enabled: true,
-      reasoningEffort: 'medium',
-    });
-  });
-
-  it('derives effort levels from explicit token budgets', () => {
-    expect(mapThinkingBudget(AIServiceProvider.OpenAI, 1024)).toEqual({
+  it('maps effort presets for OpenAI-compatible providers', () => {
+    expect(mapThinkingEffort(AIServiceProvider.OpenAI, 'low')).toEqual({
       enabled: true,
       reasoningEffort: 'low',
     });
-    expect(mapThinkingBudget(AIServiceProvider.OpenAI, 8192)).toEqual({
-      enabled: true,
-      reasoningEffort: 'medium',
-    });
-    expect(mapThinkingBudget(AIServiceProvider.OpenAI, 24576)).toEqual({
+    expect(mapThinkingEffort(AIServiceProvider.Ollama, 'high')).toEqual({
       enabled: true,
       reasoningEffort: 'high',
     });
-  });
-
-  it('passes explicit Gemini budgets through unchanged', () => {
-    expect(mapThinkingBudget(AIServiceProvider.Gemini, 4096)).toEqual({
+    expect(mapThinkingEffort(AIServiceProvider.OpenAI, 'auto')).toEqual({
       enabled: true,
-      thinkingBudget: 4096,
+      reasoningEffort: 'medium',
     });
   });
 
-  it('enables Anthropic extended thinking for any positive budget', () => {
-    expect(mapThinkingBudget(AIServiceProvider.Anthropic, 1024)).toEqual({
+  it('maps Anthropic effort to extended thinking', () => {
+    expect(mapThinkingEffort(AIServiceProvider.Anthropic, 'medium')).toEqual({
       enabled: true,
       extendedThinking: true,
     });
   });
 
-  it('returns disabled for providers without thinking support', () => {
-    expect(mapThinkingBudget(AIServiceProvider.Groq, 8192)).toEqual({
-      enabled: false,
+  it('maps Gemini effort to internal token budgets', () => {
+    expect(mapThinkingEffort(AIServiceProvider.Gemini, 'medium')).toEqual({
+      enabled: true,
+      thinkingBudget: 8192,
     });
-    expect(mapThinkingBudget(AIServiceProvider.Empty, -1)).toEqual({
-      enabled: false,
+    expect(mapThinkingEffort(AIServiceProvider.Gemini, 'auto')).toEqual({
+      enabled: true,
+      thinkingBudget: -1,
     });
   });
 
-  it('uses effort boundaries at 2048 and 16384 tokens', () => {
-    expect(
-      mapThinkingBudget(AIServiceProvider.Ollama, 2048).reasoningEffort,
-    ).toBe('low');
-    expect(
-      mapThinkingBudget(AIServiceProvider.Ollama, 2049).reasoningEffort,
-    ).toBe('medium');
-    expect(
-      mapThinkingBudget(AIServiceProvider.Ollama, 16384).reasoningEffort,
-    ).toBe('medium');
-    expect(
-      mapThinkingBudget(AIServiceProvider.Ollama, 16385).reasoningEffort,
-    ).toBe('high');
+  it('returns disabled for providers without thinking mapping', () => {
+    expect(mapThinkingEffort(AIServiceProvider.Groq, 'medium')).toEqual({
+      enabled: false,
+    });
   });
 });

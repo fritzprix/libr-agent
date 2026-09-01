@@ -1,26 +1,36 @@
 /**
- * Unified thinking budget → provider-native parameter mapping.
+ * Unified thinking effort → provider-native parameter mapping.
  *
- * All provider services import from this module instead of reading
- * `enableReasoning` / `reasoningEffort` directly from `AIServiceConfig`.
- *
- * Budget semantics (set once in `AdvancedSettings.thinkingBudget`):
- * - `0` or `undefined`: disabled
- * - `-1`: dynamic — model auto-adjusts
- * - `> 0`: explicit token budget
- *
- * Provider-native mapping:
- * | Provider   | Native param                    | Budget range                    |
- * |------------|--------------------------------|--------------------------------|
- * | OpenAI     | `reasoning_effort`             | low=1024, med=8192, high=24576 |
- * | Anthropic  | `extended_thinking: true`      | any > 0                        |
- * | Gemini     | `thinkingConfig.thinkingBudget`| direct pass-through            |
- * | Ollama     | `think`                        | low=1024, med=8192, high=24576 |
+ * Settings expose a single `thinkingEffort` enum. Known providers are mapped to
+ * native API parameters here. Mapping is best-effort: self-hosted OpenAI-compatible
+ * endpoints often use model-specific parameter names and may ignore LibrAgent settings.
  */
 
 import { AIServiceProvider } from './types';
 
-/** Result of mapping a thinking budget to provider-native params. */
+/** User-facing thinking effort preset stored in settings. */
+export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'auto';
+
+export const THINKING_EFFORT_VALUES = [
+  'off',
+  'low',
+  'medium',
+  'high',
+  'auto',
+] as const satisfies readonly ThinkingEffort[];
+
+/** Internal Gemini token budgets — not shown in UI. */
+const GEMINI_EFFORT_TOKEN_BUDGET: Record<
+  Exclude<ThinkingEffort, 'off'>,
+  number
+> = {
+  low: 1024,
+  medium: 8192,
+  high: 24576,
+  auto: -1,
+};
+
+/** Result of mapping thinking effort to provider-native params. */
 export interface ThinkingNativeParams {
   /** Whether extended reasoning/thinking is enabled. */
   enabled: boolean;
@@ -33,78 +43,68 @@ export interface ThinkingNativeParams {
 }
 
 /**
- * Map a unified thinking budget to provider-specific native parameters.
- * @param provider The AI service provider.
- * @param budget The thinking budget from `AIServiceConfig.thinkingBudget`.
- * @returns Native parameter set for the provider.
+ * Normalize persisted or legacy values into a thinking effort enum.
  */
-export function mapThinkingBudget(
+export function normalizeThinkingEffort(
+  effort: unknown,
+  legacyBudget?: unknown,
+): ThinkingEffort {
+  if (
+    effort === 'off' ||
+    effort === 'low' ||
+    effort === 'medium' ||
+    effort === 'high' ||
+    effort === 'auto'
+  ) {
+    return effort;
+  }
+
+  if (typeof legacyBudget === 'number') {
+    if (legacyBudget === 0) return 'off';
+    if (legacyBudget === -1) return 'auto';
+    if (legacyBudget <= 2048) return 'low';
+    if (legacyBudget <= 16384) return 'medium';
+    return 'high';
+  }
+
+  return 'off';
+}
+
+/**
+ * Map unified thinking effort to provider-specific native parameters.
+ */
+export function mapThinkingEffort(
   provider: AIServiceProvider,
-  budget: number | undefined,
+  effort: ThinkingEffort | undefined,
 ): ThinkingNativeParams {
-  // Disabled
-  if (budget === undefined || budget === 0) {
+  const normalized = effort ?? 'off';
+  if (normalized === 'off') {
     return { enabled: false };
   }
-
-  // Dynamic mode — provider-native mapping still applies
-  if (budget === -1) {
-    switch (provider) {
-      case AIServiceProvider.OpenAI:
-      case AIServiceProvider.Fireworks:
-      case AIServiceProvider.Cerebras:
-      case AIServiceProvider.OpenRouter:
-        return { enabled: true, reasoningEffort: 'medium' };
-
-      case AIServiceProvider.Anthropic:
-        return { enabled: true, extendedThinking: true };
-
-      case AIServiceProvider.Gemini:
-        return { enabled: true, thinkingBudget: -1 };
-
-      case AIServiceProvider.Ollama:
-        return { enabled: true, reasoningEffort: 'medium' };
-
-      case AIServiceProvider.Groq:
-      case AIServiceProvider.Empty:
-      default:
-        return { enabled: false };
-    }
-  }
-
-  // Explicit budget — derive effort level from token range
-  const effort = deriveEffortLevel(budget);
 
   switch (provider) {
     case AIServiceProvider.OpenAI:
     case AIServiceProvider.Fireworks:
     case AIServiceProvider.Cerebras:
     case AIServiceProvider.OpenRouter:
-      return { enabled: true, reasoningEffort: effort };
+    case AIServiceProvider.Ollama:
+      return {
+        enabled: true,
+        reasoningEffort: normalized === 'auto' ? 'medium' : normalized,
+      };
 
     case AIServiceProvider.Anthropic:
       return { enabled: true, extendedThinking: true };
 
     case AIServiceProvider.Gemini:
-      return { enabled: true, thinkingBudget: budget };
-
-    case AIServiceProvider.Ollama:
-      return { enabled: true, reasoningEffort: effort };
+      return {
+        enabled: true,
+        thinkingBudget: GEMINI_EFFORT_TOKEN_BUDGET[normalized],
+      };
 
     case AIServiceProvider.Groq:
     case AIServiceProvider.Empty:
     default:
-      // Providers that don't support thinking — return enabled=false
       return { enabled: false };
   }
-}
-
-/**
- * Derive an effort level from a token budget value.
- * @internal
- */
-function deriveEffortLevel(budget: number): 'low' | 'medium' | 'high' {
-  if (budget <= 2048) return 'low';
-  if (budget <= 16384) return 'medium';
-  return 'high';
 }

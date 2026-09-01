@@ -33,7 +33,7 @@ async function testOllamaReasoning() {
   });
 
   const config: AIServiceConfig = {
-    thinkingBudget: 8192,
+    thinkingEffort: 'medium',
     maxTokens: 2000,
   };
 
@@ -80,7 +80,7 @@ async function testAnthropicReasoning() {
   const service = new AnthropicService(apiKey);
 
   const config: AIServiceConfig = {
-    thinkingBudget: 8192,
+    thinkingEffort: 'medium',
     maxTokens: 2000,
   };
 
@@ -128,7 +128,7 @@ async function testOpenAIReasoning() {
   const service = new OpenAIService(apiKey);
 
   const config: AIServiceConfig = {
-    thinkingBudget: 8192,
+    thinkingEffort: 'medium',
     maxTokens: 2000,
   };
 

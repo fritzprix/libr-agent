@@ -23,8 +23,7 @@ export const BUILTIN_SERVICE_CANONICAL_NAMES = [
   'media',
 ] as const;
 
-export type BuiltinServiceCanonicalName =
-  (typeof BUILTIN_SERVICE_CANONICAL_NAMES)[number];
+export type BuiltinServiceCanonicalName = typeof BUILTIN_SERVICE_CANONICAL_NAMES[number];
 
 /** All recognized builtin service aliases */
 export const ALL_BUILTIN_SERVICE_ALIASES = [
@@ -49,7 +48,7 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'media',
 ] as const;
 
-export type BuiltinServiceAlias = (typeof ALL_BUILTIN_SERVICE_ALIASES)[number];
+export type BuiltinServiceAlias = typeof ALL_BUILTIN_SERVICE_ALIASES[number];
 
 /** Core builtin services (optional: false in Rust) */
 export const CORE_BUILTIN_SERVICE_ALIASES = [

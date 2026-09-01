@@ -101,6 +101,10 @@ export async function setupCompactRequestListener({
         settings,
         resolved.serviceConfig,
       );
+      const compactRuntimeConfig = {
+        ...runtimeConfig,
+        thinkingEffort: 'off' as const,
+      };
       const requestComposition = summarizeCompactionRequestSizes({
         messages,
         systemPrompt,
@@ -111,22 +115,22 @@ export async function setupCompactRequestListener({
         const service: AIContextCompactionService = AIServiceFactory.getService(
           provider,
           apiKey,
-          runtimeConfig,
+          compactRuntimeConfig,
         );
         logger.info(
           `🧪 Compact provider handoff ingredients: session=${sessionId}, provider=${provider}, model=${model}`,
           {
             ...requestComposition,
             isRetry,
-            thinkingBudget: runtimeConfig.thinkingBudget,
-            maxTokens: runtimeConfig.maxTokens,
+            thinkingEffort: compactRuntimeConfig.thinkingEffort,
+            maxTokens: compactRuntimeConfig.maxTokens,
           },
         );
         const summary = await service.compact(messages, {
           modelName: model,
           systemPrompt,
           availableTools,
-          config: runtimeConfig,
+          config: compactRuntimeConfig,
         });
         const response = await handleCompactResponse(
           sessionId,
@@ -176,7 +180,7 @@ export async function setupCompactRequestListener({
           `🧪 Compact failure request composition: session=${sessionId}, provider=${provider}, model=${model}`,
           {
             ...requestComposition,
-            thinkingBudget: runtimeConfig.thinkingBudget,
+            thinkingEffort: compactRuntimeConfig.thinkingEffort,
             maxTokens: runtimeConfig.maxTokens,
           },
         );

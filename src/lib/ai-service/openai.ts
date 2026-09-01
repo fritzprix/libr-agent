@@ -13,6 +13,7 @@ import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import type { ModelInfo } from '../llm-config-manager';
 import { supportsThinking } from './model-capabilities';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 import { ensureSchemaTypeField, processMessageContent } from './utils';
 import { OpenAIPromptDiagnosticsTracker } from './openai/diagnostics';
 import { convertToOpenAIMessages } from './openai/message-converter';
@@ -36,7 +37,6 @@ import type {
   OpenAIStreamingRequest,
 } from './openai/types';
 import { isOpenAIStreamUsage } from './openai/types';
-import { mapThinkingBudget } from './thinking-effort-mapping';
 
 const logger = getLogger('OpenAIService');
 
@@ -79,6 +79,7 @@ function summarizeOpenAIRequestIngredients(params: {
     stream: request.stream,
     promptCacheKeyPresent: typeof request.prompt_cache_key === 'string',
     promptCacheRetention: request.prompt_cache_retention ?? null,
+    reasoningEffort: request.reasoning_effort ?? null,
     ...messageSummary,
     openaiRoleCounts,
   };
@@ -274,7 +275,7 @@ export class OpenAIService extends BaseAIService<
 
       // Prepare reasoning_effort for reasoning models via unified mapper
       let reasoningEffort: 'low' | 'medium' | 'high' | undefined;
-      const thinkingParams = mapThinkingBudget(provider, config.thinkingBudget);
+      const thinkingParams = mapThinkingEffort(provider, config.thinkingEffort);
       if (thinkingParams.enabled) {
         const modelSupportsThinking = await supportsThinking(
           modelName,

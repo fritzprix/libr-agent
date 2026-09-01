@@ -1,5 +1,6 @@
 import type { ModelInfo } from '../llm-config-manager';
 import type { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
+import type { ThinkingEffort } from './thinking-effort-mapping';
 
 export type { ModelInfo, SamplingOptions, SamplingResponse };
 
@@ -106,21 +107,13 @@ export interface AIServiceConfig {
   temperature?: number;
 
   /**
-   * Thinking budget in tokens for models that support extended reasoning/thinking.
+   * Thinking effort preset. Best-effort: mapped to provider-native params where
+   * supported. Self-hosted OpenAI-compatible servers may ignore this or use
+   * different fields per model; responses can still include thinking tokens.
    *
-   * - `undefined` or `0`: disabled (no thinking/extended reasoning)
-   * `-1`: dynamic — model auto-adjusts budget
-   * - `> 0`: explicit token budget (e.g. 8192 for ~8K thinking tokens)
-   *
-   * Provider-specific parameter mapping:
-   * - OpenAI: `reasoning_effort` derived from budget range
-   * - Anthropic: `extended_thinking: true` when budget > 0
-   * - Gemini: `thinkingConfig.thinkingBudget` set directly
-   * - Ollama: `think` derived from budget range
-   *
-   * @default undefined
+   * @default undefined (treated as `off`)
    */
-  thinkingBudget?: number;
+  thinkingEffort?: ThinkingEffort;
 }
 
 /**

@@ -10,6 +10,7 @@ import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 import {
   applyAnthropicMessageDeltaUsage,
   applyAnthropicMessageStartUsage,
@@ -37,7 +38,6 @@ import {
 import { ensureSchemaTypeField } from './utils';
 import { createLlmFetch } from './desktop-fetch';
 import { reportListModelsFallback } from './list-models-errors';
-import { mapThinkingBudget } from './thinking-effort-mapping';
 
 const logger = getLogger('AnthropicService');
 
@@ -298,9 +298,9 @@ export class AnthropicService extends BaseAIService<
       // Check if model supports extended thinking via unified mapper
       const model = options.modelName || this.getDefaultModel();
       let extendedThinking: boolean | undefined;
-      const thinkingParams = mapThinkingBudget(
+      const thinkingParams = mapThinkingEffort(
         AIServiceProvider.Anthropic,
-        config.thinkingBudget,
+        config.thinkingEffort,
       );
       if (thinkingParams.enabled) {
         const modelSupportsThinking = await supportsThinking(

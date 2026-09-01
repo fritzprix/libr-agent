@@ -19,6 +19,7 @@ import {
   migrateLegacyOpenAICompatibleSettings,
   normalizeCustomOpenAIProviders,
 } from '@/lib/ai-service/custom-providers';
+import { normalizeThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 import { normalizeMaxRecentMediaMessages } from '@/lib/media-settings';
 
 const logger = getLogger('RustSettingsService');
@@ -205,6 +206,10 @@ function mapDtosToSettings(dtos: SettingDto[]): {
       ...storedAdvanced,
       maxRecentMediaMessages: normalizeMaxRecentMediaMessages(
         storedAdvanced.maxRecentMediaMessages,
+      ),
+      thinkingEffort: normalizeThinkingEffort(
+        storedAdvanced.thinkingEffort,
+        (storedAdvanced as { thinkingBudget?: unknown }).thinkingBudget,
       ),
     },
     display: getTypedValue('displaySettings', DEFAULT_SETTING.display),

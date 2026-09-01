@@ -13,8 +13,8 @@ export function buildServiceRuntimeConfig(
     ...(settings.temperatureOverrideEnabled
       ? { temperature: settings.temperature }
       : {}),
-    ...(settings.advanced.thinkingBudget !== undefined && {
-      thinkingBudget: settings.advanced.thinkingBudget,
+    ...(settings.advanced.thinkingEffort !== undefined && {
+      thinkingEffort: settings.advanced.thinkingEffort,
     }),
     ...overrides,
   };

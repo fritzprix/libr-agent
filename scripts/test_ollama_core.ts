@@ -29,7 +29,8 @@ import {
   consoleLogger,
   noopLogger,
 } from '../src/lib/ai-service/ollama-core';
-import { mapThinkingBudget } from '../src/lib/ai-service/thinking-effort-mapping';
+import { mapThinkingEffort } from '../src/lib/ai-service/thinking-effort-mapping';
+import type { ThinkingEffort } from '../src/lib/ai-service/thinking-effort-mapping';
 import { AIServiceProvider } from '../src/lib/ai-service/types';
 import type { Message } from '../src/models/chat';
 import type { MCPTool } from '../src/lib/mcp';
@@ -195,26 +196,23 @@ function testModelCapabilities() {
 function testReasoningParam() {
   console.log('\n=== Testing Reasoning Parameter Determination ===\n');
 
-  const testCases = [
-    { thinkingBudget: undefined, modelSupportsThinking: true },
-    { thinkingBudget: 8192, modelSupportsThinking: true },
-    { thinkingBudget: 24576, modelSupportsThinking: true },
-    { thinkingBudget: 8192, modelSupportsThinking: false },
-    { thinkingBudget: -1, modelSupportsThinking: true },
+  const testCases: Array<{ thinkingEffort: ThinkingEffort | undefined }> = [
+    { thinkingEffort: undefined },
+    { thinkingEffort: 'medium' },
+    { thinkingEffort: 'high' },
+    { thinkingEffort: 'auto' },
   ];
 
   testCases.forEach((testCase, index) => {
-    const params = mapThinkingBudget(
+    const params = mapThinkingEffort(
       AIServiceProvider.Ollama,
-      testCase.thinkingBudget,
+      testCase.thinkingEffort,
     );
-    const result =
-      params.enabled && testCase.modelSupportsThinking
-        ? (params.reasoningEffort ?? true)
-        : undefined;
+    const result = params.enabled
+      ? (params.reasoningEffort ?? true)
+      : undefined;
     console.log(
-      `Case ${index + 1}: thinkingBudget=${testCase.thinkingBudget}, ` +
-        `modelSupportsThinking=${testCase.modelSupportsThinking} => ${result}`,
+      `Case ${index + 1}: thinkingEffort=${testCase.thinkingEffort ?? 'off'} => ${result}`,
     );
   });
 }

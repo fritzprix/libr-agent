@@ -12,7 +12,7 @@ import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { ModelInfo } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { supportsThinking, getContextWindow } from './model-capabilities';
+import { getContextWindow, supportsThinking } from './model-capabilities';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
@@ -33,7 +33,7 @@ import {
   SELF_HOSTED_LLM_TIMEOUT_MS,
 } from './llm-host-policy';
 import { reportListModelsFallback } from './list-models-errors';
-import { mapThinkingBudget } from './thinking-effort-mapping';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 
 const logger = getLogger('OllamaService');
 
@@ -312,9 +312,9 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
 
       // Prepare reasoning parameter via unified mapper
       let thinkParam: boolean | 'low' | 'medium' | 'high' | undefined;
-      const thinkingParams = mapThinkingBudget(
+      const thinkingParams = mapThinkingEffort(
         AIServiceProvider.Ollama,
-        config.thinkingBudget,
+        config.thinkingEffort,
       );
       if (thinkingParams.enabled) {
         const modelSupportsThinking = await supportsThinking(

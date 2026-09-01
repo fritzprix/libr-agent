@@ -6,7 +6,6 @@ import { AdvancedPerformanceSection } from './advanced/AdvancedPerformanceSectio
 import { AdvancedRequestReliabilitySection } from './advanced/AdvancedRequestReliabilitySection';
 import { AdvancedRuntimeControlsSection } from './advanced/AdvancedRuntimeControlsSection';
 import { AdvancedShellIsolationSection } from './advanced/AdvancedShellIsolationSection';
-import { AdvancedThinkingBudgetSection } from './advanced/AdvancedThinkingBudgetSection';
 import type { AdvancedTabProps } from './advanced/types';
 
 function AdvancedTabComponent({
@@ -32,10 +31,6 @@ function AdvancedTabComponent({
       </div>
 
       <AdvancedRequestReliabilitySection
-        localAdvancedSettings={localAdvancedSettings}
-        onChange={onChange}
-      />
-      <AdvancedThinkingBudgetSection
         localAdvancedSettings={localAdvancedSettings}
         onChange={onChange}
       />
