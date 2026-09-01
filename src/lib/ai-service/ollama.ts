@@ -20,7 +20,6 @@ import {
   flushThinkTagStream,
   processChunk,
   getModelToolSupport,
-  determineThinkParam,
   type Logger,
   type SimpleOllamaMessage,
 } from './ollama-core';
@@ -34,6 +33,7 @@ import {
   SELF_HOSTED_LLM_TIMEOUT_MS,
 } from './llm-host-policy';
 import { reportListModelsFallback } from './list-models-errors';
+import { mapThinkingBudget } from './thinking-effort-mapping';
 
 const logger = getLogger('OllamaService');
 
@@ -310,20 +310,22 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         })),
       });
 
-      // Prepare reasoning parameter based on config
-      // Check if model actually supports thinking (optional, for better UX)
-      const modelSupportsThinking = config.enableReasoning
-        ? await supportsThinking(model, AIServiceProvider.Ollama, {
-            apiBase: this.host,
-          })
-        : false;
-
-      const thinkParam = determineThinkParam(
-        config.enableReasoning ?? false,
-        config.reasoningEffort,
-        modelSupportsThinking,
-        coreLogger,
+      // Prepare reasoning parameter via unified mapper
+      let thinkParam: boolean | 'low' | 'medium' | 'high' | undefined;
+      const thinkingParams = mapThinkingBudget(
+        AIServiceProvider.Ollama,
+        config.thinkingBudget,
       );
+      if (thinkingParams.enabled) {
+        const modelSupportsThinking = await supportsThinking(
+          model,
+          AIServiceProvider.Ollama,
+          { apiBase: this.host },
+        );
+        if (modelSupportsThinking) {
+          thinkParam = thinkingParams.reasoningEffort ?? true;
+        }
+      }
 
       const requestOptions: ChatRequest & { stream: true } = {
         model,

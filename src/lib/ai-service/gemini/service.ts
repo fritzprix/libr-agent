@@ -17,16 +17,13 @@ import {
   convertToGeminiMessages,
   convertMCPSchemaToGeminiParameters,
 } from './mapper';
-import {
-  mapReasoningEffortToBudget,
-  checkThinkingSupport,
-  prepareSafetySettings,
-} from './config';
+import { checkThinkingSupport, prepareSafetySettings } from './config';
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
 import { isCompactSummaryMessage } from '../base-service-context';
 import { reportListModelsFallback } from '../list-models-errors';
 import type { MCPContent } from '@/lib/mcp';
+import { mapThinkingBudget } from '../thinking-effort-mapping';
 
 function summarizeLibrAgentMessages(messages: Message[]): {
   count: number;
@@ -315,17 +312,18 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         });
 
         let thinkingConfig: GeminiServiceConfig['thinkingConfig'];
-        if (config.enableReasoning) {
+        const thinkingParams = mapThinkingBudget(
+          AIServiceProvider.Gemini,
+          config.thinkingBudget,
+        );
+        if (thinkingParams.enabled) {
           const modelSupportsThinking = await checkThinkingSupport(
             model,
             this.modelCache,
           );
           if (modelSupportsThinking) {
-            const thinkingBudget = mapReasoningEffortToBudget(
-              config.reasoningEffort,
-            );
             thinkingConfig = {
-              thinkingBudget,
+              thinkingBudget: thinkingParams.thinkingBudget,
               includeThoughts: true,
             };
           }

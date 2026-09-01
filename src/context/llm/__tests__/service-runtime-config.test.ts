@@ -38,4 +38,28 @@ describe('buildServiceRuntimeConfig', () => {
 
     expect(config.temperature).toBe(1.2);
   });
+
+  it('includes thinkingBudget from advanced settings', () => {
+    const config = buildServiceRuntimeConfig({
+      ...DEFAULT_SETTING,
+      advanced: {
+        ...DEFAULT_SETTING.advanced,
+        thinkingBudget: -1,
+      },
+    });
+
+    expect(config.thinkingBudget).toBe(-1);
+  });
+
+  it('includes thinkingBudget when disabled (0)', () => {
+    const config = buildServiceRuntimeConfig({
+      ...DEFAULT_SETTING,
+      advanced: {
+        ...DEFAULT_SETTING.advanced,
+        thinkingBudget: 0,
+      },
+    });
+
+    expect(config.thinkingBudget).toBe(0);
+  });
 });

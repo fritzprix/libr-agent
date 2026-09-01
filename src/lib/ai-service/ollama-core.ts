@@ -26,7 +26,7 @@ export {
   processMessageContent,
 } from './ollama-message-converter';
 export { processChunk } from './ollama-chunk-processor';
-export { determineThinkParam, getModelToolSupport } from './ollama-model-utils';
+export { getModelToolSupport } from './ollama-model-utils';
 export {
   createThinkTagStreamState,
   feedThinkTagDelta,

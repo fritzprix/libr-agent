@@ -33,8 +33,7 @@ async function testOllamaReasoning() {
   });
 
   const config: AIServiceConfig = {
-    enableReasoning: true,
-    reasoningEffort: 'medium', // Will fallback to boolean true
+    thinkingBudget: 8192,
     maxTokens: 2000,
   };
 
@@ -81,7 +80,7 @@ async function testAnthropicReasoning() {
   const service = new AnthropicService(apiKey);
 
   const config: AIServiceConfig = {
-    enableReasoning: true, // Will use extended_thinking for Claude 3.5+
+    thinkingBudget: 8192,
     maxTokens: 2000,
   };
 
@@ -129,8 +128,7 @@ async function testOpenAIReasoning() {
   const service = new OpenAIService(apiKey);
 
   const config: AIServiceConfig = {
-    enableReasoning: true,
-    reasoningEffort: 'medium', // For o3/o4 models
+    thinkingBudget: 8192,
     maxTokens: 2000,
   };
 

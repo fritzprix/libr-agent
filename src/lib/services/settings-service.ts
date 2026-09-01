@@ -59,6 +59,16 @@ export interface AdvancedSettings {
   thinkingLoopMinRepetitions: number; // default 4 — minimum repetitions for thinking loops
   /** Number of recent media-containing messages that retain full payloads. */
   maxRecentMediaMessages: number;
+  /**
+   * Thinking budget level for extended reasoning/thinking.
+   * Maps to provider-specific token budgets:
+   * - -1: dynamic (model auto-adjusts)
+   * - 1024: low (~1K thinking tokens)
+   * - 8192: medium (~8K, default)
+   * - 24576: high (~24K, higher cost)
+   * - 0 or undefined: disabled
+   */
+  thinkingBudget: number;
 }
 
 export interface DisplaySettings {
@@ -194,6 +204,7 @@ export const DEFAULT_SETTING: Settings = {
     thinkingLoopMinPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
     thinkingLoopMinRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
     maxRecentMediaMessages: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
+    thinkingBudget: 0, // disabled by default
   },
   display: {
     metricDisplayMode: 'inline',

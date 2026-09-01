@@ -106,28 +106,21 @@ export interface AIServiceConfig {
   temperature?: number;
 
   /**
-   * Enable reasoning mode for supported models.
-   * Per-conversation temporary setting (not global).
+   * Thinking budget in tokens for models that support extended reasoning/thinking.
    *
-   * Provider-specific parameters:
-   * - Ollama: think: true | 'low' | 'medium' | 'high'
-   * - OpenAI: reasoning_effort: 'low' | 'medium' | 'high' (o1/o3/o4 only)
-   * - Anthropic: extended_thinking: true (Claude 3.5+)
-   * - Gemini: thinkingConfig.thinkingBudget: number | -1 | 0
+   * - `undefined` or `0`: disabled (no thinking/extended reasoning)
+   * `-1`: dynamic — model auto-adjusts budget
+   * - `> 0`: explicit token budget (e.g. 8192 for ~8K thinking tokens)
    *
-   * @default false
+   * Provider-specific parameter mapping:
+   * - OpenAI: `reasoning_effort` derived from budget range
+   * - Anthropic: `extended_thinking: true` when budget > 0
+   * - Gemini: `thinkingConfig.thinkingBudget` set directly
+   * - Ollama: `think` derived from budget range
+   *
+   * @default undefined
    */
-  enableReasoning?: boolean;
-
-  /**
-   * Reasoning depth level when reasoning is enabled.
-   * - 'low': Fast, minimal reasoning (~1K tokens)
-   * - 'medium': Balanced reasoning (~8K tokens, default)
-   * - 'high': Deep reasoning (~24K tokens, higher cost)
-   *
-   * @default 'medium'
-   */
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  thinkingBudget?: number;
 }
 
 /**

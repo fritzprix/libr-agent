@@ -118,7 +118,7 @@ export async function setupCompactRequestListener({
           {
             ...requestComposition,
             isRetry,
-            reasoningEnabled: runtimeConfig.enableReasoning ?? false,
+            thinkingBudget: runtimeConfig.thinkingBudget,
             maxTokens: runtimeConfig.maxTokens,
           },
         );
@@ -176,7 +176,7 @@ export async function setupCompactRequestListener({
           `🧪 Compact failure request composition: session=${sessionId}, provider=${provider}, model=${model}`,
           {
             ...requestComposition,
-            reasoningEnabled: runtimeConfig.enableReasoning ?? false,
+            thinkingBudget: runtimeConfig.thinkingBudget,
             maxTokens: runtimeConfig.maxTokens,
           },
         );

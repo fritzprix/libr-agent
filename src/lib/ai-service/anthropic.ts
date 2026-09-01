@@ -37,6 +37,7 @@ import {
 import { ensureSchemaTypeField } from './utils';
 import { createLlmFetch } from './desktop-fetch';
 import { reportListModelsFallback } from './list-models-errors';
+import { mapThinkingBudget } from './thinking-effort-mapping';
 
 const logger = getLogger('AnthropicService');
 
@@ -294,16 +295,20 @@ export class AnthropicService extends BaseAIService<
         finalSystemPrompt,
       );
 
-      // Check if model supports extended thinking via dynamic capability detection
+      // Check if model supports extended thinking via unified mapper
       const model = options.modelName || this.getDefaultModel();
       let extendedThinking: boolean | undefined;
-      if (config.enableReasoning) {
+      const thinkingParams = mapThinkingBudget(
+        AIServiceProvider.Anthropic,
+        config.thinkingBudget,
+      );
+      if (thinkingParams.enabled) {
         const modelSupportsThinking = await supportsThinking(
           model,
           AIServiceProvider.Anthropic,
         );
         if (modelSupportsThinking) {
-          extendedThinking = true;
+          extendedThinking = thinkingParams.extendedThinking;
         }
       }
 

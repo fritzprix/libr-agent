@@ -26,10 +26,11 @@ import {
   convertToOllamaMessages,
   processChunk,
   getModelToolSupport,
-  determineThinkParam,
   consoleLogger,
   noopLogger,
 } from '../src/lib/ai-service/ollama-core';
+import { mapThinkingBudget } from '../src/lib/ai-service/thinking-effort-mapping';
+import { AIServiceProvider } from '../src/lib/ai-service/types';
 import type { Message } from '../src/models/chat';
 import type { MCPTool } from '../src/lib/mcp';
 
@@ -195,38 +196,24 @@ function testReasoningParam() {
   console.log('\n=== Testing Reasoning Parameter Determination ===\n');
 
   const testCases = [
-    {
-      enableReasoning: false,
-      reasoningEffort: undefined,
-      modelSupportsThinking: true,
-    },
-    {
-      enableReasoning: true,
-      reasoningEffort: undefined,
-      modelSupportsThinking: true,
-    },
-    {
-      enableReasoning: true,
-      reasoningEffort: 'medium' as const,
-      modelSupportsThinking: true,
-    },
-    {
-      enableReasoning: true,
-      reasoningEffort: 'high' as const,
-      modelSupportsThinking: false,
-    },
+    { thinkingBudget: undefined, modelSupportsThinking: true },
+    { thinkingBudget: 8192, modelSupportsThinking: true },
+    { thinkingBudget: 24576, modelSupportsThinking: true },
+    { thinkingBudget: 8192, modelSupportsThinking: false },
+    { thinkingBudget: -1, modelSupportsThinking: true },
   ];
 
   testCases.forEach((testCase, index) => {
-    const result = determineThinkParam(
-      testCase.enableReasoning,
-      testCase.reasoningEffort,
-      testCase.modelSupportsThinking,
-      consoleLogger,
+    const params = mapThinkingBudget(
+      AIServiceProvider.Ollama,
+      testCase.thinkingBudget,
     );
+    const result =
+      params.enabled && testCase.modelSupportsThinking
+        ? (params.reasoningEffort ?? true)
+        : undefined;
     console.log(
-      `Case ${index + 1}: enableReasoning=${testCase.enableReasoning}, ` +
-        `reasoningEffort=${testCase.reasoningEffort}, ` +
+      `Case ${index + 1}: thinkingBudget=${testCase.thinkingBudget}, ` +
         `modelSupportsThinking=${testCase.modelSupportsThinking} => ${result}`,
     );
   });

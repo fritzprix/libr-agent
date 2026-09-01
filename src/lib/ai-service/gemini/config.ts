@@ -3,26 +3,6 @@ import { ModelInfo, llmConfigManager } from '../../llm-config-manager';
 import { AIServiceConfig } from '../types';
 
 /**
- * Maps reasoning effort level to Gemini thinkingBudget tokens.
- * @param level The reasoning effort level.
- * @returns The thinking budget in tokens.
- */
-export function mapReasoningEffortToBudget(
-  level?: 'low' | 'medium' | 'high',
-): number {
-  switch (level) {
-    case 'low':
-      return 1024; // Fast, minimal reasoning
-    case 'medium':
-      return 8192; // Balanced reasoning (default)
-    case 'high':
-      return 24576; // Deep reasoning (higher cost)
-    default:
-      return -1; // Dynamic adjustment by the model
-  }
-}
-
-/**
  * Check if a model supports thinking mode
  * @param modelId The ID of the model.
  * @param modelCache The cache object containing model properties.

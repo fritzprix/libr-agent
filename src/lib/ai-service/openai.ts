@@ -36,6 +36,7 @@ import type {
   OpenAIStreamingRequest,
 } from './openai/types';
 import { isOpenAIStreamUsage } from './openai/types';
+import { mapThinkingBudget } from './thinking-effort-mapping';
 
 const logger = getLogger('OpenAIService');
 
@@ -271,16 +272,16 @@ export class OpenAIService extends BaseAIService<
         modelName = `${fireworksPrefix}${modelName}`;
       }
 
-      // Prepare reasoning_effort for reasoning models
-      // Check model capability dynamically instead of hardcoded patterns
+      // Prepare reasoning_effort for reasoning models via unified mapper
       let reasoningEffort: 'low' | 'medium' | 'high' | undefined;
-      if (config.enableReasoning && config.reasoningEffort) {
+      const thinkingParams = mapThinkingBudget(provider, config.thinkingBudget);
+      if (thinkingParams.enabled) {
         const modelSupportsThinking = await supportsThinking(
           modelName,
           provider,
         );
         if (modelSupportsThinking) {
-          reasoningEffort = config.reasoningEffort;
+          reasoningEffort = thinkingParams.reasoningEffort;
         }
       }
 
