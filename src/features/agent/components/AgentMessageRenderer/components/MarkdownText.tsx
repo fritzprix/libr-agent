@@ -17,7 +17,7 @@ export const MarkdownText = memo(
     const displayContent = useStreamMarkdownPreprocess(content, isStreaming);
 
     return (
-      <div className="relative text-sm leading-relaxed break-words font-sans">
+      <div className="relative text-sm leading-relaxed break-words font-sans whitespace-normal">
         <ReactMarkdown
           skipHtml={false}
           remarkPlugins={REMARK_PLUGINS}
