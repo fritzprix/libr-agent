@@ -4,7 +4,8 @@
 @import url('https://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.css');
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import 'katex/dist/katex.min.css';
+
+/* KaTeX CSS is imported from markdown.tsx so it stays in the message-renderer chunk. */
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
