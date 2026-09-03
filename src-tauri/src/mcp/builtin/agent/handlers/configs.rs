@@ -18,7 +18,7 @@ use super::super::formatting::{
     resolve_external_server_labels,
 };
 use super::super::AgentServer;
-use super::normalize_agent_config_result;
+use super::shared::normalize_agent_config_result;
 
 /// Request structure for creating an agent config
 #[derive(Debug, Deserialize, Serialize)]

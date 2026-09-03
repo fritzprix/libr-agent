@@ -15,10 +15,12 @@ use crate::repositories::{AssistantRepository, SessionStatus};
 
 use super::super::AgentServer;
 use super::check_session::check_session;
-use super::{
-    caller_session_not_found_result, format_workspace_status_note,
-    load_accessible_delegated_session, WorkspaceRelation,
+use super::delegation::load_accessible_delegated_session;
+use super::enrichment::{
+    apply_check_session_enrichment, display_sanitize_workspace_path, format_workspace_status_note,
+    resolve_check_session_enrichment, WorkspaceRelation,
 };
+use super::shared::caller_session_not_found_result;
 
 /// Resolve display path + SHARED/ISOLATED for a newly spawned child session.
 fn resolve_spawned_workspace_signal(
@@ -29,7 +31,7 @@ fn resolve_spawned_workspace_signal(
     let Ok(session_manager) = crate::session::get_session_manager() else {
         let display = intended_workspace
             .as_deref()
-            .and_then(super::display_sanitize_workspace_path);
+            .and_then(display_sanitize_workspace_path);
         return (display, None);
     };
 
@@ -54,7 +56,7 @@ fn resolve_spawned_workspace_signal(
     };
     // Strip newlines before display — workspaceOverride is user-controlled and this
     // path lands in the plain-text startSession note (not only the Metadata fence).
-    let display = super::display_sanitize_workspace_path(&child_raw);
+    let display = display_sanitize_workspace_path(&child_raw);
     (display, Some(relation))
 }
 
@@ -405,9 +407,8 @@ pub async fn message_to_session(
 
     // Non-blocking path: attach child workspace so the parent can locate files
     // without waiting for the next checkSession.
-    let enrichment =
-        super::resolve_check_session_enrichment(&target_session, caller_session_id).await;
-    super::apply_check_session_enrichment(&mut response_data, &enrichment);
+    let enrichment = resolve_check_session_enrichment(&target_session, caller_session_id).await;
+    apply_check_session_enrichment(&mut response_data, &enrichment);
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

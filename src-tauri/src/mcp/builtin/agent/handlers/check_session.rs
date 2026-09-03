@@ -11,10 +11,13 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::types::MCPResult;
 
 use super::super::AgentServer;
-use super::{
-    append_check_session_context_to_message, apply_check_session_enrichment,
+use super::check_session_results::{
     build_paused_check_session_result, build_terminal_check_session_result,
-    load_accessible_delegated_session, resolve_check_session_enrichment,
+};
+use super::delegation::load_accessible_delegated_session;
+use super::enrichment::{
+    append_check_session_context_to_message, apply_check_session_enrichment,
+    resolve_check_session_enrichment,
 };
 
 /// checkSession handler (from awaitAgent / getAgentStatus)
