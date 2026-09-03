@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { encodeModelChoice } from '@/lib/ai-service/model-choice-encoding';
+import type { ModelInfo } from '@/lib/llm-config-manager';
 import { AgentModelPicker } from '../AgentModelPicker';
 
 const mockGroupedModelsState = vi.hoisted(() => ({
@@ -35,7 +36,7 @@ const mockGroupedModelsState = vi.hoisted(() => ({
   refreshModels: vi.fn().mockResolvedValue(undefined),
   canRefresh: true,
   refreshBlockedReason: 'allowed',
-  getModelInfo: vi.fn(() => undefined),
+  getModelInfo: vi.fn((): ModelInfo | undefined => undefined),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -114,12 +115,15 @@ vi.mock('@/components/ui/select', () => ({
 vi.mock('@/features/settings/components/ThinkingEffortControl', () => ({
   ThinkingEffortControl: ({
     onThinkingEffortChange,
+    disabled,
   }: {
     onThinkingEffortChange: (effort: string) => void;
+    disabled?: boolean;
   }) => (
     <button
       type="button"
       data-testid="thinking-effort-control"
+      disabled={disabled}
       onClick={() => onThinkingEffortChange('high')}
     >
       effort
@@ -155,7 +159,8 @@ describe('AgentModelPicker', () => {
     mockGroupedModelsState.isRefreshing = false;
     mockGroupedModelsState.canRefresh = true;
     mockGroupedModelsState.refreshBlockedReason = 'allowed';
-    mockGroupedModelsState.getModelInfo = vi.fn(() => undefined);
+    mockGroupedModelsState.getModelInfo.mockReset();
+    mockGroupedModelsState.getModelInfo.mockReturnValue(undefined);
   });
 
   it('revalidates models when refresh is available', () => {
@@ -240,6 +245,35 @@ describe('AgentModelPicker', () => {
     );
 
     fireEvent.click(screen.getByTestId('thinking-effort-control'));
+    expect(onThinkingEffortChange).toHaveBeenCalledWith('high');
+  });
+
+  it('keeps thinking effort enabled for models without supportReasoning metadata', () => {
+    mockGroupedModelsState.getModelInfo.mockReturnValue({
+      id: 'gpt-4o',
+      name: 'GPT-4o',
+      contextWindow: 128000,
+      supportReasoning: false,
+      supportTools: true,
+      supportStreaming: true,
+      cost: { input: 0, output: 0 },
+      description: 'Non-reasoning OpenAI model',
+    });
+
+    const onThinkingEffortChange = vi.fn();
+
+    render(
+      <AgentModelPicker
+        currentModel="gpt-4o"
+        currentProvider="openai"
+        showThinkingEffort
+        onThinkingEffortChange={onThinkingEffortChange}
+      />,
+    );
+
+    const control = screen.getByTestId('thinking-effort-control');
+    expect(control).not.toBeDisabled();
+    fireEvent.click(control);
     expect(onThinkingEffortChange).toHaveBeenCalledWith('high');
   });
 });

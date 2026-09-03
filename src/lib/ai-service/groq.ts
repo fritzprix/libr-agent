@@ -8,7 +8,6 @@ import {
   SamplingOptions,
   SamplingResponse,
 } from '@/lib/mcp';
-import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { mapThinkingEffort } from './thinking-effort-mapping';
@@ -114,11 +113,6 @@ export class GroqService extends BaseAIService<
         options.systemPrompt,
       );
 
-      const model = llmConfigManager.getModel(
-        'groq',
-        options.modelName || config.defaultModel || 'llama-3.1-8b-instant',
-      );
-
       const toolChoice = !options.availableTools?.length
         ? undefined
         : options.disableToolUse
@@ -131,10 +125,9 @@ export class GroqService extends BaseAIService<
         AIServiceProvider.Groq,
         config.thinkingEffort,
       );
-      const reasoningFormat =
-        thinkingParams.enabled && model?.supportReasoning
-          ? ('parsed' as const)
-          : undefined;
+      const reasoningFormat = thinkingParams.enabled
+        ? ('parsed' as const)
+        : undefined;
 
       const chatCompletion = await this.withRetry(
         () =>

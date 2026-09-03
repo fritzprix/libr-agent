@@ -54,7 +54,7 @@ function ThinkingEffortSectionComponent({
             <TooltipContent className="max-w-xs text-pretty">
               {t(
                 'settings.aiModels.thinkingEffortTooltip',
-                'Best-effort control over reasoning depth. Unsupported models skip the parameter. Some providers may ignore it. Off still allows thinking tokens in the response if the server sends them. Anthropic uses extended thinking for all non-off levels.',
+                'Controls how deeply the model reasons before answering. The setting is always sent when enabled. Models or providers that do not support it return an API error — turn effort Off or switch models. Anthropic uses extended thinking for all non-off levels.',
               )}
             </TooltipContent>
           </Tooltip>
@@ -62,7 +62,7 @@ function ThinkingEffortSectionComponent({
         <p className="mt-1 text-xs text-muted-foreground">
           {t(
             'settings.aiModels.thinkingEffortDescription',
-            'How deeply the model reasons before answering, when supported.',
+            'How deeply the model reasons before answering. Unsupported models return a provider error.',
           )}
         </p>
       </div>

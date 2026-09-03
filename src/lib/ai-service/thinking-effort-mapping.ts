@@ -2,8 +2,9 @@
  * Unified thinking effort → provider-native parameter mapping.
  *
  * Settings expose a single `thinkingEffort` enum. Known providers are mapped to
- * native API parameters here. Mapping is best-effort: self-hosted OpenAI-compatible
- * endpoints often use model-specific parameter names and may ignore LibrAgent settings.
+ * native API parameters here. Mapping is best-effort and always applied when the
+ * user enables an effort level — providers that reject the parameter return an
+ * API error the UI surfaces so the user can turn effort off or change models.
  */
 
 import { AIServiceProvider } from './types';
@@ -93,6 +94,10 @@ export function mapThinkingEffort(
         reasoningEffort: normalized === 'auto' ? 'medium' : normalized,
       };
 
+    case AIServiceProvider.Groq:
+      // Groq uses reasoning_format (parsed) rather than effort levels.
+      return { enabled: true };
+
     case AIServiceProvider.Anthropic:
       return { enabled: true, extendedThinking: true };
 
@@ -102,7 +107,6 @@ export function mapThinkingEffort(
         thinkingBudget: GEMINI_EFFORT_TOKEN_BUDGET[normalized],
       };
 
-    case AIServiceProvider.Groq:
     case AIServiceProvider.Empty:
     default:
       return { enabled: false };

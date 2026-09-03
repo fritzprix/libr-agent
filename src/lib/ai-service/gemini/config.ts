@@ -1,28 +1,5 @@
 import { HarmCategory, HarmBlockThreshold } from '@google/genai';
-import { ModelInfo, llmConfigManager } from '../../llm-config-manager';
 import { AIServiceConfig } from '../types';
-
-/**
- * Check if a model supports thinking mode.
- */
-export async function checkThinkingSupport(
-  modelId: string,
-  modelCache?: ModelInfo[],
-): Promise<boolean> {
-  if (modelCache) {
-    const cachedModel = modelCache.find((m) => m.id === modelId);
-    if (cachedModel) {
-      return cachedModel.supportReasoning;
-    }
-  }
-
-  const staticModel = llmConfigManager.getModel('gemini', modelId);
-  if (staticModel?.supportReasoning !== undefined) {
-    return staticModel.supportReasoning;
-  }
-
-  return /gemini-2\.[5-9]|gemini-[3-9]/.test(modelId);
-}
 
 /**
  * Returns the default safety settings for Gemini.

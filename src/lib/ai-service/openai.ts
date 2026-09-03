@@ -12,7 +12,6 @@ import {
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import type { ModelInfo } from '../llm-config-manager';
-import { supportsThinking } from './model-capabilities';
 import { mapThinkingEffort } from './thinking-effort-mapping';
 import { ensureSchemaTypeField, processMessageContent } from './utils';
 import { OpenAIPromptDiagnosticsTracker } from './openai/diagnostics';
@@ -273,17 +272,11 @@ export class OpenAIService extends BaseAIService<
         modelName = `${fireworksPrefix}${modelName}`;
       }
 
-      // Prepare reasoning_effort for reasoning models via unified mapper
+      // Honor user thinking effort; unsupported models return provider API errors.
       let reasoningEffort: 'low' | 'medium' | 'high' | undefined;
       const thinkingParams = mapThinkingEffort(provider, config.thinkingEffort);
       if (thinkingParams.enabled) {
-        const modelSupportsThinking = await supportsThinking(
-          modelName,
-          provider,
-        );
-        if (modelSupportsThinking) {
-          reasoningEffort = thinkingParams.reasoningEffort;
-        }
+        reasoningEffort = thinkingParams.reasoningEffort;
       }
 
       const automaticPromptCacheKey = this.buildAutomaticPromptCacheKey({

@@ -111,4 +111,19 @@ describe('OpenAIService temperature payload', () => {
     const request = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(request.temperature).toBe(0.4);
   });
+
+  it('sends reasoning_effort when thinkingEffort is set even if model metadata lacks support', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    await consumeStream(
+      service.streamChat([createUserMessage('hello')], {
+        modelName: 'gpt-4o',
+        config: { thinkingEffort: 'high' },
+      }),
+    );
+
+    const request = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request.reasoning_effort).toBe('high');
+  });
 });

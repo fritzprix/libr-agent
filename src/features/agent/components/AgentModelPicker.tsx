@@ -22,9 +22,7 @@ import {
   decodeModelChoice,
   encodeModelChoice,
 } from '@/lib/ai-service/model-choice-encoding';
-import { mapThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
-import { AIServiceProvider } from '@/lib/ai-service/types';
 import type {
   CustomOpenAIProvider,
   ServiceConfig,
@@ -121,22 +119,6 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
     selectedModelInfo?.name,
     selectedProviderLabel,
   ]);
-
-  const thinkingSupported = useMemo(() => {
-    if (!currentProvider) {
-      return false;
-    }
-
-    if (selectedModelInfo) {
-      return selectedModelInfo.supportReasoning;
-    }
-
-    const mapped = mapThinkingEffort(
-      currentProvider as AIServiceProvider,
-      effectiveThinkingEffort,
-    );
-    return mapped.enabled;
-  }, [currentProvider, effectiveThinkingEffort, selectedModelInfo]);
 
   const showRefreshButton =
     Boolean(currentProvider) &&
@@ -244,26 +226,13 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       {showThinkingEffort && onThinkingEffortChange ? (
         <>
           <span className="text-muted-foreground/50">·</span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={cn(!thinkingSupported && 'cursor-not-allowed')}>
-                <ThinkingEffortControl
-                  thinkingEffort={effectiveThinkingEffort}
-                  onThinkingEffortChange={onThinkingEffortChange}
-                  disabled={disabled || !thinkingSupported}
-                  compact
-                  showTooltip={false}
-                />
-              </span>
-            </TooltipTrigger>
-            {!thinkingSupported ? (
-              <TooltipContent>
-                {t('agent.modelPicker.thinkingUnsupported', {
-                  defaultValue: 'Thinking is not supported for this model',
-                })}
-              </TooltipContent>
-            ) : null}
-          </Tooltip>
+          <ThinkingEffortControl
+            thinkingEffort={effectiveThinkingEffort}
+            onThinkingEffortChange={onThinkingEffortChange}
+            disabled={disabled}
+            compact
+            showTooltip
+          />
         </>
       ) : null}
 

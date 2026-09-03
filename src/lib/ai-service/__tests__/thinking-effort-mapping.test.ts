@@ -67,8 +67,14 @@ describe('mapThinkingEffort', () => {
     });
   });
 
-  it('returns disabled for providers without thinking mapping', () => {
+  it('enables Groq thinking via reasoning_format (no effort level)', () => {
     expect(mapThinkingEffort(AIServiceProvider.Groq, 'medium')).toEqual({
+      enabled: true,
+    });
+  });
+
+  it('returns disabled for providers without thinking mapping', () => {
+    expect(mapThinkingEffort(AIServiceProvider.Empty, 'medium')).toEqual({
       enabled: false,
     });
   });

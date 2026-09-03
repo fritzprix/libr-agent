@@ -9,7 +9,7 @@ import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
-import { supportsThinking, getContextWindow } from './model-capabilities';
+import { getContextWindow } from './model-capabilities';
 import { mapThinkingEffort } from './thinking-effort-mapping';
 import {
   applyAnthropicMessageDeltaUsage,
@@ -295,7 +295,7 @@ export class AnthropicService extends BaseAIService<
         finalSystemPrompt,
       );
 
-      // Check if model supports extended thinking via unified mapper
+      // Honor user thinking effort; unsupported models return provider API errors.
       const model = options.modelName || this.getDefaultModel();
       let extendedThinking: boolean | undefined;
       const thinkingParams = mapThinkingEffort(
@@ -303,13 +303,7 @@ export class AnthropicService extends BaseAIService<
         config.thinkingEffort,
       );
       if (thinkingParams.enabled) {
-        const modelSupportsThinking = await supportsThinking(
-          model,
-          AIServiceProvider.Anthropic,
-        );
-        if (modelSupportsThinking) {
-          extendedThinking = thinkingParams.extendedThinking;
-        }
+        extendedThinking = thinkingParams.extendedThinking;
       }
 
       const systemBlocks = buildAnthropicSystemBlocks(finalSystemPrompt);

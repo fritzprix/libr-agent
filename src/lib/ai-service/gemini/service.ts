@@ -17,7 +17,7 @@ import {
   convertToGeminiMessages,
   convertMCPSchemaToGeminiParameters,
 } from './mapper';
-import { prepareSafetySettings, checkThinkingSupport } from './config';
+import { prepareSafetySettings } from './config';
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
 import { isCompactSummaryMessage } from '../base-service-context';
@@ -316,17 +316,12 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           AIServiceProvider.Gemini,
           config.thinkingEffort,
         );
+        // Honor user thinking effort; unsupported models return provider API errors.
         if (thinkingParams.enabled) {
-          const modelSupportsThinking = await checkThinkingSupport(
-            model,
-            this.modelCache,
-          );
-          if (modelSupportsThinking) {
-            thinkingConfig = {
-              thinkingBudget: thinkingParams.thinkingBudget,
-              includeThoughts: true,
-            };
-          }
+          thinkingConfig = {
+            thinkingBudget: thinkingParams.thinkingBudget,
+            includeThoughts: true,
+          };
         }
 
         const safetySettings = prepareSafetySettings(config);

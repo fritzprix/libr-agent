@@ -12,7 +12,7 @@ import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { ModelInfo } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { getContextWindow, supportsThinking } from './model-capabilities';
+import { getContextWindow } from './model-capabilities';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
@@ -310,21 +310,15 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         })),
       });
 
-      // Prepare reasoning parameter via unified mapper
+      // Honor user thinking effort; unsupported models return provider API errors.
+      // Ollama may still retry with boolean `think` if granular levels are rejected.
       let thinkParam: boolean | 'low' | 'medium' | 'high' | undefined;
       const thinkingParams = mapThinkingEffort(
         AIServiceProvider.Ollama,
         config.thinkingEffort,
       );
       if (thinkingParams.enabled) {
-        const modelSupportsThinking = await supportsThinking(
-          model,
-          AIServiceProvider.Ollama,
-          { apiBase: this.host },
-        );
-        if (modelSupportsThinking) {
-          thinkParam = thinkingParams.reasoningEffort ?? true;
-        }
+        thinkParam = thinkingParams.reasoningEffort ?? true;
       }
 
       const requestOptions: ChatRequest & { stream: true } = {
