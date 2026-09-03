@@ -1,3 +1,21 @@
+## [0.9.7] - 2026-09-03
+
+### 🚀 Features & UI
+
+- **Grouped Model Picker & Inline Thinking Effort**: Added a grouped model picker dropdown in the chat input bar organized by provider, with inline `Thinking Effort` adjustment (`None`, `Low`, `Medium`, `High`) for rapid reasoning configuration during agent sessions.
+- **Unified Reasoning Settings Across Providers**: Standardized reasoning configuration under `ThinkingEffort` / `thinkingBudget` across Anthropic, OpenAI, Gemini, Groq, Cerebras, and Ollama, eliminating fragile model-name capability gates.
+- **Browser Screenshot MCP Tool**: Introduced `browser__takeScreenshot` supporting bounded viewport and full-page PNG capture with memory-safe limits (64M pixels, 8 MiB) via the browser sidecar.
+- **Paginated Terminal Output**: Added paginated process output reads (`read_process_output`) for improved memory efficiency and agent context handling with long-running terminal tasks.
+- **Sub-Agent Session Reuse**: Restored role-aware sub-agent session reuse to prevent duplicate child session spawning during delegated workflows.
+
+### 🐛 Fixes & Hardening
+
+- **LaTeX & KaTeX Stream Rendering**: Protected inline and block LaTeX math expressions during streaming Markdown preprocessing and eliminated duplicate KaTeX stylesheet bundles.
+- **Process Cancellation & Cleanup**: Hardened persistent shell termination and process cancellation awareness, ensuring robust lifecycle cleanup across platforms.
+- **Compaction Prompt-Cache Prefix Alignment**: Aligned conversation compaction requests with parent prompt-cache prefixes to maximize LLM KV cache reuse.
+- **Session Status Filter Hygiene**: Added `queued` and `provisioning` states to history and session list status filters.
+- **Modular Workspace Subsystems**: Decomposed `workspace_server` and `readFile` handlers into modular, maintainable submodules.
+
 ## [0.9.6] - 2026-08-25
 
 ### 🚀 Features & Performance
