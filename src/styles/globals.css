@@ -4,6 +4,7 @@
 @import url('https://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.css');
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'katex/dist/katex.min.css';
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);

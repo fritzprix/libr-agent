@@ -192,6 +192,21 @@
       .md table { border-collapse: collapse; width: 100%; margin: 0 0 14px; font-size: 0.93em; }
       .md th { background: var(--muted, #f3f4f6); font-weight: 600; }
       .md th, .md td { border: 1px solid var(--border, #d1d5db); padding: 7px 12px; text-align: left; }
+      .md .math-inline {
+        font-family: 'KaTeX_Math', 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif;
+        font-style: italic;
+        padding: 0 2px;
+      }
+      .md .math-display {
+        font-family: 'KaTeX_Math', 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif;
+        font-style: italic;
+        text-align: center;
+        margin: 12px 0;
+        padding: 8px 12px;
+        background: var(--muted, #f3f4f6);
+        border-radius: 6px;
+        overflow-x: auto;
+      }
     </style>
   </head>
   <body>
@@ -227,16 +242,50 @@
               }
 
               function parseInline(s) {
-                return s
-                  .replace(/`([^`]+)`/g, '<code>$1</code>')
-                  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-                  .replace(/__([^_]+)__/g, '<strong>$1</strong>')
-                  .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-                  .replace(/_([^_]+)_/g, '<em>$1</em>')
-                  .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
-                    var safe = /^(https?:|mailto:|#)/.test(url.trim()) ? url : '#';
-                    return '<a href="' + safe + '" target="_blank" rel="noopener">' + text + '</a>';
-                  });
+                var placeholders = [];
+
+                // 1. Protect inline code
+                s = s.replace(/`([^`]+)`/g, function (_, code) {
+                  var idx = placeholders.length;
+                  placeholders.push('<code>' + escape(code) + '</code>');
+                  return '@@PH_' + idx + '@@';
+                });
+
+                // 2. Protect display math $$...$$
+                s = s.replace(/\$\$([^\$]+)\$\$/g, function (_, math) {
+                  var idx = placeholders.length;
+                  placeholders.push('<div class="math-display">$$' + escape(math) + '$$</div>');
+                  return '@@PH_' + idx + '@@';
+                });
+
+                // 3. Protect inline math $...$
+                s = s.replace(/\$([^\$\s](?:[^\$]*[^\$\s])?)\$/g, function (_, math) {
+                  var idx = placeholders.length;
+                  placeholders.push('<span class="math-inline">$' + escape(math) + '$</span>');
+                  return '@@PH_' + idx + '@@';
+                });
+
+                // 4. Links
+                s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
+                  var safe = /^(https?:|mailto:|#)/.test(url.trim()) ? url : '#';
+                  return '<a href="' + safe + '" target="_blank" rel="noopener">' + text + '</a>';
+                });
+
+                // 5. Bold & Italic
+                s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                     .replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+                // Single * only when not surrounded by whitespace
+                s = s.replace(/(^|[^\s*])\*([^\s*](?:[^*]*[^\s*])?)\*([^\s*]|$)/g, '$1<em>$2</em>$3');
+                // Single _ only when not surrounded by word/whitespace
+                s = s.replace(/(^|[\s(])_([^\s_](?:[^_]*[^\s_])?)_([\s).,!?:;]|$)/g, '$1<em>$2</em>$3');
+
+                // Restore placeholders
+                s = s.replace(/@@PH_(\d+)@@/g, function (_, idx) {
+                  return placeholders[parseInt(idx, 10)] || '';
+                });
+
+                return s;
               }
 
               function parseMarkdown(md) {
