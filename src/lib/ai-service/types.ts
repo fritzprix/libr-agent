@@ -1,5 +1,6 @@
 import type { ModelInfo } from '../llm-config-manager';
 import type { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
+import type { ThinkingEffort } from './thinking-effort-mapping';
 
 export type { ModelInfo, SamplingOptions, SamplingResponse };
 
@@ -106,28 +107,13 @@ export interface AIServiceConfig {
   temperature?: number;
 
   /**
-   * Enable reasoning mode for supported models.
-   * Per-conversation temporary setting (not global).
+   * Thinking effort preset. Best-effort: mapped to provider-native params where
+   * supported. Self-hosted OpenAI-compatible servers may ignore this or use
+   * different fields per model; responses can still include thinking tokens.
    *
-   * Provider-specific parameters:
-   * - Ollama: think: true | 'low' | 'medium' | 'high'
-   * - OpenAI: reasoning_effort: 'low' | 'medium' | 'high' (o1/o3/o4 only)
-   * - Anthropic: extended_thinking: true (Claude 3.5+)
-   * - Gemini: thinkingConfig.thinkingBudget: number | -1 | 0
-   *
-   * @default false
+   * @default undefined (treated as `off`)
    */
-  enableReasoning?: boolean;
-
-  /**
-   * Reasoning depth level when reasoning is enabled.
-   * - 'low': Fast, minimal reasoning (~1K tokens)
-   * - 'medium': Balanced reasoning (~8K tokens, default)
-   * - 'high': Deep reasoning (~24K tokens, higher cost)
-   *
-   * @default 'medium'
-   */
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  thinkingEffort?: ThinkingEffort;
 }
 
 /**

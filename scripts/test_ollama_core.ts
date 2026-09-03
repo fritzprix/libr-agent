@@ -26,10 +26,12 @@ import {
   convertToOllamaMessages,
   processChunk,
   getModelToolSupport,
-  determineThinkParam,
   consoleLogger,
   noopLogger,
 } from '../src/lib/ai-service/ollama-core';
+import { mapThinkingEffort } from '../src/lib/ai-service/thinking-effort-mapping';
+import type { ThinkingEffort } from '../src/lib/ai-service/thinking-effort-mapping';
+import { AIServiceProvider } from '../src/lib/ai-service/types';
 import type { Message } from '../src/models/chat';
 import type { MCPTool } from '../src/lib/mcp';
 
@@ -194,40 +196,23 @@ function testModelCapabilities() {
 function testReasoningParam() {
   console.log('\n=== Testing Reasoning Parameter Determination ===\n');
 
-  const testCases = [
-    {
-      enableReasoning: false,
-      reasoningEffort: undefined,
-      modelSupportsThinking: true,
-    },
-    {
-      enableReasoning: true,
-      reasoningEffort: undefined,
-      modelSupportsThinking: true,
-    },
-    {
-      enableReasoning: true,
-      reasoningEffort: 'medium' as const,
-      modelSupportsThinking: true,
-    },
-    {
-      enableReasoning: true,
-      reasoningEffort: 'high' as const,
-      modelSupportsThinking: false,
-    },
+  const testCases: Array<{ thinkingEffort: ThinkingEffort | undefined }> = [
+    { thinkingEffort: undefined },
+    { thinkingEffort: 'medium' },
+    { thinkingEffort: 'high' },
+    { thinkingEffort: 'auto' },
   ];
 
   testCases.forEach((testCase, index) => {
-    const result = determineThinkParam(
-      testCase.enableReasoning,
-      testCase.reasoningEffort,
-      testCase.modelSupportsThinking,
-      consoleLogger,
+    const params = mapThinkingEffort(
+      AIServiceProvider.Ollama,
+      testCase.thinkingEffort,
     );
+    const result = params.enabled
+      ? (params.reasoningEffort ?? true)
+      : undefined;
     console.log(
-      `Case ${index + 1}: enableReasoning=${testCase.enableReasoning}, ` +
-        `reasoningEffort=${testCase.reasoningEffort}, ` +
-        `modelSupportsThinking=${testCase.modelSupportsThinking} => ${result}`,
+      `Case ${index + 1}: thinkingEffort=${testCase.thinkingEffort ?? 'off'} => ${result}`,
     );
   });
 }

@@ -1,4 +1,5 @@
 import { AIServiceProvider } from '@/lib/ai-service';
+import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import {
   REPEATED_THINKING_MIN_PATTERN_LENGTH,
@@ -59,6 +60,8 @@ export interface AdvancedSettings {
   thinkingLoopMinRepetitions: number; // default 4 — minimum repetitions for thinking loops
   /** Number of recent media-containing messages that retain full payloads. */
   maxRecentMediaMessages: number;
+  /** Thinking effort preset for extended reasoning/thinking. */
+  thinkingEffort: ThinkingEffort;
 }
 
 export interface DisplaySettings {
@@ -194,6 +197,7 @@ export const DEFAULT_SETTING: Settings = {
     thinkingLoopMinPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
     thinkingLoopMinRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
     maxRecentMediaMessages: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
+    thinkingEffort: 'off',
   },
   display: {
     metricDisplayMode: 'inline',

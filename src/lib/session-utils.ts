@@ -119,10 +119,11 @@ export function buildDescendantStatusCounts<T extends AgentSession>(
     for (const child of children) {
       total[child.status] += 1;
       const childCounts = countStatuses(child.id);
-      total.busy += childCounts.busy;
-      total.idle += childCounts.idle;
-      total.paused += childCounts.paused;
-      total.error += childCounts.error;
+      for (const key of Object.keys(total) as Array<
+        keyof SessionStatusCounts
+      >) {
+        total[key] += childCounts[key];
+      }
     }
 
     counts.set(sessionId, total);

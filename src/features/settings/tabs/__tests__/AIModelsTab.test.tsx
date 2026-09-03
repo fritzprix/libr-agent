@@ -100,6 +100,8 @@ const temperatureProps = {
   temperature: 0.7,
   onTemperatureOverrideEnabledChange: vi.fn(),
   onTemperatureChange: vi.fn(),
+  thinkingEffort: 'off' as const,
+  onThinkingEffortChange: vi.fn(),
 };
 
 describe('AIModelsTab', () => {
@@ -152,6 +154,7 @@ describe('AIModelsTab', () => {
       expect.objectContaining({
         currentModel: 'gpt-4o',
         currentProvider: AIServiceProvider.OpenAI,
+        serviceConfigs: expect.any(Object),
       }),
     );
   });
@@ -302,6 +305,8 @@ describe('AIModelsTab', () => {
           onTemperatureOverrideEnabledChange
         }
         onTemperatureChange={vi.fn()}
+        thinkingEffort="off"
+        onThinkingEffortChange={vi.fn()}
       />,
     );
 
@@ -330,6 +335,8 @@ describe('AIModelsTab', () => {
           onTemperatureOverrideEnabledChange
         }
         onTemperatureChange={vi.fn()}
+        thinkingEffort="off"
+        onThinkingEffortChange={vi.fn()}
       />,
     );
 

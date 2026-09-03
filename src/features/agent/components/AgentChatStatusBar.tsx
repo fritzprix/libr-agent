@@ -36,6 +36,8 @@ import { mergeDisplayTokenUsage } from './token-metrics';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useSettings } from '@/hooks/use-settings';
+import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 
 const logger = getLogger('AgentChatStatusBar');
 
@@ -115,6 +117,19 @@ export function AgentChatStatusBar() {
     useAgentChat();
   const { isCompacting, isAwaitingCompact } = useLLMService();
   const [showToolsModal, setShowToolsModal] = useState(false);
+  const { value: settings, update: updateSettings } = useSettings();
+
+  const handleThinkingEffortChange = useCallback(
+    async (effort: ThinkingEffort) => {
+      await updateSettings({
+        advanced: {
+          ...settings.advanced,
+          thinkingEffort: effort,
+        },
+      });
+    },
+    [settings.advanced, updateSettings],
+  );
 
   // ✅ Fetch real-time token metrics
   const sessionId = session?.id;
@@ -591,6 +606,11 @@ export function AgentChatStatusBar() {
                 className="w-full sm:w-auto"
                 disabled={!canUpdateSessionConfig}
                 onConfigUpdate={handleConfigUpdate}
+                showThinkingEffort
+                thinkingEffort={settings.advanced.thinkingEffort}
+                onThinkingEffortChange={(effort) => {
+                  void handleThinkingEffortChange(effort);
+                }}
               />
             )}
           </div>

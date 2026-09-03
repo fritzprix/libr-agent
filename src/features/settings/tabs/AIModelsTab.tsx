@@ -24,6 +24,8 @@ import { ProviderCard } from '../components/ProviderCard';
 import { CustomProviderCard } from '../components/CustomProviderCard';
 import { NumberSettingField } from '../components/NumberSettingField';
 import { parseFloatInput } from '../components/settings-number-utils';
+import { ThinkingEffortSection } from '../components/ThinkingEffortSection';
+import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 
 const EMPTY_CUSTOM_PROVIDERS: CustomOpenAIProvider[] = [];
 
@@ -44,6 +46,8 @@ interface AIModelsTabProps {
   onFallbackModelChange: (model: string, provider: string) => void;
   onTemperatureOverrideEnabledChange: (enabled: boolean) => void;
   onTemperatureChange: (temperature: number) => void;
+  thinkingEffort: ThinkingEffort;
+  onThinkingEffortChange: (effort: ThinkingEffort) => void;
 }
 
 function AIModelsTabComponent({
@@ -60,6 +64,8 @@ function AIModelsTabComponent({
   onFallbackModelChange,
   onTemperatureOverrideEnabledChange,
   onTemperatureChange,
+  thinkingEffort,
+  onThinkingEffortChange,
 }: AIModelsTabProps) {
   const { t } = useTranslation('common');
   const providers = customProviders ?? EMPTY_CUSTOM_PROVIDERS;
@@ -227,6 +233,7 @@ function AIModelsTabComponent({
             currentModel={localPreferredModel.model}
             currentProvider={localPreferredModel.provider}
             customProviders={providers}
+            serviceConfigs={serviceConfigs}
             onConfigUpdate={onPreferredModelChange}
             className="w-full max-w-sm"
           />
@@ -242,6 +249,7 @@ function AIModelsTabComponent({
               localFallbackModel?.provider ?? localPreferredModel.provider
             }
             customProviders={providers}
+            serviceConfigs={serviceConfigs}
             onConfigUpdate={onFallbackModelChange}
             className="w-full max-w-sm"
           />
@@ -252,6 +260,11 @@ function AIModelsTabComponent({
             )}
           </p>
         </div>
+
+        <ThinkingEffortSection
+          thinkingEffort={thinkingEffort}
+          onThinkingEffortChange={onThinkingEffortChange}
+        />
 
         <div className="min-w-0 space-y-3">
           <div className="flex items-center space-x-2">

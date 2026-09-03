@@ -12,7 +12,7 @@ import {
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import type { ModelInfo } from '../llm-config-manager';
-import { supportsThinking } from './model-capabilities';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 import { ensureSchemaTypeField, processMessageContent } from './utils';
 import { OpenAIPromptDiagnosticsTracker } from './openai/diagnostics';
 import { convertToOpenAIMessages } from './openai/message-converter';
@@ -78,6 +78,7 @@ function summarizeOpenAIRequestIngredients(params: {
     stream: request.stream,
     promptCacheKeyPresent: typeof request.prompt_cache_key === 'string',
     promptCacheRetention: request.prompt_cache_retention ?? null,
+    reasoningEffort: request.reasoning_effort ?? null,
     ...messageSummary,
     openaiRoleCounts,
   };
@@ -271,17 +272,11 @@ export class OpenAIService extends BaseAIService<
         modelName = `${fireworksPrefix}${modelName}`;
       }
 
-      // Prepare reasoning_effort for reasoning models
-      // Check model capability dynamically instead of hardcoded patterns
+      // Honor user thinking effort; unsupported models return provider API errors.
       let reasoningEffort: 'low' | 'medium' | 'high' | undefined;
-      if (config.enableReasoning && config.reasoningEffort) {
-        const modelSupportsThinking = await supportsThinking(
-          modelName,
-          provider,
-        );
-        if (modelSupportsThinking) {
-          reasoningEffort = config.reasoningEffort;
-        }
+      const thinkingParams = mapThinkingEffort(provider, config.thinkingEffort);
+      if (thinkingParams.enabled) {
+        reasoningEffort = thinkingParams.reasoningEffort;
       }
 
       const automaticPromptCacheKey = this.buildAutomaticPromptCacheKey({

@@ -190,6 +190,10 @@ const SettingsPage: FC = function SettingsPage() {
                 onTemperatureChange={(temperature) =>
                   update('temperature', temperature)
                 }
+                thinkingEffort={formState.advanced.thinkingEffort}
+                onThinkingEffortChange={(effort) =>
+                  updateAdvanced('thinkingEffort', effort)
+                }
               />
             </TabsContent>
 

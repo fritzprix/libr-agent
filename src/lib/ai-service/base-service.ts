@@ -362,7 +362,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
       messagesCount: messages.length,
       toolsCount: options.availableTools?.length || 0,
       systemPromptLength: options.systemPrompt?.length,
-      reasoningEnabled: options.config?.enableReasoning,
+      thinkingEffort: options.config?.thinkingEffort,
     });
 
     // Accumulate the full response for logging

@@ -11,20 +11,26 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  listCustomProviderPickerOptions,
-  resolveDefaultModelForProviderChange,
-} from '@/lib/ai-service/custom-providers';
 import { setLastSelectedModel } from '@/lib/ai-service/last-selected-model-storage';
-import type { CustomOpenAIProvider } from '@/lib/services/settings-service';
-import { llmConfigManager } from '@/lib/llm-config-manager';
+import {
+  decodeModelChoice,
+  encodeModelChoice,
+} from '@/lib/ai-service/model-choice-encoding';
+import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
+import type {
+  CustomOpenAIProvider,
+  ServiceConfig,
+} from '@/lib/services/settings-service';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/hooks/use-settings';
-import { useAgentModels } from '../hooks/useAgentModels';
+import { ThinkingEffortControl } from '@/features/settings/components/ThinkingEffortControl';
+import { useGroupedAgentModels } from '../hooks/useGroupedAgentModels';
 
 interface AgentModelPickerProps {
   currentModel?: string;
@@ -32,11 +38,18 @@ interface AgentModelPickerProps {
   className?: string;
   disabled?: boolean;
   onConfigUpdate?: (model: string, provider: string) => void;
+  thinkingEffort?: ThinkingEffort;
+  onThinkingEffortChange?: (effort: ThinkingEffort) => void;
+  showThinkingEffort?: boolean;
   /**
    * Optional override for custom providers (e.g. settings form draft).
    * Falls back to persisted settings when omitted.
    */
   customProviders?: CustomOpenAIProvider[];
+  /**
+   * Optional override for service configs (e.g. settings form draft).
+   */
+  serviceConfigs?: Record<string, ServiceConfig>;
 }
 
 const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
@@ -45,41 +58,67 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   className,
   disabled = false,
   onConfigUpdate,
+  thinkingEffort,
+  onThinkingEffortChange,
+  showThinkingEffort = false,
   customProviders: customProvidersProp,
+  serviceConfigs: serviceConfigsProp,
 }) => {
   const { t } = useTranslation('common');
   const {
-    value: {
-      customProviders: settingsCustomProviders,
-      serviceConfigs,
-      preferredModel,
-      fallbackModel,
-    },
+    value: { advanced },
   } = useSettings();
-  const customProviders = customProvidersProp ?? settingsCustomProviders;
+
+  const effectiveThinkingEffort = thinkingEffort ?? advanced.thinkingEffort;
+
   const {
-    availableModels,
+    groupedModels,
+    hasConfiguredProviders,
     isRefreshing,
     refreshModels,
     canRefresh,
     refreshBlockedReason,
-  } = useAgentModels(currentProvider);
+    getModelInfo,
+  } = useGroupedAgentModels({
+    customProviders: customProvidersProp,
+    serviceConfigs: serviceConfigsProp,
+    currentProvider,
+  });
 
-  const modelOptions = useMemo(() => {
-    return Object.entries(availableModels).map(([key, value]) => ({
-      label: value.name,
-      value: key,
-    }));
-  }, [availableModels]);
+  const selectedModelChoice = useMemo(() => {
+    if (!currentProvider || !currentModel) {
+      return undefined;
+    }
+    return encodeModelChoice(currentProvider, currentModel);
+  }, [currentModel, currentProvider]);
 
-  const providerOptions = useMemo(() => {
-    const providers = llmConfigManager.getProviders();
-    const builtin = Object.entries(providers).map(([key, value]) => ({
-      label: value.name,
-      value: key,
-    }));
-    return [...builtin, ...listCustomProviderPickerOptions(customProviders)];
-  }, [customProviders]);
+  const selectedModelInfo = useMemo(() => {
+    if (!currentProvider || !currentModel) {
+      return undefined;
+    }
+    return getModelInfo(currentProvider, currentModel);
+  }, [currentModel, currentProvider, getModelInfo]);
+
+  const selectedProviderLabel = useMemo(() => {
+    const group = groupedModels.find(
+      (entry) => entry.providerId === currentProvider,
+    );
+    return group?.label ?? currentProvider;
+  }, [currentProvider, groupedModels]);
+
+  const triggerLabel = useMemo(() => {
+    if (!currentProvider || !currentModel) {
+      return undefined;
+    }
+
+    const modelName = selectedModelInfo?.name ?? currentModel;
+    return `${selectedProviderLabel} · ${modelName}`;
+  }, [
+    currentModel,
+    currentProvider,
+    selectedModelInfo?.name,
+    selectedProviderLabel,
+  ]);
 
   const showRefreshButton =
     Boolean(currentProvider) &&
@@ -107,52 +146,26 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
     return '';
   }, [canRefresh, refreshBlockedReason, t]);
 
-  const handleProviderChange = useCallback(
-    (newProvider: string) => {
-      // Radix can emit "" when clearing / syncing controlled values — ignore it
-      // so a custom:`id` selection is not immediately reverted.
-      if (!newProvider) {
+  const handleModelChoiceChange = useCallback(
+    (value: string) => {
+      if (!value) {
         return;
       }
 
-      const defaultModel = resolveDefaultModelForProviderChange(
-        newProvider,
-        {
-          serviceConfigs,
-          customProviders,
-          preferredModel,
-          fallbackModel,
-        },
-        currentModel,
-      );
-      if (defaultModel) {
-        setLastSelectedModel(newProvider, defaultModel);
-      }
-
-      onConfigUpdate?.(defaultModel, newProvider);
-    },
-    [
-      currentModel,
-      customProviders,
-      fallbackModel,
-      onConfigUpdate,
-      preferredModel,
-      serviceConfigs,
-    ],
-  );
-
-  const handleModelChange = useCallback(
-    (newModel: string) => {
-      if (!newModel || !currentProvider) {
+      const decoded = decodeModelChoice(value);
+      if (!decoded) {
         return;
       }
-      setLastSelectedModel(currentProvider, newModel);
-      onConfigUpdate?.(newModel, currentProvider);
+
+      setLastSelectedModel(decoded.provider, decoded.model);
+      onConfigUpdate?.(decoded.model, decoded.provider);
     },
-    [currentProvider, onConfigUpdate],
+    [onConfigUpdate],
   );
 
-  if (!currentProvider && !currentModel) return null;
+  if (!hasConfiguredProviders && !currentProvider && !currentModel) {
+    return null;
+  }
 
   return (
     <div
@@ -162,53 +175,66 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         className,
       )}
     >
-      <div className="w-2 h-2 rounded-full bg-primary/40" />
+      <div className="h-2 w-2 shrink-0 rounded-full bg-primary/40" />
 
-      {/* Provider Selector */}
       <Select
-        value={currentProvider}
-        onValueChange={handleProviderChange}
-        disabled={disabled}
+        value={selectedModelChoice}
+        onValueChange={handleModelChoiceChange}
+        disabled={disabled || !hasConfiguredProviders}
       >
-        <SelectTrigger className="h-6 w-[5.5rem] shrink-0 border-none bg-transparent px-1 text-xs shadow-none gap-1 focus:ring-0 [&>span]:truncate">
-          <SelectValue placeholder={t('agent.modelPicker.provider')} />
+        <SelectTrigger className="h-6 min-w-0 flex-1 border-none bg-transparent px-1 text-xs shadow-none gap-1 focus:ring-0 sm:w-[11.5rem] sm:flex-none [&>span]:truncate">
+          {triggerLabel ? (
+            <span className="truncate">{triggerLabel}</span>
+          ) : (
+            <SelectValue
+              placeholder={
+                hasConfiguredProviders
+                  ? isRefreshing
+                    ? t('agent.modelPicker.loading')
+                    : t('agent.modelPicker.model')
+                  : t('agent.modelPicker.noProvidersConfigured', {
+                      defaultValue: 'Configure a provider in Settings',
+                    })
+              }
+            />
+          )}
         </SelectTrigger>
-        <SelectContent>
-          {providerOptions.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <span className="text-muted-foreground/50">/</span>
-
-      {/* Model Selector */}
-      <Select
-        // Empty string means "cleared" in Radix Select — use undefined so the
-        // placeholder shows without wiping sibling controlled selects.
-        value={currentModel || undefined}
-        onValueChange={handleModelChange}
-        disabled={disabled || isRefreshing || !currentProvider}
-      >
-        <SelectTrigger className="h-6 min-w-0 flex-1 border-none bg-transparent px-1 text-xs shadow-none gap-1 focus:ring-0 sm:w-[10.5rem] sm:flex-none [&>span]:truncate">
-          <SelectValue
-            placeholder={
-              isRefreshing
-                ? t('agent.modelPicker.loading')
-                : t('agent.modelPicker.model')
+        <SelectContent className="max-h-[300px]">
+          {groupedModels.map((group) => {
+            const modelEntries = Object.entries(group.models);
+            if (modelEntries.length === 0) {
+              return null;
             }
-          />
-        </SelectTrigger>
-        <SelectContent>
-          {modelOptions.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </SelectItem>
-          ))}
+
+            return (
+              <SelectGroup key={group.providerId}>
+                <SelectLabel>{group.label}</SelectLabel>
+                {modelEntries.map(([modelId, modelInfo]) => (
+                  <SelectItem
+                    key={encodeModelChoice(group.providerId, modelId)}
+                    value={encodeModelChoice(group.providerId, modelId)}
+                  >
+                    {modelInfo.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            );
+          })}
         </SelectContent>
       </Select>
+
+      {showThinkingEffort && onThinkingEffortChange ? (
+        <>
+          <span className="text-muted-foreground/50">·</span>
+          <ThinkingEffortControl
+            thinkingEffort={effectiveThinkingEffort}
+            onThinkingEffortChange={onThinkingEffortChange}
+            disabled={disabled}
+            compact
+            showTooltip
+          />
+        </>
+      ) : null}
 
       {showRefreshButton && (
         <Tooltip>
@@ -237,7 +263,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
                 onClick={() => refreshModels()}
                 disabled={disabled || isRefreshing || !canRefresh}
                 className={cn(
-                  'p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  'rounded p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                   (disabled || isRefreshing || !canRefresh) &&
                     'pointer-events-none',
                 )}
@@ -251,7 +277,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
                 }
               >
                 <RefreshCw
-                  className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
+                  className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`}
                 />
               </button>
             </span>
@@ -272,7 +298,11 @@ export const AgentModelPicker = React.memo(
       prev.className === next.className &&
       prev.disabled === next.disabled &&
       prev.onConfigUpdate === next.onConfigUpdate &&
-      prev.customProviders === next.customProviders
+      prev.thinkingEffort === next.thinkingEffort &&
+      prev.onThinkingEffortChange === next.onThinkingEffortChange &&
+      prev.showThinkingEffort === next.showThinkingEffort &&
+      prev.customProviders === next.customProviders &&
+      prev.serviceConfigs === next.serviceConfigs
     );
   },
 );

@@ -63,14 +63,22 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@/context/SettingsContext', () => ({
-  useSettings: () => ({
-    value: {
-      advanced: {
-        defaultMaxOutputTokens: 8192,
-      },
+const settingsMock = {
+  value: {
+    advanced: {
+      defaultMaxOutputTokens: 8192,
+      thinkingEffort: 'off' as const,
     },
-  }),
+  },
+  update: vi.fn(),
+};
+
+vi.mock('@/hooks/use-settings', () => ({
+  useSettings: () => settingsMock,
+}));
+
+vi.mock('@/context/SettingsContext', () => ({
+  useSettings: () => settingsMock,
 }));
 
 vi.mock('../hooks/useAgentDraftChat', () => ({

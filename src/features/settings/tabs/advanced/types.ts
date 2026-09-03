@@ -5,7 +5,10 @@ import type {
 
 export interface AdvancedSettingsSectionProps {
   localAdvancedSettings: AdvancedSettings;
-  onChange: (key: keyof AdvancedSettings, value: number) => void;
+  onChange: <K extends keyof AdvancedSettings>(
+    key: K,
+    value: AdvancedSettings[K],
+  ) => void;
 }
 
 export interface AdvancedSystemSettingsProps {

@@ -1,41 +1,63 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTING } from '@/lib/services/settings-service';
 import { buildServiceRuntimeConfig } from '../service-runtime-config';
+import { DEFAULT_SETTING } from '@/lib/services/settings-service';
 
 describe('buildServiceRuntimeConfig', () => {
-  it('omits temperature when override is disabled', () => {
-    const config = buildServiceRuntimeConfig({
+  it('includes retry settings from advanced settings', () => {
+    const settings = {
       ...DEFAULT_SETTING,
-      temperatureOverrideEnabled: false,
-      temperature: 0.9,
-    });
-
-    expect(config.temperature).toBeUndefined();
-    expect(config.maxRetries).toBe(DEFAULT_SETTING.advanced.maxRetries);
-    expect(config.retryDelay).toBe(DEFAULT_SETTING.advanced.retryDelay);
+      advanced: {
+        ...DEFAULT_SETTING.advanced,
+        maxRetries: 3,
+        retryDelay: 1000,
+      },
+    };
+    const config = buildServiceRuntimeConfig(settings);
+    expect(config.maxRetries).toBe(3);
+    expect(config.retryDelay).toBe(1000);
   });
 
   it('includes temperature when override is enabled', () => {
-    const config = buildServiceRuntimeConfig({
+    const settings = {
       ...DEFAULT_SETTING,
       temperatureOverrideEnabled: true,
-      temperature: 0.3,
-    });
-
-    expect(config.temperature).toBe(0.3);
+      temperature: 0.5,
+    };
+    const config = buildServiceRuntimeConfig(settings);
+    expect(config.temperature).toBe(0.5);
   });
 
-  it('lets explicit overrides win over settings temperature', () => {
-    const config = buildServiceRuntimeConfig(
-      {
-        ...DEFAULT_SETTING,
-        temperatureOverrideEnabled: true,
-        temperature: 0.3,
-      },
-      {},
-      { temperature: 1.2 },
-    );
+  it('omits temperature when override is disabled', () => {
+    const settings = {
+      ...DEFAULT_SETTING,
+      temperatureOverrideEnabled: false,
+      temperature: 0.5,
+    };
+    const config = buildServiceRuntimeConfig(settings);
+    expect(config.temperature).toBeUndefined();
+  });
 
-    expect(config.temperature).toBe(1.2);
+  it('includes thinkingEffort from advanced settings', () => {
+    const settings = {
+      ...DEFAULT_SETTING,
+      advanced: {
+        ...DEFAULT_SETTING.advanced,
+        thinkingEffort: 'auto' as const,
+      },
+    };
+    const config = buildServiceRuntimeConfig(settings);
+    expect(config.thinkingEffort).toBe('auto');
+  });
+
+  it('includes thinkingEffort when disabled (off)', () => {
+    const settings = {
+      ...DEFAULT_SETTING,
+      advanced: {
+        ...DEFAULT_SETTING.advanced,
+        thinkingEffort: 'off' as const,
+      },
+    };
+    const config = buildServiceRuntimeConfig(settings);
+    expect(config.thinkingEffort).toBe('off');
   });
 });

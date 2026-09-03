@@ -5,6 +5,7 @@ import { Message, ToolCall } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 import { ensureSchemaTypeField, formatToolResultForLlm } from './utils';
 
 const logger = getLogger('CerebrasService');
@@ -166,6 +167,15 @@ export class CerebrasService extends BaseAIService<
             ? 'required'
             : 'auto';
 
+      let reasoningEffort: 'low' | 'medium' | 'high' | undefined;
+      const thinkingParams = mapThinkingEffort(
+        AIServiceProvider.Cerebras,
+        config.thinkingEffort,
+      );
+      if (thinkingParams.enabled) {
+        reasoningEffort = thinkingParams.reasoningEffort;
+      }
+
       const stream = await this.withRetry(
         async (): Promise<AsyncIterable<unknown>> => {
           if (!this.cerebras) {
@@ -180,6 +190,7 @@ export class CerebrasService extends BaseAIService<
               ...(config.temperature !== undefined && {
                 temperature: config.temperature,
               }),
+              ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
               tools: tools,
               tool_choice: toolChoice,
             },

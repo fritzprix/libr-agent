@@ -12,7 +12,7 @@ import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { ModelInfo } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { supportsThinking, getContextWindow } from './model-capabilities';
+import { getContextWindow } from './model-capabilities';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
@@ -20,7 +20,6 @@ import {
   flushThinkTagStream,
   processChunk,
   getModelToolSupport,
-  determineThinkParam,
   type Logger,
   type SimpleOllamaMessage,
 } from './ollama-core';
@@ -34,6 +33,7 @@ import {
   SELF_HOSTED_LLM_TIMEOUT_MS,
 } from './llm-host-policy';
 import { reportListModelsFallback } from './list-models-errors';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 
 const logger = getLogger('OllamaService');
 
@@ -310,20 +310,16 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         })),
       });
 
-      // Prepare reasoning parameter based on config
-      // Check if model actually supports thinking (optional, for better UX)
-      const modelSupportsThinking = config.enableReasoning
-        ? await supportsThinking(model, AIServiceProvider.Ollama, {
-            apiBase: this.host,
-          })
-        : false;
-
-      const thinkParam = determineThinkParam(
-        config.enableReasoning ?? false,
-        config.reasoningEffort,
-        modelSupportsThinking,
-        coreLogger,
+      // Honor user thinking effort; unsupported models return provider API errors.
+      // Ollama may still retry with boolean `think` if granular levels are rejected.
+      let thinkParam: boolean | 'low' | 'medium' | 'high' | undefined;
+      const thinkingParams = mapThinkingEffort(
+        AIServiceProvider.Ollama,
+        config.thinkingEffort,
       );
+      if (thinkingParams.enabled) {
+        thinkParam = thinkingParams.reasoningEffort ?? true;
+      }
 
       const requestOptions: ChatRequest & { stream: true } = {
         model,
