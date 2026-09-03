@@ -21,9 +21,11 @@ export const sessionSortValues: SessionSortKey[] = [
 
 export const statusPriority: Record<string, number> = {
   busy: 1,
-  idle: 2,
-  paused: 3,
-  error: 4,
+  provisioning: 2,
+  queued: 3,
+  idle: 4,
+  paused: 5,
+  error: 6,
 };
 
 export const statusFilterValues: Array<'all' | SessionStatus> = [
@@ -32,6 +34,8 @@ export const statusFilterValues: Array<'all' | SessionStatus> = [
   'idle',
   'paused',
   'error',
+  'queued',
+  'provisioning',
 ];
 
 export function getSessionDisplayName(

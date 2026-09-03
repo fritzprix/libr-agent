@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { applyViewedAtToSession, filterSessions } from '../session-utils';
+import {
+  applyViewedAtToSession,
+  buildDescendantStatusCounts,
+  filterSessions,
+} from '../session-utils';
 import type { AgentSession } from '@/models/agent';
 import type { Assistant } from '@/models/chat';
 
@@ -176,6 +180,47 @@ describe('session-utils', () => {
 
     it('returns empty array when no matches found', () => {
       expect(filterSessions(mockSessions, 'nonexistent')).toEqual([]);
+    });
+  });
+
+  describe('buildDescendantStatusCounts', () => {
+    it('accumulates queued and provisioning counts across nested descendants', () => {
+      const sessions: AgentSession[] = [
+        makeSession({ id: 'root', status: 'idle' }),
+        makeSession({
+          id: 'child-queued',
+          status: 'queued',
+          parentSessionId: 'root',
+        }),
+        makeSession({
+          id: 'grandchild-provisioning',
+          status: 'provisioning',
+          parentSessionId: 'child-queued',
+        }),
+        makeSession({
+          id: 'child-busy',
+          status: 'busy',
+          parentSessionId: 'root',
+        }),
+      ];
+
+      const counts = buildDescendantStatusCounts(sessions);
+      expect(counts.get('root')).toEqual({
+        busy: 1,
+        idle: 0,
+        paused: 0,
+        error: 0,
+        queued: 1,
+        provisioning: 1,
+      });
+      expect(counts.get('child-queued')).toEqual({
+        busy: 0,
+        idle: 0,
+        paused: 0,
+        error: 0,
+        queued: 0,
+        provisioning: 1,
+      });
     });
   });
 });
