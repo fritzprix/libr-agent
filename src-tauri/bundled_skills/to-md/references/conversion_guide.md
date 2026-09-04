@@ -4,40 +4,32 @@ MarkItDown is a lightweight Python utility developed by Microsoft for converting
 
 ## Prerequisites
 
-Follow the **Dependency check** in `SKILL.md` first (interpreter → `python -m pip` → fallback CLIs). When Python is available:
+Install the package with all optional dependencies (for OCR, audio, etc.):
 
 ```bash
-PY="$(command -v python3 || command -v python)"
-"$PY" -m pip install "markitdown[all]"
-```
-
-Then prefer:
-
-```bash
-"$PY" -m markitdown <input_file_path> -o <output_file_path.md>
+pip install "markitdown[all]"
 ```
 
 ## Command-line usage (recommended)
 
-Prefer the module form with the same interpreter used in the dependency check:
-
-```bash
-PY="$(command -v python3 || command -v python)"
-"$PY" -m markitdown <input_file_path> -o <output_file_path.md>
-```
-
-If the `markitdown` console script is on `PATH`, this is equivalent:
+The simplest way to convert any supported file to Markdown is using the CLI:
 
 ```bash
 markitdown <input_file_path> -o <output_file_path.md>
 ```
 
+Or via Python module:
+
+```bash
+python -m markitdown <input_file_path> -o <output_file_path.md>
+```
+
 **Examples:**
 
 ```bash
-"$PY" -m markitdown report.pdf -o report.md
-"$PY" -m markitdown presentation.pptx -o presentation.md
-"$PY" -m markitdown spreadsheet.xlsx -o spreadsheet.md
+markitdown report.pdf -o report.md
+markitdown presentation.pptx -o presentation.md
+markitdown spreadsheet.xlsx -o spreadsheet.md
 ```
 
 ## Python API usage
