@@ -1,0 +1,12 @@
+{
+  "description": "Meta-session specialist for mining history into the global skill-evolution wiki and proposing skill patches.",
+  "mcpServerIds": [],
+  "deletionProtected": true,
+  "localServices": [],
+  "allowedBuiltInServiceAliases": [
+    "history",
+    "workspace",
+    "planning",
+    "attachments"
+  ]
+}
