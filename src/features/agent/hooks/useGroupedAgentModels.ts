@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 
+import { useDebouncedValue } from '@/features/knowledge/hooks/useDebouncedValue';
 import { useSettings } from '@/hooks/use-settings';
 import {
   AIServiceFactory,
@@ -11,23 +12,28 @@ import {
   listConfiguredProviderGroups,
   type ProviderPickerGroup,
 } from '@/lib/ai-service/configured-providers';
+import {
+  BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+  REFRESH_LIST_MODELS_TIMEOUT_MS,
+  buildProviderModelsSwrSegment,
+  fetchDynamicProviderModels,
+} from '@/lib/ai-service/fetch-dynamic-provider-models';
 import { getDynamicModelFetchPolicy } from '@/lib/ai-service/model-fetch-policy';
 import {
   resolveProviderModels,
   type ProviderModelMap,
 } from '@/lib/ai-service/resolve-provider-models';
-import type { AIModelLookupService } from '@/lib/ai-service/types';
 import type { ModelInfo } from '@/lib/llm-config-manager';
-import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
-import { reportListModelsFallback } from '@/lib/ai-service/list-models-errors';
-import { setStoredModelCache } from '@/lib/ai-service/model-cache-storage';
 import type {
   CustomOpenAIProvider,
   Settings,
 } from '@/lib/services/settings-service';
 
 const logger = getLogger('useGroupedAgentModels');
+
+/** Stabilize draft credential keystrokes before changing the SWR key. */
+const FETCH_SETTINGS_DEBOUNCE_MS = 800;
 
 export interface GroupedProviderModels {
   providerId: string;
@@ -37,6 +43,7 @@ export interface GroupedProviderModels {
 
 type GroupedDynamicModelMap = Record<string, ProviderModelMap>;
 type GroupedModelsSWRKey = readonly ['grouped-models', string, ...string[]];
+type SettingsSlice = Pick<Settings, 'serviceConfigs' | 'customProviders'>;
 
 interface UseGroupedAgentModelsOptions {
   customProviders?: CustomOpenAIProvider[];
@@ -45,63 +52,8 @@ interface UseGroupedAgentModelsOptions {
   currentProvider?: string;
 }
 
-async function fetchDynamicModelsForProvider(
-  providerId: string,
-  settings: Pick<Settings, 'serviceConfigs' | 'customProviders'>,
-): Promise<ProviderModelMap> {
-  const resolved = resolveProviderRuntimeConfig(providerId, settings);
-  const policy = getDynamicModelFetchPolicy({
-    provider: providerId,
-    apiKey: resolved.apiKey,
-    baseUrl: resolved.baseUrl,
-    use3rdParty: resolved.use3rdParty,
-    customModelId: resolved.customModelId,
-  });
-
-  if (!policy.canFetch) {
-    return {};
-  }
-
-  const effectiveApiKey = resolved.apiKey || 'no-api-key';
-
-  try {
-    const service: AIModelLookupService = AIServiceFactory.getService(
-      providerId,
-      effectiveApiKey,
-      resolved.serviceConfig,
-    );
-    const modelList = await withTimeout(service.listModels(), 20000);
-
-    const modelsRecord = modelList.reduce<ProviderModelMap>(
-      (acc, modelInfo) => {
-        const key = modelInfo.id || modelInfo.name;
-        acc[key] = modelInfo;
-        return acc;
-      },
-      {},
-    );
-
-    if (Object.keys(modelsRecord).length > 0) {
-      setStoredModelCache(providerId, modelsRecord);
-    }
-
-    return modelsRecord;
-  } catch (error) {
-    logger.error(`Failed to fetch models for ${providerId}:`, error);
-    const storedModels = resolveProviderModels(providerId, settings);
-    reportListModelsFallback({
-      provider: providerId,
-      baseUrl: resolved.baseUrl,
-      reason: 'api_error',
-      error,
-      hasCachedModels: Object.keys(storedModels).length > 0,
-    });
-    return {};
-  }
-}
-
 function buildGroupedSWRKey(
-  settings: Pick<Settings, 'serviceConfigs' | 'customProviders'>,
+  settings: SettingsSlice,
   providerGroups: ProviderPickerGroup[],
 ): GroupedModelsSWRKey | null {
   if (providerGroups.length === 0) {
@@ -123,13 +75,13 @@ function buildGroupedSWRKey(
         return null;
       }
 
-      return [
-        group.providerId,
-        resolved.apiKey,
-        resolved.baseUrl ?? '',
-        resolved.use3rdParty ? 'use-3rd-party' : 'first-party',
-        resolved.customModelId ?? '',
-      ].join('|');
+      return buildProviderModelsSwrSegment({
+        providerId: group.providerId,
+        apiKey: resolved.apiKey,
+        baseUrl: resolved.baseUrl,
+        use3rdParty: resolved.use3rdParty,
+        customModelId: resolved.customModelId,
+      });
     })
     .filter((entry): entry is string => entry !== null)
     .sort();
@@ -150,7 +102,7 @@ export const useGroupedAgentModels = ({
     value: { serviceConfigs: settingsServiceConfigs, customProviders },
   } = useSettings();
 
-  const settings = useMemo(
+  const displaySettings = useMemo(
     () =>
       buildSettingsSnapshot(
         serviceConfigsProp ?? settingsServiceConfigs,
@@ -164,14 +116,25 @@ export const useGroupedAgentModels = ({
     ],
   );
 
+  // Draft keystrokes update display immediately; SWR key waits for quiet period.
+  const fetchSettings = useDebouncedValue(
+    displaySettings,
+    FETCH_SETTINGS_DEBOUNCE_MS,
+  );
+
   const providerGroups = useMemo(
-    () => listConfiguredProviderGroups(settings),
-    [settings],
+    () => listConfiguredProviderGroups(displaySettings),
+    [displaySettings],
+  );
+
+  const fetchProviderGroups = useMemo(
+    () => listConfiguredProviderGroups(fetchSettings),
+    [fetchSettings],
   );
 
   const swrKey = useMemo(
-    () => buildGroupedSWRKey(settings, providerGroups),
-    [providerGroups, settings],
+    () => buildGroupedSWRKey(fetchSettings, fetchProviderGroups),
+    [fetchProviderGroups, fetchSettings],
   );
 
   const fetchGroupedDynamicModels = useCallback(
@@ -181,19 +144,39 @@ export const useGroupedAgentModels = ({
         .map((entry) => entry.split('|')[0])
         .filter((providerId): providerId is string => Boolean(providerId));
 
-      const entries = await Promise.all(
+      const settled = await Promise.allSettled(
         providerIds.map(async (providerId) => {
-          const dynamicModels = await fetchDynamicModelsForProvider(
+          const dynamicModels = await fetchDynamicProviderModels(
             providerId,
-            settings,
+            fetchSettings,
+            {
+              timeoutMs: BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+              notifyUser: false,
+            },
           );
           return [providerId, dynamicModels] as const;
         }),
       );
 
+      const entries = settled.map((result, index) => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        }
+        const providerId = providerIds[index] ?? `unknown-${index}`;
+        const reasonMessage =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
+        logger.warn(
+          `Grouped model fetch rejected for ${providerId}:`,
+          reasonMessage,
+        );
+        return [providerId, {}] as const;
+      });
+
       return Object.fromEntries(entries) as GroupedDynamicModelMap;
     },
-    [settings],
+    [fetchSettings],
   );
 
   const {
@@ -212,11 +195,11 @@ export const useGroupedAgentModels = ({
       label: group.label,
       models: resolveProviderModels(
         group.providerId,
-        settings,
+        displaySettings,
         dynamicModelsByProvider[group.providerId],
       ),
     }));
-  }, [dynamicModelsByProvider, providerGroups, settings]);
+  }, [displaySettings, dynamicModelsByProvider, providerGroups]);
 
   const currentProviderPolicy = useMemo(() => {
     if (!currentProvider) {
@@ -226,7 +209,10 @@ export const useGroupedAgentModels = ({
       };
     }
 
-    const resolved = resolveProviderRuntimeConfig(currentProvider, settings);
+    const resolved = resolveProviderRuntimeConfig(
+      currentProvider,
+      displaySettings,
+    );
     return getDynamicModelFetchPolicy({
       provider: currentProvider,
       apiKey: resolved.apiKey,
@@ -234,14 +220,17 @@ export const useGroupedAgentModels = ({
       use3rdParty: resolved.use3rdParty,
       customModelId: resolved.customModelId,
     });
-  }, [currentProvider, settings]);
+  }, [currentProvider, displaySettings]);
 
   const refreshModels = useCallback(async () => {
     if (!currentProvider || !currentProviderPolicy.canFetch) {
       return;
     }
 
-    const resolved = resolveProviderRuntimeConfig(currentProvider, settings);
+    const resolved = resolveProviderRuntimeConfig(
+      currentProvider,
+      displaySettings,
+    );
     AIServiceFactory.invalidateService(
       currentProvider,
       resolved.apiKey,
@@ -250,9 +239,13 @@ export const useGroupedAgentModels = ({
 
     await mutateGroupedModels(
       async (current) => {
-        const dynamicModels = await fetchDynamicModelsForProvider(
+        const dynamicModels = await fetchDynamicProviderModels(
           currentProvider,
-          settings,
+          displaySettings,
+          {
+            timeoutMs: REFRESH_LIST_MODELS_TIMEOUT_MS,
+            notifyUser: true,
+          },
         );
         return {
           ...current,
@@ -264,8 +257,8 @@ export const useGroupedAgentModels = ({
   }, [
     currentProvider,
     currentProviderPolicy.canFetch,
+    displaySettings,
     mutateGroupedModels,
-    settings,
   ]);
 
   const getModelInfo = useCallback(

@@ -11,6 +11,11 @@ export interface ListModelsFailureContext {
   reason: 'api_error' | 'invalid_response';
   error?: unknown;
   hasCachedModels?: boolean;
+  /**
+   * When true, show a user-facing error toast (e.g. explicit Refresh).
+   * Background / automatic listModels failures stay silent by default.
+   */
+  notifyUser?: boolean;
 }
 
 export interface ListModelsFailurePayload {
@@ -20,6 +25,7 @@ export interface ListModelsFailurePayload {
   message: string;
   usedStaticFallback: true;
   hasCachedModels?: boolean;
+  notifyUser: boolean;
 }
 
 type ListModelsFallbackListener = (payload: ListModelsFailurePayload) => void;
@@ -50,6 +56,7 @@ export function describeListModelsFailure(
     message: errorMessage(context.error),
     usedStaticFallback: true,
     hasCachedModels: context.hasCachedModels,
+    notifyUser: context.notifyUser === true,
   };
 }
 
@@ -85,6 +92,9 @@ function notifyFallbackListeners(payload: ListModelsFailurePayload): void {
 }
 
 function toastListModelsFallback(payload: ListModelsFailurePayload): void {
+  if (!payload.notifyUser) {
+    return;
+  }
   // If persistent cached models are available for this provider, do not alarm the user with error toasts
   if (payload.hasCachedModels) {
     return;
@@ -100,7 +110,8 @@ function toastListModelsFallback(payload: ListModelsFailurePayload): void {
 }
 
 /**
- * Log-friendly payload + notify UI listeners + transient toast (deduped).
+ * Log-friendly payload + notify UI listeners + optional toast (deduped).
+ * Toast only when `notifyUser: true` (explicit user refresh).
  */
 export function reportListModelsFallback(
   context: ListModelsFailureContext,
