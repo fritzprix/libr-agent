@@ -98,6 +98,19 @@ Use `waitForResult=true` only when:
 
 Avoid synchronous waits for open-ended debugging or implementation tasks. That just blocks the parent for no good reason.
 
+## When to Load `delegation-eval-loop`
+
+Stay on `delegate` for research summaries, soft drafts, or low-risk exploration.
+
+Load **`delegation-eval-loop`** when any of these apply:
+
+- user or task requires tests/build/lint proof before "done"
+- child may edit a shared workspace and path invariants matter
+- implementation or refactor where fake completion / self-grading is likely
+- you need a bounded reject → `agent__messageToSession` → retry loop
+
+Pattern: child generates; parent evaluates. Do not ask the child to grade its own acceptance as the final gate.
+
 ## Troubleshooting
 
 ### Symptom: Child cannot find a file the parent just created

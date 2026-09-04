@@ -42,6 +42,7 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 - Empty / new workspace and the task needs durable project rules → offer or run **agent-init** (do not invent a fat default `agents.md` silently unless the user wants guidelines).
 - Need OS/Python/Node for MCP → **setup-wizard**.
 - Need sub-agent handoff rules → **delegate** (and `references/session-isolation.md` here for the matrix).
+- Need generator–evaluator / proof-before-done on a child → **delegation-eval-loop** (after `delegate` mechanics).
 - Need tool/server install → **tool-installer** / **skill-deployer**.
 
 ## Hard runtime rules (always true)

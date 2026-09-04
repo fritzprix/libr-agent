@@ -37,7 +37,7 @@ The Divide-Conquer pattern splits a complex task into independent subtasks, dele
 3. **Workspace Strategy**: Decide whether children share the parent workspace (`workspaceOverride`) or use isolated workspaces (**default: isolated** for plain `startSession`; org members inherit the org root unless overridden).
 4. **Spawn & Monitor**: Spawn sessions in batches respecting the concurrency limit (default: `maxConcurrentActiveSessions` is 4).
 5. **Merge**: Assemble output artifacts based on merge patterns. See [merge-patterns.md](references/merge-patterns.md).
-6. **Verify**: Run build/tests to ensure integration integrity. Retries failed subtasks if needed.
+6. **Verify**: Run build/tests to ensure integration integrity. Retries failed subtasks if needed. For strict proof-before-done (path invariants, reject/re-steer), follow **`delegation-eval-loop`** after `delegate` mechanics.
 
 ## 🛠️ MCP Tools Guide
 

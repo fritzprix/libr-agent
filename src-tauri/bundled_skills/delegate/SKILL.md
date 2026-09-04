@@ -1,6 +1,13 @@
 ---
 name: delegate
-description: Delegate work between LibrAgent AI agent sessions using sub-agent sessions. Use when an agent needs to spawn, brief, monitor, or troubleshoot a child session with `agent__startSession`, `agent__checkSession`, or `agent__messageToSession`, especially when deciding whether the child really needs parent workspace state, workspace instructions, or workspace-scoped skills.
+description: >
+  Delegate work between LibrAgent AI agent sessions using sub-agent sessions.
+  Use when an agent needs to spawn, brief, monitor, or troubleshoot a child
+  session with `agent__startSession`, `agent__checkSession`, or
+  `agent__messageToSession`, especially when deciding whether the child really
+  needs parent workspace state, workspace instructions, or workspace-scoped
+  skills. For generator-evaluator / strict acceptance criteria / proof before
+  done, load `delegation-eval-loop` after this skill's spawn mechanics.
 ---
 
 # Delegate
@@ -14,6 +21,17 @@ Treat sub-agent delegation as session orchestration, not magic inheritance.
 A child session keeps lineage to its parent, but it does **not** automatically inherit the parent's workspace, workspace instruction files, or workspace-local skills. If the task depends on those, either restate them in the handoff, choose a different assistant, or avoid delegation.
 
 Read `references/delegation-patterns.md` when you need concrete handoff templates, troubleshooting patterns, or a quick matrix for what the child session can actually see.
+
+## Skill Routing
+
+| Need | Skill |
+| --- | --- |
+| Spawn, isolation, workspace/handoff mechanics | **this skill** (`delegate`) |
+| Strict acceptance criteria, proof-before-done, reject/re-steer loop | **`delegation-eval-loop`** (parent = evaluator, child = generator) |
+| Parallel independent pieces | `divide-conquer` |
+| Multi-perspective review of one question | `consensus-delegation` |
+
+Do **not** paste the full eval protocol into every delegation. Use light checks in §5 for casual handoffs; load `delegation-eval-loop` when the user or task requires verifiable completion.
 
 ## Delegation Workflow
 
@@ -111,16 +129,24 @@ Use the builtin agent tools deliberately:
 - `agent__checkSession(sessionId, wait=true)` when you want to block until a terminal result
 Default to `waitForResult=false` unless the parent truly has nothing useful to do while waiting.
 
-## 5. Review the Result Like an Adult
+## 5. Review the Result (Parent Owns Acceptance)
 
-Do not blindly trust the child.
+Do not blindly trust the child. The child **generates**; the parent **accepts**. A child's "done" / "tests pass" claim is a hypothesis until the parent has evidence.
 
-After the child returns:
+**Casual handoff (this skill only)** — after `agent__checkSession` returns idle:
 
-- verify whether it actually used the correct scope
-- check whether missing workspace instructions or skills likely distorted the result
-- inspect referenced files or commands before presenting the answer as final
-- send a follow-up message if the child stopped short or misunderstood the objective
+- Confirm scope: correct workspace (`SHARED` vs `ISOLATED` in Metadata) and authorized paths
+- Spot-check deliverables in the child's **final text** (not scratchpad IDs)
+- If claims cite commands/files, inspect or re-run the critical check yourself before presenting as final
+- Re-steer with `agent__messageToSession` if the child stopped short or missed the objective
+
+**Strict / high-stakes handoff** — stop here and follow **`delegation-eval-loop`**:
+
+- Brief with verifiable acceptance criteria (sprint contract) before spawn
+- Layered eval: Deterministic → Invariant → Trajectory/reliability → Semantic
+- Reject with exact failure output; bound the retry loop; never accept self-graded success
+
+Incomplete, cancelled, circuit-broken, or evidence-free runs are **not** successes even if the prose sounds finished.
 
 ## 6. Troubleshooting Heuristics
 
