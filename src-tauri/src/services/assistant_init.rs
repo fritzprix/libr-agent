@@ -21,11 +21,18 @@ const CODING_EXPERT_CONFIG: &str =
 
 const APP_WIZARD_PROMPT: &str = include_str!("../../bundled_assistants/App Wizard/prompt.md");
 const APP_WIZARD_CONFIG: &str = include_str!("../../bundled_assistants/App Wizard/mcp-config.json");
-const DEFAULT_ASSISTANT_NAMES: [&str; 4] = [
+
+const WIKI_MAINTAINER_PROMPT: &str =
+    include_str!("../../bundled_assistants/Wiki Maintainer/prompt.md");
+const WIKI_MAINTAINER_CONFIG: &str =
+    include_str!("../../bundled_assistants/Wiki Maintainer/mcp-config.json");
+
+const DEFAULT_ASSISTANT_NAMES: [&str; 5] = [
     "Master Mind",
     "Libr Assistant",
     "Coding Expert",
     "App Wizard",
+    "Wiki Maintainer",
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -330,6 +337,11 @@ pub async fn ensure_default_assistants_hardcoded() -> Result<(), String> {
         ),
         ("Coding Expert", CODING_EXPERT_PROMPT, CODING_EXPERT_CONFIG),
         ("App Wizard", APP_WIZARD_PROMPT, APP_WIZARD_CONFIG),
+        (
+            "Wiki Maintainer",
+            WIKI_MAINTAINER_PROMPT,
+            WIKI_MAINTAINER_CONFIG,
+        ),
     ];
     let default_names: Vec<&str> = defaults.iter().map(|(n, _, _)| *n).collect();
 
