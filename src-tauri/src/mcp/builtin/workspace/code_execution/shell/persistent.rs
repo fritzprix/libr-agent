@@ -174,6 +174,7 @@ impl WorkspaceServer {
                         Some(exit_code),
                         &stdout,
                         &stderr,
+                        command,
                     ))
                     .to_mcp_result())
                 }

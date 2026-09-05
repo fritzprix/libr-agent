@@ -414,6 +414,7 @@ impl WorkspaceServer {
                         Some(actual_exit_code),
                         &stdout,
                         &stderr,
+                        command,
                     );
 
                     return Ok(guided_error(
