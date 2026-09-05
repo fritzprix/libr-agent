@@ -79,6 +79,7 @@ export const MigrationIdleCards: FC<MigrationIdleCardsProps> = ({
             <input
               type="checkbox"
               checked={includeSensitiveData}
+              onClick={(e) => e.stopPropagation()}
               onChange={(e) => setIncludeSensitiveData(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
             />
