@@ -81,6 +81,39 @@ async fn present_interactive_text_mode_includes_safe_default_options_array() {
 }
 
 #[tokio::test]
+async fn present_interactive_display_only_reminds_task_is_not_complete() {
+    let server = UiServer::new();
+
+    let result = server
+        .call_tool(
+            "presentInteractive",
+            json!({
+                "title": "Status",
+                "content": "Remaining overfull hboxes listed here.",
+                "format": "markdown"
+            }),
+            None,
+        )
+        .await
+        .expect("display-only presentInteractive should render");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("Display-only UI — this does not complete the task"),
+        "display-only presentInteractive must not look like task completion: {text}"
+    );
+    assert!(
+        text.contains("ui__reportResult"),
+        "display-only presentInteractive should point at reportResult for completion: {text}"
+    );
+    assert!(
+        !text.contains("Workflow paused until the user responds"),
+        "display-only mode must not claim a user response is required: {text}"
+    );
+}
+
+#[tokio::test]
 async fn present_interactive_select_mode_preserves_options_array() {
     let server = UiServer::new();
 

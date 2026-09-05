@@ -366,6 +366,11 @@ impl UiServer {
 
             summary_lines
                 .push("Workflow paused until the user responds via the rendered UI.".to_string());
+        } else {
+            summary_lines.push(
+                "Display-only UI — this does not complete the task. Continue with tools until the requirements are met, then call ui__reportResult once."
+                    .to_string(),
+            );
         }
 
         let summary = summary_lines.join("\n");

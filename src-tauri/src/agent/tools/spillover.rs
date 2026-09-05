@@ -8,6 +8,12 @@ pub const TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES: usize = 16 * 1024;
 const TOOL_RESULT_SPILLOVER_DIR: &str = ".libragent/tool-results";
 const MIN_TOOL_RESULT_INLINE_LIMIT_BYTES: usize = 4 * 1024;
 const MAX_TOOL_RESULT_INLINE_LIMIT_BYTES: usize = 256 * 1024;
+/// Outputs at or above this size are treated as unbounded dumps even when mostly printable.
+const LARGE_TOOL_RESULT_DUMP_BYTES: usize = 5 * 1024 * 1024;
+/// Sample window for non-text density checks (chars, not bytes).
+const NON_TEXT_SAMPLE_CHARS: usize = 8192;
+/// Fraction of sampled control/replacement chars that marks output as non-text.
+const NON_TEXT_CONTROL_RATIO: f64 = 0.15;
 
 fn sanitize_spillover_identifier(raw: &str) -> String {
     let sanitized: String = raw
@@ -109,13 +115,56 @@ fn truncate_to_complete_lines(text: &str, limit: usize) -> (&str, PreviewTruncat
     }
 }
 
+/// True when spilled tool output is too large or too control-dense to page as text.
+///
+/// Harbor traces show agents following generic readFile pagination on multi‑MB binary
+/// dumps and burning the turn budget. Prefer extraction-oriented recovery instead.
+fn looks_like_non_text_tool_output(text: &str, size_bytes: usize) -> bool {
+    if size_bytes >= LARGE_TOOL_RESULT_DUMP_BYTES {
+        return true;
+    }
+
+    let mut sample_len = 0usize;
+    let mut control_like = 0usize;
+    for ch in text.chars().take(NON_TEXT_SAMPLE_CHARS) {
+        sample_len += 1;
+        let code = ch as u32;
+        let is_allowed_whitespace = ch == '\t' || ch == '\n' || ch == '\r';
+        if (!is_allowed_whitespace && code < 32) || code == 127 || ch == '\u{FFFD}' {
+            control_like += 1;
+        }
+    }
+
+    if sample_len == 0 {
+        return false;
+    }
+
+    (control_like as f64) / (sample_len as f64) >= NON_TEXT_CONTROL_RATIO
+}
+
+fn build_non_text_spillover_notice(relative_path: &str, original_size_bytes: usize) -> String {
+    format!(
+        "\n\n... [output truncated: {original_size_bytes} bytes of large binary/non-text data] ...\n\n\
+Full output saved to workspace file: `{relative_path}`.\n\
+Output appears to contain large binary or non-text data. Prefer `workspace__runShell` with \
+`strings`, `head -c`, `grep -a`, or redirect the original command to a file for targeted extraction \
+instead of inspecting raw bytes.\n\
+Do not page through this dump with repeated `workspace__readFile` chunk reads."
+    )
+}
+
 fn build_tool_result_spillover_notice(
     relative_path: &str,
+    original_text: &str,
     original_size_bytes: usize,
     total_line_count: usize,
     preview_line_count: usize,
     truncate_kind: PreviewTruncateKind,
 ) -> String {
+    if looks_like_non_text_tool_output(original_text, original_size_bytes) {
+        return build_non_text_spillover_notice(relative_path, original_size_bytes);
+    }
+
     let truncation_summary = match truncate_kind {
         PreviewTruncateKind::LineBoundary if preview_line_count > 0 => format!(
             "total {} lines / {} bytes (showing lines 1-{})",
@@ -236,6 +285,7 @@ pub async fn spill_oversized_tool_result_messages(
                             preview,
                             build_tool_result_spillover_notice(
                                 &relative_path,
+                                &text,
                                 text.len(),
                                 total_line_count,
                                 preview_line_count,
@@ -254,4 +304,67 @@ pub async fn spill_oversized_tool_result_messages(
     }
 
     Ok(processed_messages)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_text_detector_flags_large_dumps_by_size() {
+        let text = "printable ".repeat(100);
+        assert!(looks_like_non_text_tool_output(
+            &text,
+            LARGE_TOOL_RESULT_DUMP_BYTES
+        ));
+        assert!(!looks_like_non_text_tool_output(
+            &text,
+            TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES
+        ));
+    }
+
+    #[test]
+    fn non_text_detector_flags_control_dense_samples() {
+        let dense: String = (0u8..32)
+            .filter(|b| *b != b'\t' && *b != b'\n' && *b != b'\r')
+            .map(char::from)
+            .cycle()
+            .take(NON_TEXT_SAMPLE_CHARS)
+            .collect();
+        assert!(looks_like_non_text_tool_output(
+            &dense,
+            TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES + 1
+        ));
+    }
+
+    #[test]
+    fn non_text_spillover_notice_discourages_raw_pagination() {
+        let notice = build_non_text_spillover_notice(
+            ".libragent/tool-results/call_example-1.txt",
+            54_860_523,
+        );
+        assert!(notice.contains("large binary/non-text data"));
+        assert!(notice.contains("strings"));
+        assert!(notice.contains("grep -a"));
+        assert!(notice.contains("Do not page through this dump"));
+        assert!(
+            !notice.contains("Read it in chunks with `readFile"),
+            "binary dumps must not recommend generic readFile pagination: {notice}"
+        );
+    }
+
+    #[test]
+    fn text_spillover_notice_still_guides_line_pagination() {
+        let text = "hello world\n".repeat(100);
+        let notice = build_tool_result_spillover_notice(
+            ".libragent/tool-results/call_text-1.txt",
+            &text,
+            text.len(),
+            100,
+            40,
+            PreviewTruncateKind::LineBoundary,
+        );
+        assert!(notice.contains("To read remaining lines ("));
+        assert!(!notice.contains("large binary/non-text data"));
+    }
 }
