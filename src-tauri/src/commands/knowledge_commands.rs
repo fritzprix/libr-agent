@@ -84,6 +84,13 @@ pub struct KnowledgeChunkDetailDto {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GlobalKnowledgeGraphDto {
+    pub entities: Vec<KnowledgeGraphEntityDto>,
+    pub relationships: Vec<KnowledgeGraphRelationshipDto>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteGlobalKnowledgeResponse {
     pub deleted_chunk_id: i32,
     pub orphan_entity_count: u64,
@@ -248,5 +255,20 @@ pub async fn delete_global_knowledge(id: i32) -> Result<DeleteGlobalKnowledgeRes
         deleted_chunk_id: id,
         orphan_entity_count: summary.orphan_entity_count,
         orphan_relationship_count: summary.orphan_relationship_count,
+    })
+}
+
+#[command]
+pub async fn get_global_knowledge_graph(
+    assistant_id: Option<String>,
+    limit: Option<u64>,
+) -> Result<GlobalKnowledgeGraphDto, String> {
+    let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_LIST_LIMIT);
+    let graph = get_knowledge_v2_repository()
+        .get_global_graph(assistant_id.as_deref(), limit)
+        .await?;
+    Ok(GlobalKnowledgeGraphDto {
+        entities: graph.entities.into_iter().map(Into::into).collect(),
+        relationships: graph.relationships.into_iter().map(Into::into).collect(),
     })
 }

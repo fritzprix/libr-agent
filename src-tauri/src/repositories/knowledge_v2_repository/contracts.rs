@@ -23,6 +23,12 @@ pub struct KnowledgeGraphRelationship {
 }
 
 #[derive(Debug, Clone)]
+pub struct GlobalKnowledgeGraph {
+    pub entities: Vec<KnowledgeGraphEntity>,
+    pub relationships: Vec<KnowledgeGraphRelationship>,
+}
+
+#[derive(Debug, Clone)]
 pub struct KnowledgeChunkDetail {
     pub chunk: knowledge_chunk_v2::Model,
     pub primary_entity_ids: Vec<i32>,
@@ -115,4 +121,10 @@ pub trait KnowledgeV2Repository: Send + Sync {
     ) -> Result<Vec<i32>, DbError>;
 
     async fn get_chunk_detail(&self, id: i32) -> Result<KnowledgeChunkDetail, DbError>;
+
+    async fn get_global_graph(
+        &self,
+        assistant_id: Option<&str>,
+        limit_entities: u64,
+    ) -> Result<GlobalKnowledgeGraph, DbError>;
 }

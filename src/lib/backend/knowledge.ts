@@ -86,3 +86,33 @@ export async function deleteGlobalKnowledge(
     id,
   });
 }
+
+export interface GlobalKnowledgeGraphResponse {
+  entities: KnowledgeGraphEntity[];
+  relationships: KnowledgeGraphRelationship[];
+}
+
+export interface GetGlobalKnowledgeGraphOptions {
+  assistantId?: string;
+  limit?: number;
+}
+
+export async function getGlobalKnowledgeGraph(
+  assistantIdOrOptions?: string | GetGlobalKnowledgeGraphOptions,
+  limit?: number,
+): Promise<GlobalKnowledgeGraphResponse> {
+  let assistantId: string | undefined;
+  let resolvedLimit: number | undefined = limit;
+
+  if (typeof assistantIdOrOptions === 'object' && assistantIdOrOptions !== null) {
+    assistantId = assistantIdOrOptions.assistantId;
+    resolvedLimit = assistantIdOrOptions.limit ?? limit;
+  } else {
+    assistantId = assistantIdOrOptions;
+  }
+
+  return safeInvoke<GlobalKnowledgeGraphResponse>('get_global_knowledge_graph', {
+    assistantId,
+    limit: resolvedLimit,
+  });
+}

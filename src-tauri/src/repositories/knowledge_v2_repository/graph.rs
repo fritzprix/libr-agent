@@ -1,8 +1,9 @@
+use super::contracts::{GlobalKnowledgeGraph, KnowledgeGraphEntity, KnowledgeGraphRelationship};
 use crate::entity::{knowledge_chunk_entity, knowledge_chunk_v2, knowledge_relationship};
 use crate::repositories::DbError;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    Statement,
+    QueryOrder, QuerySelect, Statement,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -223,4 +224,118 @@ pub(super) async fn get_graph_context(
     };
 
     serde_json::to_value(payload).map_err(|error| DbError::SerializationError(error.to_string()))
+}
+
+pub(super) async fn get_global_graph(
+    db: &DatabaseConnection,
+    assistant_id: Option<&str>,
+    limit_entities: u64,
+) -> Result<GlobalKnowledgeGraph, DbError> {
+    if limit_entities == 0 {
+        return Ok(GlobalKnowledgeGraph {
+            entities: Vec::new(),
+            relationships: Vec::new(),
+        });
+    }
+
+    let (sql, values) = match assistant_id.filter(|aid| !aid.trim().is_empty()) {
+        Some(aid) => (
+            "SELECT e.id, e.assistant_id, e.name, e.entity_type, e.description, \
+             EXISTS(SELECT 1 FROM knowledge_chunk_entities ce WHERE ce.entity_id = e.id) AS is_primary \
+             FROM knowledge_entities e \
+             WHERE e.assistant_id = ? \
+             ORDER BY is_primary DESC, e.id DESC \
+             LIMIT ?",
+            vec![aid.into(), (limit_entities as i64).into()],
+        ),
+        None => (
+            "SELECT e.id, e.assistant_id, e.name, e.entity_type, e.description, \
+             EXISTS(SELECT 1 FROM knowledge_chunk_entities ce WHERE ce.entity_id = e.id) AS is_primary \
+             FROM knowledge_entities e \
+             ORDER BY is_primary DESC, e.id DESC \
+             LIMIT ?",
+            vec![(limit_entities as i64).into()],
+        ),
+    };
+
+    let entity_rows = db
+        .query_all(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            sql,
+            values,
+        ))
+        .await
+        .map_err(DbError::SeaOrmQueryFailed)?;
+
+    let mut entities = Vec::with_capacity(entity_rows.len());
+    let mut entity_ids = Vec::with_capacity(entity_rows.len());
+
+    for row in entity_rows {
+        let id: i32 = row.try_get("", "id").map_err(DbError::SeaOrmQueryFailed)?;
+        let assistant_id: String = row
+            .try_get("", "assistant_id")
+            .map_err(DbError::SeaOrmQueryFailed)?;
+        let name: String = row
+            .try_get("", "name")
+            .map_err(DbError::SeaOrmQueryFailed)?;
+        let entity_type: Option<String> = row
+            .try_get("", "entity_type")
+            .map_err(DbError::SeaOrmQueryFailed)?;
+        let description: Option<String> = row
+            .try_get("", "description")
+            .map_err(DbError::SeaOrmQueryFailed)?;
+        let is_primary: bool = row
+            .try_get::<bool>("", "is_primary")
+            .or_else(|_| row.try_get::<i32>("", "is_primary").map(|val| val != 0))
+            .or_else(|_| row.try_get::<i64>("", "is_primary").map(|val| val != 0))
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        entity_ids.push(id);
+        entities.push(KnowledgeGraphEntity {
+            id,
+            assistant_id,
+            name,
+            entity_type,
+            description,
+            is_primary,
+        });
+    }
+
+    let relationships = if entity_ids.is_empty() {
+        Vec::new()
+    } else {
+        let mut query = knowledge_relationship::Entity::find().filter(
+            Condition::all()
+                .add(knowledge_relationship::Column::SourceEntityId.is_in(entity_ids.clone()))
+                .add(knowledge_relationship::Column::TargetEntityId.is_in(entity_ids.clone())),
+        );
+
+        if let Some(aid) = assistant_id.filter(|aid| !aid.trim().is_empty()) {
+            query = query.filter(knowledge_relationship::Column::AssistantId.eq(aid));
+        }
+
+        let rel_rows = query
+            .order_by_asc(knowledge_relationship::Column::Id)
+            .limit(1000)
+            .all(db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        rel_rows
+            .into_iter()
+            .map(|rel| KnowledgeGraphRelationship {
+                id: rel.id,
+                assistant_id: rel.assistant_id,
+                source_entity_id: rel.source_entity_id,
+                target_entity_id: rel.target_entity_id,
+                relation_type: rel.relation_type,
+                weight: rel.weight,
+            })
+            .collect()
+    };
+
+    Ok(GlobalKnowledgeGraph {
+        entities,
+        relationships,
+    })
 }

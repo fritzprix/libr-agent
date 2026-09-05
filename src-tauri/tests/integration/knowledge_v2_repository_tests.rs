@@ -330,3 +330,116 @@ async fn knowledge_v2_repository_lists_chunks_with_cursor_pagination() {
     assert_eq!(second_page.items[0].id, third_id);
     assert!(second_page.next_cursor.is_none());
 }
+
+#[tokio::test]
+async fn knowledge_v2_repository_get_global_graph_returns_entities_and_relationships_accurately() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteKnowledgeV2Repository::new(db.clone());
+
+    // 1. Record a chunk
+    let chunk_id = repo
+        .record_chunk(
+            "assistant-graph-test".to_string(),
+            "Rust is a systems programming language".to_string(),
+            Some(r#"["rust","systems"]"#.to_string()),
+            Some("test".to_string()),
+            vec![0.1; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+
+    // 2. Create entities
+    let rust_entity_id = repo
+        .upsert_entity(
+            "assistant-graph-test".to_string(),
+            "Rust".to_string(),
+            Some("technology".to_string()),
+            Some("Memory safe language".to_string()),
+        )
+        .await
+        .expect("upsert_entity should succeed");
+
+    let llm_entity_id = repo
+        .upsert_entity(
+            "assistant-graph-test".to_string(),
+            "LLM".to_string(),
+            Some("concept".to_string()),
+            Some("Large language model".to_string()),
+        )
+        .await
+        .expect("upsert_entity should succeed");
+
+    // Link rust_entity to chunk => is_primary = true
+    repo.link_chunk_to_entity(chunk_id, rust_entity_id)
+        .await
+        .expect("link_chunk_to_entity should succeed");
+
+    // Create relationship between rust and llm
+    let rel_id = repo
+        .create_relationship(
+            "assistant-graph-test".to_string(),
+            rust_entity_id,
+            llm_entity_id,
+            "interfaces_with".to_string(),
+        )
+        .await
+        .expect("create_relationship should succeed");
+
+    // Create entity for a different assistant
+    let other_entity_id = repo
+        .upsert_entity(
+            "assistant-other".to_string(),
+            "Python".to_string(),
+            Some("technology".to_string()),
+            None,
+        )
+        .await
+        .expect("upsert_entity for assistant-other should succeed");
+
+    // 3. Test scoped to assistant-graph-test
+    let scoped_graph = repo
+        .get_global_graph(Some("assistant-graph-test"), 10)
+        .await
+        .expect("get_global_graph should succeed");
+
+    assert_eq!(scoped_graph.entities.len(), 2);
+    // Entity with chunk link should be primary
+    let rust_node = scoped_graph
+        .entities
+        .iter()
+        .find(|e| e.id == rust_entity_id)
+        .expect("rust entity should exist");
+    assert_eq!(rust_node.name, "Rust");
+    assert!(rust_node.is_primary);
+
+    let llm_node = scoped_graph
+        .entities
+        .iter()
+        .find(|e| e.id == llm_entity_id)
+        .expect("llm entity should exist");
+    assert_eq!(llm_node.name, "LLM");
+    assert!(!llm_node.is_primary);
+
+    assert_eq!(scoped_graph.relationships.len(), 1);
+    assert_eq!(scoped_graph.relationships[0].id, rel_id);
+    assert_eq!(scoped_graph.relationships[0].source_entity_id, rust_entity_id);
+    assert_eq!(scoped_graph.relationships[0].target_entity_id, llm_entity_id);
+    assert_eq!(scoped_graph.relationships[0].relation_type, "interfaces_with");
+
+    // 4. Test global (all assistants)
+    let global_graph = repo
+        .get_global_graph(None, 10)
+        .await
+        .expect("get_global_graph without filter should succeed");
+
+    assert_eq!(global_graph.entities.len(), 3);
+    assert!(global_graph.entities.iter().any(|e| e.id == other_entity_id));
+
+    // 5. Test limit 0 returns empty
+    let empty_graph = repo
+        .get_global_graph(Some("assistant-graph-test"), 0)
+        .await
+        .expect("get_global_graph with 0 limit should succeed");
+    assert!(empty_graph.entities.is_empty());
+    assert!(empty_graph.relationships.is_empty());
+}
