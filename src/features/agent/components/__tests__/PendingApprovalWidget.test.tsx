@@ -49,11 +49,29 @@ describe('PendingApprovalWidget', () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Approve high-risk action' }),
+      screen.getByRole('button', { name: /Approve high-risk action/i }),
     ).toBeInTheDocument();
   });
 
-  it('approves the priority approval on Enter', async () => {
+  it('approves the priority approval on Cmd/Ctrl+Enter', async () => {
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <PendingApprovalWidget
+        approvals={[standardApproval, hardApproval]}
+        executionMode="normal"
+        onRespond={onRespond}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => {
+      expect(onRespond).toHaveBeenCalledWith('call-hard', true);
+    });
+  });
+
+  it('does not approve on bare Enter', async () => {
     const onRespond = vi.fn().mockResolvedValue(undefined);
 
     render(
@@ -65,10 +83,9 @@ describe('PendingApprovalWidget', () => {
     );
 
     fireEvent.keyDown(window, { key: 'Enter' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    await waitFor(() => {
-      expect(onRespond).toHaveBeenCalledWith('call-hard', true);
-    });
+    expect(onRespond).not.toHaveBeenCalled();
   });
 
   it('rejects the priority approval on Escape', async () => {
@@ -113,7 +130,7 @@ describe('PendingApprovalWidget', () => {
     window.removeEventListener('keydown', preventEscape);
   });
 
-  it('ignores Enter while typing in an input', async () => {
+  it('ignores Cmd/Ctrl+Enter while typing in an input', async () => {
     const onRespond = vi.fn().mockResolvedValue(undefined);
 
     render(
@@ -129,7 +146,7 @@ describe('PendingApprovalWidget', () => {
 
     const input = screen.getByLabelText('chat-input');
     input.focus();
-    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true });
 
     expect(onRespond).not.toHaveBeenCalled();
   });

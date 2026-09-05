@@ -63,13 +63,24 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   className = '',
 }) => {
   const { t } = useTranslation();
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(() => isStreaming);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const userReleasedAutoPinRef = useRef(false);
 
   useEffect(() => {
     userReleasedAutoPinRef.current = false;
+    if (isStreaming) {
+      setIsExpanded(true);
+    }
   }, [isStreaming]);
+
+  const handleToggleExpanded = useCallback(() => {
+    setIsExpanded((prev) => !prev);
+  }, []);
+
+  const handleExpand = useCallback(() => {
+    setIsExpanded(true);
+  }, []);
 
   const handleScroll = useCallback(() => {
     const element = scrollRef.current;
@@ -107,7 +118,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
         {isStreaming && <LoadingIndicator size="sm" />}
         <button
           type="button"
-          onClick={() => setIsExpanded((prev) => !prev)}
+          onClick={handleToggleExpanded}
           className="inline-flex items-center gap-1 rounded-sm hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-expanded={isExpanded}
         >
@@ -129,7 +140,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto"
+          className="text-xs opacity-50 italic whitespace-pre-wrap max-h-56 overflow-y-auto transition-[max-height] duration-200"
         >
           {thinking != null && thinking.length > 0
             ? thinking
@@ -142,7 +153,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
           </p>
           <button
             type="button"
-            onClick={() => setIsExpanded(true)}
+            onClick={handleExpand}
             className="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
           >
             {t('agent.bubble.expandThinking', 'Expand')}

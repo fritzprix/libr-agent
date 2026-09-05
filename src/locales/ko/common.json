@@ -1021,8 +1021,11 @@
       "standardBadge": "일반 승인",
       "arguments": "인자",
       "reject": "거부",
+      "rejectShortcut": "거부 (Esc)",
       "hardApprove": "고위험 작업 승인",
-      "approve": "승인"
+      "approve": "승인",
+      "approveShortcut": "승인 (⌘↵ / Ctrl+↵)",
+      "approveShortcutBadge": "⌘↵"
     },
     "draft": {
       "send": "메시지 보내기",
@@ -1155,6 +1158,7 @@
       "toolsCount": "{{totalCount}}({{mcpCount}})개 사용 가능 • 기본 제공 {{builtinCount}}개",
       "statusCompacting": "배경에서 대화 컨텍스트를 압축하는 중...",
       "statusAwaitingCompact": "컨텍스트 압축이 완료되기를 기다리는 중...",
+      "statusAwaitingApproval": "승인 대기 중 — 보류 중인 도구 실행을 검토하세요.",
       "statusError": "오류 발생: {{error}}",
       "statusIdle": "입력 대기 중. 메시지를 입력하여 시작하세요.",
       "statusBusy": "요청 처리 중... 에이전트가 생각하고 도구를 사용하고 있습니다.",

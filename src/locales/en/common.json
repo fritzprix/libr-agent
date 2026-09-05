@@ -1021,8 +1021,11 @@
       "standardBadge": "Standard approval",
       "arguments": "Arguments",
       "reject": "Reject",
+      "rejectShortcut": "Reject (Esc)",
       "hardApprove": "Approve high-risk action",
-      "approve": "Approve"
+      "approve": "Approve",
+      "approveShortcut": "Approve (⌘↵ / Ctrl+↵)",
+      "approveShortcutBadge": "⌘↵"
     },
     "draft": {
       "send": "Send message",
@@ -1155,6 +1158,7 @@
       "toolsCount": "{{totalCount}}({{mcpCount}}) available • builtin {{builtinCount}}",
       "statusCompacting": "Compressing conversation context in background...",
       "statusAwaitingCompact": "Waiting for context compression to complete...",
+      "statusAwaitingApproval": "Awaiting approval — review pending tool actions.",
       "statusError": "An error occurred: {{error}}",
       "statusIdle": "Ready for input. Type a message to start.",
       "statusBusy": "Processing your request... Agent is thinking and using tools.",

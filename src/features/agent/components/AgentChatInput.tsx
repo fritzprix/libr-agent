@@ -206,7 +206,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   useTextareaAutosize({
     textareaRef,
     value: input,
-    maxHeight: 96,
+    maxHeight: 220,
   });
 
   useEffect(() => {
@@ -257,6 +257,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         }
       }
       if (e.key === 'Enter' && !e.shiftKey) {
+        // CJK IME: do not submit while a composition session is active.
+        if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) {
+          return;
+        }
         e.preventDefault();
         if (
           !isSendDisabled &&

@@ -56,6 +56,7 @@ interface MockAgentSessionContextValue {
   session: MockSession;
   executionMode: ExecutionMode;
   preflightTokenMetrics: PreflightTokenMetrics | null;
+  pendingApprovals: Array<{ toolCallId: string }>;
   setExecutionMode: typeof mocks.setExecutionMode;
   updateSessionConfig: typeof mocks.updateSessionConfig;
   isProxyReady: boolean;
@@ -80,6 +81,7 @@ const mockAgentSession: MockAgentSessionContextValue = {
   session: mockSession,
   executionMode: 'normal' as ExecutionMode,
   preflightTokenMetrics: null,
+  pendingApprovals: [],
   setExecutionMode: mocks.setExecutionMode,
   updateSessionConfig: mocks.updateSessionConfig,
   isProxyReady: true,
@@ -263,6 +265,7 @@ describe('AgentChatStatusBar', () => {
     mockAgentSession.session = { ...mockSession };
     mockAgentSession.executionMode = 'normal';
     mockAgentSession.preflightTokenMetrics = null;
+    mockAgentSession.pendingApprovals = [];
     mockAgentChat.messages = [];
     mockAgentChat.workflowStatus = 'idle';
     mockAgentChat.error = null;
@@ -310,6 +313,17 @@ describe('AgentChatStatusBar', () => {
       'data-disabled',
       'true',
     );
+  });
+
+  it('shows awaiting approval status when tool approvals are pending', () => {
+    mockAgentChat.workflowStatus = 'busy';
+    mockAgentSession.pendingApprovals = [{ toolCallId: 'call-1' }];
+
+    render(<AgentChatStatusBar />);
+
+    expect(
+      screen.getByText(/Awaiting approval/i),
+    ).toBeInTheDocument();
   });
 
   it('renders a single execution mode control and switches to unsafe mode', () => {

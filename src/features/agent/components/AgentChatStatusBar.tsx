@@ -105,6 +105,7 @@ export function AgentChatStatusBar() {
     setExecutionMode,
     updateSessionConfig,
     preflightTokenMetrics,
+    pendingApprovals,
   } = useAgentSession();
   const { sessions } = useAgentSessionListState();
   const [showBatchDialog, setShowBatchDialog] = useState(false);
@@ -485,6 +486,20 @@ export function AgentChatStatusBar() {
         ),
         text: t('agent.statusBar.statusCompacting'),
         className: 'bg-secondary/50 border-border text-muted-foreground',
+        showRetry: false,
+        showResume: false,
+      };
+    }
+
+    if (pendingApprovals.length > 0) {
+      return {
+        icon: <Shield className="w-4 h-4" />,
+        text: t(
+          'agent.statusBar.statusAwaitingApproval',
+          'Awaiting approval — review pending tool actions.',
+        ),
+        className:
+          'bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300',
         showRetry: false,
         showResume: false,
       };
