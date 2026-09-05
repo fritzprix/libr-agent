@@ -559,7 +559,7 @@ switch ($Preset) {
   }
   "dataset" {
     if (-not $PSBoundParameters.ContainsKey('Dataset')) {
-      $Dataset = "NovitaAI/tb21-file-recovery"
+      $Dataset = "fritzprix/libragent-diverse-9"
     }
     Write-Step "Preset: dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)

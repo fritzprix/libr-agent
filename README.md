@@ -230,8 +230,10 @@ pnpm tauri dev
 **Benchmarking (Harbor & Terminal-Bench):**
 
 ```bash
-pnpm bench:registry    # Run evaluation on default dataset (NovitaAI/tb21-file-recovery)
-pnpm xbench:registry   # Run comparative evaluation with Hermes Agent
+pnpm bench:diverse     # Stratified 9-task TB2.1 smoke (fritzprix/libragent-diverse-9)
+pnpm bench:fileop      # File/data-focused 9-task set (NovitaAI/tb21-file-recovery)
+pnpm bench:registry    # Same default as bench:diverse
+pnpm xbench:registry   # Comparative evaluation with Hermes Agent
 pnpm bench:terminal    # Run Terminal-Bench 2.1 evaluation
 ```
 

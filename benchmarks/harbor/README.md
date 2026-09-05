@@ -103,11 +103,15 @@ Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
 
 Use `--dataset <org/name-version>` to run any dataset from the
 [Harbor Hub registry](https://harbor.laude-institute.org) without touching the scripts.
-`pnpm bench:registry` (and `pnpm xbench:registry` for Hermes) is a shortcut for `--preset dataset` — defaults to `NovitaAI/tb21-file-recovery`, or pass `--dataset` to run any other registry dataset (pnpm 9+ forwards unknown script flags without requiring `--`):
+`pnpm bench:registry` (and `pnpm xbench:registry` for Hermes) is a shortcut for `--preset dataset` — defaults to `fritzprix/libragent-diverse-9` (stratified 9-task Terminal-Bench 2.1 smoke suite), or pass `--dataset` to run any other registry dataset (pnpm 9+ forwards unknown script flags without requiring `--`):
 
 ```sh
-pnpm bench:registry                                            # runs default dataset: NovitaAI/tb21-file-recovery
-pnpm xbench:registry                                           # runs Hermes on default dataset: NovitaAI/tb21-file-recovery
+pnpm bench:registry                                            # runs default: fritzprix/libragent-diverse-9
+pnpm bench:diverse                                             # same diverse-9 suite (explicit)
+pnpm bench:diverse:n1                                          # first task only
+pnpm bench:fileop                                              # NovitaAI/tb21-file-recovery (file/data-focused 9)
+pnpm bench:fileop:n1                                           # first fileop task only
+pnpm xbench:registry                                           # Hermes on default diverse-9
 pnpm bench:registry --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
 pnpm bench:registry --dataset aider-bench/aider-bench-1.0
 ```
