@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
-import { Building2, RefreshCw } from 'lucide-react';
+import { Building2, RefreshCw, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
@@ -37,6 +38,8 @@ function OrgCardSkeleton() {
 
 export default function Org() {
   const { t } = useTranslation('common');
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const fetcher = async () => {
     const response = await safeInvoke<AgentSessionMetadata[]>(
@@ -60,6 +63,20 @@ export default function Org() {
   });
 
   const orgs = useMemo(() => selectOrgSummaries(sessions), [sessions]);
+
+  const filteredOrgs = useMemo(() => {
+    const query = deferredSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return orgs;
+    }
+
+    return orgs.filter(
+      (org) =>
+        org.orgName.toLowerCase().includes(query) ||
+        org.orgId.toLowerCase().includes(query) ||
+        org.orgRootSessionId.toLowerCase().includes(query),
+    );
+  }, [deferredSearchQuery, orgs]);
 
   async function handleRefresh() {
     await mutate();
@@ -91,7 +108,7 @@ export default function Org() {
   return (
     <div className="flex h-full flex-col bg-background p-6">
       <div className="mx-auto flex h-full w-full max-w-6xl flex-col">
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">
               {t('orgHistory.heading', 'Org View')}
@@ -108,6 +125,7 @@ export default function Org() {
             size="sm"
             onClick={handleRefresh}
             disabled={isValidating}
+            className="shrink-0"
           >
             <RefreshCw
               className={cn('mr-2 h-4 w-4', isValidating && 'animate-spin')}
@@ -115,6 +133,32 @@ export default function Org() {
             {t('history.refresh', 'Refresh')}
           </Button>
         </div>
+
+        {orgs.length > 0 ? (
+          <div className="relative mb-4 max-w-md">
+            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={t(
+                'orgHistory.searchPlaceholder',
+                'Search orgs by name or ID…',
+              )}
+              aria-label={t('orgHistory.searchAria', 'Search organizations')}
+              className="pr-9 pl-9"
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                className="absolute top-1/2 right-2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                aria-label={t('orgHistory.clearSearchAria', 'Clear search')}
+                onClick={() => setSearchQuery('')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-2 pb-4">
           {orgs.length === 0 ? (
@@ -130,9 +174,26 @@ export default function Org() {
                 )}
               </p>
             </div>
+          ) : filteredOrgs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-16 text-center text-muted-foreground">
+              <p className="text-base font-medium">
+                {t(
+                  'orgHistory.noOrgsMatching',
+                  'No organizations match "{{query}}"',
+                  { query: searchQuery.trim() },
+                )}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSearchQuery('')}
+              >
+                {t('orgHistory.clearSearch', 'Clear search')}
+              </Button>
+            </div>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
-              {orgs.map((org) => (
+              {filteredOrgs.map((org) => (
                 <OrgCard
                   key={org.orgId}
                   org={org}

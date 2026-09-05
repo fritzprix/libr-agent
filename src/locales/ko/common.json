@@ -627,6 +627,120 @@
       "success": "모든 세션이 삭제되었습니다. 재시작을 권장합니다.",
       "error": "세션 삭제에 실패했습니다."
     },
+    "migration": {
+      "title": "데이터 마이그레이션 (Migration)",
+      "subtitle": "LibrAgent 설정, 어시스턴트, 스케줄러 및 커스텀 스킬을 다른 기기로 이전합니다.",
+      "errors": {
+        "occurred": "오류 발생:",
+        "reset": "초기화",
+        "wrongPassword": "비밀번호가 올바르지 않습니다. 다시 입력해주세요.",
+        "passwordMinLength": "비밀번호는 최소 4자리 이상이어야 합니다.",
+        "passwordMismatch": "비밀번호가 일치하지 않습니다."
+      },
+      "toasts": {
+        "backupPasswordVerified": "백업 파일 비밀번호 확인 완료",
+        "exportSuccess": "데이터를 성공적으로 내보냈습니다!",
+        "exportFailed": "내보내기 실패: {{error}}",
+        "exportEncryptedSuccess": "암호화된 데이터를 성공적으로 내보냈습니다!",
+        "importSuccess": "마이그레이션 데이터를 성공적으로 가져왔습니다!",
+        "importFailed": "가져오기 실패: {{error}}",
+        "mcpReverifyPartial": "일부 MCP 서버 재검증 실패: {{servers}}",
+        "mcpReverifySuccess": "MCP 서버 재검증이 완료되었습니다.",
+        "reverifyFailed": "재검증 실패: {{error}}"
+      },
+      "export": {
+        "title": "설정 내보내기 (Export)",
+        "description": "현재 기기의 전체 설정 및 사용자 스킬 데이터를 단일 아카이브 파일(`.libragent-migration`)로 패키징합니다.",
+        "securityWarningLabel": "⚠️ 보안 주의:",
+        "securityWarning": "API 키와 액세스 토큰은 기본적으로 포함되지 않도록 마스킹됩니다. 다른 안전한 채널로 이동하는 경우 아래 옵션을 켜십시오.",
+        "includeSensitiveLabel": "민감한 데이터 포함 (Settings 테이블 전체)",
+        "includeSensitiveDescription": "API 키, 액세스 토큰 등을 포함한 settings 테이블 전체의 평문 데이터를 백업 아카이브에 동반하여 저장합니다.",
+        "selectPathLabel": "내보낼 경로 선택",
+        "selectPathPlaceholder": "내보낼 폴더를 선택하십시오...",
+        "browse": "선택",
+        "runExport": "내보내기 실행"
+      },
+      "import": {
+        "title": "설정 가져오기 (Import)",
+        "description": "기존에 내보낸 `.libragent-migration` 아카이브 파일을 불러와 현재 환경의 설정을 갱신합니다.",
+        "autoBackupInfo": "가져오기 전, 데이터 손실 방지를 위해 현재 DB의 **자동 백업**이 생성되며 실패 시 즉시 이전 상태로 복구됩니다.",
+        "archiveFileLabel": "마이그레이션 아카이브 파일",
+        "selectAndValidate": "파일 선택 및 유효성 검사",
+        "runImportWaiting": "가져오기 실행 (파일 분석 대기)",
+        "runImport": "가져오기 실행"
+      },
+      "loading": {
+        "inspectingTitle": "파일 구조 분석 중...",
+        "inspectingDescription": "내용 검사 및 ZIP Slip 방어를 위한 위협 분석을 수행하고 있습니다.",
+        "exportingTitle": "마이그레이션 파일 작성 중...",
+        "exportingDescription": "설정 테이블 직렬화 및 스킬 파일 아카이빙을 진행하고 있습니다.",
+        "importingTitle": "환경 데이터베이스 적용 중...",
+        "importingDescription": "단일 격리 트랜잭션 내에서 설정을 적용하며 외래키 제약을 검증하고 있습니다.",
+        "selectingTitle": "사용자 입력 대기 중...",
+        "selectingDescription": "폴더/파일 탐색기 창에서 결정을 완료하십시오."
+      },
+      "preview": {
+        "analysisComplete": "마이그레이션 아카이브 파일 분석 완료",
+        "compatible": "✅ 호환성 통과",
+        "newerVersionWarning": "⚠️ 상위 버전 경고",
+        "incompatible": "❌ 호환되지 않음",
+        "compatibilityInfo": "호환성 정보:",
+        "backupAppVersion": "백업 앱 버전",
+        "exportedAt": "내보낸 시각",
+        "totalSize": "백업 총 크기",
+        "unknown": "알 수 없음",
+        "sectionsList": "백업 포함 섹션 리스트",
+        "sectionName": "섹션명",
+        "itemCount": "항목 수",
+        "fileSize": "파일 크기",
+        "itemCountValue": "{{count}}개",
+        "conflictStrategyLabel": "가져오기 충돌 해결 방식",
+        "cancelAndBack": "취소 및 뒤로가기"
+      },
+      "strategy": {
+        "skipTitle": "Skip (기존 유지)",
+        "skipDescription": "이름이나 ID가 겹칠 경우 현재 기기의 기존 설정을 보존합니다.",
+        "overwriteTitle": "Overwrite (덮어쓰기)",
+        "overwriteDescription": "기존의 로컬 레코드를 전부 제거하고 백업 데이터로 완전 교체합니다.",
+        "mergeTitle": "Merge (병합)",
+        "mergeDescription": "기존 설정을 유지하면서 새 설정 항목을 주입합니다. settings 외의 다른 데이터는 안전을 위해 '건너뛰기(Skip)'로 처리됩니다."
+      },
+      "complete": {
+        "exportTitle": "내보내기 작업 완료!",
+        "importTitle": "가져오기 작업 성공!",
+        "exportDescription": "현재 환경의 설정 백업 파일이 정상적으로 패키징 및 생성되었습니다.",
+        "importDescription": "가져온 설정이 무결성 검증을 마치고 안전하게 주입되었습니다. 변화를 활성화하기 위해 아래 정리를 수행해 주십시오.",
+        "savePath": "저장 경로:",
+        "fileSize": "파일 크기:",
+        "includedSections": "포함 구역:",
+        "section": "섹션",
+        "success": "성공",
+        "skipped": "스킵",
+        "errors": "오류",
+        "mcpRestoreLabel": "🔌 MCP 및 백그라운드 환경 복원:",
+        "mcpRestoreDescription": "가져오기 이후 MCP 서비스가 새로운 호스트/환경에서 정상 가동되기 위해 토큰 갱신 및 검증이 필요합니다. 아래 검증 버튼을 클릭하십시오.",
+        "mcpReverifyButton": "MCP 서버 재인증 및 정합성 검증",
+        "backToMain": "마이그레이션 메인으로 이동"
+      },
+      "exportPassword": {
+        "title": "백업 보안 비밀번호 설정",
+        "description": "민감한 데이터(API 키, 자격 증명 등)를 포함하여 백업 파일을 생성하므로, 백업 파일을 암호화하여 보호하기 위해 비밀번호를 설정해야 합니다. 이 비밀번호는 나중에 백업을 복원(가져오기)할 때 사용됩니다.",
+        "passwordLabel": "비밀번호 입력 (최소 4자리)",
+        "passwordPlaceholder": "비밀번호를 입력하십시오",
+        "confirmLabel": "비밀번호 확인",
+        "confirmPlaceholder": "비밀번호를 다시 한번 입력하십시오",
+        "cancel": "취소",
+        "runExport": "내보내기 실행"
+      },
+      "importPassword": {
+        "title": "보안 비밀번호 입력",
+        "description": "이 백업 파일은 암호화되어 있어 미리보기와 가져오기를 수행하려면 비밀번호가 필요합니다. 설정하신 비밀번호를 입력해주세요.",
+        "passwordLabel": "비밀번호 입력",
+        "passwordPlaceholder": "비밀번호를 입력하십시오",
+        "cancel": "취소",
+        "confirm": "확인"
+      }
+    },
     "skills": {
       "modalTitle": "사용 가능한 스킬 ({{count}})",
       "noSkills": "스킬을 찾을 수 없습니다.",
@@ -892,7 +1006,10 @@
   "agent": {
     "messages": {
       "loadingOlder": "이전 메시지를 불러오는 중...",
-      "scrollToLoadOlder": "위로 스크롤하여 이전 메시지 불러오기"
+      "scrollToLoadOlder": "위로 스크롤하여 이전 메시지 불러오기",
+      "scrollToLatest": "최신 메시지로 이동",
+      "pendingApprovalsJump_one": "승인 대기 중인 도구 {{count}}개 — 이동하여 응답",
+      "pendingApprovalsJump_other": "승인 대기 중인 도구 {{count}}개 — 이동하여 응답"
     },
     "approval": {
       "hardTitle": "강력한 승인 필요",
@@ -1297,6 +1414,12 @@
     "deleteTask": "작업 삭제",
     "editTaskAria": "작업 편집: {{name}}",
     "deleteTaskAria": "작업 삭제: {{name}}",
+    "deleteConfirm": {
+      "title": "예약 작업을 삭제할까요?",
+      "description": "\"{{name}}\"이(가) 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+      "confirm": "삭제",
+      "deleting": "삭제 중…"
+    },
     "modal": {
       "titleNew": "새 예약 작업",
       "titleEdit": "예약 작업 편집",
@@ -1354,8 +1477,12 @@
         "hours_other": "매 {{count}}시간마다",
         "daily": "매일 {{time}}",
         "weekly": "매주 {{day}} {{time}}",
-        "monthly": "매월 {{day}}일 {{time}}"
+        "monthly": "매월 {{day}}일 {{time}}",
+        "custom": "사용자 지정: {{cron}}"
       },
+      "customHint": "이 일정은 간단 편집기가 표현할 수 없는 고급 cron 식입니다. 아래에서 식을 수정하거나, 간단 일정으로 전환하세요(현재 식이 대체됩니다).",
+      "customLabel": "Cron 식",
+      "switchToSimple": "간단 일정으로 전환",
       "days": {
         "0": "일요일",
         "1": "월요일",

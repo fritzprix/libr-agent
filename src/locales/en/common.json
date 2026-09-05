@@ -628,6 +628,120 @@
       "success": "All sessions have been deleted. Restart recommended.",
       "error": "Failed to clear sessions."
     },
+    "migration": {
+      "title": "Data Migration",
+      "subtitle": "Transfer LibrAgent settings, assistants, scheduler, and custom skills to another device.",
+      "errors": {
+        "occurred": "Error occurred:",
+        "reset": "Reset",
+        "wrongPassword": "Incorrect password. Please try again.",
+        "passwordMinLength": "Password must be at least 4 characters.",
+        "passwordMismatch": "Passwords do not match."
+      },
+      "toasts": {
+        "backupPasswordVerified": "Backup file password verified",
+        "exportSuccess": "Data exported successfully!",
+        "exportFailed": "Export failed: {{error}}",
+        "exportEncryptedSuccess": "Encrypted data exported successfully!",
+        "importSuccess": "Migration data imported successfully!",
+        "importFailed": "Import failed: {{error}}",
+        "mcpReverifyPartial": "Some MCP servers failed re-verification: {{servers}}",
+        "mcpReverifySuccess": "MCP server re-verification completed.",
+        "reverifyFailed": "Re-verification failed: {{error}}"
+      },
+      "export": {
+        "title": "Export Settings",
+        "description": "Package all settings and user skill data from this device into a single archive file (`.libragent-migration`).",
+        "securityWarningLabel": "⚠️ Security notice:",
+        "securityWarning": "API keys and access tokens are masked by default. Enable the option below only when moving them through another secure channel.",
+        "includeSensitiveLabel": "Include sensitive data (full Settings table)",
+        "includeSensitiveDescription": "Store plaintext data from the entire settings table—including API keys and access tokens—in the backup archive.",
+        "selectPathLabel": "Select export path",
+        "selectPathPlaceholder": "Select a folder to export to...",
+        "browse": "Browse",
+        "runExport": "Run Export"
+      },
+      "import": {
+        "title": "Import Settings",
+        "description": "Load a previously exported `.libragent-migration` archive file to update the current environment.",
+        "autoBackupInfo": "Before importing, an automatic backup of the current database is created to prevent data loss. If import fails, the previous state is restored immediately.",
+        "archiveFileLabel": "Migration archive file",
+        "selectAndValidate": "Select file and validate",
+        "runImportWaiting": "Run Import (awaiting file analysis)",
+        "runImport": "Run Import"
+      },
+      "loading": {
+        "inspectingTitle": "Analyzing file structure...",
+        "inspectingDescription": "Inspecting contents and performing threat analysis for ZIP Slip protection.",
+        "exportingTitle": "Writing migration file...",
+        "exportingDescription": "Serializing settings tables and archiving skill files.",
+        "importingTitle": "Applying to environment database...",
+        "importingDescription": "Applying settings within an isolated transaction and validating foreign key constraints.",
+        "selectingTitle": "Waiting for user input...",
+        "selectingDescription": "Complete your selection in the folder/file explorer window."
+      },
+      "preview": {
+        "analysisComplete": "Migration archive analysis complete",
+        "compatible": "✅ Compatible",
+        "newerVersionWarning": "⚠️ Newer version warning",
+        "incompatible": "❌ Incompatible",
+        "compatibilityInfo": "Compatibility info:",
+        "backupAppVersion": "Backup app version",
+        "exportedAt": "Exported at",
+        "totalSize": "Total backup size",
+        "unknown": "Unknown",
+        "sectionsList": "Included backup sections",
+        "sectionName": "Section",
+        "itemCount": "Items",
+        "fileSize": "File size",
+        "itemCountValue": "{{count}} items",
+        "conflictStrategyLabel": "Import conflict resolution",
+        "cancelAndBack": "Cancel and go back"
+      },
+      "strategy": {
+        "skipTitle": "Skip (keep existing)",
+        "skipDescription": "When names or IDs conflict, preserve the existing settings on this device.",
+        "overwriteTitle": "Overwrite",
+        "overwriteDescription": "Remove all existing local records and fully replace them with backup data.",
+        "mergeTitle": "Merge",
+        "mergeDescription": "Keep existing settings while injecting new items. For safety, non-settings data is handled as Skip."
+      },
+      "complete": {
+        "exportTitle": "Export complete!",
+        "importTitle": "Import successful!",
+        "exportDescription": "A backup file of the current environment settings was packaged and created successfully.",
+        "importDescription": "Imported settings passed integrity verification and were applied safely. Complete the cleanup below to activate the changes.",
+        "savePath": "Save path:",
+        "fileSize": "File size:",
+        "includedSections": "Included sections:",
+        "section": "Section",
+        "success": "Success",
+        "skipped": "Skipped",
+        "errors": "Errors",
+        "mcpRestoreLabel": "🔌 MCP and background environment restore:",
+        "mcpRestoreDescription": "After import, MCP services need token refresh and verification to run correctly in the new host/environment. Click the verify button below.",
+        "mcpReverifyButton": "Re-authenticate and verify MCP servers",
+        "backToMain": "Back to migration home"
+      },
+      "exportPassword": {
+        "title": "Set backup security password",
+        "description": "Because this backup includes sensitive data (API keys, credentials, etc.), you must set a password to encrypt the backup file. This password is required when restoring (importing) the backup later.",
+        "passwordLabel": "Password (minimum 4 characters)",
+        "passwordPlaceholder": "Enter password",
+        "confirmLabel": "Confirm password",
+        "confirmPlaceholder": "Re-enter password",
+        "cancel": "Cancel",
+        "runExport": "Run Export"
+      },
+      "importPassword": {
+        "title": "Enter security password",
+        "description": "This backup file is encrypted. A password is required to preview and import it. Enter the password you set when exporting.",
+        "passwordLabel": "Password",
+        "passwordPlaceholder": "Enter password",
+        "cancel": "Cancel",
+        "confirm": "Confirm"
+      }
+    },
     "skills": {
       "modalTitle": "Installed Skills ({{count}})",
       "noSkills": "No skills found.",
@@ -892,7 +1006,10 @@
   "agent": {
     "messages": {
       "loadingOlder": "Loading older messages...",
-      "scrollToLoadOlder": "Scroll up to load older messages"
+      "scrollToLoadOlder": "Scroll up to load older messages",
+      "scrollToLatest": "Scroll to latest",
+      "pendingApprovalsJump_one": "{{count}} tool awaiting approval — jump to respond",
+      "pendingApprovalsJump_other": "{{count}} tools awaiting approval — jump to respond"
     },
     "approval": {
       "hardTitle": "Hard Approval Required",
@@ -1317,6 +1434,12 @@
     "deleteTask": "Delete Task",
     "editTaskAria": "Edit task: {{name}}",
     "deleteTaskAria": "Delete task: {{name}}",
+    "deleteConfirm": {
+      "title": "Delete scheduled task?",
+      "description": "This permanently deletes \"{{name}}\". This action cannot be undone.",
+      "confirm": "Delete",
+      "deleting": "Deleting…"
+    },
     "modal": {
       "titleNew": "New Scheduled Task",
       "titleEdit": "Edit Scheduled Task",
@@ -1374,8 +1497,12 @@
         "hours_other": "Every {{count}} hours",
         "daily": "Daily at {{time}}",
         "weekly": "Every {{day}} at {{time}}",
-        "monthly": "Monthly on day {{day}} at {{time}}"
+        "monthly": "Monthly on day {{day}} at {{time}}",
+        "custom": "Custom: {{cron}}"
       },
+      "customHint": "This schedule uses an advanced cron expression the simple editor cannot represent. Edit the expression below, or switch to a simple schedule (this replaces the current expression).",
+      "customLabel": "Cron expression",
+      "switchToSimple": "Switch to simple schedule",
       "days": {
         "0": "Sunday",
         "1": "Monday",

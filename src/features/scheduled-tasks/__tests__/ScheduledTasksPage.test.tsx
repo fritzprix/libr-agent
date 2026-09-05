@@ -1,8 +1,10 @@
 
 import { expect, test, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { ScheduledTasksPage } from '@/features/scheduled-tasks/ScheduledTasksPage';
+
+const deleteTask = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
   useScheduledTasks: () => ({
@@ -14,7 +16,7 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         scheduleTimezone: 'local',
         assistantId: 'ast-1',
         message: 'Hello World',
-      executionMode: 'normal' as const,
+        executionMode: 'normal' as const,
         createdBySessionId: null,
         sessionId: null,
         taskCategory: 'GLOBAL',
@@ -32,7 +34,7 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         scheduleTimezone: 'local',
         assistantId: 'ast-1',
         message: 'Review metrics',
-      executionMode: 'normal' as const,
+        executionMode: 'normal' as const,
         createdBySessionId: null,
         sessionId: null,
         taskCategory: 'GLOBAL',
@@ -50,7 +52,7 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
     createTask: vi.fn(),
     updateTask: vi.fn(),
     toggleTask: vi.fn(),
-    deleteTask: vi.fn(),
+    deleteTask,
   }),
 }));
 
@@ -131,4 +133,34 @@ test('ScheduledTasksPage renders scheduled tasks in a flat list', async () => {
   expect(screen.getAllByText('scheduledTasks.deleteTask')).toHaveLength(2);
   expect(screen.getByText('/tmp/scheduled-task-workspace')).toBeInTheDocument();
   expect(screen.getByText('Solo Task')).toBeInTheDocument();
+});
+
+test('ScheduledTasksPage confirms before deleting a task', async () => {
+  deleteTask.mockClear();
+  render(<ScheduledTasksPage />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Test Task 1')).toBeInTheDocument();
+  });
+
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: /scheduledTasks.deleteTaskAria Test Task 1/i,
+    }),
+  );
+
+  expect(
+    screen.getByText('scheduledTasks.deleteConfirm.title'),
+  ).toBeInTheDocument();
+  expect(deleteTask).not.toHaveBeenCalled();
+
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: 'scheduledTasks.deleteConfirm.confirm',
+    }),
+  );
+
+  await waitFor(() => {
+    expect(deleteTask).toHaveBeenCalledWith('task-1');
+  });
 });

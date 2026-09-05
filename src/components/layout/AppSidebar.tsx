@@ -391,75 +391,81 @@ export default function AppSidebar() {
 
                       return (
                         <SidebarMenuItem key={session.id}>
-                          <SidebarMenuButton
-                            asChild
-                            isActive={
-                              location.pathname === `/agent/${session.id}`
-                            }
-                            tooltip={
-                              session.name ||
-                              `${t('sidebar.session')} ${session.id.slice(0, 8)}`
-                            }
+                          <div
+                            className={cn(
+                              'flex w-full items-center gap-0.5',
+                              nestingLevel > 0 && 'text-muted-foreground',
+                            )}
+                            style={{
+                              paddingLeft: `${nestingLevel * 12}px`,
+                            }}
                           >
-                            <Link
-                              to={`/agent/${session.id}`}
-                              className={cn(
-                                'flex w-full items-center gap-2',
-                                nestingLevel > 0 && 'text-muted-foreground',
-                              )}
-                              style={{
-                                paddingLeft: `${nestingLevel * 12}px`,
-                              }}
-                            >
-                              {hasExpandableChildren ? (
-                                <button
-                                  type="button"
-                                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-                                  aria-expanded={isExpanded}
-                                  aria-busy={isLoadingChildren}
-                                  aria-label={
-                                    isLoadingChildren
+                            {hasExpandableChildren ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-7 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                                aria-expanded={isExpanded}
+                                aria-busy={isLoadingChildren}
+                                aria-label={
+                                  isLoadingChildren
+                                    ? t(
+                                        'sidebar.loadingSessionChildren',
+                                        'Loading session children',
+                                      )
+                                    : isExpanded
                                       ? t(
-                                          'sidebar.loadingSessionChildren',
-                                          'Loading session children',
+                                          'sidebar.collapseSession',
+                                          'Collapse session children',
                                         )
-                                      : isExpanded
-                                        ? t(
-                                            'sidebar.collapseSession',
-                                            'Collapse session children',
-                                          )
-                                        : t(
-                                            'sidebar.expandSession',
-                                            'Expand session children',
-                                          )
-                                  }
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    handleToggleExpand(session.id);
-                                  }}
-                                >
-                                  {isLoadingChildren ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : isExpanded ? (
-                                    <ChevronDown className="h-3.5 w-3.5" />
-                                  ) : (
-                                    <ChevronRight className="h-3.5 w-3.5" />
-                                  )}
-                                </button>
-                              ) : (
-                                <span className="inline-block h-4 w-4 shrink-0" />
-                              )}
-                              <StatusDot status={session.status} />
-                              <span className="truncate text-xs">
-                                {session.name ||
-                                  `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
-                              </span>
-                              {session.isBookmarked && (
-                                <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
-                              )}
-                            </Link>
-                          </SidebarMenuButton>
+                                      : t(
+                                          'sidebar.expandSession',
+                                          'Expand session children',
+                                        )
+                                }
+                                onClick={() => {
+                                  handleToggleExpand(session.id);
+                                }}
+                              >
+                                {isLoadingChildren ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : isExpanded ? (
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                ) : (
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            ) : (
+                              <span
+                                className="inline-block h-7 w-5 shrink-0"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <SidebarMenuButton
+                              asChild
+                              isActive={
+                                location.pathname === `/agent/${session.id}`
+                              }
+                              tooltip={
+                                session.name ||
+                                `${t('sidebar.session')} ${session.id.slice(0, 8)}`
+                              }
+                              className="min-w-0 flex-1"
+                            >
+                              <Link
+                                to={`/agent/${session.id}`}
+                                className="flex min-w-0 items-center gap-2"
+                              >
+                                <StatusDot status={session.status} />
+                                <span className="truncate text-xs">
+                                  {session.name ||
+                                    `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
+                                </span>
+                                {session.isBookmarked && (
+                                  <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
+                                )}
+                              </Link>
+                            </SidebarMenuButton>
+                          </div>
                         </SidebarMenuItem>
                       );
                     },

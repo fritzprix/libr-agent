@@ -119,8 +119,7 @@ export async function fetchDynamicProviderModels(
     );
     return modelsRecord;
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     logger.warn(`Failed to fetch models for ${providerId}:`, errorMessage);
     const fallbackModels = resolveProviderModels(providerId, settings);
     reportListModelsFallback({

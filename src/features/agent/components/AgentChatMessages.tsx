@@ -20,7 +20,7 @@ import {
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { CompactEventDivider } from './shared/CompactEventDivider';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -380,10 +380,36 @@ export function AgentChatMessages() {
           totalListHeightChanged={handleTotalListHeightChanged}
           itemContent={renderMessageGroup}
         />
+        {pendingApprovals.length > 0 && !isPinned ? (
+          <div
+            className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4"
+            style={{
+              paddingRight: 'var(--agent-side-panel-inset, 0px)',
+            }}
+          >
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="pointer-events-auto gap-2 shadow-lg"
+              onClick={handleManualScrollToBottom}
+            >
+              <ShieldAlert className="size-4 text-warning" />
+              <span>
+                {t('agent.messages.pendingApprovalsJump', {
+                  count: pendingApprovals.length,
+                  defaultValue:
+                    '{{count}} tools awaiting approval — jump to respond',
+                })}
+              </span>
+            </Button>
+          </div>
+        ) : null}
         {!isPinned && (
           <div
-            className="pointer-events-none absolute right-6 z-10"
+            className="pointer-events-none absolute z-20"
             style={{
+              right: `calc(1.5rem + var(--agent-side-panel-inset, 0px))`,
               bottom: `calc(var(--agent-chat-composer-overlap, 64px) + ${SCROLL_TO_LATEST_BUTTON_OFFSET}px)`,
             }}
           >

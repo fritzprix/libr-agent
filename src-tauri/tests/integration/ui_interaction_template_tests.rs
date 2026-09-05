@@ -387,7 +387,8 @@ async fn report_result_markdown_math_loads_katex_and_preserves_latex() {
     // Raw markdown is embedded as JSON; &= / < must still be intact there
     // (escaping happens only when the client parser emits HTML).
     assert!(
-        html.contains(r"\nabla \cdot \mathbf{E} &=") || html.contains(r"\\nabla \\cdot \\mathbf{E} &="),
+        html.contains(r"\nabla \cdot \mathbf{E} &=")
+            || html.contains(r"\\nabla \\cdot \\mathbf{E} &="),
         "source markdown JSON must preserve LaTeX alignment &= before HTML escape"
     );
     assert!(

@@ -78,6 +78,7 @@ export function ScheduledTasksPage() {
         toast.error(
           t('scheduledTasks.deleteFailed', 'Failed to delete scheduled task'),
         );
+        throw error;
       }
     },
     [deleteTask, t],

@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Clock,
@@ -9,6 +9,16 @@ import {
   Zap,
   DatabaseZap,
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,6 +57,7 @@ export const ScheduledTaskRow = memo(function ScheduledTaskRow({
   isDeleting,
 }: ScheduledTaskRowProps) {
   const { t } = useTranslation();
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
     <li className="flex items-start gap-4 rounded-lg border border-border bg-card p-4">
@@ -135,7 +146,7 @@ export const ScheduledTaskRow = memo(function ScheduledTaskRow({
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-destructive hover:text-destructive"
-              onClick={() => void onDelete(task.id)}
+              onClick={() => setConfirmOpen(true)}
               aria-label={t('scheduledTasks.deleteTaskAria', {
                 name: task.name,
               })}
@@ -151,6 +162,61 @@ export const ScheduledTaskRow = memo(function ScheduledTaskRow({
           <TooltipContent>{t('scheduledTasks.deleteTask')}</TooltipContent>
         </Tooltip>
       </div>
+
+      <AlertDialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) {
+            setConfirmOpen(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t(
+                'scheduledTasks.deleteConfirm.title',
+                'Delete scheduled task?',
+              )}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('scheduledTasks.deleteConfirm.description', {
+                defaultValue:
+                  'This permanently deletes "{{name}}". This action cannot be undone.',
+                name: task.name,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>
+              {t('common.cancel', 'Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeleting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                void onDelete(task.id)
+                  .then(() => {
+                    setConfirmOpen(false);
+                  })
+                  .catch(() => {
+                    // Keep dialog open; page handler already toasts.
+                  });
+              }}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t('scheduledTasks.deleteConfirm.deleting', 'Deleting…')}
+                </>
+              ) : (
+                t('scheduledTasks.deleteConfirm.confirm', 'Delete')
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </li>
   );
 });

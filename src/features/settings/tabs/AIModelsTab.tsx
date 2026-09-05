@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Info } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
@@ -13,6 +13,16 @@ import type {
   ModelChoice,
 } from '@/lib/services/settings-service';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Button,
   Checkbox,
@@ -69,6 +79,9 @@ function AIModelsTabComponent({
 }: AIModelsTabProps) {
   const { t } = useTranslation('common');
   const providers = customProviders ?? EMPTY_CUSTOM_PROVIDERS;
+  const [providerPendingRemoval, setProviderPendingRemoval] = useState<
+    string | null
+  >(null);
   const PROVIDER_META: Record<
     AIServiceProvider,
     { name: string; description: string }
@@ -186,38 +199,41 @@ function AIModelsTabComponent({
     [providers, onCustomProvidersChange],
   );
 
-  const handleRemoveCustomProvider = useCallback(
-    (id: string) => {
-      const providerId = toCustomProviderId(id);
-      const confirmed = window.confirm(
-        t(
-          'settings.customProviders.removeConfirm',
-          'Remove this custom provider? Sessions using it will need a new model selection.',
-        ),
-      );
-      if (!confirmed) {
-        return;
-      }
+  const handleRemoveCustomProvider = useCallback((id: string) => {
+    setProviderPendingRemoval(id);
+  }, []);
 
-      onCustomProvidersChange(providers.filter((entry) => entry.id !== id));
+  const confirmRemoveCustomProvider = useCallback(() => {
+    if (!providerPendingRemoval) {
+      return;
+    }
 
-      if (localPreferredModel.provider === providerId) {
-        onPreferredModelChange('', AIServiceProvider.OpenAI);
-      }
-      if (localFallbackModel?.provider === providerId) {
-        onFallbackModelChange('', AIServiceProvider.OpenAI);
-      }
-    },
-    [
-      providers,
-      localFallbackModel?.provider,
-      localPreferredModel.provider,
-      onCustomProvidersChange,
-      onFallbackModelChange,
-      onPreferredModelChange,
-      t,
-    ],
-  );
+    const id = providerPendingRemoval;
+    const providerId = toCustomProviderId(id);
+
+    onCustomProvidersChange(providers.filter((entry) => entry.id !== id));
+
+    if (localPreferredModel.provider === providerId) {
+      onPreferredModelChange('', AIServiceProvider.OpenAI);
+    }
+    if (localFallbackModel?.provider === providerId) {
+      onFallbackModelChange('', AIServiceProvider.OpenAI);
+    }
+
+    setProviderPendingRemoval(null);
+  }, [
+    providers,
+    localFallbackModel?.provider,
+    localPreferredModel.provider,
+    onCustomProvidersChange,
+    onFallbackModelChange,
+    onPreferredModelChange,
+    providerPendingRemoval,
+  ]);
+
+  const providerPendingRemovalName =
+    providers.find((entry) => entry.id === providerPendingRemoval)?.name ??
+    providerPendingRemoval;
 
   return (
     <div className="space-y-8">
@@ -406,6 +422,44 @@ function AIModelsTabComponent({
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={providerPendingRemoval !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setProviderPendingRemoval(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t(
+                'settings.customProviders.removeConfirmTitle',
+                'Remove custom provider?',
+              )}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.customProviders.removeConfirm', {
+                name: providerPendingRemovalName ?? '',
+                defaultValue:
+                  'Remove "{{name}}"? Sessions using it will need a new model selection.',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t('common.cancel', 'Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={confirmRemoveCustomProvider}
+            >
+              {t('settings.customProviders.removeConfirmAction', 'Remove')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

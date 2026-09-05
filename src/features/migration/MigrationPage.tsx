@@ -92,10 +92,13 @@ const MigrationPage: FC = () => {
     } else if (error === 'WRONG_PASSWORD') {
       setIsImportPasswordOpen(true);
       setImportPasswordError(
-        '비밀번호가 올바르지 않습니다. 다시 입력해주세요.',
+        t(
+          'settings.migration.errors.wrongPassword',
+          'Incorrect password. Please try again.',
+        ),
       );
     }
-  }, [error]);
+  }, [error, t]);
 
   const handleCancelImportPassword = () => {
     setIsImportPasswordOpen(false);
@@ -112,11 +115,19 @@ const MigrationPage: FC = () => {
       setCurrentPassword(importPassword);
       setIsImportPasswordOpen(false);
       setImportPassword('');
-      toast.success('백업 파일 비밀번호 확인 완료');
+      toast.success(
+        t(
+          'settings.migration.toasts.backupPasswordVerified',
+          'Backup file password verified',
+        ),
+      );
     } catch (e) {
       if (e instanceof Error && e.message === 'WRONG_PASSWORD') {
         setImportPasswordError(
-          '비밀번호가 올바르지 않습니다. 다시 입력해주세요.',
+          t(
+            'settings.migration.errors.wrongPassword',
+            'Incorrect password. Please try again.',
+          ),
         );
       } else {
         setIsImportPasswordOpen(false);
@@ -134,10 +145,19 @@ const MigrationPage: FC = () => {
     } else {
       try {
         await doExport();
-        toast.success('데이터를 성공적으로 내보냈습니다!');
+        toast.success(
+          t(
+            'settings.migration.toasts.exportSuccess',
+            'Data exported successfully!',
+          ),
+        );
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
         toast.error(
-          '내보내기 실패: ' + (e instanceof Error ? e.message : String(e)),
+          t('settings.migration.toasts.exportFailed', {
+            defaultValue: 'Export failed: {{error}}',
+            error: msg,
+          }),
         );
       }
     }
@@ -145,11 +165,21 @@ const MigrationPage: FC = () => {
 
   const handleExportWithPassword = async () => {
     if (exportPassword.length < 4) {
-      setExportPasswordError('비밀번호는 최소 4자리 이상이어야 합니다.');
+      setExportPasswordError(
+        t(
+          'settings.migration.errors.passwordMinLength',
+          'Password must be at least 4 characters.',
+        ),
+      );
       return;
     }
     if (exportPassword !== exportPasswordConfirm) {
-      setExportPasswordError('비밀번호가 일치하지 않습니다.');
+      setExportPasswordError(
+        t(
+          'settings.migration.errors.passwordMismatch',
+          'Passwords do not match.',
+        ),
+      );
       return;
     }
 
@@ -157,11 +187,20 @@ const MigrationPage: FC = () => {
       setExportPasswordError(null);
       await doExport(exportPassword);
       setIsExportPasswordOpen(false);
-      toast.success('암호화된 데이터를 성공적으로 내보냈습니다!');
+      toast.success(
+        t(
+          'settings.migration.toasts.exportEncryptedSuccess',
+          'Encrypted data exported successfully!',
+        ),
+      );
     } catch (e) {
       setIsExportPasswordOpen(false);
+      const msg = e instanceof Error ? e.message : String(e);
       toast.error(
-        '내보내기 실패: ' + (e instanceof Error ? e.message : String(e)),
+        t('settings.migration.toasts.exportFailed', {
+          defaultValue: 'Export failed: {{error}}',
+          error: msg,
+        }),
       );
     }
   };
@@ -169,10 +208,19 @@ const MigrationPage: FC = () => {
   const handleImport = async () => {
     try {
       await doImport(strategy, currentPassword);
-      toast.success('마이그레이션 데이터를 성공적으로 가져왔습니다!');
+      toast.success(
+        t(
+          'settings.migration.toasts.importSuccess',
+          'Migration data imported successfully!',
+        ),
+      );
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       toast.error(
-        '가져오기 실패: ' + (e instanceof Error ? e.message : String(e)),
+        t('settings.migration.toasts.importFailed', {
+          defaultValue: 'Import failed: {{error}}',
+          error: msg,
+        }),
       );
     }
   };
@@ -186,13 +234,28 @@ const MigrationPage: FC = () => {
         .map(([id]) => id);
 
       if (failedServers.length > 0) {
-        toast.warning(`일부 MCP 서버 재검증 실패: ${failedServers.join(', ')}`);
+        toast.warning(
+          t('settings.migration.toasts.mcpReverifyPartial', {
+            defaultValue:
+              'Some MCP servers failed re-verification: {{servers}}',
+            servers: failedServers.join(', '),
+          }),
+        );
       } else {
-        toast.success('MCP 서버 재검증이 완료되었습니다.');
+        toast.success(
+          t(
+            'settings.migration.toasts.mcpReverifySuccess',
+            'MCP server re-verification completed.',
+          ),
+        );
       }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       toast.error(
-        '재검증 실패: ' + (e instanceof Error ? e.message : String(e)),
+        t('settings.migration.toasts.reverifyFailed', {
+          defaultValue: 'Re-verification failed: {{error}}',
+          error: msg,
+        }),
       );
     } finally {
       setReverifying(false);
@@ -222,12 +285,12 @@ const MigrationPage: FC = () => {
           </Button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              {t('settings.migration.title', '데이터 마이그레이션 (Migration)')}
+              {t('settings.migration.title', 'Data Migration')}
             </h1>
             <p className="text-sm text-muted-foreground">
               {t(
                 'settings.migration.subtitle',
-                'LibrAgent 설정, 어시스턴트, 스케줄러 및 커스텀 스킬을 다른 기기로 이전합니다.',
+                'Transfer LibrAgent settings, assistants, scheduler, and custom skills to another device.',
               )}
             </p>
           </div>
@@ -239,7 +302,10 @@ const MigrationPage: FC = () => {
             <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/10 text-destructive-foreground flex gap-3 items-start animate-in fade-in slide-in-from-top-4 duration-300">
               <ShieldAlert className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
               <div className="text-sm flex-1">
-                <span className="font-semibold">오류 발생:</span> {error}
+                <span className="font-semibold">
+                  {t('settings.migration.errors.occurred', 'Error occurred:')}
+                </span>{' '}
+                {error}
               </div>
               <Button
                 variant="ghost"
@@ -247,7 +313,7 @@ const MigrationPage: FC = () => {
                 onClick={reset}
                 className="h-7 text-xs hover:bg-destructive/20 text-destructive-foreground"
               >
-                초기화
+                {t('settings.migration.errors.reset', 'Reset')}
               </Button>
             </div>
           )}
@@ -261,11 +327,13 @@ const MigrationPage: FC = () => {
                   <ArrowUpFromLine className="h-6 w-6" />
                 </div>
                 <CardTitle className="text-lg">
-                  설정 내보내기 (Export)
+                  {t('settings.migration.export.title', 'Export Settings')}
                 </CardTitle>
                 <CardDescription>
-                  현재 기기의 전체 설정 및 사용자 스킬 데이터를 단일 아카이브
-                  파일(`.libragent-migration`)로 패키징합니다.
+                  {t(
+                    'settings.migration.export.description',
+                    'Package all settings and user skill data from this device into a single archive file (`.libragent-migration`).',
+                  )}
                 </CardDescription>
               </CardHeader>
 
@@ -274,11 +342,15 @@ const MigrationPage: FC = () => {
                   <AlertTriangle className="h-5 w-5 shrink-0 text-warning mt-0.5" />
                   <div className="text-xs text-muted-foreground leading-relaxed">
                     <span className="font-semibold text-foreground">
-                      ⚠️ 보안 주의:
+                      {t(
+                        'settings.migration.export.securityWarningLabel',
+                        '⚠️ Security notice:',
+                      )}
                     </span>{' '}
-                    API 키와 액세스 토큰은 기본적으로 포함되지 않도록
-                    마스킹됩니다. 다른 안전한 채널로 이동하는 경우 아래 옵션을
-                    켜십시오.
+                    {t(
+                      'settings.migration.export.securityWarning',
+                      'API keys and access tokens are masked by default. Enable the option below only when moving them through another secure channel.',
+                    )}
                   </div>
                 </div>
 
@@ -294,24 +366,35 @@ const MigrationPage: FC = () => {
                   />
                   <div className="flex flex-col">
                     <span className="text-xs font-semibold text-foreground">
-                      민감한 데이터 포함 (Settings 테이블 전체)
+                      {t(
+                        'settings.migration.export.includeSensitiveLabel',
+                        'Include sensitive data (full Settings table)',
+                      )}
                     </span>
                     <span className="text-[10px] text-muted-foreground">
-                      API 키, 액세스 토큰 등을 포함한 settings 테이블 전체의
-                      평문 데이터를 백업 아카이브에 동반하여 저장합니다.
+                      {t(
+                        'settings.migration.export.includeSensitiveDescription',
+                        'Store plaintext data from the entire settings table—including API keys and access tokens—in the backup archive.',
+                      )}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <span className="text-xs font-semibold text-muted-foreground">
-                    내보낼 경로 선택
+                    {t(
+                      'settings.migration.export.selectPathLabel',
+                      'Select export path',
+                    )}
                   </span>
                   <div className="flex gap-2">
                     <input
                       type="text"
                       readOnly
-                      placeholder="내보낼 폴더를 선택하십시오..."
+                      placeholder={t(
+                        'settings.migration.export.selectPathPlaceholder',
+                        'Select a folder to export to...',
+                      )}
                       value={selectedExportDir || ''}
                       className="flex-1 px-3 py-2 text-xs rounded-lg border bg-background/30 focus:outline-none truncate"
                     />
@@ -322,7 +405,7 @@ const MigrationPage: FC = () => {
                       className="gap-1.5 h-9 rounded-lg"
                     >
                       <FolderOpen className="h-4 w-4" />
-                      선택
+                      {t('settings.migration.export.browse', 'Browse')}
                     </Button>
                   </div>
                 </div>
@@ -335,7 +418,7 @@ const MigrationPage: FC = () => {
                   className="w-full gap-2 rounded-xl h-10 shadow-sm"
                 >
                   <ArrowUpFromLine className="h-4 w-4" />
-                  내보내기 실행
+                  {t('settings.migration.export.runExport', 'Run Export')}
                 </Button>
               </CardFooter>
             </Card>
@@ -347,11 +430,13 @@ const MigrationPage: FC = () => {
                   <ArrowDownToLine className="h-6 w-6" />
                 </div>
                 <CardTitle className="text-lg">
-                  설정 가져오기 (Import)
+                  {t('settings.migration.import.title', 'Import Settings')}
                 </CardTitle>
                 <CardDescription>
-                  기존에 내보낸 `.libragent-migration` 아카이브 파일을 불러와
-                  현재 환경의 설정을 갱신합니다.
+                  {t(
+                    'settings.migration.import.description',
+                    'Load a previously exported `.libragent-migration` archive file to update the current environment.',
+                  )}
                 </CardDescription>
               </CardHeader>
 
@@ -359,14 +444,19 @@ const MigrationPage: FC = () => {
                 <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex gap-3 items-start mb-6">
                   <Info className="h-5 w-5 shrink-0 text-primary mt-0.5" />
                   <div className="text-xs text-muted-foreground leading-relaxed">
-                    가져오기 전, 데이터 손실 방지를 위해 현재 DB의 **자동
-                    백업**이 생성되며 실패 시 즉시 이전 상태로 복구됩니다.
+                    {t(
+                      'settings.migration.import.autoBackupInfo',
+                      'Before importing, an automatic backup of the current database is created to prevent data loss. If import fails, the previous state is restored immediately.',
+                    )}
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <span className="text-xs font-semibold text-muted-foreground">
-                    마이그레이션 아카이브 파일
+                    {t(
+                      'settings.migration.import.archiveFileLabel',
+                      'Migration archive file',
+                    )}
                   </span>
                   <Button
                     variant="outline"
@@ -374,7 +464,10 @@ const MigrationPage: FC = () => {
                     className="w-full gap-2 h-14 border-dashed border-2 hover:border-primary/50 hover:bg-primary/5 rounded-xl transition-all duration-200"
                   >
                     <FileCheck2 className="h-5 w-5 text-muted-foreground" />
-                    파일 선택 및 유효성 검사
+                    {t(
+                      'settings.migration.import.selectAndValidate',
+                      'Select file and validate',
+                    )}
                   </Button>
                 </div>
               </CardContent>
@@ -382,7 +475,10 @@ const MigrationPage: FC = () => {
               <CardFooter className="pt-2">
                 <Button disabled className="w-full gap-2 rounded-xl h-10">
                   <ArrowDownToLine className="h-4 w-4" />
-                  가져오기 실행 (파일 분석 대기)
+                  {t(
+                    'settings.migration.import.runImportWaiting',
+                    'Run Import (awaiting file analysis)',
+                  )}
                 </Button>
               </CardFooter>
             </Card>
@@ -403,20 +499,48 @@ const MigrationPage: FC = () => {
             </div>
             <div>
               <h3 className="text-lg font-bold text-foreground capitalize">
-                {phase === 'inspecting' && '파일 구조 분석 중...'}
-                {phase === 'exporting' && '마이그레이션 파일 작성 중...'}
-                {phase === 'importing' && '환경 데이터베이스 적용 중...'}
-                {phase === 'selecting' && '사용자 입력 대기 중...'}
+                {phase === 'inspecting' &&
+                  t(
+                    'settings.migration.loading.inspectingTitle',
+                    'Analyzing file structure...',
+                  )}
+                {phase === 'exporting' &&
+                  t(
+                    'settings.migration.loading.exportingTitle',
+                    'Writing migration file...',
+                  )}
+                {phase === 'importing' &&
+                  t(
+                    'settings.migration.loading.importingTitle',
+                    'Applying to environment database...',
+                  )}
+                {phase === 'selecting' &&
+                  t(
+                    'settings.migration.loading.selectingTitle',
+                    'Waiting for user input...',
+                  )}
               </h3>
               <p className="text-sm text-muted-foreground mt-2 max-w-sm">
                 {phase === 'inspecting' &&
-                  '내용 검사 및 ZIP Slip 방어를 위한 위협 분석을 수행하고 있습니다.'}
+                  t(
+                    'settings.migration.loading.inspectingDescription',
+                    'Inspecting contents and performing threat analysis for ZIP Slip protection.',
+                  )}
                 {phase === 'exporting' &&
-                  '설정 테이블 직렬화 및 스킬 파일 아카이빙을 진행하고 있습니다.'}
+                  t(
+                    'settings.migration.loading.exportingDescription',
+                    'Serializing settings tables and archiving skill files.',
+                  )}
                 {phase === 'importing' &&
-                  '단일 격리 트랜잭션 내에서 설정을 적용하며 외래키 제약을 검증하고 있습니다.'}
+                  t(
+                    'settings.migration.loading.importingDescription',
+                    'Applying settings within an isolated transaction and validating foreign key constraints.',
+                  )}
                 {phase === 'selecting' &&
-                  '폴더/파일 탐색기 창에서 결정을 완료하십시오.'}
+                  t(
+                    'settings.migration.loading.selectingDescription',
+                    'Complete your selection in the folder/file explorer window.',
+                  )}
               </p>
             </div>
             <div className="w-full max-w-xs bg-muted rounded-full h-1.5 overflow-hidden">
@@ -435,7 +559,10 @@ const MigrationPage: FC = () => {
               <div className="flex justify-between items-start gap-4">
                 <div>
                   <CardTitle className="text-lg">
-                    마이그레이션 아카이브 파일 분석 완료
+                    {t(
+                      'settings.migration.preview.analysisComplete',
+                      'Migration archive analysis complete',
+                    )}
                   </CardTitle>
                   <CardDescription className="truncate max-w-lg">
                     {preview.file_path}
@@ -452,13 +579,20 @@ const MigrationPage: FC = () => {
                   }
                   className="rounded-lg py-1 px-2.5 text-xs font-semibold"
                 >
-                  {preview.compatibility === 'Compatible' && '✅ 호환성 통과'}
+                  {preview.compatibility === 'Compatible' &&
+                    t('settings.migration.preview.compatible', '✅ Compatible')}
                   {typeof preview.compatibility === 'object' &&
                     'NewerVersion' in preview.compatibility &&
-                    '⚠️ 상위 버전 경고'}
+                    t(
+                      'settings.migration.preview.newerVersionWarning',
+                      '⚠️ Newer version warning',
+                    )}
                   {typeof preview.compatibility === 'object' &&
                     'Incompatible' in preview.compatibility &&
-                    '❌ 호환되지 않음'}
+                    t(
+                      'settings.migration.preview.incompatible',
+                      '❌ Incompatible',
+                    )}
                 </Badge>
               </div>
             </CardHeader>
@@ -469,7 +603,12 @@ const MigrationPage: FC = () => {
                 <div className="p-4 rounded-xl border border-warning/20 bg-warning/5 flex gap-3 text-sm text-warning-foreground">
                   <AlertTriangle className="h-5 w-5 shrink-0 text-warning mt-0.5" />
                   <div>
-                    <span className="font-bold">호환성 정보:</span>{' '}
+                    <span className="font-bold">
+                      {t(
+                        'settings.migration.preview.compatibilityInfo',
+                        'Compatibility info:',
+                      )}
+                    </span>{' '}
                     {'NewerVersion' in preview.compatibility
                       ? preview.compatibility.NewerVersion.message
                       : 'Incompatible' in preview.compatibility
@@ -483,25 +622,32 @@ const MigrationPage: FC = () => {
               <div className="grid grid-cols-3 gap-4 text-center rounded-xl bg-background/30 p-4 border">
                 <div>
                   <div className="text-[10px] font-semibold text-muted-foreground uppercase">
-                    백업 앱 버전
+                    {t(
+                      'settings.migration.preview.backupAppVersion',
+                      'Backup app version',
+                    )}
                   </div>
                   <div className="text-sm font-bold text-foreground mt-1">
-                    {preview.app_version || '알 수 없음'}
+                    {preview.app_version ||
+                      t('settings.migration.preview.unknown', 'Unknown')}
                   </div>
                 </div>
                 <div>
                   <div className="text-[10px] font-semibold text-muted-foreground uppercase">
-                    내보낸 시각
+                    {t('settings.migration.preview.exportedAt', 'Exported at')}
                   </div>
                   <div className="text-sm font-bold text-foreground mt-1 truncate">
                     {preview.exported_at
                       ? new Date(preview.exported_at).toLocaleDateString()
-                      : '알 수 없음'}
+                      : t('settings.migration.preview.unknown', 'Unknown')}
                   </div>
                 </div>
                 <div>
                   <div className="text-[10px] font-semibold text-muted-foreground uppercase">
-                    백업 총 크기
+                    {t(
+                      'settings.migration.preview.totalSize',
+                      'Total backup size',
+                    )}
                   </div>
                   <div className="text-sm font-bold text-foreground mt-1">
                     {formatBytes(preview.total_size_bytes)}
@@ -512,20 +658,29 @@ const MigrationPage: FC = () => {
               {/* Sections List */}
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-semibold text-muted-foreground">
-                  백업 포함 섹션 리스트
+                  {t(
+                    'settings.migration.preview.sectionsList',
+                    'Included backup sections',
+                  )}
                 </span>
                 <div className="rounded-xl border overflow-hidden bg-background/20">
                   <table className="min-w-full divide-y divide-border">
                     <thead className="bg-muted/40">
                       <tr>
                         <th className="px-4 py-2 text-left text-[10px] font-semibold text-muted-foreground uppercase">
-                          섹션명
+                          {t(
+                            'settings.migration.preview.sectionName',
+                            'Section',
+                          )}
                         </th>
                         <th className="px-4 py-2 text-center text-[10px] font-semibold text-muted-foreground uppercase">
-                          항목 수
+                          {t('settings.migration.preview.itemCount', 'Items')}
                         </th>
                         <th className="px-4 py-2 text-right text-[10px] font-semibold text-muted-foreground uppercase">
-                          파일 크기
+                          {t(
+                            'settings.migration.preview.fileSize',
+                            'File size',
+                          )}
                         </th>
                       </tr>
                     </thead>
@@ -536,7 +691,10 @@ const MigrationPage: FC = () => {
                             {sec.name.replace('_', ' ')}
                           </td>
                           <td className="px-4 py-2 text-center font-semibold">
-                            {sec.item_count}개
+                            {t('settings.migration.preview.itemCountValue', {
+                              defaultValue: '{{count}} items',
+                              count: sec.item_count,
+                            })}
                           </td>
                           <td className="px-4 py-2 text-right text-muted-foreground">
                             {formatBytes(sec.size_bytes)}
@@ -551,7 +709,10 @@ const MigrationPage: FC = () => {
               {/* Strategy Selection */}
               <div className="flex flex-col gap-3">
                 <span className="text-xs font-semibold text-muted-foreground">
-                  가져오기 충돌 해결 방식
+                  {t(
+                    'settings.migration.preview.conflictStrategyLabel',
+                    'Import conflict resolution',
+                  )}
                 </span>
                 <div className="grid grid-cols-3 gap-3">
                   <div
@@ -562,10 +723,17 @@ const MigrationPage: FC = () => {
                         : 'bg-background/20'
                     }`}
                   >
-                    <span className="text-xs font-bold">Skip (기존 유지)</span>
+                    <span className="text-xs font-bold">
+                      {t(
+                        'settings.migration.strategy.skipTitle',
+                        'Skip (keep existing)',
+                      )}
+                    </span>
                     <span className="text-[10px] text-muted-foreground leading-relaxed">
-                      이름이나 ID가 겹칠 경우 현재 기기의 기존 설정을
-                      보존합니다.
+                      {t(
+                        'settings.migration.strategy.skipDescription',
+                        'When names or IDs conflict, preserve the existing settings on this device.',
+                      )}
                     </span>
                   </div>
                   <div
@@ -577,11 +745,16 @@ const MigrationPage: FC = () => {
                     }`}
                   >
                     <span className="text-xs font-bold text-destructive">
-                      Overwrite (덮어쓰기)
+                      {t(
+                        'settings.migration.strategy.overwriteTitle',
+                        'Overwrite',
+                      )}
                     </span>
                     <span className="text-[10px] text-muted-foreground leading-relaxed font-medium">
-                      기존의 로컬 레코드를 전부 제거하고 백업 데이터로 완전
-                      교체합니다.
+                      {t(
+                        'settings.migration.strategy.overwriteDescription',
+                        'Remove all existing local records and fully replace them with backup data.',
+                      )}
                     </span>
                   </div>
                   <div
@@ -592,11 +765,14 @@ const MigrationPage: FC = () => {
                         : 'bg-background/20'
                     }`}
                   >
-                    <span className="text-xs font-bold">Merge (병합)</span>
+                    <span className="text-xs font-bold">
+                      {t('settings.migration.strategy.mergeTitle', 'Merge')}
+                    </span>
                     <span className="text-[10px] text-muted-foreground leading-relaxed">
-                      {
-                        "기존 설정을 유지하면서 새 설정 항목을 주입합니다. settings 외의 다른 데이터는 안전을 위해 '건너뛰기(Skip)'로 처리됩니다."
-                      }
+                      {t(
+                        'settings.migration.strategy.mergeDescription',
+                        'Keep existing settings while injecting new items. For safety, non-settings data is handled as Skip.',
+                      )}
                     </span>
                   </div>
                 </div>
@@ -609,7 +785,10 @@ const MigrationPage: FC = () => {
                 onClick={reset}
                 className="rounded-xl h-10"
               >
-                취소 및 뒤로가기
+                {t(
+                  'settings.migration.preview.cancelAndBack',
+                  'Cancel and go back',
+                )}
               </Button>
               <Button
                 onClick={handleImport}
@@ -620,7 +799,7 @@ const MigrationPage: FC = () => {
                 className="gap-2 rounded-xl h-10 shadow-sm"
               >
                 <ArrowDownToLine className="h-4 w-4" />
-                가져오기 실행
+                {t('settings.migration.import.runImport', 'Run Import')}
               </Button>
             </CardFooter>
           </Card>
@@ -635,12 +814,26 @@ const MigrationPage: FC = () => {
 
             <div className="text-center">
               <h2 className="text-xl font-bold text-foreground">
-                {exportInfo ? '내보내기 작업 완료!' : '가져오기 작업 성공!'}
+                {exportInfo
+                  ? t(
+                      'settings.migration.complete.exportTitle',
+                      'Export complete!',
+                    )
+                  : t(
+                      'settings.migration.complete.importTitle',
+                      'Import successful!',
+                    )}
               </h2>
               <p className="text-sm text-muted-foreground mt-2 max-w-md">
                 {exportInfo
-                  ? '현재 환경의 설정 백업 파일이 정상적으로 패키징 및 생성되었습니다.'
-                  : '가져온 설정이 무결성 검증을 마치고 안전하게 주입되었습니다. 변화를 활성화하기 위해 아래 정리를 수행해 주십시오.'}
+                  ? t(
+                      'settings.migration.complete.exportDescription',
+                      'A backup file of the current environment settings was packaged and created successfully.',
+                    )
+                  : t(
+                      'settings.migration.complete.importDescription',
+                      'Imported settings passed integrity verification and were applied safely. Complete the cleanup below to activate the changes.',
+                    )}
               </p>
             </div>
 
@@ -649,19 +842,28 @@ const MigrationPage: FC = () => {
             {exportInfo && (
               <div className="w-full flex flex-col gap-2 text-xs p-4 rounded-xl border bg-background/30 text-left">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">저장 경로:</span>
+                  <span className="text-muted-foreground">
+                    {t('settings.migration.complete.savePath', 'Save path:')}
+                  </span>
                   <span className="font-mono text-foreground font-semibold truncate max-w-sm">
                     {exportInfo.file_path}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">파일 크기:</span>
+                  <span className="text-muted-foreground">
+                    {t('settings.migration.complete.fileSize', 'File size:')}
+                  </span>
                   <span className="text-foreground font-semibold">
                     {formatBytes(exportInfo.file_size_bytes)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">포함 구역:</span>
+                  <span className="text-muted-foreground">
+                    {t(
+                      'settings.migration.complete.includedSections',
+                      'Included sections:',
+                    )}
+                  </span>
                   <span className="text-foreground font-semibold">
                     {exportInfo.sections.join(', ')}
                   </span>
@@ -676,16 +878,16 @@ const MigrationPage: FC = () => {
                     <thead className="bg-muted/40">
                       <tr>
                         <th className="px-4 py-2 font-semibold text-muted-foreground uppercase">
-                          섹션
+                          {t('settings.migration.complete.section', 'Section')}
                         </th>
                         <th className="px-4 py-2 text-center font-semibold text-muted-foreground uppercase">
-                          성공
+                          {t('settings.migration.complete.success', 'Success')}
                         </th>
                         <th className="px-4 py-2 text-center font-semibold text-muted-foreground uppercase">
-                          스킵
+                          {t('settings.migration.complete.skipped', 'Skipped')}
                         </th>
                         <th className="px-4 py-2 text-right font-semibold text-muted-foreground uppercase">
-                          오류
+                          {t('settings.migration.complete.errors', 'Errors')}
                         </th>
                       </tr>
                     </thead>
@@ -717,11 +919,15 @@ const MigrationPage: FC = () => {
                     <FolderSync className="h-5 w-5 text-primary shrink-0" />
                     <div>
                       <span className="font-semibold text-foreground">
-                        🔌 MCP 및 백그라운드 환경 복원:
+                        {t(
+                          'settings.migration.complete.mcpRestoreLabel',
+                          '🔌 MCP and background environment restore:',
+                        )}
                       </span>{' '}
-                      가져오기 이후 MCP 서비스가 새로운 호스트/환경에서 정상
-                      가동되기 위해 토큰 갱신 및 검증이 필요합니다. 아래 검증
-                      버튼을 클릭하십시오.
+                      {t(
+                        'settings.migration.complete.mcpRestoreDescription',
+                        'After import, MCP services need token refresh and verification to run correctly in the new host/environment. Click the verify button below.',
+                      )}
                     </div>
                   </div>
                   <Button
@@ -732,7 +938,10 @@ const MigrationPage: FC = () => {
                     <RefreshCw
                       className={`h-4 w-4 ${reverifying ? 'animate-spin' : ''}`}
                     />
-                    MCP 서버 재인증 및 정합성 검증
+                    {t(
+                      'settings.migration.complete.mcpReverifyButton',
+                      'Re-authenticate and verify MCP servers',
+                    )}
                   </Button>
                 </div>
               </div>
@@ -743,7 +952,10 @@ const MigrationPage: FC = () => {
               className="w-full rounded-xl h-10 font-bold"
               variant="outline"
             >
-              마이그레이션 메인으로 이동
+              {t(
+                'settings.migration.complete.backToMain',
+                'Back to migration home',
+              )}
             </Button>
           </Card>
         )}
@@ -757,24 +969,33 @@ const MigrationPage: FC = () => {
         <DialogContent className="max-w-md rounded-2xl bg-card border border-border shadow-lg p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-foreground">
-              백업 보안 비밀번호 설정
+              {t(
+                'settings.migration.exportPassword.title',
+                'Set backup security password',
+              )}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-2">
-              민감한 데이터(API 키, 자격 증명 등)를 포함하여 백업 파일을
-              생성하므로, 백업 파일을 암호화하여 보호하기 위해 비밀번호를
-              설정해야 합니다. 이 비밀번호는 나중에 백업을 복원(가져오기)할 때
-              사용됩니다.
+              {t(
+                'settings.migration.exportPassword.description',
+                'Because this backup includes sensitive data (API keys, credentials, etc.), you must set a password to encrypt the backup file. This password is required when restoring (importing) the backup later.',
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-4 my-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground">
-                비밀번호 입력 (최소 4자리)
+                {t(
+                  'settings.migration.exportPassword.passwordLabel',
+                  'Password (minimum 4 characters)',
+                )}
               </label>
               <Input
                 type="password"
-                placeholder="비밀번호를 입력하십시오"
+                placeholder={t(
+                  'settings.migration.exportPassword.passwordPlaceholder',
+                  'Enter password',
+                )}
                 value={exportPassword}
                 onChange={(e) => setExportPassword(e.target.value)}
                 className="h-9 rounded-lg border bg-background/50 text-sm focus:ring-1 focus:ring-primary"
@@ -783,11 +1004,17 @@ const MigrationPage: FC = () => {
 
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground">
-                비밀번호 확인
+                {t(
+                  'settings.migration.exportPassword.confirmLabel',
+                  'Confirm password',
+                )}
               </label>
               <Input
                 type="password"
-                placeholder="비밀번호를 다시 한번 입력하십시오"
+                placeholder={t(
+                  'settings.migration.exportPassword.confirmPlaceholder',
+                  'Re-enter password',
+                )}
                 value={exportPasswordConfirm}
                 onChange={(e) => setExportPasswordConfirm(e.target.value)}
                 className="h-9 rounded-lg border bg-background/50 text-sm focus:ring-1 focus:ring-primary"
@@ -808,14 +1035,14 @@ const MigrationPage: FC = () => {
               onClick={() => setIsExportPasswordOpen(false)}
               className="rounded-lg h-9"
             >
-              취소
+              {t('settings.migration.exportPassword.cancel', 'Cancel')}
             </Button>
             <Button
               size="sm"
               onClick={handleExportWithPassword}
               className="rounded-lg h-9 font-semibold"
             >
-              내보내기 실행
+              {t('settings.migration.exportPassword.runExport', 'Run Export')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -831,22 +1058,33 @@ const MigrationPage: FC = () => {
         <DialogContent className="max-w-md rounded-2xl bg-card border border-border shadow-lg p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-foreground">
-              보안 비밀번호 입력
+              {t(
+                'settings.migration.importPassword.title',
+                'Enter security password',
+              )}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-2">
-              이 백업 파일은 암호화되어 있어 미리보기와 가져오기를 수행하려면
-              비밀번호가 필요합니다. 설정하신 비밀번호를 입력해주세요.
+              {t(
+                'settings.migration.importPassword.description',
+                'This backup file is encrypted. A password is required to preview and import it. Enter the password you set when exporting.',
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-4 my-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground">
-                비밀번호 입력
+                {t(
+                  'settings.migration.importPassword.passwordLabel',
+                  'Password',
+                )}
               </label>
               <Input
                 type="password"
-                placeholder="비밀번호를 입력하십시오"
+                placeholder={t(
+                  'settings.migration.importPassword.passwordPlaceholder',
+                  'Enter password',
+                )}
                 value={importPassword}
                 onChange={(e) => setImportPassword(e.target.value)}
                 onKeyDown={(e) => {
@@ -870,14 +1108,14 @@ const MigrationPage: FC = () => {
               onClick={handleCancelImportPassword}
               className="rounded-lg h-9"
             >
-              취소
+              {t('settings.migration.importPassword.cancel', 'Cancel')}
             </Button>
             <Button
               size="sm"
               onClick={handleImportPasswordSubmit}
               className="rounded-lg h-9 font-semibold"
             >
-              확인
+              {t('settings.migration.importPassword.confirm', 'Confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

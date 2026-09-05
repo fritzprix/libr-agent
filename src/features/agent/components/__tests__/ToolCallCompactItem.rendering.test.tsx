@@ -78,11 +78,11 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
     expect(queryByTestId('tool-details')).toBeInTheDocument();
   });
 
-  it('does NOT auto-expand in simple mode when an error occurs', () => {
+  it('auto-expands in simple mode when an error occurs so the cause is visible', () => {
     mockDetailLevel = 'simple';
     const toolCall = makeToolCall('call-2');
 
-    const { rerender, queryByTestId } = render(
+    const { rerender, queryByTestId, getByLabelText } = render(
       <ToolCallCompactItem toolCall={toolCall} />,
     );
 
@@ -91,10 +91,13 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
       <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
     );
 
+    expect(queryByTestId('tool-details')).toBeInTheDocument();
+
+    fireEvent.click(getByLabelText('agentChat.toolDetails.toggleAriaLabel'));
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
   });
 
-  it('stays collapsed when switching from simple to developer mode if transition occurred in simple mode', () => {
+  it('keeps expand state when switching from simple to developer after an error', () => {
     // 1. Simple mode, no error
     mockDetailLevel = 'simple';
     const toolCall = makeToolCall('call-3');
@@ -102,21 +105,20 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
       <ToolCallCompactItem toolCall={toolCall} />,
     );
 
-    // 2. Simple mode, error occurs
+    // 2. Simple mode, error occurs → auto-expand
     const toolResultWithError = makeToolResult('call-3', true);
     rerender(
       <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
     );
-    expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+    expect(queryByTestId('tool-details')).toBeInTheDocument();
 
-    // 3. Switch to developer mode
+    // 3. Switch to developer mode — expand state persists
     mockDetailLevel = 'developer';
     rerender(
       <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
     );
 
-    // Critical: Should NOT be expanded because the sentinel synced during simple mode
-    expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+    expect(queryByTestId('tool-details')).toBeInTheDocument();
   });
 
   it('does NOT re-trigger expansion on subsequent renders if no new transition occurred', () => {

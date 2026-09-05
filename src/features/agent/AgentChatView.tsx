@@ -334,6 +334,12 @@ function AgentChatInner() {
           ref={containerRef}
           className="relative flex min-h-0 flex-1 overflow-hidden"
           data-testid="agent-chat-body"
+          style={
+            {
+              '--agent-side-panel-inset':
+                !isMobile && showSidePanel ? `${panelWidth}px` : '0px',
+            } as CSSProperties
+          }
         >
           {/* Chat keeps full width — panel is a pure overlay, never shrinks this column. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
