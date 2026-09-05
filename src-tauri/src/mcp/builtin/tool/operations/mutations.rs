@@ -164,11 +164,12 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
 
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n\nStatus: Saved",
+            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n\nStatus: Saved (connectivity verification running in the background)",
             name, id
         ),
         vec![
             "Use tool__listServers({\"availability\":\"inventory\"}) to confirm the registered server.".to_string(),
+            "Use tool__verifyServer to wait for / refresh connectivity and tool cache if needed.".to_string(),
             "Attach this Server ID to an agent config with agent__updateAgent(id:\"<agentId>\", externalMcpServers:[...]). That updates the template for future sessions only — it cannot add tools to your currently active session.".to_string(),
             "Confirm what this session can call with tool__listServers({\"availability\":\"session\"}).".to_string(),
         ],

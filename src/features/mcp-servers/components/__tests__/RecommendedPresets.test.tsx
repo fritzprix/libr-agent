@@ -57,7 +57,7 @@ describe('RecommendedPresets', () => {
         allServers={[installedServer]}
         registryLoaded={true}
         registryError={undefined}
-        onSetupPreset={vi.fn()}
+        onInstallOrConfigurePreset={vi.fn()}
         onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
@@ -76,7 +76,7 @@ describe('RecommendedPresets', () => {
         allServers={[]}
         registryLoaded={true}
         registryError={undefined}
-        onSetupPreset={vi.fn()}
+        onInstallOrConfigurePreset={vi.fn()}
         onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
@@ -88,7 +88,7 @@ describe('RecommendedPresets', () => {
         allServers={[]}
         registryLoaded={true}
         registryError={undefined}
-        onSetupPreset={vi.fn()}
+        onInstallOrConfigurePreset={vi.fn()}
         onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
@@ -106,7 +106,7 @@ describe('RecommendedPresets', () => {
         allServers={[]}
         registryLoaded={false}
         registryError={undefined}
-        onSetupPreset={vi.fn()}
+        onInstallOrConfigurePreset={vi.fn()}
         onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
@@ -124,7 +124,7 @@ describe('RecommendedPresets', () => {
         allServers={[]}
         registryLoaded={false}
         registryError={undefined}
-        onSetupPreset={onSetupPreset}
+        onInstallOrConfigurePreset={onSetupPreset}
         onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
@@ -158,7 +158,7 @@ describe('RecommendedPresets', () => {
         allServers={[]}
         registryLoaded={true}
         registryError={undefined}
-        onSetupPreset={vi.fn()}
+        onInstallOrConfigurePreset={vi.fn()}
         onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
@@ -177,12 +177,74 @@ describe('RecommendedPresets', () => {
         allServers={[]}
         registryLoaded={false}
         registryError="Registry fetch failed"
-        onSetupPreset={vi.fn()}
+        onInstallOrConfigurePreset={vi.fn()}
         onRetryRegistryLoad={onRetryRegistryLoad}
       />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetryRegistryLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it('one-click installs zero-config presets and opens configure for keyed presets', () => {
+    const onInstallOrConfigurePreset = vi.fn();
+    const keyedPreset: MCPServerPreset = {
+      name: 'context7',
+      category: 'devtools',
+      transportType: 'sse',
+      url: 'https://mcp.context7.com/mcp',
+      env: { CONTEXT7_API_KEY: 'YOUR_API_KEY' },
+      variableDefinitions: {
+        CONTEXT7_API_KEY: { required: true, target: 'header' },
+      },
+    };
+
+    render(
+      <RecommendedPresets
+        presets={[basePreset, keyedPreset]}
+        servers={[]}
+        allServers={[]}
+        registryLoaded={true}
+        registryError={undefined}
+        onInstallOrConfigurePreset={onInstallOrConfigurePreset}
+        onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Install filesystem extension' }),
+    );
+    expect(onInstallOrConfigurePreset).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'filesystem' }),
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Configure context7 extension' }),
+    );
+    expect(onInstallOrConfigurePreset).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'context7' }),
+    );
+    expect(screen.getByText('Configure')).toBeInTheDocument();
+  });
+
+  it('shows inline verifying state on recommended card while pending', () => {
+    render(
+      <RecommendedPresets
+        presets={[basePreset]}
+        servers={[]}
+        allServers={[
+          {
+            ...installedServer,
+            verificationStatus: 'pending',
+          },
+        ]}
+        registryLoaded={true}
+        registryError={undefined}
+        onInstallOrConfigurePreset={vi.fn()}
+        onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByText('Verifying...')).toBeInTheDocument();
   });
 });

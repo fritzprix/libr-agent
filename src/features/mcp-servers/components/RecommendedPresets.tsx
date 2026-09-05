@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Download, Search, Server } from 'lucide-react';
+import { Download, Loader2, Search, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerPreset } from '@/lib/backend/mcp-server-config';
 import { MCPServerEntity } from '@/models/chat';
@@ -17,6 +17,7 @@ import {
   type PresetCategory,
   normalizePresetCategory,
 } from '../utils/preset-categories';
+import { presetNeedsUserConfig } from '../utils/preset-utils';
 
 interface RecommendedPresetsProps {
   presets: MCPServerPreset[] | undefined;
@@ -24,7 +25,10 @@ interface RecommendedPresetsProps {
   allServers: MCPServerEntity[];
   registryLoaded: boolean;
   registryError?: string;
-  onSetupPreset: (preset: MCPServerPreset) => void;
+  /** One-click install (zero-config) or open configure dialog */
+  onInstallOrConfigurePreset: (preset: MCPServerPreset) => void | Promise<void>;
+  /** Preset names currently saving via one-click install */
+  installingPresetNames?: ReadonlySet<string>;
   onRetryRegistryLoad: () => Promise<void>;
 }
 
@@ -32,13 +36,25 @@ type CategorizedPreset = MCPServerPreset & {
   category: PresetCategory;
 };
 
+function findInstalledServer(
+  presetName: string,
+  servers: MCPServerEntity[],
+  allServers: MCPServerEntity[],
+): MCPServerEntity | undefined {
+  return (
+    allServers.find((server) => server.name === presetName) ??
+    servers.find((server) => server.name === presetName)
+  );
+}
+
 export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   presets,
   servers,
   allServers,
   registryLoaded,
   registryError,
-  onSetupPreset,
+  onInstallOrConfigurePreset,
+  installingPresetNames,
   onRetryRegistryLoad,
 }) => {
   const { t } = useTranslation('common');
@@ -140,8 +156,19 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   }
 
   const renderPresetCard = (preset: CategorizedPreset) => {
+    const installedServer = findInstalledServer(
+      preset.name,
+      servers,
+      allServers,
+    );
     const isInstalled = installedServerNames.has(preset.name);
-    const canInstall = !isInstalled && registryLoaded;
+    const isOneClickInstalling =
+      installingPresetNames?.has(preset.name) === true;
+    const isVerifying =
+      installedServer?.verificationStatus === 'pending' || isOneClickInstalling;
+    const verifyFailed = installedServer?.verificationStatus === 'error';
+    const needsConfig = presetNeedsUserConfig(preset);
+    const canInstall = !isInstalled && !isOneClickInstalling && registryLoaded;
     const canRetryRegistryLoad =
       !isInstalled && !registryLoaded && !!registryError;
     const categoryMeta = PRESET_CATEGORY_META[preset.category];
@@ -154,43 +181,113 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
       ? `${preset.command} ${preset.args?.[0] ?? ''}`.trim()
       : (preset.url ?? t('assistant.mcp.transport.sse', 'sse'));
 
+    const statusBadge = (() => {
+      if (isOneClickInstalling) {
+        return (
+          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            {t('mcpServer.installingShort', 'Installing…')}
+          </span>
+        );
+      }
+      if (isInstalled && installedServer?.verificationStatus === 'pending') {
+        return (
+          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            {t('mcpServer.verifying', 'Verifying...')}
+          </span>
+        );
+      }
+      if (isInstalled && verifyFailed) {
+        return (
+          <span className="text-[10px] bg-destructive/10 text-destructive px-1.5 py-0.5 rounded font-medium">
+            {t('mcpServer.installedNeedsAttention', 'Installed · needs fix')}
+          </span>
+        );
+      }
+      if (isInstalled) {
+        return (
+          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
+            {t('mcpServer.installed', 'Installed')}
+          </span>
+        );
+      }
+      if (canInstall) {
+        return (
+          <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
+            {needsConfig
+              ? t('mcpServer.configureBadge', 'Configure')
+              : transportLabel}
+          </span>
+        );
+      }
+      if (canRetryRegistryLoad) {
+        return (
+          <span className="text-[10px] bg-destructive/10 px-1.5 py-0.5 rounded text-destructive uppercase">
+            {t('common.retry', 'Retry')}
+          </span>
+        );
+      }
+      return (
+        <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
+          {t('common.loading', 'Loading')}
+        </span>
+      );
+    })();
+
     return (
       <div
         key={preset.name}
         className={cn(
-          'group relative flex flex-col justify-between rounded-[1.5rem] border bg-background/50 backdrop-blur-sm p-5 transition-all duration-300 focus-visible:ring-2 focus-visible:ring-primary/20 outline-none',
-          isInstalled
+          'group relative flex flex-col justify-between rounded-[1.5rem] border overflow-hidden bg-background/50 backdrop-blur-sm p-5 transition-all duration-300 focus-visible:ring-2 focus-visible:ring-primary/20 outline-none',
+          isInstalled && !isVerifying && !verifyFailed
             ? 'opacity-60 cursor-default bg-muted/20 border-border/50'
             : canInstall
               ? 'hover:shadow-2xl hover:bg-background hover:-translate-y-1 cursor-pointer border-border/50 hover:border-primary/40'
-              : 'opacity-60 cursor-wait border-border/50',
+              : isVerifying
+                ? 'border-primary/40 bg-primary/5 cursor-wait'
+                : 'opacity-60 cursor-wait border-border/50',
         )}
         role={canInstall ? 'button' : undefined}
         tabIndex={canInstall ? 0 : -1}
         aria-disabled={!canInstall}
+        aria-busy={isVerifying || undefined}
         aria-label={
           canInstall
-            ? t('mcpServer.installExtension', {
-                name: preset.name,
-                defaultValue: 'Install {{name}} extension',
-              })
+            ? needsConfig
+              ? t('mcpServer.configureExtension', {
+                  name: preset.name,
+                  defaultValue: 'Configure {{name}} extension',
+                })
+              : t('mcpServer.installExtension', {
+                  name: preset.name,
+                  defaultValue: 'Install {{name}} extension',
+                })
             : undefined
         }
-        onClick={() => canInstall && onSetupPreset(preset)}
+        onClick={() => {
+          if (canInstall) {
+            void onInstallOrConfigurePreset(preset);
+          }
+        }}
         onKeyDown={(event) => {
           if (!canInstall) return;
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            onSetupPreset(preset);
+            void onInstallOrConfigurePreset(preset);
           }
         }}
       >
+        {isVerifying ? (
+          <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden">
+            <div className="h-full w-1/2 bg-primary/60 rounded-full animate-[slide_1.2s_ease-in-out_infinite]" />
+          </div>
+        ) : null}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-6 h-6 rounded overflow-hidden flex-shrink-0 border border-border/50">
                 {preset.logo ? (
-                  /* ⚡ Bolt: Added lazy loading and async decoding to improve scroll performance for long lists */
                   <img
                     src={preset.logo}
                     alt={preset.name}
@@ -216,23 +313,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                 {preset.name}
               </h4>
             </div>
-            {isInstalled ? (
-              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
-                {t('mcpServer.installed', 'Installed')}
-              </span>
-            ) : canInstall ? (
-              <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
-                {transportLabel}
-              </span>
-            ) : canRetryRegistryLoad ? (
-              <span className="text-[10px] bg-destructive/10 px-1.5 py-0.5 rounded text-destructive uppercase">
-                {t('common.retry', 'Retry')}
-              </span>
-            ) : (
-              <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
-                {t('common.loading', 'Loading')}
-              </span>
-            )}
+            {statusBadge}
           </div>
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <CategoryIcon className="w-3 h-3" />
@@ -242,6 +323,22 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
             {preset.description ||
               t('mcpServer.noDescription', 'No description available')}
           </p>
+          {isOneClickInstalling ? (
+            <p className="text-[11px] text-primary">
+              {t(
+                'mcpServer.oneClickInstallingHint',
+                'Saving extension… connection check continues in the background.',
+              )}
+            </p>
+          ) : null}
+          {isInstalled && installedServer?.verificationStatus === 'pending' ? (
+            <p className="text-[11px] text-primary">
+              {t(
+                'mcpServer.recommendedVerifyingHint',
+                'First install may download packages — this card will update when ready.',
+              )}
+            </p>
+          ) : null}
         </div>
         {canInstall ? (
           <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between opacity-60 group-hover:opacity-100 group-focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity gap-3">
@@ -261,10 +358,15 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                {t('mcpServer.installExtension', {
-                  name: preset.name,
-                  defaultValue: 'Install {{name}} extension',
-                })}
+                {needsConfig
+                  ? t('mcpServer.configureExtension', {
+                      name: preset.name,
+                      defaultValue: 'Configure {{name}} extension',
+                    })
+                  : t('mcpServer.installExtension', {
+                      name: preset.name,
+                      defaultValue: 'Install {{name}} extension',
+                    })}
               </TooltipContent>
             </Tooltip>
           </div>

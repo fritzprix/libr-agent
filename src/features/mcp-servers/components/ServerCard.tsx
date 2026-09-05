@@ -9,6 +9,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { MCPServerEntity } from '@/models/chat';
 import {
   Button,
@@ -21,8 +22,16 @@ import { Switch } from '@/components/ui/switch';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ServerToolsModal } from './ServerToolsModal';
 import { hasOAuthToken, startOAuthFlow, revokeOAuthToken } from '@/lib/backend';
+import { listAssistants } from '@/lib/backend/assistants';
 import { safeInvoke } from '@/lib/backend/core';
 import { toast } from 'sonner';
+import {
+  humanizeVerificationError,
+  pendingVerificationHint,
+} from '../utils/verification-feedback';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('ServerCard');
 
 interface ServerCardProps {
   server: MCPServerEntity;
@@ -43,12 +52,19 @@ export const ServerCard = React.memo(
     onRevalidate,
   }: ServerCardProps) => {
     const { t } = useTranslation('common');
+    const navigate = useNavigate();
     const serverName = server.name || t('mcpServer.unnamed', 'Unnamed Server');
     const [isToolsOpen, setIsToolsOpen] = useState(false);
     const verificationStatus = server.verificationStatus;
+    const humanizedError = humanizeVerificationError(
+      server.lastVerificationError,
+    );
 
     const [hasToken, setHasToken] = useState<boolean>(false);
     const [isAuthorizing, setIsAuthorizing] = useState<boolean>(false);
+    const [isRetryingVerify, setIsRetryingVerify] = useState(false);
+    const [pendingElapsedSec, setPendingElapsedSec] = useState(0);
+    const [isOpeningWizard, setIsOpeningWizard] = useState(false);
 
     useEffect(() => {
       if (server.authentication?.type === 'oauth2.1') {
@@ -57,6 +73,73 @@ export const ServerCard = React.memo(
           .catch(() => setHasToken(false));
       }
     }, [server.id, server.authentication]);
+
+    useEffect(() => {
+      if (verificationStatus !== 'pending') {
+        setPendingElapsedSec(0);
+        return;
+      }
+      setPendingElapsedSec(0);
+      const startedAt = Date.now();
+      const timer = window.setInterval(() => {
+        setPendingElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
+      }, 1000);
+      return () => window.clearInterval(timer);
+    }, [verificationStatus, server.id]);
+
+    const handleRetryVerify = useCallback(async () => {
+      setIsRetryingVerify(true);
+      try {
+        await safeInvoke('probe_mcp_server', { serverId: server.id });
+        toast.success(
+          t('mcpServer.toasts.reverifySuccess', 'Connection verified'),
+        );
+        onRevalidate?.();
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        toast.error(
+          t('mcpServer.toasts.reverifyFailed', {
+            error: msg,
+            defaultValue: 'Verification failed: {{error}}',
+          }),
+        );
+        onRevalidate?.();
+      } finally {
+        setIsRetryingVerify(false);
+      }
+    }, [server.id, t, onRevalidate]);
+
+    const handleOpenAppWizard = useCallback(async () => {
+      setIsOpeningWizard(true);
+      try {
+        const assistants = await listAssistants();
+        const wizard = assistants.find(
+          (assistant) => assistant.name === 'App Wizard',
+        );
+        if (wizard) {
+          navigate(`/agent/draft?assistantId=${encodeURIComponent(wizard.id)}`);
+          return;
+        }
+        navigate('/agent');
+        toast.message(
+          t(
+            'mcpServer.toasts.appWizardFallback',
+            'Open App Wizard from Chat and ask it to install Node.js / uv.',
+          ),
+        );
+      } catch (error) {
+        logger.error('Failed to open App Wizard', error);
+        navigate('/agent');
+        toast.error(
+          t(
+            'mcpServer.toasts.appWizardOpenFailed',
+            'Could not open App Wizard. Go to Chat and select App Wizard.',
+          ),
+        );
+      } finally {
+        setIsOpeningWizard(false);
+      }
+    }, [navigate, t]);
 
     const handleAuthorize = useCallback(async () => {
       if (!server.authentication) return;
@@ -203,10 +286,20 @@ export const ServerCard = React.memo(
                   </span>
                 )}
                 {verificationStatus === 'pending' && (
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    {t('mcpServer.verifying', 'Verifying...')}
-                  </span>
+                  <div className="space-y-1">
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      {t('mcpServer.verifying', 'Verifying...')}
+                      {pendingElapsedSec > 0 ? (
+                        <span className="tabular-nums text-muted-foreground/80">
+                          ({pendingElapsedSec}s)
+                        </span>
+                      ) : null}
+                    </span>
+                    <p className="text-xs text-muted-foreground">
+                      {pendingVerificationHint(pendingElapsedSec)}
+                    </p>
+                  </div>
                 )}
                 {verificationStatus === 'success' && (
                   <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
@@ -225,14 +318,43 @@ export const ServerCard = React.memo(
                       <XCircle className="w-3.5 h-3.5" />
                       {t('mcpServer.verificationFailed', 'Connection failed')}
                     </span>
-                    {server.lastVerificationError && (
+                    {humanizedError ? (
+                      <>
+                        <p
+                          className="text-xs text-destructive/90 break-words"
+                          title={humanizedError.raw}
+                        >
+                          {humanizedError.summary}
+                        </p>
+                        {humanizedError.guidance ? (
+                          <p className="text-xs text-muted-foreground break-words">
+                            {humanizedError.guidance}
+                          </p>
+                        ) : null}
+                        {humanizedError.runtime ? (
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs"
+                            disabled={isOpeningWizard}
+                            onClick={() => void handleOpenAppWizard()}
+                          >
+                            {isOpeningWizard ? (
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            ) : null}
+                            {t('mcpServer.openAppWizard', 'Open App Wizard')}
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : server.lastVerificationError ? (
                       <p
                         className="text-xs text-destructive/90 break-words"
                         title={server.lastVerificationError}
                       >
                         {server.lastVerificationError}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                 )}
                 {/* Only show "not verified" when no active verification and no tool count */}
@@ -310,6 +432,24 @@ export const ServerCard = React.memo(
                 {t('mcpServer.edit', 'Edit')}
               </Button>
 
+              {verificationStatus === 'error' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isRetryingVerify}
+                  onClick={() => void handleRetryVerify()}
+                  aria-label={t('mcpServer.retryVerify', {
+                    name: serverName,
+                    defaultValue: 'Retry verification for {{name}}',
+                  })}
+                >
+                  {isRetryingVerify ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : null}
+                  {t('mcpServer.retryVerifyShort', 'Retry')}
+                </Button>
+              )}
+
               {server.authentication?.type === 'oauth2.1' &&
                 (hasToken ? (
                   <Button
@@ -369,7 +509,8 @@ export const ServerCard = React.memo(
       prev.isToggling === next.isToggling &&
       prev.onEdit === next.onEdit &&
       prev.onDelete === next.onDelete &&
-      prev.onToggleActive === next.onToggleActive
+      prev.onToggleActive === next.onToggleActive &&
+      prev.onRevalidate === next.onRevalidate
     );
   },
 );

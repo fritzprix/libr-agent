@@ -9,37 +9,44 @@ pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<Strin
         .as_ref()
         .ok_or_else(|| "Server name is required".to_string())?;
 
-    // 1. Verify the configuration before saving
-    let tools =
-        crate::services::mcp_server_service::McpServerService::verify_config(config.clone())
-            .await
-            .map_err(|e| format!("Verification failed: {}", e))?;
-    let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
-
     let config_value = serde_json::to_value(config).map_err(|e| e.to_string())?;
 
-    // Try to update first (by name lookup), create if doesn't exist
-    let id = match repo.get_by_name(server_name).await {
+    // Save-first (pending). Connectivity runs asynchronously so registration is not blocked
+    // by cold npx/uvx downloads. Callers can use tool__verifyServer for an explicit check.
+    let (id, needs_probe) = match repo.get_by_name(server_name).await {
         Ok(Some(existing)) => {
-            // Update by ID with new config
-            repo.update(&existing.id, None, Some(config_value))
+            let existing_config_val: serde_json::Value = serde_json::from_str(&existing.config)
+                .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?;
+            let requires_reverification = existing_config_val.get("transport")
+                != config_value.get("transport")
+                || existing_config_val.get("authentication") != config_value.get("authentication");
+
+            let updated = repo
+                .update(&existing.id, None, Some(config_value))
                 .await
-                .map_err(|e| format!("Failed to update MCP server config: {}", e))?
-                .id
+                .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
+
+            if requires_reverification {
+                repo.mark_verification_pending(&updated.id, true)
+                    .await
+                    .map_err(|e| format!("Failed to mark verification pending: {}", e))?;
+            }
+
+            (updated.id, requires_reverification)
         }
         Ok(None) => {
-            repo.create(server_name, config_value)
+            let created = repo
+                .create(server_name, config_value)
                 .await
-                .map_err(|e| format!("Failed to create MCP server config: {}", e))?
-                .id
+                .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+            (created.id, true)
         }
         Err(e) => return Err(format!("DB query error while saving server config: {}", e)),
     };
 
-    // Update the cached tools immediately since we just verified it
-    let _ = repo
-        .update_cached_tools(&id, tools.len() as i32, tools_json_str)
-        .await;
+    if needs_probe {
+        crate::services::McpServerService::schedule_background_probe(id.clone());
+    }
 
     Ok(id)
 }

@@ -14,7 +14,10 @@ import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import { useBackendResource } from '@/context/GlobalEventContext';
 import { useSettings } from '@/hooks/use-settings';
 import { getLogger } from '@/lib/logger';
-import { sanitizePresetEnv, buildPresetMetadata } from '../utils/preset-utils';
+import {
+  buildServerEntityFromPreset,
+  presetNeedsUserConfig,
+} from '../utils/preset-utils';
 
 const logger = getLogger('MCPServerManagement');
 
@@ -84,6 +87,10 @@ export function useMCPServerManagement(service?: McpServerService) {
   const [togglingStatus, setTogglingStatus] = useState<Record<string, boolean>>(
     {},
   );
+  /** Preset names currently in one-click install (before they appear as Installed). */
+  const [installingPresetNames, setInstallingPresetNames] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
 
   useBackendResource('mcpServer', () => {
     void mutateServers();
@@ -106,32 +113,7 @@ export function useMCPServerManagement(service?: McpServerService) {
   }, []);
 
   const handleSetupPreset = useCallback((preset: MCPServerPreset) => {
-    const transport: MCPServerEntity['transport'] =
-      preset.transportType === 'sse' && preset.url
-        ? {
-            type: 'http-sse',
-            url: preset.url,
-            enableSSE: true,
-            headers: sanitizePresetEnv(preset.env),
-          }
-        : {
-            type: 'stdio',
-            command: preset.command || 'uvx',
-            args: preset.args || [],
-            env: sanitizePresetEnv(preset.env),
-          };
-
-    const newServer: MCPServerEntity = {
-      id: createId(),
-      name: preset.name,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      metadata: buildPresetMetadata(preset),
-      transport,
-      authentication: preset.authentication,
-    };
-    setEditingServer(newServer);
+    setEditingServer(buildServerEntityFromPreset(preset, createId()));
   }, []);
 
   const handleSave = useCallback(
@@ -143,7 +125,7 @@ export function useMCPServerManagement(service?: McpServerService) {
         !isUpdate && server.metadata?.source === 'registry';
 
       try {
-        await saveServer({
+        const saved = await saveServer({
           ...server,
           createdAt: server.createdAt ?? new Date(),
           updatedAt: new Date(),
@@ -151,14 +133,34 @@ export function useMCPServerManagement(service?: McpServerService) {
 
         await mutateServers();
         setEditingServer(null);
-        toast.success(
-          isRegistryInstall
-            ? t(
-                'mcpServer.toasts.installed',
-                'Extension installed successfully',
-              )
-            : t('mcpServer.toasts.saved', 'Extension saved successfully'),
-        );
+
+        const needsBackgroundVerify =
+          !isUpdate || saved.verificationStatus === 'pending';
+
+        if (needsBackgroundVerify) {
+          toast.success(
+            isRegistryInstall
+              ? t(
+                  'mcpServer.toasts.installedVerifying',
+                  'Extension installed. Verifying connection in the background…',
+                )
+              : t(
+                  'mcpServer.toasts.savedVerifying',
+                  'Extension saved. Verifying connection in the background…',
+                ),
+          );
+        } else {
+          toast.success(
+            isRegistryInstall
+              ? t(
+                  'mcpServer.toasts.installed',
+                  'Extension installed successfully',
+                )
+              : t('mcpServer.toasts.saved', 'Extension saved successfully'),
+          );
+        }
+
+        return saved;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unknown error';
@@ -169,9 +171,42 @@ export function useMCPServerManagement(service?: McpServerService) {
           }),
         );
         logger.error('Failed to save extension', error);
+        throw error;
       }
     },
     [saveServer, mutateServers, t, allServers],
+  );
+
+  /**
+   * Recommended card click: zero-config presets install immediately;
+   * presets that need keys/OAuth still open the dialog.
+   */
+  const handleInstallOrConfigurePreset = useCallback(
+    async (preset: MCPServerPreset) => {
+      if (presetNeedsUserConfig(preset)) {
+        handleSetupPreset(preset);
+        return;
+      }
+
+      setInstallingPresetNames((prev) => {
+        const next = new Set(prev);
+        next.add(preset.name);
+        return next;
+      });
+
+      try {
+        await handleSave(buildServerEntityFromPreset(preset, createId()));
+      } catch {
+        // handleSave already toasted
+      } finally {
+        setInstallingPresetNames((prev) => {
+          const next = new Set(prev);
+          next.delete(preset.name);
+          return next;
+        });
+      }
+    },
+    [handleSave, handleSetupPreset],
   );
 
   const handleDelete = useCallback((server: MCPServerEntity) => {
@@ -256,6 +291,8 @@ export function useMCPServerManagement(service?: McpServerService) {
     togglingStatus,
     handleCreateNew,
     handleSetupPreset,
+    handleInstallOrConfigurePreset,
+    installingPresetNames,
     retryRegistryLoad: refreshAll,
     handleSave,
     handleDelete,

@@ -197,6 +197,60 @@ export function buildPresetMetadata(
 }
 
 /**
+ * True when Install must open the configuration dialog (API keys, OAuth, etc.).
+ * False for zero-config presets that can one-click install.
+ */
+export function presetNeedsUserConfig(preset: MCPServerPreset): boolean {
+  if (preset.authentication?.type === 'oauth2.1') {
+    return true;
+  }
+
+  const definitions = preset.variableDefinitions;
+  if (!definitions) {
+    return false;
+  }
+
+  const defaults = collectMeaningfulVariableDefaults(preset);
+  return Object.entries(definitions).some(
+    ([key]) => !Object.prototype.hasOwnProperty.call(defaults, key),
+  );
+}
+
+/**
+ * Build a new MCPServerEntity from a registry preset (dialog or one-click install).
+ */
+export function buildServerEntityFromPreset(
+  preset: MCPServerPreset,
+  id: string,
+): MCPServerEntity {
+  const transport: MCPServerEntity['transport'] =
+    preset.transportType === 'sse' && preset.url
+      ? {
+          type: 'http-sse',
+          url: preset.url,
+          enableSSE: true,
+          headers: sanitizePresetEnv(preset.env),
+        }
+      : {
+          type: 'stdio',
+          command: preset.command || 'uvx',
+          args: preset.args || [],
+          env: sanitizePresetEnv(preset.env),
+        };
+
+  return {
+    id,
+    name: preset.name,
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    metadata: buildPresetMetadata(preset),
+    transport,
+    authentication: preset.authentication,
+  };
+}
+
+/**
  * True when the server came from mcp-server.json (or still matches a registry preset name).
  * Legacy installs without `metadata.source` are detected via the preset name set.
  */

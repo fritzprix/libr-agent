@@ -2,8 +2,19 @@ use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::{MCPServerManager, MCPTool};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use serde_json::Value;
+use std::time::Duration;
 
 pub struct McpServerService;
+
+/// Probe/install verification can include cold `npx`/`uvx` downloads; keep a
+/// floor above the session startup default (30s) so first installs do not fail
+/// prematurely while the UI shows pending verification.
+fn verify_config_timeout() -> Duration {
+    Duration::from_secs(std::cmp::max(
+        crate::config::mcp_startup_timeout_seconds(),
+        120,
+    ))
+}
 
 pub(crate) fn summarize_tool_names(tools: &[MCPTool]) -> String {
     const MAX_NAMES: usize = 5;
@@ -25,10 +36,6 @@ pub(crate) fn summarize_tool_names(tools: &[MCPTool]) -> String {
     } else {
         preview
     }
-}
-
-fn is_oauth_auth_required_error(err: &str) -> bool {
-    err.contains("Auth required") || err.contains("AuthRequired")
 }
 
 impl McpServerService {
@@ -61,14 +68,41 @@ impl McpServerService {
             oauth_manager: std::sync::Arc::new(crate::mcp::oauth::OAuthManager::new()),
         };
 
-        // Connect — this blocks until the MCP handshake completes
-        probe_manager
-            .start_server(config)
-            .await
-            .map_err(|e| format!("Failed to connect to '{}': {}", server_name, e))?;
+        let timeout = verify_config_timeout();
+        // Connect — bounded so hung handshakes / slow downloads fail visibly
+        match tokio::time::timeout(timeout, probe_manager.start_server(config)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                return Err(format!("Failed to connect to '{}': {}", server_name, e));
+            }
+            Err(_) => {
+                return Err(format!(
+                    "Timed out connecting to '{}' after {}s",
+                    server_name,
+                    timeout.as_secs()
+                ));
+            }
+        }
 
-        // List tools
-        let tools_result = probe_manager.list_tools(&server_name).await;
+        // List tools (also bounded — handshake success does not guarantee a timely tools/list)
+        let tools_result =
+            match tokio::time::timeout(timeout, probe_manager.list_tools(&server_name)).await {
+                Ok(result) => result,
+                Err(_) => {
+                    if let Err(e) = probe_manager.stop_server(&server_name).await {
+                        log::warn!(
+                            "[probe] Failed to stop MCP server '{}' after list_tools timeout: {}",
+                            server_name,
+                            e
+                        );
+                    }
+                    return Err(format!(
+                        "Timed out listing tools from '{}' after {}s",
+                        server_name,
+                        timeout.as_secs()
+                    ));
+                }
+            };
 
         // Disconnect — explicitly stop the MCP server to ensure subprocess cleanup
         if let Err(e) = probe_manager.stop_server(&server_name).await {
@@ -81,6 +115,47 @@ impl McpServerService {
 
         // Return tools or error
         tools_result.map_err(|e| format!("Failed to list tools from '{}': {}", server_name, e))
+    }
+
+    /// Run connectivity verification in the background and notify the UI when done.
+    ///
+    /// Used after save-first create/update so Install does not block on cold package downloads.
+    pub fn schedule_background_probe(server_id: String) {
+        tokio::spawn(async move {
+            let repo = crate::state::get_mcp_server_repository();
+            let name_for_event = repo
+                .get(&server_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|m| m.name)
+                .unwrap_or_else(|| server_id.clone());
+
+            match Self::probe_server(repo, &server_id).await {
+                Ok(tools) => {
+                    log::info!(
+                        "[probe] background verify '{}' ({}) → {} tool(s)",
+                        name_for_event,
+                        server_id,
+                        tools.len()
+                    );
+                }
+                Err(err) => {
+                    log::warn!(
+                        "[probe] background verify '{}' ({}) failed: {}",
+                        name_for_event,
+                        server_id,
+                        err
+                    );
+                }
+            }
+
+            crate::agent::tauri_events::emit_resource_updated(
+                "mcpServer",
+                "verify",
+                Some(name_for_event),
+            );
+        });
     }
 
     /// Probe a single MCP server by ID: connect, list tools, disconnect.
@@ -146,17 +221,6 @@ impl McpServerService {
         }
     }
 
-    async fn persist_verified_tools(
-        repo: &dyn MCPServerRepository,
-        server_id: &str,
-        tools: &[MCPTool],
-    ) -> Result<(), String> {
-        let tools_json_str = crate::mcp::utils::serialize_mcp_tools(tools);
-        repo.update_cached_tools(server_id, tools.len() as i32, tools_json_str)
-            .await
-            .map_err(|e| format!("Failed to persist verification result: {}", e))
-    }
-
     /// Reloads the server row from the database after a write. Does not re-verify connectivity.
     async fn fetch_server_model(
         repo: &dyn MCPServerRepository,
@@ -180,63 +244,27 @@ impl McpServerService {
             ));
         }
 
-        // 1. Parse config into MCPServerConfig for verification
+        // Validate config shape before persisting (connectivity is verified asynchronously).
         let mut mcp_config: crate::mcp::types::MCPServerConfig =
             serde_json::from_value(config.clone())
                 .map_err(|e| format!("Invalid MCP server configuration: {}", e))?;
-
-        // Ensure name is set in the config
         mcp_config.name = Some(name.clone());
+        let _ = mcp_config;
 
-        // 2. Verify the configuration connects and provides tools before saving
-        let verify_result = Self::verify_config(mcp_config).await;
+        // Save-first: Install UI returns immediately with verification_status=pending.
+        // Callers should `schedule_background_probe` (commands / tool path do this).
+        let model = repo
+            .create(&name, config)
+            .await
+            .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
 
-        match verify_result {
-            Ok(tools) => {
-                // 3. Save to database
-                let model = repo
-                    .create(&name, config)
-                    .await
-                    .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+        log::info!(
+            "'{}' ({}) saved with pending verification (background probe expected)",
+            model.name,
+            model.id
+        );
 
-                Self::persist_verified_tools(repo, &model.id, &tools).await?;
-
-                let model = Self::fetch_server_model(repo, &model.id).await?;
-
-                log::info!(
-                    "'{}' ({}) saved after verification with {} tool(s): [{}]",
-                    model.name,
-                    model.id,
-                    tools.len(),
-                    summarize_tool_names(&tools)
-                );
-
-                Ok(model)
-            }
-            Err(err) if is_oauth_auth_required_error(&err) => {
-                // Save config even if verification failed with AuthRequired, but mark status as error/auth required
-                let model = repo
-                    .create(&name, config)
-                    .await
-                    .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
-
-                let auth_err_msg = format!("Authentication required: {}", err);
-                repo.set_verification_error(&model.id, auth_err_msg.clone())
-                    .await
-                    .map_err(|e| format!("Failed to set verification error: {}", e))?;
-
-                let model = Self::fetch_server_model(repo, &model.id).await?;
-                log::info!(
-                    "'{}' ({}) saved with pending authentication status: {}",
-                    model.name,
-                    model.id,
-                    auth_err_msg
-                );
-
-                Ok(model)
-            }
-            Err(err) => Err(format!("Verification failed: {}", err)),
-        }
+        Ok(model)
     }
 
     pub async fn update_server_config(
@@ -261,7 +289,6 @@ impl McpServerService {
             .map_err(|e| format!("DB error: {}", e))?
             .ok_or_else(|| format!("MCP server '{}' not found", id))?;
 
-        let final_name = name.clone().unwrap_or_else(|| existing.name.clone());
         let existing_config_val: Value = serde_json::from_str(&existing.config)
             .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?;
         let final_config_val = match config.as_ref() {
@@ -269,74 +296,39 @@ impl McpServerService {
             None => existing_config_val.clone(),
         };
 
-        // 2. Parse config into MCPServerConfig for verification
-        let mut mcp_config: crate::mcp::types::MCPServerConfig =
-            serde_json::from_value(final_config_val.clone())
-                .map_err(|e| format!("Invalid MCP server configuration: {}", e))?;
-
-        // Ensure name is set in the config
-        mcp_config.name = Some(final_name.clone());
+        // Validate config shape when provided
+        if config.is_some() {
+            let mut mcp_config: crate::mcp::types::MCPServerConfig =
+                serde_json::from_value(final_config_val.clone())
+                    .map_err(|e| format!("Invalid MCP server configuration: {}", e))?;
+            let final_name = name.clone().unwrap_or_else(|| existing.name.clone());
+            mcp_config.name = Some(final_name);
+            let _ = mcp_config;
+        }
 
         let requires_reverification =
             Self::requires_reverification(&existing_config_val, &final_config_val);
 
-        if requires_reverification {
-            let verify_result = Self::verify_config(mcp_config).await;
-
-            match verify_result {
-                Ok(tools) => {
-                    let updated = repo
-                        .update(&id, name.as_deref(), config)
-                        .await
-                        .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
-
-                    Self::persist_verified_tools(repo, &updated.id, &tools).await?;
-
-                    let updated = Self::fetch_server_model(repo, &updated.id).await?;
-
-                    log::info!(
-                        "'{}' ({}) updated after verification with {} tool(s): [{}]",
-                        updated.name,
-                        updated.id,
-                        tools.len(),
-                        summarize_tool_names(&tools)
-                    );
-
-                    return Ok(updated);
-                }
-                Err(err) if is_oauth_auth_required_error(&err) => {
-                    let updated = repo
-                        .update(&id, name.as_deref(), config)
-                        .await
-                        .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
-
-                    let auth_err_msg = format!("Authentication required: {}", err);
-                    repo.set_verification_error(&updated.id, auth_err_msg.clone())
-                        .await
-                        .map_err(|e| format!("Failed to set verification error: {}", e))?;
-
-                    let updated = Self::fetch_server_model(repo, &updated.id).await?;
-                    log::info!(
-                        "'{}' ({}) updated with pending authentication status: {}",
-                        updated.name,
-                        updated.id,
-                        auth_err_msg
-                    );
-
-                    return Ok(updated);
-                }
-                Err(err) => {
-                    return Err(format!("Verification failed: {}", err));
-                }
-            }
-        }
-
-        // Name-only or metadata-only updates do not require transport re-verification.
         let updated = repo
             .update(&id, name.as_deref(), config)
             .await
             .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
 
+        if requires_reverification {
+            repo.mark_verification_pending(&updated.id, true)
+                .await
+                .map_err(|e| format!("Failed to mark verification pending: {}", e))?;
+
+            let updated = Self::fetch_server_model(repo, &updated.id).await?;
+            log::info!(
+                "'{}' ({}) updated; verification marked pending (background probe expected)",
+                updated.name,
+                updated.id
+            );
+            return Ok(updated);
+        }
+
+        // Name-only or metadata-only updates do not require transport re-verification.
         Ok(updated)
     }
 
