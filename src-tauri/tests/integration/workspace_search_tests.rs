@@ -1482,3 +1482,55 @@ async fn workspace_file_tools_expose_glob_and_grep_not_search_files() {
     assert!(names.contains(&"grepFiles".to_string()), "{names:?}");
     assert!(!names.contains(&"searchFiles".to_string()), "{names:?}");
 }
+
+#[tokio::test]
+async fn grep_files_binary_guidance_suggests_run_shell() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "grep-binary-guidance";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    // 1. Single file binary sniff
+    let bin_path = workspace_dir.join("sample.raw");
+    std::fs::write(&bin_path, b"head\x00chunk\x00needle").expect("write binary");
+
+    let result = server
+        .handle_grep_files(
+            json!({
+                "path": "sample.raw",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("grepFiles should return");
+
+    assert!(result.is_error.unwrap_or(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("workspace__runShell with `strings` or `grep -a`"),
+        "{text}"
+    );
+
+    // 2. Directory skipped binary files
+    let dir_result = server
+        .handle_grep_files(
+            json!({
+                "path": ".",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("grepFiles should return");
+
+    let dir_text = extract_text_content(&dir_result);
+    assert!(
+        dir_text.contains("Skipped 1 binary-looking file(s)"),
+        "{dir_text}"
+    );
+    assert!(
+        dir_text.contains("workspace__runShell (`strings`, `grep -a`)"),
+        "{dir_text}"
+    );
+}
