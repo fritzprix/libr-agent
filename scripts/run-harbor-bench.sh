@@ -2,6 +2,21 @@
 # Run Harbor / Terminal-Bench tasks against a live LibrAgent Session API.
 set -euo pipefail
 
+# Bash reads this file by offset. If the on-disk script is edited during a long
+# `harbor` run, the parser resumes at a stale offset and can treat later Python
+# heredocs as shell (syntax error near `(`). Re-invoke from a private copy.
+if [[ -z "${_LIBRAGENT_HARBOR_BENCH_STABLE:-}" ]]; then
+  _origin="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  _stable="$(mktemp "${TMPDIR:-/tmp}/run-harbor-bench.XXXXXX")"
+  cp "$_origin" "$_stable"
+  export _LIBRAGENT_HARBOR_BENCH_STABLE=1
+  export LIBRAGENT_HARBOR_BENCH_ORIGIN="$_origin"
+  bash "$_stable" "$@"
+  _code=$?
+  rm -f "$_stable"
+  exit "$_code"
+fi
+
 PRESET="hello"
 PRESET_EXPLICIT=0
 DATASET="terminal-bench/terminal-bench-2-1"
@@ -40,7 +55,7 @@ Options:
   --dataset NAME                       Default depends on preset:
                                        terminal-bench/terminal-bench-2-1 (terminal-bench),
                                        harbor-index/harbor-index-1.0 (harbor-index), or
-                                       NovitaAI/tb21-file-recovery (dataset).
+                                       fritzprix/libragent-diverse-9 (dataset).
                                        Omitting --preset with --dataset selects dataset.
   --path DIR                           Local task/dataset path (preset=path)
   --include GLOB                       Include task name pattern (-i)
@@ -109,7 +124,8 @@ if [[ "$PRESET_EXPLICIT" -eq 0 && "$DATASET_EXPLICIT" -eq 1 ]]; then
   PRESET="dataset"
 fi
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+_SCRIPT="${LIBRAGENT_HARBOR_BENCH_ORIGIN:-$0}"
+REPO_ROOT="$(cd "$(dirname "$_SCRIPT")/.." && pwd)"
 cd "$REPO_ROOT"
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
@@ -408,7 +424,7 @@ case "$PRESET" in
     ;;
   dataset)
     if [[ "$DATASET_EXPLICIT" -eq 0 ]]; then
-      DATASET="NovitaAI/tb21-file-recovery"
+      DATASET="fritzprix/libragent-diverse-9"
     fi
     echo "==> Preset: dataset ($DATASET)"
     ARGS+=(-d "$DATASET")
@@ -455,17 +471,26 @@ set -e
 LATEST=$(ls -1d jobs/*/ 2>/dev/null | sort | tail -n 1 || true)
 if [[ -n "$LATEST" ]]; then
   echo "==> Latest job: $LATEST"
+  if [[ "$CODE" -ne 0 ]]; then
+    echo "  (Harbor exited $CODE; if download/extract failed, this may be a previous job.)"
+  fi
   if [[ -f "${LATEST}result.json" ]]; then
     "$PYTHON" - "${LATEST}result.json" <<'PY' || true
 import json, sys
 path = sys.argv[1]
 try:
-    job = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as f:
+        job = json.load(f)
 except Exception:
     print("  (could not parse job result.json)")
     raise SystemExit(0)
 evals = (job.get("stats") or {}).get("evals") or {}
-for name, value in evals.items():
+items = evals.items() if isinstance(evals, dict) else enumerate(evals)
+for name, value in items:
+    if not isinstance(value, dict):
+        continue
+    if not isinstance(name, str):
+        name = value.get("name") or value.get("eval_name") or str(name)
     metrics = value.get("metrics") or []
     mean = metrics[0].get("mean") if metrics else None
     print(
