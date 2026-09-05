@@ -13,6 +13,7 @@ import {
   type ExperimentalSettings,
   type StoredExperimentalSettings,
   normalizeExperimentalSettings,
+  normalizeDisplaySettings,
 } from './settings-service';
 import type { AIServiceProvider } from '@/lib/ai-service';
 import {
@@ -212,7 +213,7 @@ function mapDtosToSettings(dtos: SettingDto[]): {
         (storedAdvanced as { thinkingBudget?: unknown }).thinkingBudget,
       ),
     },
-    display: getTypedValue('displaySettings', DEFAULT_SETTING.display),
+    display: normalizeDisplaySettings(settingsMap.get('displaySettings')),
     system: {
       ...DEFAULT_SETTING.system,
       ...storedSystem,

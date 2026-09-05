@@ -44,6 +44,12 @@ import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachm
 import { useMcpDiscoveryToasts } from './hooks/useMcpDiscoveryToasts';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useSettings } from '@/hooks/use-settings';
+import {
+  DOCUMENT_CONTENT_RAIL_CLASS,
+  isDocumentMessageLayout,
+} from '@/features/agent/lib/message-layout';
+import { cn } from '@/lib/utils';
 import {
   Sheet,
   SheetContent,
@@ -51,7 +57,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentChatView');
 
@@ -166,6 +171,11 @@ function MobilePanelSheet({
 }
 
 function AgentChatComposer() {
+  const {
+    value: { display },
+  } = useSettings();
+  const isDocumentMode = isDocumentMessageLayout(display?.messageLayout);
+
   return (
     <div className="relative shrink-0 px-4 pb-4">
       <div
@@ -179,8 +189,12 @@ function AgentChatComposer() {
         }}
       >
         <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
-        <AgentChatAttachedFiles />
-        <AgentChatInput />
+        <div
+          className={cn(isDocumentMode ? DOCUMENT_CONTENT_RAIL_CLASS : null)}
+        >
+          <AgentChatAttachedFiles />
+          <AgentChatInput />
+        </div>
       </div>
     </div>
   );

@@ -45,4 +45,38 @@ describe('GeneralTab', () => {
       screen.getByLabelText('Tool Detail Level'),
     ).toHaveTextContent('Developer (params, errors, timing)');
   });
+
+  it('rerenders when message layout changes', () => {
+    const onChange = vi.fn();
+    const onDisplaySettingsChange = vi.fn();
+
+    const { rerender } = render(
+      <GeneralTab
+        localLanguage="en"
+        onChange={onChange}
+        localDisplay={DEFAULT_SETTING.display}
+        onDisplaySettingsChange={onDisplaySettingsChange}
+      />,
+    );
+
+    expect(screen.getByLabelText('Message Layout')).toHaveTextContent(
+      'Document (full-width coding layout)',
+    );
+
+    rerender(
+      <GeneralTab
+        localLanguage="en"
+        onChange={onChange}
+        localDisplay={{
+          ...DEFAULT_SETTING.display,
+          messageLayout: 'bubble',
+        }}
+        onDisplaySettingsChange={onDisplaySettingsChange}
+      />,
+    );
+
+    expect(screen.getByLabelText('Message Layout')).toHaveTextContent(
+      'Bubble (classic chat bubbles)',
+    );
+  });
 });

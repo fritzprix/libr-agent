@@ -145,6 +145,12 @@ vi.mock('@/hooks/use-mobile', () => ({
   useIsMobile: () => mocks.isMobile,
 }));
 
+vi.mock('@/hooks/use-settings', () => ({
+  useSettings: () => ({
+    value: { display: { messageLayout: 'bubble' } },
+  }),
+}));
+
 vi.mock('../hooks/useAgentResourceAttachment', () => ({
   AgentResourceAttachmentProvider: (props: {
     children: ReactNode;

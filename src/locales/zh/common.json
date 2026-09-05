@@ -473,7 +473,11 @@
       "toolDetailLevelDescription": "简单模式仅显示工具名称和状态图标。开发者模式显示完整参数、错误详情和执行时间。",
       "uiVisualsTitle": "界面视觉",
       "fontFamily": "字体",
-      "fontFamilyDescription": "更改界面的默认字体。"
+      "fontFamilyDescription": "更改界面的默认字体。",
+      "messageLayout": "消息布局",
+      "messageLayoutDocument": "文档式（全宽编码布局）",
+      "messageLayoutBubble": "气泡（经典聊天气泡）",
+      "messageLayoutDescription": "文档模式最大化代码与 diff 的可读宽度。气泡模式保留经典聊天气泡样式。"
     },
     "advanced": {
       "maxRetries": "最大重试次数",

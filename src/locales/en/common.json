@@ -476,7 +476,11 @@
       "toolDetailLevelDescription": "Simple mode shows only tool names and status icons. Developer mode shows full parameters, error details, and execution time.",
       "uiVisualsTitle": "UI Visuals",
       "fontFamily": "Font Family",
-      "fontFamilyDescription": "Change the default font family for the UI."
+      "fontFamilyDescription": "Change the default font family for the UI.",
+      "messageLayout": "Message Layout",
+      "messageLayoutDocument": "Document (full-width coding layout)",
+      "messageLayoutBubble": "Bubble (classic chat bubbles)",
+      "messageLayoutDescription": "Document is the default coding layout (full width for code and diffs). Bubble keeps classic messenger-style chat bubbles."
     },
     "advanced": {
       "maxRetries": "Max Retry Attempts",

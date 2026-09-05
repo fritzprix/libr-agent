@@ -4,10 +4,15 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Message, ToolCall } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
+import type { MessageLayoutStyle } from '@/lib/services/settings-service';
 import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 import { MessageActionBar } from './MessageActionBar';
 import { computeDisplayContent } from '@/features/agent/lib/chat-utils';
+import {
+  DOCUMENT_CONTENT_RAIL_CLASS,
+  isDocumentMessageLayout,
+} from '@/features/agent/lib/message-layout';
 import { formatMessageTime } from '@/lib/date-utils';
 
 interface AgentMessageBubbleProps {
@@ -23,6 +28,8 @@ interface AgentMessageBubbleProps {
    * (iconography/colors) for clear visual distinction.
    */
   toolErrorGroup?: boolean;
+  /** Chat transcript layout; defaults to document stream. */
+  messageLayout?: MessageLayoutStyle;
 }
 
 interface ChannelBubbleMetadata {
@@ -54,8 +61,10 @@ function AgentMessageBubbleImpl({
   groupedMessages,
   followChatScroll = true,
   toolErrorGroup = false,
+  messageLayout = 'document',
 }: AgentMessageBubbleProps) {
   const { t, i18n } = useTranslation();
+  const isDocumentMode = isDocumentMessageLayout(messageLayout);
 
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
@@ -81,33 +90,56 @@ function AgentMessageBubbleImpl({
   const isStandardUserMessage = msg.role === 'user' && !isChannelMessage;
 
   return (
-    <div className="px-4 py-2">
+    <div
+      className={cn(
+        // Document mode: spacing-only separation (no hairline stripe on every turn).
+        isDocumentMode ? 'px-0 py-4' : 'px-4 py-2',
+      )}
+    >
       <div
         className={cn(
           'flex',
-          isStandardUserMessage ? 'justify-end' : 'w-full justify-start',
+          isDocumentMode || !isStandardUserMessage
+            ? 'w-full justify-start'
+            : 'justify-end',
         )}
       >
         <div
           className={cn(
-            'relative flex min-w-0 flex-col',
-            // Assistant / channel / tool groups: lock width from first paint so
-            // streaming only grows vertically (no horizontal re-wrap jitter).
-            // User bubbles stay content-sized with a small floor for short replies.
-            hasUIResource
-              ? 'w-full max-w-full rounded-lg p-3'
-              : isStandardUserMessage
-                ? 'min-w-[64px] max-w-[85%] rounded-2xl rounded-tr-md px-4 py-2.5 md:max-w-2xl'
-                : 'w-full max-w-3xl rounded-lg p-3',
-            isChannelMessage
-              ? 'border border-amber-500/30 bg-amber-500/10 text-secondary-foreground'
-              : msg.role === 'user'
-                ? 'bg-primary text-primary-foreground'
-                : toolErrorGroup
-                  ? 'border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5 text-secondary-foreground'
-                  : 'bg-secondary text-secondary-foreground',
+            'group/message relative flex min-w-0 flex-col',
+            isDocumentMode
+              ? cn(
+                  DOCUMENT_CONTENT_RAIL_CLASS,
+                  // Keep column width locked so streaming only grows vertically.
+                  isChannelMessage
+                    ? 'rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-secondary-foreground'
+                    : isStandardUserMessage
+                      ? 'border-l-2 border-primary bg-muted/15 px-4 py-2.5 text-foreground'
+                      : toolErrorGroup
+                        ? 'border-l-4 border-l-destructive bg-destructive/5 px-4 py-2.5 text-secondary-foreground'
+                        : 'bg-transparent px-0 py-1 text-secondary-foreground',
+                  // Tighter code chrome: avoid bubble padding stacking on pre blocks.
+                  '[&_pre]:my-2 [&_pre]:p-2',
+                )
+              : cn(
+                  // Assistant / channel / tool groups: lock width from first paint so
+                  // streaming only grows vertically (no horizontal re-wrap jitter).
+                  // User bubbles stay content-sized with a small floor for short replies.
+                  hasUIResource
+                    ? 'w-full max-w-full rounded-lg p-3'
+                    : isStandardUserMessage
+                      ? 'min-w-[64px] max-w-[85%] rounded-2xl rounded-tr-md px-4 py-2.5 md:max-w-2xl'
+                      : 'w-full max-w-3xl rounded-lg p-3',
+                  isChannelMessage
+                    ? 'border border-amber-500/30 bg-amber-500/10 text-secondary-foreground'
+                    : msg.role === 'user'
+                      ? 'bg-primary text-primary-foreground'
+                      : toolErrorGroup
+                        ? 'border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5 text-secondary-foreground'
+                        : 'bg-secondary text-secondary-foreground',
+                ),
             // Add custom utility to ensure links inside are visible
-            isStandardUserMessage
+            isStandardUserMessage && !isDocumentMode
               ? '[&_a]:text-primary-foreground'
               : '[&_a]:text-primary',
           )}
@@ -211,39 +243,74 @@ function AgentMessageBubbleImpl({
             msg.thinking ||
             (msg.tool_calls && msg.tool_calls.length > 0) ||
             (msg.attachments && msg.attachments.length > 0)) ? (
-            <div
-              className={cn(
-                'mt-2 flex items-center justify-between gap-1 border-t pt-2',
-                isStandardUserMessage
-                  ? 'border-primary-foreground/20'
-                  : 'border-border/60',
-              )}
-            >
-              <MessageActionBar
-                message={msg}
-                displayContent={displayContent}
-                toolResultsMap={toolResultsMap}
-                tone={isStandardUserMessage ? 'user' : 'assistant'}
-              />
-              {msg.createdAt && (
-                <span
+            isDocumentMode ? (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div
                   className={cn(
-                    'text-[10px] select-none opacity-70',
-                    isStandardUserMessage
-                      ? 'text-primary-foreground/80'
-                      : 'text-muted-foreground/80',
+                    // Touch / coarse pointers: always visible.
+                    // Fine hover devices: reveal on hover or keyboard focus.
+                    'transition-opacity',
+                    '[@media(hover:hover)_and_(pointer:fine)]:opacity-0',
+                    '[@media(hover:hover)_and_(pointer:fine)]:group-hover/message:opacity-100',
+                    '[@media(hover:hover)_and_(pointer:fine)]:focus-within:opacity-100',
                   )}
                 >
-                  {formatMessageTime(msg.createdAt, new Date(), i18n.language)}
-                </span>
-              )}
-            </div>
+                  <MessageActionBar
+                    message={msg}
+                    displayContent={displayContent}
+                    toolResultsMap={toolResultsMap}
+                    tone="assistant"
+                  />
+                </div>
+                {msg.createdAt ? (
+                  <span className="text-[10px] select-none text-muted-foreground/80 opacity-70">
+                    {formatMessageTime(
+                      msg.createdAt,
+                      new Date(),
+                      i18n.language,
+                    )}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  'mt-2 flex items-center justify-between gap-1 border-t pt-2',
+                  isStandardUserMessage
+                    ? 'border-primary-foreground/20'
+                    : 'border-border/60',
+                )}
+              >
+                <MessageActionBar
+                  message={msg}
+                  displayContent={displayContent}
+                  toolResultsMap={toolResultsMap}
+                  tone={isStandardUserMessage ? 'user' : 'assistant'}
+                />
+                {msg.createdAt && (
+                  <span
+                    className={cn(
+                      'text-[10px] select-none opacity-70',
+                      isStandardUserMessage
+                        ? 'text-primary-foreground/80'
+                        : 'text-muted-foreground/80',
+                    )}
+                  >
+                    {formatMessageTime(
+                      msg.createdAt,
+                      new Date(),
+                      i18n.language,
+                    )}
+                  </span>
+                )}
+              </div>
+            )
           ) : null}
           {msg.createdAt && msg.isStreaming && (
             <div
               className={cn(
-                'text-[10px] mt-1 select-none self-end opacity-70',
-                isStandardUserMessage
+                'mt-1 select-none self-end text-[10px] opacity-70',
+                isStandardUserMessage && !isDocumentMode
                   ? 'text-primary-foreground/80'
                   : 'text-muted-foreground/80',
               )}
@@ -266,6 +333,7 @@ const arePropsEqual = (
     prev.assistantName !== next.assistantName ||
     prev.followChatScroll !== next.followChatScroll ||
     prev.toolErrorGroup !== next.toolErrorGroup ||
+    prev.messageLayout !== next.messageLayout ||
     prev.groupedMessages !== next.groupedMessages ||
     prev.groupedToolCalls !== next.groupedToolCalls
   ) {

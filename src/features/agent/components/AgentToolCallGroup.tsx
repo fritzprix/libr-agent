@@ -13,6 +13,7 @@ import { hasToolCallError } from '@/lib/tool-call-utils';
 import { ToolCallCompactItem } from './ToolCallCompactItem';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
+import { isDocumentMessageLayout } from '@/features/agent/lib/message-layout';
 
 interface AgentToolCallGroupProps {
   message: Message;
@@ -208,6 +209,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
     value: { display },
   } = useSettings();
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
+  const isDocumentMode = isDocumentMessageLayout(display?.messageLayout);
 
   // Calculate status summary using passed toolResults
   const statusSummary: StatusSummary = useMemo(() => {
@@ -248,9 +250,14 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
   const isAnyRunning = statusSummary.runningCount > 0;
 
   const containerClass = cn(
-    'rounded-lg border transition-all mb-2 hover:bg-accent/50 w-full max-w-full',
+    'mb-2 w-full max-w-full transition-all',
+    isDocumentMode
+      ? 'rounded-md border border-border/50 bg-muted/10'
+      : 'rounded-lg border hover:bg-accent/50',
     isSimpleMode
-      ? 'border-l-4 border-muted'
+      ? isDocumentMode
+        ? 'border-l-2 border-l-muted-foreground/40'
+        : 'border-l-4 border-muted'
       : [
           isAnyRunning && 'border-l-4 border-primary bg-primary/10',
           !isAnyRunning &&

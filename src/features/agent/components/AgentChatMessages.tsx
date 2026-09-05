@@ -28,6 +28,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useSettings } from '@/hooks/use-settings';
+import type { MessageLayoutStyle } from '@/lib/services/settings-service';
 
 // Submodule imports
 import {
@@ -117,6 +119,10 @@ export function AgentChatMessages() {
     loadOlderMessages,
   } = useAgentSession();
   const { getCompactedRange } = useLLMService();
+  const {
+    value: { display },
+  } = useSettings();
+  const messageLayout: MessageLayoutStyle = display?.messageLayout ?? 'document';
 
   // Compact range for divider rendering (null if no compaction has occurred)
   const compactedRange = session?.id
@@ -224,6 +230,7 @@ export function AgentChatMessages() {
       sessionAssistantName: assistantName,
       workflowStatus,
       executionMode,
+      messageLayout,
     }),
     [
       error,
@@ -238,6 +245,7 @@ export function AgentChatMessages() {
       assistantName,
       workflowStatus,
       executionMode,
+      messageLayout,
     ],
   );
 
@@ -275,6 +283,7 @@ export function AgentChatMessages() {
               groupedToolCalls={groupedMessage.toolGroup.calls}
               groupedMessages={groupedMessage.messages}
               followChatScroll={followChatScroll}
+              messageLayout={messageLayout}
             />
             {compactDivider}
           </div>
@@ -290,6 +299,7 @@ export function AgentChatMessages() {
               groupedMessages={groupedMessage.messages}
               followChatScroll={followChatScroll}
               toolErrorGroup={true}
+              messageLayout={messageLayout}
             />
             {compactDivider}
           </div>
@@ -331,6 +341,7 @@ export function AgentChatMessages() {
             message={msg}
             assistantName={assistantName}
             followChatScroll={followChatScroll}
+            messageLayout={messageLayout}
           />
           {compactDivider}
         </div>
@@ -341,6 +352,7 @@ export function AgentChatMessages() {
       compactedEvent,
       compactedRange?.toId,
       isPinned,
+      messageLayout,
       retryMessage,
       toolResultsMap,
       workflowStatus,

@@ -62,6 +62,12 @@ vi.mock('@/context/LLMServiceContext', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-settings', () => ({
+  useSettings: () => ({
+    value: { display: { messageLayout: 'bubble' } },
+  }),
+}));
+
 vi.mock('@/features/agent/hooks/useAgentResourceAttachment', () => ({
   useAgentResourceAttachment: () => ({ refetchSessionFiles: vi.fn() }),
 }));

@@ -64,6 +64,9 @@ export interface AdvancedSettings {
   thinkingEffort: ThinkingEffort;
 }
 
+/** Chat message chrome: classic bubbles vs full-width coding-agent document stream. */
+export type MessageLayoutStyle = 'document' | 'bubble';
+
 export interface DisplaySettings {
   metricDisplayMode: 'tooltip' | 'inline';
   prefillDisplayFormat: 'time' | 'tokensPerSecond';
@@ -72,6 +75,12 @@ export interface DisplaySettings {
   /** Controls tool call display verbosity. 'simple' hides params/results/errors for regular users. */
   toolDetailLevel: 'simple' | 'developer';
   fontFamily: string;
+  /**
+   * Message layout style for the agent chat transcript.
+   * - `document`: full-width document stream optimized for code/diffs (default)
+   * - `bubble`: classic messenger bubbles
+   */
+  messageLayout: MessageLayoutStyle;
 }
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
@@ -206,6 +215,7 @@ export const DEFAULT_SETTING: Settings = {
     compactMetrics: false,
     toolDetailLevel: 'simple',
     fontFamily: 'Pretendard',
+    messageLayout: 'document',
   },
   system: {
     maxFileUploadSizeMB: 50,
@@ -227,6 +237,57 @@ export const DEFAULT_SETTING: Settings = {
     toolLoopMaxResampleRetries: 2,
   },
 };
+
+export function isMessageLayoutStyle(
+  value: unknown,
+): value is MessageLayoutStyle {
+  return value === 'document' || value === 'bubble';
+}
+
+/**
+ * Merge a stored displaySettings blob with defaults so newly added fields
+ * (e.g. messageLayout) are present for older DB values.
+ */
+export function normalizeDisplaySettings(
+  stored: unknown,
+  defaults: DisplaySettings = DEFAULT_SETTING.display,
+): DisplaySettings {
+  const blob =
+    typeof stored === 'object' && stored !== null
+      ? (stored as Partial<DisplaySettings>)
+      : {};
+
+  return {
+    metricDisplayMode:
+      blob.metricDisplayMode === 'tooltip' || blob.metricDisplayMode === 'inline'
+        ? blob.metricDisplayMode
+        : defaults.metricDisplayMode,
+    prefillDisplayFormat:
+      blob.prefillDisplayFormat === 'time' ||
+      blob.prefillDisplayFormat === 'tokensPerSecond'
+        ? blob.prefillDisplayFormat
+        : defaults.prefillDisplayFormat,
+    showTokenSpeed:
+      typeof blob.showTokenSpeed === 'boolean'
+        ? blob.showTokenSpeed
+        : defaults.showTokenSpeed,
+    compactMetrics:
+      typeof blob.compactMetrics === 'boolean'
+        ? blob.compactMetrics
+        : defaults.compactMetrics,
+    toolDetailLevel:
+      blob.toolDetailLevel === 'simple' || blob.toolDetailLevel === 'developer'
+        ? blob.toolDetailLevel
+        : defaults.toolDetailLevel,
+    fontFamily:
+      typeof blob.fontFamily === 'string' && blob.fontFamily.length > 0
+        ? blob.fontFamily
+        : defaults.fontFamily,
+    messageLayout: isMessageLayoutStyle(blob.messageLayout)
+      ? blob.messageLayout
+      : defaults.messageLayout,
+  };
+}
 
 /**
  * Canonicalize experimental settings from a DB blob.

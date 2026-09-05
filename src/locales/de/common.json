@@ -473,7 +473,11 @@
       "toolDetailLevelDescription": "Der einfache Modus zeigt nur Werkzeugnamen und Status-Icons an. Der Entwickler-Modus zeigt alle Parameter, Fehlerdetails und die Ausführungszeit an.",
       "uiVisualsTitle": "UI-Darstellung",
       "fontFamily": "Schriftfamilie",
-      "fontFamilyDescription": "Ändert die Standardschriftfamilie der Oberfläche."
+      "fontFamilyDescription": "Ändert die Standardschriftfamilie der Oberfläche.",
+      "messageLayout": "Nachrichtenlayout",
+      "messageLayoutDocument": "Dokument (volle Breite für Code)",
+      "messageLayoutBubble": "Blasen (klassisches Chat)",
+      "messageLayoutDescription": "Dokumentmodus maximiert die Breite für Code und Diffs. Blasenmodus behält klassische Chatblasen bei."
     },
     "advanced": {
       "maxRetries": "Max. Wiederholungsversuche",

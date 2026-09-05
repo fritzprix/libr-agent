@@ -473,7 +473,11 @@
       "toolDetailLevelDescription": "El modo simple muestra solo los nombres de las herramientas y los iconos de estado. El modo desarrollador muestra los parámetros completos, detalles de errores y tiempo de ejecución.",
       "uiVisualsTitle": "Aspecto visual de la interfaz",
       "fontFamily": "Familia tipográfica",
-      "fontFamilyDescription": "Cambie la familia tipográfica predeterminada de la interfaz."
+      "fontFamilyDescription": "Cambie la familia tipográfica predeterminada de la interfaz.",
+      "messageLayout": "Diseño de mensajes",
+      "messageLayoutDocument": "Documento (diseño de ancho completo)",
+      "messageLayoutBubble": "Burbujas (chat clásico)",
+      "messageLayoutDescription": "El modo Documento maximiza el ancho para código y diffs. El modo Burbujas mantiene el estilo de mensajería clásico."
     },
     "advanced": {
       "maxRetries": "Intentos máximos de reintento",

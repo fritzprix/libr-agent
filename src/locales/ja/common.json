@@ -442,6 +442,10 @@
       "toolDetailLevelDescription": "簡易モードはツール名とステータスアイコンのみを表示します。開発者モードは完全なパラメータ、エラー詳細、実行時間を表示します。",
       "fontFamily": "フォントファミリー",
       "fontFamilyDescription": "UI のデフォルトフォントファミリーを変更します。",
+      "messageLayout": "メッセージレイアウト",
+      "messageLayoutDocument": "ドキュメント（全幅コーディングレイアウト）",
+      "messageLayoutBubble": "吹き出し（クラシックチャット）",
+      "messageLayoutDescription": "ドキュメントモードはコードと diff の可読幅を最大化します。吹き出しモードは従来のチャットバブルを維持します。",
       "fontFamilyOptions": {
         "d2coding": "D2Coding (開発者向け等幅)",
         "inter": "Inter (クリーンなUI向けサンセリフ)",

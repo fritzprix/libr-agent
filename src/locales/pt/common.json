@@ -473,7 +473,11 @@
       "toolDetailLevelDescription": "O modo Simples mostra apenas nomes de ferramentas e ícones de status. O modo Desenvolvedor mostra parâmetros completos, detalhes de erros e tempo de execução.",
       "uiVisualsTitle": "Visuais da interface",
       "fontFamily": "Família da fonte",
-      "fontFamilyDescription": "Altera a família de fonte padrão da interface."
+      "fontFamilyDescription": "Altera a família de fonte padrão da interface.",
+      "messageLayout": "Layout das mensagens",
+      "messageLayoutDocument": "Documento (largura total para código)",
+      "messageLayoutBubble": "Balões (chat clássico)",
+      "messageLayoutDescription": "O modo Documento maximiza a largura para código e diffs. O modo Balões mantém o estilo clássico de chat."
     },
     "advanced": {
       "maxRetries": "Máximo de Tentativas",

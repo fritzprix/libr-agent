@@ -473,7 +473,11 @@
       "toolDetailLevelDescription": "Le mode simple affiche uniquement les noms des outils et les icônes de statut. Le mode développeur affiche tous les paramètres, les détails de l'erreur et le temps d'exécution.",
       "uiVisualsTitle": "Apparence de l'interface",
       "fontFamily": "Police",
-      "fontFamilyDescription": "Change la police par défaut de l'interface."
+      "fontFamilyDescription": "Change la police par défaut de l'interface.",
+      "messageLayout": "Disposition des messages",
+      "messageLayoutDocument": "Document (mise en page pleine largeur)",
+      "messageLayoutBubble": "Bulles (chat classique)",
+      "messageLayoutDescription": "Le mode Document maximise la largeur pour le code et les diffs. Le mode Bulles conserve le style messagerie classique."
     },
     "advanced": {
       "maxRetries": "Nombre max de tentatives",
