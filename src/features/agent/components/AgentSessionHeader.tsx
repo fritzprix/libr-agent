@@ -59,44 +59,46 @@ export default function AgentSessionHeader({
     session?.assistant?.name ??
     t('agent.header.defaultAssistant', 'Agent');
   const canEditSessionName = Boolean(session?.id && onRenameSession);
-  const sessionMetaAction =
-    isBookmarked !== undefined && onToggleBookmark ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={cn(
-              'h-7 w-7 shrink-0',
-              isBookmarked &&
-                'border-warning/20 bg-warning/10 text-warning-foreground hover:bg-warning/20',
-            )}
-            onClick={onToggleBookmark}
-            aria-label={
-              isBookmarked
-                ? t('sessionHistory.actions.unbookmarkAria', 'Remove bookmark')
-                : t('sessionHistory.actions.bookmarkAria', 'Bookmark session')
-            }
-          >
-            {isBookmarked ? (
-              <BookmarkCheck className="h-3.5 w-3.5 text-warning" />
-            ) : (
-              <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
-            )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          {isBookmarked
-            ? t('sessionHistory.actions.unbookmark', 'Remove bookmark')
-            : t('sessionHistory.actions.bookmark', 'Bookmark')}
-        </TooltipContent>
-      </Tooltip>
-    ) : sessionType ? (
-      <span className="shrink-0 text-xs text-muted-foreground">
-        ({sessionType})
-      </span>
-    ) : null;
+  const bookmarked = isBookmarked ?? false;
+  // Prefer bookmark control whenever a toggle is wired — avoid flashing
+  // `(sessionType)` while bookmark state is still undefined on first paint.
+  const sessionMetaAction = onToggleBookmark ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(
+            'h-7 w-7 shrink-0',
+            bookmarked &&
+              'border-warning/20 bg-warning/10 text-warning-foreground hover:bg-warning/20',
+          )}
+          onClick={onToggleBookmark}
+          aria-label={
+            bookmarked
+              ? t('sessionHistory.actions.unbookmarkAria', 'Remove bookmark')
+              : t('sessionHistory.actions.bookmarkAria', 'Bookmark session')
+          }
+        >
+          {bookmarked ? (
+            <BookmarkCheck className="h-3.5 w-3.5 text-warning" />
+          ) : (
+            <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {bookmarked
+          ? t('sessionHistory.actions.unbookmark', 'Remove bookmark')
+          : t('sessionHistory.actions.bookmark', 'Bookmark')}
+      </TooltipContent>
+    </Tooltip>
+  ) : sessionType ? (
+    <span className="shrink-0 text-xs text-muted-foreground">
+      ({sessionType})
+    </span>
+  ) : null;
 
   useEffect(() => {
     if (!isEditingSessionName) {
@@ -170,110 +172,102 @@ export default function AgentSessionHeader({
   };
 
   return (
-    <div>
-      <div className="flex shrink-0 items-center justify-between border-b border-border/40 bg-background px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            Assistant
-          </span>
-          <span
-            className={cn(
-              'truncate text-xs font-medium text-foreground',
-              assistantNameClassName,
-            )}
-          >
-            {resolvedAssistantName}
-          </span>
-        </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            {t('agent.header.sessionLabel', 'Session')}
-          </span>
-          {isEditingSessionName ? (
-            <div className="flex min-w-0 items-center gap-2">
-              <Input
-                ref={sessionNameInputRef}
-                value={draftSessionName}
-                onChange={(event) => setDraftSessionName(event.target.value)}
-                onKeyDown={handleSessionNameKeyDown}
-                disabled={isSavingSessionName}
-                className="h-8 w-[16rem] max-w-[50vw]"
-                aria-label={t(
-                  'agent.header.renameInputAria',
-                  'Edit session title',
-                )}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => void handleSaveSessionName()}
-                disabled={isSavingSessionName}
-                aria-label={t(
-                  'agent.header.renameSaveAria',
-                  'Save session title',
-                )}
-              >
-                {isSavingSessionName ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Check className="h-4 w-4" />
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={handleCancelEditing}
-                disabled={isSavingSessionName}
-                aria-label={t(
-                  'agent.header.renameCancelAria',
-                  'Cancel editing session title',
-                )}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-              {sessionMetaAction}
-            </div>
-          ) : (
-            <>
-              <span
-                className={cn(
-                  'max-w-xs truncate text-sm font-medium text-foreground/90',
-                  sessionNameClassName,
-                )}
-                title={resolvedSessionName}
-              >
-                {resolvedSessionName}
-              </span>
-              {canEditSessionName && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  onClick={handleStartEditing}
-                  aria-label={t('agent.header.renameAria', 'Rename session')}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              {sessionMetaAction}
-            </>
+    <div
+      className="flex shrink-0 items-center gap-3 border-b border-border/40 bg-background px-4 py-2"
+      data-testid="agent-session-header"
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span
+          className={cn(
+            'min-w-0 max-w-[120px] shrink truncate text-xs font-medium text-muted-foreground',
+            assistantNameClassName,
           )}
-        </div>
+          title={resolvedAssistantName}
+        >
+          {resolvedAssistantName}
+        </span>
+        <span className="shrink-0 text-muted-foreground/35" aria-hidden="true">
+          ·
+        </span>
+        {isEditingSessionName ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <Input
+              ref={sessionNameInputRef}
+              value={draftSessionName}
+              onChange={(event) => setDraftSessionName(event.target.value)}
+              onKeyDown={handleSessionNameKeyDown}
+              disabled={isSavingSessionName}
+              className="h-7 w-[16rem] max-w-[40vw]"
+              aria-label={t(
+                'agent.header.renameInputAria',
+                'Edit session title',
+              )}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={() => void handleSaveSessionName()}
+              disabled={isSavingSessionName}
+              aria-label={t(
+                'agent.header.renameSaveAria',
+                'Save session title',
+              )}
+            >
+              {isSavingSessionName ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={handleCancelEditing}
+              disabled={isSavingSessionName}
+              aria-label={t(
+                'agent.header.renameCancelAria',
+                'Cancel editing session title',
+              )}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            {sessionMetaAction}
+          </div>
+        ) : (
+          <>
+            <span
+              className={cn(
+                'min-w-0 truncate text-sm font-medium text-foreground/90',
+                sessionNameClassName,
+              )}
+              title={resolvedSessionName}
+            >
+              {resolvedSessionName}
+            </span>
+            {canEditSessionName ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={handleStartEditing}
+                aria-label={t('agent.header.renameAria', 'Rename session')}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
+            {sessionMetaAction}
+          </>
+        )}
       </div>
 
-      {children && (
-        <div className="shrink-0 border-b border-border/40 bg-background/90 px-4 py-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2"></div>
-            {children}
-          </div>
-        </div>
-      )}
+      {children ? (
+        <div className="flex shrink-0 items-center gap-2">{children}</div>
+      ) : null}
     </div>
   );
 }

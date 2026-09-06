@@ -282,6 +282,48 @@ describe('AgentChatStatusBar', () => {
     });
   });
 
+  it('hides the idle workflow banner to reduce chrome', () => {
+    mockAgentChat.workflowStatus = 'idle';
+
+    render(<AgentChatStatusBar />);
+
+    expect(
+      screen.queryByTestId('agent-workflow-status'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the workflow banner while the agent is busy', () => {
+    mockAgentChat.workflowStatus = 'busy';
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('agent-workflow-status')).toBeInTheDocument();
+  });
+
+  it('shows the workflow banner when idle but an error is present', () => {
+    mockAgentChat.workflowStatus = 'idle';
+    mockAgentChat.error = {
+      displayMessage: 'Something broke',
+    };
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('agent-workflow-status')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /retry/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the workflow banner when idle but approvals are pending', () => {
+    mockAgentChat.workflowStatus = 'idle';
+    mockAgentSession.pendingApprovals = [{ toolCallId: 'call-idle' }];
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('agent-workflow-status')).toBeInTheDocument();
+    expect(screen.getByText(/Awaiting approval/i)).toBeInTheDocument();
+  });
+
   it('keeps the model picker enabled in error state for recovery', () => {
     mockAgentChat.workflowStatus = 'error';
 
