@@ -1,11 +1,4 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Flame,
@@ -15,7 +8,13 @@ import {
   Plus,
   RotateCcw,
 } from 'lucide-react';
-import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui';
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui';
 import type {
   KnowledgeGraphEntity,
   KnowledgeGraphRelationship,
@@ -76,7 +75,10 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
   const hoveredNodeRef = useRef<SimulationNode | null>(hoveredNode);
   hoveredNodeRef.current = hoveredNode;
 
-  const [hoverScreenPos, setHoverScreenPos] = useState<{ x: number; y: number } | null>(null);
+  const [hoverScreenPos, setHoverScreenPos] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const hasInitialFitRef = useRef(false);
 
   const lastInteractionTimeRef = useRef(Date.now());
@@ -182,7 +184,10 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
     const neighborIds = new Set<number>([selectedEntityId]);
 
     for (const link of links) {
-      if (link.sourceId === selectedEntityId || link.targetId === selectedEntityId) {
+      if (
+        link.sourceId === selectedEntityId ||
+        link.targetId === selectedEntityId
+      ) {
         edgeIds.add(link.id);
         neighborIds.add(link.sourceId);
         neighborIds.add(link.targetId);
@@ -252,7 +257,10 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
 
       const scaleX = width / graphWidth;
       const scaleY = height / graphHeight;
-      const targetZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.25), 1.5);
+      const targetZoom = Math.min(
+        Math.max(Math.min(scaleX, scaleY), 0.25),
+        1.5,
+      );
 
       applyCamera({
         x: width / 2 - centerX * targetZoom,
@@ -394,7 +402,10 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
         return;
       }
 
-      if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+      if (
+        canvas.width !== Math.floor(width * dpr) ||
+        canvas.height !== Math.floor(height * dpr)
+      ) {
         canvas.width = Math.floor(width * dpr);
         canvas.height = Math.floor(height * dpr);
         canvas.style.width = `${width}px`;
@@ -429,7 +440,9 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
       const startY = Math.floor(minWorldY / gridStep) * gridStep - gridStep;
       const endY = Math.ceil(maxWorldY / gridStep) * gridStep + gridStep;
 
-      ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+      ctx.fillStyle = isDark
+        ? 'rgba(255, 255, 255, 0.08)'
+        : 'rgba(0, 0, 0, 0.06)';
       for (let gx = startX; gx <= endX; gx += gridStep) {
         for (let gy = startY; gy <= endY; gy += gridStep) {
           ctx.beginPath();
@@ -438,7 +451,8 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
         }
       }
 
-      const hasSelection = selectedEntityId !== null && selectedEntityId !== undefined;
+      const hasSelection =
+        selectedEntityId !== null && selectedEntityId !== undefined;
       const simLinks = sim.links;
       const simNodes = sim.nodes;
 
@@ -527,7 +541,13 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
           ctx.lineWidth = 1;
 
           ctx.beginPath();
-          ctx.roundRect(apexX - badgeW / 2, apexY - badgeH / 2, badgeW, badgeH, 4);
+          ctx.roundRect(
+            apexX - badgeW / 2,
+            apexY - badgeH / 2,
+            badgeW,
+            badgeH,
+            4,
+          );
           ctx.fill();
           ctx.stroke();
 
@@ -783,7 +803,10 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
       const drag = dragStateRef.current;
 
       if (drag) {
-        const deltaDist = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
+        const deltaDist = Math.hypot(
+          e.clientX - drag.startX,
+          e.clientY - drag.startY,
+        );
         if (deltaDist > 3) {
           drag.hasMoved = true;
         }
@@ -1035,8 +1058,7 @@ export const KnowledgeNetworkCanvas = memo(function KnowledgeNetworkCanvas({
         <div className="pointer-events-none absolute left-4 top-4 flex flex-col gap-1.5 text-xs">
           <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/70 px-2.5 py-1 text-muted-foreground shadow-sm backdrop-blur-md">
             <span>
-              {entities.length}{' '}
-              {t('knowledge.graph.entitiesCount', 'entities')}
+              {entities.length} {t('knowledge.graph.entitiesCount', 'entities')}
             </span>
             <span className="opacity-40">•</span>
             <span>

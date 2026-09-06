@@ -104,15 +104,21 @@ export async function getGlobalKnowledgeGraph(
   let assistantId: string | undefined;
   let resolvedLimit: number | undefined = limit;
 
-  if (typeof assistantIdOrOptions === 'object' && assistantIdOrOptions !== null) {
+  if (
+    typeof assistantIdOrOptions === 'object' &&
+    assistantIdOrOptions !== null
+  ) {
     assistantId = assistantIdOrOptions.assistantId;
     resolvedLimit = assistantIdOrOptions.limit ?? limit;
   } else {
     assistantId = assistantIdOrOptions;
   }
 
-  return safeInvoke<GlobalKnowledgeGraphResponse>('get_global_knowledge_graph', {
-    assistantId,
-    limit: resolvedLimit,
-  });
+  return safeInvoke<GlobalKnowledgeGraphResponse>(
+    'get_global_knowledge_graph',
+    {
+      assistantId,
+      limit: resolvedLimit,
+    },
+  );
 }

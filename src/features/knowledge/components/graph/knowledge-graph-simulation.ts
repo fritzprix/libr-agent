@@ -226,7 +226,8 @@ export class ForceSimulation {
 
       // Adjust link distance by weight if present
       const targetDistance =
-        this.linkDistance * (1 / Math.max(0.6, Math.min(1.8, link.weight || 1)));
+        this.linkDistance *
+        (1 / Math.max(0.6, Math.min(1.8, link.weight || 1)));
 
       const displacement = dist - targetDistance;
       const force = displacement * this.linkStrength * currentAlpha;

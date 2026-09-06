@@ -22,12 +22,12 @@ export function useGlobalKnowledgeGraph(
   const assistantFilter =
     typeof filterOrOptions === 'string'
       ? filterOrOptions
-      : filterOrOptions?.assistantFilter ?? 'all';
+      : (filterOrOptions?.assistantFilter ?? 'all');
   const limit =
     typeof filterOrOptions === 'object' ? filterOrOptions?.limit : undefined;
   const enabled =
     typeof filterOrOptions === 'object' && filterOrOptions !== null
-      ? filterOrOptions.enabled ?? true
+      ? (filterOrOptions.enabled ?? true)
       : true;
 
   const [graphData, setGraphData] =
@@ -55,10 +55,7 @@ export function useGlobalKnowledgeGraph(
       try {
         const resolvedFilter =
           assistantFilter === 'all' ? undefined : assistantFilter;
-        const response = await getGlobalKnowledgeGraph(
-          resolvedFilter,
-          limit,
-        );
+        const response = await getGlobalKnowledgeGraph(resolvedFilter, limit);
 
         if (!cancelled) {
           setGraphData(response);
