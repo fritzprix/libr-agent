@@ -10,9 +10,10 @@ title: 자동화 (Scheduled Tasks)
 ---
 
 ## 새 작업 만들기
-
+ 
 1. **Scheduled Tasks** → **New task** (또는 **Create your first task**)
-2. **New Scheduled Task**에서 채웁니다:
+2. 처음 시작할 때는 화면에 제공되는 **Starter Templates**(데일리 스탠드업 요약, 코드 리뷰 다이제스트 등)를 클릭하여 기본 구성값과 스케줄을 즉시 채울 수 있습니다.
+3. **New Scheduled Task**에서 필요한 항목을 조정합니다:
 
 | 필드          | 설명                                                                     |
 | ------------- | ------------------------------------------------------------------------ |
@@ -22,7 +23,7 @@ title: 자동화 (Scheduled Tasks)
 | **Workspace** | 선택. 특정 폴더에서 돌리려면 Browse 또는 폴더 드롭                       |
 | **Message**   | 깨어날 때 보낼 프롬프트. `@playbook:`, `@skill:`, `@file:` 자동완성 가능 |
 
-3. 저장합니다. 목록에 **Next run**이 표시됩니다.
+4. 저장합니다. 목록에 **Next run**이 표시됩니다.
 
 비활성(disabled)으로 두면 스케줄이 돌지 않습니다.
 
