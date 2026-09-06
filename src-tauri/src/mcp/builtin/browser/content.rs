@@ -605,9 +605,10 @@ pub async fn fetch_url(
             // Soft fallback: return imperfect static HTML rather than failing entirely.
             if let Some(html) = static_html {
                 let html_clone = html.clone();
-                let markdown_content = task::spawn_blocking(move || convert_to_markdown(&html_clone))
-                    .await
-                    .map_err(|e| format!("Task join error: {}", e))?;
+                let markdown_content =
+                    task::spawn_blocking(move || convert_to_markdown(&html_clone))
+                        .await
+                        .map_err(|e| format!("Task join error: {}", e))?;
                 if !markdown_content.trim().is_empty() {
                     let title = extract_html_title(&html).unwrap_or_default();
                     let note = format!(

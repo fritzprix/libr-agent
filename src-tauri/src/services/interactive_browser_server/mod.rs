@@ -136,10 +136,7 @@ impl InteractiveBrowserServer {
 
                 let message = match state.navigation_message {
                     Some(nav_msg) if nav_msg.contains("load wait timed out") => {
-                        format!(
-                            "Session created for {}. {}",
-                            state.url, nav_msg
-                        )
+                        format!("Session created for {}. {}", state.url, nav_msg)
                     }
                     Some(nav_msg) => {
                         format!(
