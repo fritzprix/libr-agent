@@ -10,8 +10,15 @@ import type {
 import * as backend from '@/lib/backend';
 import { toast } from 'sonner';
 import * as pathApi from '@tauri-apps/api/path';
+import { clearWorkspaceExpandedPathsCache } from '../workspace-panel/useWorkspaceFiles';
 
 let latestHandler:
+  | ((event: DragAndDropEvent, payload: DragAndDropPayload) => void)
+  | undefined;
+let folderNodeHandler:
+  | ((event: DragAndDropEvent, payload: DragAndDropPayload) => void)
+  | undefined;
+let fileNodeHandler:
   | ((event: DragAndDropEvent, payload: DragAndDropPayload) => void)
   | undefined;
 const mocks = vi.hoisted(() => ({
@@ -19,8 +26,14 @@ const mocks = vi.hoisted(() => ({
     (
       _ref: unknown,
       handler: (event: DragAndDropEvent, payload: DragAndDropPayload) => void,
+      options?: { priority?: number },
     ) => {
       latestHandler = handler;
+      if (options?.priority === 10) {
+        folderNodeHandler = handler;
+      } else if (options?.priority === 8) {
+        fileNodeHandler = handler;
+      }
       return vi.fn();
     },
   ),
@@ -82,6 +95,7 @@ vi.mock('@/context/DnDContext', () => {
   };
   return {
     useDnDContext: () => mockDnD,
+    useOptionalDnDContext: () => mockDnD,
   };
 });
 
@@ -120,7 +134,10 @@ vi.mock('react-i18next', () => ({
 describe('AgentWorkspacePanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearWorkspaceExpandedPathsCache();
     latestHandler = undefined;
+    folderNodeHandler = undefined;
+    fileNodeHandler = undefined;
     mockRustBackend.agentCallBuiltinTool.mockResolvedValue({
       content: [{ type: 'text', text: 'Imported files successfully' }],
       isError: false,
@@ -412,4 +429,121 @@ describe('AgentWorkspacePanel', () => {
       resolveOpening!();
     });
   });
+
+  it('imports dropped files into specific folder node with correct destRelPath', async () => {
+    vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
+    vi.mocked(backend.checkDroppedPathType).mockResolvedValue('file');
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      { name: 'src', isDirectory: true },
+    ]);
+
+    render(<AgentWorkspacePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText('src')).toBeInTheDocument();
+    });
+
+    // In FileTreeNode, the directory node registers with priority: 10
+    await act(async () => {
+      folderNodeHandler?.('drop', {
+        paths: ['/home/user/test.ts'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockRustBackend.agentCallBuiltinTool).toHaveBeenCalledWith(
+        'session-123',
+        'workspace__importFiles',
+        expect.objectContaining({
+          files: expect.arrayContaining([
+            expect.objectContaining({
+              srcAbsPath: '/home/user/test.ts',
+              destRelPath: 'src/test.ts',
+            }),
+          ]),
+        }),
+      );
+    });
+  });
+
+  it('rejects dropping a directory onto a folder node', async () => {
+    vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
+    vi.mocked(backend.checkDroppedPathType).mockResolvedValue('directory');
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      { name: 'src', isDirectory: true },
+    ]);
+
+    render(<AgentWorkspacePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText('src')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      folderNodeHandler?.('drop', {
+        paths: ['/home/user/nested-dir'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        'agent.workspace.dropFolderIntoSubfolderError',
+      );
+    });
+    expect(mockRustBackend.agentCallBuiltinTool).not.toHaveBeenCalled();
+  });
+
+  it('imports dropped files on child file item into parent folder', async () => {
+    vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
+    vi.mocked(backend.checkDroppedPathType).mockResolvedValue('file');
+    mockRustBackend.listWorkspaceFiles.mockImplementation(
+      async (dirPath?: string) => {
+        if (!dirPath || dirPath === './') {
+          return [{ name: 'src', isDirectory: true }];
+        }
+        if (dirPath === './src' || dirPath === 'src') {
+          return [{ name: 'index.ts', isDirectory: false }];
+        }
+        return [];
+      },
+    );
+
+    render(<AgentWorkspacePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText('src')).toBeInTheDocument();
+    });
+
+    // Expand 'src' directory via its expand button
+    const expandButton = await screen.findByRole('button', { name: 'Expand' });
+    await act(async () => {
+      fireEvent.click(expandButton);
+    });
+
+    const indexFile = await screen.findByText('index.ts');
+    expect(indexFile).toBeInTheDocument();
+
+    // Drop onto child file index.ts (registered with priority: 8)
+    await act(async () => {
+      fileNodeHandler?.('drop', {
+        paths: ['/home/user/new-file.ts'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockRustBackend.agentCallBuiltinTool).toHaveBeenCalledWith(
+        'session-123',
+        'workspace__importFiles',
+        expect.objectContaining({
+          files: expect.arrayContaining([
+            expect.objectContaining({
+              srcAbsPath: '/home/user/new-file.ts',
+              destRelPath: 'src/new-file.ts',
+            }),
+          ]),
+        }),
+      );
+    });
+  });
 });
+
