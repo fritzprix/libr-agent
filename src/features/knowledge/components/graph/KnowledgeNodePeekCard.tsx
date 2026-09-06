@@ -35,8 +35,14 @@ export function KnowledgeNodePeekCard({
         top = position.y - cardHeight - offset;
       }
 
-      left = Math.max(12, Math.min(left, containerBounds.width - cardWidth - 12));
-      top = Math.max(12, Math.min(top, containerBounds.height - cardHeight - 12));
+      left = Math.max(
+        12,
+        Math.min(left, containerBounds.width - cardWidth - 12),
+      );
+      top = Math.max(
+        12,
+        Math.min(top, containerBounds.height - cardHeight - 12),
+      );
     }
 
     return {
@@ -93,7 +99,9 @@ export function KnowledgeNodePeekCard({
       )}
 
       <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2 text-[10px] text-muted-foreground">
-        <span>{t('knowledge.graph.clickToFocus', 'Click to focus neighborhood')}</span>
+        <span>
+          {t('knowledge.graph.clickToFocus', 'Click to focus neighborhood')}
+        </span>
         {node.isPrimary && (
           <span className="font-medium text-primary">
             {t('knowledge.primary', 'Primary')}

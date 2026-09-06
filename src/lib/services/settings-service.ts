@@ -259,7 +259,8 @@ export function normalizeDisplaySettings(
 
   return {
     metricDisplayMode:
-      blob.metricDisplayMode === 'tooltip' || blob.metricDisplayMode === 'inline'
+      blob.metricDisplayMode === 'tooltip' ||
+      blob.metricDisplayMode === 'inline'
         ? blob.metricDisplayMode
         : defaults.metricDisplayMode,
     prefillDisplayFormat:

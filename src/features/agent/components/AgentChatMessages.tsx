@@ -122,7 +122,8 @@ export function AgentChatMessages() {
   const {
     value: { display },
   } = useSettings();
-  const messageLayout: MessageLayoutStyle = display?.messageLayout ?? 'document';
+  const messageLayout: MessageLayoutStyle =
+    display?.messageLayout ?? 'document';
 
   // Compact range for divider rendering (null if no compaction has occurred)
   const compactedRange = session?.id

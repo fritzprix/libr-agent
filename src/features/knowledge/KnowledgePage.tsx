@@ -175,8 +175,11 @@ export default function KnowledgePage() {
     viewMode,
   } = useKnowledgeBrowser();
 
-  const [inspectTarget, setInspectTarget] = useState<InspectedTarget | null>(null);
-  const [isStreamFilteredByEntity, setIsStreamFilteredByEntity] = useState(false);
+  const [inspectTarget, setInspectTarget] = useState<InspectedTarget | null>(
+    null,
+  );
+  const [isStreamFilteredByEntity, setIsStreamFilteredByEntity] =
+    useState(false);
 
   const excerptLabel = t('knowledge.excerpt', 'Excerpt');
   const untitledLabel = t(
@@ -413,10 +416,7 @@ export default function KnowledgePage() {
           </div>
 
           <div className="w-56 shrink-0">
-            <Select
-              value={assistantFilter}
-              onValueChange={setAssistantFilter}
-            >
+            <Select value={assistantFilter} onValueChange={setAssistantFilter}>
               <SelectTrigger className="h-9">
                 <SelectValue
                   placeholder={t(
@@ -512,7 +512,9 @@ export default function KnowledgePage() {
                       <div className="flex items-center gap-1">
                         <Button
                           type="button"
-                          variant={isStreamFilteredByEntity ? 'default' : 'ghost'}
+                          variant={
+                            isStreamFilteredByEntity ? 'default' : 'ghost'
+                          }
                           size="sm"
                           className="h-6 px-2 text-[11px]"
                           onClick={() => setIsStreamFilteredByEntity((v) => !v)}
@@ -595,7 +597,9 @@ export default function KnowledgePage() {
                           ) : null,
                       }}
                       itemContent={(_index, item) => {
-                        const isHighlighted = entityMatchingChunkIds.has(item.id);
+                        const isHighlighted = entityMatchingChunkIds.has(
+                          item.id,
+                        );
                         const isSelected =
                           item.id === selectedId &&
                           inspectTarget?.type === 'chunk';
@@ -729,9 +733,7 @@ export default function KnowledgePage() {
             }
             entity={selectedEntity}
             allEntities={
-              graphData?.entities ??
-              detail?.entities ??
-              EMPTY_GRAPH_ENTITIES
+              graphData?.entities ?? detail?.entities ?? EMPTY_GRAPH_ENTITIES
             }
             allRelationships={
               graphData?.relationships ??

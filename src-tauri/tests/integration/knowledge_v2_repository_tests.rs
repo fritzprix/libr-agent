@@ -422,9 +422,18 @@ async fn knowledge_v2_repository_get_global_graph_returns_entities_and_relations
 
     assert_eq!(scoped_graph.relationships.len(), 1);
     assert_eq!(scoped_graph.relationships[0].id, rel_id);
-    assert_eq!(scoped_graph.relationships[0].source_entity_id, rust_entity_id);
-    assert_eq!(scoped_graph.relationships[0].target_entity_id, llm_entity_id);
-    assert_eq!(scoped_graph.relationships[0].relation_type, "interfaces_with");
+    assert_eq!(
+        scoped_graph.relationships[0].source_entity_id,
+        rust_entity_id
+    );
+    assert_eq!(
+        scoped_graph.relationships[0].target_entity_id,
+        llm_entity_id
+    );
+    assert_eq!(
+        scoped_graph.relationships[0].relation_type,
+        "interfaces_with"
+    );
 
     // 4. Test global (all assistants)
     let global_graph = repo
@@ -433,7 +442,10 @@ async fn knowledge_v2_repository_get_global_graph_returns_entities_and_relations
         .expect("get_global_graph without filter should succeed");
 
     assert_eq!(global_graph.entities.len(), 3);
-    assert!(global_graph.entities.iter().any(|e| e.id == other_entity_id));
+    assert!(global_graph
+        .entities
+        .iter()
+        .any(|e| e.id == other_entity_id));
 
     // 5. Test limit 0 returns empty
     let empty_graph = repo

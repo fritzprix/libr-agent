@@ -51,6 +51,9 @@
       "searchResults": "Se encontraron {{count}} resultados para \"{{query}}\"",
       "noResults": "No se encontraron asistentes que coincidan con su búsqueda",
       "empty": "No hay asistentes disponibles",
+      "loading": "Cargando asistentes...",
+      "loadingMore": "Cargando más asistentes...",
+      "totalInfo": "{{count}} de {{total}} asistentes",
       "pagination": {
         "previous": "Anterior",
         "next": "Siguiente",
@@ -78,6 +81,7 @@
       "created": "Creado",
       "updated": "Actualizado",
       "description": "Descripción",
+      "fullConfiguration": "Configuración completa",
       "expand": "Expandir configuración",
       "collapse": "Contraer configuración"
     }

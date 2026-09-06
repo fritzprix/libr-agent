@@ -3,7 +3,7 @@ import AssistantList from './List';
 
 export default function AssistantListRoute() {
   return (
-    <AssistantContextProvider>
+    <AssistantContextProvider initialPaginationMode="paginated">
       <AssistantList />
     </AssistantContextProvider>
   );

@@ -91,22 +91,25 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
   const isViewingEntity = target?.type === 'entity';
 
   // For Entity: compute connected relationships and linked chunks
-  const connectedRelationships = isViewingEntity && entity
-    ? allRelationships.filter(
-        (rel) =>
-          rel.sourceEntityId === entity.id || rel.targetEntityId === entity.id,
-      )
-    : [];
+  const connectedRelationships =
+    isViewingEntity && entity
+      ? allRelationships.filter(
+          (rel) =>
+            rel.sourceEntityId === entity.id ||
+            rel.targetEntityId === entity.id,
+        )
+      : [];
 
-  const entityLinkedChunks = isViewingEntity && entity
-    ? allChunks.filter((chunk) => {
-        const query = entity.name.toLowerCase();
-        return (
-          chunk.preview.toLowerCase().includes(query) ||
-          chunk.tags.some((tag) => tag.toLowerCase().includes(query))
-        );
-      })
-    : [];
+  const entityLinkedChunks =
+    isViewingEntity && entity
+      ? allChunks.filter((chunk) => {
+          const query = entity.name.toLowerCase();
+          return (
+            chunk.preview.toLowerCase().includes(query) ||
+            chunk.tags.some((tag) => tag.toLowerCase().includes(query))
+          );
+        })
+      : [];
 
   return (
     <aside
@@ -138,14 +141,23 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
                 className="truncate text-base font-semibold text-foreground"
                 title={
                   chunkDetail
-                    ? getKnowledgeCardTitle(chunkDetail.content, 'Knowledge Chunk')
+                    ? getKnowledgeCardTitle(
+                        chunkDetail.content,
+                        'Knowledge Chunk',
+                      )
                     : chunkItem?.preview
                 }
               >
                 {chunkDetail
-                  ? getKnowledgeCardTitle(chunkDetail.content, 'Knowledge Chunk')
+                  ? getKnowledgeCardTitle(
+                      chunkDetail.content,
+                      'Knowledge Chunk',
+                    )
                   : chunkItem
-                    ? getKnowledgeCardTitle(chunkItem.preview, 'Knowledge Chunk')
+                    ? getKnowledgeCardTitle(
+                        chunkItem.preview,
+                        'Knowledge Chunk',
+                      )
                     : t('knowledge.chunkDetails', 'Chunk Details')}
               </h2>
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -155,12 +167,19 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
                   </Badge>
                 )}
                 {(chunkDetail?.source || chunkItem?.source) && (
-                  <Badge variant="outline" className="max-w-[200px] truncate text-xs">
+                  <Badge
+                    variant="outline"
+                    className="max-w-[200px] truncate text-xs"
+                  >
                     {chunkDetail?.source ?? chunkItem?.source}
                   </Badge>
                 )}
                 {(chunkDetail?.tags ?? chunkItem?.tags ?? []).map((tag) => (
-                  <Badge key={tag} variant="outline" className="text-xs font-normal">
+                  <Badge
+                    key={tag}
+                    variant="outline"
+                    className="text-xs font-normal"
+                  >
                     #{tag}
                   </Badge>
                 ))}
@@ -193,8 +212,16 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
                     variant="outline"
                     className="text-xs font-medium"
                     style={{
-                      borderColor: getNodeColor(entity.entityType, entity.isPrimary, true),
-                      color: getNodeColor(entity.entityType, entity.isPrimary, true),
+                      borderColor: getNodeColor(
+                        entity.entityType,
+                        entity.isPrimary,
+                        true,
+                      ),
+                      color: getNodeColor(
+                        entity.entityType,
+                        entity.isPrimary,
+                        true,
+                      ),
                     }}
                   >
                     {entity.entityType}
@@ -300,7 +327,8 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
                           onClick={() => onSelectEntity?.(ent.id)}
                           className={cn(
                             'group flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2.5 py-1 text-xs text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5',
-                            ent.isPrimary && 'border-primary/40 bg-primary/5 font-medium',
+                            ent.isPrimary &&
+                              'border-primary/40 bg-primary/5 font-medium',
                           )}
                         >
                           <span className="truncate group-hover:text-primary">
@@ -349,7 +377,9 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
                           >
                             <button
                               type="button"
-                              onClick={() => onSelectEntity?.(rel.sourceEntityId)}
+                              onClick={() =>
+                                onSelectEntity?.(rel.sourceEntityId)
+                              }
                               className="font-medium text-foreground hover:text-primary hover:underline"
                             >
                               {source?.name ?? `#${rel.sourceEntityId}`}
@@ -359,7 +389,9 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
                             </span>
                             <button
                               type="button"
-                              onClick={() => onSelectEntity?.(rel.targetEntityId)}
+                              onClick={() =>
+                                onSelectEntity?.(rel.targetEntityId)
+                              }
                               className="font-medium text-foreground hover:text-primary hover:underline"
                             >
                               {target?.name ?? `#${rel.targetEntityId}`}
@@ -401,8 +433,11 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
             <div className="space-y-2.5">
               <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 <span>
-                  {t('knowledge.connectedRelationships', 'Connected Relationships')} (
-                  {connectedRelationships.length})
+                  {t(
+                    'knowledge.connectedRelationships',
+                    'Connected Relationships',
+                  )}{' '}
+                  ({connectedRelationships.length})
                 </span>
               </div>
 
@@ -520,7 +555,10 @@ export const KnowledgeInspectorSheet = memo(function KnowledgeInspectorSheet({
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                 <div className="space-y-0.5">
                   <p className="font-medium text-destructive">
-                    {t('knowledge.confirmDeleteTitle', 'Delete knowledge entry')}
+                    {t(
+                      'knowledge.confirmDeleteTitle',
+                      'Delete knowledge entry',
+                    )}
                   </p>
                   <p className="text-muted-foreground">
                     {t(
