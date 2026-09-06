@@ -1191,7 +1191,8 @@
       "dropFiles": "Drop files here or click to upload",
       "dropFolderHint": "Drop a folder here to set as workspace",
       "dropDirToastError": "Drop directories in the central area to set workspace override.",
-      "dropMixedFoldersError": "Drop files to import them, or a single folder to set workspace override."
+      "dropMixedFoldersError": "Drop files to import them, or a single folder to set workspace override.",
+      "dropFolderIntoSubfolderError": "Dropping folders into subfolders is not supported."
     },
     "statusBar": {
       "retryError": "Failed to retry message",

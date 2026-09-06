@@ -293,4 +293,8 @@ export function useDnDContext(): DnDContextReturnType {
   return ctx;
 }
 
+export function useOptionalDnDContext(): DnDContextReturnType | null {
+  return useContext(DnDContext);
+}
+
 export { DnDContext, DnDContextProvider };

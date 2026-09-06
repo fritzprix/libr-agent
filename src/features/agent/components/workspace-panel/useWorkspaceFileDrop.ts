@@ -5,16 +5,17 @@ import { useAgentChatActions } from '@/context/AgentChatContext';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { join } from '@tauri-apps/api/path';
 import { createId } from '@paralleldrive/cuid2';
 import { createToolMessagePair } from '@/lib/chat-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
+
+import { normalizePath } from './useWorkspaceFiles';
 
 const logger = getLogger('useWorkspaceFileDrop');
 
 export function useWorkspaceFileDrop(
   rootPath: string,
-  onDropComplete: () => void,
+  onDropComplete: (targetDir?: string) => void | Promise<void>,
 ) {
   const { t } = useTranslation();
   const { agentCallBuiltinTool } = useRustBackend();
@@ -22,23 +23,24 @@ export function useWorkspaceFileDrop(
   const { injectMessages } = useAgentChatActions();
 
   const handleWorkspaceFileDrop = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[], targetDir?: string) => {
       if (!session?.id || paths.length === 0) return;
 
       logger.info('External files dropped on workspace', {
         fileCount: paths.length,
-        targetPath: rootPath,
+        targetPath: targetDir ?? rootPath,
       });
 
       try {
         const filesToImport = await Promise.all(
           paths.map(async (srcPath) => {
             const fileName = srcPath.split(/[/\\]/).pop() || 'unknown';
-            const destPath = await join(rootPath, fileName);
-            let destRelPath = destPath.replace(/\\/g, '/');
-            if (destRelPath.startsWith('./')) {
-              destRelPath = destRelPath.slice(2);
-            }
+            const baseDir = targetDir ?? rootPath;
+            const cleanBase = normalizePath(baseDir);
+            const destRelPath = cleanBase
+              ? `${cleanBase}/${fileName}`
+              : fileName;
+
             return {
               srcAbsPath: srcPath,
               destRelPath,
@@ -127,7 +129,7 @@ export function useWorkspaceFileDrop(
         await injectMessages([toolCallMessage, toolResultMessage]);
 
         // Refresh directory after import
-        onDropComplete();
+        onDropComplete(targetDir);
       } catch (error) {
         logger.error('File import failed', error);
         const message =

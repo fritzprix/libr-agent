@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -7,6 +8,12 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import {
+  useOptionalDnDContext,
+  type DragAndDropEvent,
+  type DragAndDropPayload,
+} from '@/context/DnDContext';
+import { cn } from '@/lib/utils';
 import type { FileNode } from './types';
 
 interface FileTreeNodeProps {
@@ -14,6 +21,7 @@ interface FileTreeNodeProps {
   depth?: number;
   onToggle: (node: FileNode) => void;
   onOpen?: (node: FileNode) => void;
+  onFileDrop?: (paths: string[], targetDir: string) => void;
 }
 
 export const FileTreeNode = ({
@@ -21,9 +29,48 @@ export const FileTreeNode = ({
   depth = 0,
   onToggle,
   onOpen,
+  onFileDrop,
 }: FileTreeNodeProps) => {
+  const [isDragOver, setIsDragOver] = useState(false);
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const dnd = useOptionalDnDContext();
+  const onFileDropRef = useRef(onFileDrop);
+  onFileDropRef.current = onFileDrop;
+
+  useEffect(() => {
+    if (!dnd?.subscribe || !onFileDropRef.current) {
+      return;
+    }
+
+    const targetDir = node.isDirectory ? node.path : (node.parent ?? './');
+    // Folder nodes take priority over child file nodes; both take priority over the base panel (5)
+    const priority = node.isDirectory ? 10 : 8;
+
+    const handler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
+      if (event === 'drag-over') {
+        setIsDragOver(true);
+      } else if (event === 'leave') {
+        setIsDragOver(false);
+      } else if (event === 'drop') {
+        setIsDragOver(false);
+        if (
+          payload.paths &&
+          payload.paths.length > 0 &&
+          onFileDropRef.current
+        ) {
+          onFileDropRef.current(payload.paths, targetDir);
+        }
+      }
+    };
+
+    const unsub = dnd.subscribe(nodeRef, handler, { priority });
+    return () => {
+      unsub();
+    };
+  }, [node.isDirectory, node.path, node.parent, dnd]);
+
   const Icon = node.isDirectory
-    ? node.isExpanded
+    ? node.isExpanded || isDragOver
       ? FolderOpen
       : Folder
     : File;
@@ -32,7 +79,11 @@ export const FileTreeNode = ({
   return (
     <div className="select-none">
       <div
-        className="group flex items-center gap-1.5 px-2 py-1.5 text-foreground/85 transition-colors hover:bg-foreground/[0.03]"
+        ref={nodeRef}
+        className={cn(
+          'group flex items-center gap-1.5 px-2 py-1.5 text-foreground/85 transition-colors hover:bg-foreground/[0.03]',
+          isDragOver && 'ring-2 ring-primary bg-primary/10 rounded-sm',
+        )}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={() => {
           // Keep mouse click behavior for padding area
@@ -122,6 +173,7 @@ export const FileTreeNode = ({
               depth={depth + 1}
               onToggle={onToggle}
               onOpen={onOpen}
+              onFileDrop={onFileDrop}
             />
           ))}
         </div>
