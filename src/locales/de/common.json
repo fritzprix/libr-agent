@@ -481,7 +481,16 @@
       "messageLayout": "Nachrichtenlayout",
       "messageLayoutDocument": "Dokument (volle Breite für Code)",
       "messageLayoutBubble": "Blasen (klassisches Chat)",
-      "messageLayoutDescription": "Dokumentmodus maximiert die Breite für Code und Diffs. Blasenmodus behält klassische Chatblasen bei."
+      "messageLayoutDescription": "Dokumentmodus maximiert die Breite für Code und Diffs. Blasenmodus behält klassische Chatblasen bei.",
+      "colorTheme": "Farbthema",
+      "colorThemeDescription": "Wählen Sie ein Akzentfarbthema für die Benutzeroberfläche.",
+      "colorThemes": {
+        "neutral": "Neutral (Monochrom)",
+        "amber": "Libr Bernstein (Wärme)",
+        "violet": "Iris Violett (KI)",
+        "ocean": "Ozeanblau (Ruhe)",
+        "forest": "Waldsalbei (Fokus)"
+      }
     },
     "advanced": {
       "maxRetries": "Max. Wiederholungsversuche",
@@ -1105,6 +1114,7 @@
       "updated": "aktualisiert"
     },
     "bubble": {
+      "toolError": "Werkzeugausführungsfehler",
       "notification": "Benachrichtigung",
       "channel": "KANAL",
       "assistant": "ASSISTENT",

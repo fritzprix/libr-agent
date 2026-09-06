@@ -110,6 +110,11 @@ function App() {
     }
   }, [settings.display.fontFamily]);
 
+  useEffect(() => {
+    const colorTheme = settings.display.colorTheme || 'neutral';
+    document.documentElement.setAttribute('data-color-theme', colorTheme);
+  }, [settings.display.colorTheme]);
+
   return (
     <div className="h-screen w-full">
       <UpdateProvider>

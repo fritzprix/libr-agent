@@ -456,7 +456,16 @@
         "nanumSquareNeo": "NanumSquare Neo (モダンな幾何学系)",
         "pretendard": "Pretendard (標準サンセリフ)"
       },
-      "uiVisualsTitle": "UI 表示"
+      "uiVisualsTitle": "UI 表示",
+      "colorTheme": "カラーテーマ",
+      "colorThemeDescription": "インターフェースのアクセントカラーテーマを選択します。",
+      "colorThemes": {
+        "neutral": "ニュートラル (モノクローム)",
+        "amber": "Libr アンバー (温かみ)",
+        "violet": "アイリス バイオレット (AI)",
+        "ocean": "オーシャン ブルー (落ち着き)",
+        "forest": "フォレスト セージ (集中)"
+      }
     },
     "advanced": {
       "maxRetries": "最大再試行回数",
@@ -1066,6 +1075,7 @@
       "updated": "更新済み"
     },
     "bubble": {
+      "toolError": "ツール実行エラー",
       "notification": "通知",
       "channel": "チャンネル",
       "assistant": "アシスタント",

@@ -481,7 +481,16 @@
       "messageLayout": "Layout das mensagens",
       "messageLayoutDocument": "Documento (largura total para código)",
       "messageLayoutBubble": "Balões (chat clássico)",
-      "messageLayoutDescription": "O modo Documento maximiza a largura para código e diffs. O modo Balões mantém o estilo clássico de chat."
+      "messageLayoutDescription": "O modo Documento maximiza a largura para código e diffs. O modo Balões mantém o estilo clássico de chat.",
+      "colorTheme": "Tema de cores",
+      "colorThemeDescription": "Escolha um tema de cor de destaque para a interface.",
+      "colorThemes": {
+        "neutral": "Neutro (Monocromático)",
+        "amber": "Libr Âmbar (Calor)",
+        "violet": "Íris Violeta (IA)",
+        "ocean": "Azul Oceano (Calma)",
+        "forest": "Sálvia Floresta (Foco)"
+      }
     },
     "advanced": {
       "maxRetries": "Máximo de Tentativas",
@@ -1105,6 +1114,7 @@
       "updated": "atualizado"
     },
     "bubble": {
+      "toolError": "Erro de execução da ferramenta",
       "notification": "Notificação",
       "channel": "CANAL",
       "assistant": "ASSISTENTE",

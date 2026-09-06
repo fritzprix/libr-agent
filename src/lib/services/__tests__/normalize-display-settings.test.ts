@@ -31,9 +31,35 @@ describe('normalizeDisplaySettings', () => {
     expect(normalized.messageLayout).toBe('bubble');
   });
 
+  it('fills missing colorTheme from defaults', () => {
+    const normalized = normalizeDisplaySettings({
+      metricDisplayMode: 'tooltip',
+      prefillDisplayFormat: 'tokensPerSecond',
+      showTokenSpeed: false,
+      compactMetrics: true,
+      toolDetailLevel: 'developer',
+      fontFamily: 'Inter',
+      messageLayout: 'document',
+    });
+
+    expect(normalized.colorTheme).toBe('neutral');
+  });
+
+  it('preserves a valid colorTheme value', () => {
+    const normalized = normalizeDisplaySettings({
+      ...DEFAULT_SETTING.display,
+      colorTheme: 'amber',
+    });
+
+    expect(normalized.colorTheme).toBe('amber');
+  });
+
   it('falls back to defaults for invalid blobs', () => {
     expect(normalizeDisplaySettings(null)).toEqual(DEFAULT_SETTING.display);
     expect(normalizeDisplaySettings({ messageLayout: 'wide' })).toEqual(
+      DEFAULT_SETTING.display,
+    );
+    expect(normalizeDisplaySettings({ colorTheme: 'invalid-theme' })).toEqual(
       DEFAULT_SETTING.display,
     );
   });

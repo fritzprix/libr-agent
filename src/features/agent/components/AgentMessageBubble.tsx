@@ -1,11 +1,11 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Message, ToolCall } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
 import type { MessageLayoutStyle } from '@/lib/services/settings-service';
-import { Paperclip, FileText } from 'lucide-react';
+import { Paperclip, FileText, AlertTriangle, ChevronDown } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 import { MessageActionBar } from './MessageActionBar';
 import { computeDisplayContent } from '@/features/agent/lib/chat-utils';
@@ -30,6 +30,8 @@ interface AgentMessageBubbleProps {
   toolErrorGroup?: boolean;
   /** Chat transcript layout; defaults to document stream. */
   messageLayout?: MessageLayoutStyle;
+  /** Tool display detail level; passed down from parent to avoid context subscription. */
+  toolDetailLevel?: 'simple' | 'developer';
 }
 
 interface ChannelBubbleMetadata {
@@ -62,8 +64,15 @@ function AgentMessageBubbleImpl({
   followChatScroll = true,
   toolErrorGroup = false,
   messageLayout = 'document',
+  toolDetailLevel = 'simple',
 }: AgentMessageBubbleProps) {
   const { t, i18n } = useTranslation();
+  const isSimpleMode = toolDetailLevel === 'simple';
+  // Tracks explicit user expansion override; defaults to following live isSimpleMode changes.
+  const [userToggledError, setUserToggledError] = useState<boolean | null>(
+    null,
+  );
+  const isToolErrorExpanded = userToggledError ?? !isSimpleMode;
   const isDocumentMode = isDocumentMessageLayout(messageLayout);
 
   // Construct display content:
@@ -140,104 +149,139 @@ function AgentMessageBubbleImpl({
                 ),
             // Add custom utility to ensure links inside are visible
             isStandardUserMessage && !isDocumentMode
-              ? '[&_a]:text-primary-foreground'
+              ? '[&_a]:text-primary-foreground [&_.markdown-inline-code]:bg-primary-foreground/15 [&_.markdown-inline-code]:text-primary-foreground [&_.markdown-inline-code]:border-primary-foreground/25'
               : '[&_a]:text-primary',
           )}
         >
-          <div className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold opacity-80">
-            {isChannelMessage ? (
-              <>
-                <span>{t('agent.bubble.notification')}</span>
-                <Badge
-                  variant="outline"
-                  className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                >
-                  {t('agent.bubble.channel')}
-                </Badge>
-                {channelMetadata?.serverName ? (
-                  <Badge variant="secondary" className="bg-background/70">
-                    {channelMetadata.serverName}
-                  </Badge>
-                ) : null}
-              </>
-            ) : (
-              <>
-                {msg.role === 'assistant'
-                  ? assistantName || t('agent.bubble.assistant')
-                  : msg.role === 'user'
-                    ? t('agent.bubble.you')
-                    : msg.role.toUpperCase()}
-              </>
-            )}
-          </div>
-          <div className="whitespace-pre-wrap min-w-0 font-sans">
-            {/* File Attachments Display */}
-            {msg.attachments && msg.attachments.length > 0 && (
-              <div className="mb-3 p-3 bg-background/10 rounded-lg border border-current/10">
-                <div className="text-sm mb-2 font-medium flex items-center gap-2 opacity-90">
-                  <Paperclip className="w-4 h-4" />
-                  <span>
-                    {t('agent.bubble.filesAttached', {
-                      count: msg.attachments.length,
-                    })}
+          {toolErrorGroup ? (
+            <button
+              type="button"
+              aria-expanded={isToolErrorExpanded}
+              onClick={() =>
+                setUserToggledError((prev) => !(prev ?? !isSimpleMode))
+              }
+              className={cn(
+                'w-full flex items-center justify-between gap-2 text-left select-none text-xs font-semibold text-destructive dark:text-destructive/90 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded',
+                isToolErrorExpanded ? 'mb-2' : '',
+              )}
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+                <span className="truncate">
+                  {t('agent.bubble.toolError', 'Tool Execution Error')}
+                </span>
+                {groupedMessages && groupedMessages.length > 1 ? (
+                  <span className="opacity-80 font-normal">
+                    ({groupedMessages.length})
                   </span>
-                </div>
-                <ul
-                  className="space-y-2"
-                  aria-label={t('agent.bubble.attachedFilesAria')}
-                >
-                  {msg.attachments.map((attachment) => (
-                    <li
-                      key={
-                        attachment.contentId ||
-                        attachment.workspacePath ||
-                        attachment.filename ||
-                        attachment.pendingId
-                      }
-                      className="flex items-center justify-between p-2 bg-background/20 rounded border border-current/10"
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <FileText className="w-3 h-3 opacity-70 flex-shrink-0" />
-                        <span className="text-xs font-medium truncate">
-                          {attachment.filename}
-                        </span>
-                        <span className="text-xs opacity-60 whitespace-nowrap">
-                          ({Math.round(attachment.size / 1024)}KB)
-                        </span>
-                      </div>
-                      {attachment.lineCount && attachment.lineCount > 0 ? (
-                        <div className="text-xs opacity-50 whitespace-nowrap ml-2">
-                          {t('agent.bubble.lines', {
-                            count: attachment.lineCount,
-                          })}
-                        </div>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                ) : null}
               </div>
-            )}
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 transition-transform duration-200',
+                  isToolErrorExpanded && 'rotate-180',
+                )}
+              />
+            </button>
+          ) : (
+            <div className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold opacity-80">
+              {isChannelMessage ? (
+                <>
+                  <span>{t('agent.bubble.notification')}</span>
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  >
+                    {t('agent.bubble.channel')}
+                  </Badge>
+                  {channelMetadata?.serverName ? (
+                    <Badge variant="secondary" className="bg-background/70">
+                      {channelMetadata.serverName}
+                    </Badge>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {msg.role === 'assistant'
+                    ? assistantName || t('agent.bubble.assistant')
+                    : msg.role === 'user'
+                      ? t('agent.bubble.you')
+                      : msg.role.toUpperCase()}
+                </>
+              )}
+            </div>
+          )}
+          {(!toolErrorGroup || isToolErrorExpanded) && (
+            <div className="whitespace-pre-wrap min-w-0 font-sans">
+              {/* File Attachments Display */}
+              {msg.attachments && msg.attachments.length > 0 && (
+                <div className="mb-3 p-3 bg-background/10 rounded-lg border border-current/10">
+                  <div className="text-sm mb-2 font-medium flex items-center gap-2 opacity-90">
+                    <Paperclip className="w-4 h-4" />
+                    <span>
+                      {t('agent.bubble.filesAttached', {
+                        count: msg.attachments.length,
+                      })}
+                    </span>
+                  </div>
+                  <ul
+                    className="space-y-2"
+                    aria-label={t('agent.bubble.attachedFilesAria')}
+                  >
+                    {msg.attachments.map((attachment) => (
+                      <li
+                        key={
+                          attachment.contentId ||
+                          attachment.workspacePath ||
+                          attachment.filename ||
+                          attachment.pendingId
+                        }
+                        className="flex items-center justify-between p-2 bg-background/20 rounded border border-current/10"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <FileText className="w-3 h-3 opacity-70 flex-shrink-0" />
+                          <span className="text-xs font-medium truncate">
+                            {attachment.filename}
+                          </span>
+                          <span className="text-xs opacity-60 whitespace-nowrap">
+                            ({Math.round(attachment.size / 1024)}KB)
+                          </span>
+                        </div>
+                        {attachment.lineCount && attachment.lineCount > 0 ? (
+                          <div className="text-xs opacity-50 whitespace-nowrap ml-2">
+                            {t('agent.bubble.lines', {
+                              count: attachment.lineCount,
+                            })}
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-            {(displayContent && displayContent.length > 0) ||
-            (msg.content && msg.content.length > 0) ||
-            msg.thinking ||
-            msg.isStreaming ? (
-              <>
-                {/* Unified Rendering: AgentMessageRenderer handles all content types including thinking and tools */}
-                <AgentMessageRenderer
-                  content={displayContent || msg.content}
-                  message={msg}
-                  toolResultsMap={toolResultsMap}
-                  followChatScroll={followChatScroll}
-                />
-              </>
-            ) : (
-              <span className="text-muted-foreground italic">
-                {t('agent.bubble.noContent')}
-              </span>
-            )}
-          </div>
-          {!msg.isStreaming &&
+              {(displayContent && displayContent.length > 0) ||
+              (msg.content && msg.content.length > 0) ||
+              msg.thinking ||
+              msg.isStreaming ? (
+                <>
+                  {/* Unified Rendering: AgentMessageRenderer handles all content types including thinking and tools */}
+                  <AgentMessageRenderer
+                    content={displayContent || msg.content}
+                    message={msg}
+                    toolResultsMap={toolResultsMap}
+                    followChatScroll={followChatScroll}
+                  />
+                </>
+              ) : (
+                <span className="text-muted-foreground italic">
+                  {t('agent.bubble.noContent')}
+                </span>
+              )}
+            </div>
+          )}
+          {(!toolErrorGroup || isToolErrorExpanded) &&
+          !msg.isStreaming &&
           ((displayContent && displayContent.length > 0) ||
             (msg.content && msg.content.length > 0) ||
             msg.thinking ||
@@ -306,18 +350,20 @@ function AgentMessageBubbleImpl({
               </div>
             )
           ) : null}
-          {msg.createdAt && msg.isStreaming && (
-            <div
-              className={cn(
-                'mt-1 select-none self-end text-[10px] opacity-70',
-                isStandardUserMessage && !isDocumentMode
-                  ? 'text-primary-foreground/80'
-                  : 'text-muted-foreground/80',
-              )}
-            >
-              {formatMessageTime(msg.createdAt, new Date(), i18n.language)}
-            </div>
-          )}
+          {(!toolErrorGroup || isToolErrorExpanded) &&
+            msg.createdAt &&
+            msg.isStreaming && (
+              <div
+                className={cn(
+                  'mt-1 select-none self-end text-[10px] opacity-70',
+                  isStandardUserMessage && !isDocumentMode
+                    ? 'text-primary-foreground/80'
+                    : 'text-muted-foreground/80',
+                )}
+              >
+                {formatMessageTime(msg.createdAt, new Date(), i18n.language)}
+              </div>
+            )}
         </div>
       </div>
     </div>
@@ -334,6 +380,7 @@ const arePropsEqual = (
     prev.followChatScroll !== next.followChatScroll ||
     prev.toolErrorGroup !== next.toolErrorGroup ||
     prev.messageLayout !== next.messageLayout ||
+    prev.toolDetailLevel !== next.toolDetailLevel ||
     prev.groupedMessages !== next.groupedMessages ||
     prev.groupedToolCalls !== next.groupedToolCalls
   ) {

@@ -481,7 +481,16 @@
       "messageLayout": "Diseño de mensajes",
       "messageLayoutDocument": "Documento (diseño de ancho completo)",
       "messageLayoutBubble": "Burbujas (chat clásico)",
-      "messageLayoutDescription": "El modo Documento maximiza el ancho para código y diffs. El modo Burbujas mantiene el estilo de mensajería clásico."
+      "messageLayoutDescription": "El modo Documento maximiza el ancho para código y diffs. El modo Burbujas mantiene el estilo de mensajería clásico.",
+      "colorTheme": "Tema de color",
+      "colorThemeDescription": "Elige un tema de color de acento para la interfaz.",
+      "colorThemes": {
+        "neutral": "Neutro (Monocromo)",
+        "amber": "Libr Ámbar (Calidez)",
+        "violet": "Iris Violeta (IA)",
+        "ocean": "Azul Océano (Calma)",
+        "forest": "Verde Sabia (Enfoque)"
+      }
     },
     "advanced": {
       "maxRetries": "Intentos máximos de reintento",
@@ -1105,6 +1114,7 @@
       "updated": "actualizado"
     },
     "bubble": {
+      "toolError": "Error de ejecución de herramienta",
       "notification": "Notificación",
       "channel": "CANAL",
       "assistant": "ASISTENTE",

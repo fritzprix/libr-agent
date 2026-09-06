@@ -484,7 +484,16 @@
       "messageLayout": "Message Layout",
       "messageLayoutDocument": "Document (full-width coding layout)",
       "messageLayoutBubble": "Bubble (classic chat bubbles)",
-      "messageLayoutDescription": "Document is the default coding layout (full width for code and diffs). Bubble keeps classic messenger-style chat bubbles."
+      "messageLayoutDescription": "Document is the default coding layout (full width for code and diffs). Bubble keeps classic messenger-style chat bubbles.",
+      "colorTheme": "Color Theme",
+      "colorThemeDescription": "Choose an accent color theme for the interface.",
+      "colorThemes": {
+        "neutral": "Neutral (Monochrome)",
+        "amber": "Libr Amber (Warmth)",
+        "violet": "Iris Violet (AI)",
+        "ocean": "Ocean Blue (Calm)",
+        "forest": "Forest Sage (Focus)"
+      }
     },
     "advanced": {
       "maxRetries": "Max Retry Attempts",
@@ -1351,6 +1360,7 @@
       "more": "+{{count}} more"
     },
     "bubble": {
+      "toolError": "Tool Execution Error",
       "notification": "Notification",
       "channel": "CHANNEL",
       "assistant": "ASSISTANT",

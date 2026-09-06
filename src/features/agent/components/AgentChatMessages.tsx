@@ -124,6 +124,7 @@ export function AgentChatMessages() {
   } = useSettings();
   const messageLayout: MessageLayoutStyle =
     display?.messageLayout ?? 'document';
+  const toolDetailLevel = display?.toolDetailLevel ?? 'simple';
 
   // Compact range for divider rendering (null if no compaction has occurred)
   const compactedRange = session?.id
@@ -285,6 +286,7 @@ export function AgentChatMessages() {
               groupedMessages={groupedMessage.messages}
               followChatScroll={followChatScroll}
               messageLayout={messageLayout}
+              toolDetailLevel={toolDetailLevel}
             />
             {compactDivider}
           </div>
@@ -301,6 +303,7 @@ export function AgentChatMessages() {
               followChatScroll={followChatScroll}
               toolErrorGroup={true}
               messageLayout={messageLayout}
+              toolDetailLevel={toolDetailLevel}
             />
             {compactDivider}
           </div>
@@ -343,6 +346,7 @@ export function AgentChatMessages() {
             assistantName={assistantName}
             followChatScroll={followChatScroll}
             messageLayout={messageLayout}
+            toolDetailLevel={toolDetailLevel}
           />
           {compactDivider}
         </div>
@@ -355,6 +359,7 @@ export function AgentChatMessages() {
       isPinned,
       messageLayout,
       retryMessage,
+      toolDetailLevel,
       toolResultsMap,
       workflowStatus,
     ],

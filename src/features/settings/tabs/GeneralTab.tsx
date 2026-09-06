@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui';
+import { ColorThemePicker } from '../components/ColorThemePicker';
 
 const LANGUAGE_OPTIONS = [
   { value: 'en', labelKey: 'settings.language.en', fallback: 'English' },
@@ -154,6 +155,12 @@ function GeneralTabComponent({
         <h3 className="text-lg font-medium text-foreground mb-4">
           {t('settings.display.uiVisualsTitle', 'UI Visuals')}
         </h3>
+        <div className="mb-6">
+          <ColorThemePicker
+            value={localDisplay.colorTheme}
+            onChange={(theme) => onDisplaySettingsChange('colorTheme', theme)}
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="min-w-0">
             <Label

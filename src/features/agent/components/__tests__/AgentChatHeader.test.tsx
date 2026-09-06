@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
@@ -290,5 +290,18 @@ describe('AgentChatHeader', () => {
     expect(
       screen.queryByTestId('header-status-badges'),
     ).not.toBeInTheDocument();
+  });
+
+  it('renders session identity and actions in a single header row', () => {
+    render(<AgentChatHeader />);
+
+    const header = screen.getByTestId('agent-session-header');
+    expect(header).toHaveTextContent('Current Session');
+    expect(
+      within(header).getByRole('button', { name: 'Toggle agent panels' }),
+    ).toBeInTheDocument();
+    expect(
+      within(header).getByRole('button', { name: 'Rename session' }),
+    ).toBeInTheDocument();
   });
 });

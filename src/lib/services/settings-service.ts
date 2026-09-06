@@ -67,6 +67,21 @@ export interface AdvancedSettings {
 /** Chat message chrome: classic bubbles vs full-width coding-agent document stream. */
 export type MessageLayoutStyle = 'document' | 'bubble';
 
+export type ColorTheme = 'neutral' | 'amber' | 'violet' | 'ocean' | 'forest';
+export const COLOR_THEMES: ColorTheme[] = [
+  'neutral',
+  'amber',
+  'violet',
+  'ocean',
+  'forest',
+];
+
+export function isColorTheme(val: unknown): val is ColorTheme {
+  return (
+    typeof val === 'string' && (COLOR_THEMES as readonly string[]).includes(val)
+  );
+}
+
 export interface DisplaySettings {
   metricDisplayMode: 'tooltip' | 'inline';
   prefillDisplayFormat: 'time' | 'tokensPerSecond';
@@ -81,6 +96,7 @@ export interface DisplaySettings {
    * - `bubble`: classic messenger bubbles
    */
   messageLayout: MessageLayoutStyle;
+  colorTheme: ColorTheme;
 }
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
@@ -216,6 +232,7 @@ export const DEFAULT_SETTING: Settings = {
     toolDetailLevel: 'simple',
     fontFamily: 'Pretendard',
     messageLayout: 'document',
+    colorTheme: 'neutral',
   },
   system: {
     maxFileUploadSizeMB: 50,
@@ -287,6 +304,9 @@ export function normalizeDisplaySettings(
     messageLayout: isMessageLayoutStyle(blob.messageLayout)
       ? blob.messageLayout
       : defaults.messageLayout,
+    colorTheme: isColorTheme(blob.colorTheme)
+      ? blob.colorTheme
+      : defaults.colorTheme,
   };
 }
 
