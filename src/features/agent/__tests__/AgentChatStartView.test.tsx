@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,11 +18,23 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
   loggerInfo: vi.fn(),
   loggerError: vi.fn(),
+  settings: {
+    serviceConfigs: {
+      openai: { apiKey: 'test-key' },
+    } as Record<string, unknown>,
+    customProviders: [] as unknown[],
+  },
 }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, options?: string | { defaultValue?: string }) => {
+      if (typeof options === 'string') return options;
+      if (options && typeof options === 'object' && 'defaultValue' in options) {
+        return options.defaultValue ?? key;
+      }
+      return key;
+    },
   }),
 }));
 
@@ -36,6 +48,12 @@ vi.mock('react-router-dom', async () => {
     useNavigate: () => mocks.navigate,
   };
 });
+
+vi.mock('@/hooks/use-settings', () => ({
+  useSettings: () => ({
+    value: mocks.settings,
+  }),
+}));
 
 vi.mock('../hooks/useAssistantSummaries', () => ({
   useAssistantSummaries: () => ({
@@ -116,6 +134,12 @@ describe('AgentChatStartView', () => {
 
     mocks.toastLoading.mockReturnValue('toast-1');
     mocks.createSession.mockResolvedValue({ id: 'session-123' });
+    mocks.settings = {
+      serviceConfigs: {
+        openai: { apiKey: 'test-key' },
+      },
+      customProviders: [],
+    };
   });
 
   it('starts playbook lookups for all assistants without waiting for earlier results', async () => {
@@ -173,5 +197,46 @@ describe('AgentChatStartView', () => {
     expect(mocks.navigate).toHaveBeenCalledWith(
       '/agent/session-123?playbookId=playbook-1',
     );
+  });
+
+  it('renders onboarding banner when no AI providers are configured and clicking action navigates to /settings', () => {
+    mocks.settings = {
+      serviceConfigs: {},
+      customProviders: [],
+    };
+
+    const { getByTestId, getByRole } = render(
+      <MemoryRouter initialEntries={['/agent']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    const banner = getByTestId('onboarding-banner');
+    expect(banner).toBeInTheDocument();
+
+    const settingsButton = getByRole('button', {
+      name: /Configure AI Model/i,
+    });
+    expect(settingsButton).toBeInTheDocument();
+
+    fireEvent.click(settingsButton);
+    expect(mocks.navigate).toHaveBeenCalledWith('/settings');
+  });
+
+  it('does not render onboarding banner when AI providers are configured', () => {
+    mocks.settings = {
+      serviceConfigs: {
+        openai: { apiKey: 'test-key' },
+      },
+      customProviders: [],
+    };
+
+    const { queryByTestId } = render(
+      <MemoryRouter initialEntries={['/agent']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    expect(queryByTestId('onboarding-banner')).not.toBeInTheDocument();
   });
 });

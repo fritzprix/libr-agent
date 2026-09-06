@@ -1267,7 +1267,8 @@
       "model": "Model",
       "loading": "Loading...",
       "refreshModels": "Refresh models",
-      "refreshRequiresApiKey": "Add an API key to enable model refresh"
+      "refreshRequiresApiKey": "Add an API key to enable model refresh",
+      "configureRequired": "Configure AI Model"
     },
     "toolsModal": {
       "title": "Available Tools",
@@ -1405,6 +1406,9 @@
       "heroSubtitle": "Select an assistant to begin a new autonomous session.",
       "builtinAssistants": "Built-in Assistants",
       "myAssistants": "My Assistants",
+      "onboardingBannerTitle": "AI Model Configuration Required",
+      "onboardingBannerDesc": "To start using agent sessions, please configure an AI model provider (OpenAI, Anthropic, Ollama, etc.) first.",
+      "goToSettings": "Configure AI Model",
       "assistantsLoadFailed": "Failed to load assistants.",
       "noAssistantsAvailable": "No assistants available yet.",
       "createAssistant": "Create Assistant",
@@ -1547,7 +1551,8 @@
     "title": "Error",
     "unknownError": "An unknown error occurred.",
     "retrying": "Retrying...",
-    "tryAgain": "Try Again"
+    "tryAgain": "Try Again",
+    "goToSettings": "Configure API Key in Settings"
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",

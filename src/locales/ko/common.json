@@ -1267,7 +1267,8 @@
       "model": "모델",
       "loading": "로딩 중...",
       "refreshModels": "모델 새로고침",
-      "refreshRequiresApiKey": "모델 새로고침을 사용하려면 API 키를 추가하세요"
+      "refreshRequiresApiKey": "모델 새로고침을 사용하려면 API 키를 추가하세요",
+      "configureRequired": "AI 모델 설정 필요"
     },
     "toolsModal": {
       "title": "사용 가능한 도구",
@@ -1405,6 +1406,9 @@
       "heroSubtitle": "새로운 자율 세션을 시작하려면 어시스턴트를 선택하세요.",
       "builtinAssistants": "내장 어시스턴트",
       "myAssistants": "내 어시스턴트",
+      "onboardingBannerTitle": "AI 모델 설정이 필요합니다",
+      "onboardingBannerDesc": "에이전트 세션을 시작하려면 AI 모델 제공자(OpenAI, Anthropic, Ollama 등)를 먼저 설정해야 합니다.",
+      "goToSettings": "AI 모델 설정하러 가기",
       "assistantsLoadFailed": "어시스턴트를 불러오지 못했습니다.",
       "noAssistantsAvailable": "아직 사용 가능한 어시스턴트가 없습니다.",
       "createAssistant": "어시스턴트 생성",
@@ -1527,7 +1531,8 @@
     "title": "오류",
     "unknownError": "알 수 없는 오류가 발생했습니다.",
     "retrying": "재시도 중...",
-    "tryAgain": "다시 시도"
+    "tryAgain": "다시 시도",
+    "goToSettings": "설정에서 API 키 확인하기"
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",

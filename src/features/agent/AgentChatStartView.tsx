@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { AlertCircle, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
 import { AssistantSelectionCard } from './components/AssistantSelectionCard';
@@ -9,6 +10,8 @@ import { toast } from 'sonner';
 import { getPlaybook } from '@/lib/backend/playbooks';
 import { getAssistant, type AssistantSummary } from '@/lib/backend/assistants';
 import { useAssistantSummaries } from './hooks/useAssistantSummaries';
+import { useSettings } from '@/hooks/use-settings';
+import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
 
 const logger = getLogger('AgentChatStartView');
 
@@ -49,6 +52,7 @@ async function findPlaybookMatch(
 export default function AgentChatStartView() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { value: settings } = useSettings();
   const { assistants, loading, error } = useAssistantSummaries();
   const { createSession } = useAgentSessionListActions();
   const [isCreating, setIsCreating] = useState(false);
@@ -58,6 +62,11 @@ export default function AgentChatStartView() {
   const [searchParams] = useSearchParams();
   const processingPlaybookRef = useRef(false);
   const playbookId = searchParams.get('playbookId');
+
+  const hasConfiguredProviders = useMemo(
+    () => listConfiguredProviderGroups(settings).length > 0,
+    [settings],
+  );
 
   // Handle Playbook Auto-Start
   useEffect(() => {
@@ -188,6 +197,41 @@ export default function AgentChatStartView() {
             {t('agent.start.heroSubtitle')}
           </p>
         </div>
+
+        {/* Onboarding Banner */}
+        {!hasConfiguredProviders && (
+          <div
+            data-testid="onboarding-banner"
+            className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-card-foreground shadow-sm dark:border-amber-400/30 dark:bg-amber-400/10 animate-in fade-in slide-in-from-top-2 duration-500"
+          >
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 shrink-0 text-amber-500 dark:text-amber-400 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {t('agent.start.onboardingBannerTitle', {
+                    defaultValue: 'AI Model Configuration Required',
+                  })}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {t('agent.start.onboardingBannerDesc', {
+                    defaultValue:
+                      'To start using agent sessions, please configure an AI model provider (OpenAI, Anthropic, Ollama, etc.) first.',
+                  })}
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => navigate('/settings')}
+              size="sm"
+              className="shrink-0 gap-1.5 self-end sm:self-center"
+            >
+              <Settings className="h-4 w-4" />
+              {t('agent.start.goToSettings', {
+                defaultValue: 'Configure AI Model',
+              })}
+            </Button>
+          </div>
+        )}
 
         {/* Built-in Assistants */}
         {builtinAssistants.length > 0 && (

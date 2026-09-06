@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { Message } from '@/models/chat';
 import { BaseBubble } from '@/components/ui/BaseBubble';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import {
   Loader2,
   Key,
   Clock,
+  Settings,
 } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
@@ -27,6 +29,7 @@ interface ErrorBubbleProps {
 export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
   ({ error, onRetry }) => {
     const { t } = useTranslation('common');
+    const navigate = useNavigate();
     const [retrying, setRetrying] = useState(false);
     const lastLoggedErrorKeyRef = useRef<string | null>(null);
 
@@ -134,6 +137,18 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
             {error?.displayMessage ||
               t('errorBubble.unknownError', 'An unknown error occurred.')}
           </p>
+
+          {errorType === 'AUTHENTICATION_ERROR' && (
+            <Button
+              onClick={() => navigate('/settings')}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              {t('errorBubble.goToSettings', 'Configure API Key in Settings')}
+            </Button>
+          )}
 
           {error?.recoverable && (
             <Button
