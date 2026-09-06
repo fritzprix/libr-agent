@@ -11,6 +11,8 @@ vi.mock('@/context/SettingsContext', () => ({
   useSettings: () => ({
     value: {
       advanced: { defaultMaxOutputTokens: 4096 },
+      serviceConfigs: { openai: { apiKey: 'test-key' } },
+      customProviders: [],
     },
   }),
 }));

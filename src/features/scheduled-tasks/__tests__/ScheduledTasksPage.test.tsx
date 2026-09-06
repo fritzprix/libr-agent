@@ -294,8 +294,12 @@ test('ScheduledTasksPage renders open walkthrough button and opens dialog when c
 
   fireEvent.click(walkthroughButton);
 
-  expect(screen.getByRole('dialog')).toBeInTheDocument();
-  expect(
-    screen.getByText(/recipes\.morningBriefing\.modalTitle|모닝 테크 & 금융 브리핑 세팅/),
-  ).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /recipes\.morningBriefing\.modalTitle|모닝 테크 & 금융 브리핑 세팅/,
+      ),
+    ).toBeInTheDocument();
+  });
 });

@@ -12,6 +12,7 @@ import type { AgentResponse, AgentSessionMetadata } from '@/models/agent-ipc';
 import type { AssistantDto } from '@/lib/backend/assistants';
 import { parseAssistant } from '@/models/validation';
 import { useSettings } from '@/context/SettingsContext';
+import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
 import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
 import { checkDroppedPathType } from '@/lib/backend';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
@@ -357,6 +358,23 @@ export function useAgentDraftChat() {
     )
       return;
 
+    const hasConfiguredProviders =
+      listConfiguredProviderGroups(settings).length > 0;
+    if (!hasConfiguredProviders) {
+      toast.error(
+        t('agent.draft.llmRequired', {
+          defaultValue: 'AI 모델 제공자를 먼저 설정해야 합니다.',
+        }),
+        {
+          action: {
+            label: t('common.settings', { defaultValue: '설정' }),
+            onClick: () => navigate('/settings?tab=ai-models'),
+          },
+        },
+      );
+      return;
+    }
+
     if (workspaceIsolation === 'docker' && !dockerImage.trim()) {
       toast.error(t('agent.draft.dockerImageRequired'));
       return;
@@ -585,8 +603,11 @@ export function useAgentDraftChat() {
   ]);
 
   useEffect(() => {
+    const hasConfiguredProviders =
+      listConfiguredProviderGroups(settings).length > 0;
     if (
       searchParams.get('autoSubmit') === 'true' &&
+      hasConfiguredProviders &&
       !isLoadingAssistant &&
       assistant &&
       input.trim() &&

@@ -31,7 +31,11 @@ import {
   listMCPServerPresets,
   type MCPServerPreset,
 } from '@/lib/backend/mcp-server-config';
-import { createAssistant, updateAssistant } from '@/lib/backend/assistants';
+import {
+  createAssistant,
+  updateAssistant,
+  getAssistant,
+} from '@/lib/backend/assistants';
 import {
   createScheduledTask,
   updateScheduledTask,
@@ -162,6 +166,12 @@ export function MorningBriefingWalkthroughDialog({
       let targetAssistant: { id: string };
       if (existingAssistant) {
         targetAssistant = existingAssistant;
+        let existingFull = null;
+        try {
+          existingFull = await getAssistant(existingAssistant.id);
+        } catch (e) {
+          logger.warn('Failed to fetch existing assistant details', e);
+        }
         await updateAssistant({
           id: existingAssistant.id,
           name: MORNING_BRIEFING_RECIPE.assistantTemplate.name,
@@ -171,8 +181,10 @@ export function MorningBriefingWalkthroughDialog({
             MORNING_BRIEFING_RECIPE.assistantTemplate
               .allowedBuiltInServiceAliases,
           mcpServerIds: installedServerIds,
-          deletionProtected: false,
-          createdAt: new Date(),
+          deletionProtected: existingFull?.deletionProtected ?? false,
+          avatar: existingFull?.avatar,
+          disabledSkills: existingFull?.disabledSkills,
+          createdAt: existingFull?.createdAt ?? new Date(),
           updatedAt: new Date(),
         });
       } else {

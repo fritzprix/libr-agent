@@ -417,7 +417,22 @@ export default function AgentChatStartView() {
         <Suspense fallback={null}>
           <MorningBriefingWalkthroughDialog
             open={walkthroughOpen}
-            onOpenChange={setWalkthroughOpen}
+            onOpenChange={(open) => {
+              setWalkthroughOpen(open);
+              if (!open) {
+                try {
+                  const completed =
+                    localStorage.getItem(
+                      'libragent:morning-briefing:completed',
+                    ) === 'true';
+                  if (completed) {
+                    setIsRecipeDismissed(true);
+                  }
+                } catch {
+                  // ignore localStorage read error
+                }
+              }
+            }}
           />
         </Suspense>
       )}
