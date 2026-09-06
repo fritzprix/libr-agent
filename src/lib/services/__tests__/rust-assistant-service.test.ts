@@ -99,7 +99,7 @@ describe('RustAssistantService', () => {
   });
 
   describe('getList', () => {
-    it('should calculate slices and pass to createPage correctly', async () => {
+    it('should pass the full list to createPage for paging', async () => {
       const params = { page: 1, pageSize: 10 };
       vi.mocked(safeInvoke).mockResolvedValue([mockAssistantDto, mockAssistantDto]);
       vi.mocked(createPage).mockReturnValue(mockPage);
@@ -108,12 +108,49 @@ describe('RustAssistantService', () => {
 
       expect(safeInvoke).toHaveBeenCalledWith('list_assistants');
       expect(createPage).toHaveBeenCalledWith(
-        [mockAssistant, mockAssistant], // start 0, end 10
+        [mockAssistant, mockAssistant],
         1,
         10,
-        2
+        2,
       );
       expect(result).toEqual(mockPage);
+    });
+
+    it('should not pre-slice before createPage (avoids empty page 2)', async () => {
+      const many = Array.from({ length: 25 }, (_, i) => ({
+        ...mockAssistantDto,
+        id: String(i + 1),
+        name: `A${i + 1}`,
+      }));
+      vi.mocked(safeInvoke).mockResolvedValue(many);
+      vi.mocked(createPage).mockImplementation(
+        (items, page, pageSize, totalItems) => ({
+          items: (items as Assistant[]).slice(
+            (page - 1) * pageSize,
+            page * pageSize,
+          ),
+          page,
+          pageSize,
+          totalItems,
+          totalPages: Math.ceil(totalItems / pageSize),
+          hasNextPage: page * pageSize < totalItems,
+          hasPreviousPage: page > 1,
+        }),
+      );
+
+      const result = await service.getList({ page: 2, pageSize: 20 });
+
+      expect(createPage).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ id: '1' }),
+          expect.objectContaining({ id: '25' }),
+        ]),
+        2,
+        20,
+        25,
+      );
+      expect(result.items).toHaveLength(5);
+      expect(result.items[0]?.id).toBe('21');
     });
 
     it('should log and throw an error when getting list fails', async () => {

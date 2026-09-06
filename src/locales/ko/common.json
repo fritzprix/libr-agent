@@ -51,6 +51,9 @@
       "searchResults": "\"{{query}}\"에 대한 {{count}}개의 결과 발견",
       "noResults": "검색과 일치하는 어시스턴트가 없습니다",
       "empty": "사용 가능한 어시스턴트가 없습니다",
+      "loading": "어시스턴트 불러오는 중...",
+      "loadingMore": "어시스턴트 더 불러오는 중...",
+      "totalInfo": "총 {{total}}개 중 {{count}}개",
       "pagination": {
         "previous": "이전",
         "next": "다음",
@@ -78,6 +81,7 @@
       "created": "생성일",
       "updated": "수정일",
       "description": "설명",
+      "fullConfiguration": "전체 설정",
       "expand": "설정 펼치기",
       "collapse": "설정 접기"
     }

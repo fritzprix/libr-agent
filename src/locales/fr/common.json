@@ -51,6 +51,9 @@
       "searchResults": "{{count}} résultats trouvés pour \"{{query}}\"",
       "noResults": "Aucun assistant ne correspond à votre recherche",
       "empty": "Aucun assistant disponible",
+      "loading": "Chargement des assistants...",
+      "loadingMore": "Chargement d'assistants supplémentaires...",
+      "totalInfo": "{{count}} sur {{total}} assistants",
       "pagination": {
         "previous": "Précédent",
         "next": "Suivant",
@@ -78,6 +81,7 @@
       "created": "Créé",
       "updated": "Mis à jour",
       "description": "Description",
+      "fullConfiguration": "Configuration complète",
       "expand": "Développer la configuration",
       "collapse": "Réduire la configuration"
     }

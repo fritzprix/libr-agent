@@ -37,6 +37,10 @@ interface AssistantContextType {
   searchAssistants: (query: string) => Promise<Assistant[]>;
   availableTools: MCPTool[];
   error: Error | null;
+  loading: boolean;
+  isLoadingMore: boolean;
+  hasMore: boolean;
+  loadMore: () => Promise<void>;
   // Pagination support
   paginationMode: 'full' | 'paginated';
   setPaginationMode: (mode: 'full' | 'paginated') => void;
@@ -124,7 +128,9 @@ export const DEFAULT_MCP_CONFIG = {
 
 export function getNewAssistantTemplate(): Assistant {
   return {
-    id: createId(),
+    // Empty until save — AssistantEditor uses falsy id for "Create" title,
+    // and upsertAssistant issues a real id via createId() when missing.
+    id: '',
     name: 'New Assistant',
     systemPrompt:
       'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',
@@ -138,20 +144,28 @@ export function getNewAssistantTemplate(): Assistant {
 
 export const AssistantContextProvider = ({
   children,
+  initialPaginationMode = 'full',
 }: {
   children: ReactNode;
+  initialPaginationMode?: 'full' | 'paginated';
 }) => {
   const [currentAssistant, setCurrentAssistant] = useState<Assistant | null>(
     null,
   );
 
-  // Pagination state
+  // Pagination / infinite-scroll state
   const [paginationMode, setPaginationMode] = useState<'full' | 'paginated'>(
-    'full',
+    initialPaginationMode,
   );
   const [currentPage, setCurrentPage] = useState(1);
   const [totalAssistants, setTotalAssistants] = useState(0);
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<Error | null>(null);
   const pageSize = 20;
+  const loadGenerationRef = useRef(0);
+  const loadMoreInFlightRef = useRef(false);
 
   const { connectServersFromAssistant, availableTools } = useMCPServer();
   const { activeServers } = useMCPServerRegistry();
@@ -161,10 +175,6 @@ export const AssistantContextProvider = ({
     return new AssistantService(settings.agentHubUrl);
   }, [settings.agentHubUrl]);
 
-  // Error state is derived from async operations errors - no longer needs setState
-  // const [error, setError] = useState<Error | null>(null);
-
-  // Helper to show user-friendly error messages
   const showError = useCallback((message: string, errorObj?: unknown) => {
     logger.error(message, { error: errorObj });
     toast.error(message);
@@ -172,61 +182,122 @@ export const AssistantContextProvider = ({
 
   const currentAssistantRef = useRef(currentAssistant);
 
-  const [{ value: assistants, loading, error: loadError }, loadAssistants] =
-    useAsyncFn(async () => {
-      // Ensure default assistants exist
-      // await LocalDatabase.getInstance().ensureDefaultAssistants();
+  const hasMore =
+    paginationMode === 'paginated' && assistants.length < totalAssistants;
 
+  const refreshAssistants = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
+    loadMoreInFlightRef.current = false;
+    setIsLoadingMore(false);
+    setLoading(true);
+    setLoadError(null);
+    try {
       if (paginationMode === 'paginated') {
         const result = await assistantService.getList({
-          page: currentPage,
+          page: 1,
           pageSize,
         });
+        if (generation !== loadGenerationRef.current) return;
+        setAssistants(result.items);
         setTotalAssistants(result.totalItems);
-        logger.debug('fetched assistants (paginated):', {
+        setCurrentPage(1);
+        logger.debug('fetched assistants (page 1):', {
           items: result.items.length,
           total: result.totalItems,
-          page: currentPage,
         });
-        return result.items;
       } else {
-        // Full mode: use large pageSize for backward compatibility
         const result = await assistantService.getList({
           page: 1,
           pageSize: 1000,
         });
+        if (generation !== loadGenerationRef.current) return;
+        setAssistants(result.items);
         setTotalAssistants(result.totalItems);
+        setCurrentPage(1);
         logger.debug('fetched assistants (full mode):', {
           count: result.items.length,
           total: result.totalItems,
         });
-
-        // Warn if total exceeds our batch size
         if (result.totalItems > 1000) {
           logger.warn(
             'Total assistants exceed 1000, consider implementing multi-page loading or switching to paginated mode',
           );
         }
-
-        return result.items;
       }
-    }, [assistantService, paginationMode, currentPage, pageSize]);
+    } catch (err) {
+      if (generation !== loadGenerationRef.current) return;
+      const error = err instanceof Error ? err : new Error(String(err));
+      setLoadError(error);
+      showError('Failed to load assistants.', err);
+    } finally {
+      if (generation === loadGenerationRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [assistantService, paginationMode, pageSize, showError]);
 
-  // Return assistants from DB
-  const allAssistants = useMemo(() => {
-    return assistants ?? [];
-  }, [assistants]);
+  const loadMore = useCallback(async () => {
+    if (
+      paginationMode !== 'paginated' ||
+      loading ||
+      loadMoreInFlightRef.current ||
+      assistants.length >= totalAssistants
+    ) {
+      return;
+    }
+
+    const nextPage = currentPage + 1;
+    const generation = loadGenerationRef.current;
+    loadMoreInFlightRef.current = true;
+    setIsLoadingMore(true);
+    try {
+      const result = await assistantService.getList({
+        page: nextPage,
+        pageSize,
+      });
+      if (generation !== loadGenerationRef.current) return;
+
+      setAssistants((prev) => {
+        const seen = new Set(prev.map((a) => a.id));
+        const appended = result.items.filter((item) => !seen.has(item.id));
+        return [...prev, ...appended];
+      });
+      setTotalAssistants(result.totalItems);
+      setCurrentPage(nextPage);
+      logger.debug('fetched assistants (load more):', {
+        items: result.items.length,
+        total: result.totalItems,
+        page: nextPage,
+      });
+    } catch (err) {
+      if (generation !== loadGenerationRef.current) return;
+      showError('Failed to load more assistants.', err);
+    } finally {
+      loadMoreInFlightRef.current = false;
+      if (generation === loadGenerationRef.current) {
+        setIsLoadingMore(false);
+      }
+    }
+  }, [
+    paginationMode,
+    loading,
+    assistants.length,
+    totalAssistants,
+    currentPage,
+    assistantService,
+    pageSize,
+    showError,
+  ]);
+
+  // Reload when mode/service changes (and on mount)
+  useEffect(() => {
+    void refreshAssistants();
+  }, [refreshAssistants]);
 
   const assistantsRef = useRef(assistants);
   useEffect(() => {
     assistantsRef.current = assistants;
   }, [assistants]);
-
-  useEffect(() => {
-    if (!loading && !assistants) {
-      loadAssistants();
-    }
-  }, [loadAssistants, loading, assistants]);
 
   // Track previous assistant ID to prevent toast on initial load
   const prevAssistantIdRef = useRef<string | null>(null);
@@ -290,7 +361,7 @@ export const AssistantContextProvider = ({
         if (currentAssistant?.id === assistantToSave.id || !currentAssistant) {
           setCurrentAssistant(assistantToSave);
         }
-        await loadAssistants();
+        await refreshAssistants();
         return assistantToSave;
       } catch (err) {
         showError('Failed to save assistant.', err);
@@ -298,20 +369,25 @@ export const AssistantContextProvider = ({
         return undefined;
       }
     },
-    [currentAssistant, loadAssistants, showError, assistantService],
+    [currentAssistant, refreshAssistants, showError, assistantService],
   );
 
   const [{ error: deleteError }, deleteAssistant] = useAsyncFn(
     async (assistantId: string) => {
       try {
         await assistantService.delete(assistantId);
-        await loadAssistants();
+        if (currentAssistantRef.current?.id === assistantId) {
+          setCurrentAssistant(null);
+        }
+        // Soft-remove so infinite-scroll position / loaded pages stay intact
+        setAssistants((prev) => prev.filter((a) => a.id !== assistantId));
+        setTotalAssistants((prev) => Math.max(0, prev - 1));
       } catch (err) {
         showError('Failed to delete assistant.', err);
         throw err; // Re-throw for caller to handle
       }
     },
-    [loadAssistants, showError, assistantService],
+    [showError, assistantService],
   );
 
   const searchAssistants = useCallback(
@@ -333,7 +409,7 @@ export const AssistantContextProvider = ({
   }, [saveError, deleteError, loadError]);
 
   useEffect(() => {
-    if (!loading && assistants && !currentAssistant) {
+    if (!loading && assistants.length > 0 && !currentAssistant) {
       // Select the first assistant by default (no implicit default)
       const a = assistants[0];
       if (a) {
@@ -348,9 +424,9 @@ export const AssistantContextProvider = ({
 
   const getById = useCallback(
     (id: string) => {
-      return allAssistants.find((a) => a.id === id) || null;
+      return assistants.find((a) => a.id === id) || null;
     },
-    [allAssistants],
+    [assistants],
   );
 
   // Debounce MCP server reconnection to avoid rapid successive calls
@@ -409,20 +485,20 @@ export const AssistantContextProvider = ({
   useEffect(() => {
     const unsubscribe = assistantService.onRevalidate((event) => {
       logger.debug('Local assistant service changed, refreshing...', event);
-      loadAssistants();
+      void refreshAssistants();
     });
     return unsubscribe;
-  }, [assistantService, loadAssistants]);
+  }, [assistantService, refreshAssistants]);
 
   // Subscribe to agent:event for AI agent resource updates via centralized hook
   useBackendResource('assistant', () => {
     logger.debug('Agent updated assistant resource, refreshing assistants...');
-    loadAssistants();
+    void refreshAssistants();
   });
 
   const contextValue: AssistantContextType = useMemo(
     () => ({
-      assistants: allAssistants,
+      assistants,
       currentAssistant,
       setCurrentAssistant,
       getById,
@@ -431,6 +507,10 @@ export const AssistantContextProvider = ({
       deleteAssistant: deleteAssistant,
       searchAssistants,
       error: error ?? null,
+      loading,
+      isLoadingMore,
+      hasMore,
+      loadMore,
       availableTools,
       paginationMode,
       setPaginationMode,
@@ -440,7 +520,7 @@ export const AssistantContextProvider = ({
       totalAssistants,
     }),
     [
-      allAssistants,
+      assistants,
       currentAssistant,
       setCurrentAssistant,
       getCurrent,
@@ -448,6 +528,10 @@ export const AssistantContextProvider = ({
       deleteAssistant,
       searchAssistants,
       error,
+      loading,
+      isLoadingMore,
+      hasMore,
+      loadMore,
       getById,
       availableTools,
       paginationMode,

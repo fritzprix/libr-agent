@@ -33,19 +33,22 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 describe('useAssistantsList', () => {
-  const mockSetPaginationMode = vi.fn();
   const mockSearchAssistants = vi.fn();
   
   const fixedDate = new Date('2026-03-13T00:00:00Z');
   
-  const createMockAssistant = (id: string, name: string): Assistant => ({
+  const createMockAssistant = (
+    id: string,
+    name: string,
+    mcpServerIds: string[] = id === '1' ? ['mcp-1'] : [],
+  ): Assistant => ({
     id,
     name,
     systemPrompt: 'You are an assistant',
     deletionProtected: false,
     createdAt: fixedDate,
     updatedAt: fixedDate,
-    mcpServerIds: id === '1' ? ['mcp-1'] : [],
+    mcpServerIds,
   });
 
   const mockAssistants = [createMockAssistant('1', 'Assistant 1')];
@@ -61,17 +64,10 @@ describe('useAssistantsList', () => {
     vi.mocked(useAssistantContext).mockReturnValue({
       assistants: mockAssistants,
       searchAssistants: mockSearchAssistants,
-      setPaginationMode: mockSetPaginationMode,
+      deleteAssistant: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof useAssistantContext>);
     vi.mocked(listAvailableBuiltinServerDefinitions).mockResolvedValue([]);
     vi.mocked(dbUtils.getMCPServersByIds).mockResolvedValue([]);
-  });
-
-  it('sets pagination mode to paginated on mount and resets on unmount', () => {
-    const { unmount } = renderHook(() => useAssistantsList(), { wrapper });
-    expect(mockSetPaginationMode).toHaveBeenCalledWith('paginated');
-    unmount();
-    expect(mockSetPaginationMode).toHaveBeenCalledWith('full');
   });
 
   it('loads builtin tools map on mount', async () => {
@@ -92,6 +88,41 @@ describe('useAssistantsList', () => {
     await waitFor(() => {
       expect(result.current.mcpServersMap).toEqual({ 'mcp-1': 'Server 1' });
     });
+  });
+
+  it('loads MCP servers from search results not on the current page', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockSearchAssistants.mockResolvedValueOnce([
+      createMockAssistant('9', 'Off-page', ['mcp-search-only']),
+    ]);
+    vi.mocked(dbUtils.getMCPServersByIds).mockImplementation(async (ids) => {
+      return (ids as string[]).map(
+        (id) =>
+          ({
+            id,
+            name: id === 'mcp-search-only' ? 'Search Server' : `Name ${id}`,
+          }) as unknown as MCPServerEntity,
+      );
+    });
+
+    const { result } = renderHook(() => useAssistantsList(), { wrapper });
+
+    await act(async () => {
+      result.current.handleSearch('off');
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
+    await waitFor(() => {
+      expect(result.current.searchResults).toHaveLength(1);
+    });
+    await waitFor(() => {
+      expect(result.current.mcpServersMap['mcp-search-only']).toBe(
+        'Search Server',
+      );
+    });
+    vi.useRealTimers();
   });
 
   it('handles search and prevents stale results', async () => {
@@ -192,6 +223,39 @@ describe('useAssistantsList', () => {
       expect(result.current.isSearching).toBe(false);
     });
     expect(result.current.searchResults).toEqual([createMockAssistant('2', 'Result 2')]);
+    vi.useRealTimers();
+  });
+
+  it('optimistically removes an assistant after exit animation and calls deleteAssistant', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const mockDelete = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useAssistantContext).mockReturnValue({
+      assistants: mockAssistants,
+      searchAssistants: mockSearchAssistants,
+      deleteAssistant: mockDelete,
+    } as unknown as ReturnType<typeof useAssistantContext>);
+
+    const { result } = renderHook(() => useAssistantsList(), { wrapper });
+    expect(result.current.displayedAssistants).toHaveLength(1);
+
+    let deletePromise: Promise<void>;
+    await act(async () => {
+      deletePromise = result.current.handleDeleteAssistant('1');
+    });
+
+    expect(result.current.exitingIds.has('1')).toBe(true);
+    expect(result.current.displayedAssistants).toHaveLength(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(220);
+    });
+
+    await act(async () => {
+      await deletePromise!;
+    });
+
+    expect(result.current.displayedAssistants).toHaveLength(0);
+    expect(mockDelete).toHaveBeenCalledWith('1');
     vi.useRealTimers();
   });
 });

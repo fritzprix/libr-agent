@@ -29,6 +29,8 @@ interface AssistantCardProps {
   assistant: Assistant;
   isExpanded: boolean;
   onToggle: () => void;
+  onDelete: (assistantId: string) => Promise<void>;
+  isExiting?: boolean;
   builtinToolsMap?: Record<string, string>;
   mcpServersMap?: Record<string, string>;
 }
@@ -37,11 +39,12 @@ export default function AssistantCard({
   assistant,
   isExpanded,
   onToggle,
+  onDelete,
+  isExiting = false,
   builtinToolsMap,
   mcpServersMap,
 }: AssistantCardProps) {
-  const { deleteAssistant, saveAssistant: upsertAssistant } =
-    useAssistantContext();
+  const { saveAssistant: upsertAssistant } = useAssistantContext();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [edit, setEdit] = useState<boolean>(false);
@@ -67,19 +70,18 @@ export default function AssistantCard({
   }, [assistant.deletionProtected, t]);
 
   const handleDeleteConfirm = useCallback(async () => {
+    if (!assistant.id) return;
     setIsDeleting(true);
+    setShowDeleteConfirm(false);
     try {
-      if (assistant.id) {
-        await deleteAssistant(assistant.id);
-        logger.info('Assistant deleted', { assistantId: assistant.id });
-      }
+      await onDelete(assistant.id);
+      logger.info('Assistant deleted', { assistantId: assistant.id });
     } catch (error) {
       logger.error('Failed to delete assistant', error);
     } finally {
       setIsDeleting(false);
-      setShowDeleteConfirm(false);
     }
-  }, [assistant.id, deleteAssistant, logger]);
+  }, [assistant.id, onDelete, logger]);
 
   const handleDeleteCancel = useCallback(() => {
     setShowDeleteConfirm(false);
@@ -101,14 +103,17 @@ export default function AssistantCard({
   );
 
   return (
-    <EditorProvider initialValue={assistant} onFinalize={handleEditComplete}>
+    <>
       <div
         className={cn(
           'group border rounded-[1.5rem] p-5 transition-all duration-300 relative overflow-hidden bg-background/50 backdrop-blur-sm',
           isExpanded
             ? 'ring-1 ring-primary/20 bg-background/80 shadow-xl'
             : 'hover:border-primary/40 hover:shadow-lg hover:bg-background border-border/50',
+          isExiting &&
+            'pointer-events-none opacity-0 -translate-y-1 scale-[0.98] duration-200',
         )}
+        aria-hidden={isExiting || undefined}
       >
         {/* Identity Row */}
         <div className="flex justify-between items-start mb-4 relative z-10">
@@ -139,7 +144,7 @@ export default function AssistantCard({
               </div>
               <p className="text-xs text-muted-foreground/70 font-sans line-clamp-1 italic">
                 {isExpanded
-                  ? 'Full Configuration'
+                  ? t('assistant.card.fullConfiguration')
                   : assistant.description || assistant.systemPrompt}
               </p>
             </div>
@@ -181,7 +186,7 @@ export default function AssistantCard({
               </div>
             </div>
 
-            {assistant.description && (
+            {assistant.description ? (
               <div className="space-y-2">
                 <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60 font-sans flex items-center gap-1.5">
                   <Square size={10} />
@@ -191,7 +196,7 @@ export default function AssistantCard({
                   {assistant.description}
                 </p>
               </div>
-            )}
+            ) : null}
 
             <div className="flex items-center gap-6 pt-2 border-t border-border/40">
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-sans">
@@ -275,7 +280,7 @@ export default function AssistantCard({
                 size="sm"
                 variant="ghost"
                 onClick={handleDeleteClick}
-                disabled={isDeleting}
+                disabled={isDeleting || isExiting}
                 className="rounded-lg px-4 font-bold font-sans text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 title={
                   assistant.deletionProtected === true
@@ -313,7 +318,14 @@ export default function AssistantCard({
           )}
         </div>
       </div>
-      <AssistantEditor.Dialog open={edit} onOpenChange={setEdit} />
-    </EditorProvider>
+      {edit ? (
+        <EditorProvider
+          initialValue={assistant}
+          onFinalize={handleEditComplete}
+        >
+          <AssistantEditor.Dialog open={edit} onOpenChange={setEdit} />
+        </EditorProvider>
+      ) : null}
+    </>
   );
 }

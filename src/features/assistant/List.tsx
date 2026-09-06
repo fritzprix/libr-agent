@@ -4,39 +4,61 @@ import {
 } from '@/context/AssistantContext';
 import { EditorProvider } from '@/context/EditorContext';
 import type { Assistant } from '@/models/chat';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button } from '../../components/ui';
 import { Input } from '../../components/ui/input';
 import AssistantEditor from './AssistantEditor';
 import AssistantCard from './Card';
 import { useTranslation } from 'react-i18next';
-import { Search, X, Users, Plus } from 'lucide-react';
+import { Search, X, Users, Plus, Loader2 } from 'lucide-react';
 import { useAssistantsList } from './hooks/useAssistantsList';
 
 export default function AssistantList() {
   const {
     assistants,
     saveAssistant,
-    currentPage,
-    setPage,
-    pageSize,
     totalAssistants,
+    loading,
+    isLoadingMore,
+    hasMore,
+    loadMore,
   } = useAssistantContext();
   const { t } = useTranslation('common');
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
 
   const {
     createNew,
     setCreateNew,
     searchQuery,
     searchResults,
+    displayedAssistants,
     isSearching,
     expandedId,
+    exitingIds,
     builtinToolsMap,
     mcpServersMap,
     handleToggleExpand,
     handleSearch,
     handleClearSearch,
+    handleDeleteAssistant,
   } = useAssistantsList();
+
+  const createInitialValue = useMemo(() => {
+    if (!createNew) return null;
+    return getNewAssistantTemplate();
+  }, [createNew]);
+
+  const preserveListScroll = useCallback(() => {
+    const el = listScrollRef.current;
+    if (!el) return;
+    const top = el.scrollTop;
+    const restore = () => {
+      el.scrollTop = top;
+    };
+    restore();
+    requestAnimationFrame(restore);
+  }, []);
 
   const handleCreateComplete = useCallback(
     (assistant: Assistant) => {
@@ -45,9 +67,40 @@ export default function AssistantList() {
     [saveAssistant],
   );
 
-  const displayedAssistants = searchResults ?? assistants;
-  const totalPages = Math.ceil(totalAssistants / pageSize);
-  const showPagination = !searchResults && totalPages > 1;
+  const handleDelete = useCallback(
+    async (assistantId: string) => {
+      await handleDeleteAssistant(assistantId, {
+        preserveScroll: preserveListScroll,
+      });
+    },
+    [handleDeleteAssistant, preserveListScroll],
+  );
+
+  const isSearchActive = searchResults !== null;
+  const canLoadMore = hasMore && !isSearchActive && !loading && !isLoadingMore;
+
+  useEffect(() => {
+    if (!canLoadMore) return;
+
+    const root = listScrollRef.current;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!root || !sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMore();
+        }
+      },
+      { root, rootMargin: '240px 0px', threshold: 0 },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [canLoadMore, loadMore, displayedAssistants.length]);
+
+  const showInitialLoading =
+    loading && assistants.length === 0 && !searchResults;
 
   return (
     <div className="p-8 h-full flex flex-col bg-background/50">
@@ -110,15 +163,29 @@ export default function AssistantList() {
         {searchResults !== null && !isSearching && (
           <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 font-sans ml-1">
             {t('assistant.list.searchResults', {
-              count: searchResults.length,
+              count: displayedAssistants.length,
               query: searchQuery,
             })}
           </div>
         )}
 
         {/* Scrollable assistants list */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-8 no-scrollbar animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
-          {displayedAssistants.length === 0 ? (
+        <div
+          ref={listScrollRef}
+          className="flex-1 min-h-0 overflow-y-auto pr-2 pb-8 no-scrollbar animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150"
+        >
+          {showInitialLoading ? (
+            <div
+              className="h-full flex flex-col items-center justify-center text-center p-12 gap-3"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="w-8 h-8 text-primary/60 animate-spin" />
+              <p className="text-muted-foreground font-sans text-sm">
+                {t('assistant.list.loading')}
+              </p>
+            </div>
+          ) : displayedAssistants.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-12 border border-dashed rounded-[2rem] bg-muted/10">
               <Users className="w-12 h-12 text-muted-foreground/20 mb-4" />
               <p className="text-muted-foreground font-sans max-w-xs">
@@ -134,60 +201,53 @@ export default function AssistantList() {
                   key={assistant.id}
                   assistant={assistant}
                   isExpanded={expandedId === assistant.id}
+                  isExiting={exitingIds.has(assistant.id)}
                   onToggle={() => handleToggleExpand(assistant.id)}
+                  onDelete={handleDelete}
                   builtinToolsMap={builtinToolsMap}
                   mcpServersMap={mcpServersMap}
                 />
               ))}
+
+              {!isSearchActive && hasMore ? (
+                <div
+                  ref={loadMoreSentinelRef}
+                  className="flex items-center justify-center gap-2 py-4"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-primary/60" />
+                      <span className="text-sm text-muted-foreground font-sans">
+                        {t('assistant.list.loadingMore')}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/60 font-sans">
+                      {t('assistant.list.totalInfo', {
+                        count: assistants.length,
+                        total: totalAssistants,
+                      })}
+                    </span>
+                  )}
+                </div>
+              ) : null}
             </div>
           )}
         </div>
 
-        {/* Pagination controls */}
-        {showPagination && (
-          <div className="p-4 border-t border-muted flex-shrink-0">
-            <div className="flex items-center justify-between gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                {t('assistant.list.pagination.previous')}
-              </Button>
-              <div className="text-sm text-muted-foreground">
-                {t('assistant.list.pagination.pageInfo', {
-                  current: currentPage,
-                  total: totalPages,
-                })}
-                <span className="ml-2">
-                  {t('assistant.list.pagination.totalInfo', {
-                    count: assistants.length,
-                    total: totalAssistants,
-                  })}
-                </span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(currentPage + 1)}
-                disabled={currentPage >= totalPages}
-              >
-                {t('assistant.list.pagination.next')}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <EditorProvider
-          initialValue={getNewAssistantTemplate()}
-          onFinalize={handleCreateComplete}
-        >
-          <AssistantEditor.Dialog
-            open={createNew}
-            onOpenChange={setCreateNew}
-          />
-        </EditorProvider>
+        {createNew && createInitialValue ? (
+          <EditorProvider
+            initialValue={createInitialValue}
+            onFinalize={handleCreateComplete}
+          >
+            <AssistantEditor.Dialog
+              open={createNew}
+              onOpenChange={setCreateNew}
+            />
+          </EditorProvider>
+        ) : null}
       </div>
     </div>
   );

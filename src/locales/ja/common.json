@@ -50,6 +50,9 @@
       "searchResults": "\"{{query}}\" の結果が {{count}} 件見つかりました",
       "noResults": "検索に一致するアシスタントは見つかりませんでした",
       "empty": "利用可能なアシスタントはありません",
+      "loading": "アシスタントを読み込み中...",
+      "loadingMore": "アシスタントをさらに読み込み中...",
+      "totalInfo": "{{total}} 件中 {{count}} 件",
       "pagination": {
         "previous": "前へ",
         "next": "次へ",
@@ -77,6 +80,7 @@
       "created": "作成日",
       "updated": "更新日",
       "description": "説明",
+      "fullConfiguration": "完全な設定",
       "expand": "設定を展開",
       "collapse": "設定を折りたたむ"
     }

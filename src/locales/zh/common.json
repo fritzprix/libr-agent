@@ -51,6 +51,9 @@
       "searchResults": "找到 {{count}} 个关于 \"{{query}}\" 的结果",
       "noResults": "未找到匹配您搜索的助手",
       "empty": "没有可用的助手",
+      "loading": "正在加载助手...",
+      "loadingMore": "正在加载更多助手...",
+      "totalInfo": "{{count}} / {{total}} 个助手",
       "pagination": {
         "previous": "上一页",
         "next": "下一页",
@@ -78,6 +81,7 @@
       "created": "创建于",
       "updated": "更新于",
       "description": "描述",
+      "fullConfiguration": "完整配置",
       "expand": "展开配置",
       "collapse": "折叠配置"
     }
