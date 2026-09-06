@@ -575,7 +575,7 @@ export function AgentChatStatusBar() {
       {showWorkflowBanner ? (
         <div
           data-testid="agent-workflow-status"
-          className={`flex items-center justify-between border-b px-4 py-1.5 ${config.className}`}
+          className={`flex items-center justify-between px-4 py-1.5 ${config.className}`}
         >
           <div className="flex items-center gap-2">
             {config.icon}
@@ -620,9 +620,17 @@ export function AgentChatStatusBar() {
         </div>
       ) : null}
 
-      {/* Model / execution / tools — single persistent config strip */}
-      <div className="border-b px-4 py-1.5">
-        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+      {/*
+        Single border-b under the config strip separates chrome from messages.
+        When a workflow banner is above, add border-t so banner/config stay
+        distinct without stacking against the session header border-b.
+      */}
+      <div
+        className={cn(
+          'border-b px-4 py-1.5',
+          showWorkflowBanner && 'border-t border-border/50',
+        )}
+      >        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <div className="min-w-0 w-full sm:w-auto">
             {session && (
               <AgentModelPicker

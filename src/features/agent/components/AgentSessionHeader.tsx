@@ -179,7 +179,7 @@ export default function AgentSessionHeader({
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span
           className={cn(
-            'min-w-0 max-w-[120px] shrink truncate text-xs font-medium text-muted-foreground',
+            'min-w-0 max-w-[160px] shrink truncate text-xs font-medium text-muted-foreground',
             assistantNameClassName,
           )}
           title={resolvedAssistantName}
@@ -190,14 +190,14 @@ export default function AgentSessionHeader({
           ·
         </span>
         {isEditingSessionName ? (
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <Input
               ref={sessionNameInputRef}
               value={draftSessionName}
               onChange={(event) => setDraftSessionName(event.target.value)}
               onKeyDown={handleSessionNameKeyDown}
               disabled={isSavingSessionName}
-              className="h-7 w-[16rem] max-w-[40vw]"
+              className="h-7 min-w-0 flex-1 max-w-[16rem]"
               aria-label={t(
                 'agent.header.renameInputAria',
                 'Edit session title',
@@ -238,10 +238,10 @@ export default function AgentSessionHeader({
             {sessionMetaAction}
           </div>
         ) : (
-          <>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <span
               className={cn(
-                'min-w-0 truncate text-sm font-medium text-foreground/90',
+                'min-w-0 flex-1 truncate text-sm font-medium text-foreground/90',
                 sessionNameClassName,
               )}
               title={resolvedSessionName}
@@ -261,7 +261,7 @@ export default function AgentSessionHeader({
               </Button>
             ) : null}
             {sessionMetaAction}
-          </>
+          </div>
         )}
       </div>
 
