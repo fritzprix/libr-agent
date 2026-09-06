@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import { BrainCircuit, Loader2 } from 'lucide-react';
+import { Loader2, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
@@ -71,7 +71,7 @@ const SettingsPage: FC = function SettingsPage() {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
-              <BrainCircuit size={28} />
+              <Settings size={28} />
             </div>
             <div>
               <h1 className="text-2xl text-foreground font-semibold tracking-tight">

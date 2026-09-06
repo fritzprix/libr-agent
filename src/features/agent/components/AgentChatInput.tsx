@@ -463,12 +463,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     <div className="relative">
       {executionMode === 'yolo' && (
         <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 select-none animate-pulse z-10">
-          ⚡ YOLO Mode Active
+          ⚡ {t('agent.chat.yoloModeActive', 'YOLO Mode Active')}
         </div>
       )}
       {executionMode === 'unsafe' && (
-        <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-destructive/10 border border-destructive/20 px-2.5 py-0.5 text-[10px] font-medium text-destructive select-none animate-pulse z-10">
-          ⚠️ Unsafe Mode Active
+        <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 select-none animate-pulse z-10">
+          ⚡ {t('agent.chat.fullAutoModeActive', 'Full Auto Active')}
         </div>
       )}
       {stage.kind !== 'idle' &&
