@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AgentChatStartView from '../AgentChatStartView';
 import type { Assistant } from '@/models/chat';
@@ -94,9 +94,29 @@ vi.mock('sonner', () => ({
   },
 }));
 
+function createMemoryStorage() {
+  const store = new Map<string, string>();
+  return {
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key);
+    }),
+    clear: vi.fn(() => {
+      store.clear();
+    }),
+  };
+}
+
 describe('AgentChatStartView', () => {
+  let storage: ReturnType<typeof createMemoryStorage>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    storage = createMemoryStorage();
+    vi.stubGlobal('localStorage', storage);
     mocks.assistants = [
       {
         id: 'assistant-1',
@@ -140,6 +160,10 @@ describe('AgentChatStartView', () => {
       },
       customProviders: [],
     };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('starts playbook lookups for all assistants without waiting for earlier results', async () => {
@@ -238,5 +262,72 @@ describe('AgentChatStartView', () => {
     );
 
     expect(queryByTestId('onboarding-banner')).not.toBeInTheDocument();
+  });
+
+  it('renders featured recipe card and clicking button opens walkthrough dialog', async () => {
+    const { getByTestId, findByRole, queryByRole, getByRole } = render(
+      <MemoryRouter initialEntries={['/agent']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    const card = getByTestId('featured-recipe-card');
+    expect(card).toBeInTheDocument();
+    expect(card).toHaveTextContent('모닝 브리핑');
+
+    const startButton = getByRole('button', {
+      name: /가이드 워크스루 시작/i,
+    });
+    expect(startButton).toBeInTheDocument();
+
+    expect(queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(startButton);
+
+    const dialog = await findByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('모닝 테크 & 금융 브리핑 세팅');
+  });
+
+  it('dismisses featured recipe card when dismiss button is clicked', () => {
+    const { getByTestId, queryByTestId } = render(
+      <MemoryRouter initialEntries={['/agent']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    expect(getByTestId('featured-recipe-card')).toBeInTheDocument();
+
+    const dismissButton = getByTestId('dismiss-recipe-button');
+    fireEvent.click(dismissButton);
+
+    expect(queryByTestId('featured-recipe-card')).not.toBeInTheDocument();
+    expect(
+      storage.getItem('libragent:morning-briefing:dismissed'),
+    ).toBe('true');
+  });
+
+  it('does not render featured recipe card when already dismissed in localStorage', () => {
+    storage.setItem('libragent:morning-briefing:dismissed', 'true');
+
+    const { queryByTestId } = render(
+      <MemoryRouter initialEntries={['/agent']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    expect(queryByTestId('featured-recipe-card')).not.toBeInTheDocument();
+  });
+
+  it('does not render featured recipe card when completed in localStorage', () => {
+    storage.setItem('libragent:morning-briefing:completed', 'true');
+
+    const { queryByTestId } = render(
+      <MemoryRouter initialEntries={['/agent']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    expect(queryByTestId('featured-recipe-card')).not.toBeInTheDocument();
   });
 });

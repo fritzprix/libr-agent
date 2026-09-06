@@ -258,6 +258,7 @@ interface ScheduledTasksContentProps {
   tasks: ScheduledTask[];
   deletingIds: Set<string>;
   togglingIds: Set<string>;
+  onOpenWalkthrough?: () => void;
 }
 
 export function ScheduledTasksContent({
@@ -272,6 +273,7 @@ export function ScheduledTasksContent({
   tasks,
   deletingIds,
   togglingIds,
+  onOpenWalkthrough,
 }: ScheduledTasksContentProps) {
   const { t } = useTranslation();
 
@@ -282,7 +284,10 @@ export function ScheduledTasksContent({
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold">
-                {t('scheduledTasks.starterTemplates.title', 'Starter Templates')}
+                {t(
+                  'scheduledTasks.starterTemplates.title',
+                  'Starter Templates',
+                )}
               </h2>
               <p className="text-xs text-muted-foreground">
                 {t(
@@ -353,7 +358,20 @@ export function ScheduledTasksContent({
             })}
           </div>
 
-          <div className="flex items-center justify-center pt-2">
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            {onOpenWalkthrough && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenWalkthrough}
+                className="gap-1.5"
+              >
+                {t(
+                  'scheduledTasks.starterTemplates.openWalkthrough',
+                  '🌅 모닝 브리핑 가이드 워크스루 열기',
+                )}
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"

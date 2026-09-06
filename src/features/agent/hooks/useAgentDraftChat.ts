@@ -58,7 +58,9 @@ export function useAgentDraftChat() {
   const { value: settings } = useSettings();
   const [searchParams] = useSearchParams();
   const [assistant, setAssistant] = useState<Assistant | null>(null);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(
+    () => searchParams.get('prompt') || searchParams.get('initialInput') || '',
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingAssistant, setIsLoadingAssistant] = useState(true);
 
@@ -99,6 +101,7 @@ export function useAgentDraftChat() {
     id: string | number;
     sessionId: string;
   } | null>(null);
+  const autoSubmitRef = useRef(false);
 
   const rustBackend = useRustBackend();
   const { subscribe } = useDnDContext();
@@ -302,6 +305,14 @@ export function useAgentDraftChat() {
     };
     loadAssistant();
   }, [searchParams, navigate, t]);
+
+  useEffect(() => {
+    const promptParam =
+      searchParams.get('prompt') || searchParams.get('initialInput');
+    if (promptParam && !input) {
+      setInput(promptParam);
+    }
+  }, [searchParams, input]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -567,6 +578,27 @@ export function useAgentDraftChat() {
     workspaceIsolation,
     dockerImage,
     t,
+  ]);
+
+  useEffect(() => {
+    if (
+      searchParams.get('autoSubmit') === 'true' &&
+      !isLoadingAssistant &&
+      assistant &&
+      input.trim() &&
+      !isSubmitting &&
+      !autoSubmitRef.current
+    ) {
+      autoSubmitRef.current = true;
+      void submitDraft();
+    }
+  }, [
+    searchParams,
+    isLoadingAssistant,
+    assistant,
+    input,
+    isSubmitting,
+    submitDraft,
   ]);
 
   const handleSubmit = useCallback(

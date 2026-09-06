@@ -2,6 +2,7 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { ScheduledTasksPage } from '@/features/scheduled-tasks/ScheduledTasksPage';
 
 const deleteTask = vi.fn().mockResolvedValue(undefined);
@@ -57,6 +58,17 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
     updateTask: vi.fn(),
     toggleTask: vi.fn(),
     deleteTask,
+  }),
+}));
+
+vi.mock('@/hooks/use-settings', () => ({
+  useSettings: () => ({
+    value: {
+      serviceConfigs: { openai: { apiKey: 'test' } },
+      customProviders: [],
+    },
+    update: vi.fn(),
+    loading: false,
   }),
 }));
 
@@ -143,7 +155,11 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 test('ScheduledTasksPage renders scheduled tasks in a flat list', async () => {
-  render(<ScheduledTasksPage />);
+  render(
+    <MemoryRouter>
+      <ScheduledTasksPage />
+    </MemoryRouter>,
+  );
 
   await waitFor(() => {
     expect(screen.getByText('Test Task 1')).toBeInTheDocument();
@@ -167,7 +183,11 @@ test('ScheduledTasksPage renders scheduled tasks in a flat list', async () => {
 
 test('ScheduledTasksPage confirms before deleting a task', async () => {
   deleteTask.mockClear();
-  render(<ScheduledTasksPage />);
+  render(
+    <MemoryRouter>
+      <ScheduledTasksPage />
+    </MemoryRouter>,
+  );
 
   await waitFor(() => {
     expect(screen.getByText('Test Task 1')).toBeInTheDocument();
@@ -201,7 +221,11 @@ beforeEach(() => {
 
 test('ScheduledTasksPage renders starter templates when there are no tasks', async () => {
   mockTasks = [];
-  render(<ScheduledTasksPage />);
+  render(
+    <MemoryRouter>
+      <ScheduledTasksPage />
+    </MemoryRouter>,
+  );
 
   // Heading / title
   expect(
@@ -251,4 +275,27 @@ test('ScheduledTasksPage renders starter templates when there are no tasks', asy
 
   expect(screen.getByTestId('scheduled-task-modal')).toBeInTheDocument();
   expect(screen.getByTestId('modal-template-id')).toHaveTextContent('');
+});
+
+test('ScheduledTasksPage renders open walkthrough button and opens dialog when clicked', async () => {
+  mockTasks = [];
+  render(
+    <MemoryRouter>
+      <ScheduledTasksPage />
+    </MemoryRouter>,
+  );
+
+  const walkthroughButton = screen.getByRole('button', {
+    name: 'scheduledTasks.starterTemplates.openWalkthrough',
+  });
+  expect(walkthroughButton).toBeInTheDocument();
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+  fireEvent.click(walkthroughButton);
+
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(
+    screen.getByText(/recipes\.morningBriefing\.modalTitle|모닝 테크 & 금융 브리핑 세팅/),
+  ).toBeInTheDocument();
 });

@@ -14,6 +14,7 @@ import { getDateTimeFormatter } from '@/lib/date-utils';
 import { compareScheduledTasks } from './scheduled-task-utils';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import type { StarterTaskTemplate } from './starter-templates';
+import { MorningBriefingWalkthroughDialog } from '@/features/recipes';
 
 const logger = getLogger('ScheduledTasksPage');
 
@@ -48,6 +49,7 @@ export function ScheduledTasksPage() {
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const [selectedTemplate, setSelectedTemplate] =
     useState<StarterTaskTemplate | null>(null);
+  const [walkthroughOpen, setWalkthroughOpen] = useState(false);
 
   const handleCreate = async (data: ScheduledTaskFormData) => {
     await createTask(data);
@@ -199,6 +201,7 @@ export function ScheduledTasksPage() {
             tasks={tasks}
             deletingIds={deletingIds}
             togglingIds={togglingIds}
+            onOpenWalkthrough={() => setWalkthroughOpen(true)}
           />
         </div>
       </div>
@@ -210,6 +213,11 @@ export function ScheduledTasksPage() {
         assistants={assistants}
         onClose={handleCloseModal}
         onSave={editingTask ? handleUpdate : handleCreate}
+      />
+
+      <MorningBriefingWalkthroughDialog
+        open={walkthroughOpen}
+        onOpenChange={setWalkthroughOpen}
       />
     </div>
   );

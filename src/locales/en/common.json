@@ -1045,6 +1045,7 @@
       "approveShortcutBadge": "⌘↵"
     },
     "draft": {
+      "llmRequired": "Please configure an AI model provider first.",
       "send": "Send message",
       "attachFiles": "Attach files",
       "attachedFiles": "Attached Files",
@@ -1417,7 +1418,10 @@
       "assistantNotFound": "Assistant not found",
       "startingPlaybook": "Starting playbook: {{goal}}",
       "failedToStartPlaybookSession": "Failed to start playbook session",
-      "startingSession": "Starting session..."
+      "startingSession": "Starting session...",
+      "featuredRecipeTitle": "Create Your Morning Briefing Assistant in 5 Minutes",
+      "featuredRecipeDesc": "Combine Hacker News tech trends with real-time Yahoo Finance indicators for a daily morning briefing.",
+      "startWalkthrough": "Start Guided Walkthrough"
     },
     "chat": {
       "loadingSession": "Loading session...",
@@ -1461,7 +1465,8 @@
       "pcAuditTitle": "Daily PC Health & Security Audit",
       "pcAuditDesc": "Inspect disk usage, uncommitted Git changes, suspicious processes, and package vulnerabilities every midnight.",
       "webSummaryTitle": "Website Update & Headline Briefing",
-      "webSummaryDesc": "Visit tech news or blogs with the browser every morning to summarize the top 3 headlines."
+      "webSummaryDesc": "Visit tech news or blogs with the browser every morning to summarize the top 3 headlines.",
+      "openWalkthrough": "Open Morning Briefing Walkthrough"
     },
     "disabled": "disabled",
     "nextRun": "Next run: {{time}}",
@@ -1612,5 +1617,33 @@
       "relatedEntity": "Related entity"
     },
     "excerpt": "Excerpt"
+  },
+  "recipes": {
+    "morningBriefing": {
+      "title": "Morning Tech & Finance Briefing",
+      "desc": "Combine Hacker News tech trends with real-time Yahoo Finance indicators for a daily morning briefing.",
+      "modalTitle": "🌅 Morning Tech & Finance Briefing Setup",
+      "step1Title": "Step 1 · Check AI Model Configuration",
+      "step2Title": "Step 2 · Install Free Extensions",
+      "step3Title": "Step 3 · Assistant & Automated Schedule",
+      "connected": "Connected",
+      "required": "Configuration Required",
+      "connectedDesc": "AI model provider is configured and ready for briefing generation.",
+      "unconfiguredTitle": "No AI model provider configured.",
+      "unconfiguredDesc": "To generate briefings, please configure an AI model provider (OpenAI, Anthropic, Ollama, etc.) first.",
+      "goToSettings": "Go to Settings",
+      "freeTag": "💡 100% Free · No API Key Required",
+      "hnTitle": "Hacker News (hn)",
+      "hnDesc": "Fetch trending tech & developer stories from Hacker News in real-time",
+      "yfTitle": "Yahoo Finance (yahoo-finance)",
+      "yfDesc": "Real-time global market indices (S&P 500, Nasdaq, FX, stocks) with no API key",
+      "builtinToolsBadge": "Built-in Tools Enabled",
+      "scheduleBadge": "Daily 09:00 AM (YOLO Mode)",
+      "settingUp": "Setting up...",
+      "actionButton": "🚀 Auto Setup & Receive Briefing Now",
+      "llmRequiredToast": "Please configure an AI model provider first.",
+      "setupSuccess": "Morning Briefing assistant and scheduled task created successfully!",
+      "setupError": "Failed to set up morning briefing."
+    }
   }
 }

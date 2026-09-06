@@ -210,9 +210,9 @@ function ScheduledTaskForm({
           task.scheduleTimezone,
           task.nextRunAt,
         )
-      : (!task && initialTemplate
-          ? initialTemplate.cronExpression
-          : '0 9 * * *');
+      : !task && initialTemplate
+        ? initialTemplate.cronExpression
+        : '0 9 * * *';
   const [cronExpression, setCronExpression] = useState(initialCronExpression);
 
   const [userSelectedAssistantId, setUserSelectedAssistantId] = useState<
@@ -230,7 +230,7 @@ function ScheduledTaskForm({
     ? userSelectedAssistantId
     : hasAssistant(task?.assistantId)
       ? task.assistantId
-      : matchedTemplateAssistant?.id ?? assistants[0]?.id;
+      : (matchedTemplateAssistant?.id ?? assistants[0]?.id);
   const [message, setMessage] = useState(
     task?.message ?? (!task && initialTemplate ? initialTemplate.message : ''),
   );

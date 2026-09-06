@@ -1045,6 +1045,7 @@
       "approveShortcutBadge": "⌘↵"
     },
     "draft": {
+      "llmRequired": "AI 모델 제공자를 먼저 설정해야 합니다.",
       "send": "메시지 보내기",
       "attachFiles": "파일 첨부",
       "attachedFiles": "첨부된 파일",
@@ -1417,7 +1418,10 @@
       "assistantNotFound": "어시스턴트를 찾을 수 없습니다",
       "startingPlaybook": "플레이북 시작 중: {{goal}}",
       "failedToStartPlaybookSession": "플레이북 세션을 시작하지 못했습니다",
-      "startingSession": "세션 시작 중..."
+      "startingSession": "세션 시작 중...",
+      "featuredRecipeTitle": "5분 만에 만드는 나만의 모닝 브리핑 비서",
+      "featuredRecipeDesc": "Hacker News의 테크 트렌드와 Yahoo Finance 실시간 지표를 결합해 매일 아침 브리핑합니다.",
+      "startWalkthrough": "가이드 워크스루 시작"
     },
     "chat": {
       "loadingSession": "세션 불러오는 중...",
@@ -1441,7 +1445,8 @@
       "pcAuditTitle": "내 PC 헬스 & 보안 일일 점검",
       "pcAuditDesc": "매일 자정 디스크 용량, 미커밋 Git 파일, 의심 프로세스 및 패키지 취약점(audit)을 종합 점검합니다.",
       "webSummaryTitle": "웹사이트 변경 및 헤드라인 브리핑",
-      "webSummaryDesc": "매일 아침 브라우저로 기술 뉴스/블로그를 방문해 핵심 헤드라인 3가지를 요약합니다."
+      "webSummaryDesc": "매일 아침 브라우저로 기술 뉴스/블로그를 방문해 핵심 헤드라인 3가지를 요약합니다.",
+      "openWalkthrough": "모닝 브리핑 가이드 워크스루 열기"
     },
     "disabled": "비활성화됨",
     "nextRun": "다음 실행: {{time}}",
@@ -1592,5 +1597,33 @@
       "relatedEntity": "Related entity"
     },
     "excerpt": "Excerpt"
+  },
+  "recipes": {
+    "morningBriefing": {
+      "title": "모닝 테크 & 금융 브리핑",
+      "desc": "Hacker News의 테크 트렌드와 Yahoo Finance 실시간 지표를 결합해 매일 아침 브리핑합니다.",
+      "modalTitle": "🌅 모닝 테크 & 금융 브리핑 세팅 (Morning Briefing Setup)",
+      "step1Title": "Step 1 · AI 모델 설정 확인",
+      "step2Title": "Step 2 · 무료 확장 도구 설치",
+      "step3Title": "Step 3 · 비서 및 자동 실행 스케줄",
+      "connected": "연동 완료",
+      "required": "설정 필요",
+      "connectedDesc": "AI 모델 제공자가 연동되어 브리핑 생성 준비가 완료되었습니다.",
+      "unconfiguredTitle": "AI 모델 제공자가 설정되지 않았습니다.",
+      "unconfiguredDesc": "브리핑을 생성하려면 먼저 AI 모델 제공자(OpenAI, Anthropic, Ollama 등)를 설정해야 합니다.",
+      "goToSettings": "설정으로 이동",
+      "freeTag": "💡 100% 무료 · API 키 불필요",
+      "hnTitle": "Hacker News (hn)",
+      "hnDesc": "Hacker News 실시간 인기/신규 개발 및 기술 트렌드 기사 조회",
+      "yfTitle": "Yahoo Finance (yahoo-finance)",
+      "yfDesc": "S&P 500, 나스닥, 환율, 개별 종목 등 실시간 글로벌 금융 지표 조회 (API 키 없이 즉시 사용)",
+      "builtinToolsBadge": "내장 도구 연동",
+      "scheduleBadge": "매일 09:00 AM (YOLO 모드)",
+      "settingUp": "설정 중...",
+      "actionButton": "🚀 자동 설정 & 지금 브리핑 받아보기",
+      "llmRequiredToast": "AI 모델 제공자를 먼저 설정해야 합니다.",
+      "setupSuccess": "모닝 브리핑 비서와 예약 작업이 설정되었습니다!",
+      "setupError": "설정 중 오류가 발생했습니다."
+    }
   }
 }
