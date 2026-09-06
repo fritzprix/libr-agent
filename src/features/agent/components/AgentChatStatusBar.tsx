@@ -307,14 +307,14 @@ export function AgentChatStatusBar() {
       },
       {
         mode: 'unsafe' as const,
-        label: 'Unsafe',
+        label: 'Full Auto',
         icon: DatabaseZap,
         title: t(
           'agent.statusBar.executionModeUnsafeTitle',
-          'Unsafe mode. Approval and policy enforcement are bypassed. You are fully responsible for tool execution risk.',
+          'Full Auto mode. All tool executions are automatically approved for uninterrupted workflow.',
         ),
-        activeClass: 'bg-destructive/10 text-destructive',
-        iconClass: 'fill-destructive text-destructive',
+        activeClass: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+        iconClass: 'fill-indigo-500 text-indigo-600 dark:text-indigo-400',
       },
     ],
     [t],
@@ -630,7 +630,8 @@ export function AgentChatStatusBar() {
           'border-b px-4 py-1.5',
           showWorkflowBanner && 'border-t border-border/50',
         )}
-      >        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+      >
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <div className="min-w-0 w-full sm:w-auto">
             {session && (
               <AgentModelPicker

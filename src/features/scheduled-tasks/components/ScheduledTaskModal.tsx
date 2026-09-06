@@ -552,7 +552,7 @@ function ScheduledTaskForm({
                 <SelectItem value="unsafe">
                   <span className="flex items-center gap-2">
                     <DatabaseZap className="h-3.5 w-3.5" />
-                    {t('scheduledTasks.modal.executionModeUnsafe', 'Unsafe')}
+                    {t('scheduledTasks.modal.executionModeUnsafe', 'Full Auto')}
                   </span>
                 </SelectItem>
               </SelectContent>
@@ -570,17 +570,17 @@ function ScheduledTaskForm({
                     )
                   : t(
                       'scheduledTasks.modal.executionModeUnsafeHint',
-                      'Approval and policy enforcement are bypassed. You are fully responsible for tool execution risk.',
+                      'All tool executions are automatically approved for continuous, unattended execution.',
                     )}
             </p>
             {executionMode === 'unsafe' && (
               <div
                 role="alert"
-                className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                className="rounded-md border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-600 dark:text-indigo-400"
               >
                 {t(
                   'scheduledTasks.modal.unsafeNotice',
-                  '⚠️ 무인 실행 중 터미널 명령어가 중단되지 않도록 Unsafe 모드가 적용됩니다.',
+                  '⚡ 무인 실행 중 터미널 명령어가 중단되지 않도록 Full Auto 모드가 적용됩니다.',
                 )}
               </div>
             )}

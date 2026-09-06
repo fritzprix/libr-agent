@@ -100,9 +100,12 @@ export const ScheduledTaskRow = memo(function ScheduledTaskRow({
             </Badge>
           )}
           {task.executionMode === 'unsafe' && (
-            <Badge variant="destructive" className="shrink-0 text-xs">
+            <Badge
+              variant="secondary"
+              className="shrink-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-xs border border-indigo-500/30"
+            >
               <DatabaseZap size={10} className="mr-1" />
-              {t('scheduledTasks.executionModeUnsafe', 'Unsafe')}
+              {t('scheduledTasks.executionModeUnsafe', 'Full Auto')}
             </Badge>
           )}
           {!task.enabled && (
@@ -316,11 +319,11 @@ export function ScheduledTasksContent({
                       </div>
                       {template.executionMode === 'unsafe' && (
                         <Badge
-                          variant="destructive"
-                          className="shrink-0 text-xs"
+                          variant="secondary"
+                          className="shrink-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-xs border border-indigo-500/30"
                         >
                           <DatabaseZap size={10} className="mr-1" />
-                          {t('scheduledTasks.executionModeUnsafe', 'Unsafe')}
+                          {t('scheduledTasks.executionModeUnsafe', 'Full Auto')}
                         </Badge>
                       )}
                       {template.executionMode === 'yolo' && (

@@ -375,9 +375,9 @@ describe('AgentChatStatusBar', () => {
 
     expect(screen.getByTestId('execution-mode-control')).toBeInTheDocument();
     expect(screen.queryByText('YOLO Mode')).not.toBeInTheDocument();
-    expect(screen.queryByText('Unsafe Mode')).not.toBeInTheDocument();
+    expect(screen.queryByText('Full Auto Mode')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /unsafe/i }));
+    fireEvent.click(screen.getByRole('button', { name: /full auto/i }));
 
     expect(mocks.setExecutionMode).toHaveBeenCalledWith('unsafe');
   });
