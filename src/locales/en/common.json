@@ -1647,7 +1647,13 @@
       "actionButton": "🚀 Auto Setup & Receive Briefing Now",
       "llmRequiredToast": "Please configure an AI model provider first.",
       "setupSuccess": "Morning Briefing assistant and scheduled task created successfully!",
-      "setupError": "Failed to set up morning briefing."
+      "setupError": "Failed to set up morning briefing.",
+      "assistantName": "Morning Briefing Assistant",
+      "assistantDesc": "Specialized assistant for summarizing Hacker News tech trends and global financial metrics",
+      "assistantSystemPrompt": "You are a professional briefing assistant providing fast and crisp daily summaries of global tech trends and key financial indicators. Use Hacker News (hn tools) to summarize top 3 development/tech topics, and Yahoo Finance (yahoo-finance tools) to report key market indices including S&P 500, Nasdaq, and major currencies into a concise markdown report.",
+      "scheduledTaskName": "Daily 9:00 AM Morning Briefing",
+      "scheduledTaskMessage": "Synthesize today's top 3 Hacker News stories and key market indices (S&P 500, Nasdaq) into a daily morning briefing report.",
+      "testRunPrompt": "Check today's top 3 Hacker News stories and key stock indices, and write today's morning briefing report right now."
     }
   }
 }

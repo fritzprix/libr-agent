@@ -154,13 +154,50 @@ export function MorningBriefingWalkthroughDialog({
         }
       }
 
+      // Resolve localized recipe strings
+      const localizedAssistantName = t(
+        'recipes.morningBriefing.assistantName',
+        {
+          defaultValue: MORNING_BRIEFING_RECIPE.assistantTemplate.name,
+        },
+      );
+      const localizedAssistantDesc = t(
+        'recipes.morningBriefing.assistantDesc',
+        {
+          defaultValue: MORNING_BRIEFING_RECIPE.assistantTemplate.description,
+        },
+      );
+      const localizedAssistantSystemPrompt = t(
+        'recipes.morningBriefing.assistantSystemPrompt',
+        {
+          defaultValue: MORNING_BRIEFING_RECIPE.assistantTemplate.systemPrompt,
+        },
+      );
+      const localizedTaskName = t('recipes.morningBriefing.scheduledTaskName', {
+        defaultValue: MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name,
+      });
+      const localizedTaskMessage = t(
+        'recipes.morningBriefing.scheduledTaskMessage',
+        {
+          defaultValue: MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.message,
+        },
+      );
+      const localizedTestRunPrompt = t(
+        'recipes.morningBriefing.testRunPrompt',
+        {
+          defaultValue: MORNING_BRIEFING_RECIPE.testRunPrompt,
+        },
+      );
+
       // Query existing assistants to prevent duplicate creation
       const existingAssistants =
         (await safeInvoke<Array<{ id: string; name: string }>>(
           'list_assistants',
         )) ?? [];
       const existingAssistant = existingAssistants.find(
-        (a) => a.name === MORNING_BRIEFING_RECIPE.assistantTemplate.name,
+        (a) =>
+          a.name === localizedAssistantName ||
+          a.name === MORNING_BRIEFING_RECIPE.assistantTemplate.name,
       );
 
       let targetAssistant: { id: string };
@@ -174,9 +211,9 @@ export function MorningBriefingWalkthroughDialog({
         }
         await updateAssistant({
           id: existingAssistant.id,
-          name: MORNING_BRIEFING_RECIPE.assistantTemplate.name,
-          description: MORNING_BRIEFING_RECIPE.assistantTemplate.description,
-          systemPrompt: MORNING_BRIEFING_RECIPE.assistantTemplate.systemPrompt,
+          name: localizedAssistantName,
+          description: localizedAssistantDesc,
+          systemPrompt: localizedAssistantSystemPrompt,
           allowedBuiltInServiceAliases:
             MORNING_BRIEFING_RECIPE.assistantTemplate
               .allowedBuiltInServiceAliases,
@@ -190,9 +227,9 @@ export function MorningBriefingWalkthroughDialog({
       } else {
         targetAssistant = await createAssistant({
           id: createId(),
-          name: MORNING_BRIEFING_RECIPE.assistantTemplate.name,
-          description: MORNING_BRIEFING_RECIPE.assistantTemplate.description,
-          systemPrompt: MORNING_BRIEFING_RECIPE.assistantTemplate.systemPrompt,
+          name: localizedAssistantName,
+          description: localizedAssistantDesc,
+          systemPrompt: localizedAssistantSystemPrompt,
           allowedBuiltInServiceAliases:
             MORNING_BRIEFING_RECIPE.assistantTemplate
               .allowedBuiltInServiceAliases,
@@ -209,28 +246,30 @@ export function MorningBriefingWalkthroughDialog({
           'list_scheduled_tasks',
         )) ?? [];
       const existingTask = existingTasks.find(
-        (t) => t.name === MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name,
+        (t) =>
+          t.name === localizedTaskName ||
+          t.name === MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name,
       );
 
       if (existingTask) {
         await updateScheduledTask(existingTask.id, {
-          name: MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name,
+          name: localizedTaskName,
           cronExpression:
             MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.cronExpression,
           executionMode:
             MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.executionMode,
           assistantId: targetAssistant.id,
-          message: MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.message,
+          message: localizedTaskMessage,
         });
       } else {
         await createScheduledTask({
-          name: MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name,
+          name: localizedTaskName,
           cronExpression:
             MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.cronExpression,
           executionMode:
             MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.executionMode,
           assistantId: targetAssistant.id,
-          message: MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.message,
+          message: localizedTaskMessage,
         });
       }
 
@@ -244,9 +283,7 @@ export function MorningBriefingWalkthroughDialog({
       onOpenChange(false);
 
       // Navigate to draft view with prompt ready and autoSubmit=true
-      const promptQuery = encodeURIComponent(
-        MORNING_BRIEFING_RECIPE.testRunPrompt,
-      );
+      const promptQuery = encodeURIComponent(localizedTestRunPrompt);
       navigate(
         `/agent/draft?assistantId=${targetAssistant.id}&prompt=${promptQuery}&autoSubmit=true`,
       );
@@ -452,7 +489,10 @@ export function MorningBriefingWalkthroughDialog({
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5">
                     <p className="text-xs font-medium text-foreground">
-                      {MORNING_BRIEFING_RECIPE.assistantTemplate.name}
+                      {t('recipes.morningBriefing.assistantName', {
+                        defaultValue:
+                          MORNING_BRIEFING_RECIPE.assistantTemplate.name,
+                      })}
                     </p>
                     <Badge variant="outline" className="text-[10px] h-4 px-1">
                       {t('recipes.morningBriefing.builtinToolsBadge', {
@@ -461,7 +501,10 @@ export function MorningBriefingWalkthroughDialog({
                     </Badge>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {MORNING_BRIEFING_RECIPE.assistantTemplate.description}
+                    {t('recipes.morningBriefing.assistantDesc', {
+                      defaultValue:
+                        MORNING_BRIEFING_RECIPE.assistantTemplate.description,
+                    })}
                   </p>
                 </div>
               </div>
@@ -471,7 +514,10 @@ export function MorningBriefingWalkthroughDialog({
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5">
                     <p className="text-xs font-medium text-foreground">
-                      {MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name}
+                      {t('recipes.morningBriefing.scheduledTaskName', {
+                        defaultValue:
+                          MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name,
+                      })}
                     </p>
                     <Badge
                       variant="default"
@@ -483,7 +529,10 @@ export function MorningBriefingWalkthroughDialog({
                     </Badge>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.message}
+                    {t('recipes.morningBriefing.scheduledTaskMessage', {
+                      defaultValue:
+                        MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.message,
+                    })}
                   </p>
                 </div>
               </div>
