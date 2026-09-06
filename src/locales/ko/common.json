@@ -479,7 +479,16 @@
       "messageLayout": "메시지 레이아웃",
       "messageLayoutDocument": "문서형 (전체 너비 코딩 레이아웃)",
       "messageLayoutBubble": "말풍선 (클래식 채팅)",
-      "messageLayoutDescription": "문서형이 기본 코딩 레이아웃입니다(코드·diff 전체 너비). 말풍선은 클래식 메신저 스타일을 유지합니다."
+      "messageLayoutDescription": "문서형이 기본 코딩 레이아웃입니다(코드·diff 전체 너비). 말풍선은 클래식 메신저 스타일을 유지합니다.",
+      "colorTheme": "컬러 테마",
+      "colorThemeDescription": "인터페이스의 강조 컬러 테마를 선택합니다.",
+      "colorThemes": {
+        "neutral": "뉴트럴 (모노크롬)",
+        "amber": "리브르 앰버 (따뜻함)",
+        "violet": "아이리스 바이올렛 (AI)",
+        "ocean": "오션 블루 (차분함)",
+        "forest": "포레스트 세이지 (집중)"
+      }
     },
     "advanced": {
       "maxRetries": "최대 재시도 횟수",
@@ -1347,6 +1356,7 @@
       "more": "+{{count}}개 더"
     },
     "bubble": {
+      "toolError": "도구 실행 오류",
       "notification": "알림",
       "channel": "채널",
       "assistant": "어시스턴트",

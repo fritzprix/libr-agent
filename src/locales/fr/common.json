@@ -477,7 +477,16 @@
       "messageLayout": "Disposition des messages",
       "messageLayoutDocument": "Document (mise en page pleine largeur)",
       "messageLayoutBubble": "Bulles (chat classique)",
-      "messageLayoutDescription": "Le mode Document maximise la largeur pour le code et les diffs. Le mode Bulles conserve le style messagerie classique."
+      "messageLayoutDescription": "Le mode Document maximise la largeur pour le code et les diffs. Le mode Bulles conserve le style messagerie classique.",
+      "colorTheme": "Thème de couleur",
+      "colorThemeDescription": "Choisissez un thème de couleur d'accent pour l'interface.",
+      "colorThemes": {
+        "neutral": "Neutre (Monochrome)",
+        "amber": "Libr Ambre (Chaleur)",
+        "violet": "Iris Violet (IA)",
+        "ocean": "Bleu Océan (Calme)",
+        "forest": "Sauge Forêt (Concentration)"
+      }
     },
     "advanced": {
       "maxRetries": "Nombre max de tentatives",
@@ -1101,6 +1110,7 @@
       "updated": "mis à jour"
     },
     "bubble": {
+      "toolError": "Erreur d'exécution de l'outil",
       "notification": "Notification",
       "channel": "CANAL",
       "assistant": "ASSISTANT",

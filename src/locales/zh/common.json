@@ -477,7 +477,16 @@
       "messageLayout": "消息布局",
       "messageLayoutDocument": "文档式（全宽编码布局）",
       "messageLayoutBubble": "气泡（经典聊天气泡）",
-      "messageLayoutDescription": "文档模式最大化代码与 diff 的可读宽度。气泡模式保留经典聊天气泡样式。"
+      "messageLayoutDescription": "文档模式最大化代码与 diff 的可读宽度。气泡模式保留经典聊天气泡样式。",
+      "colorTheme": "色彩主题",
+      "colorThemeDescription": "选择界面的强调色彩主题。",
+      "colorThemes": {
+        "neutral": "中性黑白 (单色)",
+        "amber": "Libr 琥珀 (温暖)",
+        "violet": "鸢尾紫 (AI)",
+        "ocean": "海洋蓝 (沉静)",
+        "forest": "森林灰绿 (专注)"
+      }
     },
     "advanced": {
       "maxRetries": "最大重试次数",
@@ -1101,6 +1110,7 @@
       "updated": "已更新"
     },
     "bubble": {
+      "toolError": "工具执行错误",
       "notification": "通知",
       "channel": "频道",
       "assistant": "助手",

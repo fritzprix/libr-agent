@@ -146,10 +146,11 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
 
   // Auto-expand on error transition (non-forced results only).
   // Forced-visible results already mount details without expand state.
+  // In simple mode, keep collapsed by default; auto-expand in developer mode only.
   if (!forceVisible && hasError !== prevHasErrorRef.current) {
     const errorBecameVisible = !prevHasErrorRef.current && hasError;
     prevHasErrorRef.current = hasError;
-    if (errorBecameVisible) {
+    if (errorBecameVisible && !isSimpleMode) {
       setIsExpanded(true);
     }
   } else if (hasError !== prevHasErrorRef.current) {

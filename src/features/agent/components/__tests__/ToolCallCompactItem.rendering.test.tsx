@@ -78,7 +78,7 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
     expect(queryByTestId('tool-details')).toBeInTheDocument();
   });
 
-  it('auto-expands in simple mode when an error occurs so the cause is visible', () => {
+  it('does not auto-expand in simple mode when an error occurs, but allows manual expansion', () => {
     mockDetailLevel = 'simple';
     const toolCall = makeToolCall('call-2');
 
@@ -91,25 +91,31 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
       <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
     );
 
-    expect(queryByTestId('tool-details')).toBeInTheDocument();
-
-    fireEvent.click(getByLabelText('agentChat.toolDetails.toggleAriaLabel'));
+    // In simple mode, error should NOT auto-expand
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+
+    // User can manually expand via toggle button
+    fireEvent.click(getByLabelText('agentChat.toolDetails.toggleAriaLabel'));
+    expect(queryByTestId('tool-details')).toBeInTheDocument();
   });
 
-  it('keeps expand state when switching from simple to developer after an error', () => {
+  it('keeps expand state when manually expanded in simple mode and switching to developer', () => {
     // 1. Simple mode, no error
     mockDetailLevel = 'simple';
     const toolCall = makeToolCall('call-3');
-    const { rerender, queryByTestId } = render(
+    const { rerender, queryByTestId, getByLabelText } = render(
       <ToolCallCompactItem toolCall={toolCall} />,
     );
 
-    // 2. Simple mode, error occurs → auto-expand
+    // 2. Simple mode, error occurs → remains collapsed
     const toolResultWithError = makeToolResult('call-3', true);
     rerender(
       <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
     );
+    expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+
+    // Manually expand
+    fireEvent.click(getByLabelText('agentChat.toolDetails.toggleAriaLabel'));
     expect(queryByTestId('tool-details')).toBeInTheDocument();
 
     // 3. Switch to developer mode — expand state persists
