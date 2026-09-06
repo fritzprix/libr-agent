@@ -1021,6 +1021,31 @@
     }
   },
   "agent": {
+    "analysisLoader": {
+      "initial": "Preparing response...",
+      "wittyMessages": [
+        "Sipping digital coffee...",
+        "Neurons are stretching...",
+        "Picking the most intellectual emojis...",
+        "Navigating through 0s and 1s...",
+        "Tabs or spaces? Debating the eternal question...",
+        "Tuning quantum entanglement...",
+        "Hunting for missing semicolons...",
+        "Dusting off virtual bookshelves...",
+        "GPU fans spinning at full speed 🌪️",
+        "Baking a fresh, crispy response 🥐",
+        "Briefly admiring a cat picture 🐾",
+        "Searching every corner of cache memory..."
+      ],
+      "lateMessages": [
+        "Great answers require proper aging, like fine wine 🍷",
+        "No progress bar, so cycling witty text instead...",
+        "Waiting 3 more seconds might unleash pure genius...",
+        "Almost there, hang tight!",
+        "Taking a moment? Time for a quick stretch 🧘",
+        "Thanks for your patience, almost ready..."
+      ]
+    },
     "messages": {
       "loadingOlder": "Loading older messages...",
       "scrollToLoadOlder": "Scroll up to load older messages",

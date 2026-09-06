@@ -4,6 +4,7 @@
  * to eliminate code duplication and improve maintainability.
  */
 
+export { PhosphorDotMatrix } from './PhosphorDotMatrix';
 export { LoadingIndicator } from './LoadingIndicator';
 export { ThinkingBubble } from './ThinkingBubble';
 export * from './AnalysisLoader';
