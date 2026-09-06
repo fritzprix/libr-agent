@@ -338,6 +338,14 @@ fn build_stable_prefix(
         parts.push(identity);
     }
 
+    // One-line stable note only — avoid multi-paragraph framing that models
+    // re-anchor on every turn (see session-context attention noise).
+    parts.push(
+        "\n\n## Session Context\n\
+         Runtime may inject a `<session-context>` block with live environment state."
+            .to_string(),
+    );
+
     // 2. Persona / Voice Template — injected from SOUL.md and kept distinct from
     //    workspace instructions because it defines character, not task guidance.
     if let Some((filename, content)) = &soul_instruction {
@@ -507,14 +515,16 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(
-            prompt,
+        assert!(prompt.starts_with(
             "Base prompt only.\n\n\n## Agent Runtime Identity\n\
             - Agent Name: Default Assistant\n\
             - Agent ID: (unknown)\n\
             - Session ID: (unknown-session)"
-        );
-        assert!(!prompt.contains("## Session Context"));
+        ));
+        assert!(prompt.contains("## Session Context"));
+        assert!(prompt.contains("<session-context>"));
+        assert!(!prompt.contains("passive environment reference only"));
+        assert!(!prompt.contains("## Session Context Handling"));
         assert!(!prompt.contains("## Workspace Instructions"));
         assert!(!prompt.contains("## Available Tools & Current State"));
     }

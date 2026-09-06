@@ -59,15 +59,9 @@ export class RustAssistantService implements IAssistantService {
   async getList(params: PaginationParams): Promise<Page<Assistant>> {
     try {
       const all = await this.getAll();
-      const start = (params.page - 1) * params.pageSize;
-      const end = start + params.pageSize;
-
-      return createPage(
-        all.slice(start, end),
-        params.page,
-        params.pageSize,
-        all.length,
-      );
+      // Pass the full list — createPage performs the page window slice.
+      // Pre-slicing here caused page>1 to return [] (double offset).
+      return createPage(all, params.page, params.pageSize, all.length);
     } catch (error) {
       logger.error('Failed to get assistant list', error);
       throw error;

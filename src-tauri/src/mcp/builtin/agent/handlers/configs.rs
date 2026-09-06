@@ -18,7 +18,7 @@ use super::super::formatting::{
     resolve_external_server_labels,
 };
 use super::super::AgentServer;
-use super::normalize_agent_config_result;
+use super::shared::normalize_agent_config_result;
 
 /// Request structure for creating an agent config
 #[derive(Debug, Deserialize, Serialize)]
@@ -387,8 +387,8 @@ pub async fn update_agent(
                 )
                 .with_guidance(vec![
                     "This restriction prevents privilege escalation and identity drift during a session.".to_string(),
-                    "If this task requires a different configuration, delegate it using another agent configuration with the required permissions."
-                        .to_string(),
+                    "Active session tool access is fixed at session start; updating a template cannot inject tools into this running session.".to_string(),
+                    "If this task requires a different configuration, delegate it using another agent configuration with the required permissions.".to_string(),
                     "List available agent configurations, then start a new delegated session with one that can perform the change."
                         .to_string(),
                 ])
@@ -455,8 +455,9 @@ pub async fn update_agent(
                     &config,
                 ),
                 vec![
-                    "Inspect the configuration details to verify the changes".to_string(),
-                    "Start a new delegated session to apply the updated configuration".to_string(),
+                    "This updates the agent template only — it does not change tools in any currently running session.".to_string(),
+                    "Inspect the configuration details to verify the changes.".to_string(),
+                    "Start a new session (or agent__startSession with this config) to apply the updated tool access.".to_string(),
                 ],
             );
 
@@ -731,15 +732,16 @@ async fn list_delegated_sessions(
             paged_results.push(json!({
                 "id": crate::utils::session_id::display_session_id(&child_id),
                 "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
-                "status": status
+                "status": status,
+                "assistantId": child_data.assistant_id,
             }));
         }
     }
 
     let mut message = format!("Found {} sub-agent sessions.\n\n", total);
     if !paged_results.is_empty() {
-        message.push_str("| Name | Session ID | Status |\n");
-        message.push_str("|---|---|---|\n");
+        message.push_str("| Name | Session ID | Assistant ID | Status |\n");
+        message.push_str("|---|---|---|---|\n");
         for result in &paged_results {
             let name_clean = result["name"]
                 .as_str()
@@ -751,14 +753,19 @@ async fn list_delegated_sessions(
                 .unwrap_or("")
                 .replace('|', "\\|")
                 .replace('\n', " ");
+            let assistant_id_clean = result["assistantId"]
+                .as_str()
+                .unwrap_or("[unbound]")
+                .replace('|', "\\|")
+                .replace('\n', " ");
             let status_clean = result["status"]
                 .as_str()
                 .unwrap_or("")
                 .replace('|', "\\|")
                 .replace('\n', " ");
             message.push_str(&format!(
-                "| {} | `{}` | {} |\n",
-                name_clean, id_clean, status_clean
+                "| {} | `{}` | `{}` | {} |\n",
+                name_clean, id_clean, assistant_id_clean, status_clean
             ));
         }
     } else if total > 0 {

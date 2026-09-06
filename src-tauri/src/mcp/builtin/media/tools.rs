@@ -30,6 +30,7 @@ fn see_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -57,5 +58,6 @@ fn listen_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

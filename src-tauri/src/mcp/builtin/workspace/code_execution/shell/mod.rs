@@ -12,7 +12,7 @@ pub(super) fn format_duration_ms(duration_ms: u64) -> String {
     }
 }
 
-pub(super) fn format_command_io_message(
+pub fn format_command_io_message(
     header: &str,
     stdout_label: &str,
     stdout: &str,
@@ -20,7 +20,9 @@ pub(super) fn format_command_io_message(
     stderr: &str,
 ) -> String {
     match (stdout.is_empty(), stderr.is_empty()) {
-        (true, true) => header.to_string(),
+        // Exit success with empty streams is still a factual observation — do not
+        // omit IO so agents do not treat "silent success" as missing feedback.
+        (true, true) => format!("{header}\n\n(no stdout/stderr captured)"),
         (false, true) => format!("{header}\n\n{stdout_label}:\n{stdout}"),
         (true, false) => format!("{header}\n\n{stderr_label}:\n{stderr}"),
         (false, false) => {

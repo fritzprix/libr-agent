@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.9.3",
+  "version": "0.9.8",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
@@ -83,8 +83,19 @@
     "bench:harbor": "node scripts/run-harbor-bench.cjs --preset harbor-index --n-tasks 1",
     "bench:harbor:all": "node scripts/run-harbor-bench.cjs --preset harbor-index",
     "bench:registry": "node scripts/run-harbor-bench.cjs --preset dataset",
+    "bench:diverse": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-diverse-9",
+    "bench:diverse:n1": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-diverse-9 --n-tasks 1",
+    "bench:fileop": "node scripts/run-harbor-bench.cjs --preset dataset --dataset NovitaAI/tb21-file-recovery",
+    "bench:fileop:n1": "node scripts/run-harbor-bench.cjs --preset dataset --dataset NovitaAI/tb21-file-recovery --n-tasks 1",
+    "bench:upload": "node scripts/upload-harbor-bench.cjs",
     "bench:termial": "pnpm bench:terminal",
-    "bench:termial:all": "pnpm bench:terminal:all"
+    "bench:termial:all": "pnpm bench:terminal:all",
+    "xbench:registry": "node scripts/run-harbor-bench.cjs --agent hermes --preset dataset",
+    "xbench:terminal": "node scripts/run-harbor-bench.cjs --agent hermes --preset terminal-bench --n-tasks 1",
+    "xbench:terminal:all": "node scripts/run-harbor-bench.cjs --agent hermes --preset terminal-bench",
+    "xbench:harbor": "node scripts/run-harbor-bench.cjs --agent hermes --preset harbor-index --n-tasks 1",
+    "xbench:harbor:all": "node scripts/run-harbor-bench.cjs --agent hermes --preset harbor-index",
+    "bench:hermes:registry": "node scripts/run-harbor-bench.cjs --agent hermes --preset dataset"
   },
   "pnpm": {
     "overrides": {

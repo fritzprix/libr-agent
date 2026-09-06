@@ -58,3 +58,51 @@ async fn reusing_builtin_only_proxy_keeps_runtime_state_sequence_stable() {
     );
     assert_eq!(reused_state, first_state);
 }
+
+/// Reuse must promote an incomplete (ready=false) snapshot back to ready so FE
+/// remounts can leave Hydrating when a prior path wrote ready without emit.
+#[tokio::test]
+async fn reuse_promotes_unready_runtime_state_to_ready() {
+    let db = Arc::new(setup_test_db_with_migrations().await);
+    set_mcp_server_repository(SqliteMCPServerRepository::new((*db).clone()));
+    set_session_repository(SqliteSessionRepository::new((*db).clone()));
+    let temp_dir = TempDir::new().expect("temp dir");
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(temp_dir.path().join("session-root"))
+            .expect("session manager"),
+    );
+    let manager = MCPServiceProxyManager::new(db, session_manager);
+    let session_id = "reuse-promote-unready".to_string();
+
+    let first_proxy = manager
+        .create_proxy(session_id.clone(), Vec::new(), Vec::new(), None)
+        .await
+        .expect("initial create_proxy");
+    assert!(
+        manager.get_runtime_state(&session_id).await.proxy.ready,
+        "initial create must leave ready=true"
+    );
+
+    manager
+        .force_runtime_proxy_not_ready_for_test(&session_id)
+        .await;
+    assert!(
+        !manager.get_runtime_state(&session_id).await.proxy.ready,
+        "test helper must clear ready for the promotion scenario"
+    );
+
+    let reused = manager
+        .create_proxy(session_id.clone(), Vec::new(), Vec::new(), None)
+        .await
+        .expect("reuse create_proxy");
+    let after_reuse = manager.get_runtime_state(&session_id).await;
+
+    assert!(
+        Arc::ptr_eq(&first_proxy, &reused),
+        "matching empty create_proxy must Reuse the existing proxy"
+    );
+    assert!(
+        after_reuse.proxy.ready,
+        "Reuse must promote builtin-only sessions back to ready"
+    );
+}

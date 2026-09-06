@@ -1,3 +1,86 @@
+## [0.9.8] - 2026-09-07
+
+### 🚀 Features & UI
+
+- **5-Color Theme Design System**: Introduced 5 rich color themes (`Neutral`, `Slate`, `Amber`, `Emerald`, `Indigo`, `Rose`) configurable under General settings, alongside simple mode collapsible tool call error bubbles.
+- **Document-Style Full-Bleed Layout**: Added an optional document-style full-bleed chat view mode, offering an expanded reading and writing layout for long-form agent outputs.
+- **Compact Chat Header & Full Auto Mode Display**: Streamlined the agent session header chrome into a single unified row with inline session rename, bookmark toggling, and modernized "Full Auto" execution mode labeling with localized tooltips.
+- **Interactive Global Knowledge Graph**: Added an interactive knowledge network visualization (`KnowledgeNetworkCanvas`) and progressive split view in the Knowledge page with node peeking and force-directed simulation.
+- **Zero-Dependency Starter Scheduled Tasks**: Introduced one-click starter task templates (Daily Standup, Code Review Digest, RSS/News monitoring) in Scheduled Tasks for immediate automation setup.
+- **Onboarding & Provider Experience**: Added an LLM provider nudge banner, direct ModelPicker shortcut, streamlined setup recovery, and localized starter recipes including an idempotent Morning Briefing walkthrough.
+- **MCP Extension Setup & Presets**: Enhanced MCP server installation with a save-first asynchronous verification flow and one-click recommended presets for smoother external tool onboarding.
+- **Phosphor Dot-Matrix Loader**: Upgraded agent processing indicators with a retro phosphor dot-matrix loader and witty localized activity copy.
+- **Infinite Scroll for Assistants**: Replaced paginated assistants list with smooth infinite scroll for effortless navigation across custom assistant catalogs.
+- **Wiki Maintainer & Benchmark Analysis Skills**: Added `Wiki Maintainer` assistant loop with host-global `skill-proposer` / `wiki-maintainer` skills, plus `jobs-trace-analyzer` for deep Harbor and Terminal-Bench trajectory audits.
+
+### 🐛 Fixes & Hardening
+
+- **Browser Sidecar Process Management**: Prevented `fetchUrl` hangs and eliminated orphaned Chrome sidecar processes upon request timeout, and dropped unused platform command extensions.
+- **Workspace File Drop & Script Loop Prevention**: Supported recursive folder drop importing into the workspace panel while preserving folder expansion state, and added diagnostic hints to prevent full-script rewrite loops on shell command failure.
+- **AI Model Fetch Hygiene & SWR Key Stability**: Consolidated `listModels` dynamic provider fetcher with debounced credentials, isolated failure handling, and silent background toasts to prevent chat UI spam.
+- **LaTeX Math Rendering**: Enabled LaTeX math formatting within `reportResult` and `presentInteractive` markdown payloads.
+- **Theme Reactivity & Branding**: Synchronized official LibrAgent brand logo with dark/light theme switching via `useIsDarkMode`.
+- **Harbor Runner Resilience**: Snapshot runner scripts to temp paths to prevent bash offset desynchronization during long-running benchmark jobs.
+
+## [0.9.7] - 2026-09-03
+
+
+### 🚀 Features & UI
+
+- **Grouped Model Picker & Inline Thinking Effort**: Added a grouped model picker dropdown in the chat input bar organized by provider, with inline `Thinking Effort` adjustment (`None`, `Low`, `Medium`, `High`) for rapid reasoning configuration during agent sessions.
+- **Unified Reasoning Settings Across Providers**: Standardized reasoning configuration under `ThinkingEffort` / `thinkingBudget` across Anthropic, OpenAI, Gemini, Groq, Cerebras, and Ollama, eliminating fragile model-name capability gates.
+- **Browser Screenshot MCP Tool**: Introduced `browser__takeScreenshot` supporting bounded viewport and full-page PNG capture with memory-safe limits (64M pixels, 8 MiB) via the browser sidecar.
+- **Paginated Terminal Output**: Added paginated process output reads (`read_process_output`) for improved memory efficiency and agent context handling with long-running terminal tasks.
+- **Sub-Agent Session Reuse**: Restored role-aware sub-agent session reuse to prevent duplicate child session spawning during delegated workflows.
+
+### 🐛 Fixes & Hardening
+
+- **LaTeX & KaTeX Stream Rendering**: Protected inline and block LaTeX math expressions during streaming Markdown preprocessing and eliminated duplicate KaTeX stylesheet bundles.
+- **Process Cancellation & Cleanup**: Hardened persistent shell termination and process cancellation awareness, ensuring robust lifecycle cleanup across platforms.
+- **Compaction Prompt-Cache Prefix Alignment**: Aligned conversation compaction requests with parent prompt-cache prefixes to maximize LLM KV cache reuse.
+- **Session Status Filter Hygiene**: Added `queued` and `provisioning` states to history and session list status filters.
+- **Modular Workspace Subsystems**: Decomposed `workspace_server` and `readFile` handlers into modular, maintainable submodules.
+
+## [0.9.6] - 2026-08-25
+
+### 🚀 Features & Performance
+
+- **Adaptive Tool-Loop Recovery Policy**: Introduces experimental resample-then-break tool-loop recovery (`tool_loop_recovery_policy`), configurable in Settings > Experimental. When an agent encounters repetitive tool calls or outcome streaks, it first attempts natural resample recovery before breaking or short-circuiting.
+- **Reasoning & Output Budget Early Abort & Clean Retry**: Automatically detects runaway thinking/reasoning (for OpenAI reasoning and general LLM outputs) reaching 90% of `maxTokens` budget, aborting early and cleanly retrying to prevent truncated responses or wasted context.
+- **Prompt Architecture & Session Context Optimization**: Streamlined volatile session context noise (Phase 1) and repositioned session context ahead of previous assistant responses (Phase 2) to maximize KV cache reuse and reduce prompt jitter.
+
+### 🐛 Fixes & Hardening
+
+- **Delegated Session Workspace Signaling**: Explicitly surfaces `SHARED` vs `ISOLATED` workspace relation badges for delegated child sessions and sanitized newline display paths in `agent__startSession`.
+- **Streaming `<think>` Tag Parser**: Improved stateful `<think>` tag streaming parser (Ollama/DeepSeek models) to properly classify unclosed thinking tags as thought content instead of leaking raw text.
+- **Session Reset & UI Toast Hygiene**: Instantly dismisses compaction toast notifications when clearing an agent session.
+- **Runtime State Resumption**: Force-emits ready runtime states upon built-in service proxy reuse to prevent stale hydrating state indicators on session reactivation.
+- **Consensus Delegation Assistant Reuse**: Updated consensus delegation workflows to prefer reusing existing assistants rather than creating redundant session instances.
+
+## [0.9.5] - 2026-08-17
+
+### 🚀 Features & Performance
+
+- **Lazy Interactive Shell Dialog & Render Optimization**: Defer `InteractiveShellPromptDialog` loading until a prompt is active (`React.lazy`) and memoize `ScrollerContext` to stabilize chat message list rendering and eliminate unnecessary component re-renders.
+- **Harbor Telemetry & Benchmark Automation**: Added live Harbor benchmark telemetry reporting and cross-platform benchmark uploads (`pnpm bench:upload`) with configurable timeouts.
+
+### 🐛 Fixes & Hardening
+
+- **Execution Mode & Context Hardening**: Unified execution-mode single source of truth (SSOT) and hardened session-context framing across agent runtimes.
+- **MCP Tool Discovery & File Operations**: Clarified `workspace__writeFile` creation redirect behavior and tool immutability guidance in tool discovery.
+
+## [0.9.4] - 2026-08-16
+
+### 🚀 Features
+
+- **Sidebar Pagination (Load More)**: Adds an explicit "Load more" button to recent sessions in the sidebar for in-place pagination without having to open History.
+- **Prevent System Idle Sleep During Agent Work**: Automatically prevents system idle sleep while agent sessions are actively running, queued, or provisioning, with a user setting in System & Background Tasks to toggle the behavior.
+
+### 🐛 Fixes
+
+- **LLM Request Orphan Prevention & Timeout Handling**: Aborts orphaned active LLM fetch requests when user stops or switches sessions, and relaxes self-hosted provider default timeouts for heavy operations.
+- **Handoff Process Visibility**: Preserves process IDs and status visibility in subagent handoff service contexts when terminal sync times out.
+
 ## [0.9.3] - 2026-08-14
 
 ### 🐛 Fixes

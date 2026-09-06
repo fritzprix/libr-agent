@@ -1,6 +1,6 @@
 import React, { useId } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { MCPServerEntity } from '@/models/chat';
 import {
   Dialog,
@@ -399,6 +399,15 @@ function MCPServerDialogComponent({
                 </p>
               )}
 
+              {isInstallFlow ? (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'mcpServer.dialog.installHint',
+                    'Install saves immediately. Connection and package download run in the background — the extension card will show Verifying… until ready.',
+                  )}
+                </p>
+              ) : null}
+
               <div className="border rounded-md">
                 <button
                   type="button"
@@ -467,13 +476,18 @@ function MCPServerDialogComponent({
             }
             disabled={!isValid() || isSaving}
           >
-            {isSaving
-              ? isInstallFlow
-                ? t('mcpServer.dialog.installing', 'Installing...')
-                : t('mcpServer.dialog.saving', 'Saving...')
-              : isInstallFlow
-                ? t('mcpServer.dialog.install', 'Install')
-                : t('mcpServer.dialog.save', 'Save')}
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {isInstallFlow
+                  ? t('mcpServer.dialog.installing', 'Installing...')
+                  : t('mcpServer.dialog.saving', 'Saving...')}
+              </>
+            ) : isInstallFlow ? (
+              t('mcpServer.dialog.install', 'Install')
+            ) : (
+              t('mcpServer.dialog.save', 'Save')
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

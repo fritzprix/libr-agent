@@ -5,6 +5,7 @@ import { Message, ToolCall } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 import { ensureSchemaTypeField, formatToolResultForLlm } from './utils';
 
 const logger = getLogger('CerebrasService');
@@ -20,6 +21,8 @@ interface StreamChatOptions {
   systemPrompt?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
+  forceToolUse?: boolean;
+  disableToolUse?: boolean;
   signal?: AbortSignal;
 }
 /** @internal */
@@ -156,6 +159,22 @@ export class CerebrasService extends BaseAIService<
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
       const abortSignal = options.signal;
+      const toolChoice = !tools?.length
+        ? undefined
+        : options.disableToolUse
+          ? 'none'
+          : options.forceToolUse
+            ? 'required'
+            : 'auto';
+
+      let reasoningEffort: 'low' | 'medium' | 'high' | undefined;
+      const thinkingParams = mapThinkingEffort(
+        AIServiceProvider.Cerebras,
+        config.thinkingEffort,
+      );
+      if (thinkingParams.enabled) {
+        reasoningEffort = thinkingParams.reasoningEffort;
+      }
 
       const stream = await this.withRetry(
         async (): Promise<AsyncIterable<unknown>> => {
@@ -171,8 +190,9 @@ export class CerebrasService extends BaseAIService<
               ...(config.temperature !== undefined && {
                 temperature: config.temperature,
               }),
+              ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
               tools: tools,
-              tool_choice: tools ? 'auto' : undefined,
+              tool_choice: toolChoice,
             },
             { signal: abortSignal },
           );

@@ -4,6 +4,11 @@ import { Bot } from 'lucide-react';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from '@/features/agent/components/shared';
 import { PendingApprovalWidget } from '@/features/agent/components/PendingApprovalWidget';
+import {
+  DOCUMENT_CONTENT_RAIL_CLASS,
+  isDocumentMessageLayout,
+} from '@/features/agent/lib/message-layout';
+import { cn } from '@/lib/utils';
 import { shouldShowAnalysisLoader } from '../utils';
 import {
   CHAT_COMPOSER_CLEARANCE,
@@ -16,7 +21,9 @@ export const AgentChatMessagesList = forwardRef<
   ListProps & AgentChatVirtuosoContextProps
 >(function AgentChatMessagesList(props, ref) {
   const { children, style, context, ...domProps } = props;
-  void context;
+  const isDocumentMode = isDocumentMessageLayout(context.messageLayout);
+  // Document mode: keep a small gutter; bubble mode: match classic 16px rail.
+  const horizontalPadding = isDocumentMode ? '24px' : '16px';
 
   return (
     <div
@@ -26,8 +33,8 @@ export const AgentChatMessagesList = forwardRef<
         // Preserve Virtuoso's paddingTop/paddingBottom — they are the
         // virtualization offsets for off-screen items, not visual chrome.
         ...style,
-        paddingLeft: '16px',
-        paddingRight: '16px',
+        paddingLeft: horizontalPadding,
+        paddingRight: horizontalPadding,
       }}
     >
       {children}
@@ -70,9 +77,10 @@ export function AgentChatMessagesFooter({
     latestMessage,
     context.workflowStatus,
   );
+  const isDocumentMode = isDocumentMessageLayout(context.messageLayout);
 
   return (
-    <div className="px-4">
+    <div className={cn(isDocumentMode ? 'px-0' : 'px-4')}>
       {context.agentError && (
         <div className="self-start mt-2">
           <ErrorBubble
@@ -93,7 +101,14 @@ export function AgentChatMessagesFooter({
 
       {showAnalysisLoader && (
         <div className="flex justify-start mb-8 mt-3">
-          <div className="w-full max-w-3xl rounded-lg bg-secondary/30 px-6 py-5">
+          <div
+            className={cn(
+              'w-full rounded-lg px-6 py-5',
+              isDocumentMode
+                ? cn(DOCUMENT_CONTENT_RAIL_CLASS, 'bg-transparent')
+                : 'max-w-3xl bg-secondary/30',
+            )}
+          >
             <div className="flex items-center gap-3 mb-2">
               <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
                 <Bot size={16} className="text-primary-foreground" />
@@ -110,7 +125,12 @@ export function AgentChatMessagesFooter({
       )}
 
       {context.pendingApprovals && context.pendingApprovals.length > 0 && (
-        <div className="flex justify-start mb-8 mt-3">
+        <div
+          className={cn(
+            'mb-8 mt-3 flex justify-start',
+            isDocumentMode ? DOCUMENT_CONTENT_RAIL_CLASS : null,
+          )}
+        >
           <PendingApprovalWidget
             approvals={context.pendingApprovals}
             executionMode={context.executionMode}

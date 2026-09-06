@@ -152,20 +152,7 @@ pub async fn push_host_file_to_container(
 }
 
 fn simplify_host_path_for_docker(path: &Path) -> String {
-    #[cfg(windows)]
-    {
-        let lossy = path.to_string_lossy();
-        if let Some(stripped) = lossy.strip_prefix(r"\\?\") {
-            if !stripped.starts_with(r"UNC\") {
-                return stripped.to_string();
-            }
-        }
-        lossy.into_owned()
-    }
-    #[cfg(not(windows))]
-    {
-        path.to_string_lossy().into_owned()
-    }
+    crate::mcp::builtin::utils::display_workspace_path(path)
 }
 
 async fn verify_container_file(container: &str, container_path: &str) -> Result<(), String> {

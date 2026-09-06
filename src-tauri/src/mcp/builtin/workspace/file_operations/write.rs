@@ -502,6 +502,7 @@ impl WorkspaceServer {
                          **Actually written to:** `{}`\n\
                          **Total Size:** {}\n\
                          **Total Lines:** {}\n\n\
+                         Subsequent reads, edits, or shell commands on `{}` still use the previous file. Use `{}` for this new content.\n\n\
                          **Correct usage reminder:**\n\
                          - To **replace** an existing file: `writeFile` with `\"mode\": \"overwrite\"`\n\
                          - To **add to the end** of an existing file: `\"mode\": \"append\"`\n\
@@ -512,6 +513,8 @@ impl WorkspaceServer {
                         write_display_path,
                         total_size_str,
                         total_lines,
+                        requested_path_str,
+                        write_display_path,
                         PRIMARY_EDIT_TOOL,
                     ));
                 } else {

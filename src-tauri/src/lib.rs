@@ -64,7 +64,8 @@ use commands::file_commands::{
     write_file,
 };
 use commands::knowledge_commands::{
-    delete_global_knowledge, get_global_knowledge_detail, list_global_knowledge,
+    delete_global_knowledge, get_global_knowledge_detail, get_global_knowledge_graph,
+    list_global_knowledge,
 };
 use commands::log_commands::{
     backup_current_log, clear_current_log, get_launch_log_level, list_log_files, log_batch,
@@ -221,6 +222,7 @@ pub fn run() {
                 workspace_write_file,
                 list_global_knowledge,
                 get_global_knowledge_detail,
+                get_global_knowledge_graph,
                 delete_global_knowledge,
                 open_external_url,
                 open_path_with_default_app,
@@ -395,6 +397,7 @@ pub fn run() {
             .expect("error while building tauri application")
             .run(|app_handle, event| {
                 if let tauri::RunEvent::Exit = event {
+                    crate::utils::keep_awake::shutdown();
                     let app_handle_clone = app_handle.clone();
                     tauri::async_runtime::block_on(async move {
                         if let Some(browser_server) =

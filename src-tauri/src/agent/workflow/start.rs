@@ -17,9 +17,12 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     *session.repeated_text_loop_retry_count.write().await = 0;
     *session.bad_tool_args_retry_count.write().await = 0;
     *session.bad_tool_args_incident_count.write().await = 0;
+    *session.reasoning_budget_retry_count.write().await = 0;
     // Safety valve: clear any stale in-flight compaction state before
     // explicitly starting or restarting a workflow from the current stack.
     session.compaction.clear_runtime_state(false).await;
+    session.tool_loop_resample_attempts.write().await.clear();
+    session.tool_poll_trackers.write().await.clear();
 }
 
 pub async fn start_workflow(
@@ -112,6 +115,9 @@ pub async fn start_workflow(
             reset_session_execution_state(session).await;
         }
     }
+    proxy_manager
+        .clear_process_cancel_pending(&session_id)
+        .await;
 
     // --- STANDARD START WORKFLOW (Idle/Paused) ---
 

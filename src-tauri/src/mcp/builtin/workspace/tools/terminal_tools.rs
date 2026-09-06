@@ -1,4 +1,7 @@
-use crate::mcp::{schema::SchemaProperties, utils::schema_builder::*, MCPTool};
+use crate::mcp::{
+    schema::SchemaProperties, utils::schema_builder::*, wait_extension::LibragentWaitExtension,
+    MCPTool,
+};
 
 const PROCESS_ID_PROP: &str = "Process ID from workspace__spawnProcess, a sync-timeout handoff response, or workspace__listProcesses. Never invent an ID.";
 
@@ -33,15 +36,27 @@ pub fn create_read_process_output_tool() -> MCPTool {
         integer_prop_with_default(Some(1), Some(100), 20, Some("Number of lines to read")),
     );
 
+    props.insert(
+        "offset".to_string(),
+        integer_prop(
+            Some(0),
+            None,
+            Some(
+                "Optional zero-based line offset for pagination. Omit to keep the default tail behavior. Use with mode=\"head\"; continue with the returned next_offset.",
+            ),
+        ),
+    );
+
     MCPTool {
         name: "readProcessOutput".to_string(),
         title: Some("Read Process Output".to_string()),
         description:
-            "Read captured stdout, stderr, or both from a background process ID (workspace__spawnProcess or sync-timeout handoff). Works while the process is still running and after it finishes. Not for synchronous isolated/shell commands that already returned stdout/stderr inline — those registry entries are removed immediately. Returns output_paths for diagnostics (absolute internal paths; do not pass them to workspace__readFile/workspace__listDirectory)."
+            "Read captured stdout, stderr, or both from a background process ID (workspace__spawnProcess or sync-timeout handoff). Works while the process is still running and after it finishes. Not for synchronous isolated/shell commands that already returned stdout/stderr inline — those registry entries are removed immediately. Omit offset for the existing bounded tail read. For long output, use mode=\"head\", offset=0, and then pass next_offset until it is null. With stream=\"both\", the same offset is applied independently to stdout and stderr. Paginated outputs include total_lines and truncated per stream; while a process is running, null next_offset means no more output is available in the current read, so retry the same offset later. Returns output_paths for diagnostics (absolute internal paths; do not pass them to workspace__readFile/workspace__listDirectory)."
                 .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string(), "stream".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -73,6 +88,7 @@ pub fn create_wait_for_process_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: Some(LibragentWaitExtension::wait_for_process()),
     }
 }
 
@@ -96,6 +112,7 @@ pub fn create_list_processes_tool() -> MCPTool {
         input_schema: object_schema(props, vec![]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -116,5 +133,6 @@ pub fn create_stop_process_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

@@ -5,6 +5,12 @@ import {
   type OllamaToolCallAccumulator,
   type ProcessedChunk,
 } from './ollama-core-types';
+import {
+  createThinkTagStreamState,
+  feedThinkTagDelta,
+  flushThinkTagStream,
+  type ThinkTagStreamState,
+} from './think-tag-stream-parser';
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
 const MAX_ACCUMULATOR_AGE_MS = 30_000;
@@ -13,6 +19,7 @@ export function processChunk(
   chunk: unknown,
   logger: Logger = noopLogger,
   accumulators?: Map<number, OllamaToolCallAccumulator>,
+  thinkTagState?: ThinkTagStreamState,
 ): ProcessedChunk | null {
   try {
     if (!chunk || typeof chunk !== 'object') {
@@ -74,46 +81,46 @@ export function processChunk(
       }
 
       if (message.content && typeof message.content === 'string') {
-        const thinkMatch = message.content.match(
-          /<think[^>]*>([\s\S]*?)<\/think>/i,
-        );
+        // Prefer a caller-owned stream state so tags can span chunks. When the
+        // caller does not pass one (unit tests / one-shot chunks), use a local
+        // state and flush so unclosed `<think>` still classifies as thinking.
+        const ownedState = thinkTagState ?? createThinkTagStreamState();
+        const fed = feedThinkTagDelta(ownedState, message.content);
+        const flushed = thinkTagState
+          ? { content: '', thinking: '' }
+          : flushThinkTagStream(ownedState);
 
-        if (thinkMatch) {
-          const thinkingContent = thinkMatch[1];
-          if (thinkingContent) {
-            result.thinking = thinkingContent;
-            logger.debug('Thinking extracted from content field', {
-              thinkingLength: thinkingContent.length,
-            });
-          }
+        const thinkingFromTags = `${fed.thinking}${flushed.thinking}`;
+        const contentFromTags = `${fed.content}${flushed.content}`;
 
-          const contentWithoutThink = message.content.replace(
-            /<think[^>]*>[\s\S]*?<\/think>/gi,
-            '',
-          );
+        if (thinkingFromTags) {
+          result.thinking = thinkingFromTags;
+          logger.debug('Thinking extracted from content field', {
+            thinkingLength: thinkingFromTags.length,
+            mode: ownedState.mode,
+          });
+        }
 
-          if (contentWithoutThink) {
-            result.content = contentWithoutThink;
-            logger.debug('Content extracted (thinking removed)', {
-              contentLength: contentWithoutThink.length,
-            });
-          }
-        } else {
-          result.content = message.content;
+        if (contentFromTags) {
+          result.content = contentFromTags;
           logger.debug('Content extracted from chunk', {
-            contentLength: message.content.length,
+            contentLength: contentFromTags.length,
           });
         }
       }
 
       if (message.thinking && typeof message.thinking === 'string') {
-        result.thinking = message.thinking
+        const nativeThinking = message.thinking
           .replace(/<think[^>]*>/gi, '')
           .replace(/<\/think>/gi, '');
 
+        result.thinking = result.thinking
+          ? `${result.thinking}${nativeThinking}`
+          : nativeThinking;
+
         logger.debug('Thinking extracted from chunk', {
           thinkingLength: result.thinking.length,
-          hadTags: message.thinking !== result.thinking,
+          hadTags: message.thinking !== nativeThinking,
         });
       }
 

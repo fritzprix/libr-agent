@@ -1,9 +1,11 @@
 import { AIServiceProvider } from '@/lib/ai-service';
+import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import {
   REPEATED_THINKING_MIN_PATTERN_LENGTH,
   REPEATED_THINKING_MIN_REPETITIONS,
 } from '@/context/llm/repeatedTailDetector';
+import { DEFAULT_MAX_RECENT_MEDIA_MESSAGES } from '@/lib/media-settings';
 
 export interface SafetySetting {
   category: string;
@@ -56,6 +58,28 @@ export interface AdvancedSettings {
   loopPreventionHardBreakOffset: number;
   thinkingLoopMinPatternLength: number; // default 256 — minimum repeating sequence length for thinking loops
   thinkingLoopMinRepetitions: number; // default 4 — minimum repetitions for thinking loops
+  /** Number of recent media-containing messages that retain full payloads. */
+  maxRecentMediaMessages: number;
+  /** Thinking effort preset for extended reasoning/thinking. */
+  thinkingEffort: ThinkingEffort;
+}
+
+/** Chat message chrome: classic bubbles vs full-width coding-agent document stream. */
+export type MessageLayoutStyle = 'document' | 'bubble';
+
+export type ColorTheme = 'neutral' | 'amber' | 'violet' | 'ocean' | 'forest';
+export const COLOR_THEMES: ColorTheme[] = [
+  'neutral',
+  'amber',
+  'violet',
+  'ocean',
+  'forest',
+];
+
+export function isColorTheme(val: unknown): val is ColorTheme {
+  return (
+    typeof val === 'string' && (COLOR_THEMES as readonly string[]).includes(val)
+  );
 }
 
 export interface DisplaySettings {
@@ -66,6 +90,13 @@ export interface DisplaySettings {
   /** Controls tool call display verbosity. 'simple' hides params/results/errors for regular users. */
   toolDetailLevel: 'simple' | 'developer';
   fontFamily: string;
+  /**
+   * Message layout style for the agent chat transcript.
+   * - `document`: full-width document stream optimized for code/diffs (default)
+   * - `bubble`: classic messenger bubbles
+   */
+  messageLayout: MessageLayoutStyle;
+  colorTheme: ColorTheme;
 }
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
@@ -88,11 +119,42 @@ export interface SystemSettings {
   shellIsolationLevel: IsolationLevel;
   shellRuntimeBootstrap: boolean;
   skillsDirectory?: string;
+  /**
+   * When true (default), inhibit system idle sleep while LibrAgent is running.
+   * Does not keep the display forced on.
+   */
+  preventSleepDuringAgentWork: boolean;
+}
+
+/** Canonical tool-loop recovery policy stored in experimentalSettings. */
+export type ToolLoopRecoveryPolicy = 'resampleThenBreak' | 'legacyGuidance';
+
+export function isToolLoopRecoveryPolicy(
+  value: unknown,
+): value is ToolLoopRecoveryPolicy {
+  return value === 'resampleThenBreak' || value === 'legacyGuidance';
 }
 
 export interface ExperimentalSettings {
   inlineAudioAttachment: boolean;
+  /**
+   * Default `resampleThenBreak`: discard the looping assistant turn and
+   * request a fresh completion. `legacyGuidance` injects loop-prevention
+   * text into tool errors (opt-in).
+   */
+  toolLoopRecoveryPolicy: ToolLoopRecoveryPolicy;
+
+  /** Max clean resample retries before promoting to circuit breaker. */
+  toolLoopMaxResampleRetries: number;
 }
+
+/**
+ * Partial / legacy DB blob for `experimentalSettings`.
+ * `toolLoopLegacyGuidanceEnabled` is read-only migration input.
+ */
+export type StoredExperimentalSettings = Partial<ExperimentalSettings> & {
+  toolLoopLegacyGuidanceEnabled?: boolean;
+};
 
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
@@ -159,6 +221,8 @@ export const DEFAULT_SETTING: Settings = {
     loopPreventionHardBreakOffset: 2,
     thinkingLoopMinPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
     thinkingLoopMinRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
+    maxRecentMediaMessages: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
+    thinkingEffort: 'off',
   },
   display: {
     metricDisplayMode: 'inline',
@@ -167,6 +231,8 @@ export const DEFAULT_SETTING: Settings = {
     compactMetrics: false,
     toolDetailLevel: 'simple',
     fontFamily: 'Pretendard',
+    messageLayout: 'document',
+    colorTheme: 'neutral',
   },
   system: {
     maxFileUploadSizeMB: 50,
@@ -180,11 +246,120 @@ export const DEFAULT_SETTING: Settings = {
     shellIsolationLevel: 'medium',
     shellRuntimeBootstrap: false,
     skillsDirectory: '',
+    preventSleepDuringAgentWork: true,
   },
   experimental: {
     inlineAudioAttachment: true,
+    toolLoopRecoveryPolicy: 'resampleThenBreak',
+    toolLoopMaxResampleRetries: 2,
   },
 };
+
+export function isMessageLayoutStyle(
+  value: unknown,
+): value is MessageLayoutStyle {
+  return value === 'document' || value === 'bubble';
+}
+
+/**
+ * Merge a stored displaySettings blob with defaults so newly added fields
+ * (e.g. messageLayout) are present for older DB values.
+ */
+export function normalizeDisplaySettings(
+  stored: unknown,
+  defaults: DisplaySettings = DEFAULT_SETTING.display,
+): DisplaySettings {
+  const blob =
+    typeof stored === 'object' && stored !== null
+      ? (stored as Partial<DisplaySettings>)
+      : {};
+
+  return {
+    metricDisplayMode:
+      blob.metricDisplayMode === 'tooltip' ||
+      blob.metricDisplayMode === 'inline'
+        ? blob.metricDisplayMode
+        : defaults.metricDisplayMode,
+    prefillDisplayFormat:
+      blob.prefillDisplayFormat === 'time' ||
+      blob.prefillDisplayFormat === 'tokensPerSecond'
+        ? blob.prefillDisplayFormat
+        : defaults.prefillDisplayFormat,
+    showTokenSpeed:
+      typeof blob.showTokenSpeed === 'boolean'
+        ? blob.showTokenSpeed
+        : defaults.showTokenSpeed,
+    compactMetrics:
+      typeof blob.compactMetrics === 'boolean'
+        ? blob.compactMetrics
+        : defaults.compactMetrics,
+    toolDetailLevel:
+      blob.toolDetailLevel === 'simple' || blob.toolDetailLevel === 'developer'
+        ? blob.toolDetailLevel
+        : defaults.toolDetailLevel,
+    fontFamily:
+      typeof blob.fontFamily === 'string' && blob.fontFamily.length > 0
+        ? blob.fontFamily
+        : defaults.fontFamily,
+    messageLayout: isMessageLayoutStyle(blob.messageLayout)
+      ? blob.messageLayout
+      : defaults.messageLayout,
+    colorTheme: isColorTheme(blob.colorTheme)
+      ? blob.colorTheme
+      : defaults.colorTheme,
+  };
+}
+
+/**
+ * Canonicalize experimental settings from a DB blob.
+ * Maps deprecated `toolLoopLegacyGuidanceEnabled` → `toolLoopRecoveryPolicy`
+ * and drops the legacy key from the returned object.
+ */
+export function normalizeExperimentalSettings(
+  stored: unknown,
+  defaults: ExperimentalSettings = DEFAULT_SETTING.experimental,
+): { experimental: ExperimentalSettings; didMigrate: boolean } {
+  const blob =
+    typeof stored === 'object' && stored !== null
+      ? (stored as StoredExperimentalSettings)
+      : {};
+
+  const hasLegacyKey = Object.prototype.hasOwnProperty.call(
+    blob,
+    'toolLoopLegacyGuidanceEnabled',
+  );
+
+  let policy = defaults.toolLoopRecoveryPolicy;
+  if (isToolLoopRecoveryPolicy(blob.toolLoopRecoveryPolicy)) {
+    policy = blob.toolLoopRecoveryPolicy;
+  } else if (
+    hasLegacyKey &&
+    typeof blob.toolLoopLegacyGuidanceEnabled === 'boolean'
+  ) {
+    policy = blob.toolLoopLegacyGuidanceEnabled
+      ? 'legacyGuidance'
+      : 'resampleThenBreak';
+  }
+
+  const maxRetries =
+    typeof blob.toolLoopMaxResampleRetries === 'number' &&
+    Number.isFinite(blob.toolLoopMaxResampleRetries)
+      ? Math.min(20, Math.max(0, Math.trunc(blob.toolLoopMaxResampleRetries)))
+      : defaults.toolLoopMaxResampleRetries;
+
+  return {
+    experimental: {
+      inlineAudioAttachment:
+        typeof blob.inlineAudioAttachment === 'boolean'
+          ? blob.inlineAudioAttachment
+          : defaults.inlineAudioAttachment,
+      toolLoopRecoveryPolicy: policy,
+      toolLoopMaxResampleRetries: maxRetries,
+    },
+    // Persist rewrite whenever the deprecated key is still present in DB JSON.
+    didMigrate: hasLegacyKey,
+  };
+}
 
 export interface ISettingsService {
   getSettings(): Promise<Settings>;

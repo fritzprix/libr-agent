@@ -65,10 +65,14 @@ pub const NAME: &str = "agent";
 pub const AGENT_DELEGATION_HEADER: &str = concat!(
     "## Agent Delegation\n\n",
     "- `agent__prepareTeamworkWorkspace` returns an app-local teamwork artifact directory for orchestration files without changing the current session workspace.\n",
-    "- `agent__startSession` starts delegated work.\n",
-    "- `agent__messageToSession` resumes or retries an existing delegated session.\n",
+    "- `agent__messageToSession` sends follow-up or new work to an existing delegated session; reuse a suitable idle session with the same assistant configuration when possible.\n",
+    "- `agent__startSession` starts delegated work when no suitable session exists or separate role, parallel, or workspace isolation is needed.\n",
     "- `agent__compactSessionContext` refreshes another session's stored compact summary before more work.\n",
 );
+
+/// Compact header used with live child/org inventory (Volatile path).
+/// Tool names live in the MCP tool list — do not restate them here.
+const AGENT_DELEGATION_LIVE_PREFIX: &str = "## Agent Delegation\n";
 
 #[async_trait]
 impl BuiltinMCPServer for AgentServer {
@@ -121,31 +125,36 @@ impl BuiltinMCPServer for AgentServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        let mut context_prompt = AGENT_DELEGATION_HEADER.to_string();
-
-        let volatility = ContextVolatility::Volatile;
+        // Static tool catalogue → Stable (cacheable prefix). Live child/org inventory →
+        // Volatile so it only appears in the synthetic session-context user message.
+        let mut live_parts: Vec<String> = Vec::new();
 
         let repo = SqliteSessionRepository::new(self.get_db().clone());
         if let Ok(Some(session)) = repo.get_session(&self.session_id).await {
-            // Fetch child sessions once
             if let Ok(children) = repo.get_child_sessions(&self.session_id).await {
                 if let Some(active_notice) = format_active_sessions_notice(&children) {
-                    context_prompt.push('\n');
-                    context_prompt.push_str(&active_notice);
+                    live_parts.push(active_notice);
                 }
             }
 
-            // Build org layer context (only if organization metadata exists on the session)
             if session.org_id.is_some() {
                 if let Ok(Some(org_layer_context)) =
                     build_explicit_org_layer_context(&repo, &session).await
                 {
-                    context_prompt.push('\n');
-                    context_prompt.push_str(&org_layer_context);
+                    live_parts.push(org_layer_context);
                 }
             }
         }
 
-        ServiceContext::new(context_prompt).with_volatility(volatility)
+        if live_parts.is_empty() {
+            return ServiceContext::new(AGENT_DELEGATION_HEADER.to_string())
+                .with_volatility(ContextVolatility::Stable);
+        }
+
+        let mut context_prompt = AGENT_DELEGATION_LIVE_PREFIX.to_string();
+        context_prompt.push('\n');
+        context_prompt.push_str(&live_parts.join("\n\n"));
+
+        ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Volatile)
     }
 }

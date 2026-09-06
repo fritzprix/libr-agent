@@ -48,13 +48,13 @@ impl WorkspaceServer {
                     entry.poll_count += 1;
 
                     let is_running = terminal_manager::is_active_process_status(&entry.status);
+                    let status_label = terminal_manager::process_status_label(&entry.status);
                     if is_running {
                         if entry.first_running_poll_at.is_none() {
                             entry.first_running_poll_at = Some(now);
                         }
-                        entry.consecutive_running_polls += 1;
                     } else {
-                        entry.consecutive_running_polls = 0;
+                        entry.poll_tracker.reset();
                         entry.first_running_poll_at = None;
                     }
 
@@ -62,7 +62,8 @@ impl WorkspaceServer {
                     let threshold = crate::config::poll_threshold();
                     let guidance = is_polling_mode
                         && is_running
-                        && entry.consecutive_running_polls >= threshold;
+                        && entry.poll_tracker.observe(&status_label, threshold)
+                            == crate::agent::poll_tracker::PollTrackerVerdict::Excessive;
 
                     // Clone entry data before the mutable borrow of `entry` ends so we can
                     // subsequently take an immutable borrow for the completion notifier.
@@ -107,9 +108,17 @@ impl WorkspaceServer {
                     | terminal_manager::ProcessStatus::Failed
                     | terminal_manager::ProcessStatus::Killed
             ) {
+                // Drop idle "Running Processes: None" cache so the next turn can
+                // pick up the Recently Finished window for this processId.
+                self.invalidate_context_cache().await;
+
+                let status_label = terminal_manager::process_status_label(&status);
+                let loop_fingerprint =
+                    format!("{status_label}:{}", entry_data.exit_code.unwrap_or(-1));
                 let response = serde_json::json!({
                     "process_id": process_id,
-                    "status": terminal_manager::process_status_label(&status),
+                    "status": status_label,
+                    "loopFingerprint": loop_fingerprint,
                     "command": entry_data.command,
                     "exit_code": entry_data.exit_code,
                     "pid": entry_data.pid,
@@ -126,9 +135,13 @@ impl WorkspaceServer {
 
             // 2. Polling Mode: Return current status immediately (even if Running)
             if is_polling_mode {
+                let status_label = terminal_manager::process_status_label(&status);
+                let loop_fingerprint =
+                    format!("{status_label}:{}", entry_data.exit_code.unwrap_or(-1));
                 let response = serde_json::json!({
                     "process_id": process_id,
-                    "status": terminal_manager::process_status_label(&status),
+                    "status": status_label,
+                    "loopFingerprint": loop_fingerprint,
                     "command": entry_data.command,
                     "exit_code": entry_data.exit_code,
                     "pid": entry_data.pid,

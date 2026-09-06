@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Info } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
@@ -14,6 +14,16 @@ import type {
 } from '@/lib/services/settings-service';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Button,
   Checkbox,
   Tooltip,
@@ -24,6 +34,8 @@ import { ProviderCard } from '../components/ProviderCard';
 import { CustomProviderCard } from '../components/CustomProviderCard';
 import { NumberSettingField } from '../components/NumberSettingField';
 import { parseFloatInput } from '../components/settings-number-utils';
+import { ThinkingEffortSection } from '../components/ThinkingEffortSection';
+import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 
 const EMPTY_CUSTOM_PROVIDERS: CustomOpenAIProvider[] = [];
 
@@ -44,6 +56,8 @@ interface AIModelsTabProps {
   onFallbackModelChange: (model: string, provider: string) => void;
   onTemperatureOverrideEnabledChange: (enabled: boolean) => void;
   onTemperatureChange: (temperature: number) => void;
+  thinkingEffort: ThinkingEffort;
+  onThinkingEffortChange: (effort: ThinkingEffort) => void;
 }
 
 function AIModelsTabComponent({
@@ -60,9 +74,14 @@ function AIModelsTabComponent({
   onFallbackModelChange,
   onTemperatureOverrideEnabledChange,
   onTemperatureChange,
+  thinkingEffort,
+  onThinkingEffortChange,
 }: AIModelsTabProps) {
   const { t } = useTranslation('common');
   const providers = customProviders ?? EMPTY_CUSTOM_PROVIDERS;
+  const [providerPendingRemoval, setProviderPendingRemoval] = useState<
+    string | null
+  >(null);
   const PROVIDER_META: Record<
     AIServiceProvider,
     { name: string; description: string }
@@ -180,38 +199,41 @@ function AIModelsTabComponent({
     [providers, onCustomProvidersChange],
   );
 
-  const handleRemoveCustomProvider = useCallback(
-    (id: string) => {
-      const providerId = toCustomProviderId(id);
-      const confirmed = window.confirm(
-        t(
-          'settings.customProviders.removeConfirm',
-          'Remove this custom provider? Sessions using it will need a new model selection.',
-        ),
-      );
-      if (!confirmed) {
-        return;
-      }
+  const handleRemoveCustomProvider = useCallback((id: string) => {
+    setProviderPendingRemoval(id);
+  }, []);
 
-      onCustomProvidersChange(providers.filter((entry) => entry.id !== id));
+  const confirmRemoveCustomProvider = useCallback(() => {
+    if (!providerPendingRemoval) {
+      return;
+    }
 
-      if (localPreferredModel.provider === providerId) {
-        onPreferredModelChange('', AIServiceProvider.OpenAI);
-      }
-      if (localFallbackModel?.provider === providerId) {
-        onFallbackModelChange('', AIServiceProvider.OpenAI);
-      }
-    },
-    [
-      providers,
-      localFallbackModel?.provider,
-      localPreferredModel.provider,
-      onCustomProvidersChange,
-      onFallbackModelChange,
-      onPreferredModelChange,
-      t,
-    ],
-  );
+    const id = providerPendingRemoval;
+    const providerId = toCustomProviderId(id);
+
+    onCustomProvidersChange(providers.filter((entry) => entry.id !== id));
+
+    if (localPreferredModel.provider === providerId) {
+      onPreferredModelChange('', AIServiceProvider.OpenAI);
+    }
+    if (localFallbackModel?.provider === providerId) {
+      onFallbackModelChange('', AIServiceProvider.OpenAI);
+    }
+
+    setProviderPendingRemoval(null);
+  }, [
+    providers,
+    localFallbackModel?.provider,
+    localPreferredModel.provider,
+    onCustomProvidersChange,
+    onFallbackModelChange,
+    onPreferredModelChange,
+    providerPendingRemoval,
+  ]);
+
+  const providerPendingRemovalName =
+    providers.find((entry) => entry.id === providerPendingRemoval)?.name ??
+    providerPendingRemoval;
 
   return (
     <div className="space-y-8">
@@ -227,7 +249,9 @@ function AIModelsTabComponent({
             currentModel={localPreferredModel.model}
             currentProvider={localPreferredModel.provider}
             customProviders={providers}
+            serviceConfigs={serviceConfigs}
             onConfigUpdate={onPreferredModelChange}
+            disableConfigureAction
             className="w-full max-w-sm"
           />
         </div>
@@ -242,7 +266,9 @@ function AIModelsTabComponent({
               localFallbackModel?.provider ?? localPreferredModel.provider
             }
             customProviders={providers}
+            serviceConfigs={serviceConfigs}
             onConfigUpdate={onFallbackModelChange}
+            disableConfigureAction
             className="w-full max-w-sm"
           />
           <p className="mt-1 text-xs text-muted-foreground">
@@ -252,6 +278,11 @@ function AIModelsTabComponent({
             )}
           </p>
         </div>
+
+        <ThinkingEffortSection
+          thinkingEffort={thinkingEffort}
+          onThinkingEffortChange={onThinkingEffortChange}
+        />
 
         <div className="min-w-0 space-y-3">
           <div className="flex items-center space-x-2">
@@ -393,6 +424,44 @@ function AIModelsTabComponent({
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={providerPendingRemoval !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setProviderPendingRemoval(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t(
+                'settings.customProviders.removeConfirmTitle',
+                'Remove custom provider?',
+              )}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.customProviders.removeConfirm', {
+                name: providerPendingRemovalName ?? '',
+                defaultValue:
+                  'Remove "{{name}}"? Sessions using it will need a new model selection.',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t('common.cancel', 'Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={confirmRemoveCustomProvider}
+            >
+              {t('settings.customProviders.removeConfirmAction', 'Remove')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

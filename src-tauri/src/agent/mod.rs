@@ -11,6 +11,7 @@ pub mod lifecycle;
 pub mod llm;
 pub mod message_merge;
 pub mod pending_queue;
+pub mod poll_tracker;
 pub mod references;
 pub mod runtime_state;
 pub mod session_bus;

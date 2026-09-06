@@ -692,4 +692,29 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(thinkingChunks[0]).toEqual({ thinking: 'Let me think...' });
     expect(thinkingChunks[1]).toEqual({ thinking: 'Continuing to think...' });
   });
+
+  it('preserves tools but sets tool_choice to none when disableToolUse is true', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    for await (const chunk of service.streamChat([message], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable system prompt',
+      availableTools: [alphaTool, betaTool],
+      disableToolUse: true,
+    })) {
+      void chunk;
+    }
+
+    const request = createMock.mock.calls[0]?.[0] as {
+      tools?: Array<{ function?: { name?: string } }>;
+      tool_choice?: string;
+    };
+
+    expect(request.tool_choice).toBe('none');
+    expect(request.tools?.map((tool) => tool.function?.name).sort()).toEqual([
+      'alpha',
+      'beta',
+    ]);
+  });
 });

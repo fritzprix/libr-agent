@@ -105,7 +105,7 @@ export function PendingApprovalWidget({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (submittingIdRef.current !== null) {
+      if (event.defaultPrevented || submittingIdRef.current !== null) {
         return;
       }
       if (isTypingTarget(event.target)) {
@@ -117,14 +117,23 @@ export function PendingApprovalWidget({
         return;
       }
 
-      if (event.key === 'Enter') {
+      // Approve only via explicit chord — bare Enter must never auto-approve,
+      // especially hard/high-risk tool calls.
+      if (
+        event.key === 'Enter' &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
         event.preventDefault();
+        event.stopImmediatePropagation();
         void handleResponse(target.toolCallId, true);
         return;
       }
 
       if (event.key === 'Escape') {
         event.preventDefault();
+        event.stopImmediatePropagation();
         void handleResponse(target.toolCallId, false);
       }
     };
@@ -233,6 +242,8 @@ export function PendingApprovalWidget({
                 size="sm"
                 onClick={() => handleResponse(approval.toolCallId, false)}
                 disabled={isSubmitting}
+                title={t('agent.approval.rejectShortcut', 'Reject (Esc)')}
+                aria-keyshortcuts="Escape"
                 className="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
               >
                 {isSubmitting && submittingId === approval.toolCallId ? (
@@ -241,11 +252,19 @@ export function PendingApprovalWidget({
                   <X className="w-3.5 h-3.5 mr-1.5" />
                 )}
                 {t('agent.approval.reject', 'Reject')}
+                <kbd className="ml-1.5 hidden sm:inline rounded border border-border/60 bg-muted/40 px-1 py-px text-[10px] font-normal text-muted-foreground">
+                  Esc
+                </kbd>
               </Button>
               <Button
                 size="sm"
                 onClick={() => handleResponse(approval.toolCallId, true)}
                 disabled={isSubmitting}
+                title={t(
+                  'agent.approval.approveShortcut',
+                  'Approve (⌘↵ / Ctrl+↵)',
+                )}
+                aria-keyshortcuts="Meta+Enter Control+Enter"
                 className={
                   isHardApproval
                     ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground'
@@ -260,6 +279,9 @@ export function PendingApprovalWidget({
                 {isHardApproval
                   ? t('agent.approval.hardApprove', 'Approve high-risk action')
                   : t('agent.approval.approve', 'Approve')}
+                <kbd className="ml-1.5 hidden sm:inline rounded border border-current/20 bg-black/10 px-1 py-px text-[10px] font-normal opacity-80 dark:bg-white/10">
+                  {t('agent.approval.approveShortcutBadge', '⌘↵')}
+                </kbd>
               </Button>
             </CardFooter>
           </Card>

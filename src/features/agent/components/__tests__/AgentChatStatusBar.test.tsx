@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TokenUsage } from '@/lib/ai-service/types';
 import type { PreflightTokenMetrics } from '@/models/agent-ipc';
-import type { Message } from '@/models/chat';
+import type { Message, MessageError } from '@/models/chat';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { AgentChatStatusBar } from '../AgentChatStatusBar';
 
@@ -56,6 +56,7 @@ interface MockAgentSessionContextValue {
   session: MockSession;
   executionMode: ExecutionMode;
   preflightTokenMetrics: PreflightTokenMetrics | null;
+  pendingApprovals: Array<{ toolCallId: string }>;
   setExecutionMode: typeof mocks.setExecutionMode;
   updateSessionConfig: typeof mocks.updateSessionConfig;
   isProxyReady: boolean;
@@ -80,6 +81,7 @@ const mockAgentSession: MockAgentSessionContextValue = {
   session: mockSession,
   executionMode: 'normal' as ExecutionMode,
   preflightTokenMetrics: null,
+  pendingApprovals: [],
   setExecutionMode: mocks.setExecutionMode,
   updateSessionConfig: mocks.updateSessionConfig,
   isProxyReady: true,
@@ -91,8 +93,8 @@ const mockAgentSession: MockAgentSessionContextValue = {
 const mockAgentChat = {
   messages: [] as Message[],
   workflowStatus: 'idle' as WorkflowStatus,
-  error: null,
-  llmError: null,
+  error: null as MessageError | null,
+  llmError: null as MessageError | null,
   retryMessage: mocks.retryMessage,
   resume: mocks.resume,
 };
@@ -118,11 +120,15 @@ vi.mock('@/context/AgentSessionListContext', () => ({
   }),
 }));
 
-vi.mock('@/context/SettingsContext', () => ({
+vi.mock('@/hooks/use-settings', () => ({
   useSettings: () => ({
     value: {
       contextStrategy: 'default',
+      advanced: {
+        thinkingEffort: 'medium',
+      },
     },
+    update: vi.fn(),
   }),
 }));
 
@@ -259,6 +265,7 @@ describe('AgentChatStatusBar', () => {
     mockAgentSession.session = { ...mockSession };
     mockAgentSession.executionMode = 'normal';
     mockAgentSession.preflightTokenMetrics = null;
+    mockAgentSession.pendingApprovals = [];
     mockAgentChat.messages = [];
     mockAgentChat.workflowStatus = 'idle';
     mockAgentChat.error = null;
@@ -273,6 +280,50 @@ describe('AgentChatStatusBar', () => {
         message: 'updated',
       });
     });
+  });
+
+  it('hides the idle workflow banner to reduce chrome', () => {
+    mockAgentChat.workflowStatus = 'idle';
+
+    render(<AgentChatStatusBar />);
+
+    expect(
+      screen.queryByTestId('agent-workflow-status'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the workflow banner while the agent is busy', () => {
+    mockAgentChat.workflowStatus = 'busy';
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('agent-workflow-status')).toBeInTheDocument();
+  });
+
+  it('shows the workflow banner when idle but an error is present', () => {
+    mockAgentChat.workflowStatus = 'idle';
+    mockAgentChat.error = {
+      displayMessage: 'Something broke',
+      type: 'AI_SERVICE_ERROR',
+      recoverable: true,
+    };
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('agent-workflow-status')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /retry/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the workflow banner when idle but approvals are pending', () => {
+    mockAgentChat.workflowStatus = 'idle';
+    mockAgentSession.pendingApprovals = [{ toolCallId: 'call-idle' }];
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('agent-workflow-status')).toBeInTheDocument();
+    expect(screen.getByText(/Awaiting approval/i)).toBeInTheDocument();
   });
 
   it('keeps the model picker enabled in error state for recovery', () => {
@@ -308,14 +359,25 @@ describe('AgentChatStatusBar', () => {
     );
   });
 
+  it('shows awaiting approval status when tool approvals are pending', () => {
+    mockAgentChat.workflowStatus = 'busy';
+    mockAgentSession.pendingApprovals = [{ toolCallId: 'call-1' }];
+
+    render(<AgentChatStatusBar />);
+
+    expect(
+      screen.getByText(/Awaiting approval/i),
+    ).toBeInTheDocument();
+  });
+
   it('renders a single execution mode control and switches to unsafe mode', () => {
     render(<AgentChatStatusBar />);
 
     expect(screen.getByTestId('execution-mode-control')).toBeInTheDocument();
     expect(screen.queryByText('YOLO Mode')).not.toBeInTheDocument();
-    expect(screen.queryByText('Unsafe Mode')).not.toBeInTheDocument();
+    expect(screen.queryByText('Full Auto Mode')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /unsafe/i }));
+    fireEvent.click(screen.getByRole('button', { name: /full auto/i }));
 
     expect(mocks.setExecutionMode).toHaveBeenCalledWith('unsafe');
   });

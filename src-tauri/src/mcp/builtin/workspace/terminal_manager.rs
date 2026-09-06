@@ -1,8 +1,10 @@
+use crate::agent::poll_tracker::PollTracker;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::io::AsyncBufReadExt;
 use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -40,7 +42,7 @@ pub struct ProcessEntry {
     #[serde(default)]
     pub poll_count: u32,
     #[serde(default)]
-    pub consecutive_running_polls: u32,
+    pub poll_tracker: PollTracker,
     #[serde(default)]
     pub first_running_poll_at: Option<DateTime<Utc>>,
 }
@@ -172,6 +174,92 @@ pub fn process_status_label(status: &ProcessStatus) -> String {
         ProcessStatus::Failed => "failed".to_string(),
         ProcessStatus::Killed => "killed".to_string(),
     }
+}
+
+/// Marker written when process output exceeds the configured capture limit.
+pub const OUTPUT_TRUNCATION_MARKER: &str = "[Output truncated: size limit exceeded]";
+
+/// Build the newline-delimited truncation notice written to output files.
+pub fn output_truncation_notice() -> String {
+    format!("\n{OUTPUT_TRUNCATION_MARKER}\n")
+}
+
+/// A bounded page of output lines together with the snapshot line count.
+#[derive(Debug, Clone)]
+pub struct LinePage {
+    pub lines: Vec<String>,
+    pub total_lines: usize,
+    pub truncated: bool,
+}
+
+/// Read a bounded page from the beginning of an output file.
+///
+/// `offset` is zero-based. The page and `total_lines` are derived during one
+/// sequential read, keeping pagination internally consistent while output grows.
+pub async fn read_lines_page(
+    file_path: &Path,
+    offset: usize,
+    limit: usize,
+) -> Result<LinePage, String> {
+    if !file_path.exists() {
+        return Ok(LinePage {
+            lines: Vec::new(),
+            total_lines: 0,
+            truncated: false,
+        });
+    }
+
+    let limit = limit.min(100);
+
+    let file = tokio::fs::File::open(file_path)
+        .await
+        .map_err(|e| format!("Failed to open file: {e}"))?;
+    let mut reader = tokio::io::BufReader::new(file);
+    let mut raw_line = Vec::new();
+    let mut total_lines = 0;
+    let mut truncated = false;
+    let mut lines = Vec::with_capacity(limit);
+
+    loop {
+        raw_line.clear();
+        let bytes_read = reader
+            .read_until(b'\n', &mut raw_line)
+            .await
+            .map_err(|e| format!("Failed to read file: {e}"))?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        if raw_line.last() == Some(&b'\n') {
+            raw_line.pop();
+        }
+        if raw_line.last() == Some(&b'\r') {
+            raw_line.pop();
+        }
+
+        #[cfg(target_os = "windows")]
+        let line = String::from_utf8_lossy(&raw_line).into_owned();
+
+        #[cfg(not(target_os = "windows"))]
+        let line = String::from_utf8(raw_line.clone()).map_err(|_| {
+            "Failed to read terminal output: Content appears to be binary or contains invalid UTF-8 characters"
+                .to_string()
+        })?;
+
+        if line == OUTPUT_TRUNCATION_MARKER {
+            truncated = true;
+        }
+        if total_lines >= offset && lines.len() < limit {
+            lines.push(line);
+        }
+        total_lines += 1;
+    }
+
+    Ok(LinePage {
+        lines,
+        total_lines,
+        truncated,
+    })
 }
 
 /// Read last N lines from file (max 100, text only)
@@ -485,6 +573,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_read_lines_page_reports_snapshot_and_truncation() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_lines_page.txt");
+
+        let mut content = String::new();
+        for index in 1..=205 {
+            content.push_str(&format!("line {index}\n"));
+        }
+        fs::write(&test_file, content).await.unwrap();
+
+        let first_page = read_lines_page(&test_file, 0, 100).await.unwrap();
+        assert_eq!(first_page.total_lines, 205);
+        assert_eq!(first_page.lines.len(), 100);
+        assert_eq!(first_page.lines.first().map(String::as_str), Some("line 1"));
+        assert!(!first_page.truncated);
+
+        let final_page = read_lines_page(&test_file, 200, 100).await.unwrap();
+        assert_eq!(final_page.lines.len(), 5);
+        assert_eq!(
+            final_page.lines.last().map(String::as_str),
+            Some("line 205")
+        );
+
+        fs::write(
+            &test_file,
+            "line 1\n[Output truncated: size limit exceeded]\n",
+        )
+        .await
+        .unwrap();
+        let truncated_page = read_lines_page(&test_file, 0, 100).await.unwrap();
+        assert!(truncated_page.truncated);
+
+        fs::write(&test_file, "").await.unwrap();
+        let empty_page = read_lines_page(&test_file, 0, 100).await.unwrap();
+        assert!(empty_page.lines.is_empty());
+        assert_eq!(empty_page.total_lines, 0);
+        assert!(!empty_page.truncated);
+
+        let _ = fs::remove_file(&test_file).await;
+    }
+
+    #[tokio::test]
     async fn test_get_file_size() {
         let temp_dir = std::env::temp_dir();
         let test_file = temp_dir.join("test_size.txt");
@@ -531,12 +661,12 @@ mod tests {
             stderr_size: 0,
             last_poll_at: None,
             poll_count: 0,
-            consecutive_running_polls: 0,
+            poll_tracker: PollTracker::default(),
             first_running_poll_at: None,
         };
 
         assert_eq!(entry.poll_count, 0);
-        assert_eq!(entry.consecutive_running_polls, 0);
+        assert_eq!(entry.poll_tracker.consecutive_identical(), 0);
         assert!(entry.last_poll_at.is_none());
         assert!(entry.first_running_poll_at.is_none());
     }
@@ -559,7 +689,13 @@ mod tests {
             stderr_size: 50,
             last_poll_at: Some(Utc::now()),
             poll_count: 5,
-            consecutive_running_polls: 3,
+            poll_tracker: {
+                let mut tracker = PollTracker::default();
+                for _ in 0..3 {
+                    tracker.observe("running", 99);
+                }
+                tracker
+            },
             first_running_poll_at: Some(Utc::now()),
         };
 
@@ -570,8 +706,8 @@ mod tests {
         assert_eq!(entry.id, deserialized.id);
         assert_eq!(entry.poll_count, deserialized.poll_count);
         assert_eq!(
-            entry.consecutive_running_polls,
-            deserialized.consecutive_running_polls
+            entry.poll_tracker.consecutive_identical(),
+            deserialized.poll_tracker.consecutive_identical()
         );
         assert!(deserialized.last_poll_at.is_some());
         assert!(deserialized.first_running_poll_at.is_some());
@@ -600,7 +736,7 @@ mod tests {
 
         assert_eq!(entry.id, "test-789");
         assert_eq!(entry.poll_count, 0); // Default value
-        assert_eq!(entry.consecutive_running_polls, 0); // Default value
+        assert_eq!(entry.poll_tracker.consecutive_identical(), 0); // Default value
         assert!(entry.last_poll_at.is_none()); // Default value
         assert!(entry.first_running_poll_at.is_none()); // Default value
     }

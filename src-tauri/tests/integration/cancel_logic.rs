@@ -10,9 +10,12 @@ use std::sync::Arc;
 use tauri_mcp_agent_lib::agent::state::{PendingEvent, PendingEventManager};
 use tauri_mcp_agent_lib::agent::workflow::{
     classify_cancel_strategy, is_inactive_cancel_noop, should_consume_cancel_at_message_boundary,
-    CancelStrategy,
+    should_discard_workflow_before_continuation, CancelStrategy,
 };
+use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
 use tauri_mcp_agent_lib::repositories::SessionStatus;
+use tauri_mcp_agent_lib::session::SessionManager;
+use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 // -----------------------------------------------------------------------
@@ -21,20 +24,39 @@ use tokio_util::sync::CancellationToken;
 
 #[test]
 fn test_classify_cancel_strategy_keeps_boundary_pause_when_pending_execution_exists() {
-    let strategy = classify_cancel_strategy(true);
+    let strategy = classify_cancel_strategy(true, false);
     assert_eq!(strategy, CancelStrategy::CancelToolsThenPause);
 }
 
 #[test]
 fn test_classify_cancel_strategy_stops_immediately_without_pending_execution() {
-    let strategy = classify_cancel_strategy(false);
+    let strategy = classify_cancel_strategy(false, false);
     assert_eq!(strategy, CancelStrategy::StopImmediately);
+}
+
+#[test]
+fn test_classify_cancel_strategy_continues_after_stopping_active_process() {
+    let strategy = classify_cancel_strategy(true, true);
+    assert_eq!(strategy, CancelStrategy::CancelProcessThenContinue);
 }
 
 #[test]
 fn test_should_consume_cancel_at_message_boundary_only_when_pending_flag_set() {
     assert!(should_consume_cancel_at_message_boundary(true));
     assert!(!should_consume_cancel_at_message_boundary(false));
+}
+
+#[test]
+fn test_pending_cancel_is_consumed_before_cancelled_token_is_discarded() {
+    assert!(
+        !should_discard_workflow_before_continuation(true, true),
+        "a pending cancel must reach the message boundary so the session can pause"
+    );
+    assert!(
+        should_discard_workflow_before_continuation(true, false),
+        "a cancelled token without a pending cancel is a stale workflow result"
+    );
+    assert!(!should_discard_workflow_before_continuation(false, false));
 }
 
 #[test]
@@ -304,5 +326,41 @@ fn test_tool_batch_cancel_cancels_token_immediately() {
     assert!(
         !token.is_cancelled(),
         "workflow must be startable after tool-batch cancel"
+    );
+}
+
+#[tokio::test]
+async fn test_process_cancel_retry_state_survives_unrelated_batch_tool() {
+    let db = Arc::new(crate::common::setup_test_db_with_migrations().await);
+    let session_root = TempDir::new().expect("session root");
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(session_root.path().join("sessions"))
+            .expect("session manager"),
+    );
+    let manager = MCPServiceProxyManager::new(db, session_manager);
+
+    manager
+        .record_process_cancelled_tool("retry-session", "workspace__execute", "{}")
+        .await;
+    // The cancelled tool itself must retain its retry state.
+    manager
+        .clear_process_cancel_retry_after_tool("retry-session", true, true)
+        .await;
+    // A normal follow-up tool in the same batch must not clear it either.
+    manager
+        .clear_process_cancel_retry_after_tool("retry-session", false, true)
+        .await;
+
+    assert!(
+        !manager
+            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
+            .await,
+        "the cancelled tool should receive its single retry"
+    );
+    assert!(
+        manager
+            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
+            .await,
+        "the same cancelled tool must be blocked after its retry"
     );
 }

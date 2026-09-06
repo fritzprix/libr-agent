@@ -51,6 +51,9 @@
       "searchResults": "Found {{count}} results for \"{{query}}\"",
       "noResults": "No assistants found matching your search",
       "empty": "No assistants available",
+      "loading": "Loading assistants...",
+      "loadingMore": "Loading more assistants...",
+      "totalInfo": "{{count}} of {{total}} assistants",
       "pagination": {
         "previous": "Previous",
         "next": "Next",
@@ -78,6 +81,7 @@
       "created": "Created",
       "updated": "Updated",
       "description": "Description",
+      "fullConfiguration": "Full Configuration",
       "expand": "Expand configuration",
       "collapse": "Collapse configuration"
     }
@@ -290,7 +294,10 @@
     "emptyState": {
       "title": "No sessions yet",
       "subtitle": "Start a conversation to create your first session"
-    }
+    },
+    "loadMore": "Load more",
+    "loadingMore": "Loading more...",
+    "moreAvailable": "more available"
   },
   "orgHistory": {
     "heading": "Org View",
@@ -379,6 +386,10 @@
       "temperatureOverrideTooltip": "Most providers already set a default temperature per model. Leave this off unless you need to override that model default.",
       "temperature": "Temperature",
       "temperatureDescription": "Controls randomness. Lower is more deterministic; higher is more creative. Range 0–2. Applied uniformly to all providers.",
+      "thinkingEffort": "Thinking Effort",
+      "thinkingEffortDescription": "How deeply the model reasons before answering. Unsupported models return a provider error.",
+      "thinkingEffortTooltipAria": "About thinking effort",
+      "thinkingEffortTooltip": "Controls how deeply the model reasons before answering. The setting is always sent when enabled. Models or providers that do not support it return an API error — turn effort Off or switch models. Anthropic uses extended thinking for all non-off levels.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "Agent Hub URL",
       "agentHubUrlDescription": "URL of the remote Agent Hub server. If set, assistants will be synced with this server.",
@@ -469,7 +480,20 @@
       "toolDetailLevelDescription": "Simple mode shows only tool names and status icons. Developer mode shows full parameters, error details, and execution time.",
       "uiVisualsTitle": "UI Visuals",
       "fontFamily": "Font Family",
-      "fontFamilyDescription": "Change the default font family for the UI."
+      "fontFamilyDescription": "Change the default font family for the UI.",
+      "messageLayout": "Message Layout",
+      "messageLayoutDocument": "Document (full-width coding layout)",
+      "messageLayoutBubble": "Bubble (classic chat bubbles)",
+      "messageLayoutDescription": "Document is the default coding layout (full width for code and diffs). Bubble keeps classic messenger-style chat bubbles.",
+      "colorTheme": "Color Theme",
+      "colorThemeDescription": "Choose an accent color theme for the interface.",
+      "colorThemes": {
+        "neutral": "Neutral (Monochrome)",
+        "amber": "Libr Amber (Warmth)",
+        "violet": "Iris Violet (AI)",
+        "ocean": "Ocean Blue (Calm)",
+        "forest": "Forest Sage (Focus)"
+      }
     },
     "advanced": {
       "maxRetries": "Max Retry Attempts",
@@ -552,6 +576,8 @@
       "maxScheduledTaskGroups": "Max Scheduled Task Groups",
       "maxScheduledTaskGroupsDescription": "Maximum number of distinct scheduled task groups allowed across recurring teamwork automation.",
       "backgroundTasks": "Background Tasks",
+      "preventSleepDuringAgentWork": "Prevent sleep while app is running",
+      "preventSleepDuringAgentWorkDescription": "Keep the system from idle-sleeping while LibrAgent is open. Does not force the display to stay on. Enabled by default.",
       "searchIndexFrequency": "Search Index Frequency (Min)",
       "searchIndexFrequencyDescription": "How often the AI updates its memory search. Faster updates keep search fresh but use more battery/CPU.",
       "webActionTimeout": "Web Action Timeout (Sec)",
@@ -618,6 +644,120 @@
       "deleting": "Deleting...",
       "success": "All sessions have been deleted. Restart recommended.",
       "error": "Failed to clear sessions."
+    },
+    "migration": {
+      "title": "Data Migration",
+      "subtitle": "Transfer LibrAgent settings, assistants, scheduler, and custom skills to another device.",
+      "errors": {
+        "occurred": "Error occurred:",
+        "reset": "Reset",
+        "wrongPassword": "Incorrect password. Please try again.",
+        "passwordMinLength": "Password must be at least 4 characters.",
+        "passwordMismatch": "Passwords do not match."
+      },
+      "toasts": {
+        "backupPasswordVerified": "Backup file password verified",
+        "exportSuccess": "Data exported successfully!",
+        "exportFailed": "Export failed: {{error}}",
+        "exportEncryptedSuccess": "Encrypted data exported successfully!",
+        "importSuccess": "Migration data imported successfully!",
+        "importFailed": "Import failed: {{error}}",
+        "mcpReverifyPartial": "Some MCP servers failed re-verification: {{servers}}",
+        "mcpReverifySuccess": "MCP server re-verification completed.",
+        "reverifyFailed": "Re-verification failed: {{error}}"
+      },
+      "export": {
+        "title": "Export Settings",
+        "description": "Package all settings and user skill data from this device into a single archive file (`.libragent-migration`).",
+        "securityWarningLabel": "⚠️ Security notice:",
+        "securityWarning": "API keys and access tokens are masked by default. Enable the option below only when moving them through another secure channel.",
+        "includeSensitiveLabel": "Include sensitive data (full Settings table)",
+        "includeSensitiveDescription": "Store plaintext data from the entire settings table—including API keys and access tokens—in the backup archive.",
+        "selectPathLabel": "Select export path",
+        "selectPathPlaceholder": "Select a folder to export to...",
+        "browse": "Browse",
+        "runExport": "Run Export"
+      },
+      "import": {
+        "title": "Import Settings",
+        "description": "Load a previously exported `.libragent-migration` archive file to update the current environment.",
+        "autoBackupInfo": "Before importing, an automatic backup of the current database is created to prevent data loss. If import fails, the previous state is restored immediately.",
+        "archiveFileLabel": "Migration archive file",
+        "selectAndValidate": "Select file and validate",
+        "runImportWaiting": "Run Import (awaiting file analysis)",
+        "runImport": "Run Import"
+      },
+      "loading": {
+        "inspectingTitle": "Analyzing file structure...",
+        "inspectingDescription": "Inspecting contents and performing threat analysis for ZIP Slip protection.",
+        "exportingTitle": "Writing migration file...",
+        "exportingDescription": "Serializing settings tables and archiving skill files.",
+        "importingTitle": "Applying to environment database...",
+        "importingDescription": "Applying settings within an isolated transaction and validating foreign key constraints.",
+        "selectingTitle": "Waiting for user input...",
+        "selectingDescription": "Complete your selection in the folder/file explorer window."
+      },
+      "preview": {
+        "analysisComplete": "Migration archive analysis complete",
+        "compatible": "✅ Compatible",
+        "newerVersionWarning": "⚠️ Newer version warning",
+        "incompatible": "❌ Incompatible",
+        "compatibilityInfo": "Compatibility info:",
+        "backupAppVersion": "Backup app version",
+        "exportedAt": "Exported at",
+        "totalSize": "Total backup size",
+        "unknown": "Unknown",
+        "sectionsList": "Included backup sections",
+        "sectionName": "Section",
+        "itemCount": "Items",
+        "fileSize": "File size",
+        "itemCountValue": "{{count}} items",
+        "conflictStrategyLabel": "Import conflict resolution",
+        "cancelAndBack": "Cancel and go back"
+      },
+      "strategy": {
+        "skipTitle": "Skip (keep existing)",
+        "skipDescription": "When names or IDs conflict, preserve the existing settings on this device.",
+        "overwriteTitle": "Overwrite",
+        "overwriteDescription": "Remove all existing local records and fully replace them with backup data.",
+        "mergeTitle": "Merge",
+        "mergeDescription": "Keep existing settings while injecting new items. For safety, non-settings data is handled as Skip."
+      },
+      "complete": {
+        "exportTitle": "Export complete!",
+        "importTitle": "Import successful!",
+        "exportDescription": "A backup file of the current environment settings was packaged and created successfully.",
+        "importDescription": "Imported settings passed integrity verification and were applied safely. Complete the cleanup below to activate the changes.",
+        "savePath": "Save path:",
+        "fileSize": "File size:",
+        "includedSections": "Included sections:",
+        "section": "Section",
+        "success": "Success",
+        "skipped": "Skipped",
+        "errors": "Errors",
+        "mcpRestoreLabel": "🔌 MCP and background environment restore:",
+        "mcpRestoreDescription": "After import, MCP services need token refresh and verification to run correctly in the new host/environment. Click the verify button below.",
+        "mcpReverifyButton": "Re-authenticate and verify MCP servers",
+        "backToMain": "Back to migration home"
+      },
+      "exportPassword": {
+        "title": "Set backup security password",
+        "description": "Because this backup includes sensitive data (API keys, credentials, etc.), you must set a password to encrypt the backup file. This password is required when restoring (importing) the backup later.",
+        "passwordLabel": "Password (minimum 4 characters)",
+        "passwordPlaceholder": "Enter password",
+        "confirmLabel": "Confirm password",
+        "confirmPlaceholder": "Re-enter password",
+        "cancel": "Cancel",
+        "runExport": "Run Export"
+      },
+      "importPassword": {
+        "title": "Enter security password",
+        "description": "This backup file is encrypted. A password is required to preview and import it. Enter the password you set when exporting.",
+        "passwordLabel": "Password",
+        "passwordPlaceholder": "Enter password",
+        "cancel": "Cancel",
+        "confirm": "Confirm"
+      }
     },
     "skills": {
       "modalTitle": "Installed Skills ({{count}})",
@@ -690,6 +830,19 @@
       "inlineAudioAttachment": {
         "title": "Inline Audio Attachments",
         "description": "Convert attached audio files into base64 inline content for LLM requests. Disabling this saves significant context window tokens by keeping audio files as workspace-only references."
+      },
+      "toolLoopRecoveryPolicy": {
+        "title": "Tool-loop recovery",
+        "description": "By default, repeated tool loops trigger a clean resample without injecting guidance text into tool errors. When the retry budget is exhausted, the circuit breaker stops the run."
+      },
+      "toolLoopMaxResampleRetries": {
+        "title": "Max resample retries",
+        "description": "How many clean resample attempts to make when a repeated tool-loop signature is detected, before hard-stopping.",
+        "placeholder": "e.g., 2"
+      },
+      "toolLoopLegacyGuidanceEnabled": {
+        "title": "Show loop warnings in tool results (legacy)",
+        "description": "Off by default. When enabled, injects loop-prevention guidance as tool errors instead of silently retrying with a clean resample."
       }
     }
   },
@@ -868,11 +1021,56 @@
     }
   },
   "agent": {
+    "analysisLoader": {
+      "initial": "Preparing response...",
+      "wittyMessages": [
+        "Sipping digital coffee...",
+        "Neurons are stretching...",
+        "Picking the most intellectual emojis...",
+        "Navigating through 0s and 1s...",
+        "Tabs or spaces? Debating the eternal question...",
+        "Tuning quantum entanglement...",
+        "Hunting for missing semicolons...",
+        "Dusting off virtual bookshelves...",
+        "GPU fans spinning at full speed 🌪️",
+        "Baking a fresh, crispy response 🥐",
+        "Briefly admiring a cat picture 🐾",
+        "Searching every corner of cache memory..."
+      ],
+      "lateMessages": [
+        "Great answers require proper aging, like fine wine 🍷",
+        "No progress bar, so cycling witty text instead...",
+        "Waiting 3 more seconds might unleash pure genius...",
+        "Almost there, hang tight!",
+        "Taking a moment? Time for a quick stretch 🧘",
+        "Thanks for your patience, almost ready..."
+      ]
+    },
     "messages": {
       "loadingOlder": "Loading older messages...",
-      "scrollToLoadOlder": "Scroll up to load older messages"
+      "scrollToLoadOlder": "Scroll up to load older messages",
+      "scrollToLatest": "Scroll to latest",
+      "pendingApprovalsJump_one": "{{count}} tool awaiting approval — jump to respond",
+      "pendingApprovalsJump_other": "{{count}} tools awaiting approval — jump to respond"
+    },
+    "approval": {
+      "hardTitle": "Hard Approval Required",
+      "title": "Approval Required",
+      "hardDescriptionYolo": "YOLO mode is on, but this high-risk action still requires manual approval.",
+      "hardDescription": "This high-risk action requires explicit approval.",
+      "description": "The agent wants to execute this tool.",
+      "hardBadge": "Hard approval",
+      "standardBadge": "Standard approval",
+      "arguments": "Arguments",
+      "reject": "Reject",
+      "rejectShortcut": "Reject (Esc)",
+      "hardApprove": "Approve high-risk action",
+      "approve": "Approve",
+      "approveShortcut": "Approve (⌘↵ / Ctrl+↵)",
+      "approveShortcutBadge": "⌘↵"
     },
     "draft": {
+      "llmRequired": "Please configure an AI model provider first.",
       "send": "Send message",
       "attachFiles": "Attach files",
       "attachedFiles": "Attached Files",
@@ -993,7 +1191,8 @@
       "dropFiles": "Drop files here or click to upload",
       "dropFolderHint": "Drop a folder here to set as workspace",
       "dropDirToastError": "Drop directories in the central area to set workspace override.",
-      "dropMixedFoldersError": "Drop files to import them, or a single folder to set workspace override."
+      "dropMixedFoldersError": "Drop files to import them, or a single folder to set workspace override.",
+      "dropFolderIntoSubfolderError": "Dropping folders into subfolders is not supported."
     },
     "statusBar": {
       "retryError": "Failed to retry message",
@@ -1003,6 +1202,7 @@
       "toolsCount": "{{totalCount}}({{mcpCount}}) available • builtin {{builtinCount}}",
       "statusCompacting": "Compressing conversation context in background...",
       "statusAwaitingCompact": "Waiting for context compression to complete...",
+      "statusAwaitingApproval": "Awaiting approval — review pending tool actions.",
       "statusError": "An error occurred: {{error}}",
       "statusIdle": "Ready for input. Type a message to start.",
       "statusBusy": "Processing your request... Agent is thinking and using tools.",
@@ -1029,6 +1229,9 @@
       "mcpServerReadyTools": "{{count}} tools",
       "mcpServerTimedOut": "Timed out",
       "mcpServerFailedShort": "Failed",
+      "executionModeNormalTitle": "Normal mode. Policy blocks and approval rules are enforced.",
+      "executionModeYoloTitle": "YOLO mode. Standard approvals are auto-approved, but hard approvals still require manual approval.",
+      "executionModeUnsafeTitle": "Full Auto mode. All tool executions are automatically approved for uninterrupted workflow.",
       "mcpResultSuccess": "MCP servers ready",
       "mcpResultPartial": "Some MCP servers failed or timed out",
       "mcpResultFailed": "MCP servers failed to load",
@@ -1059,6 +1262,11 @@
       "cancelAriaLabel": "Cancel request",
       "cancellingTooltip": "Cancelling...",
       "cancelTooltip": "Cancel",
+      "cancelOutcome": {
+        "processStopped": "Stopped {{count}} workspace process(es). The workflow will continue.",
+        "workflowPaused": "Workflow cancelled and paused.",
+        "noActiveWork": "There was no active workflow to cancel."
+      },
       "resumeAriaLabel": "Resume workflow",
       "resumeTooltip": "Resume",
       "sendAriaLabel": "Send message",
@@ -1089,7 +1297,8 @@
       "model": "Model",
       "loading": "Loading...",
       "refreshModels": "Refresh models",
-      "refreshRequiresApiKey": "Add an API key to enable model refresh"
+      "refreshRequiresApiKey": "Add an API key to enable model refresh",
+      "configureRequired": "Configure AI Model"
     },
     "toolsModal": {
       "title": "Available Tools",
@@ -1182,6 +1391,7 @@
       "more": "+{{count}} more"
     },
     "bubble": {
+      "toolError": "Tool Execution Error",
       "notification": "Notification",
       "channel": "CHANNEL",
       "assistant": "ASSISTANT",
@@ -1226,6 +1436,9 @@
       "heroSubtitle": "Select an assistant to begin a new autonomous session.",
       "builtinAssistants": "Built-in Assistants",
       "myAssistants": "My Assistants",
+      "onboardingBannerTitle": "AI Model Configuration Required",
+      "onboardingBannerDesc": "To start using agent sessions, please configure an AI model provider (OpenAI, Anthropic, Ollama, etc.) first.",
+      "goToSettings": "Configure AI Model",
       "assistantsLoadFailed": "Failed to load assistants.",
       "noAssistantsAvailable": "No assistants available yet.",
       "createAssistant": "Create Assistant",
@@ -1234,14 +1447,19 @@
       "assistantNotFound": "Assistant not found",
       "startingPlaybook": "Starting playbook: {{goal}}",
       "failedToStartPlaybookSession": "Failed to start playbook session",
-      "startingSession": "Starting session..."
+      "startingSession": "Starting session...",
+      "featuredRecipeTitle": "Create Your Morning Briefing Assistant in 5 Minutes",
+      "featuredRecipeDesc": "Combine Hacker News tech trends with real-time Yahoo Finance indicators for a daily morning briefing.",
+      "startWalkthrough": "Start Guided Walkthrough"
     },
     "chat": {
       "loadingSession": "Loading session...",
       "playbookStartedAutomatically": "Playbook started automatically",
       "failedToStartPlaybookWorkflow": "Failed to start playbook workflow",
       "sessionContextUnavailable": "Session context is unavailable.",
-      "sessionNotFoundOrFailed": "Session not found or failed to load."
+      "sessionNotFoundOrFailed": "Session not found or failed to load.",
+      "yoloModeActive": "YOLO Mode Active",
+      "fullAutoModeActive": "Full Auto Active"
     },
     "mediaRenderer": {
       "failedToLoadImage": "Failed to load image",
@@ -1270,13 +1488,35 @@
     "newTask": "New task",
     "noTasks": "No scheduled tasks yet",
     "createFirst": "Create your first task",
+    "createBlank": "Create blank task",
+    "starterTemplates": {
+      "title": "Starter Templates",
+      "subtitle": "Quickly set up recurring automated tasks with pre-configured templates",
+      "useTemplate": "Use template",
+      "pcAuditTitle": "Daily PC Health & Security Audit",
+      "pcAuditDesc": "Inspect disk usage, uncommitted Git changes, suspicious processes, and package vulnerabilities every midnight.",
+      "pcAuditName": "Daily PC Health & Security Audit",
+      "pcAuditMessage": "Use the workspace shell to perform a comprehensive check on disk space (df -h), long-running processes, uncommitted git status, and package vulnerabilities (audit), then generate a daily briefing markdown report.",
+      "webSummaryTitle": "Website Update & Headline Briefing",
+      "webSummaryDesc": "Visit tech news or blogs with the browser every morning to summarize the top 3 headlines.",
+      "webSummaryName": "Website Update & Headline Briefing",
+      "webSummaryMessage": "Visit Hacker News (https://news.ycombinator.com) using the browser tool and summarize today's top 3 tech headlines into a 3-bullet briefing.",
+      "openWalkthrough": "Open Morning Briefing Walkthrough"
+    },
     "disabled": "disabled",
+    "executionModeUnsafe": "Full Auto",
     "nextRun": "Next run: {{time}}",
     "nextRunNone": "—",
     "editTask": "Edit Task",
     "deleteTask": "Delete Task",
     "editTaskAria": "Edit task: {{name}}",
     "deleteTaskAria": "Delete task: {{name}}",
+    "deleteConfirm": {
+      "title": "Delete scheduled task?",
+      "description": "This permanently deletes \"{{name}}\". This action cannot be undone.",
+      "confirm": "Delete",
+      "deleting": "Deleting…"
+    },
     "modal": {
       "titleNew": "New Scheduled Task",
       "titleEdit": "Edit Scheduled Task",
@@ -1300,6 +1540,14 @@
       "messageHint": "Use @playbook:, @skill:, or @file: for autocomplete.",
       "workspaceAutocompleteHint": "Workspace override enables @skill: and @file: autocomplete.",
       "messagePlaceholder": "Type a message… use @playbook:, @skill:, or @file: for autocomplete",
+      "executionModeLabel": "Execution mode",
+      "executionModeNormal": "Normal",
+      "executionModeYolo": "YOLO",
+      "executionModeUnsafe": "Full Auto",
+      "executionModeNormalHint": "Policy blocks and approval rules are enforced.",
+      "executionModeYoloHint": "Standard approvals are auto-approved; hard approvals still require manual approval.",
+      "executionModeUnsafeHint": "All tool executions are automatically approved for continuous, unattended execution.",
+      "unsafeNotice": "⚡ Full Auto mode is applied so terminal commands are not interrupted during unattended execution.",
       "resetPlanningLabel": "Reset planning state before run",
       "resetPlanningHint": "Clears goal, todos, and scratchpad before injecting the message. Does not wipe chat history.",
       "cancel": "Cancel",
@@ -1334,8 +1582,12 @@
         "hours_other": "Every {{count}} hours",
         "daily": "Daily at {{time}}",
         "weekly": "Every {{day}} at {{time}}",
-        "monthly": "Monthly on day {{day}} at {{time}}"
+        "monthly": "Monthly on day {{day}} at {{time}}",
+        "custom": "Custom: {{cron}}"
       },
+      "customHint": "This schedule uses an advanced cron expression the simple editor cannot represent. Edit the expression below, or switch to a simple schedule (this replaces the current expression).",
+      "customLabel": "Cron expression",
+      "switchToSimple": "Switch to simple schedule",
       "days": {
         "0": "Sunday",
         "1": "Monday",
@@ -1358,7 +1610,8 @@
     "title": "Error",
     "unknownError": "An unknown error occurred.",
     "retrying": "Retrying...",
-    "tryAgain": "Try Again"
+    "tryAgain": "Try Again",
+    "goToSettings": "Configure API Key in Settings"
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",
@@ -1407,5 +1660,39 @@
       "relatedEntity": "Related entity"
     },
     "excerpt": "Excerpt"
+  },
+  "recipes": {
+    "morningBriefing": {
+      "title": "Morning Tech & Finance Briefing",
+      "desc": "Combine Hacker News tech trends with real-time Yahoo Finance indicators for a daily morning briefing.",
+      "modalTitle": "🌅 Morning Tech & Finance Briefing Setup",
+      "step1Title": "Step 1 · Check AI Model Configuration",
+      "step2Title": "Step 2 · Install Free Extensions",
+      "step3Title": "Step 3 · Assistant & Automated Schedule",
+      "connected": "Connected",
+      "required": "Configuration Required",
+      "connectedDesc": "AI model provider is configured and ready for briefing generation.",
+      "unconfiguredTitle": "No AI model provider configured.",
+      "unconfiguredDesc": "To generate briefings, please configure an AI model provider (OpenAI, Anthropic, Ollama, etc.) first.",
+      "goToSettings": "Go to Settings",
+      "freeTag": "💡 100% Free · No API Key Required",
+      "hnTitle": "Hacker News (hn)",
+      "hnDesc": "Fetch trending tech & developer stories from Hacker News in real-time",
+      "yfTitle": "Yahoo Finance (yahoo-finance)",
+      "yfDesc": "Real-time global market indices (S&P 500, Nasdaq, FX, stocks) with no API key",
+      "builtinToolsBadge": "Built-in Tools Enabled",
+      "scheduleBadge": "Daily 09:00 AM (YOLO Mode)",
+      "settingUp": "Setting up...",
+      "actionButton": "🚀 Auto Setup & Receive Briefing Now",
+      "llmRequiredToast": "Please configure an AI model provider first.",
+      "setupSuccess": "Morning Briefing assistant and scheduled task created successfully!",
+      "setupError": "Failed to set up morning briefing.",
+      "assistantName": "Morning Briefing Assistant",
+      "assistantDesc": "Specialized assistant for summarizing Hacker News tech trends and global financial metrics",
+      "assistantSystemPrompt": "You are a professional briefing assistant providing fast and crisp daily summaries of global tech trends and key financial indicators. Use Hacker News (hn tools) to summarize top 3 development/tech topics, and Yahoo Finance (yahoo-finance tools) to report key market indices including S&P 500, Nasdaq, and major currencies into a concise markdown report.",
+      "scheduledTaskName": "Daily 9:00 AM Morning Briefing",
+      "scheduledTaskMessage": "Synthesize today's top 3 Hacker News stories and key market indices (S&P 500, Nasdaq) into a daily morning briefing report.",
+      "testRunPrompt": "Check today's top 3 Hacker News stories and key stock indices, and write today's morning briefing report right now."
+    }
   }
 }

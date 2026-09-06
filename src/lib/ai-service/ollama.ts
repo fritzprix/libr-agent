@@ -12,13 +12,14 @@ import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { ModelInfo } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { supportsThinking, getContextWindow } from './model-capabilities';
+import { getContextWindow } from './model-capabilities';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
+  createThinkTagStreamState,
+  flushThinkTagStream,
   processChunk,
   getModelToolSupport,
-  determineThinkParam,
   type Logger,
   type SimpleOllamaMessage,
 } from './ollama-core';
@@ -27,7 +28,12 @@ import {
   serializeDirectToolCalls,
 } from './stream-events';
 import { createLlmFetch } from './desktop-fetch';
+import {
+  SELF_HOSTED_LLM_MAX_RETRIES,
+  SELF_HOSTED_LLM_TIMEOUT_MS,
+} from './llm-host-policy';
 import { reportListModelsFallback } from './list-models-errors';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 
 const logger = getLogger('OllamaService');
 
@@ -101,11 +107,14 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
    * @param config Optional configuration for the service.
    */
   constructor(apiKey: string, config?: AIServiceConfig) {
-    // Local models can be slow, especially for initial loading or large context.
-    // We increase the default timeout to 5 minutes (300000ms) if not explicitly provided.
+    // Ollama is always treated as self-hosted: large prefills (e.g. ~128k at
+    // session start) commonly take 5–6+ minutes. Disable retries so a slow
+    // prefill is not duplicated onto another slot.
+    const timeout = config?.timeout ?? SELF_HOSTED_LLM_TIMEOUT_MS;
     super(apiKey, {
-      timeout: 300_000,
       ...config,
+      timeout,
+      maxRetries: SELF_HOSTED_LLM_MAX_RETRIES,
     });
     this.host = config?.baseUrl || 'http://127.0.0.1:11434';
 
@@ -116,6 +125,8 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
     });
     logger.info('Ollama service initialized', {
       host: this.host,
+      timeout,
+      maxRetries: SELF_HOSTED_LLM_MAX_RETRIES,
     });
   }
 
@@ -272,6 +283,9 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
+      // Ollama's native /api/chat has no reliable tool_choice=none. Omitting tools
+      // is the only way to disable function calling (unlike OpenAI/Anthropic/Gemini).
+      // This trades prompt-prefix alignment for correct no-tool compaction behavior.
       const shouldIncludeTools = !options.disableToolUse;
       const requestTools = shouldIncludeTools ? ollamaTools : undefined;
       const abortSignal = options.signal;
@@ -296,20 +310,16 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         })),
       });
 
-      // Prepare reasoning parameter based on config
-      // Check if model actually supports thinking (optional, for better UX)
-      const modelSupportsThinking = config.enableReasoning
-        ? await supportsThinking(model, AIServiceProvider.Ollama, {
-            apiBase: this.host,
-          })
-        : false;
-
-      const thinkParam = determineThinkParam(
-        config.enableReasoning ?? false,
-        config.reasoningEffort,
-        modelSupportsThinking,
-        coreLogger,
+      // Honor user thinking effort; unsupported models return provider API errors.
+      // Ollama may still retry with boolean `think` if granular levels are rejected.
+      let thinkParam: boolean | 'low' | 'medium' | 'high' | undefined;
+      const thinkingParams = mapThinkingEffort(
+        AIServiceProvider.Ollama,
+        config.thinkingEffort,
       );
+      if (thinkingParams.enabled) {
+        thinkParam = thinkingParams.reasoningEffort ?? true;
+      }
 
       const requestOptions: ChatRequest & { stream: true } = {
         model,
@@ -356,6 +366,7 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         number,
         import('./ollama-core').OllamaToolCallAccumulator
       >();
+      const thinkTagState = createThinkTagStreamState();
 
       try {
         abortSignal?.addEventListener('abort', abortStream, { once: true });
@@ -382,6 +393,7 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
             chunk,
             coreLogger,
             toolCallAccumulators,
+            thinkTagState,
           );
           if (processedChunk) {
             if (processedChunk.content) {
@@ -411,6 +423,14 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
               logger.error('Error processing chunk', processedChunk.error);
             }
           }
+        }
+
+        const flushedTags = flushThinkTagStream(thinkTagState);
+        if (flushedTags.thinking) {
+          yield JSON.stringify({ thinking: flushedTags.thinking });
+        }
+        if (flushedTags.content) {
+          yield JSON.stringify({ content: flushedTags.content });
         }
       } finally {
         abortSignal?.removeEventListener('abort', abortStream);

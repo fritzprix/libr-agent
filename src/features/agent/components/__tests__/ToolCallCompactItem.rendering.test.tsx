@@ -78,11 +78,11 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
     expect(queryByTestId('tool-details')).toBeInTheDocument();
   });
 
-  it('does NOT auto-expand in simple mode when an error occurs', () => {
+  it('does not auto-expand in simple mode when an error occurs, but allows manual expansion', () => {
     mockDetailLevel = 'simple';
     const toolCall = makeToolCall('call-2');
 
-    const { rerender, queryByTestId } = render(
+    const { rerender, queryByTestId, getByLabelText } = render(
       <ToolCallCompactItem toolCall={toolCall} />,
     );
 
@@ -91,32 +91,40 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
       <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
     );
 
+    // In simple mode, error should NOT auto-expand
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+
+    // User can manually expand via toggle button
+    fireEvent.click(getByLabelText('agentChat.toolDetails.toggleAriaLabel'));
+    expect(queryByTestId('tool-details')).toBeInTheDocument();
   });
 
-  it('stays collapsed when switching from simple to developer mode if transition occurred in simple mode', () => {
+  it('keeps expand state when manually expanded in simple mode and switching to developer', () => {
     // 1. Simple mode, no error
     mockDetailLevel = 'simple';
     const toolCall = makeToolCall('call-3');
-    const { rerender, queryByTestId } = render(
+    const { rerender, queryByTestId, getByLabelText } = render(
       <ToolCallCompactItem toolCall={toolCall} />,
     );
 
-    // 2. Simple mode, error occurs
+    // 2. Simple mode, error occurs → remains collapsed
     const toolResultWithError = makeToolResult('call-3', true);
     rerender(
       <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
     );
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
 
-    // 3. Switch to developer mode
+    // Manually expand
+    fireEvent.click(getByLabelText('agentChat.toolDetails.toggleAriaLabel'));
+    expect(queryByTestId('tool-details')).toBeInTheDocument();
+
+    // 3. Switch to developer mode — expand state persists
     mockDetailLevel = 'developer';
     rerender(
       <ToolCallCompactItem toolCall={toolCall} toolResult={toolResultWithError} />,
     );
 
-    // Critical: Should NOT be expanded because the sentinel synced during simple mode
-    expect(queryByTestId('tool-details')).not.toBeInTheDocument();
+    expect(queryByTestId('tool-details')).toBeInTheDocument();
   });
 
   it('does NOT re-trigger expansion on subsequent renders if no new transition occurred', () => {

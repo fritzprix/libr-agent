@@ -24,6 +24,8 @@ vi.mock('@/hooks/use-settings', () => ({
       },
       experimental: {
         inlineAudioAttachment: true,
+        toolLoopRecoveryPolicy: 'resampleThenBreak',
+        toolLoopMaxResampleRetries: 2,
       },
     },
   }),

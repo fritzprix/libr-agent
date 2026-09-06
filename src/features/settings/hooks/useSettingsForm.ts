@@ -45,6 +45,7 @@ function getAiModelsComparableState(settings: SettingsFormState) {
     fallbackModel: settings.fallbackModel,
     temperatureOverrideEnabled: settings.temperatureOverrideEnabled,
     temperature: settings.temperature,
+    thinkingEffort: settings.advanced.thinkingEffort,
     agentHubUrl: settings.agentHubUrl,
   };
 }
@@ -80,10 +81,12 @@ function getAdvancedComparableState(settings: SettingsFormState) {
   const {
     diffContextLines,
     defaultMaxOutputTokens,
+    thinkingEffort,
     ...advancedWithoutChatFields
   } = settings.advanced;
   void diffContextLines;
   void defaultMaxOutputTokens;
+  void thinkingEffort;
 
   return {
     ...advancedWithoutChatFields,
@@ -95,6 +98,9 @@ function getAdvancedComparableState(settings: SettingsFormState) {
 function getExperimentalComparableState(settings: SettingsFormState) {
   return {
     inlineAudioAttachment: settings.experimental.inlineAudioAttachment,
+    toolLoopRecoveryPolicy: settings.experimental.toolLoopRecoveryPolicy,
+    toolLoopMaxResampleRetries:
+      settings.experimental.toolLoopMaxResampleRetries,
   };
 }
 

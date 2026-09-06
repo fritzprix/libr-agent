@@ -1,5 +1,10 @@
 use std::time::Duration;
 
+use chromiumoxide::cdp::browser_protocol::emulation::{
+    ClearDeviceMetricsOverrideParams, SetDeviceMetricsOverrideParams,
+};
+use chromiumoxide::cdp::browser_protocol::page::{CaptureScreenshotFormat, Viewport};
+use chromiumoxide::page::ScreenshotParams;
 use chromiumoxide::Page;
 use log::warn;
 use serde::de::DeserializeOwned;
@@ -10,6 +15,12 @@ use super::contracts::{HistoryNavigationStatus, PageClassification, PageState};
 
 const HISTORY_NAVIGATION_TIMEOUT: Duration = Duration::from_secs(4);
 const HISTORY_NAVIGATION_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// Cap how long chromiumoxide may wait for full page load (networkIdle-prone sites).
+pub(crate) const PAGE_LOAD_TIMEOUT: Duration = Duration::from_secs(30);
+/// Maximum accepted PNG payload size after capture.
+pub const MAX_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum CSS content pixels allowed for full-page capture (matches chromiumoxide scale=1).
+pub const MAX_FULL_PAGE_PIXELS: f64 = 64_000_000.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +44,36 @@ pub(crate) async fn snapshot_page_state(page: &Page) -> Result<PageState, String
     Ok(page_state_from_snapshot(snapshot))
 }
 
+/// Navigate and bound the load wait so ad-heavy / never-idle pages cannot hang forever.
+///
+/// On timeout the page is kept open and a partial snapshot is returned so callers can
+/// still extract whatever DOM has already rendered.
+pub(crate) async fn goto_with_load_timeout(page: &Page, url: &str) -> Result<PageState, String> {
+    let timed = tokio::time::timeout(PAGE_LOAD_TIMEOUT, page.goto(url)).await;
+    let timed_out = match timed {
+        Ok(Ok(_)) => false,
+        Ok(Err(error)) => {
+            return Err(format!("Failed to navigate to '{url}': {error}"));
+        }
+        Err(_) => {
+            warn!(
+                "Page load timed out for {url} after {:?}; continuing with partial page state",
+                PAGE_LOAD_TIMEOUT
+            );
+            true
+        }
+    };
+
+    let mut state = snapshot_page_state(page).await?;
+    if timed_out {
+        state.navigation_message = Some(format!(
+            "Navigation load wait timed out after {}s; page may be partially loaded",
+            PAGE_LOAD_TIMEOUT.as_secs()
+        ));
+    }
+    Ok(state)
+}
+
 pub(crate) async fn navigate_back(page: &Page) -> Result<PageState, String> {
     perform_history_navigation(page, HistoryDirection::Back).await
 }
@@ -45,6 +86,113 @@ pub(crate) fn serialize_evaluation_result(
     result: chromiumoxide::js::EvaluationResult,
 ) -> Result<String, String> {
     serialize_browser_result_value(result.value().cloned())
+}
+
+/// Validate full-page CSS content dimensions before capture.
+pub fn validate_full_page_dimensions(width: f64, height: f64) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() {
+        return Err("Full-page screenshot dimensions are invalid".to_string());
+    }
+    let width = width.max(0.0);
+    let height = height.max(0.0);
+    let pixel_count = width * height;
+    if !pixel_count.is_finite() {
+        return Err("Full-page screenshot dimensions are invalid".to_string());
+    }
+    if pixel_count > MAX_FULL_PAGE_PIXELS {
+        return Err(format!(
+            "Full-page screenshot is too large: {:.0} pixels exceeds the limit of {:.0}",
+            pixel_count, MAX_FULL_PAGE_PIXELS
+        ));
+    }
+    Ok(())
+}
+
+/// Validate captured PNG payload size.
+pub fn validate_screenshot_png_bytes(screenshot: &[u8]) -> Result<(), String> {
+    if screenshot.len() > MAX_SCREENSHOT_BYTES {
+        return Err(format!(
+            "Screenshot is too large: {} bytes exceeds the limit of {} bytes",
+            screenshot.len(),
+            MAX_SCREENSHOT_BYTES
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) async fn capture_screenshot(page: &Page, full_page: bool) -> Result<Vec<u8>, String> {
+    if full_page {
+        capture_full_page_screenshot(page).await
+    } else {
+        capture_viewport_screenshot(page).await
+    }
+}
+
+async fn capture_viewport_screenshot(page: &Page) -> Result<Vec<u8>, String> {
+    let screenshot = page
+        .screenshot(
+            ScreenshotParams::builder()
+                .format(CaptureScreenshotFormat::Png)
+                .full_page(false)
+                .build(),
+        )
+        .await
+        .map_err(|e| format!("Failed to capture browser screenshot: {e}"))?;
+    validate_screenshot_png_bytes(&screenshot)?;
+    Ok(screenshot)
+}
+
+/// Full-page capture with guaranteed device-metrics cleanup.
+///
+/// chromiumoxide's `full_page(true)` sets `SetDeviceMetricsOverride` and only clears it on the
+/// success path. We own that lifecycle here so a mid-capture failure cannot leave the page stuck
+/// at an oversized viewport for later browser tools.
+async fn capture_full_page_screenshot(page: &Page) -> Result<Vec<u8>, String> {
+    let metrics = page
+        .layout_metrics()
+        .await
+        .map_err(|e| format!("Failed to measure page for full-page screenshot: {e}"))?;
+    let size = metrics.css_content_size;
+    validate_full_page_dimensions(size.width, size.height)?;
+    let width = size.width.max(0.0);
+    let height = size.height.max(0.0);
+
+    page.execute(SetDeviceMetricsOverrideParams::new(
+        width as i64,
+        height as i64,
+        1.0,
+        false,
+    ))
+    .await
+    .map_err(|e| format!("Failed to prepare full-page screenshot viewport: {e}"))?;
+
+    let capture_result = page
+        .screenshot(
+            ScreenshotParams::builder()
+                .format(CaptureScreenshotFormat::Png)
+                .full_page(false)
+                .clip(Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width,
+                    height,
+                    scale: 1.0,
+                })
+                .build(),
+        )
+        .await;
+
+    if let Err(clear_error) = page
+        .execute(ClearDeviceMetricsOverrideParams::default())
+        .await
+    {
+        warn!("Failed to clear device metrics override after full-page screenshot: {clear_error}");
+    }
+
+    let screenshot =
+        capture_result.map_err(|e| format!("Failed to capture browser screenshot: {e}"))?;
+    validate_screenshot_png_bytes(&screenshot)?;
+    Ok(screenshot)
 }
 
 async fn snapshot_navigation_state(page: &Page) -> Result<NavigationSnapshot, String> {

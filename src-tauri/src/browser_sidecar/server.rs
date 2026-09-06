@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use base64::Engine;
 use chromiumoxide::cdp::browser_protocol::target::{
     CreateBrowserContextParams, CreateTargetParams,
 };
@@ -12,10 +13,11 @@ use tokio::task::JoinSet;
 
 use super::contracts::{
     ConsoleEntry, CreateSessionParams, EvaluateParams, GetConsoleLogsParams, NavigateParams,
-    SessionIdParams, SidecarRequest, SidecarResponse,
+    SessionIdParams, SidecarRequest, SidecarResponse, TakeScreenshotParams,
 };
 use super::page::{
-    navigate_back, navigate_forward, serialize_evaluation_result, snapshot_page_state,
+    capture_screenshot, goto_with_load_timeout, navigate_back, navigate_forward,
+    serialize_evaluation_result, snapshot_page_state,
 };
 use super::runtime::{
     cleanup_failed_context_launch, cleanup_session_resources, shutdown_runtime,
@@ -121,6 +123,7 @@ impl BrowserSidecarServer {
             "goBack" => self.go_back(request.params).await,
             "goForward" => self.go_forward(request.params).await,
             "evaluate" => self.evaluate(request.params).await,
+            "takeScreenshot" => self.take_screenshot(request.params).await,
             "getState" => self.get_state(request.params).await,
             "getConsoleLogs" => self.get_console_logs(request.params).await,
             _ => Err(format!(
@@ -158,13 +161,15 @@ impl BrowserSidecarServer {
             .await
             .map_err(|e| format!("Failed to create isolated browser context: {e}"))?;
 
+        // Open about:blank first so createTarget does not block on a never-idle URL.
+        // Navigation is bounded separately via goto_with_load_timeout.
         let page = match runtime
             .browser
             .lock()
             .await
             .new_page(
                 CreateTargetParams::builder()
-                    .url(&params.url)
+                    .url("about:blank")
                     .browser_context_id(context_id.clone())
                     .build()
                     .map_err(|e| format!("Failed to build browser target params: {e}"))?,
@@ -178,6 +183,15 @@ impl BrowserSidecarServer {
             }
         };
         let page = Arc::new(page);
+
+        let navigated_state = match goto_with_load_timeout(page.as_ref(), &params.url).await {
+            Ok(state) => state,
+            Err(error) => {
+                let _ = page.as_ref().clone().close().await;
+                cleanup_failed_context_launch(runtime.browser.clone(), context_id.clone()).await;
+                return Err(error);
+            }
+        };
 
         // Attach console event listener
         use futures::StreamExt;
@@ -249,7 +263,7 @@ impl BrowserSidecarServer {
             }
         }
 
-        let state = match snapshot_page_state(&page).await {
+        let mut state = match snapshot_page_state(&page).await {
             Ok(state) => state,
             Err(error) => {
                 let _ = page.as_ref().clone().close().await;
@@ -257,6 +271,9 @@ impl BrowserSidecarServer {
                 return Err(error);
             }
         };
+        if state.navigation_message.is_none() {
+            state.navigation_message = navigated_state.navigation_message;
+        }
 
         let mut sessions = self.sessions.lock().await;
         sessions.insert(params.session_id, SidecarSession { context_id, page });
@@ -322,10 +339,7 @@ impl BrowserSidecarServer {
         let params: NavigateParams =
             serde_json::from_value(params).map_err(|e| format!("Invalid navigate params: {e}"))?;
         let page = self.get_session_page(&params.session_id).await?;
-        page.goto(&params.url)
-            .await
-            .map_err(|e| format!("Failed to navigate to '{}': {e}", params.url))?;
-        let state = snapshot_page_state(&page).await?;
+        let state = goto_with_load_timeout(page.as_ref(), &params.url).await?;
         serde_json::to_value(state).map_err(|e| format!("Failed to serialize navigate result: {e}"))
     }
 
@@ -371,6 +385,16 @@ impl BrowserSidecarServer {
         let page = self.get_session_page(&params.session_id).await?;
         let state = snapshot_page_state(&page).await?;
         serde_json::to_value(state).map_err(|e| format!("Failed to serialize getState result: {e}"))
+    }
+
+    async fn take_screenshot(&self, params: Value) -> Result<Value, String> {
+        let params: TakeScreenshotParams = serde_json::from_value(params)
+            .map_err(|e| format!("Invalid takeScreenshot params: {e}"))?;
+        let page = self.get_session_page(&params.session_id).await?;
+        let screenshot = capture_screenshot(&page, params.full_page).await?;
+        Ok(Value::String(
+            base64::engine::general_purpose::STANDARD.encode(screenshot),
+        ))
     }
 
     async fn close_existing_session_if_present(&self, session_id: &str) -> Result<(), String> {

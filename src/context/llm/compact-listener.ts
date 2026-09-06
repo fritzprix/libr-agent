@@ -18,11 +18,12 @@ import { toast } from 'sonner';
 import { buildServiceRuntimeConfig } from './service-runtime-config';
 import { toAgentRuntimeError } from './listener-utils';
 import type { CompactRequest, CompactedRange } from './types';
+import { compactSessionToastId } from './compact-toast-id';
+import { applyCompactionRetryTailInstruction } from './compact-cache-alignment';
 
 const logger = getLogger('compact-listener');
+/** Sessions whose prior compact summary was rejected; retry with tail-only guidance. */
 const compactionRetrySessions = new Set<string>();
-const COMPACTION_RETRY_NO_TOOL_NOTE =
-  'RETRY INSTRUCTION: The previous compaction response contained tool-call markup or execution syntax. Output plain markdown summary text only. Do not call tools, emit tool-call markup, or include pseudo-tool XML/JSON.';
 
 interface CompactRequestListenerOptions {
   settingsRef: MutableRefObject<Settings>;
@@ -50,19 +51,6 @@ interface CompactStateListenerOptions {
   onRegistered: () => void;
 }
 
-function buildCompactionRetrySystemPrompt(
-  systemPrompt: string | undefined,
-  retryWithoutTools: boolean,
-): string | undefined {
-  if (!retryWithoutTools) {
-    return systemPrompt;
-  }
-
-  return systemPrompt
-    ? `${systemPrompt}\n\n${COMPACTION_RETRY_NO_TOOL_NOTE}`
-    : COMPACTION_RETRY_NO_TOOL_NOTE;
-}
-
 export async function setupCompactRequestListener({
   settingsRef,
   setCompactedRangeForSession,
@@ -79,8 +67,11 @@ export async function setupCompactRequestListener({
         compactedDeltaCount,
         parentRequest,
       } = event.payload;
-      const messages = rawMessages.map(normalizeRustMessage);
-      const retryWithoutTools = compactionRetrySessions.has(sessionId);
+      const baseMessages = rawMessages.map(normalizeRustMessage);
+      const isRetry = compactionRetrySessions.has(sessionId);
+      const messages = isRetry
+        ? applyCompactionRetryTailInstruction(baseMessages)
+        : baseMessages;
       logger.info(
         `📦 Compact request received: session=${sessionId}, toId=${toId}, compactedDeltaCount=${compactedDeltaCount}`,
       );
@@ -102,17 +93,18 @@ export async function setupCompactRequestListener({
       const resolved = resolveProviderRuntimeConfig(provider, settings);
       const apiKey = resolved.apiKey ?? '';
       const model = parentRequest?.model ?? settings.preferredModel.model;
-      const systemPrompt = buildCompactionRetrySystemPrompt(
-        parentRequest?.systemPrompt,
-        retryWithoutTools,
-      );
-      const availableTools = retryWithoutTools
-        ? undefined
-        : parentRequest?.availableTools;
+      // Preserve parent system prompt + tool schemas for prompt-cache prefix reuse.
+      // Retry guidance is tail-injected only (see applyCompactionRetryTailInstruction).
+      const systemPrompt = parentRequest?.systemPrompt;
+      const availableTools = parentRequest?.availableTools;
       const runtimeConfig = buildServiceRuntimeConfig(
         settings,
         resolved.serviceConfig,
       );
+      const compactRuntimeConfig = {
+        ...runtimeConfig,
+        thinkingEffort: 'off' as const,
+      };
       const requestComposition = summarizeCompactionRequestSizes({
         messages,
         systemPrompt,
@@ -123,22 +115,22 @@ export async function setupCompactRequestListener({
         const service: AIContextCompactionService = AIServiceFactory.getService(
           provider,
           apiKey,
-          runtimeConfig,
+          compactRuntimeConfig,
         );
         logger.info(
           `🧪 Compact provider handoff ingredients: session=${sessionId}, provider=${provider}, model=${model}`,
           {
             ...requestComposition,
-            retryWithoutTools,
-            reasoningEnabled: runtimeConfig.enableReasoning ?? false,
-            maxTokens: runtimeConfig.maxTokens,
+            isRetry,
+            thinkingEffort: compactRuntimeConfig.thinkingEffort,
+            maxTokens: compactRuntimeConfig.maxTokens,
           },
         );
         const summary = await service.compact(messages, {
           modelName: model,
           systemPrompt,
           availableTools,
-          config: runtimeConfig,
+          config: compactRuntimeConfig,
         });
         const response = await handleCompactResponse(
           sessionId,
@@ -188,7 +180,7 @@ export async function setupCompactRequestListener({
           `🧪 Compact failure request composition: session=${sessionId}, provider=${provider}, model=${model}`,
           {
             ...requestComposition,
-            reasoningEnabled: runtimeConfig.enableReasoning ?? false,
+            thinkingEffort: compactRuntimeConfig.thinkingEffort,
             maxTokens: runtimeConfig.maxTokens,
           },
         );
@@ -226,7 +218,7 @@ export async function setupCompactStateListener({
         phase,
         error,
       } = event.payload;
-      const toastId = `compact-${sessionId}`;
+      const toastId = compactSessionToastId(sessionId);
       const description = sessionName ?? sessionId.slice(0, 8);
 
       setCompactingFromEvent(sessionId, compacting);

@@ -226,6 +226,7 @@ pub async fn list_tools(manager: &MCPServerManager, server_name: &str) -> Result
                         input_schema: structured_schema,
                         output_schema: None,
                         annotations: None,
+                        libragent_wait: None,
                     };
 
                     debug!(

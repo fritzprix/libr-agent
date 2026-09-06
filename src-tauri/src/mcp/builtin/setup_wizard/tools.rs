@@ -36,6 +36,7 @@ Returns:
         input_schema: object_schema(SchemaProperties::new(), vec![]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -87,6 +88,7 @@ The guide includes:
         input_schema: object_schema(props, vec!["tool".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 

@@ -1,8 +1,10 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { ServerCard } from '../ServerCard';
 import type { MCPServerEntity } from '@/models/chat';
+import type { ReactElement } from 'react';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -12,6 +14,14 @@ vi.mock('react-i18next', () => ({
     },
   }),
 }));
+
+vi.mock('@/lib/backend/assistants', () => ({
+  listAssistants: vi.fn().mockResolvedValue([]),
+}));
+
+function renderCard(ui: ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 // Mock ServerToolsModal to avoid safeInvoke() calls in tests
 vi.mock('../ServerToolsModal', () => ({
@@ -51,7 +61,7 @@ const noop = () => {};
 
 describe('ServerCard', () => {
   it('renders server name', () => {
-    render(
+    renderCard(
       <ServerCard
         server={baseServer}
         onEdit={noop}
@@ -63,7 +73,7 @@ describe('ServerCard', () => {
   });
 
   it('does NOT show Browse Tools button when toolCount is null/undefined', () => {
-    render(
+    renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: undefined }}
         onEdit={noop}
@@ -75,7 +85,7 @@ describe('ServerCard', () => {
   });
 
   it('does NOT show Browse Tools button when toolCount is 0', () => {
-    render(
+    renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 0 }}
         onEdit={noop}
@@ -87,7 +97,7 @@ describe('ServerCard', () => {
   });
 
   it('shows Browse Tools button when toolCount > 0', () => {
-    render(
+    renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 5 }}
         onEdit={noop}
@@ -99,7 +109,7 @@ describe('ServerCard', () => {
   });
 
   it('opens ServerToolsModal when Browse Tools is clicked', () => {
-    render(
+    renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 3 }}
         onEdit={noop}
@@ -113,7 +123,7 @@ describe('ServerCard', () => {
   });
 
   it('closes ServerToolsModal when onClose is called', () => {
-    render(
+    renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 3 }}
         onEdit={noop}
@@ -129,7 +139,7 @@ describe('ServerCard', () => {
 
   it('calls onEdit when Edit button is clicked', () => {
     const onEdit = vi.fn();
-    render(
+    renderCard(
       <ServerCard
         server={baseServer}
         onEdit={onEdit}
@@ -143,7 +153,7 @@ describe('ServerCard', () => {
 
   it('calls onDelete when Delete button is clicked', () => {
     const onDelete = vi.fn();
-    render(
+    renderCard(
       <ServerCard
         server={baseServer}
         onEdit={noop}
@@ -156,12 +166,13 @@ describe('ServerCard', () => {
   });
 
   it('renders verification error details on the card', () => {
-    render(
+    renderCard(
       <ServerCard
         server={{
           ...baseServer,
           verificationStatus: 'error',
-          lastVerificationError: 'Failed to connect to test server',
+          lastVerificationError:
+            "Failed to connect to 'hn': No such file or directory (os error 2)",
         }}
         onEdit={noop}
         onDelete={noop}
@@ -171,7 +182,26 @@ describe('ServerCard', () => {
 
     expect(screen.getByText('Connection failed')).toBeInTheDocument();
     expect(
-      screen.getByText('Failed to connect to test server'),
+      screen.getByText('A required command was not found on this machine.'),
     ).toBeInTheDocument();
+    expect(screen.getByText('Open App Wizard')).toBeInTheDocument();
+    expect(screen.getByText('Retry')).toBeInTheDocument();
+  });
+
+  it('shows verifying state for pending verification', () => {
+    renderCard(
+      <ServerCard
+        server={{
+          ...baseServer,
+          verificationStatus: 'pending',
+        }}
+        onEdit={noop}
+        onDelete={noop}
+        onToggleActive={noop}
+      />,
+    );
+
+    expect(screen.getAllByText('Verifying...').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Starting extension process/i)).toBeInTheDocument();
   });
 });

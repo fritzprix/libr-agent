@@ -92,6 +92,14 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
         session_id: Option<String>,
     ) -> Result<MCPResult, String>;
 
+    /// Cancel resources owned by a session.
+    ///
+    /// Builtin servers that own cancellable external resources can override this
+    /// hook. Servers without session-scoped resources have no work to perform.
+    async fn kill_session_processes(&self, _session_id: &str) -> Result<usize, String> {
+        Ok(0)
+    }
+
     /// Returns a markdown-formatted string describing the server's current status and context.
     ///
     /// If the returned context is marked `ContextVolatility::Stable`, its text must be

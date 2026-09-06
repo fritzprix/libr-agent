@@ -1,6 +1,13 @@
 ---
 name: delegate
-description: Delegate work between LibrAgent AI agent sessions using sub-agent sessions. Use when an agent needs to spawn, brief, monitor, or troubleshoot a child session with `agent__startSession`, `agent__checkSession`, or `agent__messageToSession`, especially when deciding whether the child really needs parent workspace state, workspace instructions, or workspace-scoped skills.
+description: >
+  Delegate work between LibrAgent AI agent sessions using sub-agent sessions.
+  Use when an agent needs to spawn, brief, monitor, or troubleshoot a child
+  session with `agent__startSession`, `agent__checkSession`, or
+  `agent__messageToSession`, especially when deciding whether the child really
+  needs parent workspace state, workspace instructions, or workspace-scoped
+  skills. For generator-evaluator / strict acceptance criteria / proof before
+  done, load `delegation-eval-loop` after this skill's spawn mechanics.
 ---
 
 # Delegate
@@ -15,14 +22,26 @@ A child session keeps lineage to its parent, but it does **not** automatically i
 
 Read `references/delegation-patterns.md` when you need concrete handoff templates, troubleshooting patterns, or a quick matrix for what the child session can actually see.
 
+## Skill Routing
+
+| Need | Skill |
+| --- | --- |
+| Spawn, isolation, workspace/handoff mechanics | **this skill** (`delegate`) |
+| Strict acceptance criteria, proof-before-done, reject/re-steer loop | **`delegation-eval-loop`** (parent = evaluator, child = generator) |
+| Parallel independent pieces | `divide-conquer` |
+| Multi-perspective review of one question | `consensus-delegation` |
+
+Do **not** paste the full eval protocol into every delegation. Use light checks in §5 for casual handoffs; load `delegation-eval-loop` when the user or task requires verifiable completion.
+
 ## Delegation Workflow
 
 1. Decide whether delegation is appropriate.
-2. Choose the child's effective context.
-3. Prepare a handoff that includes everything the child actually needs.
-4. Start the child session.
-5. Monitor or steer it with follow-up messages.
-6. Merge the result back into the parent flow.
+2. Inspect existing child sessions and reuse a suitable idle session with the same assistant configuration when possible.
+3. Choose the child's effective context.
+4. Prepare a handoff that includes everything the child actually needs.
+5. Start a new child only when no suitable session exists or separate role, parallel, or workspace isolation is needed.
+6. Monitor or steer it with follow-up messages.
+7. Merge the result back into the parent flow.
 
 ## 1. Decide Whether to Delegate
 
@@ -47,6 +66,8 @@ If the work depends on any of those, delegation is usually the wrong move unless
 
 When the child finishes, require deliverables in its **final text response**. Parent recovery uses that text (`agent__checkSession` / `waitForResult`), not scratchpad IDs — child scratchpad notes are invisible to the parent.
 
+After `agent__checkSession`, read the Metadata `workspace:` line: `SHARED with caller` means relative paths in the parent root are safe; `ISOLATED` means use the absolute path from Metadata or rely on Result text — do not assume sibling sessions share a workspace.
+
 ## 2. Choose the Child's Effective Context
 
 Assume these rules:
@@ -60,7 +81,7 @@ Assume these rules:
 
 If the parent is running inside a task-force workspace, check `.libragent/teamwork.json` before delegating:
 
-- If `executionSubstrate.mode` is `"org"`, prefer `agent__startSession(...)` so the child joins the org and inherits the parent effective workspace by default. Switch to `org` for org-specific operating rules.
+- If `executionSubstrate.mode` is `"org"`, reuse an existing Idle org child with the matching assistant ID and compatible workspace via `agent__messageToSession` when possible; otherwise prefer `agent__startSession(...)` so the new child joins the org and inherits the parent effective workspace by default. Switch to `org` for org-specific operating rules.
 - If `executionSubstrate.mode` is `"scheduled"`, the wake-up is likely a global scheduled task. Follow `schedule` for scheduled-task operating rules instead of ad-hoc delegation.
 - If the user wants a future reminder inside the current session, use `session-schedule` instead of delegation.
 - Treat the app-local teamwork artifact directory as the orchestration/constitution storage. If the child also needs to edit code in a repo, keep the session workspace semantics separate from the teamwork artifact path.
@@ -99,25 +120,33 @@ Say "use the same workspace as this session" only when you intentionally started
 Use the builtin agent tools deliberately:
 
 - `agent__listAgents(type="configs")` to find the right assistant and prefer its returned ID
+- `agent__listAgents(type="sessions")` or the live sub-agent inventory to find an existing child with a matching assistant ID
+- `agent__messageToSession(sessionId="...", message="...")` to continue work or assign new work to a suitable idle matching-role child
+- Set `reset=true` only when the previous conversation and runtime state should be discarded. This resets messages, planning/compaction state, and pending messages but does not clean workspace files.
 - `agent__startSession(agentId="...", task="...", waitForResult=false)` when you have the ID
 - `agent__startSession(agentId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
 - `agent__checkSession(sessionId)` to poll
 - `agent__checkSession(sessionId, wait=true)` when you want to block until a terminal result
-- `agent__messageToSession(sessionId, message)` to correct course or provide more input
-- `agent__listAgents(type="sessions")` to inspect delegated children of the current session
-
 Default to `waitForResult=false` unless the parent truly has nothing useful to do while waiting.
 
-## 5. Review the Result Like an Adult
+## 5. Review the Result (Parent Owns Acceptance)
 
-Do not blindly trust the child.
+Do not blindly trust the child. The child **generates**; the parent **accepts**. A child's "done" / "tests pass" claim is a hypothesis until the parent has evidence.
 
-After the child returns:
+**Casual handoff (this skill only)** — after `agent__checkSession` returns idle:
 
-- verify whether it actually used the correct scope
-- check whether missing workspace instructions or skills likely distorted the result
-- inspect referenced files or commands before presenting the answer as final
-- send a follow-up message if the child stopped short or misunderstood the objective
+- Confirm scope: correct workspace (`SHARED` vs `ISOLATED` in Metadata) and authorized paths
+- Spot-check deliverables in the child's **final text** (not scratchpad IDs)
+- If claims cite commands/files, inspect or re-run the critical check yourself before presenting as final
+- Re-steer with `agent__messageToSession` if the child stopped short or missed the objective
+
+**Strict / high-stakes handoff** — stop here and follow **`delegation-eval-loop`**:
+
+- Brief with verifiable acceptance criteria (sprint contract) before spawn
+- Layered eval: Deterministic → Invariant → Trajectory/reliability → Semantic
+- Reject with exact failure output; bound the retry loop; never accept self-graded success
+
+Incomplete, cancelled, circuit-broken, or evidence-free runs are **not** successes even if the prose sounds finished.
 
 ## 6. Troubleshooting Heuristics
 

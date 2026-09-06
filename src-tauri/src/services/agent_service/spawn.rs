@@ -122,12 +122,12 @@ impl AgentService {
             ExecutionMode::Normal
         };
 
-        if resolved_mode != ExecutionMode::Normal {
-            manager
-                .set_execution_mode(&session_id, resolved_mode)
-                .await
-                .map_err(|e| format!("Failed to set execution mode: {}", e))?;
-        }
+        // Always write through set_execution_mode so active metadata + DB share one path
+        // (including explicit `normal` and parent inheritance).
+        manager
+            .set_execution_mode(&session_id, resolved_mode)
+            .await
+            .map_err(|e| format!("Failed to set execution mode: {}", e))?;
 
         let Some(initial_request) = initial_request else {
             return Ok(CreateSessionResponse {

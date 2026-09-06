@@ -1,6 +1,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Switch } from '@/components/ui/switch';
+import { NumberSettingField } from '@/features/settings/components/NumberSettingField';
+import { parseIntegerInput } from '@/features/settings/components/settings-number-utils';
 import type { ExperimentalSettings } from '@/context/SettingsContext';
 
 interface ExperimentalTabProps {
@@ -58,6 +60,90 @@ function ExperimentalTabComponent({
             }
           />
         </div>
+      </div>
+
+      <div className="rounded-xl border border-border/60 bg-card p-6 shadow-xs backdrop-blur-md">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">
+            {t(
+              'settings.experimental.toolLoopRecoveryPolicy.title',
+              'Tool-loop recovery',
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground leading-normal max-w-2xl">
+            {t(
+              'settings.experimental.toolLoopRecoveryPolicy.description',
+              'By default, repeated tool loops trigger a clean resample (no intrusive guidance text). Budget exhausted → circuit breaker.',
+            )}
+          </p>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-4">
+          <div className="flex-1 space-y-1">
+            <label
+              className="text-sm font-medium text-foreground cursor-pointer"
+              htmlFor="tool-loop-legacy-guidance"
+            >
+              {t(
+                'settings.experimental.toolLoopLegacyGuidanceEnabled.title',
+                'Show loop warnings in tool results (legacy)',
+              )}
+            </label>
+            <p className="text-xs text-muted-foreground leading-normal max-w-2xl">
+              {t(
+                'settings.experimental.toolLoopLegacyGuidanceEnabled.description',
+                'Off by default. When enabled, injects loop-prevention guidance as tool errors instead of silently retrying with a clean resample.',
+              )}
+            </p>
+          </div>
+          <Switch
+            id="tool-loop-legacy-guidance"
+            checked={
+              localExperimentalSettings.toolLoopRecoveryPolicy ===
+              'legacyGuidance'
+            }
+            onCheckedChange={(checked) =>
+              onChange(
+                'toolLoopRecoveryPolicy',
+                checked ? 'legacyGuidance' : 'resampleThenBreak',
+              )
+            }
+          />
+        </div>
+
+        {localExperimentalSettings.toolLoopRecoveryPolicy ===
+        'resampleThenBreak' ? (
+          <div className="mt-4">
+            <NumberSettingField
+              label={t(
+                'settings.experimental.toolLoopMaxResampleRetries.title',
+                'Max resample retries',
+              )}
+              description={t(
+                'settings.experimental.toolLoopMaxResampleRetries.description',
+                'How many clean resample attempts before hard-stopping when repeated tool-loop signatures are detected.',
+              )}
+              placeholder={t(
+                'settings.experimental.toolLoopMaxResampleRetries.placeholder',
+                'e.g., 2',
+              )}
+              min={0}
+              max={20}
+              step={1}
+              value={localExperimentalSettings.toolLoopMaxResampleRetries}
+              parseValue={(rawValue) =>
+                parseIntegerInput(rawValue, {
+                  fallback: 2,
+                  min: 0,
+                  max: 20,
+                })
+              }
+              onValueChange={(value) =>
+                onChange('toolLoopMaxResampleRetries', value)
+              }
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

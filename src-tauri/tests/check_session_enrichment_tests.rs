@@ -222,3 +222,71 @@ More analysis after the quoted marker.";
     assert!(result_idx < quoted_idx);
     assert!(text.contains("orgId: org-9"));
 }
+
+#[test]
+fn check_session_workspace_relation_shared_and_isolated() {
+    use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
+        check_session_enrichment_from_metadata_with_caller, WorkspaceRelation,
+    };
+
+    let meta = sample_meta();
+    let shared = check_session_enrichment_from_metadata_with_caller(
+        &meta,
+        Some("Researcher".to_string()),
+        Some("/shared/workspace".to_string()),
+        Some("/shared/workspace"),
+    );
+    assert_eq!(shared.workspace_relation, Some(WorkspaceRelation::Shared));
+    assert_eq!(shared.workspace_path.as_deref(), Some("/shared/workspace"));
+    let shared_text = format_check_session_context_text(&shared).expect("context");
+    assert!(shared_text.contains("workspace: /shared/workspace (SHARED with caller)"));
+
+    let isolated = check_session_enrichment_from_metadata_with_caller(
+        &meta,
+        Some("Researcher".to_string()),
+        Some("/isolated/child-ws".to_string()),
+        Some("/shared/workspace"),
+    );
+    assert_eq!(
+        isolated.workspace_relation,
+        Some(WorkspaceRelation::Isolated)
+    );
+    let isolated_text = format_check_session_context_text(&isolated).expect("context");
+    assert!(isolated_text.contains(
+        "workspace: /isolated/child-ws (ISOLATED — different from caller; use absolute path or Result text)"
+    ));
+
+    let mut map = serde_json::Map::new();
+    apply_check_session_enrichment(&mut map, &isolated);
+    assert_eq!(
+        map.get("workspaceRelation").and_then(|v| v.as_str()),
+        Some("isolated")
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn check_session_workspace_relation_treats_verbatim_prefix_as_shared() {
+    use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
+        check_session_enrichment_from_metadata_with_caller, WorkspaceRelation,
+    };
+
+    let meta = sample_meta();
+    let enrichment = check_session_enrichment_from_metadata_with_caller(
+        &meta,
+        Some("Researcher".to_string()),
+        Some(r"\\?\C:\Users\test\project".to_string()),
+        Some(r"C:\Users\test\project"),
+    );
+    assert_eq!(
+        enrichment.workspace_relation,
+        Some(WorkspaceRelation::Shared)
+    );
+    assert_eq!(
+        enrichment.workspace_path.as_deref(),
+        Some(r"C:\Users\test\project")
+    );
+    let text = format_check_session_context_text(&enrichment).expect("context");
+    assert!(text.contains(r"workspace: C:\Users\test\project (SHARED with caller)"));
+    assert!(!text.contains(r"\\?\"));
+}

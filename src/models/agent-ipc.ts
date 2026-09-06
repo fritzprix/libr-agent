@@ -145,16 +145,29 @@ export interface AgentResponse<T = unknown> {
   data?: T;
 }
 
+export type CancelWorkflowOutcome =
+  | 'processStopped'
+  | 'workflowPaused'
+  | 'noActiveWork';
+
+export interface CancelWorkflowResult {
+  outcome: CancelWorkflowOutcome;
+  stoppedResources: number;
+}
+
 export type StreamingIssueKind =
   | 'REPEATED_THINKING_LOOP'
-  | 'REPEATED_TEXT_LOOP';
+  | 'REPEATED_TEXT_LOOP'
+  | 'REASONING_BUDGET_EXCEEDED';
 
 export interface StreamingIssueReport {
   sessionId: string;
   responseMessageId: string;
   issueKind: StreamingIssueKind;
   observedTailChars: number;
+  /** For reasoning/output-budget: threshold tokens (floor(maxTokens * 0.9)). */
   patternLength: number;
+  /** For reasoning/output-budget: estimated non-tool output tokens at abort. */
   repetitionCount: number;
 }
 
@@ -259,8 +272,12 @@ export interface ToolExecutionResult {
   success: boolean;
   content: string;
   mcpContent?: MCPContent[];
+  structuredContent?: unknown;
   error?: string;
   isError: boolean;
+  cancellation?: {
+    cancelledBy: 'user' | 'timeout' | 'system';
+  };
 }
 
 /**

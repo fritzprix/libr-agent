@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+const fs = require('node:fs');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
@@ -71,6 +72,15 @@ function hasFlag(args, flagNames) {
   });
 }
 
+function commandExists(command) {
+  const result = spawnSync('command', ['-v', command], {
+    env: process.env,
+    shell: true,
+    stdio: 'ignore',
+  });
+  return result.status === 0;
+}
+
 const env = { ...process.env };
 const isCargoTest = cargoArgs[0] === 'test';
 
@@ -99,12 +109,61 @@ if (isCargoTest && !env.CARGO_INCREMENTAL) {
   env.CARGO_INCREMENTAL = '0';
 }
 
-const result = spawnSync('cargo', cargoArgs, {
+function buildSpawnTarget(args) {
+  if (
+    process.platform === 'linux' &&
+    isCargoTest &&
+    env.LIBRAGENT_NO_NICE !== '1' &&
+    commandExists('nice')
+  ) {
+    // Keep rustc/linker below the desktop shell so Cursor stays responsive.
+    if (commandExists('ionice')) {
+      return {
+        command: 'nice',
+        args: ['-n', '10', 'ionice', '-c2', '-n7', 'cargo', ...args],
+      };
+    }
+
+    return {
+      command: 'nice',
+      args: ['-n', '10', 'cargo', ...args],
+    };
+  }
+
+  return { command: 'cargo', args };
+}
+
+function resolveStdio() {
+  const logPath = env.LIBRAGENT_RUST_TEST_LOG;
+  if (logPath) {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    const logFd = fs.openSync(logPath, 'a');
+    return { stdio: ['ignore', logFd, logFd], logFd };
+  }
+
+  return { stdio: 'inherit', logFd: null };
+}
+
+const { command, args: spawnArgs } = buildSpawnTarget(cargoArgs);
+const { stdio, logFd } = resolveStdio();
+
+if (isCargoTest && stdio === 'inherit') {
+  const jobs = env.CARGO_BUILD_JOBS ?? 'default';
+  console.error(
+    `[run-rust-command] cargo test (jobs=${jobs}, test-threads=1, ci-test profile)`,
+  );
+}
+
+const result = spawnSync(command, spawnArgs, {
   cwd: path.join(__dirname, '..', 'src-tauri'),
   env,
-  stdio: 'inherit',
+  stdio,
   shell: process.platform === 'win32' ? true : undefined,
 });
+
+if (logFd !== null) {
+  fs.closeSync(logFd);
+}
 
 if (result.error) {
   console.error(result.error.message);

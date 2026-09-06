@@ -2,7 +2,6 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Bot,
-  BrainCircuit,
   History,
   BookmarkCheck,
   Network,
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
+import { LibrAgentLogo } from '../common/LibrAgentLogo';
 import {
   Sidebar,
   SidebarContent,
@@ -182,9 +182,9 @@ export default function AppSidebar() {
             isCollapsed ? 'px-2' : 'px-4',
           )}
         >
-          <BrainCircuit
+          <LibrAgentLogo
             size={isCollapsed ? 24 : 32}
-            className="flex-shrink-0 text-primary"
+            className="transition-all duration-300"
           />
           <span
             className={cn(
@@ -391,89 +391,112 @@ export default function AppSidebar() {
 
                       return (
                         <SidebarMenuItem key={session.id}>
-                          <SidebarMenuButton
-                            asChild
-                            isActive={
-                              location.pathname === `/agent/${session.id}`
-                            }
-                            tooltip={
-                              session.name ||
-                              `${t('sidebar.session')} ${session.id.slice(0, 8)}`
-                            }
+                          <div
+                            className={cn(
+                              'flex w-full items-center gap-0.5',
+                              nestingLevel > 0 && 'text-muted-foreground',
+                            )}
+                            style={{
+                              paddingLeft: `${nestingLevel * 12}px`,
+                            }}
                           >
-                            <Link
-                              to={`/agent/${session.id}`}
-                              className={cn(
-                                'flex w-full items-center gap-2',
-                                nestingLevel > 0 && 'text-muted-foreground',
-                              )}
-                              style={{
-                                paddingLeft: `${nestingLevel * 12}px`,
-                              }}
-                            >
-                              {hasExpandableChildren ? (
-                                <button
-                                  type="button"
-                                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-                                  aria-expanded={isExpanded}
-                                  aria-busy={isLoadingChildren}
-                                  aria-label={
-                                    isLoadingChildren
+                            {hasExpandableChildren ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-7 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                                aria-expanded={isExpanded}
+                                aria-busy={isLoadingChildren}
+                                aria-label={
+                                  isLoadingChildren
+                                    ? t(
+                                        'sidebar.loadingSessionChildren',
+                                        'Loading session children',
+                                      )
+                                    : isExpanded
                                       ? t(
-                                          'sidebar.loadingSessionChildren',
-                                          'Loading session children',
+                                          'sidebar.collapseSession',
+                                          'Collapse session children',
                                         )
-                                      : isExpanded
-                                        ? t(
-                                            'sidebar.collapseSession',
-                                            'Collapse session children',
-                                          )
-                                        : t(
-                                            'sidebar.expandSession',
-                                            'Expand session children',
-                                          )
-                                  }
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    handleToggleExpand(session.id);
-                                  }}
-                                >
-                                  {isLoadingChildren ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : isExpanded ? (
-                                    <ChevronDown className="h-3.5 w-3.5" />
-                                  ) : (
-                                    <ChevronRight className="h-3.5 w-3.5" />
-                                  )}
-                                </button>
-                              ) : (
-                                <span className="inline-block h-4 w-4 shrink-0" />
-                              )}
-                              <StatusDot status={session.status} />
-                              <span className="truncate text-xs">
-                                {session.name ||
-                                  `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
-                              </span>
-                              {session.isBookmarked && (
-                                <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
-                              )}
-                            </Link>
-                          </SidebarMenuButton>
+                                      : t(
+                                          'sidebar.expandSession',
+                                          'Expand session children',
+                                        )
+                                }
+                                onClick={() => {
+                                  handleToggleExpand(session.id);
+                                }}
+                              >
+                                {isLoadingChildren ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : isExpanded ? (
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                ) : (
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            ) : (
+                              <span
+                                className="inline-block h-7 w-5 shrink-0"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <SidebarMenuButton
+                              asChild
+                              isActive={
+                                location.pathname === `/agent/${session.id}`
+                              }
+                              tooltip={
+                                session.name ||
+                                `${t('sidebar.session')} ${session.id.slice(0, 8)}`
+                              }
+                              className="min-w-0 flex-1"
+                            >
+                              <Link
+                                to={`/agent/${session.id}`}
+                                className="flex min-w-0 items-center gap-2"
+                              >
+                                <StatusDot status={session.status} />
+                                <span className="truncate text-xs">
+                                  {session.name ||
+                                    `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
+                                </span>
+                                {session.isBookmarked && (
+                                  <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
+                                )}
+                              </Link>
+                            </SidebarMenuButton>
+                          </div>
                         </SidebarMenuItem>
                       );
                     },
                   )}
                 </SidebarMenu>
                 <div ref={loadMoreSentinelRef} className="h-px w-full" />
-                {isLoadingMoreSessions && (
-                  <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>
-                      {t('sessionHistory.loadingMore', 'Loading more...')}
-                    </span>
+                {hasMoreSessions ? (
+                  <div className="px-2 py-2">
+                    <button
+                      type="button"
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMoreSessions}
+                      className={cn(
+                        'flex w-full items-center justify-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground',
+                        'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                        'disabled:pointer-events-none disabled:opacity-50',
+                      )}
+                    >
+                      {isLoadingMoreSessions ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>
+                            {t('sessionHistory.loadingMore', 'Loading more...')}
+                          </span>
+                        </>
+                      ) : (
+                        <span>{t('sessionHistory.loadMore', 'Load more')}</span>
+                      )}
+                    </button>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           </SidebarGroup>

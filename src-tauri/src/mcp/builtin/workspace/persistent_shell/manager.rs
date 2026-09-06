@@ -20,7 +20,19 @@ use crate::session_isolation::types::ShellType;
 #[derive(Debug)]
 pub struct PersistentShellManager {
     /// session_id -> PersistentShell mapping
-    shells: Arc<Mutex<HashMap<String, Arc<Mutex<PersistentShell>>>>>,
+    shells: Arc<Mutex<HashMap<String, ManagedShell>>>,
+    /// Monotonically increasing cancellation generation per session.
+    ///
+    /// An in-flight command captures the generation before execution. If a
+    /// session is cancelled while that command is running, the generation
+    /// changes and the normal crash-recovery retry is suppressed.
+    cancellation_generations: Arc<Mutex<HashMap<String, u64>>>,
+}
+
+#[derive(Debug)]
+struct ManagedShell {
+    shell: Arc<Mutex<PersistentShell>>,
+    pid: Option<u32>,
 }
 
 impl PersistentShellManager {
@@ -28,6 +40,7 @@ impl PersistentShellManager {
     pub fn new() -> Self {
         Self {
             shells: Arc::new(Mutex::new(HashMap::new())),
+            cancellation_generations: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -45,7 +58,13 @@ impl PersistentShellManager {
         session_id: String,
         workspace_path: std::path::PathBuf,
     ) -> Result<Arc<Mutex<PersistentShell>>, String> {
-        if let Some(shell) = self.shells.lock().await.get(&session_id).cloned() {
+        if let Some(shell) = self
+            .shells
+            .lock()
+            .await
+            .get(&session_id)
+            .map(|managed| managed.shell.clone())
+        {
             let shell_guard = shell.lock().await;
             if shell_guard.pid().is_some() {
                 debug!("Reusing existing shell for session: {}", session_id);
@@ -55,7 +74,7 @@ impl PersistentShellManager {
 
             debug!("Removing dead shell for session: {}", session_id);
             drop(shell_guard);
-            self.shells.lock().await.remove(&session_id);
+            self.remove_shell(&session_id).await;
         }
 
         // Create new shell
@@ -93,16 +112,24 @@ impl PersistentShellManager {
         };
 
         let shell_arc = Arc::new(Mutex::new(shell));
+        let shell_pid = shell_arc.lock().await.pid();
         let mut shells = self.shells.lock().await;
-        if let Some(existing) = shells.get(&session_id).cloned() {
+        if let Some(existing) = shells.get(&session_id) {
+            let existing_shell = existing.shell.clone();
             drop(shells);
             debug!(
                 "Discarding concurrently created duplicate shell for session: {}",
                 session_id
             );
-            return Ok(existing);
+            return Ok(existing_shell);
         }
-        shells.insert(session_id.clone(), shell_arc.clone());
+        shells.insert(
+            session_id.clone(),
+            ManagedShell {
+                shell: shell_arc.clone(),
+                pid: shell_pid,
+            },
+        );
 
         Ok(shell_arc)
     }
@@ -117,6 +144,8 @@ impl PersistentShellManager {
         workspace_path: std::path::PathBuf,
         command: &str,
     ) -> Result<(String, String, i32, String), String> {
+        let cancellation_generation = self.cancellation_generation(&session_id).await;
+
         // Try to execute with retry on failure
         match self
             .execute_internal(session_id.clone(), workspace_path.clone(), command)
@@ -129,10 +158,14 @@ impl PersistentShellManager {
                     session_id, e
                 );
 
+                if self.cancellation_generation(&session_id).await != cancellation_generation {
+                    return Err(format!(
+                        "Shell execution cancelled for session {session_id}"
+                    ));
+                }
+
                 // Remove dead shell
-                let mut shells = self.shells.lock().await;
-                shells.remove(&session_id);
-                drop(shells);
+                self.remove_shell(&session_id).await;
 
                 // Retry once with new shell
                 self.execute_internal(session_id, workspace_path, command)
@@ -169,6 +202,8 @@ impl PersistentShellManager {
         user_input: &str,
         stdin_delivery: crate::mcp::builtin::workspace::StdinDelivery,
     ) -> Result<(String, String, i32, String), String> {
+        let cancellation_generation = self.cancellation_generation(&session_id).await;
+
         // Try with retry on failure
         match self
             .execute_with_input_internal(
@@ -187,10 +222,14 @@ impl PersistentShellManager {
                     session_id, e
                 );
 
+                if self.cancellation_generation(&session_id).await != cancellation_generation {
+                    return Err(format!(
+                        "Shell execution with input cancelled for session {session_id}"
+                    ));
+                }
+
                 // Remove dead shell
-                let mut shells = self.shells.lock().await;
-                shells.remove(&session_id);
-                drop(shells);
+                self.remove_shell(&session_id).await;
 
                 // Retry once with new shell
                 self.execute_with_input_internal(
@@ -225,43 +264,137 @@ impl PersistentShellManager {
 
     /// Get the current working directory for a session's persistent shell
     pub async fn get_shell_cwd(&self, session_id: &str) -> Option<String> {
-        let shells = self.shells.lock().await;
-        if let Some(shell) = shells.get(session_id) {
-            let shell = shell.lock().await;
-            Some(shell.get_cwd().to_string())
-        } else {
-            None
-        }
+        let shell = self
+            .shells
+            .lock()
+            .await
+            .get(session_id)
+            .map(|managed| managed.shell.clone())?;
+        let shell = shell.lock().await;
+        Some(shell.get_cwd().to_string())
+    }
+
+    pub(crate) async fn cancellation_generation(&self, session_id: &str) -> u64 {
+        self.cancellation_generations
+            .lock()
+            .await
+            .get(session_id)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    async fn remove_shell(&self, session_id: &str) -> Option<ManagedShell> {
+        self.shells.lock().await.remove(session_id)
+    }
+
+    async fn force_kill_pid(pid: u32) -> Result<(), String> {
+        tokio::task::spawn_blocking(move || crate::utils::process::force_kill_process(pid))
+            .await
+            .map_err(crate::utils::process::describe_join_error)?
+            .map_err(|error| error.to_string())
+    }
+
+    /// Force-kill and remove a session's persistent shell without waiting for
+    /// its command mutex. This is used by workflow cancellation.
+    pub async fn force_kill_shell(&self, session_id: &str) -> Result<bool, String> {
+        let generation = {
+            let mut generations = self.cancellation_generations.lock().await;
+            let generation = generations.entry(session_id.to_string()).or_insert(0);
+            *generation = generation.saturating_add(1);
+            *generation
+        };
+
+        let managed = self.shells.lock().await.remove(session_id);
+        let Some(managed) = managed else {
+            debug!(
+                "No persistent shell to kill for session {} (generation {})",
+                session_id, generation
+            );
+            return Ok(false);
+        };
+
+        // Prefer the live child handle. If an in-flight command owns the mutex,
+        // use the PID captured at registration rather than waiting for it.
+        let live_pid = managed.shell.try_lock().ok().and_then(|shell| shell.pid());
+        let pid = live_pid.or(managed.pid);
+        let Some(pid) = pid else {
+            let mut shell = managed.shell.lock().await;
+            shell
+                .terminate()
+                .await
+                .map_err(|error| format!("Failed to terminate persistent shell: {error}"))?;
+            return Ok(true);
+        };
+
+        Self::force_kill_pid(pid).await.map_err(|error| {
+            format!("Failed to force-kill persistent shell for session {session_id}: {error}")
+        })?;
+
+        info!(
+            "Force-killed persistent shell for session {} (PID {})",
+            session_id, pid
+        );
+        Ok(true)
     }
 
     /// Terminate shell for session
     ///
     /// Gracefully terminates and removes the shell instance.
     pub async fn terminate_shell(&self, session_id: &str) -> Result<(), String> {
-        let mut shells = self.shells.lock().await;
-
-        if let Some(shell) = shells.remove(session_id) {
+        let termination_generation = self.cancellation_generation(session_id).await;
+        let managed = self.shells.lock().await.remove(session_id);
+        let has_managed_shell = managed.is_some();
+        let result = if let Some(managed) = managed {
             info!("Terminating persistent shell for session: {}", session_id);
-            shell
-                .lock()
-                .await
-                .terminate()
-                .await
-                .map_err(|e| format!("Failed to terminate shell: {e}"))?;
+            if let Some(pid) = managed.pid {
+                Self::force_kill_pid(pid)
+                    .await
+                    .map_err(|error| format!("Failed to terminate shell: {error}"))
+            } else {
+                managed
+                    .shell
+                    .lock()
+                    .await
+                    .terminate()
+                    .await
+                    .map_err(|e| format!("Failed to terminate shell: {e}"))
+            }
+        } else {
+            Ok(())
+        };
+
+        if has_managed_shell {
+            let mut generations = self.cancellation_generations.lock().await;
+            if generations.get(session_id).copied() == Some(termination_generation) {
+                generations.remove(session_id);
+            }
         }
-        Ok(())
+        result
     }
 
     /// Terminates all active shells. Used during shutdown and integration tests.
     pub async fn cleanup_all(&self) -> Result<(), String> {
-        let mut shells = self.shells.lock().await;
-        let count = shells.len();
+        let (count, shells) = {
+            let mut managed_shells = self.shells.lock().await;
+            let count = managed_shells.len();
+            let shells = managed_shells.drain().collect::<Vec<_>>();
+            (count, shells)
+        };
 
         info!("Cleaning up {} persistent shell(s)", count);
 
-        for (session_id, shell) in shells.drain() {
+        for (session_id, managed) in shells {
             debug!("Terminating shell for session: {}", session_id);
-            let _ = shell.lock().await.terminate().await;
+            if let Some(pid) = managed.pid {
+                if let Err(error) = Self::force_kill_pid(pid).await {
+                    warn!(
+                        "Failed to terminate persistent shell for session {}: {}",
+                        session_id, error
+                    );
+                }
+            } else {
+                let _ = managed.shell.lock().await.terminate().await;
+            }
         }
 
         Ok(())

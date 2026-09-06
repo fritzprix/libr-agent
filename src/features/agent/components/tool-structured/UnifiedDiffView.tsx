@@ -57,16 +57,13 @@ export const UnifiedDiffView: React.FC<UnifiedDiffViewProps> = ({
         </p>
       ) : null}
       <div className="max-h-80 overflow-auto rounded border bg-muted/30">
-        <pre className="min-w-0 p-2 font-mono text-xs leading-5">
+        <pre className="min-w-max p-2 font-mono text-xs leading-5">
           {lines.map((line, index) => {
             const kind = classifyDiffLine(line);
             return (
               <div
                 key={`${index}-${line.slice(0, 24)}`}
-                className={cn(
-                  'whitespace-pre-wrap break-all px-1',
-                  LINE_CLASS[kind],
-                )}
+                className={cn('whitespace-pre px-1', LINE_CLASS[kind])}
               >
                 {line.length > 0 ? line : ' '}
               </div>

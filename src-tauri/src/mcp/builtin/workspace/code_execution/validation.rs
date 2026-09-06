@@ -353,30 +353,58 @@ fn write_file_then_shell_guidance() -> Vec<String> {
     ]
 }
 
+/// True when the failed command likely executed a script file (not a missing binary).
+fn looks_like_script_file_run(command: &str) -> bool {
+    let lower = command.to_ascii_lowercase();
+    const SCRIPT_EXTS: &[&str] = &[
+        ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".sh", ".bash", ".zsh", ".vim", ".rb", ".pl",
+        ".ps1",
+    ];
+    SCRIPT_EXTS.iter().any(|ext| lower.contains(ext))
+}
+
+fn rewrite_loop_recovery_hint() -> String {
+    "If this ran a script you just wrote, prefer a minimal diagnostic one-liner (or a tiny repro) before rewriting the entire script.".to_string()
+}
+
+fn with_rewrite_loop_hint(mut guidance: Vec<String>, command: &str) -> Vec<String> {
+    if looks_like_script_file_run(command) {
+        guidance.push(rewrite_loop_recovery_hint());
+    }
+    guidance
+}
+
 /// Outcome-conditioned next-step hints for failed one-shot / persistent shell runs.
 pub fn shell_command_failure_guidance(
     exit_code: Option<i32>,
     stdout: &str,
     stderr: &str,
+    command: &str,
 ) -> Vec<String> {
     if looks_like_shell_quote_parse_error(stdout, stderr) {
         return write_file_then_shell_guidance();
     }
 
     match exit_code {
-        Some(1) => vec![
-            "General command failure - review error output above".to_string(),
-            "Verify command syntax and required files exist".to_string(),
-            "Use workspace__listDirectory to check file paths".to_string(),
-        ],
-        Some(2) => vec![
-            "Misuse of shell command or invalid arguments".to_string(),
-            format!(
-                "For multi-line or quote-heavy scripts, use workspace__writeFile then {} with a short command.",
-                crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL
-            ),
-            "Verify required files exist with workspace__listDirectory.".to_string(),
-        ],
+        Some(1) => with_rewrite_loop_hint(
+            vec![
+                "General command failure - review error output above".to_string(),
+                "Verify command syntax and required files exist".to_string(),
+                "Use workspace__listDirectory to check file paths".to_string(),
+            ],
+            command,
+        ),
+        Some(2) => with_rewrite_loop_hint(
+            vec![
+                "Misuse of shell command or invalid arguments".to_string(),
+                format!(
+                    "For multi-line or quote-heavy scripts, use workspace__writeFile then {} with a short command.",
+                    crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL
+                ),
+                "Verify required files exist with workspace__listDirectory.".to_string(),
+            ],
+            command,
+        ),
         Some(127) => vec![
             "Command not found - program is not installed or not in PATH".to_string(),
             "Verify the program is installed on the system".to_string(),
@@ -391,16 +419,22 @@ pub fn shell_command_failure_guidance(
             "Command terminated by Ctrl+C (SIGINT)".to_string(),
             "Process was interrupted by user or system".to_string(),
         ],
-        Some(code) => vec![
-            format!("Command failed with exit code: {code}"),
-            "Review error output above for specific failure reasons".to_string(),
-            "Verify command syntax and required dependencies".to_string(),
-        ],
-        None => vec![
-            "Command failed without an exit code".to_string(),
-            "Review error output above for specific failure reasons".to_string(),
-            "Verify command syntax and required dependencies".to_string(),
-        ],
+        Some(code) => with_rewrite_loop_hint(
+            vec![
+                format!("Command failed with exit code: {code}"),
+                "Review error output above for specific failure reasons".to_string(),
+                "Verify command syntax and required dependencies".to_string(),
+            ],
+            command,
+        ),
+        None => with_rewrite_loop_hint(
+            vec![
+                "Command failed without an exit code".to_string(),
+                "Review error output above for specific failure reasons".to_string(),
+                "Verify command syntax and required dependencies".to_string(),
+            ],
+            command,
+        ),
     }
 }
 
@@ -565,6 +599,7 @@ index 111..222 100644
             Some(2),
             "",
             "bash: -c: line 20: unexpected EOF while looking for matching `''",
+            "python3 /tmp/script.py",
         );
         let joined = guidance.join("\n");
         assert!(
@@ -579,16 +614,55 @@ index 111..222 100644
             !joined.contains("Misuse of shell command"),
             "generic exit-2 text must not override quote-parse guidance: {joined}"
         );
+        assert!(
+            !joined.contains("rewriting the entire script"),
+            "quote-parse path should not add rewrite-loop hint: {joined}"
+        );
     }
 
     #[test]
     fn test_shell_command_failure_guidance_exit_2_without_quote_signal() {
-        let guidance = shell_command_failure_guidance(Some(2), "", "usage: foo [-a]");
+        let guidance = shell_command_failure_guidance(Some(2), "", "usage: foo [-a]", "foo -x");
         let joined = guidance.join("\n");
         assert!(joined.contains("Misuse of shell command"));
         assert!(
             joined.contains("writeFile"),
             "plain exit 2 should still offer workspace__writeFile alternative: {joined}"
+        );
+        assert!(
+            !joined.contains("rewriting the entire script"),
+            "non-script commands should not get rewrite-loop hint: {joined}"
+        );
+    }
+
+    #[test]
+    fn test_shell_command_failure_guidance_script_run_adds_rewrite_loop_hint() {
+        let guidance = shell_command_failure_guidance(
+            Some(1),
+            "",
+            "AssertionError: expected != actual",
+            "cd /workspace && python3 repro.py",
+        );
+        let joined = guidance.join("\n");
+        assert!(
+            joined.contains("rewriting the entire script"),
+            "failed script runs should discourage full rewrite loops: {joined}"
+        );
+    }
+
+    #[test]
+    fn test_shell_command_failure_guidance_command_not_found_skips_rewrite_hint() {
+        let guidance = shell_command_failure_guidance(
+            Some(127),
+            "",
+            "bash: line 1: somebin: command not found",
+            "somebin --help",
+        );
+        let joined = guidance.join("\n");
+        assert!(joined.contains("Command not found"));
+        assert!(
+            !joined.contains("rewriting the entire script"),
+            "missing binaries are not rewrite-loop cases: {joined}"
         );
     }
 }

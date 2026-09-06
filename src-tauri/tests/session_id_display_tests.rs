@@ -154,6 +154,22 @@ fn active_sessions_notice_uses_short_tokens_for_legacy_and_short_ids() {
     );
     assert!(!notice.contains("`session-a1b2c3d4e5`"));
     assert!(!notice.contains("`session-` (name:"));
+    assert!(notice.contains("### Sub-Agents (2)"));
+    assert!(notice.contains("- Idle:"));
+    assert!(notice.contains("- Paused:"));
+    assert!(notice.contains("[unbound]"));
+    assert!(!notice.contains("Reuse Existing"));
+}
+
+#[test]
+fn active_sessions_notice_includes_assistant_routing_identity() {
+    let mut session = sample_session("codertask1", "Coder task", SessionStatus::Idle);
+    session.assistant_id = Some("assistant-coder".to_string());
+
+    let notice =
+        format_active_sessions_notice(&[session]).expect("notice should render for one session");
+
+    assert!(notice.contains("`codertask1` [assistant:assistant-coder] \"Coder task\""));
 }
 
 #[test]

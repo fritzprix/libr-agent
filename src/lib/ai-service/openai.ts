@@ -12,7 +12,7 @@ import {
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import type { ModelInfo } from '../llm-config-manager';
-import { supportsThinking } from './model-capabilities';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 import { ensureSchemaTypeField, processMessageContent } from './utils';
 import { OpenAIPromptDiagnosticsTracker } from './openai/diagnostics';
 import { convertToOpenAIMessages } from './openai/message-converter';
@@ -27,6 +27,7 @@ import {
   serializeToolCallArgumentDeltas,
 } from './stream-events';
 import { createLlmFetch } from './desktop-fetch';
+import { resolveSelfHostedLlmClientOptions } from './llm-host-policy';
 import { reportListModelsFallback } from './list-models-errors';
 import type {
   OpenAINonStreamingRequest,
@@ -77,6 +78,7 @@ function summarizeOpenAIRequestIngredients(params: {
     stream: request.stream,
     promptCacheKeyPresent: typeof request.prompt_cache_key === 'string',
     promptCacheRetention: request.prompt_cache_retention ?? null,
+    reasoningEffort: request.reasoning_effort ?? null,
     ...messageSummary,
     openaiRoleCounts,
   };
@@ -102,12 +104,30 @@ export class OpenAIService extends BaseAIService<
    * @param config Optional configuration for the service.
    */
   constructor(apiKey: string, config?: AIServiceConfig) {
-    super(apiKey, config);
+    const selfHostedOptions = resolveSelfHostedLlmClientOptions(
+      config?.baseUrl,
+      config,
+    );
+    const resolvedConfig: AIServiceConfig | undefined = selfHostedOptions
+      ? {
+          ...config,
+          timeout: selfHostedOptions.timeout,
+          maxRetries: selfHostedOptions.maxRetries,
+        }
+      : config;
+
+    super(apiKey, resolvedConfig);
     this.openai = new OpenAI({
       apiKey: this.apiKey,
       baseURL: config?.baseUrl || undefined,
       dangerouslyAllowBrowser: true,
       fetch: createLlmFetch(),
+      ...(selfHostedOptions
+        ? {
+            timeout: selfHostedOptions.timeout,
+            maxRetries: selfHostedOptions.maxRetries,
+          }
+        : {}),
     });
     this.promptDiagnostics = new OpenAIPromptDiagnosticsTracker(this.logger);
   }
@@ -252,17 +272,11 @@ export class OpenAIService extends BaseAIService<
         modelName = `${fireworksPrefix}${modelName}`;
       }
 
-      // Prepare reasoning_effort for reasoning models
-      // Check model capability dynamically instead of hardcoded patterns
+      // Honor user thinking effort; unsupported models return provider API errors.
       let reasoningEffort: 'low' | 'medium' | 'high' | undefined;
-      if (config.enableReasoning && config.reasoningEffort) {
-        const modelSupportsThinking = await supportsThinking(
-          modelName,
-          provider,
-        );
-        if (modelSupportsThinking) {
-          reasoningEffort = config.reasoningEffort;
-        }
+      const thinkingParams = mapThinkingEffort(provider, config.thinkingEffort);
+      if (thinkingParams.enabled) {
+        reasoningEffort = thinkingParams.reasoningEffort;
       }
 
       const automaticPromptCacheKey = this.buildAutomaticPromptCacheKey({

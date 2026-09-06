@@ -87,4 +87,29 @@ describe('Org', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith('/agent/root');
   });
+
+  it('filters org cards by search query', async () => {
+    render(<Org />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Research Org')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText('Search organizations'), {
+      target: { value: 'missing-org' },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Research Org')).not.toBeInTheDocument();
+      expect(
+        screen.getByText('No organizations match "{{query}}"'),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText('Clear search'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Research Org')).toBeInTheDocument();
+    });
+  });
 });

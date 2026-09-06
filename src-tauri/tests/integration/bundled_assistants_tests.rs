@@ -21,8 +21,8 @@ async fn test_load_bundled_assistants_from_manifest() {
 
     assert_eq!(
         assistants.len(),
-        4,
-        "expected exactly four bundled assistants"
+        5,
+        "expected exactly five bundled assistants"
     );
 
     let names: Vec<&str> = assistants.iter().map(|a| a.name.as_str()).collect();
@@ -30,6 +30,7 @@ async fn test_load_bundled_assistants_from_manifest() {
     assert!(names.contains(&"Coding Expert"));
     assert!(names.contains(&"App Wizard"));
     assert!(names.contains(&"Master Mind"));
+    assert!(names.contains(&"Wiki Maintainer"));
     assert!(
         !names.contains(&"master-mind"),
         "legacy master-mind directory must not be loaded"
@@ -79,6 +80,27 @@ async fn test_load_bundled_assistants_from_manifest() {
             "playbook".to_string(),
         ]
     );
+
+    let wiki_maintainer = assistants
+        .iter()
+        .find(|a| a.name == "Wiki Maintainer")
+        .expect("Wiki Maintainer should be loaded");
+
+    let expected_wiki_prompt = std::fs::read_to_string(
+        manifest_resource_dir().join("bundled_assistants/Wiki Maintainer/prompt.md"),
+    )
+    .expect("failed to read expected Wiki Maintainer prompt");
+    assert_eq!(wiki_maintainer.prompt(), expected_wiki_prompt);
+
+    assert_eq!(
+        wiki_maintainer.allowed_builtin_service_aliases(),
+        vec![
+            "history".to_string(),
+            "workspace".to_string(),
+            "planning".to_string(),
+            "attachments".to_string(),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -96,13 +118,14 @@ async fn test_ensure_default_assistants_hardcoded_fallback() {
         .list_assistants()
         .await
         .expect("failed to list assistants");
-    assert_eq!(assistants.len(), 4);
+    assert_eq!(assistants.len(), 5);
 
     let names: Vec<String> = assistants.into_iter().map(|a| a.name).collect();
     assert!(names.contains(&"Libr Assistant".to_string()));
     assert!(names.contains(&"Coding Expert".to_string()));
     assert!(names.contains(&"App Wizard".to_string()));
     assert!(names.contains(&"Master Mind".to_string()));
+    assert!(names.contains(&"Wiki Maintainer".to_string()));
 }
 
 #[tokio::test]
@@ -120,13 +143,14 @@ async fn test_ensure_default_assistants_from_bundle() {
         .list_assistants()
         .await
         .expect("failed to list assistants");
-    assert_eq!(assistants.len(), 4);
+    assert_eq!(assistants.len(), 5);
 
     let names: Vec<String> = assistants.into_iter().map(|a| a.name).collect();
     assert!(names.contains(&"Libr Assistant".to_string()));
     assert!(names.contains(&"Coding Expert".to_string()));
     assert!(names.contains(&"App Wizard".to_string()));
     assert!(names.contains(&"Master Mind".to_string()));
+    assert!(names.contains(&"Wiki Maintainer".to_string()));
 }
 
 #[tokio::test]
@@ -163,7 +187,8 @@ async fn test_ensure_default_assistants_falls_back_when_bundle_is_incomplete() {
     assert!(
         names.contains(&"Libr Assistant".to_string())
             && names.contains(&"Coding Expert".to_string())
-            && names.contains(&"App Wizard".to_string()),
+            && names.contains(&"App Wizard".to_string())
+            && names.contains(&"Wiki Maintainer".to_string()),
         "fallback should keep the full default assistant set"
     );
 }

@@ -7,11 +7,11 @@ use sea_orm::*;
 
 use super::cleanup::{delete_chunk_global, delete_chunks_atomic};
 use super::contracts::{
-    KnowledgeChunkDetail, KnowledgeChunkPage, KnowledgeDeleteSummary, KnowledgeListCursor,
-    KnowledgeV2Repository,
+    GlobalKnowledgeGraph, KnowledgeChunkDetail, KnowledgeChunkPage, KnowledgeDeleteSummary,
+    KnowledgeListCursor, KnowledgeV2Repository,
 };
 use super::detail::get_chunk_detail;
-use super::graph::get_graph_context;
+use super::graph::{get_global_graph, get_graph_context};
 use super::search::search_hybrid;
 
 #[derive(Debug)]
@@ -369,5 +369,13 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
 
     async fn get_chunk_detail(&self, id: i32) -> Result<KnowledgeChunkDetail, DbError> {
         get_chunk_detail(&self.db, id).await
+    }
+
+    async fn get_global_graph(
+        &self,
+        assistant_id: Option<&str>,
+        limit_entities: u64,
+    ) -> Result<GlobalKnowledgeGraph, DbError> {
+        get_global_graph(&self.db, assistant_id, limit_entities).await
     }
 }

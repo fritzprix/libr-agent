@@ -19,7 +19,7 @@ LibrAgent built-in tools are categorized into **Core tools (enabled by default o
 Essential tools automatically available for basic agent operations and UI interactions:
 
 - **`workspace__*`**: File reading/writing/line-range editing, directory listing, terminal command execution
-- **`ui__*`**: Interactive selection cards (`select_prompt`), text forms (`text_prompt`), data charts, circuit break pause (`circuitBreak`)
+- **`ui__*`**: Interactive UI component rendering and result reporting (`presentInteractive`, `reportResult`)
 - **`agent__*`**: Autonomous sub-agent spawning and multi-agent orchestration
 - **`skills__*`**: Skill execution and context loading
 - **`playbook__*`**: Automation playbook listing, execution, and saving
@@ -32,9 +32,9 @@ Essential tools automatically available for basic agent operations and UI intera
 
 Domain-specific tools that can be enabled or disabled under **Assistants → Edit → Tools**:
 
-- **`media__*`**: Image analysis, resizing, audio/image text extraction
+- **`media__*`**: Image/visual media and audio media parsing and analysis (`seeContent`, `listenContent`)
 - **`browser__*`**: Headless web browsing, DOM clicks, form typing, screenshot capture
-- **`planning__*`**: Multi-step plan creation (`create_plan`), progress tracking, failure reflection (`reflect`)
+- **`planning__*`**: Multi-step plan creation (`createGoal`), progress tracking, failure reflection (`reflect`)
 - **`knowledge__*`**: Semantic memory storage and persistent knowledge retrieval
 - **`setup-wizard__*`**: Python/Node/uv environment diagnostics and setup wizard
 - **`history__*`**: Previous session history lookup
@@ -43,7 +43,7 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 
 ## 🛠️ Built-in Tools Detailed Reference
 
-### 1. Workspace (`workspace__*` & `runShell`)
+### 1. Workspace (`workspace__*`)
 
 | Tool Name                               | Description                                       | Key Parameters                                    |
 | :-------------------------------------- | :------------------------------------------------ | :------------------------------------------------ |
@@ -55,47 +55,65 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 
 ### 2. Media (`media__*`) 🎨 _(Optional)_
 
-| Tool Name              | Description                            | Key Parameters        |
-| :--------------------- | :------------------------------------- | :-------------------- |
-| `media__seeContent`    | Inspect and analyze image/visual media | `AbsolutePath`        |
-| `media__listenContent` | Parse and analyze audio media          | `AbsolutePath`        |
-| `generate_image`       | AI image generation and visual mockups | `Prompt`, `ImageName` |
+| Tool Name              | Description                            | Key Parameters |
+| :--------------------- | :------------------------------------- | :------------- |
+| `media__seeContent`    | Inspect and analyze image/visual media | `url`          |
+| `media__listenContent` | Parse and analyze audio media          | `url`          |
 
-### 3. Interactive UI (`ask_question` / `ui__*`)
+### 3. Interactive UI (`ui__*`)
 
-| Tool Name      | Description                                     |
-| :------------- | :---------------------------------------------- |
-| `ask_question` | Render interactive multi-choice selection modal |
-| `ui__wait`     | Pause execution for user input                  |
+| Tool Name                | Description                                                        |
+| :----------------------- | :----------------------------------------------------------------- |
+| `ui__presentInteractive` | Render interactive UI components (selection buttons, forms, cards) |
+| `ui__reportResult`       | Report user selections and form inputs back to the active workflow |
 
 ### 4. Browser (`browser__*`) _(Optional)_
 
-| Tool Name          | Description                |
-| :----------------- | :------------------------- |
-| `navigateToUrl`    | Navigate to target web URL |
-| `clickElement`     | Click DOM element          |
-| `inputText`        | Type text into web input   |
-| `scrollPage`       | Scroll web page view       |
-| `listInteractable` | Extract clickable elements |
-| `evaluateJS`       | Execute custom JS snippet  |
+| Tool Name                   | Description                 |
+| :-------------------------- | :-------------------------- |
+| `browser__createSession`    | Start the browser session   |
+| `browser__closeSession`     | Close the browser session   |
+| `browser__navigateToUrl`    | Navigate to target web URL  |
+| `browser__getCurrentUrl`    | Get the current page URL    |
+| `browser__getPageTitle`     | Get the current page title  |
+| `browser__getPageContent`   | Extract page content        |
+| `browser__fetchUrl`         | Fetch URL without a session |
+| `browser__clickElement`     | Click DOM element           |
+| `browser__inputText`        | Type text into web input    |
+| `browser__scrollPage`       | Scroll web page view        |
+| `browser__listInteractable` | Extract clickable elements  |
+| `browser__takeScreenshot`   | Capture the page as a PNG   |
+| `browser__evaluateJS`       | Execute custom JS snippet   |
+
+`browser__takeScreenshot` accepts an optional `fullPage` boolean. It captures the
+current viewport by default; set `fullPage` to `true` to capture the entire page
+within the 64-million-pixel and 8 MiB PNG limits.
 
 ### 5. Planning & Reflection (`planning__*`) _(Optional)_
 
-| Tool Name              | Description                                     |
-| :--------------------- | :---------------------------------------------- |
-| `planning__createGoal` | Establish multi-step goals for complex tasks    |
-| `planning__updateGoal` | Update step progress and goal status            |
-| `planning__addTodo`    | Manage granular todo items                      |
-| `planning__reflect`    | Generate structured reflection on tool failures |
+| Tool Name                   | Description                                     |
+| :-------------------------- | :---------------------------------------------- |
+| `planning__createGoal`      | Establish multi-step goals for complex tasks    |
+| `planning__updateGoal`      | Update step progress and goal status            |
+| `planning__clearGoal`       | Clear active goal                               |
+| `planning__addTodo`         | Manage granular todo items                      |
+| `planning__updateTodo`      | Update todo item status                         |
+| `planning__clearSession`    | Clear session planning data                     |
+| `planning__getCurrentState` | Fetch current planning and goal state           |
+| `planning__reflect`         | Generate structured reflection on tool failures |
 
 ### 6. Attachments & Scheduled Tasks (`attachments__*` / `scheduled_task__*`)
 
-| Tool Name                         | Description                                      |
-| :-------------------------------- | :----------------------------------------------- |
-| `attachments__readAttachment`     | Read session attachment contents                 |
-| `attachments__searchAttachments`  | Search through uploaded attachments              |
-| `scheduled_task__create`          | Create one-shot timer or recurring Cron schedule |
-| `scheduled_task__list` / `delete` | Manage active scheduled tasks                    |
+| Tool Name                             | Description                                      |
+| :------------------------------------ | :----------------------------------------------- |
+| `attachments__readAttachment`         | Read session attachment contents                 |
+| `attachments__searchAttachments`      | Search through uploaded attachments              |
+| `scheduled_task__createScheduledTask` | Create one-shot timer or recurring Cron schedule |
+| `scheduled_task__listScheduledTasks`  | List all active scheduled tasks                  |
+| `scheduled_task__getScheduledTask`    | Get details of a specific scheduled task         |
+| `scheduled_task__updateScheduledTask` | Update scheduled task parameters                 |
+| `scheduled_task__toggleScheduledTask` | Toggle scheduled task active status              |
+| `scheduled_task__deleteScheduledTask` | Delete a scheduled task                          |
 
 ---
 

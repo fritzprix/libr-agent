@@ -51,6 +51,9 @@
       "searchResults": "Encontrados {{count}} resultados para \"{{query}}\"",
       "noResults": "Nenhum assistente encontrado para sua pesquisa",
       "empty": "Nenhum assistente disponível",
+      "loading": "Carregando assistentes...",
+      "loadingMore": "Carregando mais assistentes...",
+      "totalInfo": "{{count}} de {{total}} assistentes",
       "pagination": {
         "previous": "Anterior",
         "next": "Próximo",
@@ -78,6 +81,7 @@
       "created": "Criado",
       "updated": "Atualizado",
       "description": "Descrição",
+      "fullConfiguration": "Configuração completa",
       "expand": "Expandir configuração",
       "collapse": "Recolher configuração"
     }
@@ -286,7 +290,10 @@
     "emptyState": {
       "title": "Nenhuma sessão ainda",
       "subtitle": "Inicie uma conversa para criar sua primeira sessão"
-    }
+    },
+    "loadMore": "Carregar mais",
+    "loadingMore": "Carregando mais...",
+    "moreAvailable": "mais disponíveis"
   },
   "orgHistory": {
     "heading": "Visão da organização",
@@ -374,6 +381,10 @@
       "temperatureOverrideTooltip": "A maioria dos provedores já define uma temperature padrão por modelo. Deixe desativado, a menos que precise substituir esse padrão do modelo.",
       "temperature": "Temperature",
       "temperatureDescription": "Controla a aleatoriedade. Mais baixo é mais determinístico; mais alto, mais criativo. Intervalo 0–2. Aplicado uniformemente a todos os provedores.",
+      "thinkingEffort": "Thinking Effort",
+      "thinkingEffortDescription": "Profundidade de raciocínio antes de responder. Modelos sem suporte retornam erro do provedor.",
+      "thinkingEffortTooltipAria": "Sobre Thinking Effort",
+      "thinkingEffortTooltip": "Controla a profundidade de raciocínio antes de responder. A configuração é sempre enviada quando ativada. Modelos ou provedores sem suporte retornam erro de API — defina Effort como Off ou troque o modelo. Anthropic usa extended thinking em todos os níveis exceto Off.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "URL do Agent Hub",
       "agentHubUrlDescription": "URL do servidor remoto Agent Hub. Se definido, os assistentes serão sincronizados com este servidor.",
@@ -466,7 +477,20 @@
       "toolDetailLevelDescription": "O modo Simples mostra apenas nomes de ferramentas e ícones de status. O modo Desenvolvedor mostra parâmetros completos, detalhes de erros e tempo de execução.",
       "uiVisualsTitle": "Visuais da interface",
       "fontFamily": "Família da fonte",
-      "fontFamilyDescription": "Altera a família de fonte padrão da interface."
+      "fontFamilyDescription": "Altera a família de fonte padrão da interface.",
+      "messageLayout": "Layout das mensagens",
+      "messageLayoutDocument": "Documento (largura total para código)",
+      "messageLayoutBubble": "Balões (chat clássico)",
+      "messageLayoutDescription": "O modo Documento maximiza a largura para código e diffs. O modo Balões mantém o estilo clássico de chat.",
+      "colorTheme": "Tema de cores",
+      "colorThemeDescription": "Escolha um tema de cor de destaque para a interface.",
+      "colorThemes": {
+        "neutral": "Neutro (Monocromático)",
+        "amber": "Libr Âmbar (Calor)",
+        "violet": "Íris Violeta (IA)",
+        "ocean": "Azul Oceano (Calma)",
+        "forest": "Sálvia Floresta (Foco)"
+      }
     },
     "advanced": {
       "maxRetries": "Máximo de Tentativas",
@@ -539,6 +563,8 @@
       "maxScheduledTaskGroups": "Máximo de grupos de tarefas agendadas",
       "maxScheduledTaskGroupsDescription": "Número máximo de grupos distintos de tarefas agendadas permitidos na automação recorrente de trabalho em equipe.",
       "backgroundTasks": "Tarefas em Segundo Plano",
+      "preventSleepDuringAgentWork": "Impedir suspensão enquanto o app estiver em execução",
+      "preventSleepDuringAgentWorkDescription": "Evita que o sistema entre em suspensão ociosa enquanto o LibrAgent estiver aberto. Não mantém a tela ligada à força. Ativado por padrão.",
       "searchIndexFrequency": "Frequência do Índice de Busca (Min)",
       "searchIndexFrequencyDescription": "Com que frequência a IA atualiza sua busca na memória. Atualizações mais rápidas mantêm a busca atualizada, mas usam mais bateria/CPU.",
       "webActionTimeout": "Tempo Limite de Ação na Web (Seg)",
@@ -843,6 +869,19 @@
       "loadingOlder": "Carregando mensagens antigas...",
       "scrollToLoadOlder": "Role para cima para carregar mensagens antigas"
     },
+    "approval": {
+      "hardTitle": "Aprovação reforçada necessária",
+      "title": "Aprovação necessária",
+      "hardDescriptionYolo": "O modo YOLO está ativado, mas esta ação de alto risco ainda requer aprovação manual.",
+      "hardDescription": "Esta ação de alto risco requer aprovação explícita.",
+      "description": "O agente deseja executar esta ferramenta.",
+      "hardBadge": "Aprovação reforçada",
+      "standardBadge": "Aprovação padrão",
+      "arguments": "Argumentos",
+      "reject": "Rejeitar",
+      "hardApprove": "Aprovar ação de alto risco",
+      "approve": "Aprovar"
+    },
     "draft": {
       "send": "Enviar mensagem",
       "attachFiles": "Anexar arquivos",
@@ -951,7 +990,8 @@
       "dropFiles": "Solte os arquivos aqui ou clique para carregar",
       "dropFolderHint": "Solte uma pasta aqui para definir como espaço de trabalho",
       "dropDirToastError": "Solte diretórios na área central para definir a substituição do espaço de trabalho.",
-      "dropMixedFoldersError": "Solte arquivos para importá-los ou uma única pasta para definir a substituição do espaço de trabalho."
+      "dropMixedFoldersError": "Solte arquivos para importá-los ou uma única pasta para definir a substituição do espaço de trabalho.",
+      "dropFolderIntoSubfolderError": "Não é permitido soltar pastas em subpastas."
     },
     "statusBar": {
       "retryError": "Falha ao tentar novamente a mensagem",
@@ -1010,6 +1050,11 @@
       "cancelAriaLabel": "Cancelar solicitação",
       "cancellingTooltip": "Cancelando...",
       "cancelTooltip": "Cancelar",
+      "cancelOutcome": {
+        "processStopped": "{{count}} processo(s) do workspace foram interrompidos. O fluxo continuará.",
+        "workflowPaused": "O fluxo foi cancelado e pausado.",
+        "noActiveWork": "Não havia um fluxo ativo para cancelar."
+      },
       "resumeAriaLabel": "Retomar fluxo de trabalho",
       "resumeTooltip": "Retomar",
       "sendAriaLabel": "Enviar mensagem",
@@ -1070,6 +1115,7 @@
       "updated": "atualizado"
     },
     "bubble": {
+      "toolError": "Erro de execução da ferramenta",
       "notification": "Notificação",
       "channel": "CANAL",
       "assistant": "ASSISTENTE",

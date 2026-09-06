@@ -406,3 +406,55 @@ async fn tool_result_spillover_multiline_notice_includes_line_range_guidance() {
 
     let _ = fs::remove_dir_all(workspace_dir);
 }
+
+#[tokio::test]
+async fn tool_result_spillover_binary_like_output_advises_extraction_not_pagination() {
+    let session_id = format!("spillover-binary-{}", uuid::Uuid::new_v4());
+    // Control-dense payload over the inline limit → non-text spillover path.
+    let chunk: String = (0u8..32)
+        .filter(|b| *b != b'\t' && *b != b'\n' && *b != b'\r')
+        .map(char::from)
+        .collect();
+    let original_text = chunk.repeat((TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES / chunk.len()) + 40);
+
+    let processed = spill_oversized_tool_result_messages(
+        &session_id,
+        vec![make_tool_message(
+            &session_id,
+            "tool_call_binary",
+            &original_text,
+        )],
+    )
+    .await
+    .expect("binary-like spillover should succeed");
+
+    let message = &processed[0];
+    let MCPContent::Text { text, .. } = &message.content[0] else {
+        panic!("expected text content");
+    };
+
+    assert!(
+        text.contains("large binary/non-text data"),
+        "notice should classify binary-like dumps: {text}"
+    );
+    assert!(
+        text.contains("strings") && text.contains("grep -a"),
+        "notice should recommend extraction tools: {text}"
+    );
+    assert!(
+        text.contains("Do not page through this dump"),
+        "notice should discourage raw dump pagination: {text}"
+    );
+    assert!(
+        !text.contains("To read remaining lines ("),
+        "binary-like dumps must not use line-range pagination guidance: {text}"
+    );
+    assert!(
+        text.len() < TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+        "spillover preview should stay below the inline threshold"
+    );
+
+    let session_manager = get_session_manager().expect("session manager");
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
+    let _ = fs::remove_dir_all(workspace_dir);
+}

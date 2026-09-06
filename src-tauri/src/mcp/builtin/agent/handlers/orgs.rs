@@ -8,7 +8,7 @@ use crate::mcp::types::MCPResult;
 use crate::repositories::{session_repository::SessionRepository, SessionMetadata};
 
 use super::super::AgentServer;
-use super::{
+use super::shared::{
     caller_session_not_found_result, invalid_explicit_org_result, missing_explicit_org_result,
     read_optional_string,
 };

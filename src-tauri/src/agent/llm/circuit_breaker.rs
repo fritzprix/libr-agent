@@ -2,8 +2,22 @@ use crate::agent::types::ToolCall;
 use crate::agent::AgentConfig;
 use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
+use once_cell::sync::Lazy;
+use regex::{Captures, Regex};
 use serde_json::Value;
 use std::collections::BTreeMap;
+
+/// Shell / interactive success (and failure) headers embed wall-clock duration; spill
+/// notices embed per-call UUIDs. Both must be stabilized so RepeatedSuccessOutcome
+/// streaks can match semantically identical successes (#1776).
+static OUTCOME_COMMAND_DURATION_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)((?:Interactive )?command (?:executed|failed) in )(?:<\s*1|\d+)\s*ms")
+        .expect("valid command-duration outcome regex")
+});
+static OUTCOME_TOOL_RESULT_SPILL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\.libragent/tool-results/[A-Za-z0-9._-]+\.txt")
+        .expect("valid tool-result spill path outcome regex")
+});
 
 #[derive(Debug, PartialEq)]
 pub enum CircuitBreakerAction {
@@ -27,6 +41,12 @@ pub enum CircuitBreakerAction {
     DuplicateInBatch { tool_name: String, args: String },
     /// Entire assistant tool_calls batch fingerprint repeated across turns.
     RepeatedBatchSequence {
+        count: usize,
+        tool_name: String,
+        args: String,
+    },
+    /// Pre-hard-break escalation for repeated identical batches.
+    RepeatedBatchSequenceEscalate {
         count: usize,
         tool_name: String,
         args: String,
@@ -214,11 +234,77 @@ enum RepeatedOutcome {
     Error { signature: String },
 }
 
+fn canonical_structured_field(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn extract_structured_loop_fingerprint(message: &Message) -> Option<String> {
+    let structured = message.metadata.as_ref()?.get("structuredContent")?;
+
+    if let Some(fingerprint) = structured
+        .get("loopFingerprint")
+        .and_then(|value| value.as_str())
+    {
+        let trimmed = fingerprint.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    // Shell / runCommand payloads carry `duration_ms` and a coarse `status`
+    // (finished|failed). Prefer stabilized text so ephemeral duration/spill
+    // paths participate in the fingerprint, and so distinct stdout still breaks
+    // streaks (unlike bare status=finished).
+    if structured.get("duration_ms").is_some() {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+    for key in [
+        "status",
+        "turnCount",
+        "responseStatus",
+        "process_id",
+        "processId",
+    ] {
+        if let Some(value) = structured.get(key) {
+            parts.push(format!("{key}={}", canonical_structured_field(value)));
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("|"))
+    }
+}
+
+/// Strip ephemeral per-call metadata from tool-result text before fingerprinting.
+///
+/// Does not change what the model sees — only the loop-prevention outcome signature.
+fn stabilize_ephemeral_outcome_text(text: &str) -> String {
+    let without_duration = OUTCOME_COMMAND_DURATION_RE
+        .replace_all(text, |caps: &Captures| format!("{}<duration>", &caps[1]));
+    OUTCOME_TOOL_RESULT_SPILL_RE
+        .replace_all(&without_duration, ".libragent/tool-results/<spill>.txt")
+        .into_owned()
+}
+
 fn normalize_text_signature(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    stabilize_ephemeral_outcome_text(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn build_tool_result_signature(message: &Message) -> String {
+    if let Some(fingerprint) = extract_structured_loop_fingerprint(message) {
+        return fingerprint;
+    }
+
     let text_signature = message
         .content
         .iter()
@@ -551,14 +637,23 @@ pub fn evaluate_batch_circuit_breaker(
             tool_name: first.function.name.clone(),
             args: first.function.arguments.clone(),
         })
-    } else if total_count >= threshold {
-        Some(CircuitBreakerAction::RepeatedBatchSequence {
-            count: total_count,
-            tool_name: first.function.name.clone(),
-            args: first.function.arguments.clone(),
-        })
     } else {
-        None
+        let pre_hard_count = hard_break_at.saturating_sub(1);
+        if total_count > threshold && total_count == pre_hard_count && hard_break_offset >= 2 {
+            Some(CircuitBreakerAction::RepeatedBatchSequenceEscalate {
+                count: total_count,
+                tool_name: first.function.name.clone(),
+                args: first.function.arguments.clone(),
+            })
+        } else if total_count >= threshold {
+            Some(CircuitBreakerAction::RepeatedBatchSequence {
+                count: total_count,
+                tool_name: first.function.name.clone(),
+                args: first.function.arguments.clone(),
+            })
+        } else {
+            None
+        }
     }
 }
 

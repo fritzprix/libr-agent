@@ -51,6 +51,9 @@
       "searchResults": "{{count}} résultats trouvés pour \"{{query}}\"",
       "noResults": "Aucun assistant ne correspond à votre recherche",
       "empty": "Aucun assistant disponible",
+      "loading": "Chargement des assistants...",
+      "loadingMore": "Chargement d'assistants supplémentaires...",
+      "totalInfo": "{{count}} sur {{total}} assistants",
       "pagination": {
         "previous": "Précédent",
         "next": "Suivant",
@@ -78,6 +81,7 @@
       "created": "Créé",
       "updated": "Mis à jour",
       "description": "Description",
+      "fullConfiguration": "Configuration complète",
       "expand": "Développer la configuration",
       "collapse": "Réduire la configuration"
     }
@@ -286,7 +290,10 @@
     "emptyState": {
       "title": "Aucune session pour le moment",
       "subtitle": "Commencez une conversation pour créer votre première session"
-    }
+    },
+    "loadMore": "Charger plus",
+    "loadingMore": "Chargement...",
+    "moreAvailable": "plus disponibles"
   },
   "orgHistory": {
     "heading": "Vue organisationnelle",
@@ -374,6 +381,10 @@
       "temperatureOverrideTooltip": "La plupart des fournisseurs définissent déjà une temperature par défaut par modèle. Laissez ceci désactivé sauf si vous devez remplacer cette valeur par défaut.",
       "temperature": "Temperature",
       "temperatureDescription": "Contrôle le caractère aléatoire. Plus bas = plus déterministe ; plus haut = plus créatif. Plage 0–2. Appliqué uniformément à tous les fournisseurs.",
+      "thinkingEffort": "Thinking Effort",
+      "thinkingEffortDescription": "Profondeur de raisonnement avant la réponse. Les modèles non pris en charge renvoient une erreur du fournisseur.",
+      "thinkingEffortTooltipAria": "À propos de Thinking Effort",
+      "thinkingEffortTooltip": "Contrôle la profondeur de raisonnement avant la réponse. Le paramètre est toujours envoyé lorsqu'il est activé. Les modèles ou fournisseurs non pris en charge renvoient une erreur API — passez Effort sur Off ou changez de modèle. Anthropic utilise extended thinking pour tous les niveaux sauf Off.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "URL de l'Agent Hub",
       "agentHubUrlDescription": "URL du serveur Agent Hub distant. Si elle est définie, les assistants seront synchronisés avec ce serveur.",
@@ -466,7 +477,20 @@
       "toolDetailLevelDescription": "Le mode simple affiche uniquement les noms des outils et les icônes de statut. Le mode développeur affiche tous les paramètres, les détails de l'erreur et le temps d'exécution.",
       "uiVisualsTitle": "Apparence de l'interface",
       "fontFamily": "Police",
-      "fontFamilyDescription": "Change la police par défaut de l'interface."
+      "fontFamilyDescription": "Change la police par défaut de l'interface.",
+      "messageLayout": "Disposition des messages",
+      "messageLayoutDocument": "Document (mise en page pleine largeur)",
+      "messageLayoutBubble": "Bulles (chat classique)",
+      "messageLayoutDescription": "Le mode Document maximise la largeur pour le code et les diffs. Le mode Bulles conserve le style messagerie classique.",
+      "colorTheme": "Thème de couleur",
+      "colorThemeDescription": "Choisissez un thème de couleur d'accent pour l'interface.",
+      "colorThemes": {
+        "neutral": "Neutre (Monochrome)",
+        "amber": "Libr Ambre (Chaleur)",
+        "violet": "Iris Violet (IA)",
+        "ocean": "Bleu Océan (Calme)",
+        "forest": "Sauge Forêt (Concentration)"
+      }
     },
     "advanced": {
       "maxRetries": "Nombre max de tentatives",
@@ -539,6 +563,8 @@
       "maxScheduledTaskGroups": "Nombre maximal de groupes de tâches planifiées",
       "maxScheduledTaskGroupsDescription": "Nombre maximal de groupes distincts de tâches planifiées autorisés dans l'automatisation récurrente du travail d'équipe.",
       "backgroundTasks": "Tâches de fond",
+      "preventSleepDuringAgentWork": "Empêcher la mise en veille pendant l'exécution de l'application",
+      "preventSleepDuringAgentWorkDescription": "Empêche la mise en veille inactive du système tant que LibrAgent est ouvert. N'oblige pas l'écran à rester allumé. Activé par défaut.",
       "searchIndexFrequency": "Fréquence d'indexation de recherche (Min)",
       "searchIndexFrequencyDescription": "À quelle fréquence l'IA met à jour sa recherche en mémoire. Des mises à jour plus rapides maintiennent la recherche à jour mais consomment plus de batterie/CPU.",
       "webActionTimeout": "Délai d'action Web (Sec)",
@@ -843,6 +869,19 @@
       "loadingOlder": "Chargement des anciens messages...",
       "scrollToLoadOlder": "Faites défiler vers le haut pour charger les anciens messages"
     },
+    "approval": {
+      "hardTitle": "Approbation renforcée requise",
+      "title": "Approbation requise",
+      "hardDescriptionYolo": "Le mode YOLO est activé, mais cette action à haut risque nécessite toujours une approbation manuelle.",
+      "hardDescription": "Cette action à haut risque nécessite une approbation explicite.",
+      "description": "L’agent souhaite exécuter cet outil.",
+      "hardBadge": "Approbation renforcée",
+      "standardBadge": "Approbation standard",
+      "arguments": "Arguments",
+      "reject": "Refuser",
+      "hardApprove": "Approuver l’action à haut risque",
+      "approve": "Approuver"
+    },
     "draft": {
       "send": "Envoyer le message",
       "attachFiles": "Joindre des fichiers",
@@ -951,7 +990,8 @@
       "dropFiles": "Déposez les fichiers ici ou cliquez pour télécharger",
       "dropFolderHint": "Déposez un dossier ici pour le définir comme espace de travail",
       "dropDirToastError": "Déposez les répertoires dans la zone centrale pour définir le remplacement de l'espace de travail.",
-      "dropMixedFoldersError": "Déposez des fichiers pour les importer, ou un seul dossier pour définir le remplacement de l'espace de travail."
+      "dropMixedFoldersError": "Déposez des fichiers pour les importer, ou un seul dossier pour définir le remplacement de l'espace de travail.",
+      "dropFolderIntoSubfolderError": "Le dépôt de dossiers dans des sous-dossiers n'est pas pris en charge."
     },
     "statusBar": {
       "retryError": "Échec de la nouvelle tentative du message",
@@ -1010,6 +1050,11 @@
       "cancelAriaLabel": "Annuler la requête",
       "cancellingTooltip": "Annulation...",
       "cancelTooltip": "Annuler",
+      "cancelOutcome": {
+        "processStopped": "{{count}} processus de l’espace de travail ont été arrêtés. Le workflow va continuer.",
+        "workflowPaused": "Le workflow a été annulé et mis en pause.",
+        "noActiveWork": "Aucun workflow actif à annuler."
+      },
       "resumeAriaLabel": "Reprendre le workflow",
       "resumeTooltip": "Reprendre",
       "sendAriaLabel": "Envoyer le message",
@@ -1070,6 +1115,7 @@
       "updated": "mis à jour"
     },
     "bubble": {
+      "toolError": "Erreur d'exécution de l'outil",
       "notification": "Notification",
       "channel": "CANAL",
       "assistant": "ASSISTANT",

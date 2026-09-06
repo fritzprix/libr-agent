@@ -397,6 +397,38 @@ describe('LLMServiceContext – Completion Execution', () => {
       });
     });
 
+    it('surfaces an unmarked transport abort as an error', async () => {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
+        wrapper: TestWrapper,
+      });
+
+      mockStreamChat.mockImplementation(async function* () {
+        yield JSON.stringify({ content: 'partial response' });
+        const error = new Error('Request aborted');
+        error.name = 'AbortError';
+        throw error;
+      });
+
+      const messages: Message[] = [
+        buildTestMessage({ id: 'msg1' }),
+      ];
+
+      await expect(
+        result.current.executeCompletionRequest(
+          'test-session',
+          'response-msg-unexpected-abort',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        ),
+      ).rejects.toThrow('LLM completion aborted unexpectedly');
+
+      await waitFor(() => {
+        expect(result.current.getSessionStatus('test-session')).toBe('error');
+      });
+    });
+
     it('should cleanup resources after completion', async () => {
       const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,

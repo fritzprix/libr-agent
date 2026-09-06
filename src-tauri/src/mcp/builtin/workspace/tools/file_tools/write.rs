@@ -44,6 +44,7 @@ pub fn create_write_file_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -87,5 +88,6 @@ pub fn create_import_files_tool() -> MCPTool {
         input_schema: object_schema(props, vec!["files".to_string()]),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

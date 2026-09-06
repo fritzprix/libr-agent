@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui';
+import { ColorThemePicker } from '../components/ColorThemePicker';
 
 const LANGUAGE_OPTIONS = [
   { value: 'en', labelKey: 'settings.language.en', fallback: 'English' },
@@ -62,9 +63,29 @@ const PREFILL_DISPLAY_FORMAT_OPTIONS = [
 
 const LANGUAGE_SELECT_ID = 'settings-language';
 const FONT_FAMILY_SELECT_ID = 'settings-font-family';
+const MESSAGE_LAYOUT_SELECT_ID = 'settings-message-layout';
 const TOOL_DETAIL_LEVEL_SELECT_ID = 'settings-tool-detail-level';
 const METRIC_DISPLAY_MODE_SELECT_ID = 'settings-metric-display-mode';
 const PREFILL_DISPLAY_FORMAT_SELECT_ID = 'settings-prefill-display-format';
+
+const MESSAGE_LAYOUT_OPTIONS = [
+  {
+    value: 'document',
+    labelKey: 'settings.display.messageLayoutDocument',
+    fallback: 'Document (full-width coding layout)',
+  },
+  {
+    value: 'bubble',
+    labelKey: 'settings.display.messageLayoutBubble',
+    fallback: 'Bubble (classic chat bubbles)',
+  },
+] as const;
+
+function isMessageLayout(
+  value: string,
+): value is DisplaySettings['messageLayout'] {
+  return MESSAGE_LAYOUT_OPTIONS.some((option) => option.value === value);
+}
 
 function isToolDetailLevel(
   value: string,
@@ -134,6 +155,12 @@ function GeneralTabComponent({
         <h3 className="text-lg font-medium text-foreground mb-4">
           {t('settings.display.uiVisualsTitle', 'UI Visuals')}
         </h3>
+        <div className="mb-6">
+          <ColorThemePicker
+            value={localDisplay.colorTheme}
+            onChange={(theme) => onDisplaySettingsChange('colorTheme', theme)}
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="min-w-0">
             <Label
@@ -185,6 +212,43 @@ function GeneralTabComponent({
               {t(
                 'settings.display.fontFamilyDescription',
                 'Choose your preferred font for the application interface',
+              )}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <Label
+              htmlFor={MESSAGE_LAYOUT_SELECT_ID}
+              className="mb-2 block text-muted-foreground"
+            >
+              {t('settings.display.messageLayout', 'Message Layout')}
+            </Label>
+            <Select
+              value={localDisplay.messageLayout ?? 'document'}
+              onValueChange={(value) => {
+                if (isMessageLayout(value)) {
+                  onDisplaySettingsChange('messageLayout', value);
+                }
+              }}
+            >
+              <SelectTrigger
+                id={MESSAGE_LAYOUT_SELECT_ID}
+                className="w-full max-w-xs bg-background"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MESSAGE_LAYOUT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {t(option.labelKey, option.fallback)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(
+                'settings.display.messageLayoutDescription',
+                'Document is the default coding layout (full width for code and diffs). Bubble keeps classic messenger-style chat bubbles.',
               )}
             </p>
           </div>

@@ -1,6 +1,6 @@
 use serde_json::Value;
-use std::sync::atomic::Ordering;
 
+use crate::execution_mode::ExecutionMode;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
@@ -16,14 +16,14 @@ impl WorkspaceServer {
             return false;
         };
 
+        // Fail closed if the map is write-locked (e.g. mid set_execution_mode).
         let Ok(active) = active_sessions.try_read() else {
             return false;
         };
 
         active
             .get(&self.session_id)
-            .map(|session| session.unsafe_mode.load(Ordering::Relaxed))
-            .unwrap_or(false)
+            .is_some_and(|session| session.execution_mode() == ExecutionMode::Unsafe)
     }
 
     #[cfg(windows)]
@@ -406,8 +406,6 @@ mod tests {
             status_transition: Arc::new(RwLock::new(None)),
             transition_lock: Arc::new(tokio::sync::Mutex::new(())),
             cancellation_token: CancellationToken::new(),
-            yolo_mode: Arc::new(AtomicBool::new(false)),
-            unsafe_mode: Arc::new(AtomicBool::new(true)),
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
             messages: Arc::new(RwLock::new(Vec::new())),
@@ -417,6 +415,7 @@ mod tests {
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
+            reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),
@@ -426,6 +425,10 @@ mod tests {
             cached_stable_prompt: Arc::new(RwLock::new(None)),
             last_completion_request: Arc::new(RwLock::new(None)),
             last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+            last_session_context_snapshot: Arc::new(RwLock::new(None)),
+            session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
+            tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
+            tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 

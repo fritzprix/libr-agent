@@ -28,7 +28,7 @@ MCP 설치 UI는 [Extensions](extensions.md) / [커스텀 MCP](custom-mcp.md)를
 
 ### 우선순위 (높음 → 낮음)
 
-`workspace` → `assistant` → `agent import`(IDE 스킬) → `global`(user) → `system`(번들 미러)
+`workspace` → `agent import` (IDE 스킬) → `assistant` → `custom` (`additionalSkillPaths`) → `global` (user) → `system` (번들 미러)
 
 ### Scope 한눈에
 

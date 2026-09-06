@@ -503,16 +503,19 @@ pub async fn fetch_url(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    // 1. Send GET request to determine content type
+    // 1. Fast HTTP probe for content-type / static HTML (avoids headless for simple pages).
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|e| e.to_string())?;
 
     let get_res = client.get(&url).send().await;
     let mut is_html = true;
+    let mut static_html: Option<String> = None;
 
-    if let Ok(res) = &get_res {
+    if let Ok(res) = get_res {
         if res.status().is_success() {
             if let Some(content_type) = res.headers().get(reqwest::header::CONTENT_TYPE) {
                 if let Ok(ct_str) = content_type.to_str() {
@@ -525,24 +528,29 @@ pub async fn fetch_url(
                     }
                 }
             }
-        }
-    }
 
-    if !is_html {
-        if let (Some(path), Ok(res)) = (save_path.as_ref(), get_res) {
-            // Read bytes directly from response
-            let bytes = match res.bytes().await {
-                Ok(b) => b,
-                Err(e) => {
-                    return Ok(handle_browser_op_error(
-                        "Download File",
-                        e.to_string(),
-                        vec![],
-                    ));
+            if !is_html {
+                if let Some(path) = save_path.as_ref() {
+                    let bytes = match res.bytes().await {
+                        Ok(b) => b,
+                        Err(e) => {
+                            return Ok(handle_browser_op_error(
+                                "Download File",
+                                e.to_string(),
+                                vec![],
+                            ));
+                        }
+                    };
+                    return save_downloaded_file(&url, path, session_id.as_deref(), &bytes).await;
                 }
-            };
-
-            return save_downloaded_file(&url, path, session_id.as_deref(), &bytes).await;
+            } else {
+                match res.text().await {
+                    Ok(html) => static_html = Some(html),
+                    Err(e) => {
+                        warn_fetch_http_body(&url, &e);
+                    }
+                }
+            }
         }
     }
 
@@ -559,72 +567,137 @@ pub async fn fetch_url(
         .to_mcp_result());
     }
 
-    // HTML fallback: use a temporary headless sidecar so fetch does not conflict
-    // with an already-running visible interactive browser runtime.
-    let service = server.get_browser_service()?;
-    let action_timeout = service.action_timeout();
-    let fetch_client = BrowserAutomationClient::new(action_timeout);
-    let fetch_session_id = format!("fetch-{}", Uuid::new_v4().simple());
-
-    match fetch_client
-        .create_session(&fetch_session_id, &url, Some("Fetch Tool Session"), false)
+    // 2. Prefer static HTML when it already yields usable markdown.
+    if let Some(html) = static_html.as_ref() {
+        let html_clone = html.clone();
+        let markdown_content = task::spawn_blocking(move || {
+            if html_clone.len() > 10 * 1024 * 1024 {
+                return "**Error: Page content too large to process (exceeds 10MB limit).**"
+                    .to_string();
+            }
+            convert_to_markdown(&html_clone)
+        })
         .await
-    {
-        Ok(_) => {}
-        Err(e) => {
-            fetch_client.shutdown().await;
-            return Ok(handle_browser_op_error(
-                "Fetch URL",
-                e,
-                vec!["Check URL", "Try a different site"],
+        .map_err(|e| format!("Task join error: {}", e))?;
+
+        if is_usable_static_fetch(html, &markdown_content) {
+            let title = extract_html_title(html).unwrap_or_default();
+            return Ok(build_fetch_success(
+                &url,
+                &title,
+                &markdown_content,
+                "http",
+                None,
             ));
         }
     }
 
-    // Extract HTML
-    let raw_html = match fetch_client
-        .evaluate(
-            &fetch_session_id,
-            "document.body ? document.body.outerHTML : \"\"",
-        )
-        .await
-    {
-        Ok(html) => html,
-        Err(e) => {
-            let _ = fetch_client.close_session(&fetch_session_id).await;
-            fetch_client.shutdown().await;
-            return Ok(handle_browser_op_error("Extract HTML", e, vec![]));
+    // 3. Headless fallback for JS-rendered / bot-gated pages.
+    match fetch_url_via_headless(server, &url).await {
+        Ok((title, markdown_content, nav_note)) => Ok(build_fetch_success(
+            &url,
+            &title,
+            &markdown_content,
+            "headless",
+            nav_note.as_deref(),
+        )),
+        Err(headless_error) => {
+            // Soft fallback: return imperfect static HTML rather than failing entirely.
+            if let Some(html) = static_html {
+                let html_clone = html.clone();
+                let markdown_content =
+                    task::spawn_blocking(move || convert_to_markdown(&html_clone))
+                        .await
+                        .map_err(|e| format!("Task join error: {}", e))?;
+                if !markdown_content.trim().is_empty() {
+                    let title = extract_html_title(&html).unwrap_or_default();
+                    let note = format!(
+                        "Headless fetch failed ({headless_error}); returned static HTTP HTML which may be incomplete."
+                    );
+                    return Ok(build_fetch_success(
+                        &url,
+                        &title,
+                        &markdown_content,
+                        "http_fallback",
+                        Some(&note),
+                    ));
+                }
+            }
+            Ok(handle_browser_op_error(
+                "Fetch URL",
+                headless_error,
+                vec!["Check URL", "Try a different site"],
+            ))
         }
-    };
+    }
+}
 
-    let page_title = fetch_client
-        .evaluate(&fetch_session_id, "document.title")
-        .await
-        .unwrap_or_default();
+fn warn_fetch_http_body(url: &str, error: &reqwest::Error) {
+    log::warn!("fetchUrl HTTP body read failed for {url}: {error}");
+}
 
-    // Close the session immediately
-    let _ = fetch_client.close_session(&fetch_session_id).await;
-    fetch_client.shutdown().await;
+/// Heuristic: static HTML is good enough when markdown is substantial and not a bot wall.
+fn is_usable_static_fetch(html: &str, markdown: &str) -> bool {
+    let md = markdown.trim();
+    if md.len() < 400 {
+        return false;
+    }
 
-    // Convert to markdown off-thread
-    let raw_html_clone = raw_html.clone();
-    let markdown_content = task::spawn_blocking(move || {
-        if raw_html_clone.len() > 10 * 1024 * 1024 {
-            return "**Error: Page content too large to process (exceeds 10MB limit).**"
-                .to_string();
-        }
-        convert_to_markdown(&raw_html_clone)
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?;
+    let lower = html.to_lowercase();
+    const BLOCKERS: &[&str] = &[
+        "cf-browser-verification",
+        "just a moment...",
+        "checking your browser",
+        "enable javascript to continue",
+        "please enable cookies",
+        "_incapsula_",
+        "attention required! | cloudflare",
+    ];
+    if BLOCKERS.iter().any(|marker| lower.contains(marker)) && md.len() < 2_000 {
+        return false;
+    }
 
-    let title = page_title.trim_matches('"');
+    true
+}
 
-    // Build Response
+fn extract_html_title(html: &str) -> Option<String> {
+    static RE_TITLE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?is)<title[^>]*>(.*?)</title>").expect("title regex"));
+    RE_TITLE
+        .captures(html)
+        .and_then(|caps| caps.get(1))
+        .map(|m| {
+            let cleaned = RE_SPACES.replace_all(m.as_str().trim(), " ");
+            html_escape_minimal_decode(&cleaned)
+        })
+}
+
+fn html_escape_minimal_decode(input: &str) -> String {
+    input
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+}
+
+fn build_fetch_success(
+    url: &str,
+    title: &str,
+    markdown_content: &str,
+    method: &str,
+    note: Option<&str>,
+) -> MCPResult {
     let mut result_text = format!(
         "Content fetched from {}\n\nPage Title: {}\n\n{}",
         url, title, markdown_content
     );
+
+    if let Some(note) = note {
+        result_text.push_str("\n\n(");
+        result_text.push_str(note);
+        result_text.push(')');
+    }
 
     if markdown_content.trim().is_empty() {
         result_text.push_str(
@@ -636,7 +709,8 @@ pub async fn fetch_url(
          "url": url,
          "title": title,
          "content_length": markdown_content.len(),
-         "content_empty": markdown_content.trim().is_empty()
+         "content_empty": markdown_content.trim().is_empty(),
+         "fetch_method": method
     });
 
     let hint = SuccessHint::new(
@@ -647,7 +721,67 @@ pub async fn fetch_url(
             "Use workspace tools only if you downloaded a file instead of page content".to_string(),
         ],
     );
-    Ok(hint.to_mcp_result_with_data(Some(structured_data)))
+    hint.to_mcp_result_with_data(Some(structured_data))
+}
+
+async fn fetch_url_via_headless(
+    server: &BrowserServer,
+    url: &str,
+) -> Result<(String, String, Option<String>), String> {
+    // Temporary headless sidecar so fetch does not conflict with a visible interactive runtime.
+    let service = server.get_browser_service()?;
+    let action_timeout = service.action_timeout();
+    let fetch_client = BrowserAutomationClient::new(action_timeout);
+    let fetch_session_id = format!("fetch-{}", Uuid::new_v4().simple());
+
+    let create_state = match fetch_client
+        .create_session(&fetch_session_id, url, Some("Fetch Tool Session"), false)
+        .await
+    {
+        Ok(state) => state,
+        Err(e) => {
+            fetch_client.shutdown().await;
+            return Err(e);
+        }
+    };
+    let nav_note = create_state.navigation_message.clone();
+
+    let raw_html = match fetch_client
+        .evaluate(
+            &fetch_session_id,
+            "document.documentElement ? document.documentElement.outerHTML : (document.body ? document.body.outerHTML : \"\")",
+        )
+        .await
+    {
+        Ok(html) => html,
+        Err(e) => {
+            let _ = fetch_client.close_session(&fetch_session_id).await;
+            fetch_client.shutdown().await;
+            return Err(e);
+        }
+    };
+
+    let page_title = fetch_client
+        .evaluate(&fetch_session_id, "document.title")
+        .await
+        .unwrap_or_else(|_| create_state.title.clone().unwrap_or_default());
+
+    let _ = fetch_client.close_session(&fetch_session_id).await;
+    fetch_client.shutdown().await;
+
+    let raw_html_clone = raw_html.clone();
+    let markdown_content = task::spawn_blocking(move || {
+        if raw_html_clone.len() > 10 * 1024 * 1024 {
+            return "**Error: Page content too large to process (exceeds 10MB limit).**"
+                .to_string();
+        }
+        convert_to_markdown(&raw_html_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?;
+
+    let title = page_title.trim_matches('"').to_string();
+    Ok((title, markdown_content, nav_note))
 }
 
 pub(crate) async fn save_downloaded_file(

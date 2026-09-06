@@ -123,6 +123,7 @@ pub struct CompletionRequest {
 pub enum StreamingIssueKind {
     RepeatedThinkingLoop,
     RepeatedTextLoop,
+    ReasoningBudgetExceeded,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

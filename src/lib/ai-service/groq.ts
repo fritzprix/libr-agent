@@ -8,9 +8,9 @@ import {
   SamplingOptions,
   SamplingResponse,
 } from '@/lib/mcp';
-import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
+import { mapThinkingEffort } from './thinking-effort-mapping';
 import {
   createSerializableToolCallArgumentDelta,
   serializeToolCallArgumentDeltas,
@@ -96,6 +96,8 @@ export class GroqService extends BaseAIService<
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
+      forceToolUse?: boolean;
+      disableToolUse?: boolean;
       signal?: AbortSignal;
     } = {},
   ): AsyncGenerator<string, void, void> {
@@ -111,10 +113,21 @@ export class GroqService extends BaseAIService<
         options.systemPrompt,
       );
 
-      const model = llmConfigManager.getModel(
-        'groq',
-        options.modelName || config.defaultModel || 'llama-3.1-8b-instant',
+      const toolChoice = !options.availableTools?.length
+        ? undefined
+        : options.disableToolUse
+          ? 'none'
+          : options.forceToolUse
+            ? 'required'
+            : 'auto';
+
+      const thinkingParams = mapThinkingEffort(
+        AIServiceProvider.Groq,
+        config.thinkingEffort,
       );
+      const reasoningFormat = thinkingParams.enabled
+        ? ('parsed' as const)
+        : undefined;
 
       const chatCompletion = await this.withRetry(
         () =>
@@ -129,10 +142,10 @@ export class GroqService extends BaseAIService<
               ...(config.temperature !== undefined && {
                 temperature: config.temperature,
               }),
-              reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
+              ...(reasoningFormat && { reasoning_format: reasoningFormat }),
               stream: true,
               tools: tools,
-              tool_choice: options.availableTools ? 'auto' : undefined,
+              tool_choice: toolChoice,
             },
             {
               signal: abortSignal,

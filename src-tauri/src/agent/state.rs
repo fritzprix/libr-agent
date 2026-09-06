@@ -1,6 +1,7 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
+use crate::agent::poll_tracker::PollTracker;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
@@ -457,12 +458,6 @@ pub struct AgentSession {
     /// Cancellation token to abort running workflows
     pub cancellation_token: CancellationToken,
 
-    /// YOLO mode: execute tools without requiring approval
-    pub yolo_mode: Arc<AtomicBool>,
-
-    /// Unsafe mode: bypass approval and policy enforcement
-    pub unsafe_mode: Arc<AtomicBool>,
-
     /// Cancel-pending flag to block post-cancel recursion/re-entry
     pub cancel_pending: Arc<AtomicBool>,
 
@@ -498,6 +493,11 @@ pub struct AgentSession {
     /// workflow. Hard-stops after a fixed cap to bound unbounded truncated loops.
     pub bad_tool_args_incident_count: Arc<RwLock<u32>>,
 
+    /// Counts Rust-owned recovery retries after client-side reasoning-budget
+    /// aborts (thinking reached ~90% of max output tokens). Independent from
+    /// repeated-thinking / text-loop counters. No prompt nudge is injected.
+    pub reasoning_budget_retry_count: Arc<RwLock<u32>>,
+
     /// Pending events (messages, approvals, etc.) waiting for workflow processing
     pub pending_events: Arc<RwLock<PendingEventManager>>,
 
@@ -531,20 +531,39 @@ pub struct AgentSession {
     /// Last raw input message ID included in the most recent emitted completion request.
     /// Used to persist provider-reported prompt tokens onto the correct checkpoint message.
     pub last_submitted_input_message_id: Arc<RwLock<Option<String>>>,
+
+    /// Previous-turn volatile session-context snapshot for Phase 2 lagged inject
+    /// (`SC(state @ tn−1)` before `response(tn−1)`). Ephemeral — not persisted to DB.
+    pub last_session_context_snapshot: Arc<RwLock<Option<String>>>,
+
+    /// Completions since the last force-fresh SC inject (heartbeat).
+    pub session_context_turns_since_force_fresh: Arc<RwLock<u32>>,
+
+    /// Session-scoped resample attempt counter keyed by loop fingerprint
+    /// (single-tool signature or batch fingerprint). Independent of DB history
+    /// length so resample budget survives discarded assistant turns.
+    pub tool_loop_resample_attempts: Arc<RwLock<HashMap<String, usize>>>,
+
+    /// In-band poll snapshot trackers keyed by `{tool}:{resource_id}`.
+    pub tool_poll_trackers: Arc<RwLock<HashMap<String, PollTracker>>>,
 }
 
 impl AgentSession {
+    /// In-memory SSOT for approval policy. Persisted copy lives in the session repo.
+    #[inline]
+    pub fn execution_mode(&self) -> crate::execution_mode::ExecutionMode {
+        self.metadata.execution_mode
+    }
+
     /// Construct a new idle in-memory session shell for create / resume / recover.
     ///
-    /// Runtime flags (`yolo_mode` / `unsafe_mode`) are derived from
-    /// `metadata.execution_mode`. Field layout stays flat — do not wrap groups
-    /// in `Arc` (prior Arc-grouping attempt was reverted).
+    /// Field layout stays flat — do not wrap groups in `Arc` (prior Arc-grouping
+    /// attempt was reverted).
     pub fn new(
         metadata: SessionMetadata,
         context_registry: Arc<ContextRegistry>,
         compact_context: Option<CompactContextRecord>,
     ) -> Self {
-        let (yolo_enabled, unsafe_enabled) = metadata.execution_mode.runtime_flags();
         Self {
             metadata,
             is_running: false,
@@ -552,8 +571,6 @@ impl AgentSession {
             status_transition: Arc::new(RwLock::new(None)),
             transition_lock: Arc::new(Mutex::new(())),
             cancellation_token: CancellationToken::new(),
-            yolo_mode: Arc::new(AtomicBool::new(yolo_enabled)),
-            unsafe_mode: Arc::new(AtomicBool::new(unsafe_enabled)),
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
             messages: Arc::new(RwLock::new(Vec::new())),
@@ -563,6 +580,7 @@ impl AgentSession {
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
+            reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry,
@@ -572,6 +590,10 @@ impl AgentSession {
             cached_stable_prompt: Arc::new(RwLock::new(None)),
             last_completion_request: Arc::new(RwLock::new(None)),
             last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+            last_session_context_snapshot: Arc::new(RwLock::new(None)),
+            session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
+            tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
+            tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -588,6 +610,10 @@ impl AgentSession {
         *self.expected_response_id.write().await = None;
         *self.last_completion_request.write().await = None;
         *self.last_submitted_input_message_id.write().await = None;
+        *self.last_session_context_snapshot.write().await = None;
+        *self.session_context_turns_since_force_fresh.write().await = 0;
+        self.tool_loop_resample_attempts.write().await.clear();
+        self.tool_poll_trackers.write().await.clear();
     }
 }
 
@@ -669,8 +695,6 @@ mod tests {
             status_transition: Arc::new(RwLock::new(None)),
             transition_lock: Arc::new(tokio::sync::Mutex::new(())),
             cancellation_token: CancellationToken::new(),
-            yolo_mode: Arc::new(AtomicBool::new(false)),
-            unsafe_mode: Arc::new(AtomicBool::new(false)),
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
             messages: Arc::new(RwLock::new(Vec::new())),
@@ -680,6 +704,7 @@ mod tests {
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
+            reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),
@@ -689,6 +714,10 @@ mod tests {
             cached_stable_prompt: Arc::new(RwLock::new(None)),
             last_completion_request: Arc::new(RwLock::new(None)),
             last_submitted_input_message_id: Arc::new(RwLock::new(None)),
+            last_session_context_snapshot: Arc::new(RwLock::new(None)),
+            session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
+            tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
+            tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 

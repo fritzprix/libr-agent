@@ -156,6 +156,9 @@ pub struct MCPTool {
     /// Additional metadata about the tool.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<MCPToolAnnotations>,
+    /// Declarative wait/poll contract for loop-recovery and PollTracker integration.
+    #[serde(rename = "x-libragent-wait", skip_serializing_if = "Option::is_none")]
+    pub libragent_wait: Option<crate::mcp::wait_extension::LibragentWaitExtension>,
 }
 
 /// Represents a JSON-RPC error object as defined by the MCP specification.

@@ -211,10 +211,10 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 Download the latest installer for your platform from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.3_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_x64-setup.exe) · [`LibrAgent_0.9.3_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.3_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.3_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_amd64.AppImage) · [`LibrAgent_0.9.3_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_amd64.deb) · [`LibrAgent-0.9.3-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent-0.9.3-1.x86_64.rpm)
-- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.3)
+- **Windows:** [`LibrAgent_0.9.8_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_x64-setup.exe) · [`LibrAgent_0.9.8_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.8_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.8_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_amd64.AppImage) · [`LibrAgent_0.9.8_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_amd64.deb) · [`LibrAgent-0.9.8-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent-0.9.8-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.8)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Developer Setup:**
@@ -225,6 +225,18 @@ cd libr-agent
 pnpm install
 pnpm tauri dev
 ```
+
+**Benchmarking (Harbor & Terminal-Bench):**
+
+```bash
+pnpm bench:diverse     # Stratified 9-task TB2.1 smoke (fritzprix/libragent-diverse-9)
+pnpm bench:fileop      # File/data-focused 9-task set (NovitaAI/tb21-file-recovery)
+pnpm bench:registry    # Same default as bench:diverse
+pnpm xbench:registry   # Comparative evaluation with Hermes Agent
+pnpm bench:terminal    # Run Terminal-Bench 2.1 evaluation
+```
+
+See the [Harbor Benchmarking Guide](benchmarks/harbor/README.md) for custom registry datasets (`--dataset`) and comparative metrics.
 
 ### The 5-Minute Onboarding Path
 

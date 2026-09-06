@@ -11,12 +11,17 @@ import {
   type DisplaySettings,
   type SystemSettings,
   type ExperimentalSettings,
+  type StoredExperimentalSettings,
+  normalizeExperimentalSettings,
+  normalizeDisplaySettings,
 } from './settings-service';
 import type { AIServiceProvider } from '@/lib/ai-service';
 import {
   migrateLegacyOpenAICompatibleSettings,
   normalizeCustomOpenAIProviders,
 } from '@/lib/ai-service/custom-providers';
+import { normalizeThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
+import { normalizeMaxRecentMediaMessages } from '@/lib/media-settings';
 
 const logger = getLogger('RustSettingsService');
 
@@ -34,6 +39,7 @@ type SettingValue =
   | DisplaySettings // displaySettings
   | SystemSettings // systemSettings
   | ExperimentalSettings // experimentalSettings
+  | StoredExperimentalSettings // experimentalSettings (partial / legacy DB blob)
   | undefined; // agentHubUrl can be undefined
 
 interface SettingDto {
@@ -76,6 +82,7 @@ function isPartialAdvancedSettings(
     'loopPreventionHardBreakOffset',
     'thinkingLoopMinPatternLength',
     'thinkingLoopMinRepetitions',
+    'maxRecentMediaMessages',
   ];
   return keys.every((key) => {
     const value = obj[key];
@@ -111,6 +118,7 @@ function isCustomOpenAIProviderArray(
 function mapDtosToSettings(dtos: SettingDto[]): {
   settings: Settings;
   didMigrate: boolean;
+  didMigrateExperimental: boolean;
 } {
   const settingsMap = new Map<string, SettingValue>();
   dtos.forEach((dto) => {
@@ -137,6 +145,14 @@ function mapDtosToSettings(dtos: SettingDto[]): {
   };
 
   const storedSystem = getTypedValue('systemSettings', DEFAULT_SETTING.system);
+  const storedAdvanced = getTypedValue<Partial<AdvancedSettings>>(
+    'advancedSettings',
+    {},
+    isPartialAdvancedSettings,
+  );
+
+  const { experimental, didMigrate: didMigrateExperimental } =
+    normalizeExperimentalSettings(settingsMap.get('experimentalSettings'));
 
   const mapped: Settings = {
     ...DEFAULT_SETTING,
@@ -188,24 +204,33 @@ function mapDtosToSettings(dtos: SettingDto[]): {
     agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
     advanced: {
       ...DEFAULT_SETTING.advanced,
-      ...getTypedValue<Partial<AdvancedSettings>>(
-        'advancedSettings',
-        {},
-        isPartialAdvancedSettings,
+      ...storedAdvanced,
+      maxRecentMediaMessages: normalizeMaxRecentMediaMessages(
+        storedAdvanced.maxRecentMediaMessages,
+      ),
+      thinkingEffort: normalizeThinkingEffort(
+        storedAdvanced.thinkingEffort,
+        (storedAdvanced as { thinkingBudget?: unknown }).thinkingBudget,
       ),
     },
-    display: getTypedValue('displaySettings', DEFAULT_SETTING.display),
+    display: normalizeDisplaySettings(settingsMap.get('displaySettings')),
     system: {
       ...DEFAULT_SETTING.system,
       ...storedSystem,
+      preventSleepDuringAgentWork:
+        typeof storedSystem.preventSleepDuringAgentWork === 'boolean'
+          ? storedSystem.preventSleepDuringAgentWork
+          : DEFAULT_SETTING.system.preventSleepDuringAgentWork,
     },
-    experimental: getTypedValue(
-      'experimentalSettings',
-      DEFAULT_SETTING.experimental,
-    ),
+    experimental,
   };
 
-  return migrateLegacyOpenAICompatibleSettings(mapped);
+  const openaiMigration = migrateLegacyOpenAICompatibleSettings(mapped);
+  return {
+    settings: openaiMigration.settings,
+    didMigrate: openaiMigration.didMigrate,
+    didMigrateExperimental,
+  };
 }
 
 function invalidateSettingsCache() {
@@ -228,23 +253,29 @@ async function loadSettings(forceRefresh = false): Promise<Settings> {
   const requestGeneration = settingsCacheGeneration;
   const request = safeInvoke<SettingDto[]>('list_settings')
     .then(async (dtos) => {
-      const { settings, didMigrate } = mapDtosToSettings(dtos);
+      const { settings, didMigrate, didMigrateExperimental } =
+        mapDtosToSettings(dtos);
 
-      if (didMigrate) {
+      if (didMigrate || didMigrateExperimental) {
         try {
+          const migrationPatch: Record<string, SettingValue | null> = {};
+          if (didMigrate) {
+            migrationPatch.serviceConfigs = settings.serviceConfigs;
+            migrationPatch.customProviders = settings.customProviders;
+            migrationPatch.preferredModel = settings.preferredModel;
+            migrationPatch.fallbackModel = settings.fallbackModel ?? null;
+          }
+          if (didMigrateExperimental) {
+            logger.info(
+              'Migrating experimentalSettings: dropping toolLoopLegacyGuidanceEnabled',
+            );
+            migrationPatch.experimentalSettings = settings.experimental;
+          }
           await safeInvoke<SettingDto[]>('update_settings', {
-            settings: {
-              serviceConfigs: settings.serviceConfigs,
-              customProviders: settings.customProviders,
-              preferredModel: settings.preferredModel,
-              fallbackModel: settings.fallbackModel ?? null,
-            },
+            settings: migrationPatch,
           });
         } catch (error) {
-          logger.warn(
-            'Failed to persist legacy OpenAI-compatible settings migration',
-            error,
-          );
+          logger.warn('Failed to persist settings migration', error);
         }
       }
 
@@ -361,7 +392,9 @@ export class RustSettingsService implements ISettingsService {
       }
 
       if (settings.experimental) {
-        changes['experimentalSettings'] = settings.experimental;
+        changes['experimentalSettings'] = normalizeExperimentalSettings(
+          settings.experimental,
+        ).experimental;
       }
 
       // Perform a single batch update

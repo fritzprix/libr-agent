@@ -134,10 +134,21 @@ impl InteractiveBrowserServer {
                     session.runtime_ready_generation = Some(session.page_generation);
                 }
 
-                let message = format!(
-                    "Session created for {} - active session ready for content extraction",
-                    state.url
-                );
+                let message = match state.navigation_message {
+                    Some(nav_msg) if nav_msg.contains("load wait timed out") => {
+                        format!("Session created for {}. {}", state.url, nav_msg)
+                    }
+                    Some(nav_msg) => {
+                        format!(
+                            "Session created for {} - active session ready for content extraction. {}",
+                            state.url, nav_msg
+                        )
+                    }
+                    None => format!(
+                        "Session created for {} - active session ready for content extraction",
+                        state.url
+                    ),
+                };
                 Ok((session_id, message))
             }
             Err(error) => {
@@ -179,6 +190,32 @@ impl InteractiveBrowserServer {
         max_entries: Option<u32>,
     ) -> Result<Vec<crate::browser_sidecar::ConsoleEntry>, String> {
         self.client.get_console_logs(session_id, max_entries).await
+    }
+
+    /// Capture the active browser page as a Base64-encoded PNG.
+    pub async fn take_screenshot(
+        &self,
+        session_id: &str,
+        full_page: bool,
+    ) -> Result<String, String> {
+        let session = self.get_session(session_id)?;
+        match &session.status {
+            SessionStatus::Active => {}
+            SessionStatus::Error(message) => {
+                return Err(format!(
+                    "Browser session {} is in an error state: {}. Close the session or create a new one.",
+                    session_id, message
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "Browser session {} is not ready for screenshot capture",
+                    session_id
+                ));
+            }
+        }
+
+        self.client.take_screenshot(session_id, full_page).await
     }
 
     pub fn list_sessions(&self) -> Vec<BrowserSession> {
@@ -287,10 +324,21 @@ impl InteractiveBrowserServer {
             self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
         self.require_applied_navigation("Navigation", session_id, next_generation, outcome)?;
 
-        let message = format!(
-            "Navigated active session to {} - ready for content extraction",
-            state.url
-        );
+        let message = match state.navigation_message {
+            Some(nav_msg) if nav_msg.contains("load wait timed out") => {
+                format!("Navigated active session to {}. {}", state.url, nav_msg)
+            }
+            Some(nav_msg) => {
+                format!(
+                    "Navigated active session to {} - ready for content extraction. {}",
+                    state.url, nav_msg
+                )
+            }
+            None => format!(
+                "Navigated active session to {} - ready for content extraction",
+                state.url
+            ),
+        };
         Ok(message)
     }
 

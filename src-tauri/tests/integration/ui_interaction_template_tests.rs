@@ -81,6 +81,39 @@ async fn present_interactive_text_mode_includes_safe_default_options_array() {
 }
 
 #[tokio::test]
+async fn present_interactive_display_only_reminds_task_is_not_complete() {
+    let server = UiServer::new();
+
+    let result = server
+        .call_tool(
+            "presentInteractive",
+            json!({
+                "title": "Status",
+                "content": "Remaining overfull hboxes listed here.",
+                "format": "markdown"
+            }),
+            None,
+        )
+        .await
+        .expect("display-only presentInteractive should render");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("Display-only UI — this does not complete the task"),
+        "display-only presentInteractive must not look like task completion: {text}"
+    );
+    assert!(
+        text.contains("ui__reportResult"),
+        "display-only presentInteractive should point at reportResult for completion: {text}"
+    );
+    assert!(
+        !text.contains("Workflow paused until the user responds"),
+        "display-only mode must not claim a user response is required: {text}"
+    );
+}
+
+#[tokio::test]
 async fn present_interactive_select_mode_preserves_options_array() {
     let server = UiServer::new();
 
@@ -313,5 +346,86 @@ async fn report_result_renders_and_instructs_stop() {
     assert!(
         !html.contains("background: #f9fafb;") && !html.contains("background: white;"),
         "reportResult HTML must not hardcode light-only surfaces"
+    );
+}
+
+#[tokio::test]
+async fn report_result_markdown_math_loads_katex_and_preserves_latex() {
+    let server = UiServer::new();
+
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "title": "Maxwell",
+                "status": "success",
+                "format": "markdown",
+                "result": "Inline $E=mc^2$ and:\n\n$$\n\\begin{aligned}\n\\nabla \\cdot \\mathbf{E} &= \\frac{\\rho}{\\epsilon_0} \\\\\n\\nabla \\cdot \\mathbf{B} &= 0\n\\end{aligned}\n$$\n\nCompare $a < b$."
+            }),
+            None,
+        )
+        .await
+        .expect("reportResult with math should render");
+
+    assert_eq!(result.is_error, Some(false));
+
+    let content = result.content.expect("reportResult should return content");
+    let resource = content
+        .iter()
+        .find_map(|item| match item {
+            MCPContent::Resource { resource, .. } => Some(resource),
+            _ => None,
+        })
+        .expect("reportResult should return HTML resource");
+    let html = resource["text"]
+        .as_str()
+        .expect("HTML resource should include inline text");
+
+    assert!(
+        html.contains("cdn.jsdelivr.net/npm/katex@0.16.27/dist/katex.min.js"),
+        "markdown results must load the KaTeX renderer script"
+    );
+    assert!(
+        html.contains("cdn.jsdelivr.net/npm/katex@0.16.27/dist/katex.min.css"),
+        "markdown results must load KaTeX CSS"
+    );
+    assert!(
+        html.contains("katex.render") && html.contains("displayMode: displayMode"),
+        "template must call katex.render for math nodes"
+    );
+    assert!(
+        html.contains("@@MATHBLOCK_") && html.contains("math-display"),
+        "markdown parser must support multiline display-math placeholders"
+    );
+    assert!(
+        html.contains("escapeExceptPlaceholders"),
+        "math must be extracted before HTML escaping"
+    );
+    assert!(
+        html.contains("data-tex") && html.contains("data-katex-rendered"),
+        "math nodes must keep source TeX and skip duplicate katex.render"
+    );
+    assert!(
+        html.contains("<ol start=\"") || html.contains("'<ol start=\"'"),
+        "ordered lists must emit start= so split lists keep markdown numbers"
+    );
+    assert!(
+        html.contains("Cambria Math") && html.contains("font-style: italic"),
+        "pre-KaTeX math fallback fonts should remain for offline/loading"
+    );
+    assert!(
+        html.contains("replace(/<p>\\s*<\\/p>/g, '')"),
+        "empty paragraph tags from math/blank-line splits must be stripped"
+    );
+    // Raw markdown is embedded as JSON; &= / < must still be intact there
+    // (escaping happens only when the client parser emits HTML).
+    assert!(
+        html.contains(r"\nabla \cdot \mathbf{E} &=")
+            || html.contains(r"\\nabla \\cdot \\mathbf{E} &="),
+        "source markdown JSON must preserve LaTeX alignment &= before HTML escape"
+    );
+    assert!(
+        html.contains("$a < b$") || html.contains(r"$a < b$"),
+        "source markdown JSON must preserve inequality < inside inline math"
     );
 }

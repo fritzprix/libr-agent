@@ -192,7 +192,28 @@
       .md table { border-collapse: collapse; width: 100%; margin: 0 0 14px; font-size: 0.93em; }
       .md th { background: var(--muted, #f3f4f6); font-weight: 600; }
       .md th, .md td { border: 1px solid var(--border, #d1d5db); padding: 7px 12px; text-align: left; }
+      .md .math-inline {
+        font-family: 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif;
+        font-style: italic;
+        padding: 0 1px;
+      }
+      .md .math-display {
+        font-family: 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif;
+        font-style: italic;
+        text-align: center;
+        margin: 12px 0;
+        padding: 8px 12px;
+        background: var(--muted, #f3f4f6);
+        border-radius: 6px;
+        overflow-x: auto;
+      }
+      .md .katex { font-size: 1.05em; color: inherit; font-style: normal; }
+      .md .katex-display { margin: 0.4em 0; }
     </style>
+    {{#if isMarkdown}}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.27/dist/katex.min.css" crossorigin="anonymous" />
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.27/dist/katex.min.js" crossorigin="anonymous"></script>
+    {{/if}}
   </head>
   <body>
     <div class="container">
@@ -226,49 +247,136 @@
                 return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
               }
 
+              function escapeAttr(s) {
+                return escape(s).replace(/"/g, '&quot;');
+              }
+
+              function mathHtml(tex, display) {
+                var safe = escape(tex);
+                var attr = escapeAttr(tex);
+                if (display) {
+                  return '<div class="math-display" data-tex="' + attr + '">' + safe + '</div>';
+                }
+                return '<span class="math-inline" data-tex="' + attr + '">' + safe + '</span>';
+              }
+
+              function escapeExceptPlaceholders(s) {
+                return s.split(/(@@PH_\d+@@)/).map(function (part) {
+                  return /^@@PH_\d+@@$/.test(part) ? part : escape(part);
+                }).join('');
+              }
+
               function parseInline(s) {
-                return s
-                  .replace(/`([^`]+)`/g, '<code>$1</code>')
-                  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-                  .replace(/__([^_]+)__/g, '<strong>$1</strong>')
-                  .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-                  .replace(/_([^_]+)_/g, '<em>$1</em>')
-                  .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
-                    var safe = /^(https?:|mailto:|#)/.test(url.trim()) ? url : '#';
-                    return '<a href="' + safe + '" target="_blank" rel="noopener">' + text + '</a>';
-                  });
+                var placeholders = [];
+
+                // 1. Protect inline code (before escape / markdown)
+                s = s.replace(/`([^`]+)`/g, function (_, code) {
+                  var idx = placeholders.length;
+                  placeholders.push('<code>' + escape(code) + '</code>');
+                  return '@@PH_' + idx + '@@';
+                });
+
+                // 2. Protect remaining single-line display math $$...$$
+                s = s.replace(/\$\$([^\$]+?)\$\$/g, function (_, math) {
+                  var idx = placeholders.length;
+                  placeholders.push(mathHtml(math.trim(), true));
+                  return '@@PH_' + idx + '@@';
+                });
+
+                // 3. Protect inline math $...$ (require non-space edges to avoid $5)
+                s = s.replace(/\$([^\$\s](?:[^\$\n]*[^\$\s])?)\$/g, function (_, math) {
+                  var idx = placeholders.length;
+                  placeholders.push(mathHtml(math, false));
+                  return '@@PH_' + idx + '@@';
+                });
+
+                // 4. Escape HTML in remaining text (math/code already protected)
+                s = escapeExceptPlaceholders(s);
+
+                // 5. Links (URL checked; link text already escaped)
+                s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
+                  var safe = /^(https?:|mailto:|#)/.test(url.trim()) ? url : '#';
+                  return '<a href="' + safe + '" target="_blank" rel="noopener">' + text + '</a>';
+                });
+
+                // 6. Bold & Italic
+                s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                     .replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+                s = s.replace(/(^|[^\s*])\*([^\s*](?:[^*]*[^\s*])?)\*([^\s*]|$)/g, '$1<em>$2</em>$3');
+                s = s.replace(/(^|[\s(])_([^\s_](?:[^_]*[^\s_])?)_([\s).,!?:;]|$)/g, '$1<em>$2</em>$3');
+
+                s = s.replace(/@@PH_(\d+)@@/g, function (_, idx) {
+                  return placeholders[parseInt(idx, 10)] || '';
+                });
+
+                return s;
               }
 
               function parseMarkdown(md) {
+                // Protect fenced / inline code before math extraction so $$ inside
+                // code is not treated as LaTeX.
+                var protectedBlocks = [];
+                md = md.replace(/```[\s\S]*?```/g, function (block) {
+                  var idx = protectedBlocks.length;
+                  protectedBlocks.push({ type: 'fence', text: block });
+                  return '\n@@PROTECT_' + idx + '@@\n';
+                });
+                md = md.replace(/`([^`]+)`/g, function (block) {
+                  var idx = protectedBlocks.length;
+                  protectedBlocks.push({ type: 'inline', text: block });
+                  return '@@PROTECT_' + idx + '@@';
+                });
+
+                // Extract display math BEFORE line split + HTML escape so &= / <
+                // remain valid LaTeX for KaTeX (including multiline blocks).
+                var mathBlocks = [];
+                md = md.replace(/\$\$([\s\S]+?)\$\$/g, function (_, math) {
+                  var idx = mathBlocks.length;
+                  mathBlocks.push(mathHtml(math.trim(), true));
+                  return '\n@@MATHBLOCK_' + idx + '@@\n';
+                });
+
+                // Restore protected code as opaque line tokens for the line parser
+                md = md.replace(/@@PROTECT_(\d+)@@/g, function (_, idx) {
+                  var block = protectedBlocks[parseInt(idx, 10)];
+                  if (!block) return '';
+                  if (block.type === 'inline') {
+                    return block.text;
+                  }
+                  return '\n@@FENCE_' + idx + '@@\n';
+                });
+
                 var lines = md.split('\n');
                 var html = '';
                 var i = 0;
-                var inPre = false;
-                var preLines = [];
-                var preInfo = '';
 
                 while (i < lines.length) {
                   var line = lines[i];
-                  if (/^```/.test(line)) {
-                    if (!inPre) {
-                      inPre = true;
-                      preInfo = line.slice(3).trim();
-                      preLines = [];
-                    } else {
-                      html += '<pre><code' + (preInfo ? ' class="language-' + escape(preInfo) + '"' : '') + '>' +
-                               escape(preLines.join('\n')) + '</code></pre>\n';
-                      inPre = false;
-                      preLines = [];
-                      preInfo = '';
+
+                  var fenceMatch = line.trim().match(/^@@FENCE_(\d+)@@$/);
+                  if (fenceMatch) {
+                    var fence = protectedBlocks[parseInt(fenceMatch[1], 10)];
+                    if (fence && fence.type === 'fence') {
+                      var fenceBody = fence.text.replace(/^```[^\n]*\n?/, '').replace(/\n?```$/, '');
+                      var fenceInfo = (fence.text.match(/^```([^\n]*)/) || [])[1] || '';
+                      fenceInfo = fenceInfo.trim();
+                      html += '<pre><code' + (fenceInfo ? ' class="language-' + escape(fenceInfo) + '"' : '') + '>' +
+                               escape(fenceBody) + '</code></pre>\n';
                     }
                     i++; continue;
                   }
-                  if (inPre) { preLines.push(line); i++; continue; }
+
+                  var mathBlockMatch = line.trim().match(/^@@MATHBLOCK_(\d+)@@$/);
+                  if (mathBlockMatch) {
+                    html += '</p>' + (mathBlocks[parseInt(mathBlockMatch[1], 10)] || '') + '<p>';
+                    i++; continue;
+                  }
 
                   var hm = line.match(/^(#{1,6})\s+(.+)$/);
                   if (hm) {
                     var lvl = hm[1].length;
-                    html += '<h' + lvl + '>' + parseInline(escape(hm[2])) + '</h' + lvl + '>\n';
+                    html += '<h' + lvl + '>' + parseInline(hm[2]) + '</h' + lvl + '>\n';
                     i++; continue;
                   }
 
@@ -282,7 +390,7 @@
                       bqLines.push(lines[i].replace(/^>\s?/, ''));
                       i++;
                     }
-                    html += '<blockquote>' + parseInline(escape(bqLines.join(' '))) + '</blockquote>\n';
+                    html += '<blockquote>' + parseInline(bqLines.join(' ')) + '</blockquote>\n';
                     continue;
                   }
 
@@ -290,11 +398,11 @@
                     var headers = line.split('|').filter(function(c){ return c.trim(); });
                     i += 2;
                     html += '<table><thead><tr>' +
-                      headers.map(function(h){ return '<th>' + parseInline(escape(h.trim())) + '</th>'; }).join('') +
+                      headers.map(function(h){ return '<th>' + parseInline(h.trim()) + '</th>'; }).join('') +
                       '</tr></thead><tbody>';
                     while (i < lines.length && /\|/.test(lines[i])) {
                       var cells = lines[i].split('|').filter(function(c){ return c.trim(); });
-                      html += '<tr>' + cells.map(function(c){ return '<td>' + parseInline(escape(c.trim())) + '</td>'; }).join('') + '</tr>\n';
+                      html += '<tr>' + cells.map(function(c){ return '<td>' + parseInline(c.trim()) + '</td>'; }).join('') + '</tr>\n';
                       i++;
                     }
                     html += '</tbody></table>\n';
@@ -304,7 +412,7 @@
                   if (/^[\-\*\+]\s/.test(line)) {
                     html += '<ul>\n';
                     while (i < lines.length && /^[\-\*\+]\s/.test(lines[i])) {
-                      html += '<li>' + parseInline(escape(lines[i].replace(/^[\-\*\+]\s/, ''))) + '</li>\n';
+                      html += '<li>' + parseInline(lines[i].replace(/^[\-\*\+]\s/, '')) + '</li>\n';
                       i++;
                     }
                     html += '</ul>\n';
@@ -312,9 +420,11 @@
                   }
 
                   if (/^\d+\.\s/.test(line)) {
-                    html += '<ol>\n';
+                    // Preserve markdown numbering when lists split around math/prose
+                    var startNum = (line.match(/^(\d+)\./) || [])[1] || '1';
+                    html += '<ol start="' + startNum + '">\n';
                     while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
-                      html += '<li>' + parseInline(escape(lines[i].replace(/^\d+\.\s/, ''))) + '</li>\n';
+                      html += '<li>' + parseInline(lines[i].replace(/^\d+\.\s/, '')) + '</li>\n';
                       i++;
                     }
                     html += '</ol>\n';
@@ -322,14 +432,62 @@
                   }
 
                   if (line.trim() === '') { html += '</p><p>'; i++; continue; }
-                  html += parseInline(escape(line)) + ' ';
+                  html += parseInline(line) + ' ';
                   i++;
                 }
 
-                return '<p>' + html.replace(/<\/p><p>\s*<\/p><p>/g, '</p><p>') + '</p>';
+                return ('<p>' + html.replace(/<\/p><p>\s*<\/p><p>/g, '</p><p>') + '</p>')
+                  .replace(/<p>\s*<\/p>/g, '');
               }
 
-              document.getElementById('md-root').innerHTML = parseMarkdown(raw);
+              function renderMath(root) {
+                if (typeof katex === 'undefined' || !root) return;
+
+                function renderOne(el, displayMode) {
+                  if (el.getAttribute('data-katex-rendered') === 'true') return;
+                  var tex = el.getAttribute('data-tex');
+                  if (tex == null || !String(tex).trim()) {
+                    tex = el.textContent || '';
+                  }
+                  if (!String(tex).trim()) return;
+                  try {
+                    katex.render(tex, el, { throwOnError: false, displayMode: displayMode });
+                    el.setAttribute('data-katex-rendered', 'true');
+                  } catch (err) { /* keep escaped source */ }
+                }
+
+                root.querySelectorAll('.math-display').forEach(function (el) {
+                  renderOne(el, true);
+                });
+                root.querySelectorAll('.math-inline').forEach(function (el) {
+                  renderOne(el, false);
+                });
+              }
+
+              var mdRoot = document.getElementById('md-root');
+              mdRoot.innerHTML = parseMarkdown(raw);
+
+              function applyKatexWhenReady() {
+                renderMath(mdRoot);
+                if (typeof scheduleResizeReport === 'function') {
+                  scheduleResizeReport();
+                }
+              }
+
+              if (typeof katex !== 'undefined') {
+                applyKatexWhenReady();
+              } else {
+                var katexWait = 0;
+                var katexPoll = setInterval(function () {
+                  katexWait += 1;
+                  if (typeof katex !== 'undefined') {
+                    clearInterval(katexPoll);
+                    applyKatexWhenReady();
+                  } else if (katexWait > 100) {
+                    clearInterval(katexPoll);
+                  }
+                }, 50);
+              }
             })();
           </script>
         {{else}}

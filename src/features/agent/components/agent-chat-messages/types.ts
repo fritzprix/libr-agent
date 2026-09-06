@@ -2,6 +2,7 @@ import { type MutableRefObject } from 'react';
 import type { Message } from '@/models/chat';
 import type { useAgentChat } from '@/context/AgentChatContext';
 import type { useAgentSession } from '@/context/AgentSessionContext';
+import type { MessageLayoutStyle } from '@/lib/services/settings-service';
 
 export const INITIAL_FIRST_ITEM_INDEX = 10_000;
 export const CHAT_COMPOSER_CLEARANCE = 24;
@@ -49,6 +50,7 @@ export interface AgentChatVirtuosoContext {
   sessionAssistantName: string;
   workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'];
   executionMode: ReturnType<typeof useAgentSession>['executionMode'];
+  messageLayout: MessageLayoutStyle;
 }
 
 export type AgentChatVirtuosoContextProps = {

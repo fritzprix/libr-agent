@@ -94,10 +94,10 @@ const CompactHeaderRow: React.FC<CompactHeaderRowProps> = ({
  * Compact tool call item - no individual border, tight spacing.
  *
  * Renders differently based on the `toolDetailLevel` display setting:
- * - 'simple': shows only tool name + status icon. No params, no error text,
- *             no background colour change on error, no expand capability.
- * - 'developer': full detail view (current behaviour) with params summary,
- *               execution time, error details, and expand/collapse.
+ * - 'simple': tool name + status icon; expandable when the tool failed so
+ *             users can read the error. Params stay hidden unless forced.
+ * - 'developer': full detail view with params summary, execution time,
+ *               error details, and expand/collapse.
  *
  * Results with a UI override (MCP UI resource or structured tool UI) always
  * show details and skip collapse — see {@link resolveToolResultUiOverride}.
@@ -144,12 +144,13 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Auto-expand on error transition in developer mode (non-forced results only).
+  // Auto-expand on error transition (non-forced results only).
   // Forced-visible results already mount details without expand state.
-  if (!isSimpleMode && !forceVisible && hasError !== prevHasErrorRef.current) {
+  // In simple mode, keep collapsed by default; auto-expand in developer mode only.
+  if (!forceVisible && hasError !== prevHasErrorRef.current) {
     const errorBecameVisible = !prevHasErrorRef.current && hasError;
     prevHasErrorRef.current = hasError;
-    if (errorBecameVisible) {
+    if (errorBecameVisible && !isSimpleMode) {
       setIsExpanded(true);
     }
   } else if (hasError !== prevHasErrorRef.current) {
@@ -172,6 +173,42 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   if (isSimpleMode) {
+    // Failures stay inspectable; successful calls stay collapsed unless forced.
+    if (!forceVisible && hasError) {
+      return (
+        <div
+          className={cn(
+            'rounded px-3 py-2 text-sm transition-colors',
+            'bg-destructive/10 hover:bg-destructive/20',
+          )}
+          style={{ overflowAnchor: 'none' }}
+        >
+          <button
+            type="button"
+            className="w-full text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
+            aria-expanded={isExpanded}
+            aria-controls={detailsId}
+            aria-label={t(
+              'agentChat.toolDetails.toggleAriaLabel',
+              'Toggle {{toolName}} details',
+              { toolName: displayToolName },
+            )}
+            onClick={() => setIsExpanded((prev) => !prev)}
+          >
+            <CompactHeaderRow
+              toolResult={toolResult}
+              hasError={hasError}
+              displayToolName={displayToolName}
+              paramSummary=""
+              showChevron
+              isExpanded={isExpanded}
+            />
+          </button>
+          {isExpanded ? details : null}
+        </div>
+      );
+    }
+
     return (
       <div
         className="rounded px-3 py-2 text-sm bg-background"

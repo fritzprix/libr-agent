@@ -7,7 +7,6 @@ import {
   PropsWithChildren,
 } from 'react';
 import useSWR from 'swr';
-import { withTimeout } from '../lib/retry-utils';
 import {
   AIServiceProvider,
   AIServiceFactory,
@@ -19,17 +18,19 @@ import {
 import { setLastSelectedModel } from '../lib/ai-service/last-selected-model-storage';
 import { shouldFetchDynamicModels } from '../lib/ai-service/model-fetch-policy';
 import {
+  BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+  REFRESH_LIST_MODELS_TIMEOUT_MS,
+  buildProviderModelsSwrSegment,
+  fetchDynamicProviderModels,
+} from '../lib/ai-service/fetch-dynamic-provider-models';
+import {
   llmConfigManager,
   ModelInfo,
   ProviderInfo,
 } from '../lib/llm-config-manager';
 import { useSettings } from '../hooks/use-settings';
 import { getLogger } from '@/lib/logger';
-import { reportListModelsFallback } from '@/lib/ai-service/list-models-errors';
-import {
-  getStoredModelCache,
-  setStoredModelCache,
-} from '@/lib/ai-service/model-cache-storage';
+import { getStoredModelCache } from '@/lib/ai-service/model-cache-storage';
 
 const DEFAULT_MODEL_INFO: ModelInfo = {
   contextWindow: 0,
@@ -71,13 +72,14 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   } = useSettings();
   const { model, provider } = preferredModel;
 
+  const settingsSlice = useMemo(
+    () => ({ serviceConfigs, customProviders }),
+    [serviceConfigs, customProviders],
+  );
+
   const resolvedProvider = useMemo(
-    () =>
-      resolveProviderRuntimeConfig(provider, {
-        serviceConfigs,
-        customProviders,
-      }),
-    [provider, serviceConfigs, customProviders],
+    () => resolveProviderRuntimeConfig(provider, settingsSlice),
+    [provider, settingsSlice],
   );
 
   // Builtin-provider API keys only. Custom (`custom:<id>`) keys are resolved via
@@ -92,7 +94,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     );
   }, [serviceConfigs]);
 
-  // Generate stable cache key including baseUrl
+  // SWR key fingerprints the API key — fetcher resolves credentials from settings.
   const swrCacheKey = useMemo(() => {
     if (
       !shouldFetchDynamicModels({
@@ -108,62 +110,25 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
     return [
       'models',
-      provider,
-      resolvedProvider.apiKey || '',
-      resolvedProvider.baseUrl || '',
-      resolvedProvider.use3rdParty ? 'use-3rd-party' : 'first-party',
-      resolvedProvider.customModelId || '',
-    ];
+      buildProviderModelsSwrSegment({
+        providerId: provider,
+        apiKey: resolvedProvider.apiKey,
+        baseUrl: resolvedProvider.baseUrl,
+        use3rdParty: resolvedProvider.use3rdParty,
+        customModelId: resolvedProvider.customModelId,
+      }),
+    ] as const;
   }, [provider, resolvedProvider]);
 
-  // Fetcher for models — always delegates to service.listModels(), which each
-  // provider implements. Static-only providers return llmConfigManager data;
-  // dynamic providers (Ollama, OpenAI, OpenRouter, …) fetch from their APIs.
   const fetchDynamicModels = useCallback(
-    async ([, providerId, apiKey]: [string, string, string]) => {
-      const effectiveApiKey = apiKey || 'no-api-key';
-      const resolved = resolveProviderRuntimeConfig(providerId, {
-        serviceConfigs,
-        customProviders,
+    async ([, providerSegment]: readonly ['models', string]) => {
+      const providerId = providerSegment.split('|')[0] ?? provider;
+      return fetchDynamicProviderModels(providerId, settingsSlice, {
+        timeoutMs: BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+        notifyUser: false,
       });
-
-      try {
-        const service = AIServiceFactory.getService(
-          providerId,
-          effectiveApiKey,
-          resolved.serviceConfig,
-        );
-        const modelList = await withTimeout(service.listModels(), 20000);
-
-        const modelsRecord = Object.create(null) as Record<string, ModelInfo>;
-        for (const modelInfo of modelList) {
-          const key = modelInfo.id || modelInfo.name;
-          modelsRecord[key] = modelInfo;
-        }
-
-        if (Object.keys(modelsRecord).length > 0) {
-          setStoredModelCache(providerId, modelsRecord);
-        }
-
-        logger.info(`Fetched ${modelList.length} models from ${providerId}`);
-        return modelsRecord;
-      } catch (error) {
-        logger.error('Failed to fetch models:', error);
-        const storedModels = getStoredModelCache(providerId);
-        const hasCachedModels = !!(
-          storedModels && Object.keys(storedModels).length > 0
-        );
-        reportListModelsFallback({
-          provider: providerId,
-          baseUrl: resolved.baseUrl,
-          reason: 'api_error',
-          error,
-          hasCachedModels,
-        });
-        return storedModels || {};
-      }
     },
-    [serviceConfigs, customProviders],
+    [provider, settingsSlice],
   );
 
   // SWR for dynamic models
@@ -221,10 +186,16 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       resolvedProvider.apiKey || '',
       resolvedProvider.serviceConfig,
     );
-    await mutateModels(undefined, {
-      revalidate: true,
-    });
-  }, [mutateModels, provider, resolvedProvider]);
+    const nextModels = await fetchDynamicProviderModels(
+      provider,
+      settingsSlice,
+      {
+        timeoutMs: REFRESH_LIST_MODELS_TIMEOUT_MS,
+        notifyUser: true,
+      },
+    );
+    await mutateModels(nextModels, { revalidate: false });
+  }, [mutateModels, provider, resolvedProvider, settingsSlice]);
 
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();
@@ -236,17 +207,11 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   }, [customProviders]);
 
   const modelOptions = useMemo(() => {
-    logger.info('🎯 Current provider:', provider);
-    logger.info('📦 Models for provider:', models);
-
-    const options = Object.entries(models).map(([key, value]) => ({
+    return Object.entries(models).map(([key, value]) => ({
       label: value.name,
       value: key,
     }));
-
-    logger.info('🔄 Generated modelOptions:', options);
-    return options;
-  }, [models, provider]);
+  }, [models]);
 
   const selectedModelData = useMemo(() => {
     return models[model] || DEFAULT_MODEL_INFO;

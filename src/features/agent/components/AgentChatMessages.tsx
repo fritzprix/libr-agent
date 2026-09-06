@@ -20,7 +20,7 @@ import {
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { CompactEventDivider } from './shared/CompactEventDivider';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -28,6 +28,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useSettings } from '@/hooks/use-settings';
+import type { MessageLayoutStyle } from '@/lib/services/settings-service';
 
 // Submodule imports
 import {
@@ -91,6 +93,8 @@ const VIRTUOSO_COMPONENTS: Components<
   Scroller: AgentChatMessagesScroller,
 };
 
+const VIRTUOSO_INCREASE_VIEWPORT_BY = { top: 640, bottom: 960 } as const;
+
 // Re-export public functions to preserve the stable external API of the file
 export {
   shouldShowAnalysisLoader,
@@ -115,6 +119,12 @@ export function AgentChatMessages() {
     loadOlderMessages,
   } = useAgentSession();
   const { getCompactedRange } = useLLMService();
+  const {
+    value: { display },
+  } = useSettings();
+  const messageLayout: MessageLayoutStyle =
+    display?.messageLayout ?? 'document';
+  const toolDetailLevel = display?.toolDetailLevel ?? 'simple';
 
   // Compact range for divider rendering (null if no compaction has occurred)
   const compactedRange = session?.id
@@ -222,6 +232,7 @@ export function AgentChatMessages() {
       sessionAssistantName: assistantName,
       workflowStatus,
       executionMode,
+      messageLayout,
     }),
     [
       error,
@@ -236,6 +247,7 @@ export function AgentChatMessages() {
       assistantName,
       workflowStatus,
       executionMode,
+      messageLayout,
     ],
   );
 
@@ -273,6 +285,8 @@ export function AgentChatMessages() {
               groupedToolCalls={groupedMessage.toolGroup.calls}
               groupedMessages={groupedMessage.messages}
               followChatScroll={followChatScroll}
+              messageLayout={messageLayout}
+              toolDetailLevel={toolDetailLevel}
             />
             {compactDivider}
           </div>
@@ -288,6 +302,8 @@ export function AgentChatMessages() {
               groupedMessages={groupedMessage.messages}
               followChatScroll={followChatScroll}
               toolErrorGroup={true}
+              messageLayout={messageLayout}
+              toolDetailLevel={toolDetailLevel}
             />
             {compactDivider}
           </div>
@@ -329,6 +345,8 @@ export function AgentChatMessages() {
             message={msg}
             assistantName={assistantName}
             followChatScroll={followChatScroll}
+            messageLayout={messageLayout}
+            toolDetailLevel={toolDetailLevel}
           />
           {compactDivider}
         </div>
@@ -339,14 +357,21 @@ export function AgentChatMessages() {
       compactedEvent,
       compactedRange?.toId,
       isPinned,
+      messageLayout,
       retryMessage,
+      toolDetailLevel,
       toolResultsMap,
       workflowStatus,
     ],
   );
 
+  const scrollerContextValue = useMemo(
+    () => ({ setScrollerElement, logScrollState }),
+    [setScrollerElement, logScrollState],
+  );
+
   return (
-    <ScrollerContext.Provider value={{ setScrollerElement, logScrollState }}>
+    <ScrollerContext.Provider value={scrollerContextValue}>
       <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <Virtuoso
           key={session?.id ?? 'agent-chat'}
@@ -368,15 +393,41 @@ export function AgentChatMessages() {
           // scrolling up into never-measured variable-height rows briefly
           // paints those above-viewport bubbles then corrects (virtuoso#1096).
           skipAnimationFrameInResizeObserver
-          increaseViewportBy={{ top: 640, bottom: 960 }}
+          increaseViewportBy={VIRTUOSO_INCREASE_VIEWPORT_BY}
           startReached={handleReachTop}
           totalListHeightChanged={handleTotalListHeightChanged}
           itemContent={renderMessageGroup}
         />
+        {pendingApprovals.length > 0 && !isPinned ? (
+          <div
+            className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4"
+            style={{
+              paddingRight: 'var(--agent-side-panel-inset, 0px)',
+            }}
+          >
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="pointer-events-auto gap-2 shadow-lg"
+              onClick={handleManualScrollToBottom}
+            >
+              <ShieldAlert className="size-4 text-warning" />
+              <span>
+                {t('agent.messages.pendingApprovalsJump', {
+                  count: pendingApprovals.length,
+                  defaultValue:
+                    '{{count}} tools awaiting approval — jump to respond',
+                })}
+              </span>
+            </Button>
+          </div>
+        ) : null}
         {!isPinned && (
           <div
-            className="pointer-events-none absolute right-6 z-10"
+            className="pointer-events-none absolute z-20"
             style={{
+              right: `calc(1.5rem + var(--agent-side-panel-inset, 0px))`,
               bottom: `calc(var(--agent-chat-composer-overlap, 64px) + ${SCROLL_TO_LATEST_BUTTON_OFFSET}px)`,
             }}
           >

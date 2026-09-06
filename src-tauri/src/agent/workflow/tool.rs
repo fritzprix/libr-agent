@@ -1,5 +1,7 @@
 use crate::agent::state::AgentSession;
-use crate::agent::workflow::cancel::should_consume_cancel_at_message_boundary;
+use crate::agent::workflow::cancel::{
+    should_consume_cancel_at_message_boundary, should_discard_workflow_before_continuation,
+};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::{SessionAttentionReason, SessionRepository};
 use crate::repositories::SessionStatus;
@@ -73,31 +75,22 @@ pub async fn continue_workflow_after_tool(
                 session_id
             );
 
-            // [Race Mitigation] Verify session was not reset/cancelled before proceeding
-            {
-                let active = active_sessions.read().await;
-                if let Some(session) = active.get(&session_id) {
-                    if session.cancellation_token.is_cancelled() {
-                        log::info!(
-                            "Workflow was cancelled or reset for session {} before continuation. Discarding.",
-                            session_id
-                        );
-                        return Ok(());
-                    }
-                }
-            }
-
             // Message-boundary cancel handling:
             // Cancel during a tool batch keeps cancel_pending=true and cancels the
             // token immediately; remaining tools get cancel tombstones in
             // execute_tool_calls. Once the batch is complete, consume the flag here
             // and pause so we do not start another LLM turn.
-            let should_stop_after_message = {
+            let (token_cancelled, should_stop_after_message) = {
                 let sessions = active_sessions.read().await;
                 sessions
                     .get(&session_id)
-                    .map(|session| session.cancel_pending.load(Ordering::SeqCst))
-                    .unwrap_or(false)
+                    .map(|session| {
+                        (
+                            session.cancellation_token.is_cancelled(),
+                            session.cancel_pending.load(Ordering::SeqCst),
+                        )
+                    })
+                    .unwrap_or((false, false))
             };
 
             if should_consume_cancel_at_message_boundary(should_stop_after_message) {
@@ -130,6 +123,20 @@ pub async fn continue_workflow_after_tool(
                     reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
                 };
                 let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
+                return Ok(());
+            }
+
+            // A cancelled token without a pending boundary cancel indicates that
+            // this result belongs to an older workflow generation (for example,
+            // after a reset). Do not let that stale result restart the workflow.
+            if should_discard_workflow_before_continuation(
+                token_cancelled,
+                should_stop_after_message,
+            ) {
+                log::info!(
+                    "Workflow was cancelled or reset for session {} before continuation. Discarding stale result.",
+                    session_id
+                );
                 return Ok(());
             }
 

@@ -92,7 +92,7 @@ fn build_session(
         status,
         model: "gpt-4.1".to_string(),
         provider: "openai".to_string(),
-        assistant_id: None,
+        assistant_id: Some("assistant-list-test".to_string()),
         parent_session_id: parent_session_id.map(ToOwned::to_owned),
         lineage_id: Some(format!("lineage-{id}")),
         depth: Some(if parent_session_id.is_some() { 1 } else { 0 }),
@@ -241,7 +241,7 @@ async fn list_sessions_paginates_child_ids_before_rendering_current_page() {
 
     let text = extract_text(&result);
     assert!(text.contains("Found 25 sub-agent sessions."));
-    assert!(text.contains("|---|---|---|\n|"));
+    assert!(text.contains("|---|---|---|---|\n|"));
     assert!(text.contains(
         "Showing 21 to 22 of 25 items. Call this tool again with offset: 22 to see more"
     ));
@@ -256,6 +256,10 @@ async fn list_sessions_paginates_child_ids_before_rendering_current_page() {
             .expect("sessions array expected")
             .len(),
         2
+    );
+    assert_eq!(
+        structured["sessions"][0]["assistantId"],
+        "assistant-list-test"
     );
 }
 

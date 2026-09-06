@@ -1,18 +1,14 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
-  useState,
   type ReactNode,
   type CSSProperties,
-  type FormEvent,
 } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import {
-  agentCallBuiltinTool,
-  cancelInteractiveShellInput,
-  submitInteractiveShellInput,
-} from '@/lib/backend/agent-commands';
+import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
 import { createToolMessagePair } from '@/lib/chat-utils';
 import { MCPContent } from '@/lib/mcp';
@@ -48,6 +44,12 @@ import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachm
 import { useMcpDiscoveryToasts } from './hooks/useMcpDiscoveryToasts';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useSettings } from '@/hooks/use-settings';
+import {
+  DOCUMENT_CONTENT_RAIL_CLASS,
+  isDocumentMessageLayout,
+} from '@/features/agent/lib/message-layout';
+import { cn } from '@/lib/utils';
 import {
   Sheet,
   SheetContent,
@@ -55,20 +57,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentChatView');
+
+const InteractiveShellPromptDialog = lazy(
+  () => import('./components/InteractiveShellPromptDialog'),
+);
+
+const AGENT_CHAT_COMPOSER_OVERLAP_STYLE = {
+  '--agent-chat-composer-overlap': '64px',
+} as CSSProperties;
 
 function getSessionLoadingLabel(
   isStartingSession: boolean,
@@ -173,6 +171,11 @@ function MobilePanelSheet({
 }
 
 function AgentChatComposer() {
+  const {
+    value: { display },
+  } = useSettings();
+  const isDocumentMode = isDocumentMessageLayout(display?.messageLayout);
+
   return (
     <div className="relative shrink-0 px-4 pb-4">
       <div
@@ -186,134 +189,14 @@ function AgentChatComposer() {
         }}
       >
         <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
-        <AgentChatAttachedFiles />
-        <AgentChatInput />
+        <div
+          className={cn(isDocumentMode ? DOCUMENT_CONTENT_RAIL_CLASS : null)}
+        >
+          <AgentChatAttachedFiles />
+          <AgentChatInput />
+        </div>
       </div>
     </div>
-  );
-}
-
-interface InteractiveShellPromptDialogProps {
-  sessionId: string;
-  promptState: ReturnType<
-    typeof useAgentSessionState
-  >['pendingInteractiveShellPrompt'];
-}
-
-function InteractiveShellPromptDialog({
-  sessionId,
-  promptState,
-}: InteractiveShellPromptDialogProps) {
-  const [inputValue, setInputValue] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    setInputValue('');
-    setIsSubmitting(false);
-  }, [promptState?.executionId]);
-
-  const handleCancel = useCallback(async () => {
-    if (!promptState || isSubmitting) {
-      return;
-    }
-
-    const { executionId } = promptState;
-    setIsSubmitting(true);
-    try {
-      await cancelInteractiveShellInput(sessionId, executionId);
-    } catch (error) {
-      logger.error('Failed to cancel interactive shell prompt', error);
-      toast.error('Failed to cancel interactive prompt.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [isSubmitting, promptState, sessionId]);
-
-  const handleSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-
-      if (!promptState || isSubmitting) {
-        return;
-      }
-
-      const { executionId } = promptState;
-      setIsSubmitting(true);
-      try {
-        await submitInteractiveShellInput(sessionId, executionId, inputValue);
-        setInputValue('');
-      } catch (error) {
-        logger.error('Failed to submit interactive shell input', error);
-        toast.error('Failed to submit interactive input.');
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-    [inputValue, isSubmitting, promptState, sessionId],
-  );
-
-  return (
-    <Dialog
-      open={promptState !== null}
-      onOpenChange={(open) => {
-        if (!open) {
-          void handleCancel();
-        }
-      }}
-    >
-      <DialogContent
-        showCloseButton={false}
-        onEscapeKeyDown={(event) => {
-          event.preventDefault();
-          void handleCancel();
-        }}
-        onInteractOutside={(event) => {
-          event.preventDefault();
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle>Interactive shell input required</DialogTitle>
-          <DialogDescription>
-            {promptState?.command ?? 'A shell command'} is waiting for local
-            user input.
-          </DialogDescription>
-        </DialogHeader>
-
-        {promptState ? (
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="space-y-2">
-              <Label htmlFor="interactive-shell-input">
-                {promptState.prompt}
-              </Label>
-              <Input
-                autoFocus
-                id="interactive-shell-input"
-                type={promptState.inputType}
-                value={inputValue}
-                onChange={(event) => setInputValue(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={isSubmitting}
-              />
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void handleCancel()}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                Submit
-              </Button>
-            </DialogFooter>
-          </form>
-        ) : null}
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -448,25 +331,29 @@ function AgentChatInner() {
 
   return (
     <>
-      {sessionId ? (
-        <InteractiveShellPromptDialog
-          sessionId={sessionId}
-          promptState={pendingInteractiveShellPrompt}
-        />
+      {sessionId && pendingInteractiveShellPrompt ? (
+        <Suspense fallback={null}>
+          <InteractiveShellPromptDialog
+            sessionId={sessionId}
+            promptState={pendingInteractiveShellPrompt}
+          />
+        </Suspense>
       ) : null}
       <div
         className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]"
-        style={
-          {
-            '--agent-chat-composer-overlap': '64px',
-          } as CSSProperties
-        }
+        style={AGENT_CHAT_COMPOSER_OVERLAP_STYLE}
       >
         <AgentChatHeader />
         <div
           ref={containerRef}
           className="relative flex min-h-0 flex-1 overflow-hidden"
           data-testid="agent-chat-body"
+          style={
+            {
+              '--agent-side-panel-inset':
+                !isMobile && showSidePanel ? `${panelWidth}px` : '0px',
+            } as CSSProperties
+          }
         >
           {/* Chat keeps full width — panel is a pure overlay, never shrinks this column. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -496,7 +383,7 @@ function AgentChatInner() {
         <AgentChatComposer />
       </div>
 
-      {isMobile && (
+      {isMobile ? (
         <MobilePanelSheet
           open={showSidePanel}
           onOpenChange={handleSidePanelSheetOpenChange}
@@ -506,7 +393,7 @@ function AgentChatInner() {
         >
           <AgentSidePanelShell isVisible variant="sheet" />
         </MobilePanelSheet>
-      )}
+      ) : null}
       <AgentPlanningUpdates />
       <AgentProcessAttentionUpdates />
     </>

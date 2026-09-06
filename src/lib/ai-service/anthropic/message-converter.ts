@@ -151,7 +151,10 @@ export function convertToAnthropicMessages(
   let pendingToolResults: ReturnType<
     typeof buildAnthropicToolResultBlocks
   >['content'] = [];
-  let hasSyntheticSessionContextTail = false;
+  // Set when the first synthetic session-context appears. Points at the last
+  // message before that block (or stays unset when session-context leads).
+  let lastStableBeforeSessionContext: number | undefined;
+  let sawSyntheticSessionContext = false;
 
   const flushPendingToolResults = () => {
     if (pendingToolResults.length === 0) {
@@ -175,8 +178,15 @@ export function convertToAnthropicMessages(
     if (effectiveRole === 'user') {
       if (isAnthropicSyntheticSessionContextMessage(message)) {
         flushPendingToolResults();
-        applyCacheBreakpoint(anthropicMessages[anthropicMessages.length - 1]);
-        hasSyntheticSessionContextTail = true;
+        if (!sawSyntheticSessionContext) {
+          sawSyntheticSessionContext = true;
+          if (anthropicMessages.length > 0) {
+            lastStableBeforeSessionContext = anthropicMessages.length - 1;
+            applyCacheBreakpoint(
+              anthropicMessages[lastStableBeforeSessionContext],
+            );
+          }
+        }
       }
 
       flushPendingToolResults();
@@ -278,15 +288,20 @@ export function convertToAnthropicMessages(
 
   flushPendingToolResults();
 
-  const lastStableMessageIndex = hasSyntheticSessionContextTail
-    ? anthropicMessages.length - 2
+  const resolvedLastStableMessageIndex = sawSyntheticSessionContext
+    ? lastStableBeforeSessionContext
     : anthropicMessages.length - 1;
 
-  applyLongConversationCacheBreakpoint(
-    anthropicMessages,
-    lastStableMessageIndex,
-  );
-  applyCacheBreakpoint(anthropicMessages[lastStableMessageIndex]);
+  if (
+    resolvedLastStableMessageIndex !== undefined &&
+    resolvedLastStableMessageIndex >= 0
+  ) {
+    applyLongConversationCacheBreakpoint(
+      anthropicMessages,
+      resolvedLastStableMessageIndex,
+    );
+    applyCacheBreakpoint(anthropicMessages[resolvedLastStableMessageIndex]);
+  }
 
   return anthropicMessages;
 }

@@ -51,6 +51,9 @@
       "searchResults": "Se encontraron {{count}} resultados para \"{{query}}\"",
       "noResults": "No se encontraron asistentes que coincidan con su búsqueda",
       "empty": "No hay asistentes disponibles",
+      "loading": "Cargando asistentes...",
+      "loadingMore": "Cargando más asistentes...",
+      "totalInfo": "{{count}} de {{total}} asistentes",
       "pagination": {
         "previous": "Anterior",
         "next": "Siguiente",
@@ -78,6 +81,7 @@
       "created": "Creado",
       "updated": "Actualizado",
       "description": "Descripción",
+      "fullConfiguration": "Configuración completa",
       "expand": "Expandir configuración",
       "collapse": "Contraer configuración"
     }
@@ -286,7 +290,10 @@
     "emptyState": {
       "title": "No hay sesiones todavía",
       "subtitle": "Inicie una conversación para crear su primera sesión"
-    }
+    },
+    "loadMore": "Cargar más",
+    "loadingMore": "Cargando más...",
+    "moreAvailable": "más disponibles"
   },
   "orgHistory": {
     "heading": "Vista de la organización",
@@ -374,6 +381,10 @@
       "temperatureOverrideTooltip": "La mayoría de los proveedores ya establecen una temperature predeterminada por modelo. Déjelo desactivado salvo que necesite anular ese valor predeterminado del modelo.",
       "temperature": "Temperature",
       "temperatureDescription": "Controla la aleatoriedad. Más bajo es más determinista; más alto, más creativo. Rango 0–2. Se aplica de forma uniforme a todos los proveedores.",
+      "thinkingEffort": "Thinking Effort",
+      "thinkingEffortDescription": "Profundidad de razonamiento antes de responder. Los modelos no compatibles devuelven un error del proveedor.",
+      "thinkingEffortTooltipAria": "Acerca de Thinking Effort",
+      "thinkingEffortTooltip": "Controla la profundidad de razonamiento antes de responder. El ajuste se envía siempre cuando está activado. Los modelos o proveedores no compatibles devuelven un error de API: pon Effort en Off o cambia de modelo. Anthropic usa extended thinking en todos los niveles excepto Off.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "URL de Agent Hub",
       "agentHubUrlDescription": "URL del servidor remoto Agent Hub. Si se establece, los asistentes se sincronizarán con este servidor.",
@@ -466,7 +477,20 @@
       "toolDetailLevelDescription": "El modo simple muestra solo los nombres de las herramientas y los iconos de estado. El modo desarrollador muestra los parámetros completos, detalles de errores y tiempo de ejecución.",
       "uiVisualsTitle": "Aspecto visual de la interfaz",
       "fontFamily": "Familia tipográfica",
-      "fontFamilyDescription": "Cambie la familia tipográfica predeterminada de la interfaz."
+      "fontFamilyDescription": "Cambie la familia tipográfica predeterminada de la interfaz.",
+      "messageLayout": "Diseño de mensajes",
+      "messageLayoutDocument": "Documento (diseño de ancho completo)",
+      "messageLayoutBubble": "Burbujas (chat clásico)",
+      "messageLayoutDescription": "El modo Documento maximiza el ancho para código y diffs. El modo Burbujas mantiene el estilo de mensajería clásico.",
+      "colorTheme": "Tema de color",
+      "colorThemeDescription": "Elige un tema de color de acento para la interfaz.",
+      "colorThemes": {
+        "neutral": "Neutro (Monocromo)",
+        "amber": "Libr Ámbar (Calidez)",
+        "violet": "Iris Violeta (IA)",
+        "ocean": "Azul Océano (Calma)",
+        "forest": "Verde Sabia (Enfoque)"
+      }
     },
     "advanced": {
       "maxRetries": "Intentos máximos de reintento",
@@ -539,6 +563,8 @@
       "maxScheduledTaskGroups": "Máximo de grupos de tareas programadas",
       "maxScheduledTaskGroupsDescription": "Número máximo de grupos distintos de tareas programadas permitidos en la automatización recurrente de trabajo en equipo.",
       "backgroundTasks": "Tareas en segundo plano",
+      "preventSleepDuringAgentWork": "Evitar suspensión mientras la app está en ejecución",
+      "preventSleepDuringAgentWorkDescription": "Evita que el sistema entre en suspensión por inactividad mientras LibrAgent está abierto. No fuerza la pantalla encendida. Activado por defecto.",
       "searchIndexFrequency": "Frecuencia de índice de búsqueda (Min)",
       "searchIndexFrequencyDescription": "Con qué frecuencia la IA mide su búsqueda en memoria. Las actualizaciones más rápidas mantienen la búsqueda fresca pero consumen más batería/CPU.",
       "webActionTimeout": "Tiempo de espera de acción web (Seg)",
@@ -843,6 +869,19 @@
       "loadingOlder": "Cargando mensajes anteriores...",
       "scrollToLoadOlder": "Desplácese hacia arriba para cargar mensajes anteriores"
     },
+    "approval": {
+      "hardTitle": "Se requiere aprobación reforzada",
+      "title": "Se requiere aprobación",
+      "hardDescriptionYolo": "El modo YOLO está activado, pero esta acción de alto riesgo aún requiere aprobación manual.",
+      "hardDescription": "Esta acción de alto riesgo requiere aprobación explícita.",
+      "description": "El agente quiere ejecutar esta herramienta.",
+      "hardBadge": "Aprobación reforzada",
+      "standardBadge": "Aprobación estándar",
+      "arguments": "Argumentos",
+      "reject": "Rechazar",
+      "hardApprove": "Aprobar acción de alto riesgo",
+      "approve": "Aprobar"
+    },
     "draft": {
       "send": "Enviar mensaje",
       "attachFiles": "Adjuntar archivos",
@@ -951,7 +990,8 @@
       "dropFiles": "Suelte los archivos aquí o haga clic para cargar",
       "dropFolderHint": "Suelte una carpeta aquí para establecerla como espacio de trabajo",
       "dropDirToastError": "Suelte los directorios en el área central para establecer la anulación del espacio de trabajo.",
-      "dropMixedFoldersError": "Suelte archivos para importarlos o una sola carpeta para establecer la anulación del espacio de trabajo."
+      "dropMixedFoldersError": "Suelte archivos para importarlos o una sola carpeta para establecer la anulación del espacio de trabajo.",
+      "dropFolderIntoSubfolderError": "No se admite soltar carpetas en subcarpetas."
     },
     "statusBar": {
       "retryError": "Error al reintentar el mensaje",
@@ -1010,6 +1050,11 @@
       "cancelAriaLabel": "Cancelar solicitud",
       "cancellingTooltip": "Cancelando...",
       "cancelTooltip": "Cancelar",
+      "cancelOutcome": {
+        "processStopped": "Se detuvieron {{count}} proceso(s) del espacio de trabajo. El flujo continuará.",
+        "workflowPaused": "El flujo se canceló y se pausó.",
+        "noActiveWork": "No había ningún flujo activo que cancelar."
+      },
       "resumeAriaLabel": "Reanudar flujo de trabajo",
       "resumeTooltip": "Reanudar",
       "sendAriaLabel": "Enviar mensaje",
@@ -1070,6 +1115,7 @@
       "updated": "actualizado"
     },
     "bubble": {
+      "toolError": "Error de ejecución de herramienta",
       "notification": "Notificación",
       "channel": "CANAL",
       "assistant": "ASISTENTE",

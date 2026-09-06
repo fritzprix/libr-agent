@@ -187,9 +187,8 @@ pub async fn spawn_and_stream_to_files_with_pid_tx(
                                             "Process {} stdout size limit exceeded, truncating",
                                             label
                                         );
-                                        let _ = writer
-                                            .write_all(b"\n[Output truncated: size limit exceeded]\n")
-                                            .await;
+                                        let notice = terminal_manager::output_truncation_notice();
+                                        let _ = writer.write_all(notice.as_bytes()).await;
                                         break;
                                     }
                                     if writer.write_all(&buffer[..n]).await.is_err() {
@@ -255,9 +254,8 @@ pub async fn spawn_and_stream_to_files_with_pid_tx(
                                             "Process {} stderr size limit exceeded, truncating",
                                             label
                                         );
-                                        let _ = writer
-                                            .write_all(b"\n[Output truncated: size limit exceeded]\n")
-                                            .await;
+                                        let notice = terminal_manager::output_truncation_notice();
+                                        let _ = writer.write_all(notice.as_bytes()).await;
                                         break;
                                     }
                                     if writer.write_all(&buffer[..n]).await.is_err() {
@@ -453,7 +451,8 @@ pub async fn spawn_and_stream_hybrid(
 
                                         if total_bytes > max_output_size {
                                             warn!("Process {} stdout size limit exceeded", label);
-                                            let _ = writer.write_all(b"\n[Output truncated: size limit exceeded]\n").await;
+                                            let notice = terminal_manager::output_truncation_notice();
+                                            let _ = writer.write_all(notice.as_bytes()).await;
                                             let _ = writer.flush().await;
                                             break;
                                         }
@@ -524,7 +523,8 @@ pub async fn spawn_and_stream_hybrid(
 
                                         if total_bytes > max_output_size {
                                             warn!("Process {} stderr size limit exceeded", label);
-                                            let _ = writer.write_all(b"\n[Output truncated: size limit exceeded]\n").await;
+                                            let notice = terminal_manager::output_truncation_notice();
+                                            let _ = writer.write_all(notice.as_bytes()).await;
                                             let _ = writer.flush().await;
                                             break;
                                         }

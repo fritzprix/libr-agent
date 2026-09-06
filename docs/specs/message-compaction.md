@@ -321,6 +321,35 @@ Therefore compaction must:
 7. if the artifact spill write fails, keep the fallback summary path alive anyway;
    artifact persistence is best-effort, not a gate on resume
 
+### 5.6 Prompt-cache alignment for the compaction LLM call
+
+The compaction summarizer request should reuse the parent turn's prompt-cache /
+KV-cache prefix whenever possible (issue #1797).
+
+Required request shape:
+
+1. **Same system prompt** as the parent workflow request (no compaction-only
+   system rewrite; no retry notes prepended to system).
+2. **Same tool schema list** as the parent request. Disable calling tools via
+   provider `tool_choice` / function-calling `NONE` modes (`disableToolUse`),
+   except Ollama which must omit tools (no reliable `tool_choice=none`).
+3. **History prefix preserved** with the same roles / tool-result formatting as
+   the parent turn; fit/trim may only drop older body messages after leaving
+   `CacheAligned`.
+4. **Compaction instruction is a single synthetic user message at the tail**
+   (`MessageSource::CompactionInstruction`). Contaminated-summary retries append
+   guidance to that tail message only — never to the system prompt and never by
+   stripping tool schemas. If the instruction marker is missing, append a new
+   synthetic tail user message; never mutate real conversation history.
+
+Recovery ladder preference for fitting the summarizer payload:
+
+```text
+CacheAligned (keep tools + history; retry budget only)
+  -> OverflowRecovery (lossy history FIFO trim)
+  -> DegradedTools (strip verbose tool schemas last)
+```
+
 ---
 
 ## 6. Invalid State Rule

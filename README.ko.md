@@ -205,10 +205,10 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.3_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_x64-setup.exe) · [`LibrAgent_0.9.3_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.3_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.3_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_amd64.AppImage) · [`LibrAgent_0.9.3_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent_0.9.3_amd64.deb) · [`LibrAgent-0.9.3-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.3/LibrAgent-0.9.3-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.3)
+- **Windows:** [`LibrAgent_0.9.8_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_x64-setup.exe) · [`LibrAgent_0.9.8_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.8_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.8_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_amd64.AppImage) · [`LibrAgent_0.9.8_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent_0.9.8_amd64.deb) · [`LibrAgent-0.9.8-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.8/LibrAgent-0.9.8-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.8)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **개발자 설정:**

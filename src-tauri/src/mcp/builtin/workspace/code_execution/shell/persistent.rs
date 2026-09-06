@@ -10,7 +10,7 @@ use crate::session_isolation::PathMappingLayer;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::normalization;
-use super::format_duration_ms;
+use super::{format_command_io_message, format_duration_ms};
 
 impl WorkspaceServer {
     /// Execute command using persistent shell
@@ -44,6 +44,10 @@ impl WorkspaceServer {
 
         // Track execution time
         let execution_start = std::time::Instant::now();
+        let cancellation_generation = self
+            .shell_manager
+            .cancellation_generation(&session_id)
+            .await;
 
         // Execute with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
@@ -123,14 +127,15 @@ impl WorkspaceServer {
                         ""
                     };
 
-                    let text_message: String = if !stdout.is_empty() {
-                        format!(
-                            "{}\n\nCommand output:\n{}\n\n{}{}",
-                            header, stdout, shell_state, file_tools_warning
-                        )
-                    } else {
-                        format!("{}\n\n{}{}", header, shell_state, file_tools_warning)
-                    };
+                    let io_message = format_command_io_message(
+                        &header,
+                        "Command output",
+                        &stdout,
+                        "Stderr",
+                        &stderr,
+                    );
+                    let text_message =
+                        format!("{}\n\n{}{}", io_message, shell_state, file_tools_warning);
 
                     let next_actions = if display_cwd == "." {
                         vec![]
@@ -169,12 +174,27 @@ impl WorkspaceServer {
                         Some(exit_code),
                         &stdout,
                         &stderr,
+                        command,
                     ))
                     .to_mcp_result())
                 }
             }
 
             Ok(Err(e)) => {
+                if self
+                    .shell_manager
+                    .cancellation_generation(&session_id)
+                    .await
+                    != cancellation_generation
+                {
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        "Command cancelled with the workflow.".to_string(),
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+
                 // Execution error - shell crashed or command failed
                 warn!(
                     "Persistent shell execution failed for session {}: {}. Falling back to one-shot.",

@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import type { ScheduledTaskTimezone } from '@/lib/backend/scheduled-tasks';
 
 type RepeatMode = 'minutes' | 'hours' | 'daily' | 'weekly' | 'monthly';
@@ -97,9 +98,33 @@ function fromCron(cron: string): ScheduleState {
   };
 }
 
+/**
+ * True when the simple builder can round-trip `cron` without changing it.
+ * Unsupported expressions (ranges, lists, etc.) must stay in custom mode.
+ */
+export function isBuilderSupportedCron(cron: string): boolean {
+  const trimmed = cron.trim();
+  if (!trimmed) {
+    return true;
+  }
+  const parts = trimmed.split(/\s+/);
+  if (parts.length !== 5) {
+    return false;
+  }
+  return toCron(fromCron(trimmed)) === trimmed;
+}
+
 /** Format a ScheduleState into a human-readable summary string. */
 export function describeCron(cron: string, t: TFunction): string {
-  const s = fromCron(cron);
+  const trimmed = cron.trim();
+  if (!isBuilderSupportedCron(trimmed)) {
+    return t('scheduledTasks.schedule.describe.custom', {
+      cron: trimmed,
+      defaultValue: 'Custom: {{cron}}',
+    });
+  }
+
+  const s = fromCron(trimmed);
   const timeStr = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
   switch (s.mode) {
     case 'minutes':
@@ -134,6 +159,11 @@ export function getDisplayCron(
     return cron;
   }
 
+  // Do not rewrite unsupported expressions via timezone display conversion.
+  if (!isBuilderSupportedCron(cron)) {
+    return cron;
+  }
+
   const state = fromCron(cron);
   if (state.mode === 'minutes' || state.mode === 'hours') {
     return cron;
@@ -161,10 +191,12 @@ interface ScheduleBuilderProps {
 
 /**
  * Human-readable schedule builder that produces a cron expression.
- * Users never need to see or type cron syntax.
+ * Unsupported (advanced) expressions stay editable as raw cron so they are
+ * never silently rewritten to the daily default.
  */
 export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
   const { t } = useTranslation();
+  const isCustom = useMemo(() => !isBuilderSupportedCron(value), [value]);
   const state = useMemo(() => fromCron(value), [value]);
 
   const update = useCallback(
@@ -182,6 +214,54 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
     state.mode === 'daily' ||
     state.mode === 'weekly' ||
     state.mode === 'monthly';
+
+  if (isCustom) {
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'scheduledTasks.schedule.customHint',
+            'This schedule uses an advanced cron expression the simple editor cannot represent. Edit the expression below, or switch to a simple schedule (this replaces the current expression).',
+          )}
+        </p>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="schedule-custom-cron">
+            {t('scheduledTasks.schedule.customLabel', 'Cron expression')}
+          </Label>
+          <Input
+            id="schedule-custom-cron"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            spellCheck={false}
+            className="font-mono text-sm"
+            aria-label={t(
+              'scheduledTasks.schedule.customLabel',
+              'Cron expression',
+            )}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t('scheduledTasks.schedule.summary')}
+          <span className="font-medium text-foreground">
+            {describeCron(value, t)}
+          </span>
+        </p>
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange(toCron(DEFAULT_STATE))}
+          >
+            {t(
+              'scheduledTasks.schedule.switchToSimple',
+              'Switch to simple schedule',
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">

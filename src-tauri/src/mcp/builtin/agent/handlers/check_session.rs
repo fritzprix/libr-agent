@@ -5,14 +5,19 @@ use super::super::utils::{
     extract_session_status, handle_wait_timeout_result, is_terminal_status, read_required_string,
     wait_until_session_terminal,
 };
+use crate::agent::poll_tracker::{poll_tracker_key, PollTrackerVerdict};
 use crate::mcp::builtin::error_guidance::SuccessHint;
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 
 use super::super::AgentServer;
-use super::{
-    append_check_session_context_to_message, apply_check_session_enrichment,
+use super::check_session_results::{
     build_paused_check_session_result, build_terminal_check_session_result,
-    load_accessible_delegated_session, resolve_check_session_enrichment,
+};
+use super::delegation::load_accessible_delegated_session;
+use super::enrichment::{
+    append_check_session_context_to_message, apply_check_session_enrichment,
+    resolve_check_session_enrichment,
 };
 
 /// checkSession handler (from awaitAgent / getAgentStatus)
@@ -43,7 +48,8 @@ pub async fn check_session(
     let storage_session_id =
         crate::utils::session_id::StorageSessionId::from_resolved(session_id.clone());
     let display_id = crate::utils::session_id::display_session_id(&session_id);
-    let enrichment = resolve_check_session_enrichment(&current_session_meta).await;
+    let enrichment =
+        resolve_check_session_enrichment(&current_session_meta, caller_session_id).await;
     let current_status = format!("{:?}", current_session_meta.status).to_lowercase();
     let current_turn_count = count_session_turns(&session_id).await;
 
@@ -128,8 +134,17 @@ pub async fn check_session(
 
     let status = current_status;
     let turn_count = current_turn_count;
+    let loop_fingerprint = format!("{status}:{turn_count}");
 
     if is_terminal_status(&status) {
+        if let Some(sessions) = crate::state::try_get_active_sessions() {
+            let active = sessions.read().await;
+            if let Some(caller) = active.get(caller_session_id) {
+                let key = poll_tracker_key("agent__checkSession", &display_id);
+                caller.tool_poll_trackers.write().await.remove(&key);
+            }
+        }
+
         return build_terminal_check_session_result(
             &storage_session_id,
             &status,
@@ -137,6 +152,37 @@ pub async fn check_session(
             &enrichment,
         )
         .await;
+    }
+
+    let threshold = crate::config::poll_threshold();
+    let excessive = if let Some(sessions) = crate::state::try_get_active_sessions() {
+        let active = sessions.read().await;
+        if let Some(caller) = active.get(caller_session_id) {
+            let key = poll_tracker_key("agent__checkSession", &display_id);
+            let mut trackers = caller.tool_poll_trackers.write().await;
+            let tracker = trackers.entry(key).or_default();
+            tracker.observe(&loop_fingerprint, threshold) == PollTrackerVerdict::Excessive
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if excessive {
+        return Ok(guided_error(
+            ErrorCategory::InvalidState,
+            "Excessive polling detected".to_string(),
+            ToolGroup::Agent,
+        )
+        .guidance(vec![
+            "Wait a few seconds before checking again".to_string(),
+            format!(
+                "Or use agent__checkSession(\"{}\", wait=true) to wait for completion",
+                display_id
+            ),
+        ])
+        .to_mcp_result());
     }
 
     let next_steps = vec![format!(
@@ -161,6 +207,10 @@ pub async fn check_session(
         check_session_next_actions(&display_id),
     );
     apply_check_session_enrichment(&mut response_data, &enrichment);
+    response_data.insert(
+        "loopFingerprint".to_string(),
+        Value::String(loop_fingerprint),
+    );
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

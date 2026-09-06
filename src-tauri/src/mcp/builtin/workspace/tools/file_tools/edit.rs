@@ -120,6 +120,7 @@ Use flat params (line/anchor/new_value) for a single edit, or the `edits` array 
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -210,6 +211,7 @@ Use flat params (afterLine/anchor/new_value) for a single insertion, or the `edi
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -310,6 +312,7 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -372,6 +375,7 @@ Use workspace__writeFile mode='create' for new files and mode='overwrite' only w
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -713,5 +717,6 @@ One edit per call. For multiple locations, call workspace__editFile again (re-re
         input_schema: create_edit_file_input_schema(),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

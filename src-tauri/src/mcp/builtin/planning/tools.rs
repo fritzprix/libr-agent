@@ -45,6 +45,7 @@ fn create_goal_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -74,6 +75,7 @@ fn update_goal_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -96,6 +98,7 @@ fn clear_goal_tool() -> MCPTool {
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -135,6 +138,7 @@ fn add_todo_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -172,6 +176,7 @@ fn update_todo_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -194,6 +199,7 @@ fn clear_session_tool() -> MCPTool {
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -231,6 +237,7 @@ fn get_current_state_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -275,5 +282,6 @@ fn reflect_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

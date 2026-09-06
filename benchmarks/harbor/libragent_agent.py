@@ -20,6 +20,7 @@ import re
 import subprocess
 from collections.abc import Awaitable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,8 @@ TERMINAL_WORKFLOW_STATUSES = frozenset({"idle", "error"})
 DEFAULT_POLL_INTERVAL_SEC = 3.0
 MAIN_COMPOSE_SERVICE = "main"
 TRAJECTORY_MESSAGE_LIMIT = 10_000
+PACKAGE_JSON_PATH = Path(__file__).resolve().parents[2] / "package.json"
+BENCHMARK_CONTRACT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,19 @@ class TrajectoryTelemetry:
     tool_calls_count: int
     has_usage: bool
     error: str | None
+
+
+@dataclass(frozen=True)
+class CompletionTelemetry:
+    """Completion-state signals used to diagnose incomplete Harbor trials."""
+
+    last_tool_call: dict[str, Any] | None
+    last_successful_file_mutation: dict[str, Any] | None
+    terminal_reported: bool
+    terminal_report_result_received: bool
+    successful_tool_results: int
+    failed_tool_results: int
+    unresolved_tool_results: int
 
 
 class EmptyAgentWorkError(RuntimeError):
@@ -88,8 +104,11 @@ def build_diagnostic_meta(
     n_messages: int,
     completed: bool = False,
     extra: dict[str, Any] | None = None,
+    completion: CompletionTelemetry | None = None,
+    elapsed_wall_clock_sec: float | None = None,
 ) -> dict[str, Any]:
     """Build ``timeout_meta.json`` / incomplete-run diagnostic payload."""
+    captured_at = datetime.now(timezone.utc).isoformat()
     payload: dict[str, Any] = {
         "reason": reason,
         "sessionId": session_id,
@@ -103,6 +122,24 @@ def build_diagnostic_meta(
         "n_output_tokens": telemetry.n_output_tokens,
         "n_cache_tokens": telemetry.n_cache_tokens,
         "error": telemetry.error,
+        "last_tool_call": completion.last_tool_call if completion else None,
+        "last_successful_file_mutation": (
+            completion.last_successful_file_mutation if completion else None
+        ),
+        "terminal_reported": completion.terminal_reported if completion else False,
+        "terminal_report_result_received": (
+            completion.terminal_report_result_received if completion else False
+        ),
+        "successful_tool_results": (
+            completion.successful_tool_results if completion else 0
+        ),
+        "failed_tool_results": completion.failed_tool_results if completion else 0,
+        "unresolved_tool_results": (
+            completion.unresolved_tool_results if completion else 0
+        ),
+        "elapsed_wall_clock_sec": elapsed_wall_clock_sec,
+        "diagnostic_captured_at": captured_at,
+        "harbor_cancelled_at": captured_at if reason == "harbor_cancelled" else None,
     }
     if extra:
         payload.update(extra)
@@ -218,6 +255,115 @@ def extract_model_name_from_session_payload(payload: Any) -> str | None:
     """Build the Harbor model name from ``GET /sessions/:id`` JSON."""
     model, provider = extract_model_provider_from_session_payload(payload)
     return format_harbor_model_name(model, provider)
+
+
+def read_repo_package_version(path: Path | None = None) -> str | None:
+    """Read the repo ``package.json`` version used as the adapter fallback."""
+    package_path = path if path is not None else PACKAGE_JSON_PATH
+    try:
+        payload = json.loads(package_path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _string_field(payload, "version")
+
+
+def extract_version_from_health_payload(payload: Any) -> str | None:
+    """Read ``version`` from ``GET /api/health`` JSON."""
+    if not isinstance(payload, dict):
+        return None
+    return _string_field(payload, "version")
+
+
+def workspace_mode_name(use_attach: bool) -> str:
+    """Harbor-facing workspace mode label matching completed-trial metadata."""
+    return "attach" if use_attach else "host-sync"
+
+
+def _environment_value(name: str) -> str | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _git_contract_metadata(repo_root: Path) -> dict[str, Any]:
+    """Capture revision state without including the working-tree diff."""
+    metadata: dict[str, Any] = {"revision": None, "dirty": None}
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if revision.returncode == 0:
+            value = revision.stdout.strip()
+            metadata["revision"] = value or None
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if status.returncode == 0:
+            metadata["dirty"] = bool(status.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return metadata
+
+
+def _benchmark_contract_environment() -> dict[str, Any]:
+    """Read runner-provided contract values while excluding secret contents."""
+    return {
+        "dataset": _environment_value("LIBRAGENT_HARBOR_DATASET"),
+        "include": _environment_value("LIBRAGENT_HARBOR_INCLUDE"),
+        "n_tasks": _environment_value("LIBRAGENT_HARBOR_N_TASKS"),
+        "n_attempts": _environment_value("LIBRAGENT_HARBOR_N_ATTEMPTS"),
+        "concurrency": _environment_value("LIBRAGENT_HARBOR_CONCURRENT"),
+        "agent": _environment_value("LIBRAGENT_HARBOR_AGENT"),
+        "timeout_multiplier": _environment_value(
+            "LIBRAGENT_HARBOR_TIMEOUT_MULTIPLIER"
+        ),
+        "agent_timeout_multiplier": _environment_value(
+            "LIBRAGENT_HARBOR_AGENT_TIMEOUT_MULTIPLIER"
+        ),
+        "verifier_env_configured": _environment_value(
+            "LIBRAGENT_HARBOR_VERIFIER_ENV_CONFIGURED"
+        )
+        == "1",
+    }
+
+
+def _task_identity_from_logs_dir(logs_dir: Path) -> tuple[str | None, str | None]:
+    """Infer Harbor task/trial identity from ``<trial-id>/agent`` logs."""
+    trial_id = logs_dir.parent.name.strip()
+    if not trial_id or trial_id == logs_dir.name:
+        return None, None
+    if "__" not in trial_id:
+        return trial_id, trial_id
+    task_id, _, _attempt_id = trial_id.rpartition("__")
+    return task_id or trial_id, trial_id
+
+
+def copy_telemetry_to_context(
+    context: AgentContext, telemetry: TrajectoryTelemetry
+) -> None:
+    """Copy harvested token counts onto Harbor ``AgentContext``.
+
+    Harbor ``result.json`` / job stats read these top-level fields, not metadata.
+    """
+    context.n_input_tokens = telemetry.n_input_tokens
+    context.n_output_tokens = telemetry.n_output_tokens
+    context.n_cache_tokens = telemetry.n_cache_tokens
+    context.cost_usd = None
 
 
 def _format_message_error(error: Any) -> str | None:
@@ -440,6 +586,112 @@ def _tool_observation_content(message: dict[str, Any]) -> str:
         return json.dumps(content, ensure_ascii=False)
     except (TypeError, ValueError):
         return str(content)
+
+
+FILE_MUTATION_TOOL_NAMES = frozenset(
+    {
+        "workspace__writeFile",
+        "workspace__strReplace",
+        "workspace__editFile",
+        "workspace__deleteFile",
+        "workspace__moveFile",
+        "workspace__copyFile",
+    }
+)
+
+
+def _diagnostic_tool_call(tool_call: ToolCall) -> dict[str, Any]:
+    """Return a compact, non-content summary of a tool call."""
+    summary: dict[str, Any] = {
+        "tool_call_id": tool_call.tool_call_id,
+        "function_name": tool_call.function_name,
+    }
+    arguments = tool_call.arguments
+    if isinstance(arguments, dict):
+        path = arguments.get("path")
+        if isinstance(path, str) and path.strip():
+            summary["path"] = path
+    return summary
+
+
+def _tool_result_succeeded(message: dict[str, Any]) -> bool:
+    """Prefer structured tool-error metadata, with legacy text fallback."""
+    metadata = message.get("metadata")
+    if isinstance(metadata, dict):
+        tool_error = metadata.get("toolError")
+        if isinstance(tool_error, bool):
+            return not tool_error
+
+    if _format_message_error(message.get("error")):
+        return False
+    content = _tool_observation_content(message).lstrip()
+    if content.startswith(("✗", "❌")):
+        return False
+    lowered = content.lower()
+    return not (
+        lowered.startswith("command failed")
+        or lowered.startswith("file operation failed")
+        or lowered.startswith("error:")
+        or "failed with exit code" in lowered
+    )
+
+
+def summarize_completion_telemetry(messages: list[Any]) -> CompletionTelemetry:
+    """Summarize the last action and completion signals from session messages."""
+    tool_calls: list[ToolCall] = []
+    tool_results: dict[str, dict[str, Any]] = {}
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").lower()
+        if role == "tool":
+            call_id = message.get("toolCallId") or message.get("tool_call_id")
+            if isinstance(call_id, str) and call_id.strip():
+                tool_results[call_id.strip()] = message
+            continue
+        if role != "assistant":
+            continue
+        tool_calls.extend(_libragent_tool_calls(message) or [])
+
+    last_tool_call = _diagnostic_tool_call(tool_calls[-1]) if tool_calls else None
+    terminal_calls = [
+        call for call in tool_calls if call.function_name == "ui__reportResult"
+    ]
+    terminal_reported = bool(terminal_calls)
+    terminal_report_result_received = any(
+        call.tool_call_id in tool_results for call in terminal_calls
+    )
+
+    last_successful_file_mutation: dict[str, Any] | None = None
+    successful_tool_results = 0
+    failed_tool_results = 0
+    unresolved_tool_results = 0
+    for call in tool_calls:
+        result = tool_results.get(call.tool_call_id)
+        if result is None:
+            unresolved_tool_results += 1
+        elif _tool_result_succeeded(result):
+            successful_tool_results += 1
+        else:
+            failed_tool_results += 1
+
+    for call in tool_calls:
+        if (
+            call.function_name in FILE_MUTATION_TOOL_NAMES
+            and call.tool_call_id in tool_results
+            and _tool_result_succeeded(tool_results[call.tool_call_id])
+        ):
+            last_successful_file_mutation = _diagnostic_tool_call(call)
+
+    return CompletionTelemetry(
+        last_tool_call=last_tool_call,
+        last_successful_file_mutation=last_successful_file_mutation,
+        terminal_reported=terminal_reported,
+        terminal_report_result_received=terminal_report_result_received,
+        successful_tool_results=successful_tool_results,
+        failed_tool_results=failed_tool_results,
+        unresolved_tool_results=unresolved_tool_results,
+    )
 
 
 def _append_observation_result(step: Step, result: ObservationResult) -> None:
@@ -872,6 +1124,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         self.execution_mode = resolve_execution_mode(execution_mode)
         self.poll_timeout_sec = resolve_poll_timeout_sec(poll_timeout_sec)
         self.poll_interval_sec = float(poll_interval_sec)
+        self._resolved_version = read_repo_package_version()
         self._agent_info: AgentInfo | None = None
         super().__init__(
             logs_dir,
@@ -889,7 +1142,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         return "LibrAgent"
 
     def version(self) -> str | None:
-        return "0.8.33"
+        return self._resolved_version
 
     def to_agent_info(self) -> AgentInfo:
         """Return one stable AgentInfo instance for the whole trial.
@@ -914,6 +1167,15 @@ class LibrAgentHarborAdapter(BaseAgent):
             self._agent_info.model_info = super().to_agent_info().model_info
         return True
 
+    def _apply_agent_version(self, version: str | None) -> bool:
+        """Adopt a live binary version for Harbor reporting; True when it changed."""
+        if not version or version == self._resolved_version:
+            return False
+        self._resolved_version = version
+        if self._agent_info is not None:
+            self._agent_info.version = version
+        return True
+
     async def setup(self, environment: BaseEnvironment) -> None:
         """Validates connection and resolves Harbor model_info from the assistant."""
         _ = environment  # Harbor requires the arg; health/model lookup is API-only.
@@ -928,6 +1190,16 @@ class LibrAgentHarborAdapter(BaseAgent):
                 if res.status_code != 200:
                     raise RuntimeError(
                         f"LibrAgent health check returned invalid status code: {res.status_code}"
+                    )
+                try:
+                    health_payload = res.json()
+                except Exception:
+                    health_payload = None
+                live_version = extract_version_from_health_payload(health_payload)
+                if self._apply_agent_version(live_version):
+                    print(
+                        f"[{self.name()}] Adopted agent version from health: "
+                        f"{live_version}"
                     )
             except Exception as e:
                 if isinstance(e, RuntimeError):
@@ -1032,7 +1304,15 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"[{self.name()}] Warning: failed to pull initial container files: {e}"
                 )
 
-        task_id = getattr(context, "task_id", None) or "bench"
+        raw_context_task_id = getattr(context, "task_id", None)
+        context_task_id = (
+            raw_context_task_id.strip()
+            if isinstance(raw_context_task_id, str)
+            and raw_context_task_id.strip().lower() not in {"bench", "benchmark"}
+            else None
+        )
+        inferred_task_id, _ = _task_identity_from_logs_dir(self.logs_dir)
+        task_id = context_task_id or inferred_task_id or "bench"
         payload: dict[str, Any] = {
             "assistantId": self.assistant_id,
             "name": f"Harbor Benchmark Task: {task_id}",
@@ -1057,6 +1337,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                 if use_attach
                 else f"host:{local_workspace_str}"
             )
+            session_started_at = asyncio.get_running_loop().time()
+            session_started_at_utc = datetime.now(timezone.utc).isoformat()
             print(f"[{self.name()}] Creating session ({mode_desc})...")
             res = await client.post(f"{self.api_url}/sessions", json=payload)
             if res.status_code != 201:
@@ -1079,11 +1361,14 @@ class LibrAgentHarborAdapter(BaseAgent):
 
             # In attach/docker mode, download initial container files to host staging workspace
             # so that host-based file search tools (like globFiles, grepFiles) can find them.
+            initial_session_info: dict[str, Any] | None = None
             if use_attach:
                 try:
                     session_res = await client.get(f"{self.api_url}/sessions/{session_id}")
                     if session_res.status_code == 200:
                         session_info = session_res.json()
+                        if isinstance(session_info, dict):
+                            initial_session_info = session_info
                         host_workspace = session_info.get("dockerHostWorkspacePath")
                         if host_workspace:
                             host_workspace_path = Path(host_workspace)
@@ -1101,6 +1386,16 @@ class LibrAgentHarborAdapter(BaseAgent):
                     print(
                         f"[{self.name()}] Warning: failed to pull initial container files to host staging: {e}"
                     )
+            last_session_info: dict[str, Any] | None = initial_session_info
+            self._write_benchmark_contract(
+                task_id=task_id,
+                session_id=session_id,
+                container_id=attach_container_id,
+                container_workdir=container_workdir,
+                workspace_mode=workspace_mode_name(use_attach),
+                started_at=session_started_at_utc,
+                session_info=last_session_info,
+            )
             if self.poll_timeout_sec is not None:
                 print(
                     f"[{self.name()}] Poll wall-clock budget: "
@@ -1111,7 +1406,6 @@ class LibrAgentHarborAdapter(BaseAgent):
             seen_non_idle = False
             completed = False
             last_status = "unknown"
-            last_session_info: dict[str, Any] | None = None
             poll_deadline = (
                 asyncio.get_running_loop().time() + self.poll_timeout_sec
                 if self.poll_timeout_sec is not None
@@ -1140,6 +1434,9 @@ class LibrAgentHarborAdapter(BaseAgent):
                                     extra={
                                         "poll_timeout_sec": self.poll_timeout_sec,
                                     },
+                                    workspace_mode=workspace_mode_name(use_attach),
+                                    context=context,
+                                    started_monotonic=session_started_at,
                                 )
                             )
                         await self._delete_session(session_id)
@@ -1214,6 +1511,9 @@ class LibrAgentHarborAdapter(BaseAgent):
                             seen_non_idle=seen_non_idle,
                             reason="harbor_cancelled",
                             last_session_info=last_session_info,
+                            workspace_mode=workspace_mode_name(use_attach),
+                            context=context,
+                            started_monotonic=session_started_at,
                         )
                     )
                 # Shielded delete re-raises CancelledError after teardown.
@@ -1294,12 +1594,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 break
 
             telemetry = summarize_trajectory(messages)
-            # Harbor result.json reads these top-level AgentContext fields — not metadata.
-            context.n_input_tokens = telemetry.n_input_tokens
-            context.n_output_tokens = telemetry.n_output_tokens
-            context.n_cache_tokens = telemetry.n_cache_tokens
-            # LibrAgent does not currently expose USD cost in message usage.
-            context.cost_usd = None
+            copy_telemetry_to_context(context, telemetry)
 
             # The session knows which model actually ran (assistants may inherit the
             # app default instead of pinning one). Adopt it so agent_info.model_info
@@ -1336,8 +1631,12 @@ class LibrAgentHarborAdapter(BaseAgent):
                         completed=True,
                         extra={
                             "assistant_id": self.assistant_id,
-                            "workspaceMode": "attach" if use_attach else "host-sync",
+                            "workspaceMode": workspace_mode_name(use_attach),
                         },
+                        completion=summarize_completion_telemetry(messages),
+                        elapsed_wall_clock_sec=(
+                            asyncio.get_running_loop().time() - session_started_at
+                        ),
                     )
                 )
                 context.metadata = {
@@ -1369,7 +1668,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "finalStatus": last_status,
                 "completed": True,
                 "attachContainer": attach_container_id,
-                "workspaceMode": "attach" if use_attach else "host-sync",
+                "workspaceMode": workspace_mode_name(use_attach),
                 "assistant_id": self.assistant_id,
                 "n_turns": telemetry.n_turns,
                 "tool_calls_count": telemetry.tool_calls_count,
@@ -1442,13 +1741,19 @@ class LibrAgentHarborAdapter(BaseAgent):
         reason: str,
         last_session_info: dict[str, Any] | None,
         extra: dict[str, Any] | None = None,
-    ) -> None:
+        workspace_mode: str | None = None,
+        context: AgentContext | None = None,
+        started_monotonic: float | None = None,
+    ) -> TrajectoryTelemetry:
         """Best-effort ATIF + timeout_meta dump for cancelled/incomplete runs."""
         session_model_name = extract_model_name_from_session_payload(last_session_info)
         self._apply_model_name(session_model_name)
 
         messages = await self._fetch_session_messages_best_effort(session_id)
         telemetry = summarize_trajectory(messages)
+        completion = summarize_completion_telemetry(messages)
+        if context is not None:
+            copy_telemetry_to_context(context, telemetry)
         self._write_atif_trajectory(
             messages=messages,
             session_id=session_id,
@@ -1457,6 +1762,8 @@ class LibrAgentHarborAdapter(BaseAgent):
         meta_extra: dict[str, Any] = {"assistant_id": self.assistant_id}
         if extra:
             meta_extra.update(extra)
+        if workspace_mode:
+            meta_extra["workspaceMode"] = workspace_mode
         self._write_diagnostic_meta(
             build_diagnostic_meta(
                 reason=reason,
@@ -1467,13 +1774,22 @@ class LibrAgentHarborAdapter(BaseAgent):
                 n_messages=len(messages),
                 completed=False,
                 extra=meta_extra,
+                completion=completion,
+                elapsed_wall_clock_sec=(
+                    asyncio.get_running_loop().time() - started_monotonic
+                    if started_monotonic is not None
+                    else None
+                ),
             )
         )
         print(
             f"[{self.name()}] Diagnostic dump ({reason}): "
             f"messages={len(messages)}, turns={telemetry.n_turns}, "
-            f"tools={telemetry.tool_calls_count}, status={last_status}"
+            f"tools={telemetry.tool_calls_count}, status={last_status}, "
+            f"last_tool={completion.last_tool_call}, "
+            f"terminal_reported={completion.terminal_reported}"
         )
+        return telemetry
 
     def _write_diagnostic_meta(self, payload: dict[str, Any]) -> None:
         """Write ``timeout_meta.json`` under Harbor's agent logs dir."""
@@ -1489,6 +1805,73 @@ class LibrAgentHarborAdapter(BaseAgent):
             print(
                 f"[{self.name()}] Warning: failed to write diagnostic meta "
                 f"to {meta_path}: {e}"
+            )
+
+    def _write_benchmark_contract(
+        self,
+        *,
+        task_id: str,
+        session_id: str,
+        container_id: str | None,
+        container_workdir: str,
+        workspace_mode: str,
+        started_at: str,
+        session_info: dict[str, Any] | None,
+    ) -> None:
+        """Write non-secret run settings needed for later comparisons."""
+        session_model, session_provider = extract_model_provider_from_session_payload(
+            session_info
+        )
+        session_status = (
+            _string_field(session_info, "status") if session_info is not None else None
+        )
+        _, trial_id = _task_identity_from_logs_dir(self.logs_dir)
+        contract = {
+            "schema_version": BENCHMARK_CONTRACT_SCHEMA_VERSION,
+            "task_id": task_id,
+            "trial_id": trial_id,
+            "git": _git_contract_metadata(PACKAGE_JSON_PATH.parent),
+            "agent": {
+                "name": self.name(),
+                "version": self.version(),
+            },
+            "assistant": {"id": self.assistant_id},
+            "model": {
+                "harbor_reported": self.model_name,
+                "session_effective": format_harbor_model_name(
+                    session_model, session_provider
+                ),
+            },
+            "execution": {
+                "mode": self.execution_mode,
+                "workspace_mode": workspace_mode,
+                "container_id": container_id,
+                "container_workdir": container_workdir,
+            },
+            "harbor": _benchmark_contract_environment(),
+            "adapter": {
+                "api_url": self.api_url,
+                "poll_timeout_sec": self.poll_timeout_sec,
+                "poll_interval_sec": self.poll_interval_sec,
+            },
+            "session": {
+                "id": session_id,
+                "status": session_status,
+            },
+            "started_at": started_at,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+        }
+        contract_path = self.logs_dir / "benchmark_contract.json"
+        try:
+            contract_path.parent.mkdir(parents=True, exist_ok=True)
+            contract_path.write_text(
+                json.dumps(contract, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        except Exception as e:
+            print(
+                f"[{self.name()}] Warning: failed to write benchmark contract "
+                f"to {contract_path}: {e}"
             )
 
     def _write_atif_trajectory(

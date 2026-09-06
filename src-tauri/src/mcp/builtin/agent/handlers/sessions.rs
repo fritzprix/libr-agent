@@ -15,7 +15,50 @@ use crate::repositories::{AssistantRepository, SessionStatus};
 
 use super::super::AgentServer;
 use super::check_session::check_session;
-use super::{caller_session_not_found_result, load_accessible_delegated_session};
+use super::delegation::load_accessible_delegated_session;
+use super::enrichment::{
+    apply_check_session_enrichment, display_sanitize_workspace_path, format_workspace_status_note,
+    resolve_check_session_enrichment, WorkspaceRelation,
+};
+use super::shared::caller_session_not_found_result;
+
+/// Resolve display path + SHARED/ISOLATED for a newly spawned child session.
+fn resolve_spawned_workspace_signal(
+    caller_session_id: &str,
+    child_session_id: &str,
+    intended_workspace: Option<String>,
+) -> (Option<String>, Option<WorkspaceRelation>) {
+    let Ok(session_manager) = crate::session::get_session_manager() else {
+        let display = intended_workspace
+            .as_deref()
+            .and_then(display_sanitize_workspace_path);
+        return (display, None);
+    };
+
+    let child_raw = intended_workspace.unwrap_or_else(|| {
+        session_manager
+            .get_session_workspace_dir_by_id(child_session_id)
+            .to_string_lossy()
+            .into_owned()
+    });
+    let caller_raw = session_manager
+        .get_session_workspace_dir_by_id(caller_session_id)
+        .to_string_lossy()
+        .into_owned();
+
+    let relation = if crate::mcp::builtin::utils::workspace_paths_equivalent(
+        std::path::Path::new(&child_raw),
+        std::path::Path::new(&caller_raw),
+    ) {
+        WorkspaceRelation::Shared
+    } else {
+        WorkspaceRelation::Isolated
+    };
+    // Strip newlines before display — workspaceOverride is user-controlled and this
+    // path lands in the plain-text startSession note (not only the Metadata fence).
+    let display = display_sanitize_workspace_path(&child_raw);
+    (display, Some(relation))
+}
 
 fn self_target_session_action_result(
     tool_name: &str,
@@ -163,10 +206,11 @@ async fn start_session_impl(
         return check_session(server, check_args, caller_session_id).await;
     }
 
-    let workspace_note = if let Some(workspace_path) = effective_workspace_path.as_deref() {
-        format!(" Shared workspace: {}.", workspace_path)
-    } else {
-        String::new()
+    let (workspace_display, workspace_relation) =
+        resolve_spawned_workspace_signal(caller_session_id, &session_id, effective_workspace_path);
+    let workspace_note = match (workspace_display.as_deref(), workspace_relation) {
+        (Some(path), Some(relation)) => format_workspace_status_note(path, relation),
+        _ => String::new(),
     };
     let hint = if let Some(org_name) = response.org_name.clone() {
         SuccessHint::new(
@@ -211,8 +255,14 @@ async fn start_session_impl(
         "workspaceOverride".to_string(),
         Value::Bool(workspace_override_set),
     );
-    if let Some(workspace_path) = effective_workspace_path {
+    if let Some(workspace_path) = workspace_display {
         response_data.insert("workspacePath".to_string(), Value::String(workspace_path));
+    }
+    if let Some(relation) = workspace_relation {
+        response_data.insert(
+            "workspaceRelation".to_string(),
+            Value::String(relation.as_str().to_string()),
+        );
     }
 
     // Human card identity: prefer assistant display name over session id.
@@ -354,6 +404,11 @@ pub async fn message_to_session(
             }
         }
     }
+
+    // Non-blocking path: attach child workspace so the parent can locate files
+    // without waiting for the next checkSession.
+    let enrichment = resolve_check_session_enrichment(&target_session, caller_session_id).await;
+    apply_check_session_enrichment(&mut response_data, &enrichment);
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

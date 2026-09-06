@@ -255,11 +255,11 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
     expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
   });
 
-  it('SP4: abort error is not retried and is silently swallowed', async () => {
-    // Throw an AbortError on the first (and only) attempt
+  it('SP4: unmarked abort error is not retried and is reported to Rust', async () => {
+    // Throw an AbortError without an intentional cancellation marker.
     mockStreamChat.mockImplementation(async function* () {
       yield;
-      const err = new DOMException('User aborted', 'AbortError');
+      const err = new DOMException('Transport aborted', 'AbortError');
       throw err;
     });
 
@@ -269,9 +269,14 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
     await act(async () => {
       await triggerEvent();
     });
-    // Neither error nor success should have been reported to Rust
+    // An unmarked abort must settle the backend session instead of leaving it Busy.
     expect(agentCommands.handleLLMResponse).not.toHaveBeenCalled();
-    expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
+    expect(agentCommands.handleLLMError).toHaveBeenCalledWith(
+      'sp4-session',
+      expect.objectContaining({
+        displayMessage: 'LLM completion aborted unexpectedly',
+      }),
+    );
 
     // Only 1 attempt — no retries on abort
     expect(mockStreamChat).toHaveBeenCalledTimes(1);

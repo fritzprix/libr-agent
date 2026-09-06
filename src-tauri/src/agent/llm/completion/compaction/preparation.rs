@@ -110,6 +110,7 @@ fn degrade_tools_for_overflow_recovery(tools: &[MCPTool]) -> Vec<MCPTool> {
             input_schema: crate::mcp::schema::MCPToolInputSchema::default(),
             output_schema: None,
             annotations: tool.annotations.clone(),
+            libragent_wait: tool.libragent_wait.clone(),
         })
         .collect()
 }
@@ -219,6 +220,9 @@ async fn prepare_compaction_request(
         (request, None) => request,
     };
     let final_parent_request = match (recovery_phase, final_parent_request) {
+        // Only DegradedTools may strip verbose schemas. CacheAligned /
+        // OverflowRecovery keep the full parent tool list so provider prompt
+        // caches can reuse the prior turn's tool-declaration prefix (#1797).
         (CompactionRecoveryPhase::DegradedTools, Some(mut request)) => {
             request.available_tools = request
                 .available_tools

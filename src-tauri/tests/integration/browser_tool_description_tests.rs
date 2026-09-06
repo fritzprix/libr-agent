@@ -1,5 +1,6 @@
 use tauri_mcp_agent_lib::mcp::builtin::browser::BrowserServer;
 use tauri_mcp_agent_lib::mcp::schema::{JSONSchema, JSONSchemaType, SchemaProperties};
+use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 fn browser_tool_description(tool_name: &str) -> String {
     BrowserServer::tools_static()
@@ -86,6 +87,46 @@ fn get_page_content_page_schema_requires_positive_integer() {
 }
 
 #[test]
+fn take_screenshot_schema_exposes_optional_full_page_flag() {
+    let tool = browser_tool("takeScreenshot");
+    let properties = object_properties(&tool.input_schema, "takeScreenshot");
+    let full_page = properties
+        .get("fullPage")
+        .expect("takeScreenshot should expose fullPage");
+
+    assert!(
+        matches!(&full_page.schema_type, JSONSchemaType::Boolean),
+        "fullPage should be a boolean"
+    );
+    if let JSONSchemaType::Object { required, .. } = &tool.input_schema.schema_type {
+        assert!(
+            !required
+                .as_ref()
+                .is_some_and(|required| required.iter().any(|name| name == "fullPage")),
+            "fullPage should be optional"
+        );
+    }
+    assert!(
+        tool.description.contains("PNG image"),
+        "takeScreenshot should describe its image output"
+    );
+}
+
+#[test]
+fn screenshot_image_content_serializes_as_standard_mcp_image() {
+    let content = MCPContent::Image {
+        data: Some("cG5n".to_string()),
+        uri: None,
+        mime_type: "image/png".to_string(),
+    };
+    let serialized = serde_json::to_value(content).expect("image content should serialize");
+
+    assert_eq!(serialized["type"], "image");
+    assert_eq!(serialized["data"], "cG5n");
+    assert_eq!(serialized["mimeType"], "image/png");
+}
+
+#[test]
 fn list_interactable_description_explains_selector_discovery_role() {
     let description = browser_tool_description("listInteractable");
 
@@ -145,6 +186,10 @@ fn browser_public_surface_exposes_explicit_libragent_names() {
     assert!(
         tool_names.contains(&"getPageContent".to_string()),
         "browser public surface should expose getPageContent"
+    );
+    assert!(
+        tool_names.contains(&"takeScreenshot".to_string()),
+        "browser public surface should expose takeScreenshot"
     );
     assert!(
         !tool_names.contains(&"goto".to_string()),

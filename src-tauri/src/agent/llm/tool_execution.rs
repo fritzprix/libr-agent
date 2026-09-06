@@ -5,7 +5,7 @@ use crate::agent::state::AgentSession;
 use crate::agent::state::PendingApprovalKind;
 use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
 use crate::agent::types::{ToolCall, ToolCallFunction};
-use crate::commands::agent_commands::ToolExecutionResult;
+use crate::commands::agent_commands::{ToolCancellation, ToolExecutionResult};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::SessionRepository;
 use std::collections::HashMap;
@@ -40,24 +40,26 @@ impl ToolExecutionContext<'_> {
         }
     }
 
-    async fn current_yolo_mode(&self) -> bool {
+    async fn current_execution_mode(&self) -> crate::execution_mode::ExecutionMode {
         let active = self.active_sessions.read().await;
         active
             .get(self.session_id)
-            .map(|session| session.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
-            .unwrap_or(false)
+            .map(|session| session.execution_mode())
+            .unwrap_or(crate::execution_mode::ExecutionMode::Normal)
+    }
+
+    async fn current_yolo_mode(&self) -> bool {
+        matches!(
+            self.current_execution_mode().await,
+            crate::execution_mode::ExecutionMode::Yolo
+        )
     }
 
     async fn current_unsafe_mode(&self) -> bool {
-        let active = self.active_sessions.read().await;
-        active
-            .get(self.session_id)
-            .map(|session| {
-                session
-                    .unsafe_mode
-                    .load(std::sync::atomic::Ordering::Relaxed)
-            })
-            .unwrap_or(false)
+        matches!(
+            self.current_execution_mode().await,
+            crate::execution_mode::ExecutionMode::Unsafe
+        )
     }
 
     /// Best-effort lookup of the session's configured output-token budget.
@@ -267,6 +269,7 @@ impl ToolExecutionContext<'_> {
                     error: error_msg,
                     is_error,
                     mcp_content,
+                    cancellation: None,
                 }
             }
             Err(error) => ToolExecutionResult {
@@ -276,6 +279,7 @@ impl ToolExecutionContext<'_> {
                 error: Some(error),
                 is_error: true,
                 mcp_content: None,
+                cancellation: None,
             },
         }
     }
@@ -399,6 +403,7 @@ fn args_parse_error_result(
         structured_content: Some(structured),
         error: Some(message),
         is_error: true,
+        cancellation: None,
     }
 }
 
@@ -411,11 +416,14 @@ fn error_result(message: impl Into<String>) -> ToolExecutionResult {
         error: Some(message),
         is_error: true,
         mcp_content: None,
+        cancellation: None,
     }
 }
 
 fn cancelled_tool_result() -> ToolExecutionResult {
-    error_result("Tool call cancelled by user.")
+    let mut result = error_result("Tool call cancelled by user.");
+    result.cancellation = Some(ToolCancellation::user());
+    result
 }
 
 async fn session_cancel_requested(
@@ -488,6 +496,7 @@ pub async fn execute_tool_calls(
     // tombstone `tool_calls[index..]` and break without consuming the iterator.
     // Every continue/success path must bump `index` before the next check.
     let mut index = 0;
+    let mut process_was_cancelled_in_batch = false;
     while index < tool_calls.len() {
         if session_cancel_requested(&active_sessions, &session_id, &cancellation_token).await {
             inject_cancel_tombstones_for_remaining(&context, &tool_calls[index..]).await;
@@ -617,7 +626,48 @@ pub async fn execute_tool_calls(
             }
         }
 
-        let result = context.execute_tool(tool_name, args).await;
+        if !process_was_cancelled_in_batch
+            && proxy_manager
+                .process_cancel_retry_exhausted(&session_id, tool_name, args_str)
+                .await
+        {
+            let mut result = error_result(
+                "The same tool call was already cancelled once; stopping the workflow to avoid a retry loop.",
+            );
+            result.cancellation = Some(ToolCancellation::user());
+            cancellation_token.cancel();
+            if let Some(session) = active_sessions.write().await.get_mut(&session_id) {
+                session.cancel_pending.store(true, Ordering::Release);
+            }
+            context
+                .continue_after_tool(tool_call_id, result, "cancelled tool retry limit")
+                .await;
+            inject_cancel_tombstones_for_remaining(&context, &tool_calls[index + 1..]).await;
+            break;
+        }
+
+        let mut result = context.execute_tool(tool_name, args).await;
+        let process_was_cancelled = proxy_manager.take_process_cancel_pending(&session_id).await;
+        if process_was_cancelled {
+            process_was_cancelled_in_batch = true;
+            proxy_manager
+                .record_process_cancelled_tool(&session_id, tool_name, args_str)
+                .await;
+        }
+        proxy_manager
+            .clear_process_cancel_retry_after_tool(
+                &session_id,
+                process_was_cancelled,
+                process_was_cancelled_in_batch,
+            )
+            .await;
+        if result.is_error
+            && (process_was_cancelled
+                || session_cancel_requested(&active_sessions, &session_id, &cancellation_token)
+                    .await)
+        {
+            result.cancellation = Some(ToolCancellation::user());
+        }
         context
             .continue_after_tool(tool_call_id, result, "tool execution")
             .await;

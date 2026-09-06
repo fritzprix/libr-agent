@@ -79,8 +79,6 @@ describe('ThinkingBubble', () => {
       <ThinkingBubble thinking="first line" isStreaming={true} />,
     );
 
-    expandThinking();
-
     const scrollContainer = getScrollContainer(container);
     mockScrollMetrics(scrollContainer, {
       scrollHeight: 240,
@@ -102,8 +100,6 @@ describe('ThinkingBubble', () => {
     const { container, rerender } = render(
       <ThinkingBubble thinking="first line" isStreaming={true} />,
     );
-
-    expandThinking();
 
     const scrollContainer = getScrollContainer(container);
     mockScrollMetrics(scrollContainer, {
@@ -129,8 +125,6 @@ describe('ThinkingBubble', () => {
     const { container, rerender } = render(
       <ThinkingBubble thinking="first line" isStreaming={true} />,
     );
-
-    expandThinking();
 
     const scrollContainer = getScrollContainer(container);
     mockScrollMetrics(scrollContainer, {
@@ -164,8 +158,6 @@ describe('ThinkingBubble', () => {
       />,
     );
 
-    expandThinking();
-
     const scrollContainer = getScrollContainer(container);
     mockScrollMetrics(scrollContainer, {
       scrollHeight: 240,
@@ -184,19 +176,24 @@ describe('ThinkingBubble', () => {
     expect(scrollContainer.scrollTop).toBe(0);
   });
 
-  it('does not auto-pin while collapsed even when streaming', () => {
-    const { container, rerender } = render(
+  it('auto-expands while streaming', () => {
+    const { container } = render(
       <ThinkingBubble thinking="first line" isStreaming={true} />,
     );
 
-    expect(container.querySelector('.overflow-y-auto')).toBeNull();
-
-    rerender(
-      <ThinkingBubble
-        thinking={'first line\nsecond line\nthird line'}
-        isStreaming={true}
-      />,
+    expect(container.querySelector('.overflow-y-auto')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /Thinking Process/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
     );
+  });
+
+  it('allows collapsing while streaming', () => {
+    const { container } = render(
+      <ThinkingBubble thinking="first line" isStreaming={true} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Thinking Process/i }));
 
     expect(container.querySelector('.overflow-y-auto')).toBeNull();
   });

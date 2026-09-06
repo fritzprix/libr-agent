@@ -1,9 +1,11 @@
 import { createEvent, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
+import { act } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChatInput } from '../AgentChatInput';
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from '@/features/agent/lib/attachment-picker';
+import { toast } from 'sonner';
 
 const fileAttachmentProps = vi.hoisted(
   () =>
@@ -34,12 +36,21 @@ const mocks = vi.hoisted(() => ({
   isSubmitting: false,
   isSessionLoading: false,
   isProxyReady: true,
+  pendingApprovals: [] as Array<{ toolCallId: string }>,
+  pendingInteractiveShellPrompt: null as null | { executionId: string },
+  isCompacting: vi.fn(() => false),
 }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    info: vi.fn(),
+  },
 }));
 
 vi.mock('@/context/AgentSessionContext', () => ({
@@ -52,6 +63,8 @@ vi.mock('@/context/AgentSessionContext', () => ({
     },
     messages: [],
     isProxyReady: mocks.isProxyReady,
+    pendingApprovals: mocks.pendingApprovals,
+    pendingInteractiveShellPrompt: mocks.pendingInteractiveShellPrompt,
     runtimeState: {
       servers: [],
     },
@@ -76,7 +89,7 @@ vi.mock('@/context/AgentChatContext', () => ({
 
 vi.mock('@/context/LLMServiceContext', () => ({
   useLLMService: () => ({
-    isCompacting: () => false,
+    isCompacting: mocks.isCompacting,
   }),
 }));
 
@@ -115,6 +128,7 @@ vi.mock('@/features/agent/hooks/useInputToken', () => ({
     typeResults: [],
     skillResults: [],
     toolResults: [],
+    commandResults: [],
     onInputChange: mocks.onTokenInputChange,
     onTypeSelect: vi.fn(),
     onArgSelect: vi.fn(),
@@ -184,6 +198,10 @@ describe('AgentChatInput', () => {
     mocks.workflowStatus = 'idle';
     mocks.isSubmitting = false;
     mocks.isSessionLoading = false;
+    mocks.pendingApprovals = [];
+    mocks.pendingInteractiveShellPrompt = null;
+    mocks.isCompacting.mockReturnValue(false);
+    vi.mocked(toast.info).mockClear();
   });
 
   it('does not show Cancel while idle even if a slash command is submitting', () => {
@@ -216,6 +234,120 @@ describe('AgentChatInput', () => {
     expect(
       screen.getByLabelText('agent.input.cancelAriaLabel'),
     ).toBeInTheDocument();
+  });
+
+  it('cancels the active workflow when Escape is pressed', async () => {
+    mocks.workflowStatus = 'busy';
+
+    render(<AgentChatInput />);
+
+    const event = createEvent.keyDown(window, { key: 'Escape' });
+    await act(async () => {
+      fireEvent(window, event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(mocks.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels while the chat textarea is focused', async () => {
+    mocks.workflowStatus = 'busy';
+
+    render(<AgentChatInput />);
+
+    const textarea = screen.getByLabelText('agent.input.ariaLabel');
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Escape' });
+    });
+
+    expect(mocks.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cancel while Escape is used in another editable target', () => {
+    mocks.workflowStatus = 'busy';
+
+    render(
+      <>
+        <input aria-label="other-input" />
+        <AgentChatInput />
+      </>,
+    );
+
+    const input = screen.getByLabelText('other-input');
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel while an approval or interactive prompt is pending', () => {
+    mocks.workflowStatus = 'busy';
+    mocks.pendingApprovals = [{ toolCallId: 'approval-1' }];
+
+    render(<AgentChatInput />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel during compaction-only work', () => {
+    mocks.isCompacting.mockReturnValue(true);
+
+    render(<AgentChatInput />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel while a modal dialog is open', () => {
+    mocks.workflowStatus = 'busy';
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    document.body.appendChild(dialog);
+
+    render(<AgentChatInput />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    dialog.remove();
+  });
+
+  it('does not issue duplicate cancellation requests', async () => {
+    let resolveCancel: (() => void) | undefined;
+    mocks.workflowStatus = 'busy';
+    mocks.cancel.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveCancel = resolve;
+      }),
+    );
+
+    render(<AgentChatInput />);
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(window, { key: 'Escape' });
+    });
+
+    expect(mocks.cancel).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveCancel?.();
+    });
+  });
+
+  it('explains when cancellation stopped a workspace process', async () => {
+    mocks.workflowStatus = 'busy';
+    mocks.cancel.mockResolvedValue({
+      outcome: 'processStopped',
+      stoppedResources: 1,
+    });
+
+    render(<AgentChatInput />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('agent.input.cancelAriaLabel'));
+    });
+
+    expect(toast.info).toHaveBeenCalledWith(
+      'agent.input.cancelOutcome.processStopped',
+    );
   });
 
   it('passes the explicit agent attachment accept policy to the picker', () => {

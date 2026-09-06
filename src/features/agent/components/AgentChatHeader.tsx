@@ -107,81 +107,72 @@ export function AgentChatHeader({
 
   return (
     <AgentSessionHeader
+      assistantName={assistantName}
       onRenameSession={renameSession}
-      isBookmarked={isBookmarked}
+      isBookmarked={isBookmarked ?? false}
       onToggleBookmark={() => {
         void handleToggleBookmark();
       }}
     >
-      <div className="flex items-center justify-between w-full">
-        <div className="flex items-center">
-          {children}
-          {assistantName && (
-            <span className="ml-2 text-xs text-primary">[{assistantName}]</span>
-          )}
-        </div>
+      {children}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleCopyMessages}
+            disabled={isCopying}
+            aria-label={t('agent.header.copyAria')}
+            className="h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {isCopying ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>
+      </Tooltip>
 
-        <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleCopyMessages}
-                disabled={isCopying}
-                aria-label={t('agent.header.copyAria')}
-                className="h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {isCopying ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>
-          </Tooltip>
+      <HeaderStatusBadges />
 
-          <HeaderStatusBadges />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              toggleShell();
+            }}
+            aria-label={
+              shellAttention
+                ? t(
+                    'agent.header.toggleShellHasUpdatesAria',
+                    'Toggle agent panels (has updates)',
+                  )
+                : t('agent.header.toggleShellAria', 'Toggle agent panels')
+            }
+            aria-controls="agent-side-panel-shell"
+            aria-expanded={shellOpen}
+            className="relative h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <PanelRight
+              className={`h-4 w-4 ${shellOpen ? 'text-primary' : ''}`}
+            />
+            <PanelAttentionDot visible={shellAttention} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('agent.header.toggleShellTooltip', 'Toggle agent panels')}
+        </TooltipContent>
+      </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  toggleShell();
-                }}
-                aria-label={
-                  shellAttention
-                    ? t(
-                        'agent.header.toggleShellHasUpdatesAria',
-                        'Toggle agent panels (has updates)',
-                      )
-                    : t('agent.header.toggleShellAria', 'Toggle agent panels')
-                }
-                aria-controls="agent-side-panel-shell"
-                aria-expanded={shellOpen}
-                className="relative h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <PanelRight
-                  className={`h-4 w-4 ${shellOpen ? 'text-primary' : ''}`}
-                />
-                <PanelAttentionDot visible={shellAttention} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {t('agent.header.toggleShellTooltip', 'Toggle agent panels')}
-            </TooltipContent>
-          </Tooltip>
-
-          {session?.id && (
-            <SessionFilesPopover key={session.id} sessionId={session.id} />
-          )}
-        </div>
-      </div>
+      {session?.id ? (
+        <SessionFilesPopover key={session.id} sessionId={session.id} />
+      ) : null}
     </AgentSessionHeader>
   );
 }

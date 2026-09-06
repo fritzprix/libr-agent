@@ -405,7 +405,10 @@ impl AgentSessionManager {
     }
 
     /// Cancel a running workflow
-    pub async fn cancel_workflow(&self, session_id: String) -> Result<(), String> {
+    pub async fn cancel_workflow(
+        &self,
+        session_id: String,
+    ) -> Result<crate::commands::agent_commands::CancelWorkflowResult, String> {
         crate::agent::workflow::cancel_workflow(
             &self.session_repo,
             &self.active_sessions,
@@ -534,12 +537,7 @@ impl AgentSessionManager {
         {
             let active = self.active_sessions.read().await;
             if let Some(session) = active.get(session_id) {
-                return ExecutionMode::from_runtime_flags(
-                    session.yolo_mode.load(std::sync::atomic::Ordering::Relaxed),
-                    session
-                        .unsafe_mode
-                        .load(std::sync::atomic::Ordering::Relaxed),
-                );
+                return session.execution_mode();
             }
         }
 

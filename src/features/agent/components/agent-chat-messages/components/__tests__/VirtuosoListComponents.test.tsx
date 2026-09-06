@@ -29,6 +29,7 @@ function createContext(
     sessionAssistantName: 'Agent',
     workflowStatus: 'idle',
     executionMode: 'normal',
+    messageLayout: 'bubble',
     ...overrides,
   };
 }
@@ -105,6 +106,28 @@ describe('VirtuosoListComponents', () => {
       paddingBottom: '45px',
       paddingLeft: '16px',
       paddingRight: '16px',
+    });
+  });
+
+  it('uses wider horizontal padding in document message layout', () => {
+    const { container } = render(
+      <AgentChatMessagesList
+        context={createContext({ messageLayout: 'document' })}
+        style={{ paddingTop: '10px' }}
+        data-testid="agent-chat-messages-list-document"
+      >
+        <div>item</div>
+      </AgentChatMessagesList>,
+    );
+
+    const list = container.querySelector(
+      '[data-testid="agent-chat-messages-list-document"]',
+    ) as HTMLDivElement | null;
+
+    expect(list).not.toBeNull();
+    expect(list).toHaveStyle({
+      paddingLeft: '24px',
+      paddingRight: '24px',
     });
   });
 });

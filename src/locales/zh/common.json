@@ -51,6 +51,9 @@
       "searchResults": "找到 {{count}} 个关于 \"{{query}}\" 的结果",
       "noResults": "未找到匹配您搜索的助手",
       "empty": "没有可用的助手",
+      "loading": "正在加载助手...",
+      "loadingMore": "正在加载更多助手...",
+      "totalInfo": "{{count}} / {{total}} 个助手",
       "pagination": {
         "previous": "上一页",
         "next": "下一页",
@@ -78,6 +81,7 @@
       "created": "创建于",
       "updated": "更新于",
       "description": "描述",
+      "fullConfiguration": "完整配置",
       "expand": "展开配置",
       "collapse": "折叠配置"
     }
@@ -286,7 +290,10 @@
     "emptyState": {
       "title": "暂无会话",
       "subtitle": "开始对话以创建您的第一个会话"
-    }
+    },
+    "loadMore": "加载更多",
+    "loadingMore": "正在加载更多...",
+    "moreAvailable": "还有更多"
   },
   "orgHistory": {
     "heading": "组织视图",
@@ -374,6 +381,10 @@
       "temperatureOverrideTooltip": "大多数提供商已为每个模型设置默认 temperature。仅在需要覆盖该模型默认值时启用此项。",
       "temperature": "Temperature",
       "temperatureDescription": "控制随机性。越低越确定，越高越有创造性。范围 0–2。对所有提供商统一应用。",
+      "thinkingEffort": "Thinking Effort",
+      "thinkingEffortDescription": "回答前模型推理的深度。不支持的模型会返回提供商错误。",
+      "thinkingEffortTooltipAria": "关于 Thinking Effort",
+      "thinkingEffortTooltip": "控制回答前的推理深度。启用时始终发送该设置。不支持的模型或提供商会返回 API 错误——请将 Effort 设为 Off 或更换模型。Anthropic 在除 Off 外的所有级别均使用 extended thinking。",
       "agentHub": "代理中心 (Agent Hub)",
       "agentHubUrlLabel": "代理中心 URL",
       "agentHubUrlDescription": "远程代理中心服务器的 URL。如果设置，助手将与此服务器同步。",
@@ -466,7 +477,20 @@
       "toolDetailLevelDescription": "简单模式仅显示工具名称和状态图标。开发者模式显示完整参数、错误详情和执行时间。",
       "uiVisualsTitle": "界面视觉",
       "fontFamily": "字体",
-      "fontFamilyDescription": "更改界面的默认字体。"
+      "fontFamilyDescription": "更改界面的默认字体。",
+      "messageLayout": "消息布局",
+      "messageLayoutDocument": "文档式（全宽编码布局）",
+      "messageLayoutBubble": "气泡（经典聊天气泡）",
+      "messageLayoutDescription": "文档模式最大化代码与 diff 的可读宽度。气泡模式保留经典聊天气泡样式。",
+      "colorTheme": "色彩主题",
+      "colorThemeDescription": "选择界面的强调色彩主题。",
+      "colorThemes": {
+        "neutral": "中性黑白 (单色)",
+        "amber": "Libr 琥珀 (温暖)",
+        "violet": "鸢尾紫 (AI)",
+        "ocean": "海洋蓝 (沉静)",
+        "forest": "森林灰绿 (专注)"
+      }
     },
     "advanced": {
       "maxRetries": "最大重试次数",
@@ -539,6 +563,8 @@
       "maxScheduledTaskGroups": "最大计划任务组数",
       "maxScheduledTaskGroupsDescription": "在重复团队协作自动化中允许的不同计划任务组的最大数量。",
       "backgroundTasks": "后台任务",
+      "preventSleepDuringAgentWork": "应用运行时防止休眠",
+      "preventSleepDuringAgentWorkDescription": "LibrAgent 打开期间防止系统空闲休眠。不会强制保持屏幕常亮。默认开启。",
       "searchIndexFrequency": "搜索索引频率 (分钟)",
       "searchIndexFrequencyDescription": "AI 更新其内存搜索的频率。更快的更新保持搜索新鲜，但会消耗更多电池/CPU。",
       "webActionTimeout": "Web 操作超时 (秒)",
@@ -843,6 +869,19 @@
       "loadingOlder": "正在加载更早的消息...",
       "scrollToLoadOlder": "向上滚动以加载更早的消息"
     },
+    "approval": {
+      "hardTitle": "需要高级审批",
+      "title": "需要审批",
+      "hardDescriptionYolo": "YOLO 模式已开启，但此高风险操作仍需要手动审批。",
+      "hardDescription": "此高风险操作需要明确审批。",
+      "description": "代理希望执行此工具。",
+      "hardBadge": "高级审批",
+      "standardBadge": "标准审批",
+      "arguments": "参数",
+      "reject": "拒绝",
+      "hardApprove": "批准高风险操作",
+      "approve": "批准"
+    },
     "draft": {
       "send": "发送消息",
       "attachFiles": "附加文件",
@@ -951,7 +990,8 @@
       "dropFiles": "拖放文件至此处或点击上传",
       "dropFolderHint": "拖放文件夹至此处以设为工作区",
       "dropDirToastError": "将目录拖放到中央区域以设置工作区覆盖。",
-      "dropMixedFoldersError": "拖放文件可导入它们，拖放单个文件夹可设置工作区覆盖。"
+      "dropMixedFoldersError": "拖放文件可导入它们，拖放单个文件夹可设置工作区覆盖。",
+      "dropFolderIntoSubfolderError": "不支持将文件夹拖放到子文件夹中。"
     },
     "statusBar": {
       "retryError": "重试消息失败",
@@ -1010,6 +1050,11 @@
       "cancelAriaLabel": "取消请求",
       "cancellingTooltip": "正在取消...",
       "cancelTooltip": "取消",
+      "cancelOutcome": {
+        "processStopped": "已停止 {{count}} 个工作区进程。工作流将继续。",
+        "workflowPaused": "工作流已取消并暂停。",
+        "noActiveWork": "没有可取消的活动工作流。"
+      },
       "resumeAriaLabel": "恢复工作流",
       "resumeTooltip": "恢复",
       "sendAriaLabel": "发送消息",
@@ -1070,6 +1115,7 @@
       "updated": "已更新"
     },
     "bubble": {
+      "toolError": "工具执行错误",
       "notification": "通知",
       "channel": "频道",
       "assistant": "助手",

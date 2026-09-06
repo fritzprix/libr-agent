@@ -65,13 +65,14 @@ Keys are stored locally. Never paste keys into chat.
 
 Same **AI & Models** tab:
 
-| Field                    | Meaning                                 |
-| ------------------------ | --------------------------------------- |
-| **Default LLM**          | Default provider/model for new sessions |
-| **Fallback LLM**         | Used when the default fails             |
-| **Override temperature** | When on, set **Temperature** yourself   |
+| Field                    | Meaning                                                                |
+| ------------------------ | ---------------------------------------------------------------------- |
+| **Default LLM**          | Default provider/model for new sessions (with grouped provider picker) |
+| **Fallback LLM**         | Used when the default fails                                            |
+| **Thinking Effort**      | Model reasoning effort level (`None`, `Low`, `Medium`, `High`)         |
+| **Override temperature** | When on, set **Temperature** yourself                                  |
 
-You can also change **Provider** / **Model** in Chat for the **current session only**.
+You can also change the **Model** and inline **Thinking Effort** in the Chat input bar for the **current session only**.
 
 ---
 

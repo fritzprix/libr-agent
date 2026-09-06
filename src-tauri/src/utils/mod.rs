@@ -1,8 +1,10 @@
 pub mod env;
 pub mod fs;
 pub mod json;
+pub mod keep_awake;
 pub mod pagination;
 pub mod platform;
+pub mod process;
 pub mod security;
 pub mod session_id;
 #[cfg(any(unix, windows))]

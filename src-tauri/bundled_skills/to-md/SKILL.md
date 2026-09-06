@@ -5,7 +5,7 @@ description: "Use when the user needs to convert files (PDF, DOCX, PPTX, XLSX, H
 
 # To Markdown
 
-This skill defines the unified policy for converting files to structured Markdown without summarizing or altering the original content. It uses Microsoft's **MarkItDown** Python package.
+This skill defines the unified policy for converting files to structured Markdown without summarizing or altering the original content. Prefer Microsoft's **MarkItDown** Python package when a Python interpreter is available.
 
 ## Skill routing
 
@@ -25,28 +25,63 @@ This skill defines the unified policy for converting files to structured Markdow
 
 ## Dependency check
 
-Before converting, verify the MarkItDown **pip package** is available:
+Run these checks **in order**. Do not start a long package-install loop before confirming an interpreter exists.
+
+### 1. Locate a Python interpreter
 
 ```bash
-python -c "import markitdown" 2>/dev/null || pip install "markitdown[all]"
+command -v python3 || command -v python
 ```
 
-On Windows PowerShell:
+PowerShell: `Get-Command python3, python -ErrorAction SilentlyContinue`
+
+If neither exists, go to **step 4** (system extractors) or install a Python runtime with the environment’s package manager (`apt`, `brew`, etc.) **only when that is clearly allowed and quick**. Prefer `python3` once available.
+
+### 2. Confirm MarkItDown (or install it)
+
+Use the interpreter and matching pip module — do not assume bare `pip`/`pip3` are on `PATH`:
+
+```bash
+PY="$(command -v python3 || command -v python)"
+"$PY" -c "import markitdown" 2>/dev/null || "$PY" -m pip install "markitdown[all]"
+```
+
+PowerShell:
 
 ```powershell
-python -c "import markitdown" 2>$null; if ($LASTEXITCODE -ne 0) { pip install "markitdown[all]" }
+$py = Get-Command python3 -ErrorAction SilentlyContinue
+if (-not $py) { $py = Get-Command python -ErrorAction SilentlyContinue }
+if (-not $py) { throw "No Python interpreter on PATH" }
+& $py.Source -c "import markitdown" 2>$null
+if ($LASTEXITCODE -ne 0) { & $py.Source -m pip install "markitdown[all]" }
 ```
 
-If installation fails, report the error and stop — do not attempt manual binary parsing.
+If pip install fails (no network, managed environment, missing pip), go to **step 4**. Do not invent file contents.
+
+### 3. Convert with MarkItDown
+
+When import succeeds, use the MarkItDown CLI or Python API for all supported formats. See [references/conversion_guide.md](references/conversion_guide.md).
+
+### 4. Fallback when MarkItDown cannot run
+
+If there is no usable Python/MarkItDown path, extract text with **already-installed** system CLIs only — do not invent bytes, and do not spend the session installing large OCR/Python stacks unless the user explicitly needs MarkItDown features:
+
+| Format | Prefer (if present) |
+|--------|---------------------|
+| PDF (text layer) | `pdftotext` |
+| Images / scanned PDF | `tesseract` |
+| HTML | read the file directly or a simple HTML-to-text filter already on the system |
+| DOCX/PPTX/XLSX | report that MarkItDown is required, or follow the specialized **docx** / **pptx** skill when applicable |
+
+After extraction, write Markdown that preserves the extracted text; do not summarize or hallucinate missing content.
 
 ## Conversion workflow
 
-Use the MarkItDown CLI or Python API for all supported formats.
-
-Read [references/conversion_guide.md](references/conversion_guide.md) for detailed usage instructions.
+Prefer MarkItDown when step 2 succeeds. Otherwise use step 4 and state which extractor produced the text.
 
 ## Core execution principles
 
-1. **Unified tooling**: Always use MarkItDown for file-to-Markdown extraction. Do not parse binary files manually or use legacy tools (Pandoc, PyMuPDF, python-docx, python-pptx, openpyxl) unless a specialized skill explicitly requires it (e.g. DOCX tracked changes in **docx**).
-2. **Preserve original text**: Do not hallucinate, summarize, or alter extracted text. Rely strictly on parser output.
-3. **Structure & readability**: MarkItDown preserves headings, tables, and lists. Use its output directly for LLM ingestion.
+1. **Prefer MarkItDown** for file-to-Markdown when Python is available. Do not parse Office/PDF binaries with ad-hoc Python libraries (PyMuPDF, python-docx, python-pptx, openpyxl) or legacy Pandoc for plain reading unless a specialized skill requires it (e.g. DOCX tracked changes in **docx**).
+2. **Preserve original text**: Do not hallucinate, summarize, or alter extracted text. Rely strictly on parser/OCR output.
+3. **Structure & readability**: Prefer MarkItDown’s structure (headings, tables, lists) when available; fallback output may be flatter plain text wrapped as Markdown.
+4. **Fail fast on environment gaps**: Missing `python`/`pip` is not a signal to retry the same install recipe. Preflight, then fallback or install the interpreter once.

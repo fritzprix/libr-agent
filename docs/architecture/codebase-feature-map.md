@@ -29,7 +29,8 @@ The core Think-Act-Observe loop managed entirely in Rust.
 | ----------------------------------------------------------- | ------------------------------------------------------------- |
 | `src/features/agent/hooks/useAgentDraftChat.ts` (20 KB)     | Main chat hook: send messages, handle streaming, manage state |
 | `src/features/agent/hooks/useChatSubmit.ts`                 | Message submission logic                                      |
-| `src/features/agent/hooks/useAgentModels.ts`                | Model selection & provider switching                          |
+| `src/features/agent/hooks/useGroupedAgentModels.ts`         | Model selection & provider switching                          |
+| `src/lib/ai-service/fetch-dynamic-provider-models.ts`       | Shared listModels fetch, toast policy, SWR key fingerprint    |
 | `src/features/agent/hooks/useInputToken.ts` (6 KB)          | Token estimation for input tracking                           |
 | `src/features/agent/hooks/useAgentFileAttachment.ts` (8 KB) | File attachment handling                                      |
 | `src/features/agent/hooks/useScopedSkills.ts`               | Per-session skill scoping                                     |

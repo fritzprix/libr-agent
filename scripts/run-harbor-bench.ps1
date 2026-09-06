@@ -55,6 +55,16 @@ param(
     else { $null }
   ),
 
+  [string]$Agent = $(if ($env:LIBRAGENT_BENCH_AGENT) { $env:LIBRAGENT_BENCH_AGENT } else { "libragent" }),
+
+  [string]$OpenAIBaseUrl = $(if ($env:OPENAI_BASE_URL) { $env:OPENAI_BASE_URL } else { $null }),
+
+  [string]$OpenAIApiKey = $(if ($env:OPENAI_API_KEY) { $env:OPENAI_API_KEY } else { "sk-dummy" }),
+
+  [string]$EnvFile,
+
+  [string]$ConfigFile,
+
   [ValidateSet("yolo", "unsafe", "normal")]
   [string]$ExecutionMode = $(if ($env:LIBRAGENT_EXECUTION_MODE) { $env:LIBRAGENT_EXECUTION_MODE } else { "unsafe" }),
 
@@ -66,6 +76,8 @@ param(
   [Nullable[double]]$AgentTimeoutMultiplier = $(
     if ($env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER) { [double]$env:LIBRAGENT_AGENT_TIMEOUT_MULTIPLIER } else { $null }
   ),
+
+  [int]$SmokeTimeout = $(if ($env:LIBRAGENT_SMOKE_TIMEOUT) { [int]$env:LIBRAGENT_SMOKE_TIMEOUT } else { 300 }),
 
   [string[]]$VerifierEnv,
 
@@ -81,6 +93,47 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
+
+# Auto-discover bench_config.json if not explicitly provided
+$resolvedConfigFile = $null
+$candidateConfigs = @(
+  $ConfigFile,
+  (Join-Path $RepoRoot "bench_config.json"),
+  (Join-Path $RepoRoot ".bench_config.json"),
+  (Join-Path $RepoRoot "benchmarks\harbor\bench_config.json")
+)
+foreach ($cand in $candidateConfigs) {
+  if ($cand -and (Test-Path $cand)) {
+    $resolvedConfigFile = (Resolve-Path $cand).Path
+    break
+  }
+}
+
+if ($resolvedConfigFile) {
+  try {
+    $cfgJson = Get-Content -Raw $resolvedConfigFile | ConvertFrom-Json
+    Write-Host "Loaded benchmark config from $resolvedConfigFile" -ForegroundColor DarkCyan
+    if (-not $OpenAIBaseUrl) {
+      if ($cfgJson.base_url) { $OpenAIBaseUrl = [string]$cfgJson.base_url }
+      elseif ($cfgJson.baseUrl) { $OpenAIBaseUrl = [string]$cfgJson.baseUrl }
+      elseif ($cfgJson.openai_base_url) { $OpenAIBaseUrl = [string]$cfgJson.openai_base_url }
+      elseif ($cfgJson.openaiBaseUrl) { $OpenAIBaseUrl = [string]$cfgJson.openaiBaseUrl }
+    }
+    if (-not $PSBoundParameters.ContainsKey('OpenAIApiKey') -and (-not $env:OPENAI_API_KEY -or $env:OPENAI_API_KEY -eq 'sk-dummy')) {
+      if ($cfgJson.api_key) { $OpenAIApiKey = [string]$cfgJson.api_key }
+      elseif ($cfgJson.apiKey) { $OpenAIApiKey = [string]$cfgJson.apiKey }
+      elseif ($cfgJson.openai_api_key) { $OpenAIApiKey = [string]$cfgJson.openai_api_key }
+      elseif ($cfgJson.openaiApiKey) { $OpenAIApiKey = [string]$cfgJson.openaiApiKey }
+    }
+    if (-not $Model) {
+      if ($cfgJson.model) { $Model = [string]$cfgJson.model }
+      elseif ($cfgJson.model_name) { $Model = [string]$cfgJson.model_name }
+      elseif ($cfgJson.modelName) { $Model = [string]$cfgJson.modelName }
+    }
+  } catch {
+    Write-Host "Warning: Failed to parse $resolvedConfigFile : $_" -ForegroundColor Yellow
+  }
+}
 
 # Convenience: if --dataset was explicitly supplied without --preset, treat as dataset preset.
 if (-not $PSBoundParameters.ContainsKey('Preset') -and $PSBoundParameters.ContainsKey('Dataset')) {
@@ -231,7 +284,7 @@ function Test-LibrAgentApi {
       throw "Smoke session did not start a workflow (status=idle with no messages). CreateSessionRequest.request may have been ignored."
     }
 
-    $deadline = (Get-Date).AddSeconds(90)
+    $deadline = (Get-Date).AddSeconds($SmokeTimeout)
     while ((Get-Date) -lt $deadline) {
       if ($session.status -in @("idle", "error", "paused")) {
         break
@@ -241,7 +294,7 @@ function Test-LibrAgentApi {
     }
     Write-Host ("  settled status={0}" -f $session.status)
     if ($session.status -notin @("idle", "error", "paused")) {
-      throw "Smoke session did not settle within 90s (status='$($session.status)')."
+      throw "Smoke session did not settle within ${SmokeTimeout}s (status='$($session.status)')."
     }
   }
   finally {
@@ -360,26 +413,60 @@ function Invoke-Harbor {
 Assert-Command "python"
 Assert-Command "harbor"
 
-$script:ResolvedAssistantId = Resolve-AssistantId -ApiBase $ApiUrl -PreferredId $AssistantId -NameHint $AssistantName
-Write-Host "Using assistantId=$($script:ResolvedAssistantId)"
-
-$script:ResolvedHarborModel = Resolve-HarborModel -ApiBase $ApiUrl -PreferredModel $Model
-Write-Host "Using Harbor model (-m)=$($script:ResolvedHarborModel)"
-
-if (-not $SkipHealthCheck) {
-  Test-LibrAgentApi -ApiBase $ApiUrl
+if ($OpenAIBaseUrl) {
+  $env:OPENAI_BASE_URL = $OpenAIBaseUrl
+}
+if ($OpenAIApiKey) {
+  $env:OPENAI_API_KEY = $OpenAIApiKey
 }
 
-$harborArgs = @(
-  "run",
-  "-a", "benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter",
-  "-m", "$($script:ResolvedHarborModel)",
-  "--ak", "api_url=$ApiUrl",
-  "--ak", "assistant_id=$($script:ResolvedAssistantId)",
-  "--ak", "execution_mode=$ExecutionMode",
-  "-n", "$Concurrent",
-  "-k", "$NAttempts"
-)
+if ($Agent -eq "libragent" -or $Agent -eq "benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter") {
+  $script:ResolvedAssistantId = Resolve-AssistantId -ApiBase $ApiUrl -PreferredId $AssistantId -NameHint $AssistantName
+  Write-Host "Using assistantId=$($script:ResolvedAssistantId)"
+
+  $script:ResolvedHarborModel = Resolve-HarborModel -ApiBase $ApiUrl -PreferredModel $Model
+  Write-Host "Using Harbor model (-m)=$($script:ResolvedHarborModel)"
+
+  if (-not $SkipHealthCheck) {
+    Test-LibrAgentApi -ApiBase $ApiUrl
+  }
+
+  $harborArgs = @(
+    "run",
+    "-a", "benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter",
+    "-m", "$($script:ResolvedHarborModel)",
+    "--ak", "api_url=$ApiUrl",
+    "--ak", "assistant_id=$($script:ResolvedAssistantId)",
+    "--ak", "execution_mode=$ExecutionMode",
+    "-n", "$Concurrent",
+    "-k", "$NAttempts"
+  )
+} else {
+  $script:ResolvedHarborModel = if ($Model) {
+    $Model
+  } elseif ($env:LIBRAGENT_MODEL) {
+    $env:LIBRAGENT_MODEL
+  } elseif ($env:LIBRAGENT_HARBOR_MODEL) {
+    $env:LIBRAGENT_HARBOR_MODEL
+  } else {
+    "openai/qwen-3.6-35b"
+  }
+  Write-Step "Running agent '$Agent' with model '$script:ResolvedHarborModel'"
+  if ($env:OPENAI_BASE_URL) {
+    Write-Host "  OPENAI_BASE_URL=$($env:OPENAI_BASE_URL)" -ForegroundColor DarkCyan
+  }
+  $harborArgs = @(
+    "run",
+    "-a", "$Agent",
+    "-m", "$($script:ResolvedHarborModel)",
+    "-n", "$Concurrent",
+    "-k", "$NAttempts"
+  )
+}
+
+if ($EnvFile) {
+  $harborArgs += @("--env-file", "$EnvFile")
+}
 
 if ($null -ne $TimeoutMultiplier) {
   $harborArgs += @("--timeout-multiplier", "$TimeoutMultiplier")
@@ -419,6 +506,9 @@ switch ($Preset) {
     }
   }
   "terminal-bench" {
+    if (-not $PSBoundParameters.ContainsKey('Dataset')) {
+      $Dataset = "terminal-bench/terminal-bench-2-1"
+    }
     Write-Step "Preset: Terminal-Bench dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
     if ($Include) {
@@ -468,10 +558,8 @@ switch ($Preset) {
     }
   }
   "dataset" {
-    # Default -Dataset is terminal-bench; require an explicit value so bare
-    # -Preset dataset does not silently run the wrong registry entry.
     if (-not $PSBoundParameters.ContainsKey('Dataset')) {
-      throw "Preset 'dataset' requires -Dataset <org/name-version> (e.g. swe-bench/swe-bench-verified-1.0)"
+      $Dataset = "fritzprix/libragent-diverse-9"
     }
     Write-Step "Preset: dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
@@ -487,6 +575,16 @@ switch ($Preset) {
     }
   }
 }
+
+$env:LIBRAGENT_HARBOR_DATASET = if ($Preset -in @("terminal-bench", "harbor-index", "dataset")) { $Dataset } else { "" }
+$env:LIBRAGENT_HARBOR_INCLUDE = if ($Include) { $Include -join "," } else { "" }
+$env:LIBRAGENT_HARBOR_N_TASKS = if ($NTasks -gt 0) { [string]$NTasks } else { "" }
+$env:LIBRAGENT_HARBOR_N_ATTEMPTS = [string]$NAttempts
+$env:LIBRAGENT_HARBOR_CONCURRENT = [string]$Concurrent
+$env:LIBRAGENT_HARBOR_AGENT = [string]$Agent
+$env:LIBRAGENT_HARBOR_TIMEOUT_MULTIPLIER = if ($null -ne $TimeoutMultiplier) { [string]$TimeoutMultiplier } else { "" }
+$env:LIBRAGENT_HARBOR_AGENT_TIMEOUT_MULTIPLIER = if ($null -ne $AgentTimeoutMultiplier) { [string]$AgentTimeoutMultiplier } else { "" }
+$env:LIBRAGENT_HARBOR_VERIFIER_ENV_CONFIGURED = if ($VerifierEnv) { "1" } else { "0" }
 
 if ($DebugHarbor) {
   $harborArgs += @("--debug")

@@ -51,6 +51,9 @@
       "searchResults": "{{count}} Ergebnisse für \"{{query}}\" gefunden",
       "noResults": "Keine Assistenten für Ihre Suche gefunden",
       "empty": "Keine Assistenten verfügbar",
+      "loading": "Assistenten werden geladen...",
+      "loadingMore": "Weitere Assistenten werden geladen...",
+      "totalInfo": "{{count}} von {{total}} Assistenten",
       "pagination": {
         "previous": "Zurück",
         "next": "Weiter",
@@ -78,6 +81,7 @@
       "created": "Erstellt",
       "updated": "Aktualisiert",
       "description": "Beschreibung",
+      "fullConfiguration": "Vollständige Konfiguration",
       "expand": "Konfiguration erweitern",
       "collapse": "Konfiguration einklappen"
     }
@@ -286,7 +290,10 @@
     "emptyState": {
       "title": "Noch keine Sitzungen",
       "subtitle": "Starten Sie eine Konversation, um Ihre erste Sitzung zu erstellen"
-    }
+    },
+    "loadMore": "Mehr laden",
+    "loadingMore": "Weitere werden geladen...",
+    "moreAvailable": "weitere verfügbar"
   },
   "orgHistory": {
     "heading": "Organisationsansicht",
@@ -374,6 +381,10 @@
       "temperatureOverrideTooltip": "Die meisten Provider setzen bereits eine Standard-Temperature pro Modell. Lassen Sie dies aus, sofern Sie diesen Modellstandard nicht überschreiben müssen.",
       "temperature": "Temperature",
       "temperatureDescription": "Steuert die Zufälligkeit. Niedriger ist deterministischer, höher kreativer. Bereich 0–2. Gilt einheitlich für alle Provider.",
+      "thinkingEffort": "Thinking Effort",
+      "thinkingEffortDescription": "Steuert die Reasoning-Tiefe vor der Antwort. Nicht unterstützte Modelle liefern einen Provider-Fehler.",
+      "thinkingEffortTooltipAria": "Über Thinking Effort",
+      "thinkingEffortTooltip": "Steuert die Reasoning-Tiefe vor der Antwort. Bei aktivierter Einstellung wird der Parameter immer gesendet. Nicht unterstützte Modelle oder Provider liefern einen API-Fehler — Effort auf Off stellen oder das Modell wechseln. Anthropic nutzt für alle Stufen außer Off extended thinking.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "Agent Hub URL",
       "agentHubUrlDescription": "URL des entfernten Agent Hub Servers. Wenn gesetzt, werden Assistenten mit diesem Server synchronisiert.",
@@ -466,7 +477,20 @@
       "toolDetailLevelDescription": "Der einfache Modus zeigt nur Werkzeugnamen und Status-Icons an. Der Entwickler-Modus zeigt alle Parameter, Fehlerdetails und die Ausführungszeit an.",
       "uiVisualsTitle": "UI-Darstellung",
       "fontFamily": "Schriftfamilie",
-      "fontFamilyDescription": "Ändert die Standardschriftfamilie der Oberfläche."
+      "fontFamilyDescription": "Ändert die Standardschriftfamilie der Oberfläche.",
+      "messageLayout": "Nachrichtenlayout",
+      "messageLayoutDocument": "Dokument (volle Breite für Code)",
+      "messageLayoutBubble": "Blasen (klassisches Chat)",
+      "messageLayoutDescription": "Dokumentmodus maximiert die Breite für Code und Diffs. Blasenmodus behält klassische Chatblasen bei.",
+      "colorTheme": "Farbthema",
+      "colorThemeDescription": "Wählen Sie ein Akzentfarbthema für die Benutzeroberfläche.",
+      "colorThemes": {
+        "neutral": "Neutral (Monochrom)",
+        "amber": "Libr Bernstein (Wärme)",
+        "violet": "Iris Violett (KI)",
+        "ocean": "Ozeanblau (Ruhe)",
+        "forest": "Waldsalbei (Fokus)"
+      }
     },
     "advanced": {
       "maxRetries": "Max. Wiederholungsversuche",
@@ -539,6 +563,8 @@
       "maxScheduledTaskGroups": "Maximale Anzahl geplanter Aufgabengruppen",
       "maxScheduledTaskGroupsDescription": "Maximale Anzahl unterschiedlicher geplanter Aufgabengruppen, die in wiederkehrender Teamwork-Automatisierung erlaubt sind.",
       "backgroundTasks": "Hintergrundaufgaben",
+      "preventSleepDuringAgentWork": "Ruhezustand verhindern, solange die App läuft",
+      "preventSleepDuringAgentWorkDescription": "Verhindert den Idle-Ruhezustand, solange LibrAgent geöffnet ist. Hält das Display nicht zwingend an. Standardmäßig aktiviert.",
       "searchIndexFrequency": "Suchindex-Frequenz (Min)",
       "searchIndexFrequencyDescription": "Wie oft die KI ihre Gedächtnissuche aktualisiert. Schnellere Updates halten die Suche aktuell, verbrauchen aber mehr Akku/CPU.",
       "webActionTimeout": "Web-Aktions-Timeout (Sek)",
@@ -843,6 +869,19 @@
       "loadingOlder": "Ältere Nachrichten werden geladen...",
       "scrollToLoadOlder": "Nach oben scrollen, um ältere Nachrichten zu laden"
     },
+    "approval": {
+      "hardTitle": "Erweiterte Genehmigung erforderlich",
+      "title": "Genehmigung erforderlich",
+      "hardDescriptionYolo": "Der YOLO-Modus ist aktiviert, aber diese risikoreiche Aktion erfordert weiterhin eine manuelle Genehmigung.",
+      "hardDescription": "Diese risikoreiche Aktion erfordert eine ausdrückliche Genehmigung.",
+      "description": "Der Agent möchte dieses Tool ausführen.",
+      "hardBadge": "Erweiterte Genehmigung",
+      "standardBadge": "Standardgenehmigung",
+      "arguments": "Argumente",
+      "reject": "Ablehnen",
+      "hardApprove": "Risikoreiche Aktion genehmigen",
+      "approve": "Genehmigen"
+    },
     "draft": {
       "send": "Nachricht senden",
       "attachFiles": "Dateien anhängen",
@@ -951,7 +990,8 @@
       "dropFiles": "Dateien hier ablegen oder zum Hochladen klicken",
       "dropFolderHint": "Ordner hier ablegen, um ihn als Arbeitsbereich zu setzen",
       "dropDirToastError": "Ordner im zentralen Bereich ablegen, um die Arbeitsbereich-Überschreibung zu setzen.",
-      "dropMixedFoldersError": "Legen Sie Dateien ab, um sie zu importieren, oder einen einzelnen Ordner, um die Arbeitsbereich-Überschreibung zu setzen."
+      "dropMixedFoldersError": "Legen Sie Dateien ab, um sie zu importieren, oder einen einzelnen Ordner, um die Arbeitsbereich-Überschreibung zu setzen.",
+      "dropFolderIntoSubfolderError": "Das Ablegen von Ordnern in Unterordnern wird nicht unterstützt."
     },
     "statusBar": {
       "retryError": "Fehler beim erneuten Senden der Nachricht",
@@ -1010,6 +1050,11 @@
       "cancelAriaLabel": "Anfrage abbrechen",
       "cancellingTooltip": "Wird abgebrochen...",
       "cancelTooltip": "Abbrechen",
+      "cancelOutcome": {
+        "processStopped": "{{count}} Workspace-Prozess(e) wurden beendet. Der Workflow wird fortgesetzt.",
+        "workflowPaused": "Der Workflow wurde abgebrochen und pausiert.",
+        "noActiveWork": "Es gab keinen aktiven Workflow zum Abbrechen."
+      },
       "resumeAriaLabel": "Workflow fortsetzen",
       "resumeTooltip": "Fortsetzen",
       "sendAriaLabel": "Nachricht senden",
@@ -1070,6 +1115,7 @@
       "updated": "aktualisiert"
     },
     "bubble": {
+      "toolError": "Werkzeugausführungsfehler",
       "notification": "Benachrichtigung",
       "channel": "KANAL",
       "assistant": "ASSISTENT",

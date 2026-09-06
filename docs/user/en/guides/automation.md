@@ -12,7 +12,7 @@ title: Automation
 
 Sidebar → **Scheduled Tasks** (or Automation entry, depending on version).
 
-Create a task: choose assistant / playbook, schedule (cron or interval), and enable it.
+Create a task: choose assistant / playbook, schedule (cron or interval), and enable it. You can also pick from built-in **Starter Templates** (such as Daily Standup or Code Review Digest) for instant 1-click configuration.
 
 ---
 

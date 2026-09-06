@@ -140,8 +140,8 @@ pub(super) async fn search_content_in_file(
             ToolGroup::Workspace,
         )
         .guidance(vec![
-            "Search text files instead of binary artifacts".to_string(),
-            "Use filePattern to narrow the directory before searching contents".to_string(),
+            "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
+                .to_string(),
         ])
         .to_mcp_result());
     }
@@ -149,17 +149,24 @@ pub(super) async fn search_content_in_file(
     let content = match tokio::fs::read_to_string(file_path).await {
         Ok(s) => s,
         Err(e) => {
-            let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
+            let is_invalid_data = e.kind() == std::io::ErrorKind::InvalidData;
+            let error_msg = if is_invalid_data {
                 "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters.".to_string()
             } else {
                 e.to_string()
             };
-            return Ok(guided_error(
+            let mut builder = guided_error(
                 ErrorCategory::OperationFailed,
                 &error_msg,
                 ToolGroup::Workspace,
-            )
-            .to_mcp_result());
+            );
+            if is_invalid_data {
+                builder = builder.guidance(vec![
+                    "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
+                        .to_string(),
+                ]);
+            }
+            return Ok(builder.to_mcp_result());
         }
     };
 
@@ -452,7 +459,7 @@ pub(super) async fn search_content_in_dir(
         }
         if skipped_binary_files > 0 {
             next_steps.push(format!(
-                "Skipped {} binary-looking file(s); refine filePattern if you need a specific artifact",
+                "Skipped {} binary-looking file(s); inspect them with workspace__runShell (`strings`, `grep -a`)",
                 skipped_binary_files
             ));
         }

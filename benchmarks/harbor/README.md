@@ -56,7 +56,19 @@ pnpm bench:harbor
 
 # Harbor Index: full dataset (n-attempts defaults to 1; add --n-attempts 5 for official submission)
 pnpm bench:harbor:all
+
+# Upload latest job results to Harbor Hub (UTF-8 enabled automatically)
+pnpm bench:upload
+# Or upload a specific job folder:
+pnpm bench:upload jobs/2026-08-16__14-25-18
 ```
+
+Before uploading, `bench:upload` normalizes Hermes trial metadata to the stable
+release line (for example, `Hermes Agent v0.19.0`). Hermes includes its install
+path and Python version in the raw version output, but Harbor uses the complete
+version string as the agent identity. Removing those environment-specific
+details keeps all trials from one Hermes release in a single Harbor Hub result
+group.
 
 `pnpm bench:*` dispatches via `scripts/run-harbor-bench.cjs` to PowerShell on Windows
 and bash on Linux/macOS. Defaults omit Harbor timeout/resource overrides so runs match
@@ -91,14 +103,17 @@ Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
 
 Use `--dataset <org/name-version>` to run any dataset from the
 [Harbor Hub registry](https://harbor.laude-institute.org) without touching the scripts.
-Omitting `--preset` when `--dataset` is supplied automatically selects the `dataset` preset.
-`pnpm bench:registry` is a shortcut for `--preset dataset` — always pass `--dataset`
-(pnpm 9+ forwards unknown script flags without requiring `--`):
+`pnpm bench:registry` (and `pnpm xbench:registry` for Hermes) is a shortcut for `--preset dataset` — defaults to `fritzprix/libragent-diverse-9` (stratified 9-task Terminal-Bench 2.1 smoke suite), or pass `--dataset` to run any other registry dataset (pnpm 9+ forwards unknown script flags without requiring `--`):
 
 ```sh
+pnpm bench:registry                                            # runs default: fritzprix/libragent-diverse-9
+pnpm bench:diverse                                             # same diverse-9 suite (explicit)
+pnpm bench:diverse:n1                                          # first task only
+pnpm bench:fileop                                              # NovitaAI/tb21-file-recovery (file/data-focused 9)
+pnpm bench:fileop:n1                                           # first fileop task only
+pnpm xbench:registry                                           # Hermes on default diverse-9
 pnpm bench:registry --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
 pnpm bench:registry --dataset aider-bench/aider-bench-1.0
-pnpm bench:registry --dataset NovitaAI/tb21-file-recovery
 ```
 
 ```sh

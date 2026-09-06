@@ -94,8 +94,14 @@ export function AgentWorkspacePanel({
   const openingNativeLock = useRef(false);
 
   // Extracted hooks
-  const { fileTree, loading, error, loadDirectory, toggleDirectory } =
-    useWorkspaceFiles(rootPath);
+  const {
+    fileTree,
+    loading,
+    error,
+    loadDirectory,
+    toggleDirectory,
+    expandDirectory,
+  } = useWorkspaceFiles(rootPath);
 
   const handleOverrideChanged = useCallback(() => {
     loadDirectory(rootPath);
@@ -113,13 +119,59 @@ export function AgentWorkspacePanel({
     handleBrowseFolder,
   } = useWorkspaceOverride(handleOverrideChanged);
 
-  const handleDropComplete = useCallback(() => {
-    loadDirectory(rootPath);
-  }, [loadDirectory, rootPath]);
+  const handleDropComplete = useCallback(
+    async (targetDir?: string) => {
+      if (targetDir) {
+        await expandDirectory(targetDir);
+      } else {
+        await loadDirectory(rootPath);
+      }
+    },
+    [expandDirectory, loadDirectory, rootPath],
+  );
 
   const { handleWorkspaceFileDrop } = useWorkspaceFileDrop(
     rootPath,
     handleDropComplete,
+  );
+
+  const handleFolderNodeFileDrop = useCallback(
+    async (paths: string[], targetDir: string) => {
+      if (!session?.id || paths.length === 0) return;
+
+      logger.info('External files dropped on folder node', {
+        pathCount: paths.length,
+        targetDir,
+      });
+
+      try {
+        await registerDroppedFiles(paths);
+        const pathTypes = await Promise.all(
+          paths.map((path) => checkDroppedPathType(path)),
+        );
+
+        const hasDirectories = pathTypes.includes('directory');
+        if (hasDirectories) {
+          toast.error(
+            t(
+              'agent.workspace.dropFolderIntoSubfolderError',
+              'Dropping folders into subfolders is not supported',
+            ),
+          );
+          return;
+        }
+
+        await handleWorkspaceFileDrop(paths, targetDir);
+      } catch (error) {
+        logger.error('Failed to resolve dropped paths on folder node', error);
+        const message =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+        toast.error(t('agent.workspace.importFileError'), {
+          description: message,
+        });
+      }
+    },
+    [handleWorkspaceFileDrop, session?.id, t],
   );
 
   const handleWorkspacePathDrop = useCallback(
@@ -543,6 +595,7 @@ export function AgentWorkspacePanel({
                   node={node}
                   onToggle={toggleDirectory}
                   onOpen={handleOpenFile}
+                  onFileDrop={handleFolderNodeFileDrop}
                 />
               ))}
 

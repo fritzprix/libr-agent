@@ -115,9 +115,19 @@ pub async fn build_workspace_live_state(
     }
 }
 
+/// How long a terminal process stays visible as "Recently Finished" in service context.
+/// Bridges sync-timeout handoff tool messages (still "running") and the next turn's
+/// live context after the process exits between turns.
+pub const RECENT_FINISHED_CONTEXT_SECS: i64 = 60;
+
+/// Cap listed recently-finished processes to keep the prompt compact.
+pub const MAX_RECENT_FINISHED_IN_CONTEXT: usize = 3;
+
 /// Format the Running Processes section for the workspace service context.
 ///
 /// Awaits the registry lock so lock contention never produces a false "None".
+/// Only active (Starting/Running) processes are listed here; see
+/// [`format_recently_finished_processes_text`] for terminal entries still in the registry.
 pub async fn format_running_processes_text(
     process_registry: &terminal_manager::ProcessRegistry,
     session_id: &str,
@@ -150,6 +160,89 @@ pub async fn format_running_processes_text(
     }
 }
 
+fn is_recently_finished_entry(
+    entry: &terminal_manager::ProcessEntry,
+    now: chrono::DateTime<chrono::Utc>,
+    window: chrono::Duration,
+) -> bool {
+    if !terminal_manager::is_terminal_process_status(&entry.status) {
+        return false;
+    }
+    let Some(finished_at) = entry.finished_at else {
+        return false;
+    };
+    now.signed_duration_since(finished_at) <= window
+}
+
+/// Count session processes that finished within [`RECENT_FINISHED_CONTEXT_SECS`].
+///
+/// Used to skip idle service-context caching while handoff IDs remain queryable.
+pub async fn count_recently_finished_processes(
+    process_registry: &terminal_manager::ProcessRegistry,
+    session_id: &str,
+) -> usize {
+    let reg = process_registry.read().await;
+    let now = chrono::Utc::now();
+    let window = chrono::Duration::seconds(RECENT_FINISHED_CONTEXT_SECS);
+    reg.entries
+        .values()
+        .filter(|e| e.session_id == session_id)
+        .filter(|e| is_recently_finished_entry(e, now, window))
+        .count()
+}
+
+/// Format recently finished (still-registered) processes for service context.
+///
+/// Returns `None` when there are none. Keeps sync-timeout handoff processIds
+/// visible after they leave the Running set so the next turn does not only see
+/// `Running Processes: None`.
+pub async fn format_recently_finished_processes_text(
+    process_registry: &terminal_manager::ProcessRegistry,
+    session_id: &str,
+) -> Option<String> {
+    let reg = process_registry.read().await;
+    let now = chrono::Utc::now();
+    let window = chrono::Duration::seconds(RECENT_FINISHED_CONTEXT_SECS);
+
+    let mut finished: Vec<&terminal_manager::ProcessEntry> = reg
+        .entries
+        .values()
+        .filter(|e| e.session_id == session_id)
+        .filter(|e| is_recently_finished_entry(e, now, window))
+        .collect();
+
+    if finished.is_empty() {
+        return None;
+    }
+
+    finished.sort_by(|left, right| {
+        right
+            .finished_at
+            .cmp(&left.finished_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+
+    let total = finished.len();
+    let lines: Vec<String> = finished
+        .into_iter()
+        .take(MAX_RECENT_FINISHED_IN_CONTEXT)
+        .map(|entry| {
+            let status = terminal_manager::process_status_label(&entry.status);
+            let exit = entry
+                .exit_code
+                .map(|code| format!(", exit {code}"))
+                .unwrap_or_default();
+            let display_cmd = crate::utils::truncate_chars(&entry.command, 60);
+            format!("  • {} [{status}{exit}] - {display_cmd}", entry.id)
+        })
+        .collect();
+
+    let list = lines.join("\n");
+    Some(format!(
+        "{total} (still queryable via waitForProcess/readProcessOutput)\n{list}"
+    ))
+}
+
 /// Build the service context prompt text used in BuiltinMCPServer::get_service_context.
 pub async fn build_context_prompt(
     session_id: &str,
@@ -159,8 +252,14 @@ pub async fn build_context_prompt(
 ) -> String {
     let state = build_workspace_live_state(session_id, session_manager, shell_manager).await;
 
-    // Running processes with IDs for AI visibility (finished-only totals omitted — no actionable IDs).
+    // Active processes plus a short recently-finished window so handoff IDs stay
+    // visible after natural exit between turns (full finished history omitted).
     let running_processes_text = format_running_processes_text(process_registry, session_id).await;
+    let recently_finished_line =
+        match format_recently_finished_processes_text(process_registry, session_id).await {
+            Some(text) => format!("\n- Recently Finished: {text}"),
+            None => String::new(),
+        };
 
     let file_tools_list = workspace_file_tools_context_list();
     let isolation_lines = if state.is_docker {
@@ -185,7 +284,7 @@ pub async fn build_context_prompt(
 - Persistent Shell CWD: {shell_cwd}
 {platform_info}
 {shell_info}
-- Running Processes: {running_processes_text}
+- Running Processes: {running_processes_text}{recently_finished_line}
 - Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.",
         workspace_dir = state.workspace_dir,
         shell_cwd = state.shell_cwd,

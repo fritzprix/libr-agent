@@ -7,6 +7,7 @@ pub async fn health() -> Result<impl Reply, Rejection> {
         warp::reply::json(&HealthResponse {
             status: "ok".to_string(),
             service: "libr-agent-session-api".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         }),
         StatusCode::OK,
     ))

@@ -43,7 +43,8 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     isDeleting,
     togglingStatus,
     handleCreateNew,
-    handleSetupPreset,
+    handleInstallOrConfigurePreset,
+    installingPresetNames,
     retryRegistryLoad,
     handleSave,
     handleDelete,
@@ -152,7 +153,8 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
           allServers={allServers}
           registryLoaded={registryLoaded}
           registryError={registryError}
-          onSetupPreset={handleSetupPreset}
+          onInstallOrConfigurePreset={handleInstallOrConfigurePreset}
+          installingPresetNames={installingPresetNames}
           onRetryRegistryLoad={retryRegistryLoad}
         />
       </div>
@@ -160,7 +162,9 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
       {editingServer && (
         <MCPServerDialog
           server={editingServer}
-          onSave={handleSave}
+          onSave={async (server) => {
+            await handleSave(server);
+          }}
           onCancel={() => setEditingServer(null)}
           registryPresetNames={registryPresetNames}
           isExisting={allServers.some(

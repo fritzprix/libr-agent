@@ -36,6 +36,8 @@ import { mergeDisplayTokenUsage } from './token-metrics';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useSettings } from '@/hooks/use-settings';
+import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
 
 const logger = getLogger('AgentChatStatusBar');
 
@@ -103,6 +105,7 @@ export function AgentChatStatusBar() {
     setExecutionMode,
     updateSessionConfig,
     preflightTokenMetrics,
+    pendingApprovals,
   } = useAgentSession();
   const { sessions } = useAgentSessionListState();
   const [showBatchDialog, setShowBatchDialog] = useState(false);
@@ -115,6 +118,19 @@ export function AgentChatStatusBar() {
     useAgentChat();
   const { isCompacting, isAwaitingCompact } = useLLMService();
   const [showToolsModal, setShowToolsModal] = useState(false);
+  const { value: settings, update: updateSettings } = useSettings();
+
+  const handleThinkingEffortChange = useCallback(
+    async (effort: ThinkingEffort) => {
+      await updateSettings({
+        advanced: {
+          ...settings.advanced,
+          thinkingEffort: effort,
+        },
+      });
+    },
+    [settings.advanced, updateSettings],
+  );
 
   // ✅ Fetch real-time token metrics
   const sessionId = session?.id;
@@ -291,14 +307,14 @@ export function AgentChatStatusBar() {
       },
       {
         mode: 'unsafe' as const,
-        label: 'Unsafe',
+        label: 'Full Auto',
         icon: DatabaseZap,
         title: t(
           'agent.statusBar.executionModeUnsafeTitle',
-          'Unsafe mode. Approval and policy enforcement are bypassed. You are fully responsible for tool execution risk.',
+          'Full Auto mode. All tool executions are automatically approved for uninterrupted workflow.',
         ),
-        activeClass: 'bg-destructive/10 text-destructive',
-        iconClass: 'fill-destructive text-destructive',
+        activeClass: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+        iconClass: 'fill-indigo-500 text-indigo-600 dark:text-indigo-400',
       },
     ],
     [t],
@@ -475,6 +491,20 @@ export function AgentChatStatusBar() {
       };
     }
 
+    if (pendingApprovals.length > 0) {
+      return {
+        icon: <Shield className="w-4 h-4" />,
+        text: t(
+          'agent.statusBar.statusAwaitingApproval',
+          'Awaiting approval — review pending tool actions.',
+        ),
+        className:
+          'bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300',
+        showRetry: false,
+        showResume: false,
+      };
+    }
+
     switch (workflowStatus) {
       case 'idle':
         return {
@@ -531,57 +561,76 @@ export function AgentChatStatusBar() {
   };
 
   const config = getStatusConfig();
+  // Idle "waiting for input" banner adds chrome without action — hide it.
+  // Keep the strip for busy/error/approval/compact/queued/paused.
+  const showWorkflowBanner =
+    Boolean(error || llmError) ||
+    awaitingCompact ||
+    compacting ||
+    pendingApprovals.length > 0 ||
+    workflowStatus !== 'idle';
 
   return (
     <>
-      {/* Workflow status bar (top) */}
-      <div
-        className={`px-4 py-2 border-b flex items-center justify-between ${config.className}`}
-      >
-        <div className="flex items-center gap-2">
-          {config.icon}
-          <span className="text-sm">{config.text}</span>
+      {showWorkflowBanner ? (
+        <div
+          data-testid="agent-workflow-status"
+          className={`flex items-center justify-between px-4 py-1.5 ${config.className}`}
+        >
+          <div className="flex items-center gap-2">
+            {config.icon}
+            <span className="text-sm">{config.text}</span>
+          </div>
+          {config.showRetry ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRetry}
+              className="h-7"
+              disabled={isRetrying}
+            >
+              {isRetrying ? (
+                <LoadingSpinner size="sm" className="mr-1" />
+              ) : (
+                <RefreshCw className="w-3 h-3 mr-1" />
+              )}
+              {isRetrying
+                ? t('agent.statusBar.retrying')
+                : t('agent.statusBar.retry')}
+            </Button>
+          ) : null}
+          {config.showResume ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleResume}
+              className="h-7"
+              disabled={isResuming}
+            >
+              {isResuming ? (
+                <LoadingSpinner size="sm" className="mr-1" />
+              ) : (
+                <Play className="w-3 h-3 mr-1" />
+              )}
+              {isResuming
+                ? t('agent.statusBar.resuming')
+                : t('agent.statusBar.continue')}
+            </Button>
+          ) : null}
         </div>
-        {config.showRetry && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleRetry}
-            className="h-7"
-            disabled={isRetrying}
-          >
-            {isRetrying ? (
-              <LoadingSpinner size="sm" className="mr-1" />
-            ) : (
-              <RefreshCw className="w-3 h-3 mr-1" />
-            )}
-            {isRetrying
-              ? t('agent.statusBar.retrying')
-              : t('agent.statusBar.retry')}
-          </Button>
-        )}
-        {config.showResume && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleResume}
-            className="h-7"
-            disabled={isResuming}
-          >
-            {isResuming ? (
-              <LoadingSpinner size="sm" className="mr-1" />
-            ) : (
-              <Play className="w-3 h-3 mr-1" />
-            )}
-            {isResuming
-              ? t('agent.statusBar.resuming')
-              : t('agent.statusBar.continue')}
-          </Button>
-        )}
-      </div>
+      ) : null}
 
-      {/* Model and tools status bar (matches ChatStatusBar) */}
-      <div className="border-t px-4 py-2">
+      {/*
+        Single border-b under the config strip separates chrome from messages.
+        When a workflow banner is above, add border-t so banner/config stay
+        distinct without stacking against the session header border-b.
+      */}
+      <div
+        className={cn(
+          'border-b px-4 py-1.5',
+          showWorkflowBanner && 'border-t border-border/50',
+        )}
+      >
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <div className="min-w-0 w-full sm:w-auto">
             {session && (
@@ -591,6 +640,11 @@ export function AgentChatStatusBar() {
                 className="w-full sm:w-auto"
                 disabled={!canUpdateSessionConfig}
                 onConfigUpdate={handleConfigUpdate}
+                showThinkingEffort
+                thinkingEffort={settings.advanced.thinkingEffort}
+                onThinkingEffortChange={(effort) => {
+                  void handleThinkingEffortChange(effort);
+                }}
               />
             )}
           </div>

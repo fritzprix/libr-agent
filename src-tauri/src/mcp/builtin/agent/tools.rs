@@ -1,4 +1,5 @@
 use crate::mcp::builtin::tool_description::tool_description;
+use crate::mcp::wait_extension::LibragentWaitExtension;
 use serde_json::json;
 
 use crate::mcp::utils::schema_builder::*;
@@ -43,7 +44,7 @@ fn create_tool() -> MCPTool {
                 ("name".to_string(), string_prop_required("Unique name for the agent configuration.")),
                 ("description".to_string(), string_prop(None, None, Some("Short description of what this agent does. If omitted, the configuration is created without a description."))),
                 ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['planning', 'browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted (or []), only core services are enabled — list optional aliases explicitly when needed."))),
-                ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow (e.g. ['github', 'google-search']). If omitted, the configuration leaves external MCP server overrides unset."))),
+                ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow for sessions started from this config (e.g. ['github', 'google-search']). If omitted, the configuration leaves external MCP server overrides unset."))),
                 ("systemPrompt".to_string(), string_prop(None, None, Some("The core personality and instructions for the agent. If omitted, no custom system prompt is stored."))),
             ],
             vec!["name".to_string()],
@@ -51,6 +52,7 @@ fn create_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -110,6 +112,7 @@ fn list_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -118,15 +121,16 @@ fn update_tool() -> MCPTool {
         name: "updateAgent".to_string(),
         title: Some("Update Agent Configuration".to_string()),
         description: tool_description(
-            "Update an existing agent configuration including system prompt and tool access.",
+            "Update an existing agent configuration template (system prompt and tool access). Changes apply to future sessions only — they cannot add or modify tools in a currently active session.",
             &["Configuration ID from agent__listAgents(type='configs')."],
             &[
                 "Pass the config id and only the fields to change.",
                 "Model selection and sampling defaults are controlled elsewhere — not via this tool.",
+                "You cannot update the assistant configuration your current session is already running as.",
             ],
             &[
-                "Verify capabilities with agent__listAgents(verbose=true).",
-                "Attach MCP servers using IDs from tool__listServers.",
+                "Verify the template with agent__listAgents(verbose=true).",
+                "Start a new session (or agent__startSession) to run with the updated tool access.",
             ],
         ),
         input_schema: object_prop(
@@ -144,7 +148,7 @@ fn update_tool() -> MCPTool {
                     string_prop(None, None, Some("New description. If omitted, keep the current description unchanged.")),
                 ),
                 ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("Replace the optional builtin service aliases that are added on top of the always-on core services. If omitted, keep the current optional builtin capability list unchanged."))),
-                ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("Replace the allowed external MCP server IDs. If omitted, keep the current external MCP server list unchanged."))),
+                ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("Replace the allowed external MCP server IDs for future sessions using this config. Does not change tools in currently running sessions. If omitted, keep the current external MCP server list unchanged."))),
                 (
                     "systemPrompt".to_string(),
                     string_prop(None, None, Some("New system instructions. If omitted, keep the current system prompt unchanged.")),
@@ -155,6 +159,7 @@ fn update_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -178,6 +183,7 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -186,7 +192,7 @@ fn start_session_tool() -> MCPTool {
         name: "startSession".to_string(),
         title: Some("Start Agent Session".to_string()),
         description: tool_description(
-            "Spawn a new child agent session to delegate a specific task.",
+            "Start a new sub-agent session when no suitable existing session is available, or when a distinct role, parallel capacity, or isolated workspace is needed. Reuse a suitable idle session with the same assistant configuration via agent__messageToSession when possible.",
             &["Agent configuration ID from agent__listAgents(type='configs')."],
             &[
                 "Pass agentId (config ID, not name) and a clear task description.",
@@ -223,6 +229,7 @@ fn start_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -252,6 +259,7 @@ fn create_org_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -285,6 +293,7 @@ fn get_org_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -293,13 +302,14 @@ fn message_to_session_tool() -> MCPTool {
         name: "messageToSession".to_string(),
         title: Some("Message Agent Session".to_string()),
         description: tool_description(
-            "Send a follow-up message to an existing sub-agent session to continue or recover the conversation.",
+            "Send new work or follow-up instructions to an existing delegated session. Reuse a suitable idle session with the same assistant configuration when possible.",
             &["Session ID from agent__startSession or agent__listAgents(type='sessions')."],
             &[
                 "Pass sessionId and the message or instruction.",
-                "Use to wake paused or error sessions and retry from the latest stable state.",
+                "Use to continue ongoing work, assign new work to an idle matching-role session, or recover a paused or error session.",
                 "Set waitForResponse=false to send without blocking.",
-                "Set reset=true to clear the target session's message history and planning/compaction state before injecting the new message (defaults to false).",
+                "Set reset=true only when the previous conversation and runtime state should be discarded. This clears messages, planning/compaction state, and pending messages, but does not clean workspace files (defaults to false).",
+                "Messages sent to a busy session may be queued until its current work finishes.",
             ],
             &[
                 "Check outcome with agent__checkSession(wait=true).",
@@ -336,7 +346,7 @@ fn message_to_session_tool() -> MCPTool {
                 (
                     "reset".to_string(),
                     {
-                        let mut schema = boolean_prop(Some("If true, clear/reset the target session's message history and planning/compaction state before injecting the new message (preserving active browser session state for continuation). Defaults to false."));
+                        let mut schema = boolean_prop(Some("If true, discard the target session's messages, planning/compaction state, pending messages, and runtime state before injecting the new message. This does not clean workspace files and closes the target browser session. Defaults to false."));
                         schema.default = Some(json!(false));
                         schema
                     },
@@ -347,6 +357,7 @@ fn message_to_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -360,6 +371,7 @@ fn check_session_tool() -> MCPTool {
             &[
                 "Call with wait=false for a snapshot or wait=true to block until terminal state.",
                 "After the status line (before Result), a fenced Metadata block adds identity/routing only (assistant, workspace) — not the child's answer. Session title/name is omitted.",
+                "workspace is tagged SHARED with caller or ISOLATED (different from caller). Isolated child files are not in the caller root — use the absolute path or Result text.",
                 "Paused or error sessions need recovery via agent__messageToSession.",
             ],
             &[
@@ -390,6 +402,7 @@ fn check_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: Some(LibragentWaitExtension::check_session()),
     }
 }
 
@@ -421,6 +434,7 @@ fn stop_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -461,6 +475,7 @@ fn compact_session_context_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }
 
@@ -489,5 +504,6 @@ fn delete_session_tool() -> MCPTool {
         ),
         output_schema: None,
         annotations: None,
+        libragent_wait: None,
     }
 }

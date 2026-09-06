@@ -25,6 +25,7 @@ Rule: if a section is empty, the reviewer must write `None` explicitly so the pa
 ## Panel Handoff Wrapper
 
 Use the same wrapper for each child; change only `[PERSPECTIVE]` and optional lens-specific instructions.
+This is how you get independent lenses **without** `agent__createAgent` — reuse existing configs and let the task set the persona for that run.
 
 ```text
 You are reviewing as: [PERSPECTIVE — e.g. security reviewer, performance reviewer]
@@ -105,7 +106,8 @@ Lens-specific focus (example — compliance):
 
 If reviewers must read the same repository:
 
-- pass the same `workspaceOverride` to every `agent__startSession`, or
+- pass the same `workspaceOverride` when creating each reviewer with `agent__startSession`, or
+- reuse only an Idle reviewer whose existing workspace is already compatible, because `agent__messageToSession` does not change its workspace, or
 - paste the minimum excerpts each reviewer needs when sharing a workspace is impossible
 
 Never assume children inherit the parent workspace or workspace `agents.md` without explicit action. See `delegate` for the full isolation matrix.

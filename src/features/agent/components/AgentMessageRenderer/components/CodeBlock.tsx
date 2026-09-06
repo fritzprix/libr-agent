@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { Highlight, themes } from 'prism-react-renderer';
+import { cn } from '@/lib/utils';
 
 // Extract CodeBlock component to allow injecting isDark prop
 // Memoized to prevent expensive syntax highlighting re-runs during text streaming
@@ -28,7 +29,10 @@ export const CodeBlock = memo(
       // Inline code
       return (
         <code
-          className="px-1.5 py-0.5 bg-slate-200/60 dark:bg-slate-800/60 rounded text-sm font-mono font-semibold text-indigo-600 dark:text-indigo-300 border border-border/80 break-all"
+          className={cn(
+            'markdown-inline-code px-1.5 py-0.5 mx-0.5 rounded-md font-mono text-[0.875em] font-medium bg-muted/80 dark:bg-muted/50 text-foreground dark:text-foreground/90 border border-border/80 dark:border-border/60 break-all transition-colors',
+            className,
+          )}
           {...props}
         >
           {children}

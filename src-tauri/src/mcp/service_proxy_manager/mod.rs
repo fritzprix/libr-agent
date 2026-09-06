@@ -1,5 +1,5 @@
 use sea_orm::DatabaseConnection;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
@@ -10,6 +10,19 @@ use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::session::SessionManager;
+use sha2::{Digest, Sha256};
+
+const MAX_PROCESS_CANCEL_RETRIES: usize = 1;
+
+#[derive(Debug, Clone)]
+struct ProcessCancelRetryState {
+    tool_name: String,
+    arguments_digest: [u8; 32],
+}
+
+fn process_cancel_arguments_digest(arguments: &str) -> [u8; 32] {
+    Sha256::digest(arguments.as_bytes()).into()
+}
 
 mod background_discovery;
 mod caching;
@@ -25,6 +38,7 @@ mod test_helpers;
 mod tests;
 
 pub use caching::{persist_tool_cache_for_server, spawn_tool_cache_update};
+pub use creation::promote_builtin_reuse_runtime_state;
 pub use management::{decide_proxy_readiness_state, ProxyReadinessEntry, ProxyReadinessState};
 pub use proxy_config::{decide_existing_proxy_disposition, ExistingProxyDisposition};
 
@@ -75,6 +89,16 @@ pub struct MCPServiceProxyManager {
 
     /// Structured runtime state snapshots owned by Rust and pushed to the frontend.
     runtime_states: Arc<RwLock<HashMap<String, SessionRuntimeState>>>,
+
+    /// Sessions whose active process was stopped by a user cancel. The next
+    /// foreground tool result consumes this marker and continues the workflow.
+    process_cancel_pending: Arc<Mutex<HashSet<String>>>,
+
+    /// Bounds repeated retries of the exact tool call that was cancelled.
+    process_cancel_retry_states: Arc<Mutex<HashMap<String, ProcessCancelRetryState>>>,
+
+    /// Session-wide safety net for retries that change tool arguments between attempts.
+    process_cancel_retry_counts: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 impl std::fmt::Debug for MCPServiceProxyManager {
@@ -93,6 +117,15 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("config", &self.config)
             .field("proxy_readiness", &"<RwLock<HashMap>>")
             .field("runtime_states", &"<RwLock<HashMap>>")
+            .field("process_cancel_pending", &"<Mutex<HashSet<String>>>")
+            .field(
+                "process_cancel_retry_states",
+                &"<Mutex<HashMap<String, ProcessCancelRetryState>>>",
+            )
+            .field(
+                "process_cancel_retry_counts",
+                &"<Mutex<HashMap<String, usize>>>",
+            )
             .finish()
     }
 }

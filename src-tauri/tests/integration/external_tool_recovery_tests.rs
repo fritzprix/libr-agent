@@ -205,8 +205,12 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
         "guidance should explain how to attach the missing server: {text}"
     );
     assert!(
-        text.contains("agent__listAgents(type=\"configs\")"),
-        "guidance should point toward alternative agents: {text}"
+        text.contains("future sessions only"),
+        "guidance must state updateAgent is future-session-only: {text}"
+    );
+    assert!(
+        text.contains("already-running session"),
+        "guidance must state updateAgent cannot change the current session: {text}"
     );
     assert!(
         text.contains("agent__startSession"),
