@@ -1,7 +1,17 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  lazy,
+  Suspense,
+} from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { AlertCircle, Settings, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
 import { AssistantSelectionCard } from './components/AssistantSelectionCard';
 import { getLogger } from '@/lib/logger';
@@ -9,6 +19,14 @@ import { toast } from 'sonner';
 import { getPlaybook } from '@/lib/backend/playbooks';
 import { getAssistant, type AssistantSummary } from '@/lib/backend/assistants';
 import { useAssistantSummaries } from './hooks/useAssistantSummaries';
+import { useSettings } from '@/hooks/use-settings';
+import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
+
+const MorningBriefingWalkthroughDialog = lazy(() =>
+  import('@/features/recipes').then((m) => ({
+    default: m.MorningBriefingWalkthroughDialog,
+  })),
+);
 
 const logger = getLogger('AgentChatStartView');
 
@@ -49,15 +67,58 @@ async function findPlaybookMatch(
 export default function AgentChatStartView() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { value: settings } = useSettings();
   const { assistants, loading, error } = useAssistantSummaries();
   const { createSession } = useAgentSessionListActions();
   const [isCreating, setIsCreating] = useState(false);
   const [startingAssistantId, setStartingAssistantId] = useState<string | null>(
     null,
   );
+  const [walkthroughOpen, setWalkthroughOpen] = useState(false);
   const [searchParams] = useSearchParams();
   const processingPlaybookRef = useRef(false);
   const playbookId = searchParams.get('playbookId');
+
+  const [isRecipeDismissed, setIsRecipeDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return (
+        localStorage.getItem('libragent:morning-briefing:completed') ===
+          'true' ||
+        localStorage.getItem('libragent:morning-briefing:dismissed') === 'true'
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  const isRecipeVisible = useMemo(() => {
+    if (isRecipeDismissed) return false;
+    if (typeof window === 'undefined') return true;
+    try {
+      return (
+        localStorage.getItem('libragent:morning-briefing:completed') !==
+          'true' &&
+        localStorage.getItem('libragent:morning-briefing:dismissed') !== 'true'
+      );
+    } catch {
+      return true;
+    }
+  }, [isRecipeDismissed, walkthroughOpen]);
+
+  const handleDismissRecipe = () => {
+    try {
+      localStorage.setItem('libragent:morning-briefing:dismissed', 'true');
+    } catch (e) {
+      logger.warn('Failed to set recipe dismissal flag in localStorage', e);
+    }
+    setIsRecipeDismissed(true);
+  };
+
+  const hasConfiguredProviders = useMemo(
+    () => listConfiguredProviderGroups(settings).length > 0,
+    [settings],
+  );
 
   // Handle Playbook Auto-Start
   useEffect(() => {
@@ -189,6 +250,96 @@ export default function AgentChatStartView() {
           </p>
         </div>
 
+        {/* Onboarding Banner */}
+        {!hasConfiguredProviders && (
+          <div
+            data-testid="onboarding-banner"
+            className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-card-foreground shadow-sm dark:border-amber-400/30 dark:bg-amber-400/10 animate-in fade-in slide-in-from-top-2 duration-500"
+          >
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 shrink-0 text-amber-500 dark:text-amber-400 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {t('agent.start.onboardingBannerTitle', {
+                    defaultValue: 'AI Model Configuration Required',
+                  })}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {t('agent.start.onboardingBannerDesc', {
+                    defaultValue:
+                      'To start using agent sessions, please configure an AI model provider (OpenAI, Anthropic, Ollama, etc.) first.',
+                  })}
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => navigate('/settings?tab=ai-models')}
+              size="sm"
+              className="shrink-0 gap-1.5 self-end sm:self-center"
+            >
+              <Settings className="h-4 w-4" />
+              {t('agent.start.goToSettings', {
+                defaultValue: 'Configure AI Model',
+              })}
+            </Button>
+          </div>
+        )}
+
+        {/* Featured Recipe Card */}
+        {isRecipeVisible && (
+          <div
+            data-testid="featured-recipe-card"
+            className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 p-5 text-card-foreground shadow-sm animate-in fade-in slide-in-from-top-2 duration-500"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="dismiss-recipe-button"
+              className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground"
+              aria-label={t('agent.start.dismissRecipe', {
+                defaultValue: '추천 레시피 닫기',
+              })}
+              onClick={handleDismissRecipe}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            <div className="flex items-start gap-3 pr-8 sm:pr-0">
+              <div className="rounded-lg bg-primary/10 p-2.5 text-primary shrink-0 mt-0.5">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {t(
+                      'agent.start.featuredRecipeTitle',
+                      '🌅 5분 만에 만드는 나만의 모닝 브리핑 비서',
+                    )}
+                  </h3>
+                  <Badge
+                    variant="default"
+                    className="text-[10px] px-1.5 py-0 h-4 bg-primary/80"
+                  >
+                    YOLO
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'agent.start.featuredRecipeDesc',
+                    'Hacker News의 테크 트렌드와 Yahoo Finance 실시간 지표를 결합해 매일 아침 브리핑합니다.',
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => setWalkthroughOpen(true)}
+              size="sm"
+              className="shrink-0 gap-1.5 self-end sm:self-center"
+            >
+              {t('agent.start.startWalkthrough', '가이드 워크스루 시작')}
+            </Button>
+          </div>
+        )}
+
         {/* Built-in Assistants */}
         {builtinAssistants.length > 0 && (
           <section
@@ -261,6 +412,30 @@ export default function AgentChatStartView() {
           </div>
         )}
       </div>
+
+      {walkthroughOpen && (
+        <Suspense fallback={null}>
+          <MorningBriefingWalkthroughDialog
+            open={walkthroughOpen}
+            onOpenChange={(open) => {
+              setWalkthroughOpen(open);
+              if (!open) {
+                try {
+                  const completed =
+                    localStorage.getItem(
+                      'libragent:morning-briefing:completed',
+                    ) === 'true';
+                  if (completed) {
+                    setIsRecipeDismissed(true);
+                  }
+                } catch {
+                  // ignore localStorage read error
+                }
+              }
+            }}
+          />
+        </Suspense>
+      )}
     </main>
   );
 }

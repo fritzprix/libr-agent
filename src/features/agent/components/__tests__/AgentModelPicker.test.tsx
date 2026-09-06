@@ -7,6 +7,8 @@ import { encodeModelChoice } from '@/lib/ai-service/model-choice-encoding';
 import type { ModelInfo } from '@/lib/llm-config-manager';
 import { AgentModelPicker } from '../AgentModelPicker';
 
+const mockNavigate = vi.fn();
+
 const mockGroupedModelsState = vi.hoisted(() => ({
   groupedModels: [
     {
@@ -37,6 +39,10 @@ const mockGroupedModelsState = vi.hoisted(() => ({
   canRefresh: true,
   refreshBlockedReason: 'allowed',
   getModelInfo: vi.fn((): ModelInfo | undefined => undefined),
+}));
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => mockNavigate,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -156,6 +162,7 @@ vi.mock('@/hooks/use-settings', () => ({
 describe('AgentModelPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGroupedModelsState.hasConfiguredProviders = true;
     mockGroupedModelsState.isRefreshing = false;
     mockGroupedModelsState.canRefresh = true;
     mockGroupedModelsState.refreshBlockedReason = 'allowed';
@@ -275,5 +282,70 @@ describe('AgentModelPicker', () => {
     expect(control).not.toBeDisabled();
     fireEvent.click(control);
     expect(onThinkingEffortChange).toHaveBeenCalledWith('high');
+  });
+
+  it('renders configure button and navigates to /settings?tab=ai-models when no providers are configured', () => {
+    mockGroupedModelsState.hasConfiguredProviders = false;
+
+    render(
+      <AgentModelPicker currentModel="model-1" currentProvider="ollama" />,
+    );
+
+    expect(screen.queryByTestId('model-select')).not.toBeInTheDocument();
+
+    const configureButton = screen.getByRole('button', {
+      name: 'Configure AI Model',
+    });
+    expect(configureButton).toBeInTheDocument();
+
+    fireEvent.click(configureButton);
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=ai-models');
+  });
+
+  it('supports keyboard navigation on configure button when no providers are configured', () => {
+    mockGroupedModelsState.hasConfiguredProviders = false;
+
+    render(<AgentModelPicker />);
+
+    const configureButton = screen.getByRole('button', {
+      name: 'Configure AI Model',
+    });
+    expect(configureButton).toHaveAttribute('tabIndex', '0');
+
+    fireEvent.keyDown(configureButton, { key: 'Enter' });
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=ai-models');
+
+    mockNavigate.mockClear();
+    fireEvent.keyDown(configureButton, { key: ' ' });
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=ai-models');
+  });
+
+  it('does not render configure button when disableConfigureAction is true or in configuration context', () => {
+    mockGroupedModelsState.hasConfiguredProviders = false;
+
+    const { rerender } = render(
+      <AgentModelPicker
+        disableConfigureAction
+        currentModel="model-1"
+        currentProvider="ollama"
+      />,
+    );
+
+    expect(
+      screen.queryByRole('button', { name: 'Configure AI Model' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('model-select')).toBeInTheDocument();
+
+    rerender(
+      <AgentModelPicker
+        customProviders={[]}
+        currentModel="model-1"
+        currentProvider="ollama"
+      />,
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Configure AI Model' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('model-select')).toBeInTheDocument();
   });
 });

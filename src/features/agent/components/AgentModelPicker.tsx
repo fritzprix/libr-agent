@@ -1,7 +1,8 @@
 import { FC, useCallback, useMemo } from 'react';
 import React from 'react';
-import { RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 import {
   Tooltip,
@@ -50,6 +51,11 @@ interface AgentModelPickerProps {
    * Optional override for service configs (e.g. settings form draft).
    */
   serviceConfigs?: Record<string, ServiceConfig>;
+  /**
+   * When true, disables rendering the configure shortcut button even if no providers are configured.
+   * Useful when rendered inside settings pages.
+   */
+  disableConfigureAction?: boolean;
 }
 
 const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
@@ -63,8 +69,10 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   showThinkingEffort = false,
   customProviders: customProvidersProp,
   serviceConfigs: serviceConfigsProp,
+  disableConfigureAction = false,
 }) => {
   const { t } = useTranslation('common');
+  const navigate = useNavigate();
   const {
     value: { advanced },
   } = useSettings();
@@ -163,8 +171,47 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
     [onConfigUpdate],
   );
 
-  if (!hasConfiguredProviders && !currentProvider && !currentModel) {
-    return null;
+  const isConfigurationContext =
+    disableConfigureAction ||
+    customProvidersProp !== undefined ||
+    serviceConfigsProp !== undefined;
+
+  const handleConfigureClick = useCallback(() => {
+    navigate('/settings?tab=ai-models');
+  }, [navigate]);
+
+  const handleConfigureKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        navigate('/settings?tab=ai-models');
+      }
+    },
+    [navigate],
+  );
+
+  if (!hasConfiguredProviders && !isConfigurationContext) {
+    return (
+      <button
+        type="button"
+        tabIndex={disabled ? -1 : 0}
+        disabled={disabled}
+        onClick={handleConfigureClick}
+        onKeyDown={handleConfigureKeyDown}
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-400 dark:hover:bg-amber-400/20',
+          disabled && 'pointer-events-none opacity-50',
+          className,
+        )}
+      >
+        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-500 dark:text-amber-400" />
+        <span>
+          {t('agent.modelPicker.configureRequired', {
+            defaultValue: 'Configure AI Model',
+          })}
+        </span>
+      </button>
+    );
   }
 
   return (

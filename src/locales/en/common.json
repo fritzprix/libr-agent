@@ -1045,6 +1045,7 @@
       "approveShortcutBadge": "⌘↵"
     },
     "draft": {
+      "llmRequired": "Please configure an AI model provider first.",
       "send": "Send message",
       "attachFiles": "Attach files",
       "attachedFiles": "Attached Files",
@@ -1267,7 +1268,8 @@
       "model": "Model",
       "loading": "Loading...",
       "refreshModels": "Refresh models",
-      "refreshRequiresApiKey": "Add an API key to enable model refresh"
+      "refreshRequiresApiKey": "Add an API key to enable model refresh",
+      "configureRequired": "Configure AI Model"
     },
     "toolsModal": {
       "title": "Available Tools",
@@ -1405,6 +1407,9 @@
       "heroSubtitle": "Select an assistant to begin a new autonomous session.",
       "builtinAssistants": "Built-in Assistants",
       "myAssistants": "My Assistants",
+      "onboardingBannerTitle": "AI Model Configuration Required",
+      "onboardingBannerDesc": "To start using agent sessions, please configure an AI model provider (OpenAI, Anthropic, Ollama, etc.) first.",
+      "goToSettings": "Configure AI Model",
       "assistantsLoadFailed": "Failed to load assistants.",
       "noAssistantsAvailable": "No assistants available yet.",
       "createAssistant": "Create Assistant",
@@ -1413,7 +1418,10 @@
       "assistantNotFound": "Assistant not found",
       "startingPlaybook": "Starting playbook: {{goal}}",
       "failedToStartPlaybookSession": "Failed to start playbook session",
-      "startingSession": "Starting session..."
+      "startingSession": "Starting session...",
+      "featuredRecipeTitle": "Create Your Morning Briefing Assistant in 5 Minutes",
+      "featuredRecipeDesc": "Combine Hacker News tech trends with real-time Yahoo Finance indicators for a daily morning briefing.",
+      "startWalkthrough": "Start Guided Walkthrough"
     },
     "chat": {
       "loadingSession": "Loading session...",
@@ -1449,6 +1457,21 @@
     "newTask": "New task",
     "noTasks": "No scheduled tasks yet",
     "createFirst": "Create your first task",
+    "createBlank": "Create blank task",
+    "starterTemplates": {
+      "title": "Starter Templates",
+      "subtitle": "Quickly set up recurring automated tasks with pre-configured templates",
+      "useTemplate": "Use template",
+      "pcAuditTitle": "Daily PC Health & Security Audit",
+      "pcAuditDesc": "Inspect disk usage, uncommitted Git changes, suspicious processes, and package vulnerabilities every midnight.",
+      "pcAuditName": "Daily PC Health & Security Audit",
+      "pcAuditMessage": "Use the workspace shell to perform a comprehensive check on disk space (df -h), long-running processes, uncommitted git status, and package vulnerabilities (audit), then generate a daily briefing markdown report.",
+      "webSummaryTitle": "Website Update & Headline Briefing",
+      "webSummaryDesc": "Visit tech news or blogs with the browser every morning to summarize the top 3 headlines.",
+      "webSummaryName": "Website Update & Headline Briefing",
+      "webSummaryMessage": "Visit Hacker News (https://news.ycombinator.com) using the browser tool and summarize today's top 3 tech headlines into a 3-bullet briefing.",
+      "openWalkthrough": "Open Morning Briefing Walkthrough"
+    },
     "disabled": "disabled",
     "nextRun": "Next run: {{time}}",
     "nextRunNone": "—",
@@ -1485,6 +1508,7 @@
       "messageHint": "Use @playbook:, @skill:, or @file: for autocomplete.",
       "workspaceAutocompleteHint": "Workspace override enables @skill: and @file: autocomplete.",
       "messagePlaceholder": "Type a message… use @playbook:, @skill:, or @file: for autocomplete",
+      "unsafeNotice": "⚠️ Unsafe mode is applied so terminal commands are not interrupted during unattended execution.",
       "resetPlanningLabel": "Reset planning state before run",
       "resetPlanningHint": "Clears goal, todos, and scratchpad before injecting the message. Does not wipe chat history.",
       "cancel": "Cancel",
@@ -1547,7 +1571,8 @@
     "title": "Error",
     "unknownError": "An unknown error occurred.",
     "retrying": "Retrying...",
-    "tryAgain": "Try Again"
+    "tryAgain": "Try Again",
+    "goToSettings": "Configure API Key in Settings"
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",
@@ -1596,5 +1621,39 @@
       "relatedEntity": "Related entity"
     },
     "excerpt": "Excerpt"
+  },
+  "recipes": {
+    "morningBriefing": {
+      "title": "Morning Tech & Finance Briefing",
+      "desc": "Combine Hacker News tech trends with real-time Yahoo Finance indicators for a daily morning briefing.",
+      "modalTitle": "🌅 Morning Tech & Finance Briefing Setup",
+      "step1Title": "Step 1 · Check AI Model Configuration",
+      "step2Title": "Step 2 · Install Free Extensions",
+      "step3Title": "Step 3 · Assistant & Automated Schedule",
+      "connected": "Connected",
+      "required": "Configuration Required",
+      "connectedDesc": "AI model provider is configured and ready for briefing generation.",
+      "unconfiguredTitle": "No AI model provider configured.",
+      "unconfiguredDesc": "To generate briefings, please configure an AI model provider (OpenAI, Anthropic, Ollama, etc.) first.",
+      "goToSettings": "Go to Settings",
+      "freeTag": "💡 100% Free · No API Key Required",
+      "hnTitle": "Hacker News (hn)",
+      "hnDesc": "Fetch trending tech & developer stories from Hacker News in real-time",
+      "yfTitle": "Yahoo Finance (yahoo-finance)",
+      "yfDesc": "Real-time global market indices (S&P 500, Nasdaq, FX, stocks) with no API key",
+      "builtinToolsBadge": "Built-in Tools Enabled",
+      "scheduleBadge": "Daily 09:00 AM (YOLO Mode)",
+      "settingUp": "Setting up...",
+      "actionButton": "🚀 Auto Setup & Receive Briefing Now",
+      "llmRequiredToast": "Please configure an AI model provider first.",
+      "setupSuccess": "Morning Briefing assistant and scheduled task created successfully!",
+      "setupError": "Failed to set up morning briefing.",
+      "assistantName": "Morning Briefing Assistant",
+      "assistantDesc": "Specialized assistant for summarizing Hacker News tech trends and global financial metrics",
+      "assistantSystemPrompt": "You are a professional briefing assistant providing fast and crisp daily summaries of global tech trends and key financial indicators. Use Hacker News (hn tools) to summarize top 3 development/tech topics, and Yahoo Finance (yahoo-finance tools) to report key market indices including S&P 500, Nasdaq, and major currencies into a concise markdown report.",
+      "scheduledTaskName": "Daily 9:00 AM Morning Briefing",
+      "scheduledTaskMessage": "Synthesize today's top 3 Hacker News stories and key market indices (S&P 500, Nasdaq) into a daily morning briefing report.",
+      "testRunPrompt": "Check today's top 3 Hacker News stories and key stock indices, and write today's morning briefing report right now."
+    }
   }
 }

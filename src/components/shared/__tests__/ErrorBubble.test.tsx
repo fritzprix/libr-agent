@@ -1,12 +1,18 @@
 import '@testing-library/jest-dom';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MessageError } from '@/models/chat';
 import { ErrorBubble } from '../ErrorBubble';
 
+const mockNavigate = vi.fn();
+
 const loggerMocks = vi.hoisted(() => ({
   info: vi.fn(),
+}));
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => mockNavigate,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -22,6 +28,7 @@ vi.mock('@/lib/logger', () => ({
 describe('ErrorBubble', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockNavigate.mockClear();
   });
 
   it('logs the same error only once across rerenders', () => {
@@ -71,5 +78,23 @@ describe('ErrorBubble', () => {
     rerender(<ErrorBubble error={secondError} />);
 
     expect(loggerMocks.info).toHaveBeenCalledTimes(2);
+  });
+
+  it('displays the "Go to Settings" button for AUTHENTICATION_ERROR and clicking navigates to /settings', () => {
+    const error: MessageError = {
+      displayMessage: 'Invalid API Key provided',
+      type: 'AUTHENTICATION_ERROR',
+      recoverable: false,
+    };
+
+    render(<ErrorBubble error={error} />);
+
+    const settingsButton = screen.getByRole('button', {
+      name: /Configure API Key in Settings/i,
+    });
+    expect(settingsButton).toBeInTheDocument();
+
+    fireEvent.click(settingsButton);
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=ai-models');
   });
 });

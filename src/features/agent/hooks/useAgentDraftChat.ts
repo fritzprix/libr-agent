@@ -12,6 +12,7 @@ import type { AgentResponse, AgentSessionMetadata } from '@/models/agent-ipc';
 import type { AssistantDto } from '@/lib/backend/assistants';
 import { parseAssistant } from '@/models/validation';
 import { useSettings } from '@/context/SettingsContext';
+import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
 import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
 import { checkDroppedPathType } from '@/lib/backend';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
@@ -58,7 +59,9 @@ export function useAgentDraftChat() {
   const { value: settings } = useSettings();
   const [searchParams] = useSearchParams();
   const [assistant, setAssistant] = useState<Assistant | null>(null);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(
+    () => searchParams.get('prompt') || searchParams.get('initialInput') || '',
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingAssistant, setIsLoadingAssistant] = useState(true);
 
@@ -99,6 +102,10 @@ export function useAgentDraftChat() {
     id: string | number;
     sessionId: string;
   } | null>(null);
+  const autoSubmitRef = useRef(false);
+  const lastAppliedPromptRef = useRef<string | null>(
+    searchParams.get('prompt') || searchParams.get('initialInput'),
+  );
 
   const rustBackend = useRustBackend();
   const { subscribe } = useDnDContext();
@@ -304,6 +311,15 @@ export function useAgentDraftChat() {
   }, [searchParams, navigate, t]);
 
   useEffect(() => {
+    const promptParam =
+      searchParams.get('prompt') || searchParams.get('initialInput');
+    if (promptParam && promptParam !== lastAppliedPromptRef.current) {
+      lastAppliedPromptRef.current = promptParam;
+      setInput(promptParam);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
 
     void listen<AgentEventPayload>('agent:event', (event) => {
@@ -341,6 +357,23 @@ export function useAgentDraftChat() {
       isSubmitting
     )
       return;
+
+    const hasConfiguredProviders =
+      listConfiguredProviderGroups(settings).length > 0;
+    if (!hasConfiguredProviders) {
+      toast.error(
+        t('agent.draft.llmRequired', {
+          defaultValue: 'AI 모델 제공자를 먼저 설정해야 합니다.',
+        }),
+        {
+          action: {
+            label: t('common.settings', { defaultValue: '설정' }),
+            onClick: () => navigate('/settings?tab=ai-models'),
+          },
+        },
+      );
+      return;
+    }
 
     if (workspaceIsolation === 'docker' && !dockerImage.trim()) {
       toast.error(t('agent.draft.dockerImageRequired'));
@@ -567,6 +600,30 @@ export function useAgentDraftChat() {
     workspaceIsolation,
     dockerImage,
     t,
+  ]);
+
+  useEffect(() => {
+    const hasConfiguredProviders =
+      listConfiguredProviderGroups(settings).length > 0;
+    if (
+      searchParams.get('autoSubmit') === 'true' &&
+      hasConfiguredProviders &&
+      !isLoadingAssistant &&
+      assistant &&
+      input.trim() &&
+      !isSubmitting &&
+      !autoSubmitRef.current
+    ) {
+      autoSubmitRef.current = true;
+      void submitDraft();
+    }
+  }, [
+    searchParams,
+    isLoadingAssistant,
+    assistant,
+    input,
+    isSubmitting,
+    submitDraft,
   ]);
 
   const handleSubmit = useCallback(

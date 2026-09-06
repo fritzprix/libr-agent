@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { useCallback, useState, type CSSProperties } from 'react';
+import { useCallback, useState, useMemo, type CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import {
@@ -15,6 +16,7 @@ import AgentSessionHeader from './components/AgentSessionHeader';
 import { DraftCapabilitiesSection } from './components/DraftCapabilitiesSection';
 import { Send, Loader2, Bot } from 'lucide-react';
 import { useSettings } from '@/context/SettingsContext';
+import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
 import { EditorProvider } from '@/context/EditorContext';
 import { updateAssistant } from '@/lib/backend/assistants';
 import { getLogger } from '@/lib/logger';
@@ -39,8 +41,14 @@ const textareaStyle = {
 
 function DraftChatInner() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { value: settings } = useSettings();
   const [toolsEditorOpen, setToolsEditorOpen] = useState(false);
+
+  const hasConfiguredProviders = useMemo(
+    () => listConfiguredProviderGroups(settings).length > 0,
+    [settings],
+  );
 
   const {
     assistant,
@@ -99,6 +107,25 @@ function DraftChatInner() {
     },
     [setAssistant, t],
   );
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!hasConfiguredProviders) {
+      toast.error(
+        t('agent.draft.llmRequired', {
+          defaultValue: 'AI 모델 제공자를 먼저 설정해야 합니다.',
+        }),
+        {
+          action: {
+            label: t('common.settings', { defaultValue: '설정' }),
+            onClick: () => navigate('/settings?tab=ai-models'),
+          },
+        },
+      );
+      return;
+    }
+    handleSubmit(e);
+  };
 
   const fileQuery =
     stage.kind === 'typing-arg' && stage.typeName === 'file'
@@ -328,7 +355,7 @@ function DraftChatInner() {
 
                   <form
                     ref={formRef}
-                    onSubmit={handleSubmit}
+                    onSubmit={handleFormSubmit}
                     className={cn(
                       'flex items-end gap-2 bg-background/60 backdrop-blur-md p-3 border border-border/50 shadow-2xl focus-within:ring-1 focus-within:ring-primary/20 transition-all duration-300',
                       hasAttachedFiles
@@ -389,6 +416,24 @@ function DraftChatInner() {
 
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
+                          if (!hasConfiguredProviders) {
+                            toast.error(
+                              t('agent.draft.llmRequired', {
+                                defaultValue:
+                                  'AI 모델 제공자를 먼저 설정해야 합니다.',
+                              }),
+                              {
+                                action: {
+                                  label: t('common.settings', {
+                                    defaultValue: '설정',
+                                  }),
+                                  onClick: () =>
+                                    navigate('/settings?tab=ai-models'),
+                                },
+                              },
+                            );
+                            return;
+                          }
                           if (
                             !isAttachmentLoading &&
                             (input.trim() || hasAttachedFiles)
@@ -446,6 +491,26 @@ function DraftChatInner() {
                               isSubmitting ||
                               isAttachmentLoading
                             }
+                            onClick={(e) => {
+                              if (!hasConfiguredProviders) {
+                                e.preventDefault();
+                                toast.error(
+                                  t('agent.draft.llmRequired', {
+                                    defaultValue:
+                                      'AI 모델 제공자를 먼저 설정해야 합니다.',
+                                  }),
+                                  {
+                                    action: {
+                                      label: t('common.settings', {
+                                        defaultValue: '설정',
+                                      }),
+                                      onClick: () =>
+                                        navigate('/settings?tab=ai-models'),
+                                    },
+                                  },
+                                );
+                              }
+                            }}
                             size="icon"
                             className={cn(
                               'shadow-lg transition-all active:scale-95',
@@ -468,7 +533,12 @@ function DraftChatInner() {
                         </span>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {t('agent.input.sendTooltip', 'Send')}
+                        {!hasConfiguredProviders
+                          ? t('agent.draft.llmRequired', {
+                              defaultValue:
+                                'AI 모델 제공자를 먼저 설정해야 합니다.',
+                            })
+                          : t('agent.input.sendTooltip', 'Send')}
                       </TooltipContent>
                     </Tooltip>
                   </form>

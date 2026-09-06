@@ -57,9 +57,36 @@ const createDraftChatState = () => ({
   onDismiss: vi.fn(),
 });
 
+const mocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  toastError: vi.fn(),
+}));
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>(
+    'react-router-dom',
+  );
+  return {
+    ...actual,
+    useNavigate: () => mocks.navigate,
+  };
+});
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: (...args: unknown[]) => mocks.toastError(...args),
+  },
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, options?: string | { defaultValue?: string }) => {
+      if (typeof options === 'string') return options;
+      if (options && typeof options === 'object' && 'defaultValue' in options) {
+        return options.defaultValue ?? key;
+      }
+      return key;
+    },
   }),
 }));
 
@@ -69,6 +96,8 @@ const settingsMock = {
       defaultMaxOutputTokens: 8192,
       thinkingEffort: 'off' as const,
     },
+    serviceConfigs: {} as Record<string, unknown>,
+    customProviders: [] as unknown[],
   },
   update: vi.fn(),
 };
@@ -214,5 +243,73 @@ describe('AgentDraftChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Add tools' }));
 
     expect(screen.getByTestId('assistant-editor-dialog')).toBeInTheDocument();
+  });
+
+  it('prevents submit and shows toast navigating to /settings when pressing Enter without configured providers', () => {
+    settingsMock.value.serviceConfigs = {};
+    settingsMock.value.customProviders = [];
+
+    const draftState = {
+      ...createDraftChatState(),
+      input: 'hello world',
+      stage: { kind: 'idle' } as const,
+    };
+    mockUseAgentDraftChat.mockReturnValue(draftState);
+
+    render(
+      <MemoryRouter>
+        <AgentDraftChatView />
+      </MemoryRouter>,
+    );
+
+    const textarea = screen.getByRole('textbox');
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+
+    expect(draftState.handleSubmit).not.toHaveBeenCalled();
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      expect.stringMatching(/AI 모델 제공자|llmRequired/i),
+      expect.objectContaining({
+        action: expect.objectContaining({
+          onClick: expect.any(Function),
+        }),
+      }),
+    );
+    const enterToastCall = mocks.toastError.mock.calls[0];
+    enterToastCall[1].action.onClick();
+    expect(mocks.navigate).toHaveBeenCalledWith('/settings?tab=ai-models');
+  });
+
+  it('prevents submit and shows toast navigating to /settings?tab=ai-models when clicking submit button without configured providers', () => {
+    settingsMock.value.serviceConfigs = {};
+    settingsMock.value.customProviders = [];
+
+    const draftState = {
+      ...createDraftChatState(),
+      input: 'hello world',
+      stage: { kind: 'idle' } as const,
+    };
+    mockUseAgentDraftChat.mockReturnValue(draftState);
+
+    render(
+      <MemoryRouter>
+        <AgentDraftChatView />
+      </MemoryRouter>,
+    );
+
+    const sendButton = screen.getByRole('button', { name: /Send message/i });
+    fireEvent.click(sendButton);
+
+    expect(draftState.handleSubmit).not.toHaveBeenCalled();
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      expect.stringMatching(/AI 모델 제공자|llmRequired/i),
+      expect.objectContaining({
+        action: expect.objectContaining({
+          onClick: expect.any(Function),
+        }),
+      }),
+    );
+    const clickToastCall = mocks.toastError.mock.calls[0];
+    clickToastCall[1].action.onClick();
+    expect(mocks.navigate).toHaveBeenCalledWith('/settings?tab=ai-models');
   });
 });
