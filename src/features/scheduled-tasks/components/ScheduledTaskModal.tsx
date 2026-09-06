@@ -200,9 +200,18 @@ function ScheduledTaskForm({
         assistants[0])
       : undefined;
 
-  const [name, setName] = useState(
-    task?.name ?? (!task && initialTemplate ? initialTemplate.name : ''),
-  );
+  const [name, setName] = useState(() => {
+    if (task?.name) return task.name;
+    if (!task && initialTemplate) {
+      if (initialTemplate.nameKey) {
+        return t(initialTemplate.nameKey, {
+          defaultValue: initialTemplate.defaultName || initialTemplate.name,
+        });
+      }
+      return initialTemplate.name;
+    }
+    return '';
+  });
   const initialCronExpression =
     task !== undefined && task !== null
       ? getDisplayCron(
@@ -231,9 +240,19 @@ function ScheduledTaskForm({
     : hasAssistant(task?.assistantId)
       ? task.assistantId
       : (matchedTemplateAssistant?.id ?? assistants[0]?.id);
-  const [message, setMessage] = useState(
-    task?.message ?? (!task && initialTemplate ? initialTemplate.message : ''),
-  );
+  const [message, setMessage] = useState(() => {
+    if (task?.message) return task.message;
+    if (!task && initialTemplate) {
+      if (initialTemplate.messageKey) {
+        return t(initialTemplate.messageKey, {
+          defaultValue:
+            initialTemplate.defaultMessage || initialTemplate.message,
+        });
+      }
+      return initialTemplate.message;
+    }
+    return '';
+  });
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(
     task?.executionMode ??
       (!task && initialTemplate ? initialTemplate.executionMode : 'normal'),

@@ -284,7 +284,7 @@ describe('AgentModelPicker', () => {
     expect(onThinkingEffortChange).toHaveBeenCalledWith('high');
   });
 
-  it('renders configure button and navigates to /settings when no providers are configured', () => {
+  it('renders configure button and navigates to /settings?tab=ai-models when no providers are configured', () => {
     mockGroupedModelsState.hasConfiguredProviders = false;
 
     render(
@@ -299,7 +299,7 @@ describe('AgentModelPicker', () => {
     expect(configureButton).toBeInTheDocument();
 
     fireEvent.click(configureButton);
-    expect(mockNavigate).toHaveBeenCalledWith('/settings');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=ai-models');
   });
 
   it('supports keyboard navigation on configure button when no providers are configured', () => {
@@ -313,10 +313,39 @@ describe('AgentModelPicker', () => {
     expect(configureButton).toHaveAttribute('tabIndex', '0');
 
     fireEvent.keyDown(configureButton, { key: 'Enter' });
-    expect(mockNavigate).toHaveBeenCalledWith('/settings');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=ai-models');
 
     mockNavigate.mockClear();
     fireEvent.keyDown(configureButton, { key: ' ' });
-    expect(mockNavigate).toHaveBeenCalledWith('/settings');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=ai-models');
+  });
+
+  it('does not render configure button when disableConfigureAction is true or in configuration context', () => {
+    mockGroupedModelsState.hasConfiguredProviders = false;
+
+    const { rerender } = render(
+      <AgentModelPicker
+        disableConfigureAction
+        currentModel="model-1"
+        currentProvider="ollama"
+      />,
+    );
+
+    expect(
+      screen.queryByRole('button', { name: 'Configure AI Model' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('model-select')).toBeInTheDocument();
+
+    rerender(
+      <AgentModelPicker
+        customProviders={[]}
+        currentModel="model-1"
+        currentProvider="ollama"
+      />,
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Configure AI Model' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('model-select')).toBeInTheDocument();
   });
 });

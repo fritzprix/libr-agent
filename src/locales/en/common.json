@@ -1464,8 +1464,12 @@
       "useTemplate": "Use template",
       "pcAuditTitle": "Daily PC Health & Security Audit",
       "pcAuditDesc": "Inspect disk usage, uncommitted Git changes, suspicious processes, and package vulnerabilities every midnight.",
+      "pcAuditName": "Daily PC Health & Security Audit",
+      "pcAuditMessage": "Use the workspace shell to perform a comprehensive check on disk space (df -h), long-running processes, uncommitted git status, and package vulnerabilities (audit), then generate a daily briefing markdown report.",
       "webSummaryTitle": "Website Update & Headline Briefing",
       "webSummaryDesc": "Visit tech news or blogs with the browser every morning to summarize the top 3 headlines.",
+      "webSummaryName": "Website Update & Headline Briefing",
+      "webSummaryMessage": "Visit Hacker News (https://news.ycombinator.com) using the browser tool and summarize today's top 3 tech headlines into a 3-bullet briefing.",
       "openWalkthrough": "Open Morning Briefing Walkthrough"
     },
     "disabled": "disabled",

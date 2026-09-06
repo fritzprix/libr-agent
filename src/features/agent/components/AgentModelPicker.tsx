@@ -51,6 +51,11 @@ interface AgentModelPickerProps {
    * Optional override for service configs (e.g. settings form draft).
    */
   serviceConfigs?: Record<string, ServiceConfig>;
+  /**
+   * When true, disables rendering the configure shortcut button even if no providers are configured.
+   * Useful when rendered inside settings pages.
+   */
+  disableConfigureAction?: boolean;
 }
 
 const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
@@ -64,6 +69,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   showThinkingEffort = false,
   customProviders: customProvidersProp,
   serviceConfigs: serviceConfigsProp,
+  disableConfigureAction = false,
 }) => {
   const { t } = useTranslation('common');
   const navigate = useNavigate();
@@ -165,25 +171,29 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
     [onConfigUpdate],
   );
 
+  const isConfigurationContext =
+    disableConfigureAction ||
+    customProvidersProp !== undefined ||
+    serviceConfigsProp !== undefined;
+
   const handleConfigureClick = useCallback(() => {
-    navigate('/settings');
+    navigate('/settings?tab=ai-models');
   }, [navigate]);
 
   const handleConfigureKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLButtonElement>) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        navigate('/settings');
+        navigate('/settings?tab=ai-models');
       }
     },
     [navigate],
   );
 
-  if (!hasConfiguredProviders) {
+  if (!hasConfiguredProviders && !isConfigurationContext) {
     return (
       <button
         type="button"
-        role="button"
         tabIndex={disabled ? -1 : 0}
         disabled={disabled}
         onClick={handleConfigureClick}

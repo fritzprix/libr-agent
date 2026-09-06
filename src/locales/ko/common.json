@@ -1444,8 +1444,12 @@
       "useTemplate": "이 템플릿으로 생성",
       "pcAuditTitle": "내 PC 헬스 & 보안 일일 점검",
       "pcAuditDesc": "매일 자정 디스크 용량, 미커밋 Git 파일, 의심 프로세스 및 패키지 취약점(audit)을 종합 점검합니다.",
+      "pcAuditName": "내 PC 헬스 & 보안 일일 점검",
+      "pcAuditMessage": "workspace 쉘을 사용해 디스크 잔여 용량(df -h), 장시간 실행 중인 프로세스, 워크스페이스 내 미커밋 Git 상태 및 패키지 취약점(audit)을 종합 점검하여 일일 브리핑 마크다운 리포트를 작성해줘.",
       "webSummaryTitle": "웹사이트 변경 및 헤드라인 브리핑",
       "webSummaryDesc": "매일 아침 브라우저로 기술 뉴스/블로그를 방문해 핵심 헤드라인 3가지를 요약합니다.",
+      "webSummaryName": "웹사이트 변경 및 헤드라인 브리핑",
+      "webSummaryMessage": "Hacker News(https://news.ycombinator.com)를 browser 도구로 방문하여 오늘의 주요 기술 헤드라인 3가지를 한국어로 3줄 요약해줘.",
       "openWalkthrough": "모닝 브리핑 가이드 워크스루 열기"
     },
     "disabled": "비활성화됨",

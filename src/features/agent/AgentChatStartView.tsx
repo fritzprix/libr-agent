@@ -1,4 +1,12 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  lazy,
+  Suspense,
+} from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Settings, Sparkles, X } from 'lucide-react';
@@ -13,7 +21,12 @@ import { getAssistant, type AssistantSummary } from '@/lib/backend/assistants';
 import { useAssistantSummaries } from './hooks/useAssistantSummaries';
 import { useSettings } from '@/hooks/use-settings';
 import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
-import { MorningBriefingWalkthroughDialog } from '@/features/recipes';
+
+const MorningBriefingWalkthroughDialog = lazy(() =>
+  import('@/features/recipes').then((m) => ({
+    default: m.MorningBriefingWalkthroughDialog,
+  })),
+);
 
 const logger = getLogger('AgentChatStartView');
 
@@ -260,7 +273,7 @@ export default function AgentChatStartView() {
               </div>
             </div>
             <Button
-              onClick={() => navigate('/settings')}
+              onClick={() => navigate('/settings?tab=ai-models')}
               size="sm"
               className="shrink-0 gap-1.5 self-end sm:self-center"
             >
@@ -400,10 +413,14 @@ export default function AgentChatStartView() {
         )}
       </div>
 
-      <MorningBriefingWalkthroughDialog
-        open={walkthroughOpen}
-        onOpenChange={setWalkthroughOpen}
-      />
+      {walkthroughOpen && (
+        <Suspense fallback={null}>
+          <MorningBriefingWalkthroughDialog
+            open={walkthroughOpen}
+            onOpenChange={setWalkthroughOpen}
+          />
+        </Suspense>
+      )}
     </main>
   );
 }

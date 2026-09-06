@@ -95,6 +95,6 @@ describe('ErrorBubble', () => {
     expect(settingsButton).toBeInTheDocument();
 
     fireEvent.click(settingsButton);
-    expect(mockNavigate).toHaveBeenCalledWith('/settings');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=ai-models');
   });
 });

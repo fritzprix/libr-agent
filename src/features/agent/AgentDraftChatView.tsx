@@ -118,7 +118,7 @@ function DraftChatInner() {
         {
           action: {
             label: t('common.settings', { defaultValue: '설정' }),
-            onClick: () => navigate('/settings'),
+            onClick: () => navigate('/settings?tab=ai-models'),
           },
         },
       );
@@ -427,7 +427,8 @@ function DraftChatInner() {
                                   label: t('common.settings', {
                                     defaultValue: '설정',
                                   }),
-                                  onClick: () => navigate('/settings'),
+                                  onClick: () =>
+                                    navigate('/settings?tab=ai-models'),
                                 },
                               },
                             );
@@ -503,7 +504,8 @@ function DraftChatInner() {
                                       label: t('common.settings', {
                                         defaultValue: '설정',
                                       }),
-                                      onClick: () => navigate('/settings'),
+                                      onClick: () =>
+                                        navigate('/settings?tab=ai-models'),
                                     },
                                   },
                                 );

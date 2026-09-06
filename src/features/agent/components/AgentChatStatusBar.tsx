@@ -630,7 +630,8 @@ export function AgentChatStatusBar() {
           'border-b px-4 py-1.5',
           showWorkflowBanner && 'border-t border-border/50',
         )}
-      >        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+      >
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <div className="min-w-0 w-full sm:w-auto">
             {session && (
               <AgentModelPicker

@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAgentDraftChat } from '../useAgentDraftChat';
@@ -164,5 +164,27 @@ describe('useAgentDraftChat prompt query param initialization', () => {
     await waitFor(() => {
       expect(result.current.assistant?.id).toBe('assistant-test-1');
     });
+  });
+
+  it('does not overwrite cleared input when user clears input with prompt in URL', async () => {
+    const testPrompt = 'Initial prompt from query';
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <MemoryRouter
+        initialEntries={[
+          `/agent/draft?assistantId=assistant-test-1&prompt=${encodeURIComponent(testPrompt)}`,
+        ]}
+      >
+        {children}
+      </MemoryRouter>
+    );
+
+    const { result } = renderHook(() => useAgentDraftChat(), { wrapper });
+    expect(result.current.input).toBe(testPrompt);
+
+    act(() => {
+      result.current.setInput('');
+    });
+
+    expect(result.current.input).toBe('');
   });
 });

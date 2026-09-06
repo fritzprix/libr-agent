@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,7 +14,12 @@ import { getDateTimeFormatter } from '@/lib/date-utils';
 import { compareScheduledTasks } from './scheduled-task-utils';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import type { StarterTaskTemplate } from './starter-templates';
-import { MorningBriefingWalkthroughDialog } from '@/features/recipes';
+
+const MorningBriefingWalkthroughDialog = lazy(() =>
+  import('@/features/recipes').then((m) => ({
+    default: m.MorningBriefingWalkthroughDialog,
+  })),
+);
 
 const logger = getLogger('ScheduledTasksPage');
 
@@ -215,10 +220,14 @@ export function ScheduledTasksPage() {
         onSave={editingTask ? handleUpdate : handleCreate}
       />
 
-      <MorningBriefingWalkthroughDialog
-        open={walkthroughOpen}
-        onOpenChange={setWalkthroughOpen}
-      />
+      {walkthroughOpen && (
+        <Suspense fallback={null}>
+          <MorningBriefingWalkthroughDialog
+            open={walkthroughOpen}
+            onOpenChange={setWalkthroughOpen}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

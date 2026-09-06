@@ -244,7 +244,7 @@ describe('AgentChatStartView', () => {
     expect(settingsButton).toBeInTheDocument();
 
     fireEvent.click(settingsButton);
-    expect(mocks.navigate).toHaveBeenCalledWith('/settings');
+    expect(mocks.navigate).toHaveBeenCalledWith('/settings?tab=ai-models');
   });
 
   it('does not render onboarding banner when AI providers are configured', () => {

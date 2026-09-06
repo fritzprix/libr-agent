@@ -48,7 +48,15 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (
+      key: string,
+      fallback?: string | { defaultValue?: string },
+    ) => {
+      if (typeof fallback === 'object' && fallback?.defaultValue) {
+        return fallback.defaultValue;
+      }
+      return typeof fallback === 'string' ? fallback : key;
+    },
   }),
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));

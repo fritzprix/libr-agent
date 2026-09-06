@@ -106,7 +106,7 @@ export function MorningBriefingWalkthroughDialog({
         }),
       );
       onOpenChange(false);
-      navigate('/settings');
+      navigate('/settings?tab=ai-models');
       return;
     }
 
@@ -336,7 +336,7 @@ export function MorningBriefingWalkthroughDialog({
                   className="shrink-0 gap-1 text-xs h-7"
                   onClick={() => {
                     onOpenChange(false);
-                    navigate('/settings');
+                    navigate('/settings?tab=ai-models');
                   }}
                 >
                   <Settings className="h-3.5 w-3.5" />

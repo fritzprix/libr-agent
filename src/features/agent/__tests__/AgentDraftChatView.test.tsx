@@ -274,9 +274,12 @@ describe('AgentDraftChatView', () => {
         }),
       }),
     );
+    const enterToastCall = mocks.toastError.mock.calls[0];
+    enterToastCall[1].action.onClick();
+    expect(mocks.navigate).toHaveBeenCalledWith('/settings?tab=ai-models');
   });
 
-  it('prevents submit and shows toast navigating to /settings when clicking submit button without configured providers', () => {
+  it('prevents submit and shows toast navigating to /settings?tab=ai-models when clicking submit button without configured providers', () => {
     settingsMock.value.serviceConfigs = {};
     settingsMock.value.customProviders = [];
 
@@ -305,5 +308,8 @@ describe('AgentDraftChatView', () => {
         }),
       }),
     );
+    const clickToastCall = mocks.toastError.mock.calls[0];
+    clickToastCall[1].action.onClick();
+    expect(mocks.navigate).toHaveBeenCalledWith('/settings?tab=ai-models');
   });
 });

@@ -251,6 +251,7 @@ function AIModelsTabComponent({
             customProviders={providers}
             serviceConfigs={serviceConfigs}
             onConfigUpdate={onPreferredModelChange}
+            disableConfigureAction
             className="w-full max-w-sm"
           />
         </div>
@@ -267,6 +268,7 @@ function AIModelsTabComponent({
             customProviders={providers}
             serviceConfigs={serviceConfigs}
             onConfigUpdate={onFallbackModelChange}
+            disableConfigureAction
             className="w-full max-w-sm"
           />
           <p className="mt-1 text-xs text-muted-foreground">

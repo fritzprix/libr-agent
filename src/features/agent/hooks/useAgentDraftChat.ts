@@ -102,6 +102,9 @@ export function useAgentDraftChat() {
     sessionId: string;
   } | null>(null);
   const autoSubmitRef = useRef(false);
+  const lastAppliedPromptRef = useRef<string | null>(
+    searchParams.get('prompt') || searchParams.get('initialInput'),
+  );
 
   const rustBackend = useRustBackend();
   const { subscribe } = useDnDContext();
@@ -309,10 +312,11 @@ export function useAgentDraftChat() {
   useEffect(() => {
     const promptParam =
       searchParams.get('prompt') || searchParams.get('initialInput');
-    if (promptParam && !input) {
+    if (promptParam && promptParam !== lastAppliedPromptRef.current) {
+      lastAppliedPromptRef.current = promptParam;
       setInput(promptParam);
     }
-  }, [searchParams, input]);
+  }, [searchParams]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;

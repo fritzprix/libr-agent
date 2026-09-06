@@ -140,7 +140,7 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
 
           {errorType === 'AUTHENTICATION_ERROR' && (
             <Button
-              onClick={() => navigate('/settings')}
+              onClick={() => navigate('/settings?tab=ai-models')}
               variant="outline"
               size="sm"
               className="flex items-center gap-2"

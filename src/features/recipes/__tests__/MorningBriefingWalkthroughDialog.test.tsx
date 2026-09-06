@@ -220,7 +220,7 @@ describe('MorningBriefingWalkthroughDialog', () => {
 
     fireEvent.click(settingsButton);
     expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(mocks.navigate).toHaveBeenCalledWith('/settings');
+    expect(mocks.navigate).toHaveBeenCalledWith('/settings?tab=ai-models');
   });
 
   it('shows checkboxes for hn and yahoo-finance default checked', () => {
