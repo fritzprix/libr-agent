@@ -2,7 +2,6 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Bot,
-  BrainCircuit,
   History,
   BookmarkCheck,
   Network,
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
+import { LibrAgentLogo } from '../common/LibrAgentLogo';
 import {
   Sidebar,
   SidebarContent,
@@ -182,9 +182,9 @@ export default function AppSidebar() {
             isCollapsed ? 'px-2' : 'px-4',
           )}
         >
-          <BrainCircuit
+          <LibrAgentLogo
             size={isCollapsed ? 24 : 32}
-            className="flex-shrink-0 text-primary"
+            className="transition-all duration-300"
           />
           <span
             className={cn(
