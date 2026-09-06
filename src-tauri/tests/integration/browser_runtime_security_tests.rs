@@ -187,8 +187,9 @@ fn browser_automation_client_uses_a_longer_bootstrap_timeout() {
     let client = BrowserAutomationClient::new(std::time::Duration::from_secs(30));
 
     assert_eq!(client.request_timeout(), std::time::Duration::from_secs(30));
+    // request_timeout (30s) + launch buffer (30s) => 60s floor for createSession.
     assert_eq!(
         client.bootstrap_timeout(),
-        std::time::Duration::from_secs(180)
+        std::time::Duration::from_secs(60)
     );
 }
