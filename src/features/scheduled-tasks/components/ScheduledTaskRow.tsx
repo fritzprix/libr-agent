@@ -1,14 +1,19 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Clock,
   FolderOpen,
+  Globe,
   Loader2,
   Pencil,
+  Shield,
   Trash2,
   Zap,
   DatabaseZap,
 } from 'lucide-react';
+import {
+  STARTER_TASK_TEMPLATES,
+  type StarterTaskTemplate,
+} from '../starter-templates';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -245,6 +250,7 @@ interface ScheduledTasksContentProps {
   enabledTaskCount: number;
   formatNextRun: (ms: number | null) => string;
   onCreate: () => void;
+  onSelectTemplate?: (template: StarterTaskTemplate) => void;
   onDelete: (id: string) => Promise<void>;
   onEdit: (task: ScheduledTask) => void;
   onToggle: (task: ScheduledTask) => Promise<void>;
@@ -258,6 +264,7 @@ export function ScheduledTasksContent({
   enabledTaskCount,
   formatNextRun,
   onCreate,
+  onSelectTemplate,
   onDelete,
   onEdit,
   onToggle,
@@ -270,12 +277,93 @@ export function ScheduledTasksContent({
 
   if (tasks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-muted-foreground">
-        <Clock className="h-8 w-8 opacity-40" />
-        <p className="text-sm">{t('scheduledTasks.noTasks')}</p>
-        <Button variant="outline" size="sm" onClick={onCreate}>
-          {t('scheduledTasks.createFirst')}
-        </Button>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold">
+                {t('scheduledTasks.starterTemplates.title', 'Starter Templates')}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scheduledTasks.starterTemplates.subtitle',
+                  'Quickly set up recurring automated tasks with pre-configured templates',
+                )}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={onCreate}>
+              {t('scheduledTasks.createBlank', t('scheduledTasks.createFirst'))}
+            </Button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {STARTER_TASK_TEMPLATES.map((template) => {
+              const Icon = template.id === 'pc-health-audit' ? Shield : Globe;
+              return (
+                <Card
+                  key={template.id}
+                  className="flex flex-col justify-between border bg-card transition-shadow hover:shadow-sm"
+                >
+                  <CardHeader className="space-y-2 pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="rounded-md bg-primary/10 p-2 text-primary">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      {template.executionMode === 'unsafe' && (
+                        <Badge
+                          variant="destructive"
+                          className="shrink-0 text-xs"
+                        >
+                          <DatabaseZap size={10} className="mr-1" />
+                          {t('scheduledTasks.executionModeUnsafe', 'Unsafe')}
+                        </Badge>
+                      )}
+                      {template.executionMode === 'yolo' && (
+                        <Badge
+                          variant="default"
+                          className="shrink-0 bg-primary/80 text-xs hover:bg-primary/80"
+                        >
+                          <Zap size={10} className="mr-1 fill-current" />
+                          YOLO
+                        </Badge>
+                      )}
+                    </div>
+                    <CardTitle className="text-base">
+                      {t(template.titleKey, template.defaultTitle)}
+                    </CardTitle>
+                    <CardDescription className="line-clamp-3 text-xs leading-relaxed">
+                      {t(template.descKey, template.defaultDesc)}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => onSelectTemplate?.(template)}
+                    >
+                      {t(
+                        'scheduledTasks.starterTemplates.useTemplate',
+                        '이 템플릿으로 생성',
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-center pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onCreate}
+              className="text-muted-foreground"
+            >
+              {t('scheduledTasks.createBlank', t('scheduledTasks.createFirst'))}
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }

@@ -45,6 +45,7 @@ import { cn } from '@/lib/utils';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { normalizeExecutionMode } from '@/lib/generated/execution-mode';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
+import type { StarterTaskTemplate } from '../starter-templates';
 import { MentionTextarea } from './MentionTextarea';
 import { getDisplayCron, ScheduleBuilder } from './ScheduleBuilder';
 import type { Assistant } from '@/models/chat';
@@ -107,6 +108,7 @@ function OptionalSection({
 interface ScheduledTaskModalProps {
   open: boolean;
   task?: ScheduledTask | null;
+  initialTemplate?: StarterTaskTemplate | null;
   assistants: Assistant[];
   onClose: () => void;
   onSave: (data: {
@@ -124,6 +126,7 @@ interface ScheduledTaskModalProps {
 export function ScheduledTaskModal({
   open,
   task,
+  initialTemplate,
   assistants,
   onClose,
   onSave,
@@ -143,8 +146,12 @@ export function ScheduledTaskModal({
 
         {open && (
           <ScheduledTaskForm
-            key={task?.id || 'new'}
+            key={
+              task?.id ||
+              (initialTemplate ? `template-${initialTemplate.id}` : 'new')
+            }
             task={task}
+            initialTemplate={initialTemplate}
             assistants={assistants}
             onClose={onClose}
             onSave={onSave}
@@ -157,6 +164,7 @@ export function ScheduledTaskModal({
 
 interface ScheduledTaskFormProps {
   task?: ScheduledTask | null;
+  initialTemplate?: StarterTaskTemplate | null;
   assistants: Assistant[];
   onClose: () => void;
   onSave: (data: {
@@ -173,12 +181,28 @@ interface ScheduledTaskFormProps {
 
 function ScheduledTaskForm({
   task,
+  initialTemplate,
   assistants,
   onClose,
   onSave,
 }: ScheduledTaskFormProps) {
   const { t } = useTranslation();
-  const [name, setName] = useState(task?.name ?? '');
+  const matchedTemplateAssistant =
+    !task && initialTemplate
+      ? (assistants.find(
+          (a) => a.name === initialTemplate.preferredAssistantName,
+        ) ??
+        assistants.find(
+          (a) =>
+            a.name.toLowerCase() ===
+            initialTemplate.preferredAssistantName.toLowerCase(),
+        ) ??
+        assistants[0])
+      : undefined;
+
+  const [name, setName] = useState(
+    task?.name ?? (!task && initialTemplate ? initialTemplate.name : ''),
+  );
   const initialCronExpression =
     task !== undefined && task !== null
       ? getDisplayCron(
@@ -186,12 +210,14 @@ function ScheduledTaskForm({
           task.scheduleTimezone,
           task.nextRunAt,
         )
-      : '0 9 * * *';
+      : (!task && initialTemplate
+          ? initialTemplate.cronExpression
+          : '0 9 * * *');
   const [cronExpression, setCronExpression] = useState(initialCronExpression);
 
   const [userSelectedAssistantId, setUserSelectedAssistantId] = useState<
     string | undefined
-  >(undefined);
+  >(matchedTemplateAssistant?.id);
 
   const hasAssistant = (
     assistantId: string | undefined,
@@ -204,13 +230,17 @@ function ScheduledTaskForm({
     ? userSelectedAssistantId
     : hasAssistant(task?.assistantId)
       ? task.assistantId
-      : assistants[0]?.id;
-  const [message, setMessage] = useState(task?.message ?? '');
+      : matchedTemplateAssistant?.id ?? assistants[0]?.id;
+  const [message, setMessage] = useState(
+    task?.message ?? (!task && initialTemplate ? initialTemplate.message : ''),
+  );
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(
-    task?.executionMode ?? 'normal',
+    task?.executionMode ??
+      (!task && initialTemplate ? initialTemplate.executionMode : 'normal'),
   );
   const [resetPlanningState, setResetPlanningState] = useState(
-    task?.resetPlanningState ?? false,
+    task?.resetPlanningState ??
+      (!task && initialTemplate ? initialTemplate.resetPlanningState : false),
   );
   const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
     task?.workspaceOverride ?? null,
@@ -524,6 +554,17 @@ function ScheduledTaskForm({
                       'Approval and policy enforcement are bypassed. You are fully responsible for tool execution risk.',
                     )}
             </p>
+            {executionMode === 'unsafe' && (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+              >
+                {t(
+                  'scheduledTasks.modal.unsafeNotice',
+                  '⚠️ 무인 실행 중 터미널 명령어가 중단되지 않도록 Unsafe 모드가 적용됩니다.',
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-start justify-between gap-3 rounded-lg border bg-muted/20 px-3 py-3">

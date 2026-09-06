@@ -1,51 +1,55 @@
 
-import { expect, test, vi } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { ScheduledTasksPage } from '@/features/scheduled-tasks/ScheduledTasksPage';
 
 const deleteTask = vi.fn().mockResolvedValue(undefined);
 
+const initialTasks = [
+  {
+    id: 'task-1',
+    name: 'Test Task 1',
+    cronExpression: '* * * * *',
+    scheduleTimezone: 'local',
+    assistantId: 'ast-1',
+    message: 'Hello World',
+    executionMode: 'normal' as const,
+    createdBySessionId: null,
+    sessionId: null,
+    taskCategory: 'GLOBAL',
+    workspaceOverride: '/tmp/scheduled-task-workspace',
+    enabled: true,
+    lastRunAt: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    nextRunAt: Date.now() + 60000,
+  },
+  {
+    id: 'task-2',
+    name: 'Solo Task',
+    cronExpression: '0 9 * * *',
+    scheduleTimezone: 'local',
+    assistantId: 'ast-1',
+    message: 'Review metrics',
+    executionMode: 'normal' as const,
+    createdBySessionId: null,
+    sessionId: null,
+    taskCategory: 'GLOBAL',
+    workspaceOverride: null,
+    enabled: false,
+    lastRunAt: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    nextRunAt: Date.now() + 120000,
+  },
+];
+
+let mockTasks = [...initialTasks];
+
 vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
   useScheduledTasks: () => ({
-    tasks: [
-      {
-        id: 'task-1',
-        name: 'Test Task 1',
-        cronExpression: '* * * * *',
-        scheduleTimezone: 'local',
-        assistantId: 'ast-1',
-        message: 'Hello World',
-        executionMode: 'normal' as const,
-        createdBySessionId: null,
-        sessionId: null,
-        taskCategory: 'GLOBAL',
-        workspaceOverride: '/tmp/scheduled-task-workspace',
-        enabled: true,
-        lastRunAt: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        nextRunAt: Date.now() + 60000,
-      },
-      {
-        id: 'task-2',
-        name: 'Solo Task',
-        cronExpression: '0 9 * * *',
-        scheduleTimezone: 'local',
-        assistantId: 'ast-1',
-        message: 'Review metrics',
-        executionMode: 'normal' as const,
-        createdBySessionId: null,
-        sessionId: null,
-        taskCategory: 'GLOBAL',
-        workspaceOverride: null,
-        enabled: false,
-        lastRunAt: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        nextRunAt: Date.now() + 120000,
-      },
-    ],
+    tasks: mockTasks,
     loading: false,
     togglingIds: new Set(),
     deletingIds: new Set(),
@@ -54,6 +58,32 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
     toggleTask: vi.fn(),
     deleteTask,
   }),
+}));
+
+vi.mock('@/features/scheduled-tasks/components/ScheduledTaskModal', () => ({
+  ScheduledTaskModal: ({
+    open,
+    task,
+    initialTemplate,
+    onClose,
+  }: {
+    open: boolean;
+    task?: { name: string } | null;
+    initialTemplate?: { id: string; name: string } | null;
+    onClose: () => void;
+  }) =>
+    open ? (
+      <div data-testid="scheduled-task-modal">
+        <span data-testid="modal-task-name">{task?.name ?? ''}</span>
+        <span data-testid="modal-template-id">{initialTemplate?.id ?? ''}</span>
+        <span data-testid="modal-template-name">
+          {initialTemplate?.name ?? ''}
+        </span>
+        <button onClick={onClose} data-testid="modal-close-btn">
+          Close Modal
+        </button>
+      </div>
+    ) : null,
 }));
 
 vi.mock('@/context/AssistantContext', () => ({
@@ -163,4 +193,62 @@ test('ScheduledTasksPage confirms before deleting a task', async () => {
   await waitFor(() => {
     expect(deleteTask).toHaveBeenCalledWith('task-1');
   });
+});
+
+beforeEach(() => {
+  mockTasks = [...initialTasks];
+});
+
+test('ScheduledTasksPage renders starter templates when there are no tasks', async () => {
+  mockTasks = [];
+  render(<ScheduledTasksPage />);
+
+  // Heading / title
+  expect(
+    screen.getByText('scheduledTasks.starterTemplates.title'),
+  ).toBeInTheDocument();
+
+  // Template titles
+  expect(
+    screen.getByText('scheduledTasks.starterTemplates.pcAuditTitle'),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText('scheduledTasks.starterTemplates.webSummaryTitle'),
+  ).toBeInTheDocument();
+
+  // Template descriptions
+  expect(
+    screen.getByText('scheduledTasks.starterTemplates.pcAuditDesc'),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText('scheduledTasks.starterTemplates.webSummaryDesc'),
+  ).toBeInTheDocument();
+
+  // Template buttons
+  const useTemplateButtons = screen.getAllByRole('button', {
+    name: 'scheduledTasks.starterTemplates.useTemplate',
+  });
+  expect(useTemplateButtons).toHaveLength(2);
+
+  // Click first template ("pc-health-audit")
+  fireEvent.click(useTemplateButtons[0]);
+
+  expect(screen.getByTestId('scheduled-task-modal')).toBeInTheDocument();
+  expect(screen.getByTestId('modal-template-id')).toHaveTextContent(
+    'pc-health-audit',
+  );
+
+  // Close modal resets template
+  fireEvent.click(screen.getByTestId('modal-close-btn'));
+  expect(screen.queryByTestId('scheduled-task-modal')).not.toBeInTheDocument();
+
+  // Click blank task button
+  const createBlankButtons = screen.getAllByRole('button', {
+    name: 'scheduledTasks.createBlank',
+  });
+  expect(createBlankButtons.length).toBeGreaterThanOrEqual(1);
+  fireEvent.click(createBlankButtons[0]);
+
+  expect(screen.getByTestId('scheduled-task-modal')).toBeInTheDocument();
+  expect(screen.getByTestId('modal-template-id')).toHaveTextContent('');
 });

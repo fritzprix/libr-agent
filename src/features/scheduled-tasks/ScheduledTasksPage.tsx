@@ -13,6 +13,7 @@ import { useAssistantContext } from '@/context/AssistantContext';
 import { getDateTimeFormatter } from '@/lib/date-utils';
 import { compareScheduledTasks } from './scheduled-task-utils';
 import type { ExecutionMode } from '@/context/agent-session/types';
+import type { StarterTaskTemplate } from './starter-templates';
 
 const logger = getLogger('ScheduledTasksPage');
 
@@ -45,14 +46,18 @@ export function ScheduledTasksPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<StarterTaskTemplate | null>(null);
 
   const handleCreate = async (data: ScheduledTaskFormData) => {
     await createTask(data);
+    setSelectedTemplate(null);
   };
 
   const handleUpdate = async (data: ScheduledTaskFormData) => {
     if (!editingTask) return;
     await updateTask(editingTask.id, data);
+    setSelectedTemplate(null);
   };
 
   const handleToggle = useCallback(
@@ -86,12 +91,25 @@ export function ScheduledTasksPage() {
 
   const openCreate = useCallback(() => {
     setEditingTask(null);
+    setSelectedTemplate(null);
     setModalOpen(true);
   }, []);
 
   const openEdit = useCallback((task: ScheduledTask) => {
     setEditingTask(task);
+    setSelectedTemplate(null);
     setModalOpen(true);
+  }, []);
+
+  const handleSelectTemplate = useCallback((template: StarterTaskTemplate) => {
+    setEditingTask(null);
+    setSelectedTemplate(template);
+    setModalOpen(true);
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setModalOpen(false);
+    setSelectedTemplate(null);
   }, []);
 
   const formatNextRun = useCallback(
@@ -173,6 +191,7 @@ export function ScheduledTasksPage() {
             enabledTaskCount={enabledTaskCount}
             formatNextRun={formatNextRun}
             onCreate={openCreate}
+            onSelectTemplate={handleSelectTemplate}
             onDelete={handleDelete}
             onEdit={openEdit}
             onToggle={handleToggle}
@@ -187,8 +206,9 @@ export function ScheduledTasksPage() {
       <ScheduledTaskModal
         open={modalOpen}
         task={editingTask}
+        initialTemplate={selectedTemplate}
         assistants={assistants}
-        onClose={() => setModalOpen(false)}
+        onClose={handleCloseModal}
         onSave={editingTask ? handleUpdate : handleCreate}
       />
     </div>
