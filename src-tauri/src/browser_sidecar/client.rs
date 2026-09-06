@@ -368,9 +368,9 @@ impl BrowserAutomationClient {
         command.process_group(0);
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
             // CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
-            command.creation_flags(0x0000_0200 | 0x0800_0000);
+            // tokio::process::Command exposes creation_flags on Windows without CommandExt.
+            command.creation_flags(0x0000_0200 | crate::utils::platform::CREATE_NO_WINDOW);
         }
 
         let mut child = command
