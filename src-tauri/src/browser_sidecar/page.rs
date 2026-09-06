@@ -15,6 +15,8 @@ use super::contracts::{HistoryNavigationStatus, PageClassification, PageState};
 
 const HISTORY_NAVIGATION_TIMEOUT: Duration = Duration::from_secs(4);
 const HISTORY_NAVIGATION_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// Cap how long chromiumoxide may wait for full page load (networkIdle-prone sites).
+pub(crate) const PAGE_LOAD_TIMEOUT: Duration = Duration::from_secs(30);
 /// Maximum accepted PNG payload size after capture.
 pub const MAX_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
 /// Maximum CSS content pixels allowed for full-page capture (matches chromiumoxide scale=1).
@@ -40,6 +42,36 @@ enum HistoryDirection {
 pub(crate) async fn snapshot_page_state(page: &Page) -> Result<PageState, String> {
     let snapshot = snapshot_navigation_state(page).await?;
     Ok(page_state_from_snapshot(snapshot))
+}
+
+/// Navigate and bound the load wait so ad-heavy / never-idle pages cannot hang forever.
+///
+/// On timeout the page is kept open and a partial snapshot is returned so callers can
+/// still extract whatever DOM has already rendered.
+pub(crate) async fn goto_with_load_timeout(page: &Page, url: &str) -> Result<PageState, String> {
+    let timed = tokio::time::timeout(PAGE_LOAD_TIMEOUT, page.goto(url)).await;
+    let timed_out = match timed {
+        Ok(Ok(_)) => false,
+        Ok(Err(error)) => {
+            return Err(format!("Failed to navigate to '{url}': {error}"));
+        }
+        Err(_) => {
+            warn!(
+                "Page load timed out for {url} after {:?}; continuing with partial page state",
+                PAGE_LOAD_TIMEOUT
+            );
+            true
+        }
+    };
+
+    let mut state = snapshot_page_state(page).await?;
+    if timed_out {
+        state.navigation_message = Some(format!(
+            "Navigation load wait timed out after {}s; page may be partially loaded",
+            PAGE_LOAD_TIMEOUT.as_secs()
+        ));
+    }
+    Ok(state)
 }
 
 pub(crate) async fn navigate_back(page: &Page) -> Result<PageState, String> {

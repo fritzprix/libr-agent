@@ -134,10 +134,21 @@ impl InteractiveBrowserServer {
                     session.runtime_ready_generation = Some(session.page_generation);
                 }
 
-                let message = format!(
-                    "Session created for {} - active session ready for content extraction",
-                    state.url
-                );
+                let message = match state.navigation_message {
+                    Some(nav_msg) if nav_msg.contains("load wait timed out") => {
+                        format!("Session created for {}. {}", state.url, nav_msg)
+                    }
+                    Some(nav_msg) => {
+                        format!(
+                            "Session created for {} - active session ready for content extraction. {}",
+                            state.url, nav_msg
+                        )
+                    }
+                    None => format!(
+                        "Session created for {} - active session ready for content extraction",
+                        state.url
+                    ),
+                };
                 Ok((session_id, message))
             }
             Err(error) => {
@@ -313,10 +324,21 @@ impl InteractiveBrowserServer {
             self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
         self.require_applied_navigation("Navigation", session_id, next_generation, outcome)?;
 
-        let message = format!(
-            "Navigated active session to {} - ready for content extraction",
-            state.url
-        );
+        let message = match state.navigation_message {
+            Some(nav_msg) if nav_msg.contains("load wait timed out") => {
+                format!("Navigated active session to {}. {}", state.url, nav_msg)
+            }
+            Some(nav_msg) => {
+                format!(
+                    "Navigated active session to {} - ready for content extraction. {}",
+                    state.url, nav_msg
+                )
+            }
+            None => format!(
+                "Navigated active session to {} - ready for content extraction",
+                state.url
+            ),
+        };
         Ok(message)
     }
 

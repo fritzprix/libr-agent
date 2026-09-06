@@ -17,13 +17,19 @@ use super::contracts::{
     PageState, SessionIdParams, SidecarRequest, SidecarResponse, TakeScreenshotParams,
 };
 use super::BROWSER_SIDECAR_FLAG;
+use crate::utils::process::force_kill_process_tree;
 
-const MIN_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(180);
+/// Floor for createSession client wait: Chrome cold-start + one bounded page load.
+const MIN_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(60);
+/// Extra allowance beyond action timeout for Chrome process launch.
+const BOOTSTRAP_LAUNCH_BUFFER: Duration = Duration::from_secs(30);
 const SIDECAR_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const SIDECAR_GRACEFUL_SHUTDOWN_WAIT: Duration = Duration::from_secs(2);
 
 struct SidecarProcess {
     child: Arc<Mutex<Child>>,
     stdin: Arc<Mutex<Option<ChildStdin>>>,
+    pid: u32,
 }
 
 struct BrowserAutomationClientState {
@@ -198,18 +204,15 @@ impl BrowserAutomationClient {
             drop(stdin);
 
             let mut child = process.child.lock().await;
-            match tokio::time::timeout(self.state.request_timeout, child.wait()).await {
+            match tokio::time::timeout(SIDECAR_GRACEFUL_SHUTDOWN_WAIT, child.wait()).await {
                 Ok(Ok(_)) => debug!("Browser sidecar exited gracefully during shutdown"),
                 Ok(Err(error)) => warn!("Failed waiting for browser sidecar shutdown: {error}"),
                 Err(_) => {
                     warn!(
-            "Browser sidecar did not exit gracefully during shutdown within {:?}; forcing kill",
-            self.state.request_timeout
-          );
-                    if let Err(error) = child.kill().await {
-                        warn!("Failed to kill browser sidecar during shutdown: {error}");
-                    }
-                    let _ = child.wait().await;
+                        "Browser sidecar did not exit gracefully during shutdown within {:?}; forcing process-tree kill",
+                        SIDECAR_GRACEFUL_SHUTDOWN_WAIT
+                    );
+                    force_kill_sidecar_tree(process.pid, &mut child).await;
                 }
             }
         }
@@ -335,10 +338,7 @@ impl BrowserAutomationClient {
             );
 
             let mut child = process.child.lock().await;
-            if let Err(error) = child.kill().await {
-                warn!("Failed to kill browser sidecar during reset: {error}");
-            }
-            let _ = child.wait().await;
+            force_kill_sidecar_tree(process.pid, &mut child).await;
         }
     }
 
@@ -363,9 +363,23 @@ impl BrowserAutomationClient {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
 
+        // Own process group so timeout/reset can kill Chrome descendants with the sidecar.
+        #[cfg(unix)]
+        command.process_group(0);
+        #[cfg(windows)]
+        {
+            // CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+            // tokio::process::Command exposes creation_flags on Windows without CommandExt.
+            command.creation_flags(0x0000_0200 | crate::utils::platform::CREATE_NO_WINDOW);
+        }
+
         let mut child = command
             .spawn()
             .map_err(|e| format!("Failed to spawn browser sidecar: {e}"))?;
+
+        let pid = child
+            .id()
+            .ok_or_else(|| "Browser sidecar PID unavailable after spawn".to_string())?;
 
         let stdin = child
             .stdin
@@ -387,13 +401,23 @@ impl BrowserAutomationClient {
         spawn_sidecar_stderr_task(stderr);
         spawn_sidecar_exit_task(self.state.clone(), child.clone());
 
-        *process_guard = Some(SidecarProcess { child, stdin });
+        *process_guard = Some(SidecarProcess { child, stdin, pid });
         Ok(())
     }
 }
 
 fn derive_bootstrap_timeout(request_timeout: Duration) -> Duration {
-    request_timeout.max(MIN_BOOTSTRAP_TIMEOUT)
+    (request_timeout + BOOTSTRAP_LAUNCH_BUFFER).max(MIN_BOOTSTRAP_TIMEOUT)
+}
+
+async fn force_kill_sidecar_tree(pid: u32, child: &mut Child) {
+    match tokio::task::spawn_blocking(move || force_kill_process_tree(pid)).await {
+        Ok(Ok(())) => debug!("Browser sidecar process tree killed (pid {pid})"),
+        Ok(Err(error)) => warn!("Failed to kill browser sidecar process tree {pid}: {error}"),
+        Err(error) => warn!("Failed to join browser sidecar tree-kill task: {error}"),
+    }
+    let _ = child.try_wait();
+    let _ = child.wait().await;
 }
 
 async fn clear_process_if_matches(state: &BrowserAutomationClientState, child: &Arc<Mutex<Child>>) {
