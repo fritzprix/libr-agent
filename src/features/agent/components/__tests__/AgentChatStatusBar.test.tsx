@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TokenUsage } from '@/lib/ai-service/types';
 import type { PreflightTokenMetrics } from '@/models/agent-ipc';
-import type { Message } from '@/models/chat';
+import type { Message, MessageError } from '@/models/chat';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { AgentChatStatusBar } from '../AgentChatStatusBar';
 
@@ -93,8 +93,8 @@ const mockAgentSession: MockAgentSessionContextValue = {
 const mockAgentChat = {
   messages: [] as Message[],
   workflowStatus: 'idle' as WorkflowStatus,
-  error: null,
-  llmError: null,
+  error: null as MessageError | null,
+  llmError: null as MessageError | null,
   retryMessage: mocks.retryMessage,
   resume: mocks.resume,
 };
@@ -304,6 +304,8 @@ describe('AgentChatStatusBar', () => {
     mockAgentChat.workflowStatus = 'idle';
     mockAgentChat.error = {
       displayMessage: 'Something broke',
+      type: 'AI_SERVICE_ERROR',
+      recoverable: true,
     };
 
     render(<AgentChatStatusBar />);
