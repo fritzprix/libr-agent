@@ -184,9 +184,17 @@ def server_from_preset(preset: dict) -> dict:
     return {field: preset[field] for field in SERVER_FIELDS}
 
 
+def sanitize_secret(value: str) -> str:
+    """Strip whitespace and leading UTF-8 BOM injected by Windows pipes."""
+    cleaned = value.strip()
+    while cleaned.startswith("\ufeff"):
+        cleaned = cleaned.lstrip("\ufeff").strip()
+    return cleaned
+
+
 def read_password_from_stdin() -> str:
     """Read the entire stdin stream and trim the trailing line ending."""
-    password = sys.stdin.read().rstrip("\r\n")
+    password = sanitize_secret(sys.stdin.read().rstrip("\r\n"))
     if not password:
         fail("Password stdin was empty.")
     return password
@@ -201,6 +209,7 @@ def resolve_password(args: argparse.Namespace, interactive: bool) -> str:
         password = os.environ.get(args.password_env)
         if password is None:
             fail(f"Environment variable '{args.password_env}' was not set.")
+        password = sanitize_secret(password)
         if not password:
             fail(f"Environment variable '{args.password_env}' is empty.")
         return password

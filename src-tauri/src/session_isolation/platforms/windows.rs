@@ -119,7 +119,7 @@ pub async fn create_basic_isolated_command(
     let script_content = format!(
         "$ErrorActionPreference = 'Continue'\n\
          [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
-         [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n\
+         {}\n\
          $__libr_exit = 0\n\
          try {{\n\
              {}\n\
@@ -133,13 +133,15 @@ pub async fn create_basic_isolated_command(
              $__libr_exit = 1\n\
          }}\n\
          exit $__libr_exit\n",
+        crate::utils::powershell_encoding::SET_UTF8_NO_BOM,
         full_command
     );
 
-    // ✅ CRITICAL FIX: Add UTF-8 BOM (Byte Order Mark) so Windows PowerShell 5.1
-    // correctly recognizes the file as UTF-8. Without this, it uses the system
-    // ANSI code page (e.g., CP949 on Korean Windows), which garbles non-ASCII
-    // characters and can cause parsing hangs if misinterpreted as unclosed quotes/blocks.
+    // File-level UTF-8 BOM is required for PowerShell 5.1 to parse this .ps1 as
+    // UTF-8. It must not be confused with console `$OutputEncoding`: assigning
+    // `[System.Text.Encoding]::UTF8` (BOM-ful) would prepend U+FEFF to native
+    // process stdin. Console/pipeline encoding is set to UTF-8 *without* BOM
+    // in the script body above.
     let mut bom_content = vec![0xEF, 0xBB, 0xBF];
     bom_content.extend_from_slice(script_content.as_bytes());
 
@@ -264,7 +266,7 @@ mod tests {
         format!(
             "$ErrorActionPreference = 'Continue'\n\
              [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
-             [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n\
+             {}\n\
              $__libr_exit = 0\n\
              try {{\n\
                  {}\n\
@@ -278,6 +280,7 @@ mod tests {
                  $__libr_exit = 1\n\
              }}\n\
              exit $__libr_exit\n",
+            crate::utils::powershell_encoding::SET_UTF8_NO_BOM,
             full_command
         )
     }
@@ -292,6 +295,23 @@ mod tests {
     }
 
     // ── Script content tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_script_content_uses_utf8_without_bom() {
+        let script = build_script_content("Write-Host hi");
+        assert!(
+            script.contains("New-Object System.Text.UTF8Encoding $false"),
+            "console encoding must be UTF-8 without BOM"
+        );
+        assert!(
+            script.contains("$OutputEncoding"),
+            "native-command pipes use $OutputEncoding"
+        );
+        assert!(
+            !script.contains("[System.Text.Encoding]::UTF8"),
+            "Encoding.UTF8 prepends BOM to child stdin on Windows PowerShell 5.1"
+        );
+    }
 
     #[test]
     fn test_script_content_has_error_handling() {

@@ -127,7 +127,9 @@ Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerSh
 
 LibrAgent auto-detects `--code-stdin` and pipes the UI input into Python stdin (`stdinDelivery=child`).
 
-**Fallback** if piping is unavailable on an older build:
+**Do not use `Read-Host` inside LibrAgent persistent PowerShell.** Those sessions run `-NonInteractive`, so `Read-Host` raises `PSInvalidOperationException` and exits immediately. The `--code-stdin` / `--password-stdin` path is the supported contract.
+
+**Fallback** only in a fully interactive terminal outside LibrAgent:
 
 ```powershell
 $code = Read-Host; python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-value $code
@@ -168,11 +170,15 @@ When `--output` is set, stdout prints a compact summary (`status`, `output` path
 All CLI output uses UTF-8 (`ensure_ascii=False`). Errors go to stderr as UTF-8 JSON.
 
 ### Output handling (Windows 필수)
-On Windows, always set these before invoking any CLI command:
+On Windows, always set these before invoking any CLI command. Use UTF-8 **without BOM** — `[System.Text.Encoding]::UTF8` prepends U+FEFF to native stdin and will corrupt `--code-stdin` / `--password-stdin` secrets:
+
 ```powershell
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = $utf8
 $env:PYTHONUTF8 = "1"
 ```
+
+LibrAgent persistent shells already apply this encoding and `PYTHONUTF8=1`. `setup.py` also strips any leading UTF-8 BOM from stdin secrets as defense in depth.
 
 ### Input encoding & PowerShell escaping (Windows / Unicode / Literal $ workaround)
 
