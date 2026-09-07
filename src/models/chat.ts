@@ -130,8 +130,7 @@ export type StreamingPhase =
   | 'prefill'
   | 'thinking'
   | 'generating'
-  | 'tool_calling'
-  | 'tool_executing';
+  | 'tool_calling';
 
 export interface Message {
   id: string;

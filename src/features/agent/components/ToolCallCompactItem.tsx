@@ -49,7 +49,7 @@ export const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
         <Pencil
           className="w-3.5 h-3.5 text-primary animate-pulse flex-shrink-0"
           data-testid="tool-status-calling"
-          aria-label={t('agent.toolCalling', 'Generating tool parameters...')}
+          aria-label={t('agent.toolCalling', 'Tool calling...')}
         />
       );
     }

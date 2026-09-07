@@ -272,10 +272,7 @@ export function useExecuteCompletion({
               {
                 toolCalls: streamingToolCalls,
                 thinkingText: accumulator.currentThinkingText,
-                streamingPhase:
-                  streamingToolCalls.length > 0
-                    ? 'tool_executing'
-                    : accumulator.currentPhase,
+                streamingPhase: accumulator.currentPhase,
               },
             ),
           );

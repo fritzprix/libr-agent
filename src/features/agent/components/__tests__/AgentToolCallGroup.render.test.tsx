@@ -152,16 +152,16 @@ describe('AgentToolCallGroup Rendering', () => {
       expect(item).toHaveAttribute('data-streaming', 'true');
     });
 
-    it('passes isStreaming=false when phase is tool_executing (switches to execution spinner)', () => {
-      const executingMsg = {
+    it('passes isStreaming=false when phase is thinking (not tool_calling)', () => {
+      const thinkingMsg = {
         ...mockMessage,
         isStreaming: true,
-        streamingPhase: 'tool_executing' as const,
+        streamingPhase: 'thinking' as const,
       };
 
       render(
         <AgentToolCallGroup
-          message={executingMsg}
+          message={thinkingMsg}
           toolGroup={{ calls: [call] }}
           toolResults={[undefined]}
         />,
