@@ -136,7 +136,7 @@ export interface CompactedRange {
 export type SessionStatus = 'idle' | 'streaming' | 'error';
 
 /**
- * Re-export StreamingPhase from models/chat
+ * Re-export StreamingPhase from models/chat for convenience of LLM context consumers
  */
 export type { StreamingPhase };
 

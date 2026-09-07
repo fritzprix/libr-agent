@@ -68,8 +68,9 @@ export interface StreamAccumulatorState {
  * 3. thinking: Model is actively emitting reasoning tokens.
  * 4. currentPhase: Retain existing phase when chunk has no phase-shifting payload.
  *
- * Note: Tool execution occurs post-stream once LLM response generation completes,
- * so tool execution state in the UI is determined by (!toolResult && !isStreaming).
+ * Note: Exported for testability.
+ * Tool parameter generation (Pencil icon) is active during `message.isStreaming && message.streamingPhase === 'tool_calling'`.
+ * Once streaming concludes or transitions away without a tool result, the UI renders the tool execution spinner (`Loader2`).
  */
 export function resolveChunkPhase(
   chunk: ReturnType<typeof parseStreamChunk>,
