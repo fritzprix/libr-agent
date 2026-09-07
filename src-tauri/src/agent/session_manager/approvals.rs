@@ -2,6 +2,27 @@ use super::AgentSessionManager;
 use crate::agent::state::PendingApprovalData;
 use std::collections::HashMap;
 
+fn complete_resolved_approval(
+    manager: &AgentSessionManager,
+    session_id: &str,
+    tool_call_id: String,
+    approved: bool,
+    data: PendingApprovalData,
+) {
+    let _ = data.sender.send(approved);
+    let event = crate::agent::events::AgentEvent::ToolExecutionApprovalResolved {
+        session_id: session_id.to_string(),
+        tool_call_id,
+        approved,
+    };
+    if let Err(error) = crate::agent::tauri_events::emit_agent_event(&manager.app_handle, event) {
+        log::error!(
+            "Failed to emit ToolExecutionApprovalResolved event: {}",
+            error
+        );
+    }
+}
+
 pub(crate) async fn resolve_pending_tool_approval(
     manager: &AgentSessionManager,
     session_id: &str,
@@ -20,19 +41,13 @@ pub(crate) async fn resolve_pending_tool_approval(
     drop(approvals);
     drop(active);
 
-    let _ = data.sender.send(approved);
-    let event = crate::agent::events::AgentEvent::ToolExecutionApprovalResolved {
-        session_id: session_id.to_string(),
-        tool_call_id: tool_call_id.to_string(),
+    complete_resolved_approval(
+        manager,
+        session_id,
+        tool_call_id.to_string(),
         approved,
-    };
-    if let Err(error) = crate::agent::tauri_events::emit_agent_event(&manager.app_handle, event) {
-        log::error!(
-            "Failed to emit ToolExecutionApprovalResolved event: {}",
-            error
-        );
-    }
-
+        data,
+    );
     Ok(true)
 }
 
@@ -87,22 +102,19 @@ pub async fn approve_all_pending_tool_approvals(
     session_id: &str,
     include_hard_approvals: bool,
 ) -> Result<usize, String> {
-    let active = manager.active_sessions.read().await;
-    let Some(session) = active.get(session_id) else {
-        return Err(format!("Session not found: {}", session_id));
+    let drained = {
+        let active = manager.active_sessions.read().await;
+        let Some(session) = active.get(session_id) else {
+            return Err(format!("Session not found: {}", session_id));
+        };
+
+        let mut approvals = session.pending_approvals.write().await;
+        drain_matching_approvals(&mut approvals, include_hard_approvals)
     };
 
-    let tool_call_ids = {
-        let approvals = session.pending_approvals.read().await;
-        pending_approval_ids(&approvals, include_hard_approvals)
-    };
-    drop(active);
-
-    let mut resolved_count = 0usize;
-    for tool_call_id in tool_call_ids {
-        if resolve_pending_tool_approval(manager, session_id, &tool_call_id, true).await? {
-            resolved_count += 1;
-        }
+    let resolved_count = drained.len();
+    for (tool_call_id, data) in drained {
+        complete_resolved_approval(manager, session_id, tool_call_id, true, data);
     }
 
     Ok(resolved_count)
@@ -124,9 +136,23 @@ fn pending_approval_ids(
         .collect()
 }
 
+fn drain_matching_approvals(
+    approvals: &mut HashMap<String, PendingApprovalData>,
+    include_hard_approvals: bool,
+) -> Vec<(String, PendingApprovalData)> {
+    pending_approval_ids(approvals, include_hard_approvals)
+        .into_iter()
+        .filter_map(|tool_call_id| {
+            approvals
+                .remove(&tool_call_id)
+                .map(|data| (tool_call_id, data))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::pending_approval_ids;
+    use super::{drain_matching_approvals, pending_approval_ids};
     use crate::agent::state::{PendingApprovalData, PendingApprovalKind};
     use std::collections::HashMap;
     use tokio::sync::oneshot;
@@ -199,5 +225,54 @@ mod tests {
 
         let approved_ids = pending_approval_ids(&approvals, true);
         assert_eq!(approved_ids.len(), 2);
+    }
+
+    fn sample_approval(kind: PendingApprovalKind) -> PendingApprovalData {
+        let (sender, _rx) = oneshot::channel();
+        PendingApprovalData {
+            sender,
+            tool_name: "runShell".to_string(),
+            arguments: "{}".to_string(),
+            approval_kind: kind,
+            request_id: None,
+            description: None,
+            input_preview: None,
+        }
+    }
+
+    #[test]
+    fn drain_yolo_removes_standard_and_leaves_hard() {
+        let mut approvals = HashMap::new();
+        approvals.insert(
+            "soft-tool".to_string(),
+            sample_approval(PendingApprovalKind::Standard),
+        );
+        approvals.insert(
+            "hard-tool".to_string(),
+            sample_approval(PendingApprovalKind::Hard),
+        );
+
+        let drained = drain_matching_approvals(&mut approvals, false);
+        let drained_ids: Vec<_> = drained.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(drained_ids, vec!["soft-tool"]);
+        assert!(approvals.contains_key("hard-tool"));
+        assert!(!approvals.contains_key("soft-tool"));
+    }
+
+    #[test]
+    fn drain_unsafe_removes_all_pending_approvals() {
+        let mut approvals = HashMap::new();
+        approvals.insert(
+            "soft-tool".to_string(),
+            sample_approval(PendingApprovalKind::Standard),
+        );
+        approvals.insert(
+            "hard-tool".to_string(),
+            sample_approval(PendingApprovalKind::Hard),
+        );
+
+        let drained = drain_matching_approvals(&mut approvals, true);
+        assert_eq!(drained.len(), 2);
+        assert!(approvals.is_empty());
     }
 }

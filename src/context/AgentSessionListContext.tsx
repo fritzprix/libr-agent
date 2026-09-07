@@ -738,7 +738,10 @@ export function AgentSessionListProvider({
 
   const clearPendingApproval = useCallback(
     (sessionId: string, toolCallId: string) => {
-      pendingApprovalKeysRef.current.delete(`${sessionId}:${toolCallId}`);
+      const pendingApprovalKey = `${sessionId}:${toolCallId}`;
+      if (!pendingApprovalKeysRef.current.delete(pendingApprovalKey)) {
+        return;
+      }
       applySessionUpdate(sessionId, (session) => ({
         ...session,
         pendingApprovalCount: Math.max(

@@ -80,6 +80,10 @@ pub async fn set_execution_mode(
 
     if let Some(include_hard_approvals) = mode.include_hard_approvals() {
         if previous_mode.is_some() {
+            // Drain matching approvals under the pending-approvals write lock so a
+            // concurrent manual approve/reject cannot interleave between snapshot
+            // and resolve. Event emit stays best-effort; the frontend reconciles
+            // widgets from the successful command response.
             super::approvals::approve_all_pending_tool_approvals(
                 manager,
                 session_id,
