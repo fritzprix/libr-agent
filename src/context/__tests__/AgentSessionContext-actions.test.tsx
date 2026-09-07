@@ -239,6 +239,76 @@ describe('AgentSessionContext – User Actions', () => {
             );
         });
 
+        it('clears only the approval IDs returned by the backend after a mode change', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            listenMock.mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => ({
+                    state: useAgentSessionState(),
+                    actions: useAgentSessionActions(),
+                }),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(eventHandler).toBeDefined();
+                expect(result.current.state.isSessionLoading).toBe(false);
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-1',
+                        toolName: 'shell',
+                        arguments: '{}',
+                        approvalKind: 'standard',
+                    },
+                });
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-2',
+                        toolName: 'shell',
+                        arguments: '{}',
+                        approvalKind: 'hard',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.state.pendingApprovals).toHaveLength(2);
+            });
+
+            mockClearPendingApproval.mockClear();
+            safeInvokeMock.mockResolvedValueOnce(['call-1']);
+
+            await act(async () => {
+                await result.current.actions.setExecutionMode('unsafe');
+            });
+
+            expect(result.current.state.executionMode).toBe('unsafe');
+            expect(result.current.state.pendingApprovals).toHaveLength(1);
+            expect(result.current.state.pendingApprovals[0]?.toolCallId).toBe(
+                'call-2',
+            );
+            expect(mockClearPendingApproval).toHaveBeenCalledTimes(1);
+            expect(mockClearPendingApproval).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                'call-1',
+            );
+        });
+
         it('switches execution mode exclusively when unsafe mode is selected', async () => {
             const { result } = renderHook(
                 () => ({

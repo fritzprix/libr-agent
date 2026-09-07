@@ -20,3 +20,27 @@ export function isPendingApprovalAutoResolvedByMode(
   }
   return false;
 }
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === 'string')
+  );
+}
+
+/**
+ * Prefer IDs returned by `agent_set_execution_mode`. Fall back to the local
+ * snapshot when older backends or tests return void / an invalid payload.
+ * An empty array is trusted: the backend drained nothing.
+ */
+export function resolvedApprovalIdsFromModeChange(
+  response: unknown,
+  fallbackIds: string[],
+): string[] {
+  if (response === undefined || response === null) {
+    return fallbackIds;
+  }
+  if (!isStringArray(response)) {
+    return fallbackIds;
+  }
+  return response;
+}

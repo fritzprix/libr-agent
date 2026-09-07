@@ -18,6 +18,10 @@ pub fn revert_mode_if_unchanged(
 
 /// Persist and apply session execution mode.
 ///
+/// Returns the tool-call IDs that were auto-approved as a side effect of the
+/// mode change (empty when switching to `normal`, when no session is active,
+/// or when drain fails after the mode is already persisted).
+///
 /// # SSOT
 /// Active sessions: `AgentSession.metadata.execution_mode` is the only in-memory
 /// authority. The DB mirrors it for cold open / HTTP GET.
@@ -30,11 +34,13 @@ pub fn revert_mode_if_unchanged(
 /// - On DB failure we revert memory only if it still equals the mode we wrote
 ///   (compare-and-restore), so a concurrent successful `set_execution_mode` is
 ///   not clobbered by a late failure rollback.
+/// - Auto-approval drain runs after persist. Drain errors are logged and do not
+///   fail the command, so the frontend can apply the committed mode.
 pub async fn set_execution_mode(
     manager: &AgentSessionManager,
     session_id: &str,
     mode: ExecutionMode,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     let previous_mode = {
         let mut active = manager.active_sessions.write().await;
         if let Some(session) = active.get_mut(session_id) {
@@ -78,18 +84,29 @@ pub async fn set_execution_mode(
         );
     }
 
+    let mut resolved_ids = Vec::new();
     if let Some(include_hard_approvals) = mode.include_hard_approvals() {
         if previous_mode.is_some() {
             // Drain matching approvals under the pending-approvals write lock so a
             // concurrent manual approve/reject cannot interleave between snapshot
             // and resolve. Event emit stays best-effort; the frontend reconciles
-            // widgets from the successful command response.
-            super::approvals::approve_all_pending_tool_approvals(
+            // widgets from the command's resolved IDs (with a local fallback).
+            match super::approvals::approve_all_pending_tool_approvals(
                 manager,
                 session_id,
                 include_hard_approvals,
             )
-            .await?;
+            .await
+            {
+                Ok(ids) => resolved_ids = ids,
+                Err(error) => {
+                    log::error!(
+                        "Failed to auto-approve pending tools after setting execution mode for session '{}': {}",
+                        session_id,
+                        error
+                    );
+                }
+            }
         }
     }
 
@@ -99,5 +116,5 @@ pub async fn set_execution_mode(
         Some(session_id.to_string()),
     );
 
-    Ok(())
+    Ok(resolved_ids)
 }

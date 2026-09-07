@@ -6,7 +6,10 @@ import type { Message, RustMessage } from '@/models/chat';
 import type { AgentResponse, SendUserMessageRequest } from '@/models/agent-ipc';
 import type { useAgentSessionState } from './useAgentSessionState';
 import type { ExecutionMode } from './types';
-import { isPendingApprovalAutoResolvedByMode } from './executionModeApprovals';
+import {
+  isPendingApprovalAutoResolvedByMode,
+  resolvedApprovalIdsFromModeChange,
+} from './executionModeApprovals';
 
 const logger = getLogger('AgentSessionActions');
 
@@ -176,19 +179,14 @@ export function useAgentSessionActionsLogic(
         return;
       }
 
-      const autoResolvedIds = new Set(
-        pendingApprovalsRef.current
-          .filter((approval) =>
-            isPendingApprovalAutoResolvedByMode(mode, approval.approvalKind),
-          )
-          .map((approval) => approval.toolCallId),
-      );
-      const snapshotHadRemaining = pendingApprovalsRef.current.some(
-        (approval) => !autoResolvedIds.has(approval.toolCallId),
-      );
+      const fallbackResolvedIds = pendingApprovalsRef.current
+        .filter((approval) =>
+          isPendingApprovalAutoResolvedByMode(mode, approval.approvalKind),
+        )
+        .map((approval) => approval.toolCallId);
 
       try {
-        await safeInvoke<void>('agent_set_execution_mode', {
+        const response = await safeInvoke<unknown>('agent_set_execution_mode', {
           sessionId,
           mode,
         });
@@ -196,17 +194,23 @@ export function useAgentSessionActionsLogic(
         applyExecutionModeLocally(mode);
         logger.info(`Execution mode set to ${mode}`);
 
+        const autoResolvedIds = new Set(
+          resolvedApprovalIdsFromModeChange(response, fallbackResolvedIds),
+        );
         if (autoResolvedIds.size === 0) {
           return;
         }
 
-        // Reconcile locally after a successful command. Event emit is
-        // best-effort; widgets must not stay visible if the backend already
-        // unblocked the matching tool calls.
+        // Reconcile from the command result. Event emit is best-effort;
+        // widgets must not stay visible if the backend already unblocked
+        // the matching tool calls.
         setters.setPendingApprovals((prev) =>
           prev.filter((approval) => !autoResolvedIds.has(approval.toolCallId)),
         );
-        if (!snapshotHadRemaining) {
+        const remainingAfterReconcile = pendingApprovalsRef.current.some(
+          (approval) => !autoResolvedIds.has(approval.toolCallId),
+        );
+        if (!remainingAfterReconcile) {
           setters.setWorkflowPhase('using_tools');
         }
         autoResolvedIds.forEach((toolCallId) => {

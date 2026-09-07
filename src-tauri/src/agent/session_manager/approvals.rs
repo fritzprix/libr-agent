@@ -101,7 +101,7 @@ pub async fn approve_all_pending_tool_approvals(
     manager: &AgentSessionManager,
     session_id: &str,
     include_hard_approvals: bool,
-) -> Result<usize, String> {
+) -> Result<Vec<String>, String> {
     let drained = {
         let active = manager.active_sessions.read().await;
         let Some(session) = active.get(session_id) else {
@@ -112,12 +112,12 @@ pub async fn approve_all_pending_tool_approvals(
         drain_matching_approvals(&mut approvals, include_hard_approvals)
     };
 
-    let resolved_count = drained.len();
+    let resolved_ids: Vec<String> = drained.iter().map(|(id, _)| id.clone()).collect();
     for (tool_call_id, data) in drained {
         complete_resolved_approval(manager, session_id, tool_call_id, true, data);
     }
 
-    Ok(resolved_count)
+    Ok(resolved_ids)
 }
 
 fn pending_approval_ids(
