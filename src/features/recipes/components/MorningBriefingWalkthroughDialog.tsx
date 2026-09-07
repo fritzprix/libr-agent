@@ -9,8 +9,8 @@ import {
   Calendar,
   Bot,
   Loader2,
+  Wrench,
 } from 'lucide-react';
-import { createId } from '@paralleldrive/cuid2';
 import { toast } from 'sonner';
 
 import {
@@ -26,47 +26,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useSettings } from '@/hooks/use-settings';
 import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
-import { buildServerEntityFromPreset } from '@/features/mcp-servers/utils/preset-utils';
+import { useRuntimeReadiness } from '@/features/agent/hooks/useRuntimeReadiness';
 import {
-  listMCPServerPresets,
-  type MCPServerPreset,
-} from '@/lib/backend/mcp-server-config';
-import {
-  createAssistant,
-  updateAssistant,
-  getAssistant,
-} from '@/lib/backend/assistants';
-import {
-  createScheduledTask,
-  updateScheduledTask,
-} from '@/lib/backend/scheduled-tasks';
-import { safeInvoke } from '@/lib/backend/core';
+  APP_WIZARD_ONBOARDING_PROMPT,
+  navigateToAppWizard,
+} from '@/features/agent/utils/openAppWizard';
 import { getLogger } from '@/lib/logger';
 import { MORNING_BRIEFING_RECIPE } from '../builtin-recipes';
 import { useMCPServerActions } from '../hooks/useMCPServerActions';
+import { setupMorningBriefingRecipe } from '../setupMorningBriefing';
 
 const logger = getLogger('MorningBriefingWalkthroughDialog');
-
-const FALLBACK_PRESETS: Record<string, MCPServerPreset> = {
-  hn: {
-    name: 'hn',
-    category: 'search',
-    description:
-      'Read Hacker News — top, new, best, Ask HN, Show HN, and job stories.',
-    transportType: 'stdio',
-    command: 'npx',
-    args: ['-y', '@fre4x/hn'],
-  },
-  'yahoo-finance': {
-    name: 'yahoo-finance',
-    category: 'data',
-    description:
-      'Get real-time stock prices, financials, options chains, and insider data. No API key required.',
-    transportType: 'stdio',
-    command: 'npx',
-    args: ['-y', '@fre4x/yahoo-finance'],
-  },
-};
 
 export interface MorningBriefingWalkthroughDialogProps {
   open: boolean;
@@ -81,6 +51,11 @@ export function MorningBriefingWalkthroughDialog({
   const navigate = useNavigate();
   const { value: settings } = useSettings();
   const { saveServer } = useMCPServerActions();
+  const {
+    isNpxReady,
+    loading: runtimeLoading,
+    refresh: refreshRuntime,
+  } = useRuntimeReadiness({ enabled: open });
 
   const [selectedPresets, setSelectedPresets] = useState<
     Record<string, boolean>
@@ -89,6 +64,7 @@ export function MorningBriefingWalkthroughDialog({
     'yahoo-finance': true,
   });
   const [isSettingUp, setIsSettingUp] = useState(false);
+  const [isOpeningWizard, setIsOpeningWizard] = useState(false);
 
   const hasConfiguredProviders = useMemo(
     () => listConfiguredProviderGroups(settings).length > 0,
@@ -100,6 +76,23 @@ export function MorningBriefingWalkthroughDialog({
       ...prev,
       [presetName]: !prev[presetName],
     }));
+  };
+
+  const handleOpenAppWizard = async () => {
+    setIsOpeningWizard(true);
+    try {
+      onOpenChange(false);
+      await navigateToAppWizard(navigate, {
+        prompt: t('onboarding.appWizardPrompt', {
+          defaultValue: APP_WIZARD_ONBOARDING_PROMPT,
+        }),
+        t: (key, defaultValue) => t(key, { defaultValue }),
+      });
+    } catch (error) {
+      logger.error('Failed to open App Wizard from recipe dialog', error);
+    } finally {
+      setIsOpeningWizard(false);
+    }
   };
 
   const handleSetup = async () => {
@@ -114,164 +107,24 @@ export function MorningBriefingWalkthroughDialog({
       return;
     }
 
+    if (!isNpxReady) {
+      toast.error(
+        t('recipes.morningBriefing.runtimeRequiredToast', {
+          defaultValue:
+            'Node.js(npx)가 필요합니다. App Wizard로 런타임을 먼저 설치하세요.',
+        }),
+      );
+      return;
+    }
+
     setIsSettingUp(true);
     try {
-      let presets: MCPServerPreset[] = [];
-      try {
-        presets = await listMCPServerPresets();
-      } catch (err) {
-        logger.warn('Failed to fetch presets via IPC, using fallback', err);
-      }
-
-      // Query existing servers to reuse IDs and avoid duplicate installations
-      const existingServers =
-        (await safeInvoke<Array<{ id: string; name: string }>>(
-          'list_mcp_server_configs',
-        )) ?? [];
-
-      const installedServerIds: string[] = [];
-      for (const item of MORNING_BRIEFING_RECIPE.requiredMcpPresets) {
-        if (!selectedPresets[item.presetName]) continue;
-
-        const existingServer = existingServers.find(
-          (s) => s.name === item.presetName,
-        );
-        if (existingServer?.id) {
-          installedServerIds.push(existingServer.id);
-          continue;
-        }
-
-        const preset =
-          presets.find((p) => p.name === item.presetName) ||
-          FALLBACK_PRESETS[item.presetName];
-
-        if (preset) {
-          const entity = buildServerEntityFromPreset(preset, createId());
-          const saved = await saveServer(entity);
-          if (saved?.id) {
-            installedServerIds.push(saved.id);
-          }
-        }
-      }
-
-      // Resolve localized recipe strings
-      const localizedAssistantName = t(
-        'recipes.morningBriefing.assistantName',
-        {
-          defaultValue: MORNING_BRIEFING_RECIPE.assistantTemplate.name,
-        },
-      );
-      const localizedAssistantDesc = t(
-        'recipes.morningBriefing.assistantDesc',
-        {
-          defaultValue: MORNING_BRIEFING_RECIPE.assistantTemplate.description,
-        },
-      );
-      const localizedAssistantSystemPrompt = t(
-        'recipes.morningBriefing.assistantSystemPrompt',
-        {
-          defaultValue: MORNING_BRIEFING_RECIPE.assistantTemplate.systemPrompt,
-        },
-      );
-      const localizedTaskName = t('recipes.morningBriefing.scheduledTaskName', {
-        defaultValue: MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name,
+      const result = await setupMorningBriefingRecipe({
+        saveServer,
+        selectedPresets,
+        t: (key, options) =>
+          t(key, { defaultValue: options?.defaultValue ?? key }),
       });
-      const localizedTaskMessage = t(
-        'recipes.morningBriefing.scheduledTaskMessage',
-        {
-          defaultValue: MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.message,
-        },
-      );
-      const localizedTestRunPrompt = t(
-        'recipes.morningBriefing.testRunPrompt',
-        {
-          defaultValue: MORNING_BRIEFING_RECIPE.testRunPrompt,
-        },
-      );
-
-      // Query existing assistants to prevent duplicate creation
-      const existingAssistants =
-        (await safeInvoke<Array<{ id: string; name: string }>>(
-          'list_assistants',
-        )) ?? [];
-      const existingAssistant = existingAssistants.find(
-        (a) =>
-          a.name === localizedAssistantName ||
-          a.name === MORNING_BRIEFING_RECIPE.assistantTemplate.name,
-      );
-
-      let targetAssistant: { id: string };
-      if (existingAssistant) {
-        targetAssistant = existingAssistant;
-        let existingFull = null;
-        try {
-          existingFull = await getAssistant(existingAssistant.id);
-        } catch (e) {
-          logger.warn('Failed to fetch existing assistant details', e);
-        }
-        await updateAssistant({
-          id: existingAssistant.id,
-          name: localizedAssistantName,
-          description: localizedAssistantDesc,
-          systemPrompt: localizedAssistantSystemPrompt,
-          allowedBuiltInServiceAliases:
-            MORNING_BRIEFING_RECIPE.assistantTemplate
-              .allowedBuiltInServiceAliases,
-          mcpServerIds: installedServerIds,
-          deletionProtected: existingFull?.deletionProtected ?? false,
-          avatar: existingFull?.avatar,
-          disabledSkills: existingFull?.disabledSkills,
-          createdAt: existingFull?.createdAt ?? new Date(),
-          updatedAt: new Date(),
-        });
-      } else {
-        targetAssistant = await createAssistant({
-          id: createId(),
-          name: localizedAssistantName,
-          description: localizedAssistantDesc,
-          systemPrompt: localizedAssistantSystemPrompt,
-          allowedBuiltInServiceAliases:
-            MORNING_BRIEFING_RECIPE.assistantTemplate
-              .allowedBuiltInServiceAliases,
-          mcpServerIds: installedServerIds,
-          deletionProtected: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      }
-
-      // Query existing tasks to prevent duplicate creation
-      const existingTasks =
-        (await safeInvoke<Array<{ id: string; name: string }>>(
-          'list_scheduled_tasks',
-        )) ?? [];
-      const existingTask = existingTasks.find(
-        (t) =>
-          t.name === localizedTaskName ||
-          t.name === MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.name,
-      );
-
-      if (existingTask) {
-        await updateScheduledTask(existingTask.id, {
-          name: localizedTaskName,
-          cronExpression:
-            MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.cronExpression,
-          executionMode:
-            MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.executionMode,
-          assistantId: targetAssistant.id,
-          message: localizedTaskMessage,
-        });
-      } else {
-        await createScheduledTask({
-          name: localizedTaskName,
-          cronExpression:
-            MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.cronExpression,
-          executionMode:
-            MORNING_BRIEFING_RECIPE.scheduledTaskTemplate.executionMode,
-          assistantId: targetAssistant.id,
-          message: localizedTaskMessage,
-        });
-      }
 
       localStorage.setItem('libragent:morning-briefing:completed', 'true');
 
@@ -282,16 +135,16 @@ export function MorningBriefingWalkthroughDialog({
       );
       onOpenChange(false);
 
-      // Navigate to draft view with prompt ready and autoSubmit=true
-      const promptQuery = encodeURIComponent(localizedTestRunPrompt);
+      const promptQuery = encodeURIComponent(result.testRunPrompt);
       navigate(
-        `/agent/draft?assistantId=${targetAssistant.id}&prompt=${promptQuery}&autoSubmit=true`,
+        `/agent/draft?assistantId=${result.assistantId}&prompt=${promptQuery}&autoSubmit=true`,
       );
     } catch (error) {
       logger.error('Failed to setup morning briefing recipe', error);
+      const message = error instanceof Error ? error.message : String(error);
       toast.error(
         t('recipes.morningBriefing.setupError', {
-          defaultValue: '설정 중 오류가 발생했습니다.',
+          defaultValue: message || '설정 중 오류가 발생했습니다.',
         }),
       );
     } finally {
@@ -393,6 +246,104 @@ export function MorningBriefingWalkthroughDialog({
                     defaultValue: '설정으로 이동',
                   })}
                 </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Section 1b: Runtime Check */}
+          <div className="rounded-lg border p-4 bg-card space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t('recipes.morningBriefing.runtimeStepTitle', {
+                  defaultValue: 'Step 1.5 · 런타임 환경 (Node.js / npx)',
+                })}
+              </span>
+              {runtimeLoading ? (
+                <Badge variant="outline" className="gap-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {t('common.loading', { defaultValue: '확인 중...' })}
+                </Badge>
+              ) : isNpxReady ? (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-green-600/30 text-green-600 dark:text-green-400 bg-green-500/10"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {t('recipes.morningBriefing.runtimeReady', {
+                    defaultValue: '준비됨',
+                  })}
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-amber-600/30 text-amber-600 dark:text-amber-400 bg-amber-500/10"
+                >
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {t('recipes.morningBriefing.runtimeRequired', {
+                    defaultValue: '설치 필요',
+                  })}
+                </Badge>
+              )}
+            </div>
+
+            {isNpxReady ? (
+              <p className="text-xs text-muted-foreground">
+                {t('recipes.morningBriefing.runtimeReadyDesc', {
+                  defaultValue:
+                    'npx를 사용할 수 있어 Hacker News / Yahoo Finance MCP 서버를 설치할 수 있습니다.',
+                })}
+              </p>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md bg-amber-500/10 border border-amber-500/20 p-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-medium text-foreground">
+                      {t('recipes.morningBriefing.runtimeMissingTitle', {
+                        defaultValue: 'Node.js(npx)가 설치되어 있지 않습니다.',
+                      })}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {t('recipes.morningBriefing.runtimeMissingDesc', {
+                        defaultValue:
+                          'App Wizard로 설치한 뒤 앱을 재시작하고, 다시 이 가이드를 열어주세요.',
+                      })}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 text-xs h-7"
+                    onClick={() => {
+                      refreshRuntime().catch((error: unknown) => {
+                        logger.error('Runtime recheck failed', error);
+                      });
+                    }}
+                    disabled={runtimeLoading}
+                  >
+                    {t('recipes.morningBriefing.recheckRuntime', {
+                      defaultValue: '다시 확인',
+                    })}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 text-xs h-7"
+                    onClick={() => {
+                      handleOpenAppWizard().catch((error: unknown) => {
+                        logger.error('Open App Wizard failed', error);
+                      });
+                    }}
+                    disabled={isOpeningWizard}
+                  >
+                    <Wrench className="h-3.5 w-3.5" />
+                    {t('recipes.morningBriefing.openAppWizard', {
+                      defaultValue: 'App Wizard',
+                    })}
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -552,8 +503,17 @@ export function MorningBriefingWalkthroughDialog({
           <Button
             size="sm"
             className="gap-1.5"
-            onClick={handleSetup}
-            disabled={isSettingUp || !hasConfiguredProviders}
+            onClick={() => {
+              handleSetup().catch((error: unknown) => {
+                logger.error('Morning briefing setup failed', error);
+              });
+            }}
+            disabled={
+              isSettingUp ||
+              !hasConfiguredProviders ||
+              runtimeLoading ||
+              !isNpxReady
+            }
           >
             {isSettingUp ? (
               <>

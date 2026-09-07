@@ -386,3 +386,29 @@ pub async fn check_docker_health() -> Result<(), String> {
         .await
         .map_err(|e| e.to_agent_string())
 }
+
+/// Result of a lightweight PATH probe for MCP/runtime onboarding.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeProbeResult {
+    pub node: bool,
+    pub npx: bool,
+    pub python: bool,
+    pub uv: bool,
+}
+
+/// Checks whether common MCP runtime binaries exist on PATH.
+///
+/// Used by Chat hub onboarding and recipe walkthroughs before installing
+/// stdio MCP servers that depend on `npx` / `uv`.
+#[tauri::command]
+pub fn probe_runtime_binaries() -> RuntimeProbeResult {
+    use crate::utils::platform::command_exists;
+
+    RuntimeProbeResult {
+        node: command_exists("node"),
+        npx: command_exists("npx"),
+        python: command_exists("python3") || command_exists("python"),
+        uv: command_exists("uv"),
+    }
+}

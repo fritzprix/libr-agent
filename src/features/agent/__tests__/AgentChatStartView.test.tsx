@@ -24,6 +24,20 @@ const mocks = vi.hoisted(() => ({
     } as Record<string, unknown>,
     customProviders: [] as unknown[],
   },
+  runtime: {
+    probe: {
+      node: true,
+      npx: true,
+      python: true,
+      uv: true,
+    },
+    loading: false,
+    error: null as string | null,
+    isNpxReady: true,
+    refresh: vi.fn(),
+  },
+  navigateToAppWizard: vi.fn(),
+  restartApp: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -61,6 +75,20 @@ vi.mock('../hooks/useAssistantSummaries', () => ({
     loading: false,
     error: null,
   }),
+}));
+
+vi.mock('../hooks/useRuntimeReadiness', () => ({
+  useRuntimeReadiness: () => mocks.runtime,
+}));
+
+vi.mock('../utils/openAppWizard', () => ({
+  APP_WIZARD_ONBOARDING_PROMPT: 'Check Node.js',
+  navigateToAppWizard: (...args: unknown[]) =>
+    mocks.navigateToAppWizard(...args),
+}));
+
+vi.mock('@/lib/backend/utils', () => ({
+  restartApp: (...args: unknown[]) => mocks.restartApp(...args),
 }));
 
 vi.mock('@/context/AgentSessionListContext', () => ({
@@ -160,6 +188,20 @@ describe('AgentChatStartView', () => {
       },
       customProviders: [],
     };
+    mocks.runtime = {
+      probe: {
+        node: true,
+        npx: true,
+        python: true,
+        uv: true,
+      },
+      loading: false,
+      error: null,
+      isNpxReady: true,
+      refresh: vi.fn(),
+    };
+    mocks.navigateToAppWizard.mockResolvedValue(undefined);
+    mocks.restartApp.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -262,6 +304,59 @@ describe('AgentChatStartView', () => {
     );
 
     expect(queryByTestId('onboarding-banner')).not.toBeInTheDocument();
+  });
+
+  it('hides featured recipe and shows runtime banner when npx is missing', async () => {
+    mocks.runtime = {
+      ...mocks.runtime,
+      isNpxReady: false,
+      loading: false,
+      probe: {
+        node: false,
+        npx: false,
+        python: false,
+        uv: false,
+      },
+    };
+
+    const { getByTestId, queryByTestId, getByRole } = render(
+      <MemoryRouter initialEntries={['/agent']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    expect(queryByTestId('featured-recipe-card')).not.toBeInTheDocument();
+    expect(getByTestId('runtime-onboarding-banner')).toBeInTheDocument();
+
+    fireEvent.click(
+      getByRole('button', {
+        name: /App Wizard 열기/i,
+      }),
+    );
+    await waitFor(() => {
+      expect(mocks.navigateToAppWizard).toHaveBeenCalled();
+    });
+  });
+
+  it('does not show runtime banner when LLM is not configured', () => {
+    mocks.settings = {
+      serviceConfigs: {},
+      customProviders: [],
+    };
+    mocks.runtime = {
+      ...mocks.runtime,
+      isNpxReady: false,
+    };
+
+    const { getByTestId, queryByTestId } = render(
+      <MemoryRouter initialEntries={['/agent']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    expect(getByTestId('onboarding-banner')).toBeInTheDocument();
+    expect(queryByTestId('runtime-onboarding-banner')).not.toBeInTheDocument();
+    expect(queryByTestId('featured-recipe-card')).not.toBeInTheDocument();
   });
 
   it('renders featured recipe card and clicking button opens walkthrough dialog', async () => {
