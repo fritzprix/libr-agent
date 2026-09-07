@@ -56,6 +56,13 @@ describe('AnalysisLoader', () => {
     expect(textSpan?.textContent?.trim().length).toBeGreaterThan(0);
   });
 
+  it('pins the translated initial message for the first eye-landing beat', () => {
+    const { container } = render(<AnalysisLoader />);
+    expect(container.querySelector('span')?.textContent).toBe(
+      'Preparing response...',
+    );
+  });
+
   it('advances to next message after interval', () => {
     const { container } = render(<AnalysisLoader />);
     const initialText = container.querySelector('span')?.textContent;
@@ -70,5 +77,29 @@ describe('AnalysisLoader', () => {
     expect(nextText).not.toBe(initialText);
   });
 
+  it('keeps rotating messages after the late phase instead of freezing', () => {
+    const { container } = render(<AnalysisLoader />);
+    const seen = new Set<string>();
 
+    for (let i = 0; i < 80; i += 1) {
+      const text = container.querySelector('span')?.textContent ?? '';
+      if (text.length > 0) {
+        seen.add(text);
+      }
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+    }
+
+    // Curated witty + late alone are ~19 lines; combinatorial endless should exceed that.
+    expect(seen.size).toBeGreaterThan(20);
+
+    const beforeWrap = container.querySelector('span')?.textContent;
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    const afterWrap = container.querySelector('span')?.textContent;
+    expect(afterWrap).toBeTruthy();
+    expect(afterWrap).not.toBe(beforeWrap);
+  });
 });
