@@ -174,6 +174,7 @@ export function useExecuteCompletion({
             content: [],
             createdAt: new Date(),
             isStreaming: true,
+            streamingPhase: 'prefill',
           });
           return next;
         });
@@ -239,6 +240,7 @@ export function useExecuteCompletion({
                   {
                     toolCalls: streamingToolCalls,
                     thinkingText: accumulator.currentThinkingText,
+                    streamingPhase: accumulator.currentPhase,
                   },
                 ),
               );
@@ -270,6 +272,10 @@ export function useExecuteCompletion({
               {
                 toolCalls: streamingToolCalls,
                 thinkingText: accumulator.currentThinkingText,
+                streamingPhase:
+                  streamingToolCalls.length > 0
+                    ? 'tool_executing'
+                    : accumulator.currentPhase,
               },
             ),
           );

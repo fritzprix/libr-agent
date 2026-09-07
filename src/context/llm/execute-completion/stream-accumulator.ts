@@ -11,7 +11,7 @@ import type {
   MCPThinkingContent,
   MCPToolCallContent,
 } from '@/lib/mcp';
-import type { ToolCall } from '@/models/chat';
+import type { ToolCall, StreamingPhase } from '@/models/chat';
 import type { Settings } from '@/lib/services/settings-service';
 import { getLogger } from '@/lib/logger';
 import {
@@ -47,6 +47,7 @@ export interface StreamAccumulatorState {
   content: MCPContent[];
   indexedToolCalls: Map<number, ToolCall>;
   directToolCalls: ToolCall[];
+  currentPhase: StreamingPhase;
   thinkingStartTime?: number;
   currentThinkingTime?: number;
   currentThinkingText?: string;
@@ -56,11 +57,33 @@ export interface StreamAccumulatorState {
   currentStreamingText: string;
 }
 
+/**
+ * Determine streaming phase for an incoming chunk with explicit precedence:
+ * tool_calls > generating (content) > thinking > currentPhase
+ */
+export function resolveChunkPhase(
+  chunk: ReturnType<typeof parseStreamChunk>,
+  hasToolCallUpdate: boolean,
+  currentPhase: StreamingPhase,
+): StreamingPhase {
+  if (hasToolCallUpdate) {
+    return 'tool_calling';
+  }
+  if (typeof chunk.content === 'string' && chunk.content.length > 0) {
+    return 'generating';
+  }
+  if (typeof chunk.thinking === 'string' && chunk.thinking.length > 0) {
+    return 'thinking';
+  }
+  return currentPhase;
+}
+
 export class StreamAccumulator {
   public content: MCPContent[] = [];
   public activeToolCallIndices = new Map<number, number>();
   public indexedToolCalls = new Map<number, ToolCall>();
   public directToolCalls: ToolCall[] = [];
+  public currentPhase: StreamingPhase = 'prefill';
 
   public thinkingStartTime?: number;
   public currentThinkingTime?: number;
@@ -326,6 +349,12 @@ export class StreamAccumulator {
     const hasToolCallUpdate = toolCallChunks.length > 0;
     const previousToolCallCount =
       this.indexedToolCalls.size + this.directToolCalls.length;
+
+    this.currentPhase = resolveChunkPhase(
+      chunk,
+      hasToolCallUpdate,
+      this.currentPhase,
+    );
 
     if (hasToolCallUpdate) {
       this.hasToolCallInStream = true;

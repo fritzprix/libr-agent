@@ -127,12 +127,20 @@ export function ContentItemRenderer({
   switch (contentItem.type) {
     case 'thinking': {
       const thinkingItem = contentItem as MCPThinkingContent;
+      // Only show thinking spinner during the 'thinking' phase.
+      // For legacy messages where streamingPhase is undefined, preserve original baseline behavior (isLast).
+      const isThinkingStreaming = Boolean(
+        message?.isStreaming &&
+          (message.streamingPhase
+            ? message.streamingPhase === 'thinking'
+            : isLast),
+      );
       return (
         <div className="mb-2">
           <ThinkingBubble
             thinking={thinkingItem.thinking}
             thinkingTime={thinkingItem.thinkingTime}
-            isStreaming={message?.isStreaming}
+            isStreaming={isThinkingStreaming}
             followChatScroll={followChatScroll}
           />
         </div>

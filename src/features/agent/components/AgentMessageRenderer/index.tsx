@@ -14,6 +14,8 @@ import { ContentItemRenderer } from './components/ContentItemRenderer';
 import { STATIC_MARKDOWN_COMPONENTS } from './config/markdown';
 import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
 import { useTheme } from 'next-themes';
+import { useTranslation } from 'react-i18next';
+import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { useUIActionHandler } from './hooks/useUIActionHandler';
 import type { AgentMessageRendererProps, RenderItem } from './types';
 import { groupContent } from './utils/contentGrouping';
@@ -50,6 +52,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 }) => {
   const { openExternalUrl } = useRustBackend();
   const { resolvedTheme } = useTheme();
+  const { t } = useTranslation();
   const isDark = useIsDarkMode();
   // next-themes leaves resolvedTheme undefined until mounted; do not inject a
   // speculative light theme (defaultTheme is dark, so undefined !== dark).
@@ -189,6 +192,19 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   }, [renderItems]);
 
   if (!displayItems.length) {
+    if (message?.isStreaming && message?.streamingPhase === 'prefill') {
+      return (
+        <div
+          data-testid="streaming-prefill-indicator"
+          className="flex items-center gap-2 py-1 text-xs text-muted-foreground animate-pulse"
+        >
+          <LoadingIndicator size="sm" />
+          <span>
+            {t('agent.bubble.preparingPrompt', 'Preparing prompt...')}
+          </span>
+        </div>
+      );
+    }
     return null;
   }
 

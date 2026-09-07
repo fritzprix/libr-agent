@@ -1330,6 +1330,8 @@
       "result": "Result",
       "executing": "Executing tool..."
     },
+    "toolCalling": "Tool calling...",
+    "toolExecuting": "Tool executing...",
     "compactDivider": {
       "label": "Context compressed above",
       "ariaLabel": "Context compressed at this point"
@@ -1448,6 +1450,7 @@
       "thinkingProcess": "Thinking Process",
       "thinkingProcessWithTime": "Thinking Process {{time}}",
       "thinking": "Thinking...",
+      "preparingPrompt": "Preparing prompt...",
       "expandThinking": "Expand",
       "actionBar": {
         "copyFullAria": "Copy full message",

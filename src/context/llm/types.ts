@@ -1,4 +1,4 @@
-import type { Message } from '@/models/chat';
+import type { Message, StreamingPhase } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { CompletionCancelRequest } from '@/models/agent-ipc';
 
@@ -134,6 +134,11 @@ export interface CompactedRange {
  * Status of LLM execution for a specific session
  */
 export type SessionStatus = 'idle' | 'streaming' | 'error';
+
+/**
+ * Re-export StreamingPhase from models/chat
+ */
+export type { StreamingPhase };
 
 /**
  * Context value for LLM Service Provider
