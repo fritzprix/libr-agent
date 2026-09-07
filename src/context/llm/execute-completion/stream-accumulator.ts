@@ -59,7 +59,14 @@ export interface StreamAccumulatorState {
 
 /**
  * Determine streaming phase for an incoming chunk with explicit precedence:
- * tool_calls > generating (content) > thinking > currentPhase
+ * tool_calls > generating (content) > thinking > currentPhase.
+ *
+ * Precedence rationale:
+ * 1. tool_calls: Explicit state transition to emitting tool parameters.
+ * 2. generating: If non-empty content arrives in the same chunk, reasoning
+ *    has concluded and visible response generation is the active signal.
+ * 3. thinking: Model is actively emitting reasoning tokens.
+ * 4. currentPhase: Retain existing phase when chunk has no phase-shifting payload.
  */
 export function resolveChunkPhase(
   chunk: ReturnType<typeof parseStreamChunk>,

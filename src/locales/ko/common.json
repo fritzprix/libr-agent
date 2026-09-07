@@ -1318,7 +1318,8 @@
       "parameters": "매개변수",
       "errorDetails": "오류 상세 정보",
       "result": "결과",
-      "executing": "도구 실행 중..."
+      "executing": "도구 실행 중...",
+      "calling": "도구 호출 중..."
     },
     "toolCalling": "도구 호출 중...",
     "toolExecuting": "도구 실행 중...",

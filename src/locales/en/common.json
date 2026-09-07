@@ -1328,7 +1328,8 @@
       "parameters": "Parameters",
       "errorDetails": "Error Details",
       "result": "Result",
-      "executing": "Executing tool..."
+      "executing": "Executing tool...",
+      "calling": "Calling tool..."
     },
     "toolCalling": "Tool calling...",
     "toolExecuting": "Tool executing...",
