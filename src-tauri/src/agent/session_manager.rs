@@ -552,7 +552,7 @@ impl AgentSessionManager {
         &self,
         session_id: &str,
         mode: ExecutionMode,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<String>, String> {
         execution_mode::set_execution_mode(self, session_id, mode).await
     }
 

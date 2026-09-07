@@ -421,6 +421,46 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         expect(result.current.state.sessions[0]?.pendingApprovalCount).toBe(0);
     });
 
+    it('decrements pending approval count only once for a repeated clear of the same tool call', async () => {
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapperWithEvent },
+        );
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-child',
+                    toolCallId: 'call-1',
+                },
+            });
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-child',
+                    toolCallId: 'call-2',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.sessions[0]?.pendingApprovalCount).toBe(2);
+        });
+
+        act(() => {
+            result.current.actions.clearPendingApproval('session-child', 'call-1');
+            result.current.actions.clearPendingApproval('session-child', 'call-1');
+            result.current.actions.clearPendingApproval('session-child', 'call-1');
+        });
+
+        expect(result.current.state.sessions[0]?.pendingApprovalCount).toBe(1);
+    });
+
     it('tracks approval requests as unread notifications for inactive sessions until viewed', async () => {
         const { result } = renderHook(
             () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),

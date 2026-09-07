@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { safeInvoke } from '@/lib/backend/core';
 import { getMessagesBeforeCursor } from '@/lib/backend/messages';
 import { getLogger } from '@/lib/logger';
@@ -6,6 +6,10 @@ import type { Message, RustMessage } from '@/models/chat';
 import type { AgentResponse, SendUserMessageRequest } from '@/models/agent-ipc';
 import type { useAgentSessionState } from './useAgentSessionState';
 import type { ExecutionMode } from './types';
+import {
+  isPendingApprovalAutoResolvedByMode,
+  resolvedApprovalIdsFromModeChange,
+} from './executionModeApprovals';
 
 const logger = getLogger('AgentSessionActions');
 
@@ -20,6 +24,8 @@ export function useAgentSessionActionsLogic(
 ) {
   const { state, setters } = stateProps;
   const currentExecutionMode = state.executionMode;
+  const pendingApprovalsRef = useRef(state.pendingApprovals);
+  pendingApprovalsRef.current = state.pendingApprovals;
 
   const applyExecutionModeLocally = useCallback(
     (mode: ExecutionMode) => {
@@ -173,8 +179,14 @@ export function useAgentSessionActionsLogic(
         return;
       }
 
+      const fallbackResolvedIds = pendingApprovalsRef.current
+        .filter((approval) =>
+          isPendingApprovalAutoResolvedByMode(mode, approval.approvalKind),
+        )
+        .map((approval) => approval.toolCallId);
+
       try {
-        await safeInvoke<void>('agent_set_execution_mode', {
+        const response = await safeInvoke<unknown>('agent_set_execution_mode', {
           sessionId,
           mode,
         });
@@ -182,16 +194,29 @@ export function useAgentSessionActionsLogic(
         applyExecutionModeLocally(mode);
         logger.info(`Execution mode set to ${mode}`);
 
-        if (mode !== 'normal' && state.pendingApprovals.length > 0) {
-          logger.info(
-            'Backend will reconcile pending approvals after execution mode change',
-            {
-              mode,
-              count: state.pendingApprovals.length,
-            },
-          );
-          await externalActions.acknowledgeSessionAttention();
+        const autoResolvedIds = new Set(
+          resolvedApprovalIdsFromModeChange(response, fallbackResolvedIds),
+        );
+        if (autoResolvedIds.size === 0) {
+          return;
         }
+
+        // Reconcile from the command result. Event emit is best-effort;
+        // widgets must not stay visible if the backend already unblocked
+        // the matching tool calls.
+        setters.setPendingApprovals((prev) =>
+          prev.filter((approval) => !autoResolvedIds.has(approval.toolCallId)),
+        );
+        const remainingAfterReconcile = pendingApprovalsRef.current.some(
+          (approval) => !autoResolvedIds.has(approval.toolCallId),
+        );
+        if (!remainingAfterReconcile) {
+          setters.setWorkflowPhase('using_tools');
+        }
+        autoResolvedIds.forEach((toolCallId) => {
+          externalActions.clearPendingApproval(sessionId, toolCallId);
+        });
+        await externalActions.acknowledgeSessionAttention();
       } catch (err) {
         logger.error('Failed to set execution mode on backend', err);
       }
@@ -201,7 +226,7 @@ export function useAgentSessionActionsLogic(
       currentExecutionMode,
       externalActions,
       sessionId,
-      state.pendingApprovals.length,
+      setters,
     ],
   );
 
