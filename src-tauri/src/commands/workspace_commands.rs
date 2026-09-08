@@ -1,4 +1,6 @@
-use crate::services::{WorkspaceFileItem, WorkspaceRuntimeManager, WorkspaceService};
+use crate::services::{
+    WorkspaceFileContentResponse, WorkspaceFileItem, WorkspaceRuntimeManager, WorkspaceService,
+};
 use crate::session::get_session_manager;
 /// Workspace-related Tauri commands
 ///
@@ -113,6 +115,15 @@ pub async fn open_workspace_file_with_default_app(
     session_id: Option<String>,
 ) -> Result<(), String> {
     WorkspaceService::open_file_with_default_app(file_path, session_id).await
+}
+
+/// Reads a workspace file's content for in-app preview.
+#[tauri::command]
+pub async fn read_workspace_file_content(
+    file_path: String,
+    session_id: Option<String>,
+) -> Result<WorkspaceFileContentResponse, String> {
+    WorkspaceService::read_file_content(file_path, session_id).await
 }
 
 #[tauri::command]

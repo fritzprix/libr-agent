@@ -7,4 +7,6 @@ export interface FileNode {
   isExpanded?: boolean;
   isLoading?: boolean;
   parent?: string;
+  size?: number | null;
+  modified?: string | null;
 }

@@ -41,6 +41,12 @@ const mocks = vi.hoisted(() => ({
 const mockRustBackend = {
   listWorkspaceFiles: vi.fn().mockResolvedValue([]),
   openWorkspaceFileWithDefaultApp: vi.fn(),
+  readWorkspaceFileContent: vi.fn().mockResolvedValue({
+    content: 'test content',
+    isBinary: false,
+    size: 12,
+    mimeType: 'text/markdown',
+  }),
   agentCallBuiltinTool: vi.fn(),
   getWorkspaceOverride: vi.fn().mockResolvedValue(''),
   setWorkspaceOverride: vi.fn(),
@@ -544,6 +550,100 @@ describe('AgentWorkspacePanel', () => {
         }),
       );
     });
+  });
+
+  it('opens preview sheet for previewable file without calling external default app', async () => {
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      {
+        name: 'notes.md',
+        isDirectory: false,
+        path: 'notes.md',
+        size: 100,
+        modified: null,
+      },
+    ]);
+
+    render(<AgentWorkspacePanel />);
+
+    const fileNode = await screen.findByText('notes.md');
+    expect(fileNode).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(fileNode);
+    });
+
+    // Should NOT call openWorkspaceFileWithDefaultApp
+    expect(
+      mockRustBackend.openWorkspaceFileWithDefaultApp,
+    ).not.toHaveBeenCalled();
+
+    // Should load content via readWorkspaceFileContent
+    await waitFor(() => {
+      expect(mockRustBackend.readWorkspaceFileContent).toHaveBeenCalledWith(
+        './notes.md',
+        'session-123',
+      );
+    });
+  });
+
+  it('calls openWorkspaceFileWithDefaultApp for non-previewable files (e.g. docx)', async () => {
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      {
+        name: 'report.docx',
+        isDirectory: false,
+        path: 'report.docx',
+        size: 5000,
+        modified: null,
+      },
+    ]);
+
+    render(<AgentWorkspacePanel />);
+
+    const fileNode = await screen.findByText('report.docx');
+    expect(fileNode).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(fileNode);
+    });
+
+    // Directly opens in system default app
+    await waitFor(() => {
+      expect(
+        mockRustBackend.openWorkspaceFileWithDefaultApp,
+      ).toHaveBeenCalledWith('./report.docx', 'session-123');
+    });
+
+    expect(mockRustBackend.readWorkspaceFileContent).not.toHaveBeenCalled();
+  });
+
+  it('calls openWorkspaceFileWithDefaultApp directly for oversized files (>2MB) via dual size gate', async () => {
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      {
+        name: 'large_code.ts',
+        isDirectory: false,
+        path: 'large_code.ts',
+        size: 3 * 1024 * 1024, // 3MB
+        modified: null,
+      },
+    ]);
+
+    render(<AgentWorkspacePanel />);
+
+    const fileNode = await screen.findByText('large_code.ts');
+    expect(fileNode).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(fileNode);
+    });
+
+    // Pre-blocked by dual size gate, calls default app
+    await waitFor(() => {
+      expect(
+        mockRustBackend.openWorkspaceFileWithDefaultApp,
+      ).toHaveBeenCalledWith('./large_code.ts', 'session-123');
+    });
+
+    expect(mockRustBackend.readWorkspaceFileContent).not.toHaveBeenCalled();
   });
 });
 

@@ -42,6 +42,8 @@ import { cn } from '@/lib/utils';
 
 import { PanelEyebrow, PanelListFrame } from './panel-chrome';
 import { FileTreeNode } from './workspace-panel/FileTreeNode';
+import { WorkspaceFilePreviewSheet } from './workspace-panel/WorkspaceFilePreviewSheet';
+import { isPreviewable } from './workspace-panel/fileIconUtils';
 import { useWorkspaceFiles } from './workspace-panel/useWorkspaceFiles';
 import { useWorkspaceOverride } from './workspace-panel/useWorkspaceOverride';
 import { useWorkspaceFileDrop } from './workspace-panel/useWorkspaceFileDrop';
@@ -92,6 +94,7 @@ export function AgentWorkspacePanel({
   const [isUploading, setIsUploading] = useState(false);
   const [isOpeningNative, setIsOpeningNative] = useState(false);
   const openingNativeLock = useRef(false);
+  const [previewFile, setPreviewFile] = useState<FileNode | null>(null);
 
   // Extracted hooks
   const {
@@ -307,7 +310,30 @@ export function AgentWorkspacePanel({
     }
   };
 
-  // Open file with system default app
+  const openWithDefaultApp = useCallback(
+    async (filePath: string, fileName?: string) => {
+      try {
+        logger.debug('Opening file with default app', { path: filePath });
+        await openWorkspaceFileWithDefaultApp(filePath, session?.id);
+        logger.info('File opened successfully', { path: filePath });
+        toast.success(t('agent.workspace.fileOpened'), {
+          description: t('agent.workspace.fileOpenedDescription', {
+            name: fileName ?? filePath,
+          }),
+        });
+      } catch (error) {
+        logger.error('Failed to open file', { path: filePath, error });
+        const message =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+        toast.error(t('agent.workspace.fileOpenError'), {
+          description: message,
+        });
+      }
+    },
+    [openWorkspaceFileWithDefaultApp, session?.id, t],
+  );
+
+  // Open file with preview sheet or system default app
   const handleOpenFile = useCallback(
     async (node: FileNode) => {
       if (node.isDirectory) {
@@ -318,25 +344,17 @@ export function AgentWorkspacePanel({
         return;
       }
 
-      try {
-        logger.debug('Opening file with default app', { path: node.path });
-        await openWorkspaceFileWithDefaultApp(node.path, session?.id);
-        logger.info('File opened successfully', { path: node.path });
-        toast.success(t('agent.workspace.fileOpened'), {
-          description: t('agent.workspace.fileOpenedDescription', {
-            name: node.name,
-          }),
-        });
-      } catch (error) {
-        logger.error('Failed to open file', { path: node.path, error });
-        const message =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-        toast.error(t('agent.workspace.fileOpenError'), {
-          description: message,
-        });
+      // Dual size gate: Pre-check if size is known and exceeds 2MB
+      const isOversized = Boolean(node.size && node.size > 2 * 1024 * 1024);
+
+      if (isPreviewable(node.name) && !isOversized) {
+        logger.debug('Opening file in preview sheet', { path: node.path });
+        setPreviewFile(node);
+      } else {
+        await openWithDefaultApp(node.path, node.name);
       }
     },
-    [openWorkspaceFileWithDefaultApp, session?.id, t],
+    [openWithDefaultApp],
   );
 
   if (!session) return null;
@@ -636,6 +654,16 @@ export function AgentWorkspacePanel({
           </div>
         </div>
       </Card>
+
+      <WorkspaceFilePreviewSheet
+        file={previewFile}
+        sessionId={session?.id}
+        isOpen={Boolean(previewFile)}
+        onClose={() => setPreviewFile(null)}
+        onOpenInDefaultApp={(path) =>
+          openWithDefaultApp(path, previewFile?.name)
+        }
+      />
     </div>
   );
 }

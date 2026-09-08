@@ -1234,7 +1234,16 @@
       "dropFolderHint": "Drop a folder here to set as workspace",
       "dropDirToastError": "Drop directories in the central area to set workspace override.",
       "dropMixedFoldersError": "Drop files to import them, or a single folder to set workspace override.",
-      "dropFolderIntoSubfolderError": "Dropping folders into subfolders is not supported."
+      "dropFolderIntoSubfolderError": "Dropping folders into subfolders is not supported.",
+      "previewTitle": "File Preview",
+      "previewMode": "Preview",
+      "sourceMode": "Source",
+      "openInDefaultApp": "Open in Default App",
+      "copyContent": "Copy Content",
+      "contentCopied": "Content copied to clipboard",
+      "unsupportedEncoding": "Binary or unsupported encoding. Please open with default application.",
+      "fileTooLarge": "File is too large for inline preview.",
+      "syntaxHighlightDisabled": "Large file (>200KB) - syntax highlighting disabled for performance"
     },
     "statusBar": {
       "retryError": "Failed to retry message",

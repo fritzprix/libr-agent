@@ -14,6 +14,7 @@ export { safeInvoke } from './core';
 // Type exports
 export type {
   WorkspaceFileItem,
+  WorkspaceFileContent,
   BrowserSession,
   BrowserSessionParams,
   ScriptResult,
@@ -26,6 +27,7 @@ export {
   listWorkspaceFiles,
   workspaceWriteFile,
   openWorkspaceFileWithDefaultApp,
+  readWorkspaceFileContent,
   openWorkspaceInExplorer,
   openWorkspaceInTerminal,
   getWorkspaceOverride,
