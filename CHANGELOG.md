@@ -21,6 +21,7 @@
 - **LaTeX Math Rendering**: Enabled LaTeX math formatting within `reportResult` and `presentInteractive` markdown payloads.
 - **Theme Reactivity & Branding**: Synchronized official LibrAgent brand logo with dark/light theme switching via `useIsDarkMode`.
 - **Harbor Runner Resilience**: Snapshot runner scripts to temp paths to prevent bash offset desynchronization during long-running benchmark jobs.
+- **Windows Stdin BOM / 2FA Auth**: Stopped PowerShell 5.1 from prepending UTF-8 BOM (`U+FEFF`) to native process stdin, and strip leading BOM from skill secret readers so Telegram/X/email `--password-stdin` values hash correctly.
 
 ## [0.9.7] - 2026-09-03
 

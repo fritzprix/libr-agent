@@ -469,9 +469,9 @@ async fn test_child_stdin_delivery_pipes_input_to_python() -> Result<()> {
     .await?;
 
     #[cfg(unix)]
-    let command = "python3 -c \"import sys; print(sys.stdin.readline().strip())\"";
+    let command = "python3 -c \"import sys; data=sys.stdin.buffer.readline(); assert not data.startswith(b'\\xef\\xbb\\xbf'), data; print(data.decode().strip())\"";
     #[cfg(windows)]
-    let command = "python -c \"import sys; print(sys.stdin.readline().strip())\"";
+    let command = "python -c \"import sys; data=sys.stdin.buffer.readline(); assert not data.startswith(b'\\xef\\xbb\\xbf'), data; print(data.decode().strip())\"";
 
     let (stdout, _, exit_code, _) = shell
         .execute_with_input(command, "hello-child-stdin", StdinDelivery::Child)

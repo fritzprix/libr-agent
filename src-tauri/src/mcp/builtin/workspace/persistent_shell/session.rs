@@ -201,12 +201,15 @@ impl PersistentShell {
         {
             match shell_type {
                 ShellType::PowerShell => {
-                    // Set encoding to UTF-8 for PowerShell to handle non-ASCII characters correctly
-                    // We suppress output with [void] cast to avoid polluting the first command's output
-                    let setup_cmd = "[void]([Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8)\n";
+                    // UTF-8 without BOM. Encoding.UTF8 includes a preamble that
+                    // PowerShell prepends when piping to native stdin.
+                    let setup_cmd = format!(
+                        "{}\n",
+                        crate::utils::powershell_encoding::SET_UTF8_NO_BOM_VOIDED
+                    );
                     stdin.write_all(setup_cmd.as_bytes()).await?;
                     stdin.flush().await?;
-                    debug!("Configuring PowerShell encoding to UTF-8");
+                    debug!("Configuring PowerShell encoding to UTF-8 without BOM");
                 }
                 ShellType::Bash => {
                     // Should not reach here on Windows
@@ -237,9 +240,11 @@ impl PersistentShell {
 
         #[cfg(windows)]
         {
-            // Force UTF-8 encoding for console I/O and pipe output
-            // This is critical for handling non-ASCII characters in filenames/output
-            let _ = shell.execute("[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Encoding]::UTF8").await?;
+            // Force UTF-8 (no BOM) for console I/O and native-command pipes.
+            // `$OutputEncoding` is what PowerShell 5.1 uses when piping to python.
+            let _ = shell
+                .execute(crate::utils::powershell_encoding::SET_UTF8_NO_BOM)
+                .await?;
         }
 
         if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
@@ -681,6 +686,7 @@ impl PersistentShell {
 /// Format user input as a PowerShell literal suitable for piping into a child process.
 #[cfg(windows)]
 fn format_powershell_stdin_literal(value: &str) -> String {
+    let value = value.trim_start_matches('\u{feff}');
     if !value.contains('\n') && !value.contains('\r') {
         return format!("'{}'", value.replace('\'', "''"));
     }

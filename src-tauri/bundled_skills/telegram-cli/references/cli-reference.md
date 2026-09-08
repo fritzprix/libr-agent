@@ -187,6 +187,6 @@ python "<skill-base-dir>/scripts/telegram_cli.py" --action get_messages `
 | Auth required | Session expired or invalid | Re-run Step 2's authentication flow |
 | `auth_restart_needed` | Telegram auth state corrupted | Delete session file, run `send_code` again |
 | Unauthorized session | `send_code` only, no sign_in | Complete Step B/C (`sign_in`) |
-| ambiguous `--code` | Old docs used `--code` | Use `--code-value`, `--code-env`, or `--code-stdin` |
+| `PasswordHashInvalidError` / invalid 2FA | Wrong password **or** UTF-8 BOM prepended to stdin on older Windows shells | Re-enter password via `--password-stdin` + `requireUserInput`. Current LibrAgent persistent shells use UTF-8 without BOM; `setup.py` also strips leading `U+FEFF`. Do not use `Read-Host` in `-NonInteractive` shells. |
 | API hash invalid | Wrong or revoked API hash | Re-run Step 2 with correct credentials |
 | Phone number invalid | Format error | Guide user to enter international format (+82...) |

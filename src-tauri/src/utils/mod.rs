@@ -4,6 +4,7 @@ pub mod json;
 pub mod keep_awake;
 pub mod pagination;
 pub mod platform;
+pub mod powershell_encoding;
 pub mod process;
 pub mod security;
 pub mod session_id;
