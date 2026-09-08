@@ -143,7 +143,8 @@ export const WorkspaceFilePreviewSheet = ({
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-[600px] sm:max-w-2xl max-w-full flex flex-col p-0 gap-0 border-l border-border/40 shadow-xl"
+        overlayClassName="z-[70]"
+        className="w-[600px] sm:max-w-2xl max-w-full flex flex-col p-0 gap-0 border-l border-border/40 shadow-xl z-[70]"
       >
         {/* Header */}
         <SheetHeader className="border-b border-border/40 px-4 py-3 flex-shrink-0 flex-row items-center justify-between gap-2">

@@ -158,6 +158,16 @@ vi.mock('../hooks/useAgentResourceAttachment', () => ({
   }) => <>{props.children}</>,
 }));
 
+vi.mock('@/context/AgentFilePreviewContext', () => ({
+  AgentFilePreviewProvider: ({ children }: { children: ReactNode }) => (
+    <>{children}</>
+  ),
+}));
+
+vi.mock('../components/AgentFilePreviewHost', () => ({
+  AgentFilePreviewHost: () => null,
+}));
+
 vi.mock('../components/AgentChatHeader', () => ({
   AgentChatHeader: () => <div>mock-header</div>,
 }));

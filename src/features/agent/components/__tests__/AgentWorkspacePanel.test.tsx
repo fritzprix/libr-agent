@@ -1,5 +1,8 @@
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { AgentWorkspacePanel } from '../AgentWorkspacePanel';
+import { AgentFilePreviewHost } from '../AgentFilePreviewHost';
+import { AgentFilePreviewProvider } from '@/context/AgentFilePreviewContext';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -137,6 +140,17 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+function renderWorkspacePanel(
+  ui: ReactElement = <AgentWorkspacePanel />,
+) {
+  return render(
+    <AgentFilePreviewProvider>
+      {ui}
+      <AgentFilePreviewHost />
+    </AgentFilePreviewProvider>,
+  );
+}
+
 describe('AgentWorkspacePanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -159,7 +173,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('skips DnD subscription while hidden', async () => {
-    render(<AgentWorkspacePanel isVisible={false} />);
+    renderWorkspacePanel(<AgentWorkspacePanel isVisible={false} />);
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -171,7 +185,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('renders accessibility labels correctly', async () => {
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     // Wait for initial load
     await waitFor(() => {
@@ -196,7 +210,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('triggers file upload dialog on click', async () => {
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -216,7 +230,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('triggers file upload dialog on Enter key', async () => {
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -236,7 +250,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('triggers file upload dialog on Space key', async () => {
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -259,7 +273,7 @@ describe('AgentWorkspacePanel', () => {
     vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
     vi.mocked(backend.checkDroppedPathType).mockResolvedValue('directory');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', { paths: ['C:\\workspace'] });
@@ -279,7 +293,7 @@ describe('AgentWorkspacePanel', () => {
     vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
     vi.mocked(backend.checkDroppedPathType).mockResolvedValue('file');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', { paths: ['C:\\workspace\\notes.md'] });
@@ -307,7 +321,7 @@ describe('AgentWorkspacePanel', () => {
     vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
     vi.mocked(backend.checkDroppedPathType).mockResolvedValue('file');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', {
@@ -347,7 +361,7 @@ describe('AgentWorkspacePanel', () => {
       .mockResolvedValueOnce('file')
       .mockResolvedValueOnce('directory');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', {
@@ -371,7 +385,7 @@ describe('AgentWorkspacePanel', () => {
       .mockResolvedValueOnce('directory')
       .mockResolvedValueOnce('directory');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', {
@@ -396,7 +410,7 @@ describe('AgentWorkspacePanel', () => {
     });
     vi.mocked(backend.openWorkspaceInExplorer).mockReturnValue(openingPromise);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -443,7 +457,7 @@ describe('AgentWorkspacePanel', () => {
       { name: 'src', isDirectory: true },
     ]);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getByText('src')).toBeInTheDocument();
@@ -479,7 +493,7 @@ describe('AgentWorkspacePanel', () => {
       { name: 'src', isDirectory: true },
     ]);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getByText('src')).toBeInTheDocument();
@@ -514,7 +528,7 @@ describe('AgentWorkspacePanel', () => {
       },
     );
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getByText('src')).toBeInTheDocument();
@@ -563,7 +577,7 @@ describe('AgentWorkspacePanel', () => {
       },
     ]);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     const fileNode = await screen.findByText('notes.md');
     expect(fileNode).toBeInTheDocument();
@@ -597,7 +611,7 @@ describe('AgentWorkspacePanel', () => {
       },
     ]);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     const fileNode = await screen.findByText('report.docx');
     expect(fileNode).toBeInTheDocument();
@@ -627,7 +641,7 @@ describe('AgentWorkspacePanel', () => {
       },
     ]);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     const fileNode = await screen.findByText('large_code.ts');
     expect(fileNode).toBeInTheDocument();
