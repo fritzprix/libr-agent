@@ -198,6 +198,7 @@ const ExpandToggle: React.FC<ExpandToggleProps> = ({
  * Optimized with React.memo to prevent unnecessary re-renders during streaming or history updates.
  */
 const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
+  message,
   toolGroup,
   toolResults,
   isLast = false,
@@ -298,6 +299,11 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
               toolCall={toolCall}
               toolResult={toolResult}
               isLast={isLastItem}
+              isStreaming={Boolean(
+                message?.isStreaming &&
+                  (!message.streamingPhase ||
+                    message.streamingPhase === 'tool_calling'),
+              )}
             />
           );
         })}
@@ -320,8 +326,10 @@ export function arePropsEqual(
   prev: AgentToolCallGroupProps,
   next: AgentToolCallGroupProps,
 ) {
-  // Check message identity
+  // Check message identity, streaming, and phase
   if (prev.message.id !== next.message.id) return false;
+  if (prev.message.isStreaming !== next.message.isStreaming) return false;
+  if (prev.message.streamingPhase !== next.message.streamingPhase) return false;
 
   // Check primitive props
   if (prev.isLast !== next.isLast) return false;

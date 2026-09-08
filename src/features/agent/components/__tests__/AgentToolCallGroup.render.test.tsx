@@ -16,11 +16,13 @@ vi.mock('../ToolCallCompactItem', () => ({
   ToolCallCompactItem: ({
     toolCall,
     toolResult,
+    isStreaming,
   }: {
     toolCall: ToolCall;
     toolResult?: Message;
+    isStreaming?: boolean;
   }) => (
-    <div data-testid="tool-item">
+    <div data-testid="tool-item" data-streaming={String(Boolean(isStreaming))}>
       <span data-testid="call-id">{toolCall.id}</span>
       <span data-testid="result-id">{toolResult?.id || 'no-result'}</span>
     </div>
@@ -126,5 +128,104 @@ describe('AgentToolCallGroup Rendering', () => {
     );
 
     expect(container.firstElementChild).toHaveStyle({ overflowAnchor: 'none' });
+  });
+
+  describe('streamingPhase derivation for compact tool items', () => {
+    const call = makeToolCall('call-stream-1');
+
+    it('passes isStreaming=true when phase is tool_calling', () => {
+      const streamingMsg = {
+        ...mockMessage,
+        isStreaming: true,
+        streamingPhase: 'tool_calling' as const,
+      };
+
+      render(
+        <AgentToolCallGroup
+          message={streamingMsg}
+          toolGroup={{ calls: [call] }}
+          toolResults={[undefined]}
+        />,
+      );
+
+      const item = screen.getByTestId('tool-item');
+      expect(item).toHaveAttribute('data-streaming', 'true');
+    });
+
+    it('passes isStreaming=false when phase is thinking (not tool_calling)', () => {
+      const thinkingMsg = {
+        ...mockMessage,
+        isStreaming: true,
+        streamingPhase: 'thinking' as const,
+      };
+
+      render(
+        <AgentToolCallGroup
+          message={thinkingMsg}
+          toolGroup={{ calls: [call] }}
+          toolResults={[undefined]}
+        />,
+      );
+
+      const item = screen.getByTestId('tool-item');
+      expect(item).toHaveAttribute('data-streaming', 'false');
+    });
+
+    it('passes isStreaming=false when phase is generating (text stream active)', () => {
+      const generatingMsg = {
+        ...mockMessage,
+        isStreaming: true,
+        streamingPhase: 'generating' as const,
+      };
+
+      render(
+        <AgentToolCallGroup
+          message={generatingMsg}
+          toolGroup={{ calls: [call] }}
+          toolResults={[undefined]}
+        />,
+      );
+
+      const item = screen.getByTestId('tool-item');
+      expect(item).toHaveAttribute('data-streaming', 'false');
+    });
+
+    it('maintains backward compatibility when streamingPhase is undefined', () => {
+      const legacyMsg = {
+        ...mockMessage,
+        isStreaming: true,
+        streamingPhase: undefined,
+      };
+
+      render(
+        <AgentToolCallGroup
+          message={legacyMsg}
+          toolGroup={{ calls: [call] }}
+          toolResults={[undefined]}
+        />,
+      );
+
+      const item = screen.getByTestId('tool-item');
+      expect(item).toHaveAttribute('data-streaming', 'true');
+    });
+
+    it('passes isStreaming=false when message.isStreaming is false regardless of phase', () => {
+      const completedMsg = {
+        ...mockMessage,
+        isStreaming: false,
+        streamingPhase: undefined,
+      };
+
+      render(
+        <AgentToolCallGroup
+          message={completedMsg}
+          toolGroup={{ calls: [call] }}
+          toolResults={[undefined]}
+        />,
+      );
+
+      const item = screen.getByTestId('tool-item');
+      expect(item).toHaveAttribute('data-streaming', 'false');
+    });
   });
 });

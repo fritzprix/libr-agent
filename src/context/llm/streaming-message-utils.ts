@@ -5,11 +5,12 @@ import type {
   MCPThinkingContent,
   MCPToolCallContent,
 } from '@/lib/mcp';
-import type { Message, ToolCall } from '@/models/chat';
+import type { Message, ToolCall, StreamingPhase } from '@/models/chat';
 
 interface StreamingMessageBuildOptions {
   toolCalls?: ToolCall[];
   thinkingText?: string;
+  streamingPhase?: StreamingPhase;
 }
 
 export function extractToolCalls(content: MCPContent[]): ToolCall[] {
@@ -57,6 +58,7 @@ export function buildStreamingMessage(
     thinkingTime,
     usage,
     isStreaming: true,
+    streamingPhase: options?.streamingPhase ?? baseMessage.streamingPhase,
   };
 }
 
