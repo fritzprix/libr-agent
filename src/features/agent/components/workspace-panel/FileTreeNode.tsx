@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import {
   ChevronRight,
   ChevronDown,
-  File,
   Folder,
   FolderOpen,
   RefreshCw,
@@ -15,6 +14,7 @@ import {
 } from '@/context/DnDContext';
 import { cn } from '@/lib/utils';
 import type { FileNode } from './types';
+import { getFileIconInfo } from './fileIconUtils';
 
 interface FileTreeNodeProps {
   node: FileNode;
@@ -69,11 +69,12 @@ export const FileTreeNode = ({
     };
   }, [node.isDirectory, node.path, node.parent, dnd]);
 
+  const fileIconInfo = node.isDirectory ? null : getFileIconInfo(node.name);
   const Icon = node.isDirectory
     ? node.isExpanded || isDragOver
       ? FolderOpen
       : Folder
-    : File;
+    : fileIconInfo!.icon;
   const isInteractive = node.isDirectory || Boolean(onOpen);
 
   return (
@@ -147,7 +148,14 @@ export const FileTreeNode = ({
           }}
           aria-expanded={node.isDirectory ? node.isExpanded : undefined}
         >
-          <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <Icon
+            className={cn(
+              'h-4 w-4 flex-shrink-0',
+              node.isDirectory
+                ? 'text-muted-foreground'
+                : fileIconInfo?.className,
+            )}
+          />
 
           <span className="flex-1 truncate text-xs" title={node.name}>
             {node.name}

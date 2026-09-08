@@ -116,8 +116,8 @@ use commands::workspace_commands::{
     get_update_install_capability, get_workspace_dir, get_workspace_override, greet,
     list_workspace_file_paths, list_workspace_file_paths_for_path, list_workspace_files,
     open_workspace_file_with_default_app, open_workspace_in_explorer, open_workspace_in_terminal,
-    probe_runtime_binaries, read_local_file_as_base64, restart_app, set_workspace_override,
-    start_docker_desktop, submit_interactive_shell_input,
+    probe_runtime_binaries, read_local_file_as_base64, read_workspace_file_content, restart_app,
+    set_workspace_override, start_docker_desktop, submit_interactive_shell_input,
 };
 
 // Re-export state management functions
@@ -227,6 +227,7 @@ pub fn run() {
                 open_external_url,
                 open_path_with_default_app,
                 open_workspace_file_with_default_app,
+                read_workspace_file_content,
                 open_workspace_in_explorer,
                 open_workspace_in_terminal,
                 get_workspace_override,

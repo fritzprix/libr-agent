@@ -1,5 +1,5 @@
 import { safeInvoke } from './core';
-import type { WorkspaceFileItem } from './types';
+import type { WorkspaceFileContent, WorkspaceFileItem } from './types';
 
 /**
  * Lists the files and directories in the specified workspace path.
@@ -50,6 +50,22 @@ export async function openWorkspaceFileWithDefaultApp(
   return safeInvoke<void>('open_workspace_file_with_default_app', {
     filePath,
     sessionId,
+  });
+}
+
+/**
+ * Reads a workspace file's content for in-app preview.
+ * @param filePath The relative path within the workspace to read.
+ * @param sessionId The optional session ID to specify which session's workspace to use.
+ * @returns A promise that resolves to `WorkspaceFileContent`.
+ */
+export async function readWorkspaceFileContent(
+  filePath: string,
+  sessionId?: string,
+): Promise<WorkspaceFileContent> {
+  return safeInvoke<WorkspaceFileContent>('read_workspace_file_content', {
+    filePath,
+    sessionId: sessionId || null,
   });
 }
 
