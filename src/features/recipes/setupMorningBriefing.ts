@@ -59,15 +59,17 @@ export interface SetupMorningBriefingResult {
 }
 
 async function verifyInstalledServers(serverIds: string[]): Promise<void> {
-  for (const serverId of serverIds) {
-    try {
-      await safeInvoke('probe_mcp_server', { serverId });
-    } catch (error) {
-      const raw = error instanceof Error ? error.message : String(error);
-      const humanized = humanizeVerificationError(raw);
-      throw new Error(humanized?.summary ?? raw);
-    }
-  }
+  await Promise.all(
+    serverIds.map(async (serverId) => {
+      try {
+        await safeInvoke('probe_mcp_server', { serverId });
+      } catch (error) {
+        const raw = error instanceof Error ? error.message : String(error);
+        const humanized = humanizeVerificationError(raw);
+        throw new Error(humanized?.summary ?? raw);
+      }
+    }),
+  );
 }
 
 async function resolveInstalledServerIds(

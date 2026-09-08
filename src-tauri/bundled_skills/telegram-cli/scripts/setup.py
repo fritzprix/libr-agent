@@ -107,8 +107,8 @@ def sanitize_secret(value: str) -> str:
     """Strip whitespace and leading UTF-8 BOM injected by Windows pipes.
 
     PowerShell 5.1 `$OutputEncoding = [System.Text.Encoding]::UTF8` prepends
-    U+FEFF to native stdin. str.strip() does not remove U+FEFF, so Telethon
-    would SRP-hash BOM+password and Telegram would reject it.
+    U+FEFF to native stdin. str.strip() does not remove U+FEFF, so secrets
+    hashed or stored with a leading BOM are rejected by upstream services.
     """
     cleaned = value.strip()
     while cleaned.startswith("\ufeff"):
