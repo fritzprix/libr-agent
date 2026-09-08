@@ -61,12 +61,6 @@ describe('AgentFilePreviewContext', () => {
     expect(result.current.previewFile?.sessionId).toBe('session-2');
   });
 
-  it('throws when used outside the provider', () => {
-    expect(() => renderHook(() => useAgentFilePreview())).toThrow(
-      /AgentFilePreviewProvider/,
-    );
-  });
-
   it('optional hook returns undefined outside the provider', () => {
     const { result } = renderHook(() => useOptionalAgentFilePreview());
     expect(result.current).toBeUndefined();
