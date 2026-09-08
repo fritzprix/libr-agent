@@ -524,7 +524,9 @@ mod tests {
 
         // 3. Image file
         let img_path = temp_dir.path().join("image.png");
-        tokio::fs::write(&img_path, b"fake png bytes").await.unwrap();
+        tokio::fs::write(&img_path, b"fake png bytes")
+            .await
+            .unwrap();
         let resp = WorkspaceService::read_file_content_from_path(&img_path)
             .await
             .expect("Failed to read image file");
