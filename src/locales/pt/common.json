@@ -957,7 +957,7 @@
       "menuTooltip": "Exportar sessão",
       "markdown": "Exportar como Markdown (.md)",
       "atif": "Exportar trajetória ATIF (.json)",
-      "copyClipboard": "Copiar para a área de transferência (Markdown)",
+      "copyClipboard": "Copiar janela visível (sem thinking / tamanho limitado)",
       "markdownSuccess": "Arquivo Markdown salvo",
       "atifSuccess": "Trajetória ATIF salva",
       "openFile": "Abrir",

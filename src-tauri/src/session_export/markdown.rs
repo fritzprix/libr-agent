@@ -1,13 +1,27 @@
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 
+const EMPTY_EXPORT: &str = "> *No exportable conversation messages.*\n";
+
 pub fn messages_to_markdown(messages: &[Message]) -> String {
     if messages.is_empty() {
-        return "> *No exportable conversation messages.*\n".to_string();
+        return EMPTY_EXPORT.to_string();
     }
 
-    let sections: Vec<String> = messages.iter().map(format_single_message).collect();
-    sections.join("\n\n---\n\n")
+    let mut out = String::new();
+    let mut started = false;
+    for message in messages {
+        append_message(&mut out, message, &mut started);
+    }
+    out
+}
+
+pub(super) fn append_message(out: &mut String, message: &Message, started: &mut bool) {
+    if *started {
+        out.push_str("\n\n---\n\n");
+    }
+    *started = true;
+    out.push_str(&format_single_message(message));
 }
 
 fn format_role_header(role: &str) -> &str {
@@ -27,8 +41,25 @@ fn format_tool_arguments(arguments_json: &str) -> String {
         .unwrap_or_else(|| arguments_json.to_string())
 }
 
+fn has_thinking_field(message: &Message) -> bool {
+    message
+        .thinking
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|text| !text.is_empty())
+}
+
+fn has_tool_calls_field(message: &Message) -> bool {
+    message
+        .tool_calls
+        .as_ref()
+        .is_some_and(|calls| !calls.is_empty())
+}
+
 fn format_single_message(message: &Message) -> String {
     let mut parts = vec![format!("## {}", format_role_header(&message.role))];
+    let skip_content_thinking = has_thinking_field(message);
+    let skip_content_tool_calls = has_tool_calls_field(message);
 
     if let Some(thinking) = message
         .thinking
@@ -43,8 +74,14 @@ fn format_single_message(message: &Message) -> String {
 
     let mut body_parts: Vec<String> = Vec::new();
     for item in &message.content {
-        if let Some(formatted) = format_content_item(item) {
-            body_parts.push(formatted);
+        match item {
+            MCPContent::Thinking { .. } if skip_content_thinking => {}
+            MCPContent::ToolCall { .. } if skip_content_tool_calls => {}
+            _ => {
+                if let Some(formatted) = format_content_item(item) {
+                    body_parts.push(formatted);
+                }
+            }
         }
     }
 

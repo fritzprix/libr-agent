@@ -957,7 +957,7 @@
       "menuTooltip": "导出会话",
       "markdown": "导出为 Markdown (.md)",
       "atif": "导出 ATIF 轨迹 (.json)",
-      "copyClipboard": "复制到剪贴板（Markdown）",
+      "copyClipboard": "复制可见窗口（不含思考 / 有大小限制）",
       "markdownSuccess": "已保存 Markdown 文件",
       "atifSuccess": "已保存 ATIF 轨迹",
       "openFile": "打开",

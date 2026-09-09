@@ -270,3 +270,117 @@ fn session_export_preserves_multilingual_message_text() {
     assert_eq!(payload["steps"][0]["message"], "한글 질문 with café");
     assert_eq!(payload["steps"][1]["message"], "日本語の回答");
 }
+
+#[test]
+fn atif_observation_placeholders_omit_binary_media_payloads() {
+    let mut tool = blank_message("tool");
+    tool.tool_call_id = Some("call_shot".to_string());
+    tool.content = vec![MCPContent::Image {
+        data: Some("iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB".to_string()),
+        uri: Some("file://shot.png".to_string()),
+        mime_type: "image/png".to_string(),
+    }];
+
+    let mut assistant = text_message("assistant", "captured");
+    assistant.tool_calls = Some(vec![ToolCall {
+        id: "call_shot".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "browser__screenshot".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let trajectory = build_atif_trajectory(&[assistant, tool], metadata());
+    let observation = trajectory.steps[0]
+        .observation
+        .as_ref()
+        .expect("observation");
+    assert_eq!(
+        observation.results[0].content,
+        "[Image: image/png - file://shot.png]"
+    );
+    assert!(!observation.results[0].content.contains("iVBORw0KGgo"));
+}
+
+#[test]
+fn atif_orphan_observations_preserve_insertion_order() {
+    let mut first = text_message("tool", "first-orphan");
+    first.tool_call_id = Some("call_z".to_string());
+    let mut second = text_message("tool", "second-orphan");
+    second.tool_call_id = Some("call_a".to_string());
+
+    let trajectory = build_atif_trajectory(&[first, second], metadata());
+    let observation = trajectory.steps[0]
+        .observation
+        .as_ref()
+        .expect("orphan observation");
+    assert_eq!(observation.results.len(), 2);
+    assert_eq!(observation.results[0].content, "first-orphan");
+    assert_eq!(observation.results[1].content, "second-orphan");
+}
+
+#[test]
+fn markdown_export_dedupes_thinking_and_tool_call_fields() {
+    let mut assistant = blank_message("assistant");
+    assistant.thinking = Some("plan".to_string());
+    assistant.content = vec![
+        MCPContent::Thinking {
+            thinking: "plan".to_string(),
+            thinking_time: None,
+        },
+        MCPContent::Text {
+            text: "running".to_string(),
+        },
+        MCPContent::ToolCall {
+            id: "call_1".to_string(),
+            name: "shell__execute".to_string(),
+            arguments: r#"{"command":"ls"}"#.to_string(),
+        },
+    ];
+    assistant.tool_calls = Some(vec![ToolCall {
+        id: "call_1".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "shell__execute".to_string(),
+            arguments: r#"{"command":"ls"}"#.to_string(),
+        },
+    }]);
+
+    let markdown = String::from_utf8(
+        render_session_export(vec![assistant], metadata(), SessionExportFormat::Markdown)
+            .expect("markdown bytes"),
+    )
+    .expect("utf8");
+    assert_eq!(markdown.matches("<summary>Thinking</summary>").count(), 1);
+    assert_eq!(markdown.matches("**Tool:** shell__execute").count(), 1);
+    assert!(markdown.contains("running"));
+}
+
+#[test]
+fn session_export_excludes_in_flight_streaming_messages() {
+    let user = text_message("user", "hello");
+    let mut streaming = text_message("assistant", "partial");
+    streaming.is_streaming = Some(true);
+    let assistant = text_message("assistant", "done");
+
+    let filtered = filter_session_analysis_messages(vec![user, streaming, assistant.clone()]);
+    assert_eq!(filtered.len(), 2);
+    assert_eq!(filtered[1].id, assistant.id);
+}
+
+#[test]
+fn export_file_name_sanitizes_windows_reserved_characters() {
+    assert_eq!(
+        export_file_name(Some("a<b>|c?.d "), "sess-1", SessionExportFormat::Markdown),
+        "a_b__c_.d.md"
+    );
+    assert_eq!(
+        export_file_name(Some("CON"), "sess-1", SessionExportFormat::Atif),
+        "_CON_trajectory.json"
+    );
+    assert_eq!(
+        export_file_name(Some("report."), "sess-1", SessionExportFormat::Markdown),
+        "report.md"
+    );
+}

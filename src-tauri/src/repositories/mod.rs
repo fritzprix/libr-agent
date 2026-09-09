@@ -32,7 +32,7 @@ pub use knowledge_v2_repository::{
     SqliteKnowledgeV2Repository,
 };
 pub use mcp_server_repository::{MCPServerRepository, SqliteMCPServerRepository};
-pub use message_repository::{MessageRepository, SqliteMessageRepository};
+pub use message_repository::{MessageForwardPage, MessageRepository, SqliteMessageRepository};
 pub use pending_queue_repository::{
     PendingQueueEntry, PendingQueueRepository, SqlitePendingQueueRepository,
 };

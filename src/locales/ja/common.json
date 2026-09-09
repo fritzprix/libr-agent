@@ -918,7 +918,7 @@
       "menuTooltip": "セッションをエクスポート",
       "markdown": "Markdownとしてエクスポート (.md)",
       "atif": "ATIF軌跡としてエクスポート (.json)",
-      "copyClipboard": "クリップボードにコピー (Markdown)",
+      "copyClipboard": "表示中の会話をコピー（思考なし / サイズ制限）",
       "markdownSuccess": "Markdownファイルを保存しました",
       "atifSuccess": "ATIF軌跡を保存しました",
       "openFile": "開く",

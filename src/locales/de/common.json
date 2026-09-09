@@ -957,7 +957,7 @@
       "menuTooltip": "Sitzung exportieren",
       "markdown": "Als Markdown exportieren (.md)",
       "atif": "Als ATIF-Trajectory exportieren (.json)",
-      "copyClipboard": "In Zwischenablage kopieren (Markdown)",
+      "copyClipboard": "Sichtbares Fenster kopieren (ohne Denken / größenbegrenzt)",
       "markdownSuccess": "Markdown-Datei gespeichert",
       "atifSuccess": "ATIF-Trajectory gespeichert",
       "openFile": "Öffnen",

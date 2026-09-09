@@ -1186,7 +1186,7 @@
       "menuTooltip": "세션 내보내기",
       "markdown": "Markdown으로 내보내기 (.md)",
       "atif": "ATIF 궤적으로 내보내기 (.json)",
-      "copyClipboard": "클립보드에 복사 (Markdown)",
+      "copyClipboard": "보이는 대화 복사 (생각 제외 / 용량 제한)",
       "markdownSuccess": "Markdown 파일을 저장했습니다",
       "atifSuccess": "ATIF 궤적을 저장했습니다",
       "openFile": "열기",

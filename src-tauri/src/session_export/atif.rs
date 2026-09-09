@@ -3,9 +3,9 @@
 use crate::agent::types::ToolCall as LibrAgentToolCall;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
+use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
 
 const SCHEMA_VERSION: &str = "ATIF-v1.7";
 const EMPTY_TRAJECTORY_MESSAGE: &str = "(no LibrAgent messages harvested for ATIF trajectory)";
@@ -92,18 +92,37 @@ pub struct AtifFinalMetrics {
     pub total_steps: usize,
 }
 
-/// Convert persisted LibrAgent messages into an ATIF-v1.7 trajectory.
-pub fn build_atif_trajectory(messages: &[Message], metadata: AtifAgentMetadata) -> AtifTrajectory {
-    let mut steps: Vec<AtifStep> = Vec::new();
-    let mut pending_by_id: HashMap<String, Vec<AtifObservationResult>> = HashMap::new();
+pub(super) struct AtifTrajectoryBuilder {
+    metadata: AtifAgentMetadata,
+    steps: Vec<AtifStep>,
+    pending_by_id: IndexMap<String, Vec<AtifObservationResult>>,
+    n_input: i64,
+    n_output: i64,
+    n_cache: i64,
+    has_usage: bool,
+}
 
-    for message in messages {
+impl AtifTrajectoryBuilder {
+    pub(super) fn new(metadata: AtifAgentMetadata) -> Self {
+        Self {
+            metadata,
+            steps: Vec::new(),
+            pending_by_id: IndexMap::new(),
+            n_input: 0,
+            n_output: 0,
+            n_cache: 0,
+            has_usage: false,
+        }
+    }
+
+    pub(super) fn push(&mut self, message: &Message) {
+        self.accumulate_usage(message.usage.as_ref());
         let role = message.role.to_ascii_lowercase();
         match role.as_str() {
             "user" => {
                 let text = assistant_message_text(message);
-                steps.push(AtifStep {
-                    step_id: steps.len() + 1,
+                self.steps.push(AtifStep {
+                    step_id: self.steps.len() + 1,
                     source: "user".to_string(),
                     message: if text.is_empty() {
                         "(empty user message)".to_string()
@@ -118,8 +137,8 @@ pub fn build_atif_trajectory(messages: &[Message], metadata: AtifAgentMetadata) 
             }
             "system" => {
                 let text = assistant_message_text(message);
-                steps.push(AtifStep {
-                    step_id: steps.len() + 1,
+                self.steps.push(AtifStep {
+                    step_id: self.steps.len() + 1,
                     source: "system".to_string(),
                     message: if text.is_empty() {
                         "(empty system message)".to_string()
@@ -132,7 +151,7 @@ pub fn build_atif_trajectory(messages: &[Message], metadata: AtifAgentMetadata) 
                     metrics: None,
                 });
             }
-            "tool" => attach_tool_observation(&mut steps, message, &mut pending_by_id),
+            "tool" => attach_tool_observation(&mut self.steps, message, &mut self.pending_by_id),
             "assistant" => {
                 let reasoning = assistant_reasoning(message);
                 let tool_calls = libragent_tool_calls(message);
@@ -149,7 +168,7 @@ pub fn build_atif_trajectory(messages: &[Message], metadata: AtifAgentMetadata) 
                 }
 
                 let mut step = AtifStep {
-                    step_id: steps.len() + 1,
+                    step_id: self.steps.len() + 1,
                     source: "agent".to_string(),
                     message: message_text,
                     reasoning_content: reasoning,
@@ -157,74 +176,117 @@ pub fn build_atif_trajectory(messages: &[Message], metadata: AtifAgentMetadata) 
                     observation: None,
                     metrics: step_metrics_from_usage(message.usage.as_ref()),
                 };
-                consume_pending_observations(&mut step, &mut pending_by_id);
-                steps.push(step);
+                consume_pending_observations(&mut step, &mut self.pending_by_id);
+                self.steps.push(step);
             }
             _ => {}
         }
     }
 
-    if !pending_by_id.is_empty() {
-        let orphan_results: Vec<AtifObservationResult> = pending_by_id
-            .into_values()
-            .flatten()
-            .map(|result| AtifObservationResult {
-                source_call_id: None,
-                content: result.content,
-            })
-            .collect();
-        let agent_index = steps.iter().rposition(|step| step.source == "agent");
-        let agent_index = match agent_index {
-            Some(index) => index,
-            None => {
-                steps.push(AtifStep {
-                    step_id: steps.len() + 1,
-                    source: "agent".to_string(),
-                    message: "(orphaned LibrAgent tool results)".to_string(),
-                    reasoning_content: None,
-                    tool_calls: None,
-                    observation: None,
-                    metrics: None,
-                });
-                steps.len() - 1
-            }
+    fn accumulate_usage(&mut self, usage: Option<&Value>) {
+        let Some(usage) = usage else {
+            return;
         };
-        for result in orphan_results {
-            append_observation_result(&mut steps[agent_index], result);
+        let prompt = usage_token(usage, &["promptTokens", "prompt_tokens", "input_tokens"]);
+        let completion = usage_token(
+            usage,
+            &["completionTokens", "completion_tokens", "output_tokens"],
+        );
+        let cached = usage_token(
+            usage,
+            &[
+                "cachedPromptTokens",
+                "cached_prompt_tokens",
+                "cache_read_input_tokens",
+                "cached_tokens",
+            ],
+        );
+        if prompt.is_none() && completion.is_none() && cached.is_none() {
+            return;
+        }
+        self.has_usage = true;
+        self.n_input += prompt.unwrap_or(0);
+        self.n_output += completion.unwrap_or(0);
+        self.n_cache += cached.unwrap_or(0);
+    }
+
+    pub(super) fn finish(mut self) -> AtifTrajectory {
+        if !self.pending_by_id.is_empty() {
+            let orphan_results: Vec<AtifObservationResult> = self
+                .pending_by_id
+                .into_values()
+                .flatten()
+                .map(|result| AtifObservationResult {
+                    source_call_id: None,
+                    content: result.content,
+                })
+                .collect();
+            let agent_index = self.steps.iter().rposition(|step| step.source == "agent");
+            let agent_index = match agent_index {
+                Some(index) => index,
+                None => {
+                    self.steps.push(AtifStep {
+                        step_id: self.steps.len() + 1,
+                        source: "agent".to_string(),
+                        message: "(orphaned LibrAgent tool results)".to_string(),
+                        reasoning_content: None,
+                        tool_calls: None,
+                        observation: None,
+                        metrics: None,
+                    });
+                    self.steps.len() - 1
+                }
+            };
+            for result in orphan_results {
+                append_observation_result(&mut self.steps[agent_index], result);
+            }
+        }
+
+        if self.steps.is_empty() {
+            self.steps.push(AtifStep {
+                step_id: 1,
+                source: "agent".to_string(),
+                message: EMPTY_TRAJECTORY_MESSAGE.to_string(),
+                reasoning_content: None,
+                tool_calls: None,
+                observation: None,
+                metrics: None,
+            });
+        }
+
+        let (total_prompt_tokens, total_completion_tokens, total_cached_tokens) = if self.has_usage
+        {
+            (Some(self.n_input), Some(self.n_output), Some(self.n_cache))
+        } else {
+            (None, None, None)
+        };
+
+        AtifTrajectory {
+            schema_version: SCHEMA_VERSION.to_string(),
+            session_id: self.metadata.session_id,
+            agent: AtifAgent {
+                name: self.metadata.name,
+                version: self.metadata.version,
+                model_name: self.metadata.model_name,
+            },
+            final_metrics: Some(AtifFinalMetrics {
+                total_prompt_tokens,
+                total_completion_tokens,
+                total_cached_tokens,
+                total_steps: self.steps.len(),
+            }),
+            steps: self.steps,
         }
     }
+}
 
-    if steps.is_empty() {
-        steps.push(AtifStep {
-            step_id: 1,
-            source: "agent".to_string(),
-            message: EMPTY_TRAJECTORY_MESSAGE.to_string(),
-            reasoning_content: None,
-            tool_calls: None,
-            observation: None,
-            metrics: None,
-        });
+/// Convert persisted LibrAgent messages into an ATIF-v1.7 trajectory.
+pub fn build_atif_trajectory(messages: &[Message], metadata: AtifAgentMetadata) -> AtifTrajectory {
+    let mut builder = AtifTrajectoryBuilder::new(metadata);
+    for message in messages {
+        builder.push(message);
     }
-
-    let (total_prompt_tokens, total_completion_tokens, total_cached_tokens) =
-        summarize_usage(messages);
-
-    AtifTrajectory {
-        schema_version: SCHEMA_VERSION.to_string(),
-        session_id: metadata.session_id,
-        agent: AtifAgent {
-            name: metadata.name,
-            version: metadata.version,
-            model_name: metadata.model_name,
-        },
-        final_metrics: Some(AtifFinalMetrics {
-            total_prompt_tokens,
-            total_completion_tokens,
-            total_cached_tokens,
-            total_steps: steps.len(),
-        }),
-        steps,
-    }
+    builder.finish()
 }
 
 fn message_text_parts(message: &Message, part_types: &[&str]) -> Vec<String> {
@@ -384,55 +446,59 @@ fn step_metrics_from_usage(usage: Option<&Value>) -> Option<AtifMetrics> {
     })
 }
 
-fn summarize_usage(messages: &[Message]) -> (Option<i64>, Option<i64>, Option<i64>) {
-    let mut n_input = 0i64;
-    let mut n_output = 0i64;
-    let mut n_cache = 0i64;
-    let mut has_usage = false;
-
-    for message in messages {
-        let Some(usage) = message.usage.as_ref() else {
-            continue;
-        };
-        let prompt = usage_token(usage, &["promptTokens", "prompt_tokens", "input_tokens"]);
-        let completion = usage_token(
-            usage,
-            &["completionTokens", "completion_tokens", "output_tokens"],
-        );
-        let cached = usage_token(
-            usage,
-            &[
-                "cachedPromptTokens",
-                "cached_prompt_tokens",
-                "cache_read_input_tokens",
-                "cached_tokens",
-            ],
-        );
-        if prompt.is_none() && completion.is_none() && cached.is_none() {
-            continue;
-        }
-        has_usage = true;
-        n_input += prompt.unwrap_or(0);
-        n_output += completion.unwrap_or(0);
-        n_cache += cached.unwrap_or(0);
+fn media_placeholder(kind: &str, mime_type: &str, uri: Option<&str>) -> String {
+    match uri.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(uri) => format!("[{kind}: {mime_type} - {uri}]"),
+        None => format!("[{kind}: {mime_type}]"),
     }
+}
 
-    if has_usage {
-        (Some(n_input), Some(n_output), Some(n_cache))
-    } else {
-        (None, None, None)
+fn observation_content_part(part: &MCPContent) -> Option<String> {
+    match part {
+        MCPContent::Text { text } => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        MCPContent::Image { mime_type, uri, .. } => {
+            Some(media_placeholder("Image", mime_type, uri.as_deref()))
+        }
+        MCPContent::Audio { mime_type, uri, .. } => {
+            Some(media_placeholder("Audio", mime_type, uri.as_deref()))
+        }
+        MCPContent::Resource { resource, .. } => {
+            let mime_type = resource
+                .get("mimeType")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let uri = resource.get("uri").and_then(Value::as_str);
+            Some(match uri {
+                Some(uri) => format!("[UI Resource: {mime_type} - {uri}]"),
+                None => format!("[UI Resource: {mime_type}]"),
+            })
+        }
+        MCPContent::Thinking { thinking, .. } => {
+            let trimmed = thinking.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        MCPContent::ToolCall { name, .. } => Some(format!("[Tool call: {name}]")),
     }
 }
 
 fn tool_observation_content(message: &Message) -> String {
-    let texts = message_text_parts(message, &["text"]);
-    if !texts.is_empty() {
-        return texts.join("\n");
-    }
-    if message.content.is_empty() {
-        return String::new();
-    }
-    serde_json::to_string(&message.content).unwrap_or_default()
+    message
+        .content
+        .iter()
+        .filter_map(observation_content_part)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn append_observation_result(step: &mut AtifStep, result: AtifObservationResult) {
@@ -462,7 +528,7 @@ fn find_agent_step_for_tool_call<'a>(
 fn attach_tool_observation(
     steps: &mut [AtifStep],
     message: &Message,
-    pending_by_id: &mut HashMap<String, Vec<AtifObservationResult>>,
+    pending_by_id: &mut IndexMap<String, Vec<AtifObservationResult>>,
 ) {
     let source_call_id = message
         .tool_call_id
@@ -491,14 +557,14 @@ fn attach_tool_observation(
 
 fn consume_pending_observations(
     step: &mut AtifStep,
-    pending_by_id: &mut HashMap<String, Vec<AtifObservationResult>>,
+    pending_by_id: &mut IndexMap<String, Vec<AtifObservationResult>>,
 ) {
     let Some(tool_calls) = step.tool_calls.as_ref() else {
         return;
     };
     let mut results = Vec::new();
     for tool_call in tool_calls {
-        if let Some(pending) = pending_by_id.remove(&tool_call.tool_call_id) {
+        if let Some(pending) = pending_by_id.shift_remove(&tool_call.tool_call_id) {
             results.extend(pending);
         }
     }

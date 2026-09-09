@@ -46,6 +46,18 @@ title: 세션
 
 ---
 
+## 내보내기
+
+채팅 헤더 또는 History 카드의 **Export** 메뉴로 저장된 대화를 파일로 저장합니다.
+
+- **Markdown (.md)** — 저장소의 전체 대화(thinking, tool call 포함). compaction/recovery 스캐폴딩은 제외합니다.
+- **ATIF trajectory (.json)** — 분석용 Harbor 정렬 ATIF-v1.7. 스크린샷 등 바이너리 미디어는 원문이 아니라 placeholder만 넣습니다.
+- **보이는 대화 복사** (활성 채팅만) — 메모리에 있는 창을 클립보드로 복사합니다. thinking은 빠지고 용량 제한이 있으며, Markdown 파일 내보내기와 같지 않습니다.
+
+진행 중인 세션도 그 시점의 스냅샷으로 내보낼 수 있습니다. 아직 스트리밍 중인 행은 제외됩니다.
+
+---
+
 ## 관련
 
 - [첫 대화](../getting-started/first-agent.md)

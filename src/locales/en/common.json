@@ -1196,7 +1196,7 @@
       "menuTooltip": "Export session",
       "markdown": "Export as Markdown (.md)",
       "atif": "Export as ATIF trajectory (.json)",
-      "copyClipboard": "Copy to clipboard (Markdown)",
+      "copyClipboard": "Copy visible window (no thinking / size-limited)",
       "markdownSuccess": "Markdown file saved",
       "atifSuccess": "ATIF trajectory saved",
       "openFile": "Open",
