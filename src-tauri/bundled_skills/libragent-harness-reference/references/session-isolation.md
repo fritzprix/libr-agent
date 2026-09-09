@@ -1,13 +1,13 @@
 # Session / workspace isolation
 
-## Default child (`agent__startSession`)
+## Default child (`agent__spawnSession`)
 
 | Asset | Parent | Child (default) |
 | --- | --- | --- |
 | Session workspace | Parent dir | **New isolated** workspace |
 | `agents.md` / `SOUL.md` | Parent workspace | Loaded from **child** workspace (often empty) |
 | Workspace-local skills | Parent workspace | Child workspace only |
-| Assistant-scoped skills | Caller's assistant | Child's `agentId` assistant |
+| Assistant-scoped skills | Caller's assistant | Child's `configId` assistant |
 | Global / system skills | Shared | Shared |
 | Scratchpad | Parent session | **Separate**; parent cannot read child notes |
 

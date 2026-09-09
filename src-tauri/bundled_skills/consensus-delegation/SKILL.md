@@ -34,7 +34,7 @@ Define before spawning anything:
 
 Default: **reuse existing assistant configurations and suitable child sessions** and put the review lens in the handoff task. Do **not** `agent__createAgent` just to bake a perspective into the system prompt when a capable generalist already exists.
 
-- `agent__listAgents(type="configs")` to discover assistants; use returned IDs in `agent__startSession`
+- `agent__listAgents(type="configs")` to discover assistants; use returned template IDs in `agent__spawnSession` (never pass a `sessionId`)
 - `agent__listAgents(type="sessions")` to find an Idle child with the same assistant ID and compatible workspace; use `agent__messageToSession(reset=true)` for a fresh review assignment when reuse is safe
 - Match on **capability**, not perfect persona: any assistant that can read the repo / reason about the artifact is eligible. Coding, research, and general review configs are fine for security / correctness / coverage lenses when the task text states the lens
 - Differ perspectives via the shared handoff wrapper (`You are reviewing as: [PERSPECTIVE]`) and lens-specific bullets — see `references/workflow-templates.md`
@@ -60,7 +60,7 @@ When all reviewers need the same codebase, start each child with the same `works
 
 Default pattern:
 
-1. Inspect existing sessions and reuse a suitable Idle matching-role child with `agent__messageToSession`; use `agent__startSession(agentId="...", task="...", waitForResult=false, workspaceOverride="...")` only when no suitable child exists, a different role/workspace is needed, or parallel capacity requires another session
+1. Inspect existing sessions and reuse a suitable Idle matching-role child with `agent__messageToSession`; use `agent__spawnSession(configId="...", task="...", waitForResult=false, workspaceOverride="...")` only when no suitable child exists, a different role/workspace is needed, or parallel capacity requires another session
 2. Use the session inventory for child IDs and status—`agent__listAgents` does not return review results
 3. Collect with `agent__checkSession(sessionId)` or `agent__checkSession(sessionId, wait=true)` for actual conclusions
 
@@ -109,7 +109,7 @@ Do not present a single child's output as the final answer without comparison.
 | --- | --- |
 | Discover assistants | `agent__listAgents(type="configs")` |
 | Create specialist | `agent__createAgent(...)` — when no usable existing config; not one config per lens |
-| Assign reviewer | `agent__messageToSession(..., reset=true)` when a matching Idle child exists; otherwise `agent__startSession(..., waitForResult=false)` |
+| Assign reviewer | `agent__messageToSession(..., reset=true)` when a matching Idle child exists; otherwise `agent__spawnSession(..., waitForResult=false)` |
 | Inspect children | `agent__listAgents(type="sessions")` — IDs and status only |
 | Poll or wait | `agent__checkSession(sessionId)` / `agent__checkSession(sessionId, wait=true)` — results |
 | Reconcile | `agent__messageToSession(sessionId, message)` |

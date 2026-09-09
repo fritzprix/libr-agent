@@ -117,7 +117,7 @@ pub fn format_workspace_metadata_line(
     }
 }
 
-/// Short startSession / messageToSession hint fragment.
+/// Short spawnSession / messageToSession hint fragment.
 pub fn format_workspace_status_note(workspace_path: &str, relation: WorkspaceRelation) -> String {
     match relation {
         WorkspaceRelation::Shared => format!(" [SHARED] workspace: {}.", workspace_path),

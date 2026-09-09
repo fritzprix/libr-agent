@@ -297,7 +297,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             "\n\n---\n📌 External server IDs (inventory only — not auto-enabled in this session):\n\
             Server IDs found:\n(this page only)\n{}\n\n\
             To attach them to an agent template for future sessions, call:\n  agent__updateAgent(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
-            Note: agent__updateAgent cannot add or modify tools in your currently active session. Active session tool access is fixed at session start. Use availability='session' to see what you can call right now; start a new session (or agent__startSession) to run with an updated config.\n\n\
+            Note: agent__updateAgent cannot add or modify tools in your currently active session. Active session tool access is fixed at session start. Use availability='session' to see what you can call right now; spawn a new session with agent__spawnSession(configId=...) to run with an updated config.\n\n\
             Use agent__listAgents(type: \"configs\") to find your target agent ID.",
             ids_list.join("\n")
         )

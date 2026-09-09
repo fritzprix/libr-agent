@@ -316,8 +316,9 @@ fn build_stable_prefix(
         let mut identity = format!(
             "\n\n## Agent Runtime Identity\n\
             - Agent Name: {}\n\
-            - Agent ID: {}\n\
-            - Session ID: {}",
+            - Agent ID (Config ID): {}\n\
+            - Session ID: {}\n\
+            - Note: Agent ID / Config ID is your configuration template ID (for agent__spawnSession). Session ID is your running instance ID (for agent__messageToSession / agent__checkSession).",
             agent_config.name.trim(),
             agent_id,
             display_session

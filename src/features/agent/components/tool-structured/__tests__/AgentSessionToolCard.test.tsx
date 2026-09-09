@@ -60,7 +60,7 @@ describe('ToolStructuredResult agent session cards', () => {
     ).join('\n');
 
     renderAgentCard(
-      'agent__startSession',
+      'agent__spawnSession',
       {
         sessionId: 'a1b2c3d4e5',
         status: 'started',
@@ -91,7 +91,7 @@ describe('ToolStructuredResult agent session cards', () => {
   });
 
   it('shows isolated workspace when override was not set', () => {
-    renderAgentCard('agent__startSession', {
+    renderAgentCard('agent__spawnSession', {
       sessionId: 'a1b2c3d4e5',
       status: 'started',
       responseStatus: 'pending',

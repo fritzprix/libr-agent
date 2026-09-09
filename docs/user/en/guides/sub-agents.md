@@ -13,7 +13,7 @@ title: Sub-agents & orchestration
 
 |                   | Meaning                                                                                                        |
 | ----------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Is**            | A **child session** created by the parent (e.g. via `agent__startSession`). Parent–child **lineage** is kept.  |
+| **Is**            | A **child session** created by the parent (e.g. via `agent__spawnSession`). Parent–child **lineage** is kept.  |
 | **Is not**        | A clone of the parent runtime. Workspace, local skills, and `agents.md` are **not** copied automatically.      |
 | **Who drives it** | Usually you attach `@skill:delegate` (etc.) so the agent manages spawn / poll / merge — not manual tool calls. |
 

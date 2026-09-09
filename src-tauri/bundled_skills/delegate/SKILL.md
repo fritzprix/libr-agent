@@ -3,7 +3,7 @@ name: delegate
 description: >
   Delegate work between LibrAgent AI agent sessions using sub-agent sessions.
   Use when an agent needs to spawn, brief, monitor, or troubleshoot a child
-  session with `agent__startSession`, `agent__checkSession`, or
+  session with `agent__spawnSession`, `agent__checkSession`, or
   `agent__messageToSession`, especially when deciding whether the child really
   needs parent workspace state, workspace instructions, or workspace-scoped
   skills. For generator-evaluator / strict acceptance criteria / proof before
@@ -14,7 +14,7 @@ description: >
 
 ## Runtime Tool Names
 
-LibrAgent exposes builtin tools as `server__tool` (for example `agent__startSession`). Use the exact names from the current session tool list when calling tools. Bare shorthand like `startSession` will fail at runtime.
+LibrAgent exposes builtin tools as `server__tool` (for example `agent__spawnSession`). Use the exact names from the current session tool list when calling tools. Bare shorthand like `spawnSession` will fail at runtime.
 
 Treat sub-agent delegation as session orchestration, not magic inheritance.
 
@@ -72,16 +72,16 @@ After `agent__checkSession`, read the Metadata `workspace:` line: `SHARED with c
 
 Assume these rules:
 
-- `agent__startSession` creates a new child session with lineage metadata, not a cloned runtime context.
+- `agent__spawnSession` creates a new child session with lineage metadata, not a cloned runtime context.
 - The child gets its own session workspace by default.
 - Workspace instructions are loaded from the **child** workspace, not the parent workspace.
 - Workspace-scoped skills are resolved from the **child** workspace, not the parent workspace.
-- Assistant-scoped skills come from the assistant you choose for `agentId`.
+- Assistant-scoped skills come from the assistant you choose for `configId`.
 - Global skills remain available to both parent and child.
 
 If the parent is running inside a task-force workspace, check `.libragent/teamwork.json` before delegating:
 
-- If `executionSubstrate.mode` is `"org"`, reuse an existing Idle org child with the matching assistant ID and compatible workspace via `agent__messageToSession` when possible; otherwise prefer `agent__startSession(...)` so the new child joins the org and inherits the parent effective workspace by default. Switch to `org` for org-specific operating rules.
+- If `executionSubstrate.mode` is `"org"`, reuse an existing Idle org child with the matching assistant ID and compatible workspace via `agent__messageToSession` when possible; otherwise prefer `agent__spawnSession(...)` so the new child joins the org and inherits the parent effective workspace by default. Switch to `org` for org-specific operating rules.
 - If `executionSubstrate.mode` is `"scheduled"`, the wake-up is likely a global scheduled task. Follow `schedule` for scheduled-task operating rules instead of ad-hoc delegation.
 - If the user wants a future reminder inside the current session, use `session-schedule` instead of delegation.
 - Treat the app-local teamwork artifact directory as the orchestration/constitution storage. If the child also needs to edit code in a repo, keep the session workspace semantics separate from the teamwork artifact path.
@@ -91,7 +91,7 @@ Important limitations:
 - Do **not** assume `agent.md` exists. Workspace behavior instructions are loaded from the first non-empty file among `agents.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`.
 - Persona / tone instructions are loaded separately from the first non-empty file among `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, and `soul.md`.
 - Both persona and workspace instruction content are cached for the session lifetime until the stable prompt cache is invalidated.
-- `agent__startSession` can override the child workspace with `workspaceOverride`; files and prompt state still follow the child session.
+- `agent__spawnSession` can override the child workspace with `workspaceOverride`; files and prompt state still follow the child session.
 - Default to each session's own workspace. Use `workspaceOverride` only when the child should work in the same effective workspace as the parent or another already-existing workspace.
 
 ## 3. Prepare the Handoff
@@ -119,12 +119,12 @@ Say "use the same workspace as this session" only when you intentionally started
 
 Use the builtin agent tools deliberately:
 
-- `agent__listAgents(type="configs")` to find the right assistant and prefer its returned ID
+- `agent__listAgents(type="configs")` to find the right assistant and prefer its returned template ID
 - `agent__listAgents(type="sessions")` or the live sub-agent inventory to find an existing child with a matching assistant ID
 - `agent__messageToSession(sessionId="...", message="...")` to continue work or assign new work to a suitable idle matching-role child
 - Set `reset=true` only when the previous conversation and runtime state should be discarded. This resets messages, planning/compaction state, and pending messages but does not clean workspace files.
-- `agent__startSession(agentId="...", task="...", waitForResult=false)` when you have the ID
-- `agent__startSession(agentId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
+- `agent__spawnSession(configId="...", task="...", waitForResult=false)` to spawn a new child session using the configuration template ID. Do not pass a `sessionId` here; for existing sessions use `agent__messageToSession`.
+- `agent__spawnSession(configId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
 - `agent__checkSession(sessionId)` to poll
 - `agent__checkSession(sessionId, wait=true)` when you want to block until a terminal result
 Default to `waitForResult=false` unless the parent truly has nothing useful to do while waiting.

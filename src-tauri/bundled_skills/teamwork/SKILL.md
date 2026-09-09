@@ -65,8 +65,8 @@ Coordination model and execution substrate are not the same thing.
 
 Pick the execution substrate that matches the job:
 
-- **Plain child sessions** - use `agent__startSession(...)` for one-off delegation that does not need org visibility.
-- **Explicit org lineage** - call `agent__prepareTeamworkWorkspace()` first, then use `agent__createOrg(...)` once from the root session, then use `agent__startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic. Org-visible children inherit the governing session's effective workspace by default.
+- **Plain child sessions** - use `agent__spawnSession(...)` for one-off delegation that does not need org visibility.
+- **Explicit org lineage** - call `agent__prepareTeamworkWorkspace()` first, then use `agent__createOrg(...)` once from the root session, then use `agent__spawnSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic. Org-visible children inherit the governing session's effective workspace by default.
 - **Scheduled task groups** - use `scheduled_task__createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
 - **Session-bound follow-ups** - use `session-schedule` with `scheduled_task__scheduleCallback(...)` when a delay or reminder must stay inside the current conversation. This does not require teamwork scaffolding.
 

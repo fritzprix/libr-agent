@@ -124,7 +124,7 @@ pub async fn missing_external_tool_result(
                     "agent__updateAgent(id:\"<agentId>\", externalMcpServers:[\"{}\", ...]) attaches Server ID \"{}\" to an agent template for future sessions only — it cannot add tools to this already-running session.",
                     server.id, server.id
                 ),
-                "To use this server now, delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\") using a config that already includes it, or continue with tools shown by availability='session'.".to_string(),
+                "To use this server now, delegate with agent__spawnSession(configId:\"<configId>\", task:\"...\") using a config that already includes it, or continue with tools shown by availability='session'.".to_string(),
             ],
         ),
         Ok(None) => external_tool_error_result(
@@ -140,7 +140,7 @@ pub async fn missing_external_tool_result(
                 "Use tool__listServers({\"availability\":\"session\"}) to inspect the tools callable in the current session.".to_string(),
                 "Use tool__listServers({\"availability\":\"inventory\"}) to inspect all registered external servers and tool inventory.".to_string(),
                 "Verify the server name and tool name match the registered inventory exactly.".to_string(),
-                "If you expected another agent environment to provide this tool, use agent__listAgents(type=\"configs\") and delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\").".to_string(),
+                "If you expected another agent environment to provide this tool, use agent__listAgents(type=\"configs\") and delegate with agent__spawnSession(configId:\"<configId>\", task:\"...\").".to_string(),
             ],
         ),
         Err(error) => external_tool_error_result(

@@ -27,7 +27,7 @@ The Hub-and-Spoke pattern designates a central Coordinator session (Hub) to mana
 2. **Task Planning**: The Hub analyzes the goal, creates a task dependency list, and allocates work.
 3. **Execution Routing**:
    - Before spawning, inspect `agent__listAgents(type="sessions")` for an Idle child with the same assistant ID and a compatible workspace contract. Route new work to a suitable child with `agent__messageToSession`; use `reset=true` only when its previous conversation and runtime state should be discarded.
-   - The Hub spawns a new Spoke asynchronously using `agent__startSession(waitForResult=false)` only when no suitable child exists, a different role or workspace isolation is needed, or another parallel capacity slot is required.
+   - The Hub spawns a new Spoke asynchronously using `agent__spawnSession(waitForResult=false)` only when no suitable child exists, a different role or workspace isolation is needed, or another parallel capacity slot is required.
    - Plain spokes get **isolated** workspaces by default. For repo/code work, pass `workspaceOverride` to the Hub's workspace (or a spoke-specific subdir). For research/write-ups, require the primary deliverable in the spoke's final text (`Result:`), not only a relative file path.
    - When sharing a workspace across parallel spokes, use unique filenames or per-spoke subdirectories to avoid collisions.
    - If inter-spoke coordination is needed, the Hub routes messages. See [routing.md](references/routing.md).

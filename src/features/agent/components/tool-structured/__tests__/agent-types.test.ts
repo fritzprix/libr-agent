@@ -51,6 +51,9 @@ describe('agent session structured types', () => {
     expect(classifyAgentSessionCard('agent__startSession', spawn!)).toBe(
       'spawned',
     );
+    expect(classifyAgentSessionCard('agent__spawnSession', spawn!)).toBe(
+      'spawned',
+    );
 
     const inject = parseAgentSessionToolResult({
       sessionId: 'a1b2c3d4e5',
