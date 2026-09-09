@@ -1245,6 +1245,17 @@
       "fileTooLarge": "File is too large for inline preview.",
       "syntaxHighlightDisabled": "Large file (>200KB) - syntax highlighting disabled for performance"
     },
+    "toolStructured": {
+      "writeCreated": "Created",
+      "writeCreatedAlternate": "Created at alternate path",
+      "writeOverwritten": "Overwritten",
+      "writeAppended": "Appended",
+      "openFile": "Open file",
+      "openingFile": "Opening...",
+      "openFileError": "Failed to open file",
+      "lineCount": "{{count}} lines",
+      "requestedPath": "Requested: {{path}}"
+    },
     "statusBar": {
       "retryError": "Failed to retry message",
       "resumeError": "Failed to resume session",

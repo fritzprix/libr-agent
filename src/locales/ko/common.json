@@ -1235,6 +1235,17 @@
       "fileTooLarge": "파일이 너무 커서 인라인 미리보기를 지원하지 않습니다.",
       "syntaxHighlightDisabled": "대용량 파일 (>200KB) - 성능을 위해 구문 강조가 비활성화되었습니다"
     },
+    "toolStructured": {
+      "writeCreated": "생성됨",
+      "writeCreatedAlternate": "대체 경로에 생성됨",
+      "writeOverwritten": "덮어씀",
+      "writeAppended": "추가됨",
+      "openFile": "파일 열기",
+      "openingFile": "여는 중...",
+      "openFileError": "파일을 열지 못했습니다",
+      "lineCount": "{{count}}줄",
+      "requestedPath": "요청 경로: {{path}}"
+    },
     "statusBar": {
       "retryError": "메시지 재시도에 실패했습니다",
       "resumeError": "세션 재개에 실패했습니다",

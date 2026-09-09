@@ -23,10 +23,12 @@ import {
   useOptionalAgentSessionState,
 } from '@/context/AgentSessionContext';
 import { AgentChatProvider } from '@/context/AgentChatContext';
+import { AgentFilePreviewProvider } from '@/context/AgentFilePreviewContext';
 import {
   AgentPanelsProvider,
   useAgentPanels,
 } from '@/context/AgentPanelsContext';
+import { AgentFilePreviewHost } from './components/AgentFilePreviewHost';
 import { AgentChatHeader } from './components/AgentChatHeader';
 import { AgentChatStatusBar } from './components/AgentChatStatusBar';
 import { AgentChatMessages } from './components/AgentChatMessages';
@@ -472,7 +474,10 @@ function AgentChatViewContent({
         <div className="relative h-full">
           <AgentChatProvider>
             <AgentPanelsProvider>
-              <AgentChatInner />
+              <AgentFilePreviewProvider>
+                <AgentChatInner />
+                <AgentFilePreviewHost />
+              </AgentFilePreviewProvider>
             </AgentPanelsProvider>
           </AgentChatProvider>
         </div>

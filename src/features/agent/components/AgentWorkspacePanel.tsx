@@ -37,13 +37,13 @@ import {
   type DragAndDropEvent,
   type DragAndDropPayload,
 } from '@/context/DnDContext';
+import { useAgentFilePreview } from '@/context/AgentFilePreviewContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { cn } from '@/lib/utils';
 
 import { PanelEyebrow, PanelListFrame } from './panel-chrome';
 import { FileTreeNode } from './workspace-panel/FileTreeNode';
-import { WorkspaceFilePreviewSheet } from './workspace-panel/WorkspaceFilePreviewSheet';
-import { isPreviewable } from './workspace-panel/fileIconUtils';
+import { canOpenInAppPreview } from './workspace-panel/filePreview';
 import { useWorkspaceFiles } from './workspace-panel/useWorkspaceFiles';
 import { useWorkspaceOverride } from './workspace-panel/useWorkspaceOverride';
 import { useWorkspaceFileDrop } from './workspace-panel/useWorkspaceFileDrop';
@@ -83,6 +83,7 @@ export function AgentWorkspacePanel({
   const { t } = useTranslation();
   const { openWorkspaceFileWithDefaultApp } = useRustBackend();
   const { session } = useAgentSessionState();
+  const { openFilePreview } = useAgentFilePreview();
 
   const rootPath = './';
   const panelRef = useRef<HTMLDivElement>(null);
@@ -94,7 +95,6 @@ export function AgentWorkspacePanel({
   const [isUploading, setIsUploading] = useState(false);
   const [isOpeningNative, setIsOpeningNative] = useState(false);
   const openingNativeLock = useRef(false);
-  const [previewFile, setPreviewFile] = useState<FileNode | null>(null);
 
   // Extracted hooks
   const {
@@ -344,17 +344,19 @@ export function AgentWorkspacePanel({
         return;
       }
 
-      // Dual size gate: Pre-check if size is known and exceeds 2MB
-      const isOversized = Boolean(node.size && node.size > 2 * 1024 * 1024);
-
-      if (isPreviewable(node.name) && !isOversized) {
+      if (canOpenInAppPreview({ path: node.path, size: node.size })) {
         logger.debug('Opening file in preview sheet', { path: node.path });
-        setPreviewFile(node);
+        openFilePreview({
+          path: node.path,
+          name: node.name,
+          size: node.size,
+          sessionId: session?.id,
+        });
       } else {
         await openWithDefaultApp(node.path, node.name);
       }
     },
-    [openWithDefaultApp],
+    [openFilePreview, openWithDefaultApp, session?.id],
   );
 
   if (!session) return null;
@@ -654,16 +656,6 @@ export function AgentWorkspacePanel({
           </div>
         </div>
       </Card>
-
-      <WorkspaceFilePreviewSheet
-        file={previewFile}
-        sessionId={session?.id}
-        isOpen={Boolean(previewFile)}
-        onClose={() => setPreviewFile(null)}
-        onOpenInDefaultApp={(path) =>
-          openWithDefaultApp(path, previewFile?.name)
-        }
-      />
     </div>
   );
 }
