@@ -53,6 +53,7 @@ export const ToolStructuredResult: React.FC<ToolStructuredResultProps> = ({
       const parsed = parseRunShellResult(data);
       return parsed ? <TerminalOutputBlock data={parsed} /> : null;
     }
+    case 'agent__spawnSession':
     case 'agent__startSession':
     case 'agent__messageToSession':
     case 'agent__checkSession':

@@ -149,13 +149,13 @@ fn start_session_schema_property_order_puts_task_last() {
 
     let tool = all_tools()
         .into_iter()
-        .find(|tool| tool.name == "startSession")
-        .expect("startSession tool");
+        .find(|tool| tool.name == "spawnSession")
+        .expect("spawnSession tool");
 
     assert_property_order(
         &tool,
         &[
-            "agentId",
+            "configId",
             "workspaceOverride",
             "waitForResult",
             "timeout",

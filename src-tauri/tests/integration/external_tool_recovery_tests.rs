@@ -213,7 +213,7 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
         "guidance must state updateAgent cannot change the current session: {text}"
     );
     assert!(
-        text.contains("agent__startSession"),
+        text.contains("agent__spawnSession"),
         "guidance should explicitly mention delegation as a recovery path: {text}"
     );
 }

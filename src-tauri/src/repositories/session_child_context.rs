@@ -70,7 +70,7 @@ pub fn format_active_sessions_notice(children: &[SessionMetadata]) -> Option<Str
 
     let total_count = children.len();
     let mut parts = vec![format!(
-        "### Sub-Agents ({total_count}) — Reuse suitable idle sessions with the same assistant configuration via agent__messageToSession; use agent__startSession when no suitable session exists or separate parallel/isolation is needed."
+        "### Sub-Agents ({total_count}) — Reuse suitable idle sessions via agent__messageToSession(sessionId='...'); spawn a new session via agent__spawnSession(configId='...') only when separate parallel/isolated capacity is needed."
     )];
 
     let limit_per_group = 5;
@@ -128,7 +128,7 @@ fn format_assistant_tag(session: &SessionMetadata) -> String {
         .map(str::trim)
         .filter(|assistant_id| !assistant_id.is_empty())
     {
-        Some(assistant_id) => format!("[assistant:{assistant_id}]"),
+        Some(assistant_id) => format!("[config:{assistant_id}]"),
         None => "[unbound]".to_string(),
     }
 }

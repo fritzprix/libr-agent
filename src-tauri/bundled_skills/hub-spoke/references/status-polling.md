@@ -4,7 +4,7 @@ Hub monitors spokes without loading full conversation logs.
 
 ## Polling workflow
 
-1. After `agent__messageToSession(...)` or `agent__startSession(..., waitForResult=false)`, store the target `sessionId`.
+1. After `agent__messageToSession(...)` or `agent__spawnSession(..., waitForResult=false)`, store the target `sessionId`.
 2. Poll with `agent__checkSession(sessionId)` on an interval or before next dispatch.
 3. Request **summary fields only**: status, last message snippet, output file paths.
 

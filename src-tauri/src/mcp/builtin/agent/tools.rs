@@ -13,7 +13,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         prepare_teamwork_workspace_tool(),
         create_org_tool(),
         get_org_tool(),
-        start_session_tool(),
+        spawn_session_tool(),
         message_to_session_tool(),
         check_session_tool(),
         compact_session_context_tool(),
@@ -36,7 +36,7 @@ fn create_tool() -> MCPTool {
             ],
             &[
                 "Discover configs with agent__listAgents(type='configs').",
-                "Spawn sessions with agent__startSession using the returned ID.",
+                "Spawn sessions with agent__spawnSession(configId=...) using the returned ID.",
             ],
         ),
         input_schema: object_prop(
@@ -68,7 +68,7 @@ fn list_tool() -> MCPTool {
                 "Use query to filter configs by name or description.",
             ],
             &[
-                "Start delegation with agent__startSession (configs) or agent__checkSession (sessions).",
+                "Spawn with agent__spawnSession(configId=...) after type='configs', or poll with agent__checkSession after type='sessions'.",
                 "Update configs with agent__updateAgent.",
             ],
         ),
@@ -130,7 +130,7 @@ fn update_tool() -> MCPTool {
             ],
             &[
                 "Verify the template with agent__listAgents(verbose=true).",
-                "Start a new session (or agent__startSession) to run with the updated tool access.",
+                "Spawn a new session with agent__spawnSession(configId=...) to run with the updated tool access.",
             ],
         ),
         input_schema: object_prop(
@@ -177,7 +177,7 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
             &[
                 "Do not call agent__prepareTeamworkWorkspace again after success.",
                 "Scaffold next via the teamwork skill (prefer scripts/init_task_force.py with --output = response artifactPath) or write the full set under @teamwork/ including coordination/* and @teamwork/.libragent/teamwork.json.",
-                "Only after the org scaffold is complete, call agent__createOrg, then agent__startSession for org members.",
+                "Only after the org scaffold is complete, call agent__createOrg, then agent__spawnSession for org members.",
             ],
         ),
         input_schema: object_prop(vec![], vec![], None),
@@ -187,26 +187,26 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
     }
 }
 
-fn start_session_tool() -> MCPTool {
+fn spawn_session_tool() -> MCPTool {
     MCPTool {
-        name: "startSession".to_string(),
-        title: Some("Start Agent Session".to_string()),
+        name: "spawnSession".to_string(),
+        title: Some("Spawn New Agent Session".to_string()),
         description: tool_description(
-            "Start a new sub-agent session when no suitable existing session is available, or when a distinct role, parallel capacity, or isolated workspace is needed. Reuse a suitable idle session with the same assistant configuration via agent__messageToSession when possible.",
+            "Spawn a brand-new isolated sub-agent session from an agent configuration template. Use this when no suitable existing session is available or when separate parallel capacity / isolated workspace is needed. To assign tasks to an existing session, reuse it via agent__messageToSession instead.",
             &["Agent configuration ID from agent__listAgents(type='configs')."],
             &[
-                "Pass agentId (config ID, not name) and a clear task description.",
+                "Pass configId (config template ID, NOT a sessionId) and a clear task description.",
                 "Org children inherit org workspace by default unless workspaceOverride is set.",
                 "Set waitForResult=true to block until the child finishes (optional timeout, default 3600s).",
             ],
             &[
                 "Poll or wait with agent__checkSession.",
-                "Send follow-ups with agent__messageToSession.",
+                "Send follow-ups or assign new work with agent__messageToSession.",
             ],
         ),
         input_schema: object_prop(
             vec![
-                ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call agent__listAgents(type='configs') first, then use the returned ID. Do not put the agent name here.")),
+                ("configId".to_string(), string_prop_required("Exact agent configuration template ID to use (from agent__listAgents(type='configs')). Do NOT pass a sessionId here — for existing sessions use agent__messageToSession. Do not put the agent name here.")),
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
                 ("waitForResult".to_string(), {
                     let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. Uses timeout (default 3600s) as the maximum wait."));
@@ -224,7 +224,7 @@ fn start_session_tool() -> MCPTool {
                 ),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
             ],
-            vec!["agentId".to_string(), "task".to_string()],
+            vec!["configId".to_string(), "task".to_string()],
             None,
         ),
         output_schema: None,
@@ -246,7 +246,7 @@ fn create_org_tool() -> MCPTool {
             ],
             &[
                 "Prepare artifacts with agent__prepareTeamworkWorkspace if needed.",
-                "Spawn org members with agent__startSession.",
+                "Spawn org members with agent__spawnSession(configId=...).",
             ],
         ),
         input_schema: object_prop(
@@ -300,12 +300,12 @@ fn get_org_tool() -> MCPTool {
 fn message_to_session_tool() -> MCPTool {
     MCPTool {
         name: "messageToSession".to_string(),
-        title: Some("Message Agent Session".to_string()),
+        title: Some("Delegate Task / Message Existing Session".to_string()),
         description: tool_description(
-            "Send new work or follow-up instructions to an existing delegated session. Reuse a suitable idle session with the same assistant configuration when possible.",
-            &["Session ID from agent__startSession or agent__listAgents(type='sessions')."],
+            "Assign a new task or send follow-up instructions to an existing delegated sub-agent session. Reuse a suitable idle session with the same assistant configuration when possible instead of starting a new session.",
+            &["Session ID from agent__spawnSession or agent__listAgents(type='sessions')."],
             &[
-                "Pass sessionId and the message or instruction.",
+                "Pass sessionId (NOT an agent config template ID) and the message or task instruction.",
                 "Use to continue ongoing work, assign new work to an idle matching-role session, or recover a paused or error session.",
                 "Set waitForResponse=false to send without blocking.",
                 "Set reset=true only when the previous conversation and runtime state should be discarded. This clears messages, planning/compaction state, and pending messages, but does not clean workspace files (defaults to false).",
@@ -320,7 +320,7 @@ fn message_to_session_tool() -> MCPTool {
             vec![
                 (
                     "sessionId".to_string(),
-                    string_prop_required("ID of the target sub-agent session."),
+                    string_prop_required("ID of the target existing sub-agent session. Do NOT pass an agent config template ID here."),
                 ),
                 (
                     "message".to_string(),
@@ -367,7 +367,7 @@ fn check_session_tool() -> MCPTool {
         title: Some("Check Session Status".to_string()),
         description: tool_description(
             "Check a sub-agent session status or wait for it to complete.",
-            &["Session ID from agent__startSession or agent__listAgents(type='sessions')."],
+            &["Session ID from agent__spawnSession or agent__listAgents(type='sessions')."],
             &[
                 "Call with wait=false for a snapshot or wait=true to block until terminal state.",
                 "After the status line (before Result), a fenced Metadata block adds identity/routing only (assistant, workspace) — not the child's answer. Session title/name is omitted.",

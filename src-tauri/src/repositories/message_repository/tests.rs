@@ -191,7 +191,7 @@ async fn test_reload_preserves_structured_content_in_error_column_envelope() {
         "sessionId": "a1b2c3d4e5",
         "status": "started",
         "responseStatus": "pending",
-        "toolName": "startSession",
+        "toolName": "spawnSession",
     });
 
     let mut message = create_dummy_message("tool-structured", "session1");

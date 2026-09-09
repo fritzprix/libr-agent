@@ -4,13 +4,13 @@ Use this file when you need concrete task wording or when a delegated child sess
 
 ## Quick Matrix
 
-| Need | Safe with normal `agent__startSession`? | What to do |
+| Need | Safe with normal `agent__spawnSession`? | What to do |
 | --- | --- | --- |
 | Existing Idle child has the same assistant and compatible workspace | Prefer reuse | Inspect with `agent__listAgents(type="sessions")`, then use `agent__messageToSession`; add `reset=true` only for a fresh assignment |
 | Child runs a bounded task with its own workspace | Yes | Delegate normally |
 | Child sees parent workspace files automatically | No | Put required content in the task, or keep the work in the parent |
 | Child inherits parent workspace `agents.md` / `CLAUDE.md` | No | Copy critical rules into the handoff |
-| Child uses assistant-scoped skills from chosen assistant | Yes | Pick the right `agentId` |
+| Child uses assistant-scoped skills from chosen assistant | Yes | Pick the right `configId` |
 | Child uses parent workspace-local `skills/` | No | Use global or assistant skills instead, or inline the procedure |
 | Child receives arbitrary parent files through a `contextFiles` parameter | No | Put critical context in the task text |
 | Child works in the same workspace as the parent | Yes | Start the child with `workspaceOverride` pointing to that shared workspace |
@@ -24,7 +24,7 @@ Suggested flow:
 1. Pick the most relevant assistant.
 2. Inspect existing child sessions and reuse a suitable Idle matching-role child with `agent__messageToSession` when its workspace is compatible.
 3. Write a task that includes the exact question, output shape, and any hard constraints.
-4. Start a new child asynchronously with `agent__startSession` only when no suitable child exists or a distinct role, workspace, or parallel slot is needed.
+4. Start a new child asynchronously with `agent__spawnSession` only when no suitable child exists or a distinct role, workspace, or parallel slot is needed.
 5. Keep working in the parent or poll later.
 
 Task template:

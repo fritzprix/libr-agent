@@ -6,7 +6,7 @@ use tauri_mcp_agent_lib::mcp::builtin::agent::utils::{
 use tauri_mcp_agent_lib::mcp::builtin::error_guidance::{
     duplicate_error, guided_error, missing_agent_config_error, missing_agent_session_error,
     missing_param_error, not_found_error, operation_failed_error, permission_denied_error,
-    ErrorCategory, ToolGroup,
+    session_id_passed_as_agent_config_error, ErrorCategory, ToolGroup,
 };
 use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
@@ -79,9 +79,10 @@ fn missing_agent_config_error_suggests_listing_configs() {
     assert!(text.contains("✗"));
     assert!(text.contains("Agent configuration 'exa' not found"));
     assert!(text.contains("agent__listAgents(type=\"configs\")"));
-    assert!(text.contains(
-        "Retry agent__startSession with a valid agentId copied from agent__listAgents(type=\"configs\")"
-    ));
+    assert!(text.contains("Do NOT guess, truncate, or typo-fix"));
+    assert!(text.contains("agent__spawnSession(configId="));
+    assert!(!text.contains("exactly matches"));
+    assert!(!text.contains("Retry agent__"));
 }
 
 #[test]
@@ -94,6 +95,19 @@ fn missing_agent_session_error_suggests_listing_sessions() {
     assert!(text.contains("✗"));
     assert!(text.contains("Agent session 'sess_123' not found"));
     assert!(text.contains("agent__listAgents(type=\"sessions\")"));
+}
+
+#[test]
+fn session_id_passed_as_agent_config_error_guides_to_message_to_session() {
+    let r = session_id_passed_as_agent_config_error("sess_123456");
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(true));
+    assert!(text.contains("✗"));
+    assert!(text.contains("'sess_123456' is an existing Session ID, not an Agent Configuration ID"));
+    assert!(text.contains("agent__messageToSession(sessionId=\"sess_123456\""));
+    assert!(text.contains("Do NOT retry agent__spawnSession with this session ID"));
+    assert!(text.contains("agent__listAgents(type=\"configs\")"));
 }
 
 #[test]
@@ -189,7 +203,7 @@ fn build_agent_tool_data_includes_common_metadata() {
     // Top-level toolName is the bare local tool that produced the result.
     // nextActions.toolName uses the invocable server__tool form.
     let data = build_agent_tool_data(
-        "startSession",
+        "spawnSession",
         "session",
         Some("sess_123"),
         "Session started successfully.",
@@ -202,7 +216,7 @@ fn build_agent_tool_data_includes_common_metadata() {
 
     assert_eq!(
         data.get("toolName").and_then(|v| v.as_str()),
-        Some("startSession")
+        Some("spawnSession")
     );
     assert_eq!(
         data.get("resourceType").and_then(|v| v.as_str()),

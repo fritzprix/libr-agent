@@ -19,7 +19,7 @@ Do not conflate these — they live in different layers and are not interchangea
 | Surface                                  | Where                         | Purpose                                                                                 |
 | ---------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------- |
 | **HTTP `POST /api/sessions` `maxDepth`** | `src-tauri/src/server`        | Optional request body when creating a session via the internal Session HTTP API         |
-| **MCP `agent__startSession`**            | Removed from tool schema      | Depth/fanout limits come from assistant config and Settings, not per-call MCP overrides |
+| **MCP `agent__spawnSession`**            | Removed from tool schema      | Depth/fanout limits come from assistant config and Settings, not per-call MCP overrides |
 | **`sessions.max_depth` column**          | DB entity + `SessionMetadata` | Persisted lineage cap for a session row; used by `resolve_agent_config` and tree UI     |
 
 Settings **Session Branching Limit** writes the default `max_depth` for new desktop sessions (`0` = unlimited). Child sessions inherit parent lineage columns at creation time.

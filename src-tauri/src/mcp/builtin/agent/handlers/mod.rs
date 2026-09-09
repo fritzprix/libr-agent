@@ -37,5 +37,5 @@ pub use orgs::{
 };
 pub use sessions::{
     compact_session_context, delete_session, message_to_session,
-    parse_message_to_session_wait_config, start_session, stop_session,
+    parse_message_to_session_wait_config, spawn_session, stop_session,
 };

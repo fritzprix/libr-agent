@@ -6,12 +6,12 @@ use super::super::utils::{
     read_required_string,
 };
 use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_agent_config_error, missing_agent_session_error, ErrorCategory,
-    SuccessHint, ToolGroup,
+    guided_error, missing_agent_config_error, missing_agent_session_error,
+    session_id_passed_as_agent_config_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::models::chat::MessageSource;
-use crate::repositories::{AssistantRepository, SessionStatus};
+use crate::repositories::{AssistantRepository, SessionRepository, SessionStatus};
 
 use super::super::AgentServer;
 use super::check_session::check_session;
@@ -55,7 +55,7 @@ fn resolve_spawned_workspace_signal(
         WorkspaceRelation::Isolated
     };
     // Strip newlines before display — workspaceOverride is user-controlled and this
-    // path lands in the plain-text startSession note (not only the Metadata fence).
+    // path lands in the plain-text spawnSession note (not only the Metadata fence).
     let display = display_sanitize_workspace_path(&child_raw);
     (display, Some(relation))
 }
@@ -115,7 +115,7 @@ pub fn parse_message_to_session_wait_config(
     Ok((true, Some(timeout_seconds)))
 }
 
-async fn start_session_impl(
+async fn spawn_session_impl(
     server: &AgentServer,
     args: Value,
     caller_session_id: &str,
@@ -141,7 +141,7 @@ async fn start_session_impl(
     };
 
     let explicit_org = caller_explicit_org.clone();
-    let assistant_id = read_required_string(&args, "agentId")?;
+    let assistant_id = read_required_string(&args, "configId")?;
     let task = read_required_string(&args, "task")?;
     let requested_workspace_override = args
         .get("workspaceOverride")
@@ -186,11 +186,31 @@ async fn start_session_impl(
     let response = match crate::services::AgentService::spawn_agent(manager, body).await {
         Ok(res) => res,
         Err(err) if err.contains("Assistant not found:") => {
-            let agent_id = args
-                .get("agentId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            return Ok(missing_agent_config_error(agent_id));
+            let requested_id = &assistant_id;
+
+            let is_session_id = if crate::utils::session_id::session_id_matches_ref(
+                caller_session_id,
+                requested_id,
+            ) {
+                true
+            } else if let Ok(Some(_)) = crate::state::get_session_repository()
+                .get_session(requested_id)
+                .await
+            {
+                true
+            } else if let Ok(all_sessions) = manager.get_all_sessions().await {
+                all_sessions
+                    .iter()
+                    .any(|s| crate::utils::session_id::session_id_matches_ref(&s.id, requested_id))
+            } else {
+                false
+            };
+
+            if is_session_id {
+                return Ok(session_id_passed_as_agent_config_error(requested_id));
+            }
+
+            return Ok(missing_agent_config_error(requested_id));
         }
         Err(err) => return Err(err),
     };
@@ -277,7 +297,7 @@ async fn start_session_impl(
             Ok(None) => {}
             Err(error) => {
                 log::warn!(
-                    "agent__startSession: failed to resolve assistantName for {}: {}",
+                    "agent__spawnSession: failed to resolve assistantName for {}: {}",
                     assistant_id,
                     error
                 );
@@ -288,13 +308,13 @@ async fn start_session_impl(
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
-/// startSession handler (from spawnAgent)
-pub async fn start_session(
+/// spawnSession handler.
+pub async fn spawn_session(
     server: &AgentServer,
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
-    start_session_impl(server, args, caller_session_id, "startSession").await
+    spawn_session_impl(server, args, caller_session_id, "spawnSession").await
 }
 
 /// messageToSession handler (from messageAgent)

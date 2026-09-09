@@ -66,7 +66,7 @@ pub fn operation_failed_error(
     .to_mcp_result()
 }
 
-/// Create a guided error for a missing agent configuration during `agent__startSession`.
+/// Create a guided error for a missing agent configuration during `agent__spawnSession`.
 pub fn missing_agent_config_error(agent_id: &str) -> MCPResult {
     guided_error(
         ErrorCategory::ResourceNotFound,
@@ -74,9 +74,34 @@ pub fn missing_agent_config_error(agent_id: &str) -> MCPResult {
         ToolGroup::Agent,
     )
     .with_guidance(vec![
-        "Use agent__listAgents(type=\"configs\") to see available agent configurations".to_string(),
-        format!("Verify '{}' exactly matches a listed agent ID", agent_id),
-        "Retry agent__startSession with a valid agentId copied from agent__listAgents(type=\"configs\")"
+        "Call agent__listAgents(type=\"configs\") and copy a valid configuration template ID from the result"
+            .to_string(),
+        format!(
+            "Do NOT guess, truncate, or typo-fix '{}'; re-copy the full configId from the list output",
+            agent_id
+        ),
+        "Then call agent__spawnSession(configId=\"...\", task=\"...\") with that copied ID".to_string(),
+    ])
+    .to_mcp_result()
+}
+
+/// Create a guided error when an existing session ID was passed to `agent__spawnSession` instead of an agent config ID.
+pub fn session_id_passed_as_agent_config_error(id: &str) -> MCPResult {
+    guided_error(
+        ErrorCategory::InvalidInput,
+        format!(
+            "'{}' is an existing Session ID, not an Agent Configuration ID",
+            id
+        ),
+        ToolGroup::Agent,
+    )
+    .with_guidance(vec![
+        format!(
+            "To send tasks or follow-up instructions to this existing session, use agent__messageToSession(sessionId=\"{}\", message=\"...\")",
+            id
+        ),
+        "Do NOT retry agent__spawnSession with this session ID".to_string(),
+        "If you intended to spawn a brand new session, call agent__listAgents(type=\"configs\") first to copy a valid configuration template ID"
             .to_string(),
     ])
     .to_mcp_result()

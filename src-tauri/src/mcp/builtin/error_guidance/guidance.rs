@@ -155,7 +155,7 @@ impl ErrorGuidance {
 
             // Agent tool errors (Unified Assistant/Swarm)
             (ErrorCategory::ResourceNotFound, ToolGroup::Agent) => vec![
-                "Verify the agentId or sessionId is correct".to_string(),
+                "Verify the configId or sessionId is correct".to_string(),
                 "Use agent__listAgents(type=\"configs\") to find available agent configurations"
                     .to_string(),
                 "Use agent__listAgents(type=\"sessions\") or agent__checkSession to inspect active delegated sessions"
@@ -471,13 +471,13 @@ impl SuccessHint {
             ("createAgent", ToolGroup::Agent) => vec![
                 "Use agent__listAgents to see all agents".to_string(),
                 "Use agent__updateAgent to modify configuration".to_string(),
-                "Use agent__startSession to begin work with this agent".to_string(),
+                "Use agent__spawnSession(configId=...) to begin work with this agent".to_string(),
             ],
             ("updateAgent", ToolGroup::Agent) => vec![
                 "Use agent__listAgents to verify the template updates".to_string(),
-                "Start a new session (or agent__startSession) — updates do not change tools in already-running sessions".to_string(),
+                "Spawn a new session with agent__spawnSession(configId=...) — updates do not change tools in already-running sessions".to_string(),
             ],
-            ("startSession", ToolGroup::Agent) => vec![
+            ("spawnSession", ToolGroup::Agent) => vec![
                 "Use agent__messageToSession only for follow-up instructions after the session starts"
                     .to_string(),
                 "Use agent__checkSession to see if work is complete".to_string(),

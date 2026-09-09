@@ -104,7 +104,7 @@ Confirm creation and instruct the user on how to initiate a session:
    agent__listAgents({ "type": "configs", "query": "<new name>" })
    ```
 2. Inform the user of the new assistant's name and ID.
-3. Provide instructions on starting a session: `agent__startSession(agentId="...")` or via the UI.
+3. Provide instructions on starting a session: `agent__spawnSession(configId="...")` or via the UI.
 
 ---
 
@@ -123,7 +123,7 @@ Confirm creation and instruct the user on how to initiate a session:
 | Find existing assistants | `agent__listAgents({ "type": "configs" })` |
 | Create specialist | `agent__createAgent(...)` |
 | Verify creation | `agent__listAgents({ "type": "configs" })` |
-| Use specialist | `agent__startSession(agentId="...")` |
+| Use specialist | `agent__spawnSession(configId="...")` |
 
 ## References
 

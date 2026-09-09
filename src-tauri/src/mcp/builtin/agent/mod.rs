@@ -65,8 +65,8 @@ pub const NAME: &str = "agent";
 pub const AGENT_DELEGATION_HEADER: &str = concat!(
     "## Agent Delegation\n\n",
     "- `agent__prepareTeamworkWorkspace` returns an app-local teamwork artifact directory for orchestration files without changing the current session workspace.\n",
-    "- `agent__messageToSession` sends follow-up or new work to an existing delegated session; reuse a suitable idle session with the same assistant configuration when possible.\n",
-    "- `agent__startSession` starts delegated work when no suitable session exists or separate role, parallel, or workspace isolation is needed.\n",
+    "- `agent__messageToSession` delegates new work or follow-up tasks to an existing session (sessionId); reuse a suitable idle session with the same assistant configuration when possible.\n",
+    "- `agent__spawnSession` spawns a brand-new sub-agent session from a configuration template (configId); use when no suitable session exists or separate role, parallel, or workspace isolation is needed (do NOT pass a sessionId here).\n",
     "- `agent__compactSessionContext` refreshes another session's stored compact summary before more work.\n",
 );
 
@@ -105,7 +105,7 @@ impl BuiltinMCPServer for AgentServer {
             }
             "createOrg" => handlers::create_org(self, args, &session_id).await,
             "getOrg" => handlers::get_org(self, args, &session_id).await,
-            "startSession" => handlers::start_session(self, args, &session_id).await,
+            "spawnSession" => handlers::spawn_session(self, args, &session_id).await,
             "messageToSession" => handlers::message_to_session(self, args, &session_id).await,
             "checkSession" => handlers::check_session(self, args, &session_id).await,
             "compactSessionContext" => {

@@ -31,7 +31,7 @@ export const AgentSessionToolResultSchema = z
     workspaceOverride: z.boolean().optional(),
     assistantName: z.string().optional(),
     assistantId: z.string().optional(),
-    /** Mission text from startSession (also may come from tool args). */
+    /** Mission text from spawnSession (also may come from tool args). */
     task: z.string().optional(),
     /** Instruction text from messageToSession. */
     instruction: z.string().optional(),
@@ -66,7 +66,8 @@ export type AgentSessionCardKind =
   | 'deleted';
 
 const AGENT_SESSION_TOOLS = new Set([
-  'agent__startSession',
+  'agent__spawnSession',
+  'agent__startSession', // historical traces only (tool removed from MCP surface)
   'agent__messageToSession',
   'agent__checkSession',
   'agent__stopSession',
@@ -142,7 +143,8 @@ export function classifyAgentSessionCard(
   }
 
   // Settled child outcomes — driven by session status, not responseStatus alone.
-  // (startSession/messageToSession wait=* reuse checkSession-shaped payloads.)
+  // (spawnSession/messageToSession wait=* reuse checkSession-shaped payloads.)
+  // Also accept historical agent__startSession toolName from older stored results.
   if (isAttentionStatus(data.status)) {
     return 'needs_attention';
   }
@@ -150,7 +152,7 @@ export function classifyAgentSessionCard(
     return 'finished';
   }
 
-  if (key === 'agent__startSession') {
+  if (key === 'agent__spawnSession' || key === 'agent__startSession') {
     return 'spawned';
   }
   if (key === 'agent__messageToSession') {

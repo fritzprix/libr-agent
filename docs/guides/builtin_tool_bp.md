@@ -278,7 +278,7 @@ Recovery:
 - Use tool__listServers({"availability":"inventory"}) to inspect registered servers and Server IDs.
 - Attach Server ID "srv_123" with agent__updateAgent(id:"<agentId>", externalMcpServers:["srv_123"]).
 - If changing this agent is the wrong move, use agent__listAgents(type="configs") and
-  delegate with agent__startSession(agentId:"<agentId>", task:"...").
+  delegate with agent__spawnSession(configId:"<configId>", task:"...").
 ```
 
 **Why This Matters:** In a harness, the error must teach the Agent whether it should repair the current session, inspect global inventory, or switch strategy entirely.
@@ -297,7 +297,7 @@ Allowed cross-group recovery examples:
 - `tool__listServers(...)` to inspect current session visibility vs global inventory
 - `agent__updateAgent(...)` to attach missing external capabilities
 - `agent__listAgents(type="configs")` to find a better-equipped agent
-- `agent__startSession(...)` to delegate when the current session should not be mutated
+- `agent__spawnSession(...)` to delegate when the current session should not be mutated
 
 This exception is for **environment repair / delegation only**. Do not use it to suggest unrelated business-domain actions.
 
@@ -306,7 +306,7 @@ This exception is for **environment repair / delegation only**. Do not use it to
 **Rule:** If the current session lacks a capability, recovery guidance must expose at least one **repair path** and one **continuation path**.
 
 - **Repair path:** fix the current environment (`tool__listServers`, `agent__updateAgent`, reconnect, reattach)
-- **Continuation path:** continue the task elsewhere (`agent__listAgents`, `agent__startSession`, delegated child session)
+- **Continuation path:** continue the task elsewhere (`agent__listAgents`, `agent__spawnSession`, delegated child session)
 
 **Anti-Pattern:**
 
@@ -323,7 +323,7 @@ Recovery:
 - Use tool__listServers({"availability":"session"}) to confirm the current callable set.
 - Use tool__listServers({"availability":"inventory"}) to inspect registered servers.
 - Attach the missing capability with agent__updateAgent(...).
-- Or delegate to another agent with agent__startSession(...).
+- Or delegate to another agent with agent__spawnSession(...).
 ```
 
 The Agent must never be forced into a dead end when the system can still proceed by reconfiguration or delegation.

@@ -16,7 +16,7 @@ async fn system_prompt_exposes_agent_runtime_identity() {
 
     assert!(prompt.contains("## Agent Runtime Identity"));
     assert!(prompt.contains("Agent Name: Ops Bot"));
-    assert!(prompt.contains("Agent ID: agent-123"));
+    assert!(prompt.contains("Agent ID (Config ID): agent-123"));
     assert!(prompt.contains("Session ID: (unknown-session)"));
 }
 

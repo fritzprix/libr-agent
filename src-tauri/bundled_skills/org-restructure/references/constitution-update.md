@@ -22,7 +22,7 @@ Do not use repo-root `agents.md` unless that is the actual teamwork artifact pat
 4. Add matching subsection to `MISSION.md` under `## Roles`.
 5. Create `skills/tf-<slug>/SKILL.md` if the role needs durable guidance (see teamwork expert-skill template).
 6. Add backlog tasks in `KANBAN.md` with the new role as owner where appropriate.
-7. Spawn member from org root: `agent__startSession(agentId, task)` with task citing ROLES.md and first KANBAN item.
+7. Spawn member from org root: `agent__spawnSession(configId, task)` with task citing ROLES.md and first KANBAN item.
 8. Verify with `agent__getOrg()`.
 
 ## MISSION.md updates

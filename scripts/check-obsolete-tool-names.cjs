@@ -88,7 +88,23 @@ const FORBIDDEN = [
   {
     id: 'bare-use-startSession',
     re: /\bUse startSession\b/,
-    message: 'Use agent__startSession (bare startSession is not invocable)',
+    message: 'Use agent__spawnSession (bare startSession is not invocable)',
+  },
+  {
+    id: 'bare-use-spawnSession',
+    re: /\bUse spawnSession\b/,
+    message: 'Use agent__spawnSession (bare spawnSession is not invocable)',
+  },
+  {
+    id: 'legacy-agent-startSession',
+    re: /agent__startSession/,
+    message: 'Use agent__spawnSession (agent__startSession was removed)',
+    onlyUnder: [
+      'src-tauri/bundled_skills',
+      'src-tauri/src/mcp',
+      'docs',
+      '.agents/skills',
+    ],
   },
   {
     id: 'bare-use-updateAgent',

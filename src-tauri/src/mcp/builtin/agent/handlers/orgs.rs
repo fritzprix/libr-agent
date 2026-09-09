@@ -195,7 +195,7 @@ pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Resul
 fn create_org_next_actions(org_id: &str, include_builder_guidance: bool) -> Vec<Value> {
     let mut next_actions = vec![
         json!({
-            "toolName": "agent__startSession",
+            "toolName": "agent__spawnSession",
             "reason": "Create or add an explicit org member session. Org inheritance is automatic here.",
         }),
         json!({
@@ -492,7 +492,7 @@ pub async fn get_org(
         &message,
         "success",
         vec![json!({
-            "toolName": "agent__startSession",
+            "toolName": "agent__spawnSession",
             "reason": "Add another explicit org member under this org.",
         })],
     );

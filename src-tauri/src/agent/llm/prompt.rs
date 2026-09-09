@@ -316,8 +316,9 @@ fn build_stable_prefix(
         let mut identity = format!(
             "\n\n## Agent Runtime Identity\n\
             - Agent Name: {}\n\
-            - Agent ID: {}\n\
-            - Session ID: {}",
+            - Agent ID (Config ID): {}\n\
+            - Session ID: {}\n\
+            - Note: Agent ID / Config ID is your configuration template ID (for agent__spawnSession). Session ID is your running instance ID (for agent__messageToSession / agent__checkSession).",
             agent_config.name.trim(),
             agent_id,
             display_session
@@ -518,7 +519,7 @@ mod tests {
         assert!(prompt.starts_with(
             "Base prompt only.\n\n\n## Agent Runtime Identity\n\
             - Agent Name: Default Assistant\n\
-            - Agent ID: (unknown)\n\
+            - Agent ID (Config ID): (unknown)\n\
             - Session ID: (unknown-session)"
         ));
         assert!(prompt.contains("## Session Context"));

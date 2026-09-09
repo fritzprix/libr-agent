@@ -270,11 +270,11 @@ async fn org_service_context_includes_child_sessions_even_without_org() {
         "context should contain Child Sessions header"
     );
     assert!(
-        context.contains("- [assistant:assistant-test] child-1 — Child Agent A (status: idle)"),
+        context.contains("- [config:assistant-test] child-1 — Child Agent A (status: idle)"),
         "should contain child-1 with correct status formatting"
     );
     assert!(
-        context.contains("- [assistant:assistant-test] child-2 — Child Agent B (status: busy)"),
+        context.contains("- [config:assistant-test] child-2 — Child Agent B (status: busy)"),
         "should contain child-2 with correct status formatting"
     );
 }
@@ -312,7 +312,7 @@ async fn service_context_composes_child_and_org_context() {
     // Agent-facing ids are short tokens only (no `session-` prefix).
     // Fixture `child-org-session` (17 chars) → last 10: `rg-session`.
     assert!(prompt.contains("### Sub-Agents (1)"));
-    assert!(prompt.contains("- Idle: `rg-session` [assistant:assistant-test] \"Child Analyst\""));
+    assert!(prompt.contains("- Idle: `rg-session` [config:assistant-test] \"Child Analyst\""));
     assert!(prompt.contains("### Explicit Org Layer"));
     assert!(prompt.contains("- Org: Beta Org (ID: org-beta)"));
     assert!(prompt.contains("## Agent Delegation"));
@@ -434,19 +434,19 @@ async fn service_context_includes_active_sessions_notice() {
     assert!(!prompt.contains("Avoid `startSession`"));
     assert!(!prompt.contains("Do NOT send"));
     assert!(prompt.contains("agent__messageToSession"));
-    assert!(prompt.contains("agent__startSession"));
+    assert!(prompt.contains("agent__spawnSession"));
 
     // Agent-facing ids are short tokens only (no `session-` prefix).
     //   child-idle (10) → child-idle; child-paused (12) → ild-paused; child-error (11) → hild-error
-    assert!(prompt.contains("- Idle: `child-idle` [assistant:assistant-test] \"Active Child 1\""));
-    assert!(prompt.contains("- Paused: `ild-paused` [assistant:assistant-test] \"Active Child 2\""));
-    assert!(prompt.contains("- Error: `hild-error` [assistant:assistant-test] \"Error Child\""));
+    assert!(prompt.contains("- Idle: `child-idle` [config:assistant-test] \"Active Child 1\""));
+    assert!(prompt.contains("- Paused: `ild-paused` [config:assistant-test] \"Active Child 2\""));
+    assert!(prompt.contains("- Error: `hild-error` [config:assistant-test] \"Error Child\""));
 }
 
 #[test]
 fn static_agent_delegation_header_describes_reuse_and_new_session_boundaries() {
     assert!(AGENT_DELEGATION_HEADER.contains("agent__messageToSession"));
     assert!(AGENT_DELEGATION_HEADER.contains("same assistant configuration"));
-    assert!(AGENT_DELEGATION_HEADER.contains("agent__startSession"));
+    assert!(AGENT_DELEGATION_HEADER.contains("agent__spawnSession"));
     assert!(AGENT_DELEGATION_HEADER.contains("parallel"));
 }

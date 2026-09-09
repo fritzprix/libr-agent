@@ -146,7 +146,7 @@ pub async fn load_accessible_delegated_session(
         ),
         "Use agent__listAgents(type=\"sessions\") to inspect the delegated sessions you can control directly"
             .to_string(),
-        "Start a new delegated session with agent__startSession(...) if you need fresh child work"
+        "Start a new delegated session with agent__spawnSession(configId=...) if you need fresh child work"
             .to_string(),
     ])
     .to_mcp_result())
@@ -283,7 +283,7 @@ pub async fn prepare_teamwork_workspace(
         vec![
             "Recommended follow-up: scaffold the full org teamwork set. Prefer the teamwork skill + scripts/init_task_force.py with --output set to this response's artifactPath field, or write under @teamwork/ (agents.md, MISSION.md, ROLES.md, coordination/*, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and orgLineage.intended=true)."
                 .to_string(),
-            "After that scaffold is complete, agent__createOrg(name=\"...\") from this root session, then agent__startSession for org members so they inherit the shared workspace. Spawning children before agent__createOrg leaves each spoke in an isolated workspace."
+            "After that scaffold is complete, agent__createOrg(name=\"...\") from this root session, then agent__spawnSession for org members so they inherit the shared workspace. Spawning children before agent__createOrg leaves each spoke in an isolated workspace."
                 .to_string(),
         ],
     );

@@ -318,8 +318,12 @@ fn agent_public_surface_uses_single_session_start_tool() {
         .collect();
 
     assert!(
-        tool_names.contains(&"startSession".to_string()),
-        "startSession must remain on the public agent surface"
+        tool_names.contains(&"spawnSession".to_string()),
+        "spawnSession must remain on the public agent surface"
+    );
+    assert!(
+        !tool_names.contains(&"startSession".to_string()),
+        "startSession must not remain on the public agent surface"
     );
     assert!(
         !tool_names.contains(&"spawnOrgAgent".to_string()),
@@ -648,8 +652,8 @@ fn agent_session_tools_describe_reuse_and_reset_boundaries() {
     let tools = agent_tools::all_tools();
     let start_description = tools
         .iter()
-        .find(|tool| tool.name == "startSession")
-        .expect("startSession tool must exist")
+        .find(|tool| tool.name == "spawnSession")
+        .expect("spawnSession tool must exist")
         .description
         .as_str();
     let message_tool = tools
