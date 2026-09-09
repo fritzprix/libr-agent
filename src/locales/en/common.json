@@ -1191,6 +1191,19 @@
       "renameError": "Failed to update session title",
       "renameEmptyError": "Session title cannot be empty"
     },
+    "sessionExport": {
+      "menuAria": "Export session",
+      "menuTooltip": "Export session",
+      "markdown": "Export as Markdown (.md)",
+      "atif": "Export as ATIF trajectory (.json)",
+      "copyClipboard": "Copy to clipboard (Markdown)",
+      "markdownSuccess": "Markdown file saved",
+      "atifSuccess": "ATIF trajectory saved",
+      "openFile": "Open",
+      "openFileError": "Failed to open file",
+      "cancelled": "Export cancelled",
+      "error": "Failed to export session"
+    },
     "workspace": {
       "isolationSettings": "Isolation Settings",
       "isolationTip": "Docker workspace runs your workspace commands safely inside a container rather than directly on your host machine.",

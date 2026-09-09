@@ -6,7 +6,6 @@ import { AgentChatHeader } from '../AgentChatHeader';
 
 const mockRenameSession = vi.fn();
 const mockToggleBookmark = vi.fn();
-const mockCopyToClipboard = vi.fn();
 const mockToggleShell = vi.fn();
 const mockOpenPanel = vi.fn();
 const mockHasPanelAttention = vi.fn(
@@ -111,10 +110,12 @@ vi.mock('@/components/shared/SessionFilesPopover', () => ({
   ),
 }));
 
-vi.mock('@/hooks/useClipboard', () => ({
-  useClipboard: () => ({
-    copyToClipboard: mockCopyToClipboard,
-  }),
+vi.mock('../SessionExportMenu', () => ({
+  SessionExportMenu: () => (
+    <button type="button" aria-label="Export session">
+      Export
+    </button>
+  ),
 }));
 
 vi.mock('sonner', () => ({
@@ -302,6 +303,9 @@ describe('AgentChatHeader', () => {
     ).toBeInTheDocument();
     expect(
       within(header).getByRole('button', { name: 'Rename session' }),
+    ).toBeInTheDocument();
+    expect(
+      within(header).getByRole('button', { name: 'Export session' }),
     ).toBeInTheDocument();
   });
 });

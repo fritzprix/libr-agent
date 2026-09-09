@@ -15,6 +15,7 @@ pub mod migration_commands;
 pub mod playbook_commands;
 pub mod scheduled_task_commands;
 pub mod session_commands;
+pub mod session_export_commands;
 pub mod settings_commands;
 pub mod skill_commands;
 pub mod skill_management;

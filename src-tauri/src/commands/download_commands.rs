@@ -23,7 +23,7 @@ fn infer_extension_from_mime_type(mime_type: &str) -> &str {
     }
 }
 
-async fn save_bytes_via_dialog(
+pub(crate) async fn save_bytes_via_dialog(
     app_handle: tauri::AppHandle,
     file_name: String,
     bytes: Vec<u8>,

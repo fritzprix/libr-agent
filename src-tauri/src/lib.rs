@@ -20,6 +20,7 @@ mod search;
 pub mod server;
 pub mod services;
 pub mod session;
+pub mod session_export;
 pub mod session_isolation;
 mod state;
 pub mod utils;
@@ -97,6 +98,7 @@ use commands::scheduled_task_commands::{
     update_scheduled_task,
 };
 use commands::session_commands::remove_session;
+use commands::session_export_commands::export_session_file;
 use commands::settings_commands::{
     delete_setting, get_setting, list_settings, set_setting, update_settings,
 };
@@ -201,6 +203,7 @@ pub fn run() {
                 // Session management commands (still needed for workspace isolation)
                 remove_session,
                 export_dataset,
+                export_session_file,
                 delete_attachments,
                 get_app_data_dir,
                 get_app_logs_dir,
