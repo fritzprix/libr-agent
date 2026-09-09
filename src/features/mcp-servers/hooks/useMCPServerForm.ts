@@ -4,6 +4,7 @@ import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
 import { BUILTIN_SERVICE_CANONICAL_NAMES } from '@/lib/generated/builtin-services';
 import { createId } from '@paralleldrive/cuid2';
+import { sanitizeMcpServerName } from '@/lib/utils';
 
 /**
  * Builtin service group names reserved for internal tools.
@@ -229,10 +230,17 @@ export function useMCPServerForm(server: MCPServerEntity) {
   const isNewServer = !server.createdAt || draft.name === '';
 
   const isReservedName = () =>
-    RESERVED_BUILTIN_NAMES.has(draft.name.trim().toLowerCase());
+    RESERVED_BUILTIN_NAMES.has(
+      sanitizeMcpServerName(draft.name).toLowerCase(),
+    );
+
+  const sanitizedName = sanitizeMcpServerName(draft.name);
+  const nameNeedsSanitization =
+    draft.name.trim().length > 0 && draft.name.trim() !== sanitizedName;
 
   const isValid = () => {
     if (!draft.name.trim()) return false;
+    if (!sanitizedName) return false;
     if (isReservedName()) return false;
 
     if (draft.transport.type === 'stdio') {
@@ -343,7 +351,7 @@ export function useMCPServerForm(server: MCPServerEntity) {
           t(
             'mcpServer.dialog.reservedNameError',
             '"{{name}}" is a reserved builtin service name. Choose a different name.',
-            { name: draft.name.trim() },
+            { name: sanitizeMcpServerName(draft.name) },
           ),
         );
       } else {
@@ -359,6 +367,10 @@ export function useMCPServerForm(server: MCPServerEntity) {
 
     setIsSaving(true);
     setValidationError(null);
+
+    let resolvedName = isNewServer
+      ? sanitizeMcpServerName(draft.name)
+      : draft.name.trim();
 
     try {
       if (draft.transport.type === 'stdio') {
@@ -378,6 +390,7 @@ export function useMCPServerForm(server: MCPServerEntity) {
         // Update draft with validated env and parsed args before saving
         const updatedDraft: MCPServerEntity = {
           ...draft,
+          name: resolvedName,
           transport: {
             ...draft.transport,
             args,
@@ -415,6 +428,7 @@ export function useMCPServerForm(server: MCPServerEntity) {
 
         const updatedDraft: MCPServerEntity = {
           ...draft,
+          name: resolvedName,
           transport: {
             ...draft.transport,
             type: 'http-sse',
@@ -472,6 +486,8 @@ export function useMCPServerForm(server: MCPServerEntity) {
     setShowAdvanced,
     isNewServer,
     isValid,
+    sanitizedName,
+    nameNeedsSanitization,
     handleAddEnvVar,
     handleRemoveEnvVar,
     handleUpdateEnvVar,

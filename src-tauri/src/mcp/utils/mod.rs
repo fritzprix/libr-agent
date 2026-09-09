@@ -1,6 +1,11 @@
 pub mod command_helper;
 pub mod env;
 pub mod schema_builder;
+pub mod server_name;
+
+pub use server_name::{
+    is_valid_mcp_server_name, sanitize_mcp_server_name, unique_session_server_name,
+};
 
 /// Serialize a list of `rmcp::model::Tool` (raw MCP protocol type) to a compact JSON cache string.
 /// Used by `test_server_connection` in the builtin tool server operations.

@@ -79,6 +79,21 @@ mod tests {
     }
 
     #[test]
+    fn test_external_tool_routing_sanitized_prefix() {
+        // Session load sanitizes "My Server" → "My_Server" before tool prefixing.
+        let tool_name = "My_Server__read_file";
+        let routing = route_tool(tool_name).expect("Parsing failed");
+
+        assert_eq!(
+            routing,
+            ToolRouting::External {
+                server_name: "My_Server".to_string(),
+                tool_name: "read_file".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn test_invalid_tool_name() {
         assert!(route_tool("no_separator").is_err());
     }
