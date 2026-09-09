@@ -519,7 +519,7 @@ mod tests {
         assert!(prompt.starts_with(
             "Base prompt only.\n\n\n## Agent Runtime Identity\n\
             - Agent Name: Default Assistant\n\
-            - Agent ID: (unknown)\n\
+            - Agent ID (Config ID): (unknown)\n\
             - Session ID: (unknown-session)"
         ));
         assert!(prompt.contains("## Session Context"));
