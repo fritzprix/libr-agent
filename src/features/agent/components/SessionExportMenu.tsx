@@ -1,12 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Copy,
-  FileDown,
-  FileJson,
-  FileText,
-  Loader2,
-} from 'lucide-react';
+import { Copy, FileDown, FileJson, FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
