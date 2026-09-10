@@ -50,6 +50,8 @@ type RuntimeResult<T> = Result<T, WorkspaceRuntimeError>;
 
 #[derive(Debug, Error)]
 pub enum WorkspaceRuntimeError {
+    #[error("Docker CLI is not installed or not available on PATH. Details: {0}")]
+    DockerNotInstalled(String),
     #[error("Docker is not available. Ensure Docker Desktop/daemon is running and the current user can run Docker without sudo. Details: {0}")]
     DockerNotAvailable(String),
     #[error("Docker command failed: {0}")]
@@ -83,11 +85,16 @@ pub enum WorkspaceRuntimeError {
 
 /// Prefix for structured errors surfaced to the frontend agent layer.
 pub const AGENT_ERROR_DOCKER_NOT_AVAILABLE: &str = "DOCKER_NOT_AVAILABLE:";
+/// Prefix when the Docker CLI binary itself is missing from PATH.
+pub const AGENT_ERROR_DOCKER_NOT_INSTALLED: &str = "DOCKER_NOT_INSTALLED:";
 
 impl WorkspaceRuntimeError {
     /// Converts runtime errors into agent-facing strings with stable machine-readable codes.
     pub fn to_agent_string(self) -> String {
         match self {
+            Self::DockerNotInstalled(_) => {
+                format!("{} {}", AGENT_ERROR_DOCKER_NOT_INSTALLED, self)
+            }
             Self::DockerNotAvailable(_) => {
                 format!("{} {}", AGENT_ERROR_DOCKER_NOT_AVAILABLE, self)
             }
@@ -102,10 +109,12 @@ pub struct WorkspaceRuntimeManager;
 
 impl WorkspaceRuntimeManager {
     pub async fn healthcheck() -> RuntimeResult<()> {
-        run_docker_status(["--version"]).await?;
+        run_docker_status(["--version"])
+            .await
+            .map_err(as_docker_unavailable)?;
         run_docker_status(["info"])
             .await
-            .map_err(|error| WorkspaceRuntimeError::DockerNotAvailable(error.to_string()))?;
+            .map_err(as_docker_unavailable)?;
         Ok(())
     }
 
@@ -601,11 +610,7 @@ async fn docker_container_exists(container_name: &str) -> RuntimeResult<bool> {
     let mut cmd = AsyncCommand::new("docker");
     apply_docker_cli_env(&mut cmd);
     cmd.args(["inspect", container_name]);
-    let output = cmd.output().await.map_err(|e| {
-        WorkspaceRuntimeError::DockerCommandFailed(format!(
-            "Failed to inspect Docker container {container_name}: {e}"
-        ))
-    })?;
+    let output = cmd.output().await.map_err(map_docker_spawn_error)?;
     Ok(output.status.success())
 }
 
@@ -726,10 +731,7 @@ async fn docker_output_slice(args: &[&str]) -> RuntimeResult<String> {
     let mut cmd = AsyncCommand::new("docker");
     apply_docker_cli_env(&mut cmd);
     cmd.args(args);
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| WorkspaceRuntimeError::DockerCommandFailed(e.to_string()))?;
+    let output = cmd.output().await.map_err(map_docker_spawn_error)?;
     if !output.status.success() {
         return Err(format_docker_failure(&output));
     }
@@ -737,14 +739,29 @@ async fn docker_output_slice(args: &[&str]) -> RuntimeResult<String> {
 }
 
 async fn run_status_command(mut cmd: AsyncCommand) -> RuntimeResult<()> {
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| WorkspaceRuntimeError::DockerCommandFailed(e.to_string()))?;
+    let output = cmd.output().await.map_err(map_docker_spawn_error)?;
     if output.status.success() {
         Ok(())
     } else {
         Err(format_docker_failure(&output))
+    }
+}
+
+fn map_docker_spawn_error(error: std::io::Error) -> WorkspaceRuntimeError {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        WorkspaceRuntimeError::DockerNotInstalled(format!(
+            "Docker CLI is not installed or not available on PATH: {error}"
+        ))
+    } else {
+        WorkspaceRuntimeError::DockerCommandFailed(error.to_string())
+    }
+}
+
+fn as_docker_unavailable(error: WorkspaceRuntimeError) -> WorkspaceRuntimeError {
+    match error {
+        WorkspaceRuntimeError::DockerNotInstalled(_)
+        | WorkspaceRuntimeError::DockerNotAvailable(_) => error,
+        other => WorkspaceRuntimeError::DockerNotAvailable(other.to_string()),
     }
 }
 
@@ -822,6 +839,77 @@ async fn resolve_teamwork_root_session_id(session: &SessionMetadata) -> String {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn maps_not_found_spawn_error_to_docker_not_installed() {
+        let error = std::io::Error::new(std::io::ErrorKind::NotFound, "program not found");
+        match map_docker_spawn_error(error) {
+            WorkspaceRuntimeError::DockerNotInstalled(details) => {
+                assert!(details.contains("not available on PATH"));
+                assert!(details.contains("program not found"));
+            }
+            other => panic!("expected DockerNotInstalled, got {other}"),
+        }
+    }
+
+    #[test]
+    fn maps_other_spawn_errors_to_docker_command_failed() {
+        let error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        match map_docker_spawn_error(error) {
+            WorkspaceRuntimeError::DockerCommandFailed(details) => {
+                assert!(details.contains("denied"));
+            }
+            other => panic!("expected DockerCommandFailed, got {other}"),
+        }
+    }
+
+    #[test]
+    fn healthcheck_preserves_not_installed_classification() {
+        let error = WorkspaceRuntimeError::DockerNotInstalled("missing cli".to_string());
+        match as_docker_unavailable(error) {
+            WorkspaceRuntimeError::DockerNotInstalled(details) => {
+                assert_eq!(details, "missing cli");
+            }
+            other => panic!("expected DockerNotInstalled, got {other}"),
+        }
+    }
+
+    #[test]
+    fn healthcheck_maps_command_failures_to_not_available() {
+        let error = WorkspaceRuntimeError::DockerCommandFailed("daemon down".to_string());
+        match as_docker_unavailable(error) {
+            WorkspaceRuntimeError::DockerNotAvailable(details) => {
+                assert!(details.contains("daemon down"));
+            }
+            other => panic!("expected DockerNotAvailable, got {other}"),
+        }
+    }
+
+    #[test]
+    fn docker_not_installed_uses_structured_agent_prefix() {
+        let agent =
+            WorkspaceRuntimeError::DockerNotInstalled("missing".to_string()).to_agent_string();
+        assert!(agent.starts_with(AGENT_ERROR_DOCKER_NOT_INSTALLED));
+        assert!(agent.contains("Docker CLI is not installed"));
+        assert!(!agent.starts_with(AGENT_ERROR_DOCKER_NOT_AVAILABLE));
+    }
+
+    #[test]
+    fn docker_not_available_keeps_existing_prefix() {
+        let agent =
+            WorkspaceRuntimeError::DockerNotAvailable("daemon down".to_string()).to_agent_string();
+        assert!(agent.starts_with(AGENT_ERROR_DOCKER_NOT_AVAILABLE));
+        assert!(agent.contains("Docker is not available"));
+    }
+
+    #[test]
+    fn docker_command_failed_has_no_availability_prefix() {
+        let agent =
+            WorkspaceRuntimeError::DockerCommandFailed("boom".to_string()).to_agent_string();
+        assert!(!agent.contains(AGENT_ERROR_DOCKER_NOT_AVAILABLE));
+        assert!(!agent.contains(AGENT_ERROR_DOCKER_NOT_INSTALLED));
+        assert!(agent.contains("boom"));
+    }
 
     #[test]
     fn test_build_docker_volume_args() {
