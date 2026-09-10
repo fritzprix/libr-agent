@@ -3,11 +3,14 @@
 //! Routing invariants:
 //! 1. Idle / session-start user request → append onto the active message stack and
 //!    start the workflow (`start_workflow`). Must not enter `pending_queue`.
-//! 2. Busy / Queued / Provisioning → enqueue into `pending_events` + durable index
-//!    only (not the active stack). The workflow loop dequeues via
-//!    `claim_all_pending_messages` at the start of each LLM turn.
+//! 2. Busy / Queued / Provisioning / compaction-in-flight → enqueue into
+//!    `pending_events` + durable index only (not the active stack). The workflow
+//!    loop dequeues via `claim_all_pending_messages` at the start of each LLM turn.
 //! 3. Workflow finish → if waiters remain, continue the loop (claim on next turn)
 //!    rather than going Idle with an orphaned queue. Cancel may discard instead.
+//! 4. Compaction settle → Preflight resumes completion (which claims pending);
+//!    Manual with waiters on Idle/Paused starts a turn from the queue; Busy/Queued
+//!    leave claiming to the existing workflow lifecycle.
 
 use crate::agent::events::AgentEvent;
 use crate::agent::state::AgentSession;
@@ -517,6 +520,96 @@ async fn restore_front_pending_messages(
             .collect();
         pending.restore_front_pending_messages(&missing_ids);
     }
+}
+
+/// Restore memory + durable index after [`take_all_pending_message_ids`] when a
+/// subsequent workflow start fails, so waiters are not permanently dropped.
+pub async fn restore_pending_messages_after_take(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    messages: &[Message],
+) {
+    if messages.is_empty() {
+        return;
+    }
+
+    let message_ids: Vec<String> = messages.iter().map(|message| message.id.clone()).collect();
+    restore_front_pending_messages(active_sessions, session_id, &message_ids).await;
+
+    let queue_repo = get_pending_queue_repository();
+    for message in messages {
+        if let Err(error) = queue_repo
+            .enqueue(session_id, &message.id, message.created_at)
+            .await
+        {
+            log::error!(
+                "Failed to restore pending_queue index for {} (session {}): {}",
+                message.id,
+                session_id,
+                error
+            );
+        }
+    }
+}
+
+/// Take all waiting message IDs out of memory and the durable index without
+/// deleting message bodies or promoting into the active cache.
+///
+/// Used when starting a new workflow from queued prompts after Manual
+/// compaction settles on an Idle/Paused session. Callers that fail after this
+/// drain must restore via [`restore_pending_messages_after_take`].
+pub async fn take_all_pending_message_ids(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<Vec<String>, String> {
+    let message_ids = {
+        let sessions = active_sessions.read().await;
+        let Some(session) = sessions.get(session_id) else {
+            return Ok(Vec::new());
+        };
+        let ids = session.pending_events.write().await.drain_messages();
+        ids
+    };
+
+    if message_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let queue_repo = get_pending_queue_repository();
+    let mut removed_ok: Vec<String> = Vec::new();
+    for message_id in &message_ids {
+        match queue_repo.remove(message_id).await {
+            Ok(()) => removed_ok.push(message_id.clone()),
+            Err(error) => {
+                log::error!(
+                    "Failed to clear pending_queue index for taken message {} (session {}): {}",
+                    message_id,
+                    session_id,
+                    error
+                );
+                restore_front_pending_messages(active_sessions, session_id, &message_ids).await;
+                let created_at = chrono::Utc::now().timestamp_millis();
+                for restored_id in &removed_ok {
+                    if let Err(restore_error) = queue_repo
+                        .enqueue(session_id, restored_id, created_at)
+                        .await
+                    {
+                        log::error!(
+                            "Failed to restore pending_queue index for {} (session {}) after take failure: {}",
+                            restored_id,
+                            session_id,
+                            restore_error
+                        );
+                    }
+                }
+                return Err(format!(
+                    "Failed to clear pending_queue index for {message_id}: {error}"
+                ));
+            }
+        }
+    }
+
+    Ok(message_ids)
 }
 
 /// Drop all waiting prompts (terminate / hard clear). Soft cancel preserves them.

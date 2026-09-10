@@ -35,6 +35,18 @@ pub async fn resume_workflow(
     session_id: String,
 ) -> Result<(), String> {
     {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            if session.compaction.snapshot().await.is_in_flight() {
+                return Err(format!(
+                    "Cannot resume workflow for session {} while compaction is in flight",
+                    session_id
+                ));
+            }
+        }
+    }
+
+    {
         let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(&session_id) {
             crate::agent::workflow::start::reset_session_execution_state(session).await;
