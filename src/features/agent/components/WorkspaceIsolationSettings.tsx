@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Shield, HelpCircle } from 'lucide-react';
+import { AlertTriangle, HelpCircle, Shield } from 'lucide-react';
 
 import { Input, Label } from '@/components/ui';
 import { Switch } from '@/components/ui/switch';
@@ -9,6 +10,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { DOCKER_IMAGE_PRESETS } from '@/config/docker';
+import { checkDockerHealth } from '@/lib/backend/dockerHealth';
+import {
+  classifyDockerAvailabilityError,
+  type DockerAvailabilityIssue,
+} from '@/lib/backend/errors';
 
 interface WorkspaceIsolationSettingsProps {
   switchId: string;
@@ -28,6 +34,50 @@ export function WorkspaceIsolationSettings({
   presetActiveClassName = 'border-primary bg-primary/5 text-primary font-medium',
 }: WorkspaceIsolationSettingsProps) {
   const { t } = useTranslation();
+  const [dockerHealthIssue, setDockerHealthIssue] =
+    useState<DockerAvailabilityIssue | null>(null);
+
+  useEffect(() => {
+    if (workspaceIsolation !== 'docker') {
+      setDockerHealthIssue(null);
+      return;
+    }
+
+    let cancelled = false;
+    setDockerHealthIssue(null);
+
+    void checkDockerHealth()
+      .then(() => {
+        if (!cancelled) {
+          setDockerHealthIssue(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setDockerHealthIssue(
+          classifyDockerAvailabilityError(error) ?? 'not-available',
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceIsolation]);
+
+  const healthWarning =
+    dockerHealthIssue === 'not-installed'
+      ? t(
+          'agent.workspace.dockerNotInstalledWarning',
+          'Docker is not installed or is not available on PATH.',
+        )
+      : dockerHealthIssue === 'not-available'
+        ? t(
+            'agent.workspace.dockerDaemonOfflineWarning',
+            'Docker daemon is not running.',
+          )
+        : null;
 
   return (
     <div className="space-y-3 text-left">
@@ -69,6 +119,25 @@ export function WorkspaceIsolationSettings({
 
       {workspaceIsolation === 'docker' ? (
         <div className="space-y-2 pt-2 border-t border-border/20 animate-in fade-in slide-in-from-top-2 duration-200">
+          {healthWarning ? (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-amber-800 dark:text-amber-200"
+            >
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div className="min-w-0 space-y-1">
+                <p className="text-[11px] font-medium leading-snug">
+                  {healthWarning}
+                </p>
+                <p className="text-[10px] leading-snug text-amber-800/80 dark:text-amber-200/80">
+                  {t(
+                    'agent.workspace.dockerHealthHint',
+                    'Install Docker Desktop, start the engine, or switch back to host mode.',
+                  )}
+                </p>
+              </div>
+            </div>
+          ) : null}
           <div className="space-y-1">
             <Label className="text-[10px] font-bold text-muted-foreground uppercase">
               {t('agent.workspace.dockerImage', 'Docker Image')}

@@ -553,7 +553,11 @@ function DraftChatInner() {
           onRetry={() => {
             void retryDraftSubmit();
           }}
-          errorDetails={dockerError}
+          onRunInHostMode={() => {
+            void retryDraftSubmit('host');
+          }}
+          errorDetails={dockerError?.message}
+          notInstalled={dockerError?.kind === 'not-installed'}
         />
         <AssistantEditor.Dialog
           open={toolsEditorOpen}
