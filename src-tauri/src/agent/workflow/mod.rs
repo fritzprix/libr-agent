@@ -1,10 +1,14 @@
 pub mod cancel;
+pub mod compact_pending;
 pub mod finish;
 pub mod pause_resume;
 pub mod start;
 pub mod tool;
 
 pub use cancel::*;
+pub use compact_pending::{
+    compact_pending_continue_kind, continue_pending_after_compaction, CompactPendingContinueKind,
+};
 pub use finish::{
     continue_workflow_if_pending_events, persist_terminal_assistant_sync,
     session_has_pending_events, settle_session_and_finalize_error,

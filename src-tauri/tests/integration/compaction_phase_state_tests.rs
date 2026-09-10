@@ -16,9 +16,12 @@ async fn manual_in_flight_can_be_promoted_to_preflight_resume() {
         )
         .await;
     assert!(matches!(begin, CompactionBeginOutcome::Started));
+    assert!(compaction.snapshot().await.is_in_flight());
+    assert!(!compaction.snapshot().await.blocks_workflow());
 
     let promoted = compaction.arm_resume_completion().await;
     assert_eq!(promoted, CompactionReuseOutcome::Promoted);
+    assert!(compaction.snapshot().await.blocks_workflow());
 
     let action = compaction.complete_success().await;
     assert!(matches!(action, CompactionResumeAction::ResumeCompletion));
@@ -26,6 +29,7 @@ async fn manual_in_flight_can_be_promoted_to_preflight_resume() {
         compaction.snapshot().await.phase,
         CompactionPhase::Idle
     ));
+    assert!(!compaction.snapshot().await.is_in_flight());
     assert_eq!(
         compaction.snapshot().await.last_compacted_tail_id,
         Some("tail-manual".to_string())

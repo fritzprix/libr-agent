@@ -216,6 +216,15 @@ impl CompactionSnapshot {
             CompactionPhase::InFlight(in_flight) => in_flight.kind.blocks_workflow(),
         }
     }
+
+    /// True while any compaction kind is in flight (Manual or Preflight).
+    ///
+    /// Unlike [`Self::blocks_workflow`], this is true for Manual too — callers
+    /// that must avoid racing a new workflow against an in-flight compact
+    /// (e.g. user-message enqueue) should use this.
+    pub fn is_in_flight(&self) -> bool {
+        matches!(self.phase, CompactionPhase::InFlight(_))
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -233,23 +233,30 @@ pub(super) async fn persist_compact_summary_and_resume(
         );
     }
 
-    match resume_action {
-        CompactionResumeAction::ResumeCompletion => {
-            log::info!(
-                "▶️ Resuming blocked LLM completion after compaction for session {}",
-                context.session_id
-            );
+    let session_repo = context.session_repo.clone();
+    let active_sessions = context.active_sessions.clone();
+    let proxy_manager = context.proxy_manager.clone();
+    let app_handle = context.app_handle.clone();
+    let session_id = context.session_id.to_string();
+    crate::agent::workflow::continue_pending_after_compaction(
+        context.session_repo,
+        context.active_sessions,
+        context.proxy_manager,
+        context.app_handle,
+        context.session_id,
+        resume_action,
+        || {
             spawn_resume_completion(
-                context.session_repo,
-                context.active_sessions,
-                context.proxy_manager,
-                context.app_handle,
-                context.session_id,
+                &session_repo,
+                &active_sessions,
+                &proxy_manager,
+                &app_handle,
+                &session_id,
                 "LLM completion",
             );
-        }
-        CompactionResumeAction::Nothing => {}
-    }
+        },
+    )
+    .await?;
 
     Ok(CompactResponseOutcome { retried: false })
 }

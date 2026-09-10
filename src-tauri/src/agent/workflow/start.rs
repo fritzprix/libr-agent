@@ -71,13 +71,19 @@ pub async fn start_workflow(
                 )
             };
 
+            // Queue while compaction is in flight (Manual or Preflight). Starting a
+            // new workflow here would call reset_session_execution_state and clear
+            // the in-flight compact, racing the compact LLM call.
+            let compaction_in_flight = session.compaction.snapshot().await.is_in_flight();
+
             if session.metadata.status == SessionStatus::Busy
                 || session.metadata.status == SessionStatus::Queued
                 || session.metadata.status == SessionStatus::Provisioning
                 || is_transitioning_to_busy
+                || compaction_in_flight
             {
                 log::info!(
-                    "Session {} is busy or queued. Queueing message: {} in pending_events only.",
+                    "Session {} is busy, queued, or compacting. Queueing message: {} in pending_events only.",
                     session_id,
                     user_message.id
                 );
