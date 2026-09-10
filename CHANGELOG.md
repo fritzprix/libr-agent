@@ -25,7 +25,6 @@
 
 ## [0.9.7] - 2026-09-03
 
-
 ### 🚀 Features & UI
 
 - **Grouped Model Picker & Inline Thinking Effort**: Added a grouped model picker dropdown in the chat input bar organized by provider, with inline `Thinking Effort` adjustment (`None`, `Low`, `Medium`, `High`) for rapid reasoning configuration during agent sessions.

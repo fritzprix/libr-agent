@@ -230,9 +230,7 @@ export function useMCPServerForm(server: MCPServerEntity) {
   const isNewServer = !server.createdAt || draft.name === '';
 
   const isReservedName = () =>
-    RESERVED_BUILTIN_NAMES.has(
-      sanitizeMcpServerName(draft.name).toLowerCase(),
-    );
+    RESERVED_BUILTIN_NAMES.has(sanitizeMcpServerName(draft.name).toLowerCase());
 
   const sanitizedName = sanitizeMcpServerName(draft.name);
   const nameNeedsSanitization =

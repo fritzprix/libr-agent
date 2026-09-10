@@ -91,6 +91,7 @@ export function AgentWorkspacePanel({
   const [dragState, setDragState] = useState<{ isOver: boolean }>({
     isOver: false,
   });
+  const [activeDropDir, setActiveDropDir] = useState<string | null>(null);
 
   const [isUploading, setIsUploading] = useState(false);
   const [isOpeningNative, setIsOpeningNative] = useState(false);
@@ -361,6 +362,8 @@ export function AgentWorkspacePanel({
 
   if (!session) return null;
 
+  const isPanelDropActive = dragState.isOver || activeDropDir === rootPath;
+
   return (
     <div
       id="agent-workspace-panel"
@@ -368,7 +371,7 @@ export function AgentWorkspacePanel({
       className={cn(
         'h-full',
         variant === 'rail' ? 'w-80 flex-shrink-0' : 'w-full',
-        dragState.isOver && 'ring-2 ring-inset ring-success',
+        isPanelDropActive && 'ring-2 ring-inset ring-success',
       )}
     >
       <Card
@@ -377,7 +380,7 @@ export function AgentWorkspacePanel({
           variant === 'rail'
             ? 'border-y-0 border-r-0 border-l border-border/40'
             : 'border-0',
-          dragState.isOver && 'border-success bg-success/5',
+          isPanelDropActive && 'border-success bg-success/5',
         )}
       >
         <CardHeader className="border-b border-border/40 px-4 py-3">
@@ -616,6 +619,8 @@ export function AgentWorkspacePanel({
                   onToggle={toggleDirectory}
                   onOpen={handleOpenFile}
                   onFileDrop={handleFolderNodeFileDrop}
+                  activeDropDir={activeDropDir}
+                  onDragTargetChange={setActiveDropDir}
                 />
               ))}
 

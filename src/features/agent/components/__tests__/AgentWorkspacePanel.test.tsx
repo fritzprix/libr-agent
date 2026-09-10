@@ -566,6 +566,52 @@ describe('AgentWorkspacePanel', () => {
     });
   });
 
+  it('highlights parent folder when dragging over a child file node and clears on leave', async () => {
+    mockRustBackend.listWorkspaceFiles.mockImplementation(
+      async (dirPath?: string) => {
+        if (!dirPath || dirPath === './') {
+          return [{ name: 'src', isDirectory: true }];
+        }
+        if (dirPath === './src' || dirPath === 'src') {
+          return [{ name: 'index.ts', isDirectory: false }];
+        }
+        return [];
+      },
+    );
+
+    renderWorkspacePanel();
+
+    await waitFor(() => {
+      expect(screen.getByText('src')).toBeInTheDocument();
+    });
+
+    const expandButton = await screen.findByRole('button', { name: 'Expand' });
+    await act(async () => {
+      fireEvent.click(expandButton);
+    });
+
+    expect(await screen.findByText('index.ts')).toBeInTheDocument();
+
+    const srcFolderContainer = screen.getByText('src').closest('.group');
+    expect(srcFolderContainer).not.toHaveClass('ring-primary');
+
+    // Drag over child file -> parent folder is highlighted
+    await act(async () => {
+      fileNodeHandler?.('drag-over', {
+        paths: ['/home/user/new-file.ts'],
+      });
+    });
+
+    expect(srcFolderContainer).toHaveClass('ring-primary');
+
+    // Leave child file -> parent folder highlight is removed
+    await act(async () => {
+      fileNodeHandler?.('leave', {});
+    });
+
+    expect(srcFolderContainer).not.toHaveClass('ring-primary');
+  });
+
   it('opens preview sheet for previewable file without calling external default app', async () => {
     mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
       {
