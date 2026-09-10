@@ -952,6 +952,19 @@
       "renameError": "更新会话标题失败",
       "renameEmptyError": "会话标题不能为空"
     },
+    "sessionExport": {
+      "menuAria": "导出会话",
+      "menuTooltip": "导出会话",
+      "markdown": "导出为 Markdown (.md)",
+      "atif": "导出 ATIF 轨迹 (.json)",
+      "copyClipboard": "复制可见窗口（不含思考 / 有大小限制）",
+      "markdownSuccess": "已保存 Markdown 文件",
+      "atifSuccess": "已保存 ATIF 轨迹",
+      "openFile": "打开",
+      "openFileError": "无法打开文件",
+      "cancelled": "已取消导出",
+      "error": "导出会话失败"
+    },
     "workspace": {
       "loadError": "加载目录失败",
       "importFileError": "导入文件失败",

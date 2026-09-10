@@ -952,6 +952,19 @@
       "renameError": "Sitzungstitel konnte nicht aktualisiert werden",
       "renameEmptyError": "Der Sitzungstitel darf nicht leer sein"
     },
+    "sessionExport": {
+      "menuAria": "Sitzung exportieren",
+      "menuTooltip": "Sitzung exportieren",
+      "markdown": "Als Markdown exportieren (.md)",
+      "atif": "Als ATIF-Trajectory exportieren (.json)",
+      "copyClipboard": "Sichtbares Fenster kopieren (ohne Denken / größenbegrenzt)",
+      "markdownSuccess": "Markdown-Datei gespeichert",
+      "atifSuccess": "ATIF-Trajectory gespeichert",
+      "openFile": "Öffnen",
+      "openFileError": "Datei konnte nicht geöffnet werden",
+      "cancelled": "Export abgebrochen",
+      "error": "Sitzung konnte nicht exportiert werden"
+    },
     "workspace": {
       "loadError": "Verzeichnis konnte nicht geladen werden",
       "importFileError": "Datei konnte nicht importiert werden",

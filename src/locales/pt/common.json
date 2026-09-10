@@ -952,6 +952,19 @@
       "renameError": "Falha ao atualizar o título da sessão",
       "renameEmptyError": "O título da sessão não pode ficar vazio"
     },
+    "sessionExport": {
+      "menuAria": "Exportar sessão",
+      "menuTooltip": "Exportar sessão",
+      "markdown": "Exportar como Markdown (.md)",
+      "atif": "Exportar trajetória ATIF (.json)",
+      "copyClipboard": "Copiar janela visível (sem thinking / tamanho limitado)",
+      "markdownSuccess": "Arquivo Markdown salvo",
+      "atifSuccess": "Trajetória ATIF salva",
+      "openFile": "Abrir",
+      "openFileError": "Falha ao abrir o arquivo",
+      "cancelled": "Exportação cancelada",
+      "error": "Falha ao exportar a sessão"
+    },
     "workspace": {
       "loadError": "Falha ao carregar diretório",
       "importFileError": "Falha ao importar arquivo",

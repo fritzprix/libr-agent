@@ -952,6 +952,19 @@
       "renameError": "Échec de la mise à jour du titre de la session",
       "renameEmptyError": "Le titre de la session ne peut pas être vide"
     },
+    "sessionExport": {
+      "menuAria": "Exporter la session",
+      "menuTooltip": "Exporter la session",
+      "markdown": "Exporter en Markdown (.md)",
+      "atif": "Exporter la trajectoire ATIF (.json)",
+      "copyClipboard": "Copier la fenêtre visible (sans thinking / taille limitée)",
+      "markdownSuccess": "Fichier Markdown enregistré",
+      "atifSuccess": "Trajectoire ATIF enregistrée",
+      "openFile": "Ouvrir",
+      "openFileError": "Impossible d'ouvrir le fichier",
+      "cancelled": "Export annulé",
+      "error": "Échec de l'export de la session"
+    },
     "workspace": {
       "loadError": "Échec du chargement du répertoire",
       "importFileError": "Échec de l'importation du fichier",

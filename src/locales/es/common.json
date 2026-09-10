@@ -952,6 +952,19 @@
       "renameError": "No se pudo actualizar el título de la sesión",
       "renameEmptyError": "El título de la sesión no puede estar vacío"
     },
+    "sessionExport": {
+      "menuAria": "Exportar sesión",
+      "menuTooltip": "Exportar sesión",
+      "markdown": "Exportar como Markdown (.md)",
+      "atif": "Exportar trayectoria ATIF (.json)",
+      "copyClipboard": "Copiar ventana visible (sin thinking / tamaño limitado)",
+      "markdownSuccess": "Archivo Markdown guardado",
+      "atifSuccess": "Trayectoria ATIF guardada",
+      "openFile": "Abrir",
+      "openFileError": "No se pudo abrir el archivo",
+      "cancelled": "Exportación cancelada",
+      "error": "Error al exportar la sesión"
+    },
     "workspace": {
       "loadError": "Error al cargar el directorio",
       "importFileError": "Error al importar el archivo",

@@ -8,7 +8,9 @@ use crate::models::chat::{Message, MessageSource};
 use crate::utils::json::{from_json_option, from_json_or_default, to_json_option};
 
 use super::super::error::DbError;
-use super::types::{MessagePaginationCursor, MessageRowWithCursor, MessageSlicePage};
+use super::types::{
+    MessageForwardPage, MessagePaginationCursor, MessageRowWithCursor, MessageSlicePage,
+};
 
 pub(super) fn row_to_message_model(row: &QueryResult) -> Result<message::Model, DbError> {
     Ok(message::Model {
@@ -118,6 +120,28 @@ pub(super) fn build_slice_page(
         items,
         has_more_before,
         oldest_cursor,
+    })
+}
+
+pub(super) fn build_forward_page(
+    mut rows: Vec<MessageRowWithCursor>,
+    limit: u64,
+) -> Result<MessageForwardPage, DbError> {
+    let has_more = rows.len() as u64 > limit;
+    if has_more {
+        rows.truncate(limit as usize);
+    }
+
+    let last_row_id = rows.last().map(|row| row.cursor.row_id);
+    let items = rows
+        .into_iter()
+        .map(|row| model_to_message(row.model))
+        .collect();
+
+    Ok(MessageForwardPage {
+        items,
+        last_row_id,
+        has_more,
     })
 }
 

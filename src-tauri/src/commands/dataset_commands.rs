@@ -1,13 +1,11 @@
-use crate::models::chat::Message;
-use crate::repositories::message_repository::{MessageRepository, SqliteMessageRepository};
 use crate::repositories::session_repository::{SessionRepository, SessionStatus};
+use crate::session_export::load_session_messages;
 use crate::state::{get_message_repository, get_session_repository};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
 use tauri::command;
 
-const EXPORT_MESSAGE_PAGE_SIZE: u64 = 500;
 const ALPACA_DEFAULT_INSTRUCTION: &str = "Respond to the following user message.";
 
 #[derive(Debug, Deserialize)]
@@ -259,35 +257,6 @@ pub async fn export_dataset(
         message_count: exported_messages,
         output_path,
     })
-}
-
-async fn load_session_messages(
-    message_repo: &SqliteMessageRepository,
-    session_id: &str,
-) -> Result<Vec<Message>, String> {
-    let mut page = 1u64;
-    let mut messages = Vec::new();
-
-    loop {
-        let batch = message_repo
-            .get_page(session_id, page, EXPORT_MESSAGE_PAGE_SIZE)
-            .await
-            .map_err(|e| format!("Failed to get messages for session {session_id}: {e}"))?;
-
-        if batch.items.is_empty() {
-            break;
-        }
-
-        messages.extend(batch.items);
-
-        if !batch.has_next_page {
-            break;
-        }
-
-        page += 1;
-    }
-
-    Ok(messages)
 }
 
 fn extract_message_text(content: &crate::mcp::types::MCPContent) -> String {

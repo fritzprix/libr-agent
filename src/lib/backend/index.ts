@@ -120,3 +120,9 @@ export {
   greet,
   restartApp,
 } from './utils';
+
+export { exportSessionFile } from './session-export';
+export type {
+  SessionExportFormat,
+  ExportSessionFileArgs,
+} from './session-export';

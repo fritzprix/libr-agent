@@ -913,6 +913,19 @@
       "renameError": "セッションタイトルの更新に失敗しました",
       "renameEmptyError": "セッションタイトルは空にできません"
     },
+    "sessionExport": {
+      "menuAria": "セッションをエクスポート",
+      "menuTooltip": "セッションをエクスポート",
+      "markdown": "Markdownとしてエクスポート (.md)",
+      "atif": "ATIF軌跡としてエクスポート (.json)",
+      "copyClipboard": "表示中の会話をコピー（思考なし / サイズ制限）",
+      "markdownSuccess": "Markdownファイルを保存しました",
+      "atifSuccess": "ATIF軌跡を保存しました",
+      "openFile": "開く",
+      "openFileError": "ファイルを開けませんでした",
+      "cancelled": "エクスポートをキャンセルしました",
+      "error": "セッションのエクスポートに失敗しました"
+    },
     "workspace": {
       "loadError": "ディレクトリの読み込みに失敗しました",
       "importFileError": "ファイルのインポートに失敗しました",

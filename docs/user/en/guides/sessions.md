@@ -17,6 +17,18 @@ Recently active sessions are retained warm in memory, making switching between s
 
 ---
 
+## Export
+
+Use the **Export** control on the chat header or a History card to save the stored conversation:
+
+- **Markdown (.md)** — full untruncated transcript from storage, including thinking and tool calls. Compaction/recovery scaffolding is omitted.
+- **ATIF trajectory (.json)** — Harbor-aligned ATIF-v1.7 for analysis. Binary media (screenshots, audio) is stored as placeholders, not raw payloads.
+- **Copy visible window** (active chat only) — copies the in-memory window to the clipboard. This path skips thinking and is size-limited; it is not the same as the Markdown file export.
+
+Busy sessions can still be exported as a point-in-time snapshot. In-flight streaming rows are omitted.
+
+---
+
 ## Bookmark
 
 Use the bookmark control on the session card or header to pin important work.

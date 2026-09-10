@@ -19,6 +19,14 @@ pub struct MessageSlicePage {
     pub oldest_cursor: Option<MessagePaginationCursor>,
 }
 
+/// Oldest-first page used when walking a session forward by `rowid`.
+#[derive(Debug, Clone)]
+pub struct MessageForwardPage {
+    pub items: Vec<Message>,
+    pub last_row_id: Option<i64>,
+    pub has_more: bool,
+}
+
 #[derive(Debug)]
 pub(super) struct MessageRowWithCursor {
     pub(super) model: message::Model,
@@ -35,6 +43,16 @@ pub trait MessageRepository: Send + Sync {
         page: u64,
         page_size: u64,
     ) -> Result<Page<Message>, DbError>;
+
+    /// Oldest-first page after a `rowid` cursor (no `COUNT(*)` / `OFFSET`).
+    ///
+    /// Pass `after_row_id = None` to start at the beginning of the session.
+    async fn get_messages_after_rowid(
+        &self,
+        session_id: &str,
+        after_row_id: Option<i64>,
+        limit: u64,
+    ) -> Result<MessageForwardPage, DbError>;
 
     /// Insert or update a single message
     async fn insert(&self, message: &Message) -> Result<(), DbError>;
