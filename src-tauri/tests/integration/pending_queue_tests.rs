@@ -865,3 +865,312 @@ fn merge_user_message_contents_uses_shared_separator() {
         _ => panic!("expected text"),
     }
 }
+
+#[tokio::test]
+async fn claim_all_pending_messages_preserves_non_user_messages_without_merging() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("non-user-claim-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let mut tool_call_msg = build_user_message(&session_id, "tool-call-1", 1_000);
+    tool_call_msg.role = "assistant".to_string();
+    tool_call_msg.content = vec![];
+
+    let mut tool_result_msg = build_user_message(&session_id, "tool-result-1", 2_000);
+    tool_result_msg.role = "tool".to_string();
+    tool_result_msg.tool_call_id = Some("call-1".to_string());
+    tool_result_msg.content = vec![MCPContent::Text {
+        text: "imported successfully".to_string(),
+    }];
+
+    for msg in [&tool_call_msg, &tool_result_msg] {
+        tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+            &active_sessions,
+            app_handle,
+            &session_id,
+            msg,
+        )
+        .await
+        .expect("enqueue should succeed");
+    }
+
+    let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
+        &active_sessions,
+        app_handle,
+        &session_id,
+    )
+    .await
+    .expect("claim all should succeed");
+
+    assert_eq!(
+        claimed.len(),
+        2,
+        "non-user messages must not be merged and both must survive"
+    );
+    assert_eq!(claimed[0].id, "tool-call-1");
+    assert_eq!(claimed[0].role, "assistant");
+    assert_eq!(claimed[1].id, "tool-result-1");
+    assert_eq!(claimed[1].role, "tool");
+}
+
+#[tokio::test]
+async fn append_messages_without_workflow_bypasses_pending_queue_during_busy() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("append-no-wf-{}", uuid::Uuid::new_v4());
+    let mut metadata = build_session_metadata(&session_id);
+    metadata.status = SessionStatus::Busy;
+    session_repo
+        .upsert_session(&metadata)
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let mut session = build_agent_session(&session_id);
+    session.metadata.status = SessionStatus::Busy;
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let mut tool_call_msg = build_user_message(&session_id, "tc-direct", 1_000);
+    tool_call_msg.role = "assistant".to_string();
+    tool_call_msg.content = vec![];
+
+    let mut tool_result_msg = build_user_message(&session_id, "tr-direct", 2_000);
+    tool_result_msg.role = "tool".to_string();
+    tool_result_msg.tool_call_id = Some("call-direct".to_string());
+    tool_result_msg.content = vec![MCPContent::Text {
+        text: "direct append output".to_string(),
+    }];
+
+    tauri_mcp_agent_lib::services::MessageService::append_messages_without_workflow(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        vec![tool_call_msg, tool_result_msg],
+    )
+    .await
+    .expect("append_messages_without_workflow should succeed");
+
+    // 1. pending queue must remain completely empty
+    let pending = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending");
+    assert_eq!(pending.len(), 0, "pending queue must be empty");
+
+    // 2. session cache must immediately have both messages
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).expect("session exists");
+        let cache = s.messages.read().await;
+        assert_eq!(cache.len(), 2, "cache must have both messages");
+        assert_eq!(cache[0].id, "tc-direct");
+        assert_eq!(cache[1].id, "tr-direct");
+    }
+
+    // 3. SQLite DB must immediately have both messages
+    let db_messages = message_repo
+        .get_by_ids(vec!["tc-direct".to_string(), "tr-direct".to_string()])
+        .await
+        .expect("db lookup");
+    assert_eq!(db_messages.len(), 2, "db must have both messages");
+}
+
+#[tokio::test]
+async fn claim_all_pending_messages_merges_consecutive_user_messages_in_mixed_batch() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("mixed-batch-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let user_1 = build_user_message_with_text(&session_id, "user-1", 1_000, "hello");
+    let user_2 = build_user_message_with_text(&session_id, "user-2", 2_000, "world");
+
+    let mut tool_msg = build_user_message(&session_id, "tool-1", 3_000);
+    tool_msg.role = "tool".to_string();
+    tool_msg.content = vec![MCPContent::Text {
+        text: "tool output".to_string(),
+    }];
+
+    for msg in [&user_1, &user_2, &tool_msg] {
+        tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+            &active_sessions,
+            app_handle,
+            &session_id,
+            msg,
+        )
+        .await
+        .expect("enqueue should succeed");
+    }
+
+    let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
+        &active_sessions,
+        app_handle,
+        &session_id,
+    )
+    .await
+    .expect("claim all should succeed");
+
+    // user_1 and user_2 should be merged into 1, and tool_1 should be kept individually -> total 2
+    assert_eq!(
+        claimed.len(),
+        2,
+        "consecutive user messages merged, tool message separate"
+    );
+    assert_eq!(claimed[0].id, "user-1");
+    assert_eq!(claimed[0].role, "user");
+    let merged_text = match &claimed[0].content[0] {
+        tauri_mcp_agent_lib::mcp::types::MCPContent::Text { text, .. } => text.as_str(),
+        _ => panic!("Expected text content"),
+    };
+    assert_eq!(merged_text, "hello\n\n---\n\nworld");
+
+    assert_eq!(claimed[1].id, "tool-1");
+    assert_eq!(claimed[1].role, "tool");
+}
+
+#[tokio::test]
+async fn inject_messages_to_session_during_busy_splits_user_and_non_user() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("busy-split-{}", uuid::Uuid::new_v4());
+    let mut metadata = build_session_metadata(&session_id);
+    metadata.status = SessionStatus::Busy;
+    session_repo
+        .upsert_session(&metadata)
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let mut session = build_agent_session(&session_id);
+    session.metadata.status = SessionStatus::Busy;
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let user_msg = build_user_message_with_text(&session_id, "user-busy", 1_000, "user prompt");
+    let mut tool_msg = build_user_message(&session_id, "tool-busy", 2_000);
+    tool_msg.role = "tool".to_string();
+    tool_msg.content = vec![MCPContent::Text {
+        text: "tool output".to_string(),
+    }];
+
+    // Call inject_messages_to_session with emit_events_immediately = false (Busy simulation)
+    tauri_mcp_agent_lib::services::MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        vec![user_msg, tool_msg],
+        false,
+    )
+    .await
+    .expect("inject_messages_to_session should succeed");
+
+    // 1. Pending queue should ONLY contain user-busy
+    let pending = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending");
+    assert_eq!(pending.len(), 1, "only user message in pending queue");
+    assert_eq!(pending[0].id, "user-busy");
+
+    // 2. Session cache should immediately contain tool-busy (bypassed pending queue)
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).expect("session exists");
+        let cache = s.messages.read().await;
+        assert_eq!(
+            cache.len(),
+            1,
+            "non-user message directly committed to cache"
+        );
+        assert_eq!(cache[0].id, "tool-busy");
+    }
+
+    // 3. Both messages must be persisted in DB
+    let db_messages = message_repo
+        .get_by_ids(vec!["user-busy".to_string(), "tool-busy".to_string()])
+        .await
+        .expect("db lookup");
+    assert_eq!(db_messages.len(), 2, "both messages in DB");
+}

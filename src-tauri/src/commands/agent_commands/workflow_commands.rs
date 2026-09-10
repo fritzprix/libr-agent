@@ -47,6 +47,30 @@ pub async fn agent_inject_messages(
     })
 }
 
+/// Append UI-triggered tool execution messages directly to session history.
+///
+/// Unlike `agent_inject_messages`, this command:
+/// - NEVER triggers an LLM workflow.
+/// - NEVER routes through the pending queue, even when the session is `Busy`.
+/// - Immediately writes to sliding-window cache, SQLite DB, and emits `MessageAdded`.
+///
+/// Intended for UI action recording such as drag-and-drop file import or direct UI tool calls.
+#[command]
+pub async fn agent_append_tool_messages(
+    manager: State<'_, AgentSessionManager>,
+    request: InjectMessagesRequest,
+) -> Result<AgentResponse, String> {
+    manager
+        .append_messages(&request.session_id, request.messages)
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Appended tool messages for session: {}", request.session_id),
+        data: None,
+    })
+}
+
 /// List durable waiting prompts for a session (FIFO).
 #[command]
 pub async fn agent_get_pending_queue(

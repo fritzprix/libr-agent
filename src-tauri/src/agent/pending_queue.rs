@@ -362,38 +362,75 @@ pub async fn claim_all_pending_messages(
         .await;
     }
 
-    let merged_contents =
-        crate::agent::message_merge::merge_user_message_contents(&fetched_messages);
-    let merged_attachments =
-        crate::agent::message_merge::merge_user_message_attachments(&fetched_messages);
+    let mut promoted_messages = Vec::new();
+    let mut i = 0;
+    while i < fetched_messages.len() {
+        if fetched_messages[i].role == "user" {
+            let mut j = i + 1;
+            while j < fetched_messages.len() && fetched_messages[j].role == "user" {
+                j += 1;
+            }
+            let user_slice = &fetched_messages[i..j];
+            if user_slice.len() == 1 {
+                let res = claim_single_pending_message(
+                    active_sessions,
+                    app_handle,
+                    session_id,
+                    user_slice[0].id.clone(),
+                )
+                .await?;
+                promoted_messages.extend(res);
+            } else {
+                let merged_contents =
+                    crate::agent::message_merge::merge_user_message_contents(user_slice);
+                let merged_attachments =
+                    crate::agent::message_merge::merge_user_message_attachments(user_slice);
 
-    let mut keeper = fetched_messages[0].clone();
-    keeper.content = merged_contents;
-    keeper.attachments = merged_attachments;
-    keeper.updated_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(keeper.created_at);
+                let mut keeper = user_slice[0].clone();
+                keeper.content = merged_contents;
+                keeper.attachments = merged_attachments;
+                keeper.updated_at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(keeper.created_at);
 
-    let absorbed_ids: Vec<String> = fetched_messages
-        .iter()
-        .skip(1)
-        .map(|m| m.id.clone())
-        .collect();
+                let absorbed_ids: Vec<String> =
+                    user_slice.iter().skip(1).map(|m| m.id.clone()).collect();
 
-    if let Err(e) = get_pending_queue_repository()
-        .commit_merged_claim(&keeper, &absorbed_ids)
-        .await
-    {
-        restore_front_pending_messages(active_sessions, session_id, &claim_ids).await;
-        return Err(e.to_string());
+                if let Err(e) = get_pending_queue_repository()
+                    .commit_merged_claim(&keeper, &absorbed_ids)
+                    .await
+                {
+                    restore_front_pending_messages(active_sessions, session_id, &claim_ids).await;
+                    return Err(e.to_string());
+                }
+
+                push_message_to_session_cache(active_sessions, session_id, &keeper).await;
+                emit_message_added(app_handle, session_id, &keeper).await?;
+                promoted_messages.push(keeper);
+            }
+            i = j;
+        } else {
+            // Non-user message (e.g. tool or assistant): promote individually without merge
+            log::warn!(
+                "claim_all_pending_messages: promoting non-user message {} (role: {}) individually without merge",
+                fetched_messages[i].id,
+                fetched_messages[i].role
+            );
+            let res = claim_single_pending_message(
+                active_sessions,
+                app_handle,
+                session_id,
+                fetched_messages[i].id.clone(),
+            )
+            .await?;
+            promoted_messages.extend(res);
+            i += 1;
+        }
     }
 
-    push_message_to_session_cache(active_sessions, session_id, &keeper).await;
-    emit_message_added(app_handle, session_id, &keeper).await?;
     emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
-
-    Ok(vec![keeper])
+    Ok(promoted_messages)
 }
 
 async fn claim_single_pending_message(

@@ -60,6 +60,7 @@ const mockRustBackend = {
 const mockChatActions = {
   submit: vi.fn(),
   injectMessages: vi.fn(),
+  appendToolMessages: vi.fn(),
 };
 
 // Mock dependencies
@@ -312,6 +313,17 @@ describe('AgentWorkspacePanel', () => {
           ],
         }),
       );
+      expect(mockChatActions.appendToolMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          role: 'assistant',
+          source: 'ui',
+        }),
+        expect.objectContaining({
+          role: 'tool',
+          source: 'ui',
+        }),
+      ]);
+      expect(mockChatActions.injectMessages).not.toHaveBeenCalled();
     });
 
     expect(backend.setWorkspaceOverride).not.toHaveBeenCalled();

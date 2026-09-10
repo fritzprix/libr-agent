@@ -111,6 +111,7 @@ vi.mock('@/context/AgentChatContext', () => ({
   ),
   useAgentChatActions: () => ({
     injectMessages: vi.fn(),
+    appendToolMessages: vi.fn(),
   }),
   useAgentChatState: () => ({
     workflowStatus: 'idle' as const,
