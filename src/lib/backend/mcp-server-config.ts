@@ -2,6 +2,7 @@ import { safeInvoke } from './core';
 import type { MCPServerEntity } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import type { OAuthConfig } from '@/lib/mcp';
+import { sanitizeMcpServerName } from '@/lib/utils';
 
 /**
  * Backend DTO for MCP Server Config
@@ -119,11 +120,19 @@ export async function upsertMCPServer(
   server: MCPServerEntity,
 ): Promise<MCPServerEntity> {
   const all = await listMCPServers();
-  const exists = all.find((s) => s.name === server.name);
+  const sanitizedIncoming = sanitizeMcpServerName(server.name);
+  // Match exact name or sanitized equivalent so legacy spaced names are not duplicated.
+  const exists = all.find(
+    (s) =>
+      s.name === server.name ||
+      sanitizeMcpServerName(s.name) === sanitizedIncoming,
+  );
 
   if (exists) {
     return updateMCPServer({
       ...server,
+      // Preserve legacy display name (may contain spaces)
+      name: exists.name,
       id: exists.id,
       createdAt: exists.createdAt,
     });
