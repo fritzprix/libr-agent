@@ -1508,4 +1508,7 @@ async fn non_busy_session_flushes_stale_deferred_history_instead_of_parking() {
         assert_eq!(cache[1].id, "incoming-ui");
         assert!(s.pending_execution.is_none());
     }
+
+    tauri_mcp_agent_lib::reset_state();
 }
+
