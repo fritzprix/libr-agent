@@ -43,6 +43,13 @@ def load_validator():
         sys.exit(2)
 
     sys.path.insert(0, str(creator_scripts))
+    try:
+        from io_utils import configure_stdio
+
+        configure_stdio()
+    except Exception:
+        pass
+
     from validate_skill import format_detailed_report, get_skill_name, validate_skill_path
 
     return validate_skill_path, format_detailed_report, get_skill_name
@@ -224,6 +231,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.skill_source.startswith("@"):
+        print(
+            f"[DEPLOY-SOURCE-001] ERROR: Skill source '{args.skill_source}' looks like a tag or alias.\n"
+            "  Fix: Pass the directory path that contains SKILL.md (e.g. /path/to/my-skill).",
+            file=sys.stderr,
+        )
+        return 2
+
     source = Path(args.skill_source).resolve()
     if not source.is_dir():
         print(
@@ -271,6 +286,16 @@ def main() -> int:
         args.assistant_id,
     )
     assert_target_allowed(target)
+
+    if source.resolve() == target.resolve():
+        print("=== Deploy plan ===")
+        print(f"Scope: {args.scope}")
+        print(f"Skill: {skill_name}")
+        print(f"Target: {target}")
+        print("Notice: Source and target are the same path (already located at destination).")
+        print("Validation: strict (pre-deploy passed)")
+        print("\nDeploy complete. Skill is valid and active at target location.")
+        return 0
 
     if target.exists() and not args.overwrite and not args.dry_run:
         print(

@@ -1511,4 +1511,3 @@ async fn non_busy_session_flushes_stale_deferred_history_instead_of_parking() {
 
     tauri_mcp_agent_lib::reset_state();
 }
-
