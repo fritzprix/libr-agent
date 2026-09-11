@@ -89,9 +89,9 @@ pub fn report_result_tool() -> MCPTool {
         description: tool_description(
             "Deliver the final task result to the user when there is nothing left to do. This is the explicit completion signal — not for mid-task updates.",
             &[
-                "All required work is already finished (files written, commands succeeded, answer produced).",
+                "All required work is already finished (files written, answer produced). For code, queries, scripts, or configs that can be executed or syntax-checked: that check already succeeded at least once — fix errors before calling.",
                 "You are not waiting on another tool, process, or user clarification.",
-                "Do NOT use this while still exploring, debugging, verifying, or planning next steps.",
+                "Do NOT use this while still exploring, debugging, or planning — finish checks first, then call once.",
             ],
             &[
                 "Call this exactly once when the outcome is ready.",
@@ -100,7 +100,7 @@ pub fn report_result_tool() -> MCPTool {
             ],
             &[
                 "If you still need user input, use ui__presentInteractive with `interaction` instead.",
-                "If work remains, continue with the appropriate tools — do not call reportResult early.",
+                "If work remains (including an unrun check on an executable/parseable deliverable), continue with tools — do not call reportResult early.",
             ],
         ),
         // Keep large body last for model argument ordering.

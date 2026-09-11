@@ -83,6 +83,19 @@ fn report_result_schema_property_order_puts_result_last() {
 }
 
 #[test]
+fn report_result_description_requires_deliverable_check_before_completion() {
+    use tauri_mcp_agent_lib::mcp::builtin::ui::tools::report_result_tool;
+
+    let tool = report_result_tool();
+    let description = tool.description.as_str();
+    assert!(
+        description.contains("syntax-checked")
+            && description.contains("succeeded at least once"),
+        "reportResult must require a prior execute/syntax check for parseable deliverables: {description}"
+    );
+}
+
+#[test]
 fn record_knowledge_schema_property_order_puts_content_last() {
     use tauri_mcp_agent_lib::mcp::builtin::knowledge::tools::record_knowledge_tool;
 
