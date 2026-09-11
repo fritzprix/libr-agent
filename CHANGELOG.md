@@ -1,3 +1,24 @@
+## [0.9.9] - 2026-09-11
+
+### 🚀 Features & UI
+
+- **Session History & ATIF Trajectory Export**: Added full support for exporting agent session history to Markdown and standardized ATIF (Agent Trajectory Interchange Format) trajectories for easy auditing, sharing, and benchmark evaluation.
+- **In-App File Preview & Workspace File-Type Icons**: Introduced a built-in file preview sheet (`FilePreviewSheet`) and rich file-type icons in the workspace explorer, with automatic preview sheet opening on workspace write operations.
+- **Folder Drop Highlight Delegation**: Delegated drag-and-drop file highlight on file nodes directly to their containing folder for intuitive file tree interactions.
+- **Config-Aware Sub-Agent Spawning**: Upgraded sub-agent creation to `spawnSession` with assistant `configId` support, preserving customized agent system prompts, models, and tool configurations across delegated workflows.
+- **Fine-Grained Streaming Phases**: Introduced `StreamingPhase` granularity in agent IPC, separating tool payload streaming from active tool execution states.
+- **Readiness-Gated Onboarding Recipes**: Gated starter recipes on LLM provider configuration and runtime readiness for a smooth initial onboarding experience.
+
+### 🐛 Fixes & Hardening
+
+- **Pending Queue & Tool-Batch Race Hardening**: Resolved race conditions in the pending execution queue and tool-batch history pairing, and protected pending prompts across context window compaction.
+- **Execution Mode Pending Approvals**: Automatically reconciled pending approval state and returned auto-approved tool IDs when toggling between execution modes.
+- **Docker CLI Fallback**: Gracefully detected missing Docker CLI binaries and safely fell back to host execution mode without halting operations.
+- **MCP Tool Routing & Transport UI**: Sanitized MCP server names with whitespace characters for reliable tool routing, and enhanced long transport URL text wrapping on ServerCard.
+- **PowerShell BOM Secret Sanitization**: Prevented Windows PowerShell UTF-8 BOM byte injection from corrupting stdin secrets and 2FA credentials.
+- **Analysis Loader Visual Polish**: Ensured continuous rotation of the phosphor AnalysisLoader indicator across combinatorial status messages.
+- **Dependency Updates**: Bumped Tauri plugins (`opener`, `http`, `dialog`, `log`, `updater`, `mcp-bridge`), `keyring`, and `indexmap`.
+
 ## [0.9.8] - 2026-09-07
 
 ### 🚀 Features & UI
