@@ -1,7 +1,7 @@
 use crate::agent::session_manager::AgentSessionManager;
 use crate::agent::state::AgentSession;
 use crate::models::chat::Message;
-use crate::repositories::MessageRepository;
+use crate::repositories::{MessageRepository, SessionStatus};
 use crate::search::message_index::{MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
 use crate::utils::pagination::{paginate_in_memory, Page};
@@ -409,8 +409,54 @@ impl MessageService {
                 return Ok(());
             }
 
-            // Non-user messages bypass pending_queue and are directly committed
+            // Non-user messages bypass pending_queue and are committed to history
+            // (deferred when a tool batch is open — see below).
             messages = non_user_messages;
+        }
+
+        // Open tool batches require contiguous assistant→tool pairing. Park any
+        // non-completing history rows only while the session is still Busy with
+        // a live batch — otherwise a stale pending_execution would hang forever.
+        {
+            let mut sessions = active_sessions.write().await;
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+            if session.metadata.status == SessionStatus::Busy {
+                if let Some(pending) = session.pending_execution.as_mut() {
+                    let completes_open_batch = !messages.is_empty()
+                        && messages.iter().all(|msg| {
+                            msg.role == "tool"
+                                && msg
+                                    .tool_call_id
+                                    .as_ref()
+                                    .is_some_and(|id| pending.expected_tool_call_ids.contains(id))
+                        });
+                    if !completes_open_batch {
+                        log::info!(
+                            "Deferring {} history message(s) until open tool batch completes for session {}",
+                            messages.len(),
+                            session_id
+                        );
+                        pending.deferred_history_append.append(&mut messages);
+                        return Ok(());
+                    }
+                }
+            } else if let Some(pending) = session.pending_execution.take() {
+                // Ghost batch outside Busy: release parked rows into this commit
+                // so they are not lost, then clear the stale marker.
+                if !pending.deferred_history_append.is_empty() {
+                    log::warn!(
+                        "Flushing {} deferred history message(s) for non-Busy session {} (status={:?})",
+                        pending.deferred_history_append.len(),
+                        session_id,
+                        session.metadata.status
+                    );
+                    let mut released = pending.deferred_history_append;
+                    released.append(&mut messages);
+                    messages = released;
+                }
+            }
         }
 
         let sessions = active_sessions.read().await;

@@ -18,6 +18,17 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     *session.bad_tool_args_retry_count.write().await = 0;
     *session.bad_tool_args_incident_count.write().await = 0;
     *session.reasoning_budget_retry_count.write().await = 0;
+    // Drop any in-flight tool batch marker so a restarted turn cannot treat a
+    // prior PendingToolExecution (and its deferred history) as still open.
+    if let Some(pending) = session.pending_execution.take() {
+        if !pending.deferred_history_append.is_empty() {
+            log::warn!(
+                "Discarding {} deferred history message(s) while resetting execution state for session {}",
+                pending.deferred_history_append.len(),
+                session.metadata.id
+            );
+        }
+    }
     // Safety valve: clear any stale in-flight compaction state before
     // explicitly starting or restarting a workflow from the current stack.
     session.compaction.clear_runtime_state(false).await;

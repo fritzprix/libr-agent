@@ -101,6 +101,22 @@ pub async fn enqueue_pending_user_message(
     }
 
     let message_repo = get_message_repository();
+    // Only delete the messages-table row on index failure when this call created it.
+    // Re-queue of an existing body must never destroy the durable message.
+    let body_already_existed = match message_repo.get_by_ids(vec![user_message.id.clone()]).await {
+        Ok(existing) => existing.into_iter().any(|row| row.id == user_message.id),
+        Err(e) => {
+            if let Some(session) = active_sessions.read().await.get(session_id) {
+                session
+                    .pending_events
+                    .write()
+                    .await
+                    .remove_message(&user_message.id);
+            }
+            return Err(format!("Failed to check queued message existence: {e}"));
+        }
+    };
+
     if let Err(e) = message_repo.insert(user_message).await {
         if let Some(session) = active_sessions.read().await.get(session_id) {
             session
@@ -116,11 +132,13 @@ pub async fn enqueue_pending_user_message(
         .enqueue(session_id, &user_message.id, user_message.created_at)
         .await
     {
-        if let Err(cleanup_err) = message_repo.delete_by_id(&user_message.id).await {
-            log::error!(
-                "Failed to delete orphaned queued message {}: {cleanup_err}",
-                user_message.id
-            );
+        if !body_already_existed {
+            if let Err(cleanup_err) = message_repo.delete_by_id(&user_message.id).await {
+                log::error!(
+                    "Failed to delete orphaned queued message {}: {cleanup_err}",
+                    user_message.id
+                );
+            }
         }
         if let Some(session) = active_sessions.read().await.get(session_id) {
             session
@@ -363,6 +381,8 @@ pub async fn claim_all_pending_messages(
     }
 
     let mut promoted_messages = Vec::new();
+    // IDs not yet durably promoted — restore only this set on partial failure.
+    let mut unpromoted_ids: Vec<String> = fetched_messages.iter().map(|m| m.id.clone()).collect();
     let mut i = 0;
     while i < fetched_messages.len() {
         if fetched_messages[i].role == "user" {
@@ -372,13 +392,29 @@ pub async fn claim_all_pending_messages(
             }
             let user_slice = &fetched_messages[i..j];
             if user_slice.len() == 1 {
-                let res = claim_single_pending_message(
+                let promoted_id = user_slice[0].id.clone();
+                let res = match claim_single_pending_message(
                     active_sessions,
                     app_handle,
                     session_id,
-                    user_slice[0].id.clone(),
+                    promoted_id.clone(),
                 )
-                .await?;
+                .await
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        // claim_single restores the failed id; restore only the tail.
+                        unpromoted_ids.retain(|id| id != &promoted_id);
+                        restore_front_pending_messages(
+                            active_sessions,
+                            session_id,
+                            &unpromoted_ids,
+                        )
+                        .await;
+                        return Err(e);
+                    }
+                };
+                unpromoted_ids.retain(|id| id != &promoted_id);
                 promoted_messages.extend(res);
             } else {
                 let merged_contents =
@@ -396,13 +432,19 @@ pub async fn claim_all_pending_messages(
 
                 let absorbed_ids: Vec<String> =
                     user_slice.iter().skip(1).map(|m| m.id.clone()).collect();
+                let slice_ids: Vec<String> = user_slice.iter().map(|m| m.id.clone()).collect();
 
                 if let Err(e) = get_pending_queue_repository()
                     .commit_merged_claim(&keeper, &absorbed_ids)
                     .await
                 {
-                    restore_front_pending_messages(active_sessions, session_id, &claim_ids).await;
+                    restore_front_pending_messages(active_sessions, session_id, &unpromoted_ids)
+                        .await;
                     return Err(e.to_string());
+                }
+
+                for id in &slice_ids {
+                    unpromoted_ids.retain(|pending_id| pending_id != id);
                 }
 
                 push_message_to_session_cache(active_sessions, session_id, &keeper).await;
@@ -417,13 +459,24 @@ pub async fn claim_all_pending_messages(
                 fetched_messages[i].id,
                 fetched_messages[i].role
             );
-            let res = claim_single_pending_message(
+            let promoted_id = fetched_messages[i].id.clone();
+            let res = match claim_single_pending_message(
                 active_sessions,
                 app_handle,
                 session_id,
-                fetched_messages[i].id.clone(),
+                promoted_id.clone(),
             )
-            .await?;
+            .await
+            {
+                Ok(res) => res,
+                Err(e) => {
+                    unpromoted_ids.retain(|id| id != &promoted_id);
+                    restore_front_pending_messages(active_sessions, session_id, &unpromoted_ids)
+                        .await;
+                    return Err(e);
+                }
+            };
+            unpromoted_ids.retain(|id| id != &promoted_id);
             promoted_messages.extend(res);
             i += 1;
         }
@@ -589,32 +642,43 @@ pub async fn restore_pending_messages_after_take(
     }
 }
 
-/// Take all waiting message IDs out of memory and the durable index without
+/// Take specific waiting message IDs out of memory and the durable index without
 /// deleting message bodies or promoting into the active cache.
 ///
-/// Used when starting a new workflow from queued prompts after Manual
-/// compaction settles on an Idle/Paused session. Callers that fail after this
-/// drain must restore via [`restore_pending_messages_after_take`].
-pub async fn take_all_pending_message_ids(
+/// Only the provided IDs are removed; any waiters that arrived after the caller's
+/// snapshot stay queued. Callers that fail after this drain must restore via
+/// [`restore_pending_messages_after_take`].
+pub async fn take_pending_message_ids(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
+    message_ids: &[String],
 ) -> Result<Vec<String>, String> {
-    let message_ids = {
+    if message_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let taken_ids = {
         let sessions = active_sessions.read().await;
         let Some(session) = sessions.get(session_id) else {
             return Ok(Vec::new());
         };
-        let ids = session.pending_events.write().await.drain_messages();
-        ids
+        let mut pending = session.pending_events.write().await;
+        let mut taken = Vec::new();
+        for message_id in message_ids {
+            if pending.remove_message(message_id) {
+                taken.push(message_id.clone());
+            }
+        }
+        taken
     };
 
-    if message_ids.is_empty() {
+    if taken_ids.is_empty() {
         return Ok(Vec::new());
     }
 
     let queue_repo = get_pending_queue_repository();
     let mut removed_ok: Vec<String> = Vec::new();
-    for message_id in &message_ids {
+    for message_id in &taken_ids {
         match queue_repo.remove(message_id).await {
             Ok(()) => removed_ok.push(message_id.clone()),
             Err(error) => {
@@ -624,7 +688,7 @@ pub async fn take_all_pending_message_ids(
                     session_id,
                     error
                 );
-                restore_front_pending_messages(active_sessions, session_id, &message_ids).await;
+                restore_front_pending_messages(active_sessions, session_id, &taken_ids).await;
                 let created_at = chrono::Utc::now().timestamp_millis();
                 for restored_id in &removed_ok {
                     if let Err(restore_error) = queue_repo
@@ -646,7 +710,28 @@ pub async fn take_all_pending_message_ids(
         }
     }
 
-    Ok(message_ids)
+    Ok(taken_ids)
+}
+
+/// Take all waiting message IDs out of memory and the durable index without
+/// deleting message bodies or promoting into the active cache.
+///
+/// Used when starting a new workflow from queued prompts after Manual
+/// compaction settles on an Idle/Paused session. Callers that fail after this
+/// drain must restore via [`restore_pending_messages_after_take`].
+pub async fn take_all_pending_message_ids(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<Vec<String>, String> {
+    let message_ids = {
+        let sessions = active_sessions.read().await;
+        let Some(session) = sessions.get(session_id) else {
+            return Ok(Vec::new());
+        };
+        let ids = session.pending_events.read().await.message_ids();
+        ids
+    };
+    take_pending_message_ids(active_sessions, session_id, &message_ids).await
 }
 
 /// Drop all waiting prompts (terminate / hard clear). Soft cancel preserves them.

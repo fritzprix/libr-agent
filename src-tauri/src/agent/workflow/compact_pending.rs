@@ -126,7 +126,7 @@ async fn start_workflow_from_pending_queue(
         return Ok(());
     }
 
-    // Load bodies before draining so a lookup failure leaves the queue intact.
+    // Load bodies before claiming ownership so a lookup failure leaves the queue intact.
     let loaded_messages = get_message_repository()
         .get_by_ids(pending_ids.clone())
         .await
@@ -136,9 +136,13 @@ async fn start_workflow_from_pending_queue(
         .map(|message| (message.id.clone(), message))
         .collect();
 
-    let taken_ids =
-        crate::agent::pending_queue::take_all_pending_message_ids(active_sessions, session_id)
-            .await?;
+    // Take only the snapshotted IDs. Waiters that arrived during the DB load stay queued.
+    let taken_ids = crate::agent::pending_queue::take_pending_message_ids(
+        active_sessions,
+        session_id,
+        &pending_ids,
+    )
+    .await?;
     if taken_ids.is_empty() {
         return Ok(());
     }
@@ -149,6 +153,21 @@ async fn start_workflow_from_pending_queue(
         .collect();
     if ordered_messages.is_empty() {
         return Ok(());
+    }
+
+    // Any snapshotted ID that vanished from the messages table is already removed from
+    // the durable index above; leave a warning so it is not silently forgotten.
+    if ordered_messages.len() != taken_ids.len() {
+        let missing: Vec<&String> = taken_ids
+            .iter()
+            .filter(|id| ordered_messages.iter().all(|message| message.id != **id))
+            .collect();
+        log::warn!(
+            "Dropped {} pending id(s) with missing message bodies while starting from queue for session {}: {:?}",
+            missing.len(),
+            session_id,
+            missing
+        );
     }
 
     let mut messages = ordered_messages.into_iter();

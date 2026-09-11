@@ -26,6 +26,9 @@ pub struct PendingToolExecution {
     pub expected_tool_call_ids: HashSet<String>,
     /// Tool call IDs already completed for the current message execution
     pub completed_tool_call_ids: HashSet<String>,
+    /// History rows that must wait until this batch completes so tool-call /
+    /// tool-result pairing stays contiguous for provider APIs.
+    pub deferred_history_append: Vec<Message>,
 }
 
 /// Pending events waiting to be processed by the workflow
@@ -773,6 +776,7 @@ mod tests {
             tool_names: HashMap::new(),
             expected_tool_call_ids: HashSet::new(),
             completed_tool_call_ids: HashSet::new(),
+            deferred_history_append: Vec::new(),
         });
         *session.compact_context.write().await = Some(CompactContextRecord {
             id: "cc-1".to_string(),

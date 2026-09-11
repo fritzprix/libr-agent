@@ -525,6 +525,36 @@ describe('AgentWorkspacePanel', () => {
     expect(mockRustBackend.agentCallBuiltinTool).not.toHaveBeenCalled();
   });
 
+  it('delegates folder drops on root-level files to workspace override', async () => {
+    vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
+    vi.mocked(backend.checkDroppedPathType).mockResolvedValue('directory');
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      { name: 'README.md', isDirectory: false },
+    ]);
+
+    renderWorkspacePanel();
+
+    await waitFor(() => {
+      expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fileNodeHandler?.('drop', {
+        paths: ['/home/user/new-workspace'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(backend.setWorkspaceOverride).toHaveBeenCalledWith(
+        'session-123',
+        '/home/user/new-workspace',
+      );
+    });
+    expect(toast.error).not.toHaveBeenCalledWith(
+      'agent.workspace.dropFolderIntoSubfolderError',
+    );
+  });
+
   it('imports dropped files on child file item into parent folder', async () => {
     vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
     vi.mocked(backend.checkDroppedPathType).mockResolvedValue('file');

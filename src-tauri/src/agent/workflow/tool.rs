@@ -33,7 +33,7 @@ pub async fn continue_workflow_after_tool(
     )
     .await
     {
-        Ok(Some((completed_message, all_completed))) => {
+        Ok(Some((completed_message, all_completed, deferred_history))) => {
             let completed_messages = crate::agent::tools::spill_oversized_tool_result_messages(
                 &session_id,
                 vec![completed_message],
@@ -64,6 +64,27 @@ pub async fn continue_workflow_after_tool(
                 );
                 e
             })?;
+
+            // Flush UI/history rows that waited so they never interleave inside
+            // an open assistant→tool chain.
+            if !deferred_history.is_empty() {
+                crate::services::MessageService::inject_messages_to_session(
+                    active_sessions,
+                    app_handle,
+                    &session_id,
+                    deferred_history,
+                    true,
+                )
+                .await
+                .map_err(|e| {
+                    log::error!(
+                        "Failed to flush deferred history append for session {}: {}",
+                        session_id,
+                        e
+                    );
+                    e
+                })?;
+            }
 
             if !all_completed {
                 // If not all tools are completed, we are still waiting for other tools to execute.

@@ -139,45 +139,6 @@ export function AgentWorkspacePanel({
     handleDropComplete,
   );
 
-  const handleFolderNodeFileDrop = useCallback(
-    async (paths: string[], targetDir: string) => {
-      if (!session?.id || paths.length === 0) return;
-
-      logger.info('External files dropped on folder node', {
-        pathCount: paths.length,
-        targetDir,
-      });
-
-      try {
-        await registerDroppedFiles(paths);
-        const pathTypes = await Promise.all(
-          paths.map((path) => checkDroppedPathType(path)),
-        );
-
-        const hasDirectories = pathTypes.includes('directory');
-        if (hasDirectories) {
-          toast.error(
-            t(
-              'agent.workspace.dropFolderIntoSubfolderError',
-              'Dropping folders into subfolders is not supported',
-            ),
-          );
-          return;
-        }
-
-        await handleWorkspaceFileDrop(paths, targetDir);
-      } catch (error) {
-        logger.error('Failed to resolve dropped paths on folder node', error);
-        const message =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-        toast.error(t('agent.workspace.importFileError'), {
-          description: message,
-        });
-      }
-    },
-    [handleWorkspaceFileDrop, session?.id, t],
-  );
-
   const handleWorkspacePathDrop = useCallback(
     async (paths: string[]) => {
       if (!session?.id || paths.length === 0) return;
@@ -222,6 +183,58 @@ export function AgentWorkspacePanel({
       }
     },
     [applyWorkspaceOverride, handleWorkspaceFileDrop, session?.id, t],
+  );
+
+  const handleFolderNodeFileDrop = useCallback(
+    async (paths: string[], targetDir: string) => {
+      if (!session?.id || paths.length === 0) return;
+
+      logger.info('External files dropped on folder node', {
+        pathCount: paths.length,
+        targetDir,
+      });
+
+      const isRootTarget =
+        targetDir === rootPath || targetDir === './' || targetDir === '.';
+      if (isRootTarget) {
+        await handleWorkspacePathDrop(paths);
+        return;
+      }
+
+      try {
+        await registerDroppedFiles(paths);
+        const pathTypes = await Promise.all(
+          paths.map((path) => checkDroppedPathType(path)),
+        );
+
+        const hasDirectories = pathTypes.includes('directory');
+        if (hasDirectories) {
+          toast.error(
+            t(
+              'agent.workspace.dropFolderIntoSubfolderError',
+              'Dropping folders into subfolders is not supported',
+            ),
+          );
+          return;
+        }
+
+        await handleWorkspaceFileDrop(paths, targetDir);
+      } catch (error) {
+        logger.error('Failed to resolve dropped paths on folder node', error);
+        const message =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+        toast.error(t('agent.workspace.importFileError'), {
+          description: message,
+        });
+      }
+    },
+    [
+      handleWorkspaceFileDrop,
+      handleWorkspacePathDrop,
+      rootPath,
+      session?.id,
+      t,
+    ],
   );
 
   // Subscribe to DnD events
