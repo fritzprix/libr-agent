@@ -20,7 +20,7 @@ export function useWorkspaceFileDrop(
   const { t } = useTranslation();
   const { agentCallBuiltinTool } = useRustBackend();
   const { session } = useAgentSessionState();
-  const { injectMessages } = useAgentChatActions();
+  const { appendToolMessages } = useAgentChatActions();
 
   const handleWorkspaceFileDrop = useCallback(
     async (paths: string[], targetDir?: string) => {
@@ -125,8 +125,8 @@ export function useWorkspaceFileDrop(
           'ui',
         );
 
-        // Submit messages atomically using injectMessages
-        await injectMessages([toolCallMessage, toolResultMessage]);
+        // Submit messages atomically using appendToolMessages
+        await appendToolMessages([toolCallMessage, toolResultMessage]);
 
         // Refresh directory after import
         onDropComplete(targetDir);
@@ -141,7 +141,7 @@ export function useWorkspaceFileDrop(
     },
     [
       agentCallBuiltinTool,
-      injectMessages,
+      appendToolMessages,
       session,
       rootPath,
       onDropComplete,

@@ -354,6 +354,17 @@ impl MessageService {
         Ok(())
     }
 
+    /// Append messages into a session cache and DB without triggering workflow or touching pending_queue.
+    pub async fn append_messages_without_workflow(
+        active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+        app_handle: &AppHandle,
+        session_id: &str,
+        messages: Vec<Message>,
+    ) -> Result<(), String> {
+        Self::inject_messages_to_session(active_sessions, app_handle, session_id, messages, true)
+            .await
+    }
+
     /// Injects messages into a session cache, optionally triggering events immediately
     /// or queueing them for a running workflow.
     pub async fn inject_messages_to_session(
@@ -367,7 +378,24 @@ impl MessageService {
 
         // Busy/queued path: durable FIFO waiting prompts only (no active-context pollution).
         if !emit_events_immediately {
+            let mut user_messages = Vec::new();
+            let mut non_user_messages = Vec::new();
+
             for msg in messages {
+                if msg.role == "user" {
+                    user_messages.push(msg);
+                } else {
+                    log::warn!(
+                        "Non-user message (role: {}, id: {}) bypassed pending_queue during busy/queued session: {}",
+                        msg.role,
+                        msg.id,
+                        session_id
+                    );
+                    non_user_messages.push(msg);
+                }
+            }
+
+            for msg in user_messages {
                 crate::agent::pending_queue::enqueue_pending_user_message(
                     active_sessions,
                     app_handle,
@@ -376,7 +404,13 @@ impl MessageService {
                 )
                 .await?;
             }
-            return Ok(());
+
+            if non_user_messages.is_empty() {
+                return Ok(());
+            }
+
+            // Non-user messages bypass pending_queue and are directly committed
+            messages = non_user_messages;
         }
 
         let sessions = active_sessions.read().await;

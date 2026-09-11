@@ -162,8 +162,8 @@ pub async fn agent_execute_ui_tauri_action(
     };
 
     manager
-        .inject_messages(
-            request.session_id.clone(),
+        .append_messages(
+            &request.session_id,
             vec![tool_call_message, tool_result_message],
         )
         .await?;

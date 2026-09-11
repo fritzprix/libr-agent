@@ -105,10 +105,19 @@ interface AgentChatActionsContextValue {
   updateServiceContexts: () => Promise<void>;
 
   /**
-   * Inject messages into the session directly
-   * Backend decides whether the workflow should continue based on session state
+   * Inject messages into the session for starting/continuing agent conversation turns.
+   * - Idle: starts an LLM workflow immediately.
+   * - Busy: enqueues user prompts into the FIFO pending queue for processing in the next turn.
    */
   injectMessages: (messages: Message[]) => Promise<void>;
+
+  /**
+   * Directly record UI-triggered tool execution messages (e.g. DnD import) into session history.
+   * - Safe recording only: NEVER triggers an LLM workflow.
+   * - Bypasses the pending queue: immediately persists to cache & DB, emitting MessageAdded events.
+   * - Use this when recording UI actions to prevent spinning loaders and pending queue pollution.
+   */
+  appendToolMessages: (messages: Message[]) => Promise<void>;
 
   /**
    * Resume a paused workflow
@@ -397,6 +406,39 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     [session?.id, setError, workflowStatus],
   );
 
+  const appendToolMessages = useCallback(
+    async (messages: Message[]) => {
+      if (!session?.id) {
+        logger.error('Cannot append tool messages: no active session');
+        return;
+      }
+
+      logger.info('Appending tool messages', {
+        sessionId: session.id,
+        count: messages.length,
+      });
+
+      try {
+        const messagesForRust: RustMessage[] = messages.map(toRustMessage);
+
+        const request: InjectMessagesRequest = {
+          sessionId: session.id,
+          messages: messagesForRust,
+        };
+
+        await safeInvoke<AgentResponse>('agent_append_tool_messages', {
+          request,
+        });
+      } catch (err) {
+        logger.error('Failed to append tool messages', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(errorMessage);
+        throw err;
+      }
+    },
+    [session?.id, setError],
+  );
+
   const submit = useCallback(
     async (message: Message) => {
       if (!session?.id) {
@@ -519,6 +561,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       retryMessage,
       updateServiceContexts,
       injectMessages,
+      appendToolMessages,
       resume: resumeSession,
     }),
     [
@@ -528,6 +571,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       retryMessage,
       updateServiceContexts,
       injectMessages,
+      appendToolMessages,
       resumeSession,
     ],
   );
