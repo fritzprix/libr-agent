@@ -106,6 +106,7 @@ export const DeliverableFileActions: React.FC<DeliverableFileActionsProps> = ({
       path: item.path,
       name: item.name || fileNameFromPath(item.path),
       size: item.size_bytes ?? undefined,
+      sessionId: activeSessionId,
     });
   };
 

@@ -10,6 +10,8 @@ import { FolderOpen, RefreshCw, X } from 'lucide-react';
 import { FileTreeNode } from './workspace-panel/FileTreeNode';
 import { useDraftWorkspacePreviewTree } from './workspace-panel/useDraftWorkspacePreviewTree';
 import { WorkspaceIsolationSettings } from './WorkspaceIsolationSettings';
+import { useOptionalAgentFilePreview } from '@/context/AgentFilePreviewContext';
+import type { FileNode } from './workspace-panel/types';
 
 interface AgentDraftWorkspacePreviewPanelProps {
   workspacePath: string;
@@ -29,8 +31,18 @@ export function AgentDraftWorkspacePreviewPanel({
   onClear,
 }: AgentDraftWorkspacePreviewPanelProps) {
   const { t } = useTranslation();
+  const filePreview = useOptionalAgentFilePreview();
   const { fileTree, loading, error, refresh, toggleDirectory } =
     useDraftWorkspacePreviewTree(workspacePath);
+
+  const handleOpenFile = (node: FileNode) => {
+    if (!filePreview || node.isDirectory) return;
+    filePreview.openFilePreview({
+      path: node.path,
+      name: node.name,
+      size: node.size ?? undefined,
+    });
+  };
 
   return (
     <div className="flex h-full w-80 flex-shrink-0 animate-in slide-in-from-left duration-300">
@@ -125,6 +137,7 @@ export function AgentDraftWorkspacePreviewPanel({
                   key={node.id}
                   node={node}
                   onToggle={toggleDirectory}
+                  onOpen={handleOpenFile}
                 />
               ))}
 

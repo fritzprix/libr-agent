@@ -37,7 +37,14 @@ vi.mock('sonner', () => ({
 function PreviewProbe() {
   const { previewFile } = useAgentFilePreview();
   if (!previewFile) return null;
-  return <div data-testid="preview-probe">{previewFile.path}</div>;
+  return (
+    <div
+      data-testid="preview-probe"
+      data-session-id={previewFile.sessionId ?? ''}
+    >
+      {previewFile.path}
+    </div>
+  );
 }
 
 function renderWithPreview(ui: ReactNode) {
@@ -75,6 +82,18 @@ describe('FileWriteActions', () => {
 
     expect(screen.getByTestId('preview-probe')).toHaveTextContent('src/notes.md');
     expect(openPathWithDefaultApp).not.toHaveBeenCalled();
+  });
+
+  it('passes sessionId to preview context when provided', () => {
+    renderWithPreview(
+      <FileWriteActions data={writeResult()} sessionId="session-xyz" />,
+    );
+
+    fireEvent.click(screen.getByTestId('tool-structured-preview-file'));
+
+    const probe = screen.getByTestId('preview-probe');
+    expect(probe).toHaveTextContent('src/notes.md');
+    expect(probe).toHaveAttribute('data-session-id', 'session-xyz');
   });
 
   it('falls back to the OS app for non-previewable files', async () => {

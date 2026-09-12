@@ -28,6 +28,7 @@ const logger = getLogger('FileWriteActions');
 
 export interface FileWriteActionsProps {
   data: WriteFileResult;
+  sessionId?: string;
 }
 
 function actionIcon(action: WriteFileResult['action']) {
@@ -52,7 +53,10 @@ function formatBytes(bytes: number | undefined): string | null {
 /**
  * Structured result view for workspace__writeFile.
  */
-export const FileWriteActions: React.FC<FileWriteActionsProps> = ({ data }) => {
+export const FileWriteActions: React.FC<FileWriteActionsProps> = ({
+  data,
+  sessionId,
+}) => {
   const { t } = useTranslation('common');
   const [isOpening, setIsOpening] = useState(false);
   const filePreview = useOptionalAgentFilePreview();
@@ -107,6 +111,7 @@ export const FileWriteActions: React.FC<FileWriteActionsProps> = ({ data }) => {
       path: data.path,
       name: fileNameFromPath(data.path),
       size: data.bytes_written,
+      sessionId,
     });
   };
 

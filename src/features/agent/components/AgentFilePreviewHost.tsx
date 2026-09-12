@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useAgentFilePreview } from '@/context/AgentFilePreviewContext';
@@ -21,9 +21,23 @@ export function AgentFilePreviewHost() {
   const { t } = useTranslation();
   const sessionId = previewFile?.sessionId ?? session?.id;
 
+  const [cachedFile, setCachedFile] = useState<FileNode | null>(null);
+
+  useEffect(() => {
+    if (previewFile) {
+      setCachedFile({
+        id: previewFile.path,
+        name: previewFile.name,
+        path: previewFile.path,
+        isDirectory: false,
+        size: previewFile.size ?? null,
+      });
+    }
+  }, [previewFile]);
+
   const file = useMemo<FileNode | null>(() => {
     if (!previewFile) {
-      return null;
+      return cachedFile;
     }
     return {
       id: previewFile.path,
@@ -32,7 +46,7 @@ export function AgentFilePreviewHost() {
       isDirectory: false,
       size: previewFile.size ?? null,
     };
-  }, [previewFile]);
+  }, [previewFile, cachedFile]);
 
   const handleOpenInDefaultApp = useCallback(
     async (filePath: string) => {
