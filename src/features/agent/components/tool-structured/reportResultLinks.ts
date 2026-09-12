@@ -1,5 +1,6 @@
 import { isSafeExternalUrl } from '../AgentMessageRenderer/utils/url';
 import {
+  canOpenInAppPreview,
   fileNameFromPath,
   isWorkspaceRelativePath,
 } from '../workspace-panel/filePreview';
@@ -42,6 +43,16 @@ function normalizeWorkspaceCandidate(href: string): string {
   // Common agent/container prefix; treat as workspace-relative when present.
   if (path.startsWith('/workspace/')) {
     path = path.slice('/workspace/'.length);
+  }
+  if (
+    path === '/@teamwork' ||
+    path.startsWith('/@teamwork/') ||
+    path === '/.libragent/teamwork' ||
+    path.startsWith('/.libragent/teamwork/') ||
+    path === '/@skills' ||
+    path.startsWith('/@skills/')
+  ) {
+    path = path.slice(1);
   }
   return path;
 }
@@ -114,10 +125,13 @@ export function classifyReportResultLink(
       (abs !== undefined && abs.length > 0 && abs === withoutFile)
     );
   });
-  if (matched?.absolute_path?.trim()) {
-    return { kind: 'host', absolutePath: matched.absolute_path.trim() };
-  }
   if (matched) {
+    if (canOpenInAppPreview({ path: matched.path, size: matched.size_bytes })) {
+      return { kind: 'workspace', path: matched.path };
+    }
+    if (matched.absolute_path?.trim()) {
+      return { kind: 'host', absolutePath: matched.absolute_path.trim() };
+    }
     return { kind: 'workspace', path: matched.path };
   }
 

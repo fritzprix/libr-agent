@@ -183,6 +183,27 @@ fn timeout_guided_error_is_informational() {
 }
 
 #[test]
+fn process_interrupted_guided_error_is_informational() {
+    let r = guided_error(
+        ErrorCategory::ProcessInterrupted,
+        "Command interrupted by SIGINT (Ctrl+C) (exit code: 130)",
+        ToolGroup::Workspace,
+    )
+    .guidance(vec![
+        "Exit 130 means the process was interrupted by SIGINT (Ctrl+C).".to_string(),
+        "Inspect stdout/stderr for cleanup evidence.".to_string(),
+    ])
+    .to_mcp_result();
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(false));
+    assert!(!text.contains('✗'));
+    assert!(text.contains("Notice:"));
+    assert!(text.contains("SIGINT"));
+    assert!(text.contains("Optional Guidance") || text.contains("Guidance"));
+}
+
+#[test]
 fn internal_guided_error_is_informational() {
     let r = guided_error(
         ErrorCategory::InternalError,

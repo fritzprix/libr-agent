@@ -56,6 +56,11 @@ impl ErrorBuilder {
     pub fn to_mcp_result(self) -> MCPResult {
         self.build().to_mcp_result()
     }
+
+    /// Convenience: Build and convert to `MCPResult` with structured content.
+    pub fn to_mcp_result_with_data(self, data: Option<serde_json::Value>) -> MCPResult {
+        self.build().to_mcp_result_with_data(data)
+    }
 }
 
 /// Canonical entrypoint for creating guided errors.

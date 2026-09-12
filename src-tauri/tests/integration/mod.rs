@@ -103,6 +103,7 @@ pub mod skill_service_import_conflict_tests;
 pub mod skills_manifest_tests;
 pub mod sqlite_url_format_tests;
 pub mod subsession_llm_inheritance_tests;
+pub mod teamwork_preview_and_export_tests;
 pub mod teamwork_scaffold_script_tests;
 pub mod teamwork_scaffold_status_tests;
 pub mod teamwork_symlink_tests;

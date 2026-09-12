@@ -172,7 +172,7 @@ export function sampleCombinatorial(
     if (message.length === 0 || seen.has(message)) {
       consecutiveMisses += 1;
       // Coupon-collector near exhaustion: allow several full passes before giving up.
-      if (consecutiveMisses >= capacity * 3) {
+      if (consecutiveMisses >= Math.max(capacity * 8, 30)) {
         break;
       }
       continue;

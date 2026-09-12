@@ -1,12 +1,7 @@
 use super::WorkspaceServer;
 use crate::mcp::builtin::utils::{path_starts_with, relative_path_under_base};
-use crate::repositories::SessionRepository;
+use crate::repositories::session_repository::SessionRepository;
 use std::path::{Path, PathBuf};
-
-const TEAMWORK_ALIAS_PREFIX: &str = "@teamwork";
-// Guard against pathological or cyclic parent-session chains while still
-// allowing deep enough org hierarchies for normal teamwork lineages.
-const TEAMWORK_PARENT_CHAIN_LIMIT: usize = 64;
 
 impl WorkspaceServer {
     pub(super) async fn get_allowed_absolute_skill_roots(
@@ -70,79 +65,14 @@ impl WorkspaceServer {
     }
 
     pub(super) fn extract_teamwork_alias_relative_path(path_str: &str) -> Option<&str> {
-        if path_str == TEAMWORK_ALIAS_PREFIX
-            || path_str == ".libragent/teamwork"
-            || path_str == ".libragent\\teamwork"
-        {
-            return Some(".");
-        }
-
-        path_str
-            .strip_prefix("@teamwork/")
-            .or_else(|| path_str.strip_prefix("@teamwork\\"))
-            .or_else(|| path_str.strip_prefix(".libragent/teamwork/"))
-            .or_else(|| path_str.strip_prefix(".libragent\\teamwork\\"))
-            .map(|suffix| {
-                if suffix.trim().is_empty() {
-                    "."
-                } else {
-                    suffix
-                }
-            })
-    }
-
-    async fn resolve_teamwork_root_session_id(&self, session_id: &str) -> Result<String, String> {
-        let Some(repo) = crate::state::try_get_session_repository() else {
-            return Ok(session_id.to_string());
-        };
-
-        let mut current = match repo
-            .get_session(session_id)
-            .await
-            .map_err(|e| format!("Failed to load session metadata: {e}"))?
-        {
-            Some(session) => session,
-            None => return Ok(session_id.to_string()),
-        };
-
-        if let Some(org_root_session_id) = current.org_root_session_id.clone() {
-            return Ok(org_root_session_id);
-        }
-
-        for _ in 0..TEAMWORK_PARENT_CHAIN_LIMIT {
-            let Some(parent_session_id) = current.parent_session_id.clone() else {
-                return Ok(current.id);
-            };
-
-            current = match repo
-                .get_session(&parent_session_id)
-                .await
-                .map_err(|e| format!("Failed to load parent session metadata: {e}"))?
-            {
-                Some(session) => session,
-                None => return Ok(parent_session_id),
-            };
-
-            if let Some(org_root_session_id) = current.org_root_session_id.clone() {
-                return Ok(org_root_session_id);
-            }
-        }
-
-        Err(format!(
-            "Failed to resolve teamwork root for session {}: parent chain exceeded {} hops or contains a cycle",
-            session_id, TEAMWORK_PARENT_CHAIN_LIMIT
-        ))
+        crate::session::extract_teamwork_alias_relative_path(path_str)
     }
 
     pub(super) async fn get_teamwork_artifact_root(
         &self,
         session_id: &str,
     ) -> Result<PathBuf, String> {
-        let root_session_id = self.resolve_teamwork_root_session_id(session_id).await?;
-        Ok(crate::session::teamwork_artifact_dir_for_session(
-            &self.session_manager,
-            &root_session_id,
-        ))
+        crate::session::resolve_teamwork_artifact_dir(&self.session_manager, session_id).await
     }
 
     pub(super) fn path_is_within_any_root(

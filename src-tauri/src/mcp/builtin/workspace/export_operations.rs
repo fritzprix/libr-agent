@@ -52,12 +52,26 @@ impl WorkspaceServer {
             .clone()
             .unwrap_or_else(|| self.session_id.clone());
 
-        let workspace_dir = self
-            .session_manager
-            .get_session_workspace_dir_by_id(&target_session_id);
-
-        let workspace_dir_canon =
-            std::fs::canonicalize(&workspace_dir).unwrap_or(workspace_dir.clone());
+        let export_roots =
+            match crate::services::file_export_service::SessionExportRoots::resolve_for_session(
+                &self.session_manager,
+                &target_session_id,
+            )
+            .await
+            {
+                Ok(roots) => roots,
+                Err(e) => {
+                    return Ok(guided_error(
+                        ErrorCategory::InternalError,
+                        format!("Failed to resolve workspace export roots: {e}"),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Ensure the session workspace exists and is accessible".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            };
 
         // Layer 2: Determine mode (Single File vs ZIP)
         // If there's exactly 1 path and it's a regular file -> Single File Export
@@ -69,8 +83,12 @@ impl WorkspaceServer {
         if paths_array.len() == 1 {
             if let Some(path_str) = paths_array[0].as_str() {
                 if let Ok(canon_check) =
-                    crate::utils::security::resolve_secure_path(&workspace_dir_canon, path_str)
-                        .await
+                    crate::services::WorkspaceService::resolve_path_with_manager(
+                        &self.session_manager,
+                        &target_session_id,
+                        path_str,
+                    )
+                    .await
                 {
                     if canon_check.is_file() {
                         is_single_file_mode = true;
@@ -109,7 +127,7 @@ impl WorkspaceServer {
         if is_single_file_mode {
             // === SINGLE FILE EXPORT ===
             let source_path = single_file_path.unwrap();
-            if is_internal_workspace_artifact_path(&workspace_dir_canon, &source_path) {
+            if is_internal_workspace_artifact_path(&export_roots.workspace_canon, &source_path) {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Internal LibrAgent temp/export artifacts cannot be exported".to_string(),
@@ -181,8 +199,12 @@ impl WorkspaceServer {
         let mut missing_files = Vec::new();
         for file_value in paths_array {
             if let Some(path_str) = file_value.as_str() {
-                match crate::utils::security::resolve_secure_path(&workspace_dir_canon, path_str)
-                    .await
+                match crate::services::WorkspaceService::resolve_path_with_manager(
+                    &self.session_manager,
+                    &target_session_id,
+                    path_str,
+                )
+                .await
                 {
                     Ok(file_path) if file_path.exists() => {}
                     _ => {
@@ -237,15 +259,17 @@ impl WorkspaceServer {
 
         for file_value in paths_array {
             if let Some(path_str) = file_value.as_str() {
-                let source_path = match crate::utils::security::resolve_secure_path(
-                    &workspace_dir_canon,
-                    path_str,
-                )
-                .await
-                {
-                    Ok(p) if p.exists() => p,
-                    _ => continue,
-                };
+                let source_path =
+                    match crate::services::WorkspaceService::resolve_path_with_manager(
+                        &self.session_manager,
+                        &target_session_id,
+                        path_str,
+                    )
+                    .await
+                    {
+                        Ok(p) if p.exists() => p,
+                        _ => continue,
+                    };
 
                 let roots: Vec<PathBuf> = if source_path.is_file() {
                     vec![source_path]
@@ -254,7 +278,10 @@ impl WorkspaceServer {
                         .into_iter()
                         .filter_map(Result::ok)
                         .filter(|e| {
-                            !is_internal_workspace_artifact_path(&workspace_dir_canon, e.path())
+                            !is_internal_workspace_artifact_path(
+                                &export_roots.workspace_canon,
+                                e.path(),
+                            )
                         })
                         .filter(|e| e.file_type().is_file())
                         .map(|e| e.into_path())
@@ -268,22 +295,11 @@ impl WorkspaceServer {
                         Ok(p) => p,
                         Err(_) => continue,
                     };
-                    if !abs_canon.starts_with(&workspace_dir_canon) {
-                        continue;
-                    }
-                    if is_internal_workspace_artifact_path(&workspace_dir_canon, &abs_canon) {
-                        continue;
-                    }
-                    let rel_path = match abs_canon.strip_prefix(&workspace_dir_canon) {
-                        Ok(p) => p,
-                        Err(_) => continue,
-                    };
-                    let archive_path = {
-                        let p = rel_path.to_string_lossy().to_string();
-                        #[cfg(target_os = "windows")]
-                        let p = p.replace('\\', "/");
-                        p
-                    };
+                    let archive_path =
+                        match export_roots.determine_archive_path(&abs_canon, Some(path_str)) {
+                            Some(p) => p,
+                            None => continue,
+                        };
 
                     if !added_archive_paths.insert(archive_path.clone()) {
                         continue;

@@ -67,8 +67,15 @@ impl WorkspaceServer {
                 // Measure duration
                 let duration_ms = execution_start.elapsed().as_millis() as u64;
 
-                // Success case - format result
                 let success = exit_code == 0;
+                let interrupted = super::super::validation::is_signal_interrupt_exit(exit_code);
+                let status = if success {
+                    "finished"
+                } else if interrupted {
+                    "interrupted"
+                } else {
+                    "failed"
+                };
 
                 info!(
                     "Persistent shell command executed: {} (session: {}, exit: {}, duration: {}ms)",
@@ -81,10 +88,21 @@ impl WorkspaceServer {
                     "stdout": stdout,
                     "stderr": stderr,
                     "cwd": cwd, // Return raw absolute path in data
-                    "status": if success { "finished" } else { "failed" },
+                    "status": status,
                     "duration_ms": duration_ms,
                     "execution_type": "persistent"
                 });
+
+                if interrupted {
+                    self.invalidate_context_cache().await;
+                    return Ok(super::shell_signal_interrupt_result(
+                        exit_code,
+                        duration_ms,
+                        &stdout,
+                        &stderr,
+                        structured_data,
+                    ));
+                }
 
                 if success {
                     // Calculate relative path for display

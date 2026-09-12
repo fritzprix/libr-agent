@@ -7,8 +7,9 @@ use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::workspace::code_execution::normalization;
 use crate::mcp::builtin::workspace::code_execution::shell::{
-    format_command_io_message, format_duration_ms,
+    format_command_io_message, format_duration_ms, shell_signal_interrupt_result,
 };
+use crate::mcp::builtin::workspace::code_execution::validation;
 use crate::mcp::builtin::workspace::{
     InteractiveShellInputType, PendingExecutionLookupError, PendingShellExecution,
     PendingShellInputResolution, WorkspaceServer, INTERACTIVE_SHELL_INPUT_MAX_BYTES,
@@ -182,12 +183,20 @@ impl WorkspaceServer {
         let redact_output = pending.input_type == InteractiveShellInputType::Password;
         let output_redacted_notice =
             "Command output was redacted because this prompt used password-mode interactive input.";
+        let interrupted = validation::is_signal_interrupt_exit(exit_code);
+        let status = if exit_code == 0 {
+            "finished"
+        } else if interrupted {
+            "interrupted"
+        } else {
+            "failed"
+        };
         let structured_data = if redact_output {
             serde_json::json!({
                 "command": pending.display_command,
                 "exit_code": exit_code,
                 "cwd": cwd,
-                "status": if exit_code == 0 { "finished" } else { "failed" },
+                "status": status,
                 "duration_ms": duration_ms,
                 "execution_type": "persistent",
                 "output_redacted": true
@@ -199,11 +208,26 @@ impl WorkspaceServer {
                 "stdout": stdout,
                 "stderr": stderr,
                 "cwd": cwd,
-                "status": if exit_code == 0 { "finished" } else { "failed" },
+                "status": status,
                 "duration_ms": duration_ms,
                 "execution_type": "persistent"
             })
         };
+
+        if interrupted {
+            let (stdout_for_msg, stderr_for_msg) = if redact_output {
+                (output_redacted_notice, "")
+            } else {
+                (stdout.as_str(), stderr.as_str())
+            };
+            return Ok(shell_signal_interrupt_result(
+                exit_code,
+                duration_ms,
+                stdout_for_msg,
+                stderr_for_msg,
+                structured_data,
+            ));
+        }
 
         if exit_code != 0 {
             let mut error_sections = Vec::new();

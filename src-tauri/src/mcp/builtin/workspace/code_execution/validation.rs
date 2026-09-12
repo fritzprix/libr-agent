@@ -415,10 +415,7 @@ pub fn shell_command_failure_guidance(
             "Check file permissions".to_string(),
             "Verify the file is a valid executable".to_string(),
         ],
-        Some(130) => vec![
-            "Command terminated by Ctrl+C (SIGINT)".to_string(),
-            "Process was interrupted by user or system".to_string(),
-        ],
+        Some(code) if is_signal_interrupt_exit(code) => shell_signal_interrupt_guidance(code),
         Some(code) => with_rewrite_loop_hint(
             vec![
                 format!("Command failed with exit code: {code}"),
@@ -436,6 +433,35 @@ pub fn shell_command_failure_guidance(
             command,
         ),
     }
+}
+
+/// Exit codes that mean the process was stopped by a common termination signal
+/// (`128 + signal`): SIGINT → 130, SIGTERM → 143.
+pub fn is_signal_interrupt_exit(exit_code: i32) -> bool {
+    signal_interrupt_label(exit_code).is_some()
+}
+
+/// Human-readable label for known signal-interrupt exit codes.
+pub fn signal_interrupt_label(exit_code: i32) -> Option<&'static str> {
+    match exit_code {
+        130 => Some("SIGINT (Ctrl+C)"),
+        143 => Some("SIGTERM"),
+        _ => None,
+    }
+}
+
+/// Guidance when a shell command ends via SIGINT/SIGTERM rather than a normal failure.
+pub fn shell_signal_interrupt_guidance(exit_code: i32) -> Vec<String> {
+    let signal = signal_interrupt_label(exit_code).unwrap_or("a termination signal");
+    vec![
+        format!(
+            "Exit {exit_code} means the process was interrupted by {signal} — often expected when testing cancellation or Ctrl+C handling."
+        ),
+        "Inspect stdout/stderr above for cleanup evidence before rewriting the program under test."
+            .to_string(),
+        "Treat this as a failed check only if the output shows unexpected behavior; do not assume the shell exit alone means the implementation is broken."
+            .to_string(),
+    ]
 }
 
 #[cfg(test)]
@@ -664,5 +690,33 @@ index 111..222 100644
             !joined.contains("rewriting the entire script"),
             "missing binaries are not rewrite-loop cases: {joined}"
         );
+    }
+
+    #[test]
+    fn test_signal_interrupt_exit_codes() {
+        assert!(is_signal_interrupt_exit(130));
+        assert!(is_signal_interrupt_exit(143));
+        assert!(!is_signal_interrupt_exit(0));
+        assert!(!is_signal_interrupt_exit(1));
+        assert!(!is_signal_interrupt_exit(127));
+        assert_eq!(signal_interrupt_label(130), Some("SIGINT (Ctrl+C)"));
+        assert_eq!(signal_interrupt_label(143), Some("SIGTERM"));
+        assert_eq!(signal_interrupt_label(1), None);
+    }
+
+    #[test]
+    fn test_shell_signal_interrupt_guidance_avoids_rewrite_pressure() {
+        let guidance = shell_signal_interrupt_guidance(130);
+        let joined = guidance.join("\n");
+        assert!(joined.contains("SIGINT"));
+        assert!(joined.contains("often expected"));
+        assert!(joined.contains("Inspect stdout/stderr"));
+        assert!(!joined.contains("General command failure"));
+    }
+
+    #[test]
+    fn test_shell_command_failure_guidance_routes_sigint() {
+        let guidance = shell_command_failure_guidance(Some(130), "", "", "python app.py");
+        assert!(guidance.iter().any(|step| step.contains("SIGINT")));
     }
 }

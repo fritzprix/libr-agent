@@ -451,24 +451,13 @@ impl UiServer {
 
         let mut deliverables = Vec::new();
         if !export_paths.is_empty() {
-            let workspace_dir = if let Some(ref sid) = session_id {
-                if let Ok(sm) = crate::session::get_session_manager() {
-                    crate::session::resolve_session_workspace_dir(sm, sid)
-                        .await
-                        .ok()
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
             for path_str in &export_paths {
-                let (exists, size_bytes, extension, name, absolute_path) = if let Some(ref ws) =
-                    workspace_dir
+                let (exists, size_bytes, extension, name, absolute_path) = if let Some(ref sid) =
+                    session_id
                 {
-                    let ws_canon = std::fs::canonicalize(ws).unwrap_or_else(|_| ws.clone());
-                    match crate::utils::security::resolve_secure_path(&ws_canon, path_str).await {
+                    match crate::services::WorkspaceService::resolve_path_for_session(sid, path_str)
+                        .await
+                    {
                         Ok(full_path) => {
                             let exists = full_path.exists();
                             let size = if exists {

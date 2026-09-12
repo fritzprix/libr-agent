@@ -42,6 +42,117 @@ pub fn teamwork_artifact_dir_for_session(
         .get_teamwork_artifact_dir_unverified(session_id)
 }
 
+pub const TEAMWORK_PARENT_CHAIN_LIMIT: usize = 64;
+
+/// Extracts the scoped relative path if the candidate matches `@teamwork` or `.libragent/teamwork`.
+pub fn extract_teamwork_alias_relative_path(path_str: &str) -> Option<&str> {
+    let trimmed = path_str.trim();
+    let stripped = trimmed
+        .strip_prefix("./")
+        .or_else(|| trimmed.strip_prefix(".\\"))
+        .or_else(|| trimmed.strip_prefix("/workspace/"))
+        .or_else(|| trimmed.strip_prefix("\\workspace\\"))
+        .or_else(|| {
+            if trimmed.starts_with("/@teamwork")
+                || trimmed.starts_with("/.libragent/teamwork")
+                || trimmed.starts_with("\\@teamwork")
+                || trimmed.starts_with("\\.libragent\\teamwork")
+            {
+                Some(&trimmed[1..])
+            } else {
+                None
+            }
+        })
+        .unwrap_or(trimmed);
+
+    if stripped == "@teamwork"
+        || stripped == ".libragent/teamwork"
+        || stripped == ".libragent\\teamwork"
+    {
+        return Some(".");
+    }
+
+    stripped
+        .strip_prefix("@teamwork/")
+        .or_else(|| stripped.strip_prefix("@teamwork\\"))
+        .or_else(|| stripped.strip_prefix(".libragent/teamwork/"))
+        .or_else(|| stripped.strip_prefix(".libragent\\teamwork\\"))
+        .map(|suffix| {
+            let s = suffix.trim();
+            if s.is_empty() {
+                "."
+            } else {
+                s
+            }
+        })
+}
+
+/// Resolves the governing root session ID for teamwork artifacts by following
+/// org root or parent session chains up to TEAMWORK_PARENT_CHAIN_LIMIT hops.
+pub async fn resolve_teamwork_root_session_id(
+    session_repo: Option<&dyn crate::repositories::SessionRepository>,
+    session_id: &str,
+) -> Result<String, String> {
+    let Some(repo) = session_repo else {
+        return Ok(session_id.to_string());
+    };
+
+    let mut current = match repo.get_session(session_id).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return Ok(session_id.to_string()),
+        Err(e) => {
+            log::warn!(
+                "Could not load session {session_id} from repository: {e}; using session_id as root"
+            );
+            return Ok(session_id.to_string());
+        }
+    };
+
+    if let Some(org_root_session_id) = current.org_root_session_id.clone() {
+        return Ok(org_root_session_id);
+    }
+
+    for _ in 0..TEAMWORK_PARENT_CHAIN_LIMIT {
+        let Some(parent_session_id) = current.parent_session_id.clone() else {
+            return Ok(current.id);
+        };
+
+        current = match repo
+            .get_session(&parent_session_id)
+            .await
+            .map_err(|e| format!("Failed to load parent session metadata: {e}"))?
+        {
+            Some(session) => session,
+            None => return Ok(parent_session_id),
+        };
+
+        if let Some(org_root_session_id) = current.org_root_session_id.clone() {
+            return Ok(org_root_session_id);
+        }
+    }
+
+    log::warn!(
+        "Teamwork root search for session {session_id} hit parent chain limit ({TEAMWORK_PARENT_CHAIN_LIMIT}); falling back to current session {}",
+        current.id
+    );
+    Ok(current.id)
+}
+
+/// Resolves the teamwork artifact directory for a given session by looking up
+/// the root session ID and computing its artifact dir path.
+pub async fn resolve_teamwork_artifact_dir(
+    session_manager: &SessionManager,
+    session_id: &str,
+) -> Result<PathBuf, String> {
+    let repo_holder = crate::state::try_get_session_repository();
+    let repo_ref = repo_holder.map(|r| r as &dyn crate::repositories::SessionRepository);
+    let root_session_id = resolve_teamwork_root_session_id(repo_ref, session_id).await?;
+    Ok(teamwork_artifact_dir_for_session(
+        session_manager,
+        &root_session_id,
+    ))
+}
+
 /// Prepare the app-local teamwork artifact directory for a governing/root session.
 ///
 /// This path is for durable teamwork scaffolding and coordination metadata only.
