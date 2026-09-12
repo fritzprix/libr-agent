@@ -51,7 +51,7 @@ impl BuiltinMCPServer for ScratchpadServer {
     }
 
     fn description(&self) -> &str {
-        "Session-isolated scratchpad: notes and thinking for the current session only (not shared with parent/child sessions)"
+        "Session-isolated scratchpad: notes and thinking for the current session only (not shared with parent/child sessions; not a shareable user deliverable — use workspace files + ui__reportResult)"
     }
 
     fn tools(&self) -> Vec<MCPTool> {
