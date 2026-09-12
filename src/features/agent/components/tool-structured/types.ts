@@ -86,8 +86,8 @@ export const ReportResultSchema = z.object({
   status: z.enum(['success', 'partial', 'blocked']),
   format: z.string().optional(),
   title: z.string().optional(),
-  criteria: z.string(),
-  proof: z.string(),
+  criteria: z.string().optional().nullable(),
+  proof: z.string().optional().nullable(),
   result: z.string(),
   deliverables: z.array(DeliverableItemSchema).optional().default([]),
 });

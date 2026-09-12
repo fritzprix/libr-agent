@@ -2,7 +2,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
+use crate::mcp::types::{MCPContent, MCPResult, ServiceContext, ServiceInfo};
 use crate::mcp::MCPTool;
 use ammonia::Builder;
 use async_trait::async_trait;
@@ -407,39 +407,9 @@ impl UiServer {
             None => return Ok(missing_param_error("result", ToolGroup::UI)),
         };
 
-        let criteria = match non_empty_string_arg(&args, "criteria") {
-            Some(v) => v,
-            None if args.get("criteria").is_some() => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    "criteria must be a non-empty string",
-                    ToolGroup::UI,
-                )
-                .with_guidance(vec![
-                    "Restate checkable acceptance criteria from the user request".to_string(),
-                    "List concrete, verifiable conditions — not vague goals".to_string(),
-                ])
-                .to_mcp_result());
-            }
-            None => return Ok(missing_param_error("criteria", ToolGroup::UI)),
-        };
-
-        let proof = match non_empty_string_arg(&args, "proof") {
-            Some(v) => v,
-            None if args.get("proof").is_some() => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    "proof must be a non-empty string",
-                    ToolGroup::UI,
-                )
-                .with_guidance(vec![
-                    "Cite verification evidence (tool observations, commands, paths)".to_string(),
-                    "For partial/blocked, list which criteria remain unmet".to_string(),
-                ])
-                .to_mcp_result());
-            }
-            None => return Ok(missing_param_error("proof", ToolGroup::UI)),
-        };
+        // Optional: only meaningful when the request has checkable criteria.
+        let criteria = non_empty_string_arg(&args, "criteria");
+        let proof = non_empty_string_arg(&args, "proof");
 
         let format = args
             .get("format")
@@ -553,15 +523,21 @@ impl UiServer {
         });
 
         // Keep `Result:\n{body}\n\nSTOP:` stable for parent checkSession extraction.
-        let summary = format!(
+        let mut summary = format!(
             "Final result reported (status={status}).\n\
-             Title: {display_title}\n\
-             Acceptance criteria:\n{criteria}\n\n\
-             Verification proof:\n{proof}\n\n\
-             Result:\n{result}\n\n\
+             Title: {display_title}\n"
+        );
+        if let Some(criteria) = criteria {
+            summary.push_str(&format!("Acceptance criteria:\n{criteria}\n\n"));
+        }
+        if let Some(proof) = proof {
+            summary.push_str(&format!("Verification proof:\n{proof}\n\n"));
+        }
+        summary.push_str(&format!(
+            "Result:\n{result}\n\n\
              STOP: Do not call any more tools. The task outcome is already delivered. \
              End your turn now with at most a one-sentence confirmation."
-        );
+        ));
 
         let structured_data = json!({
             "type": "reportResult",
@@ -574,8 +550,28 @@ impl UiServer {
             "deliverables": deliverables,
         });
 
+        // Keep a minimal MCP UI resource so the existing workflow stop path
+        // (`tool` message with Resource → settle idle / RecurringStop) still fires.
+        // The chat UI prefers structured_content (ReportResultCard) over iframe render.
+        let message_id = uuid::Uuid::new_v4().to_string();
+        let stop_marker_resource = MCPContent::Resource {
+            resource: json!({
+                "uri": format!("ui://result/{}", message_id),
+                "mimeType": "text/plain",
+                "text": "",
+            }),
+            service_info: ServiceInfo {
+                server_name: "ui".to_string(),
+                tool_name: "reportResult".to_string(),
+                backend_type: "BuiltInRust".to_string(),
+            },
+        };
+
         Ok(MCPResult {
-            content: Some(vec![crate::mcp::types::MCPContent::Text { text: summary }]),
+            content: Some(vec![
+                MCPContent::Text { text: summary },
+                stop_marker_resource,
+            ]),
             structured_content: Some(structured_data),
             is_error: Some(false),
         })

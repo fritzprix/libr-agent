@@ -350,7 +350,7 @@ fn build_stable_prefix(
     // Single golden rule — do not expand into multi-bullet coaching (dilution).
     parts.push(
         "\n\n## Core Execution Principles\n\
-         - Before concluding: restate the request's checkable acceptance criteria, verify against them, and include that proof when reporting (or state what remains unmet)."
+         - Before concluding: when the request has checkable acceptance criteria, restate and verify them and include that proof when reporting (or state what remains unmet)."
             .to_string(),
     );
 

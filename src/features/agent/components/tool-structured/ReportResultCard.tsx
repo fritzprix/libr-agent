@@ -89,38 +89,44 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
         </span>
       </div>
 
-      {/* Acceptance Criteria & Verification Proof */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-        <div className="rounded-md border border-border/70 bg-muted/40 p-2.5 space-y-1.5">
-          <div className="flex items-center gap-1.5 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">
-            <ClipboardCheck className="h-3.5 w-3.5 text-foreground" />
-            <span>
-              {t(
-                'agent.toolStructured.acceptanceCriteria',
-                'Acceptance criteria',
-              )}
-            </span>
-          </div>
-          <div className="text-foreground/90 whitespace-pre-wrap leading-relaxed font-sans text-xs">
-            {data.criteria}
-          </div>
-        </div>
+      {/* Acceptance Criteria & Verification Proof (optional) */}
+      {data.criteria || data.proof ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          {data.criteria ? (
+            <div className="rounded-md border border-border/70 bg-muted/40 p-2.5 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">
+                <ClipboardCheck className="h-3.5 w-3.5 text-foreground" />
+                <span>
+                  {t(
+                    'agent.toolStructured.acceptanceCriteria',
+                    'Acceptance criteria',
+                  )}
+                </span>
+              </div>
+              <div className="text-foreground/90 whitespace-pre-wrap leading-relaxed font-sans text-xs">
+                {data.criteria}
+              </div>
+            </div>
+          ) : null}
 
-        <div className="rounded-md border border-border/70 bg-muted/40 p-2.5 space-y-1.5">
-          <div className="flex items-center gap-1.5 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">
-            <ShieldCheck className="h-3.5 w-3.5 text-foreground" />
-            <span>
-              {t(
-                'agent.toolStructured.verificationProof',
-                'Verification proof',
-              )}
-            </span>
-          </div>
-          <div className="text-foreground/90 whitespace-pre-wrap leading-relaxed font-sans text-xs">
-            {data.proof}
-          </div>
+          {data.proof ? (
+            <div className="rounded-md border border-border/70 bg-muted/40 p-2.5 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">
+                <ShieldCheck className="h-3.5 w-3.5 text-foreground" />
+                <span>
+                  {t(
+                    'agent.toolStructured.verificationProof',
+                    'Verification proof',
+                  )}
+                </span>
+              </div>
+              <div className="text-foreground/90 whitespace-pre-wrap leading-relaxed font-sans text-xs">
+                {data.proof}
+              </div>
+            </div>
+          ) : null}
         </div>
-      </div>
+      ) : null}
 
       {/* Result Markdown Content */}
       <div className="space-y-1.5 pt-1">

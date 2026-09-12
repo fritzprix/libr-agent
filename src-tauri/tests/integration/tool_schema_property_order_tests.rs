@@ -94,7 +94,7 @@ fn report_result_schema_property_order_puts_result_last() {
 }
 
 #[test]
-fn report_result_requires_criteria_and_proof_fields() {
+fn report_result_treats_criteria_and_proof_as_optional() {
     use tauri_mcp_agent_lib::mcp::builtin::ui::tools::report_result_tool;
     use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
 
@@ -102,7 +102,12 @@ fn report_result_requires_criteria_and_proof_fields() {
     let description = tool.description.as_str();
     assert!(
         description.contains("`criteria`") && description.contains("`proof`"),
-        "reportResult must instruct criteria + proof: {description}"
+        "reportResult should still document optional criteria/proof: {description}"
+    );
+    assert!(
+        description.contains("not objectively verifiable")
+            || description.contains("Skip both when"),
+        "reportResult must allow omitting criteria/proof when unverifiable: {description}"
     );
     assert!(
         !description.contains("syntax-checked"),
@@ -116,10 +121,14 @@ fn report_result_requires_criteria_and_proof_fields() {
     else {
         panic!("reportResult schema should declare required fields");
     };
-    for field in ["criteria", "proof", "result"] {
+    assert!(
+        required.iter().any(|value| value == "result"),
+        "reportResult must require `result`: {required:?}"
+    );
+    for field in ["criteria", "proof"] {
         assert!(
-            required.iter().any(|value| value == field),
-            "reportResult must require `{field}`: {required:?}"
+            !required.iter().any(|value| value == field),
+            "reportResult must not require `{field}`: {required:?}"
         );
     }
 }

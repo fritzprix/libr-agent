@@ -122,12 +122,21 @@ describe('tool-structured types', () => {
     expect(valid?.deliverables).toHaveLength(1);
     expect(valid?.deliverables[0].name).toBe('out.pdf');
 
-    // Missing required criteria or proof
+    // Missing required result
     expect(
       parseReportResult({
         status: 'success',
-        result: 'missing criteria and proof',
+        criteria: 'optional',
+        proof: 'optional',
       }),
     ).toBeNull();
+
+    // criteria/proof are optional
+    expect(
+      parseReportResult({
+        status: 'success',
+        result: 'plain outcome without verification',
+      }),
+    ).not.toBeNull();
   });
 });

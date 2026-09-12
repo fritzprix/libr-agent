@@ -5,7 +5,11 @@
  */
 
 /** Canonical execution mode values shared with the Rust backend and SQLite schema */
-export const EXECUTION_MODE_VALUES = ['normal', 'yolo', 'unsafe'] as const;
+export const EXECUTION_MODE_VALUES = [
+  'normal',
+  'yolo',
+  'unsafe',
+] as const;
 
 export type ExecutionMode = (typeof EXECUTION_MODE_VALUES)[number];
 

@@ -336,8 +336,24 @@ async fn report_result_renders_and_instructs_stop() {
     let content = result.content.expect("reportResult should return content");
     assert_eq!(
         content.len(),
-        1,
-        "reportResult should only return text content"
+        2,
+        "reportResult should return text summary + idle-stop resource marker"
+    );
+    assert!(
+        content
+            .iter()
+            .any(|item| matches!(item, MCPContent::Text { .. })),
+        "reportResult must include text summary"
+    );
+    let resource = content.iter().find_map(|item| match item {
+        MCPContent::Resource { resource, .. } => Some(resource),
+        _ => None,
+    });
+    let resource = resource.expect("reportResult must include Resource stop marker");
+    let uri = resource["uri"].as_str().unwrap_or("");
+    assert!(
+        uri.starts_with("ui://result/"),
+        "stop-marker URI should use ui://result/: {uri}"
     );
 
     let structured = result
@@ -411,46 +427,47 @@ async fn report_result_with_export_paths_populates_deliverables() {
 }
 
 #[tokio::test]
-async fn report_result_rejects_missing_criteria_or_proof() {
+async fn report_result_allows_omitting_criteria_and_proof() {
     let server = UiServer::new();
 
-    let missing_proof = server
+    let result = server
         .call_tool(
             "reportResult",
             json!({
                 "status": "success",
-                "criteria": "- answer file written",
-                "result": "done"
+                "result": "Summarized the article for the user."
             }),
             None,
         )
         .await
-        .expect("call should return guided error");
-    assert_eq!(missing_proof.is_error, Some(true));
-    let missing_proof_text = extract_text(&missing_proof);
+        .expect("reportResult without criteria/proof should succeed");
+    assert_eq!(result.is_error, Some(false));
+
+    let text = extract_text(&result);
     assert!(
-        missing_proof_text.contains("proof"),
-        "missing proof must be rejected: {missing_proof_text}"
+        !text.contains("Acceptance criteria:"),
+        "summary should omit empty criteria section: {text}"
+    );
+    assert!(
+        !text.contains("Verification proof:"),
+        "summary should omit empty proof section: {text}"
+    );
+    assert!(
+        text.contains("Result:\nSummarized the article for the user."),
+        "summary must keep Result body extractable: {text}"
     );
 
-    let empty_criteria = server
-        .call_tool(
-            "reportResult",
-            json!({
-                "status": "success",
-                "criteria": "   ",
-                "proof": "readFile ok",
-                "result": "done"
-            }),
-            None,
-        )
-        .await
-        .expect("call should return guided error");
-    assert_eq!(empty_criteria.is_error, Some(true));
-    let empty_criteria_text = extract_text(&empty_criteria);
+    let structured = result
+        .structured_content
+        .expect("structured_content expected");
     assert!(
-        empty_criteria_text.contains("criteria"),
-        "empty criteria must be rejected: {empty_criteria_text}"
+        structured.get("criteria").is_none()
+            || structured.get("criteria").is_some_and(|v| v.is_null()),
+        "criteria should be absent/null when omitted: {structured}"
+    );
+    assert!(
+        structured.get("proof").is_none() || structured.get("proof").is_some_and(|v| v.is_null()),
+        "proof should be absent/null when omitted: {structured}"
     );
 }
 
