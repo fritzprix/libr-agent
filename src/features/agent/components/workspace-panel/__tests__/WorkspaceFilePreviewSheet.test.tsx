@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import { WorkspaceFilePreviewSheet } from '../WorkspaceFilePreviewSheet';
@@ -292,7 +292,7 @@ describe('WorkspaceFilePreviewSheet', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('src/utils/math.ts')).toBeInTheDocument();
+      expect(screen.getByTestId('path-breadcrumb')).toBeInTheDocument();
     });
 
     const copyPathBtn = screen.getByRole('button', { name: /Copy file path/i });
@@ -367,5 +367,126 @@ describe('WorkspaceFilePreviewSheet', () => {
     fireEvent.click(openBtns[0]);
 
     expect(mockOpenWorkspaceFileWithDefaultApp).toHaveBeenCalledWith('corrupt.txt');
+  });
+
+  it('renders safe markdown links as anchors and sanitizes unsafe links as spans', async () => {
+    mockReadWorkspaceFileContent.mockResolvedValueOnce({
+      content: `
+[Safe HTTPS](https://example.com/docs)
+[Safe Mail](mailto:test@example.com)
+[Unsafe JS](javascript:alert(1))
+[Unsafe Data](data:text/html,<script>alert(1)</script>)
+[Unsafe Scheme Relative](//evil.com/xss)
+`,
+      isBinary: false,
+      size: 100,
+      mimeType: 'text/markdown',
+    });
+
+    render(
+      <WorkspaceFilePreviewSheet
+        file={defaultFile}
+        isOpen={true}
+        onClose={vi.fn()}
+        onOpenInDefaultApp={mockOpenWorkspaceFileWithDefaultApp}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Safe HTTPS')).toBeInTheDocument();
+    });
+
+    const safeHttpsLink = screen.getByText('Safe HTTPS');
+    expect(safeHttpsLink.tagName.toLowerCase()).toBe('a');
+    expect(safeHttpsLink).toHaveAttribute('href', 'https://example.com/docs');
+    expect(safeHttpsLink).toHaveAttribute('target', '_blank');
+
+    const safeMailLink = screen.getByText('Safe Mail');
+    expect(safeMailLink.tagName.toLowerCase()).toBe('a');
+    expect(safeMailLink).toHaveAttribute('href', 'mailto:test@example.com');
+
+    const unsafeJsLink = screen.getByText('Unsafe JS');
+    expect(unsafeJsLink.tagName.toLowerCase()).toBe('span');
+    expect(unsafeJsLink).not.toHaveAttribute('href');
+
+    const unsafeDataLink = screen.getByText('Unsafe Data');
+    expect(unsafeDataLink.tagName.toLowerCase()).toBe('span');
+    expect(unsafeDataLink).not.toHaveAttribute('href');
+
+    const unsafeSchemeRelativeLink = screen.getByText('Unsafe Scheme Relative');
+    expect(unsafeSchemeRelativeLink.tagName.toLowerCase()).toBe('span');
+    expect(unsafeSchemeRelativeLink).not.toHaveAttribute('href');
+  });
+
+  it('retains displayed content during exit transition when file becomes null and isOpen becomes false', async () => {
+    mockReadWorkspaceFileContent.mockResolvedValueOnce({
+      content: '# Preserved Markdown Content',
+      isBinary: false,
+      size: 30,
+      mimeType: 'text/markdown',
+    });
+
+    const { rerender } = render(
+      <WorkspaceFilePreviewSheet
+        file={defaultFile}
+        isOpen={true}
+        onClose={vi.fn()}
+        onOpenInDefaultApp={mockOpenWorkspaceFileWithDefaultApp}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Preserved Markdown Content')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'test.md' })).toBeInTheDocument();
+    });
+
+    // When caller clears file before/during sheet dismiss, activeFile retains displayedFile
+    rerender(
+      <WorkspaceFilePreviewSheet
+        file={null}
+        isOpen={true}
+        onClose={vi.fn()}
+        onOpenInDefaultApp={mockOpenWorkspaceFileWithDefaultApp}
+      />,
+    );
+
+    // activeFile retains displayedFile so sheet content does not abruptly vanish
+    expect(screen.getByText('Preserved Markdown Content')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'test.md' })).toBeInTheDocument();
+  });
+
+  it('renders path as a segmented breadcrumb navigation', async () => {
+    const deeplyNestedFile: FileNode = {
+      id: 'src/components/ui/button.tsx',
+      name: 'button.tsx',
+      path: 'src/components/ui/button.tsx',
+      isDirectory: false,
+    };
+
+    mockReadWorkspaceFileContent.mockResolvedValueOnce({
+      content: 'export const Button = () => null;',
+      isBinary: false,
+      size: 33,
+      mimeType: 'text/typescript',
+    });
+
+    render(
+      <WorkspaceFilePreviewSheet
+        file={deeplyNestedFile}
+        isOpen={true}
+        onClose={vi.fn()}
+        onOpenInDefaultApp={mockOpenWorkspaceFileWithDefaultApp}
+      />,
+    );
+
+    await waitFor(() => {
+      const breadcrumb = screen.getByTestId('path-breadcrumb');
+      expect(breadcrumb).toBeInTheDocument();
+      expect(breadcrumb).toHaveAttribute('title', 'src/components/ui/button.tsx');
+      expect(within(breadcrumb).getByText('src')).toBeInTheDocument();
+      expect(within(breadcrumb).getByText('components')).toBeInTheDocument();
+      expect(within(breadcrumb).getByText('ui')).toBeInTheDocument();
+      expect(within(breadcrumb).getByText('button.tsx')).toBeInTheDocument();
+    });
   });
 });

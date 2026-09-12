@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -71,7 +71,7 @@ export const WorkspaceFilePreviewSheet = ({
     }
   }, [file]);
 
-  const activeFile = file ?? (isOpen ? null : displayedFile);
+  const activeFile = file ?? displayedFile;
 
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [loading, setLoading] = useState(false);
@@ -85,10 +85,20 @@ export const WorkspaceFilePreviewSheet = ({
     height: number;
   } | null>(null);
 
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyPathTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      if (copyPathTimeoutRef.current) clearTimeout(copyPathTimeoutRef.current);
+    };
+  }, []);
+
   // Reset states and fetch when file changes or sheet opens
   useEffect(() => {
     if (!isOpen || !activeFile || activeFile.isDirectory) {
-      if (!isOpen && !file) {
+      if (!isOpen) {
         setIsCopied(false);
         setIsPathCopied(false);
       }
@@ -103,28 +113,31 @@ export const WorkspaceFilePreviewSheet = ({
     setHtmlMode('preview');
     setImageDimensions(null);
 
-    readWorkspaceFileContent(activeFile.path, sessionId)
-      .then((res) => {
-        if (!isCancelled) {
-          setContent(res);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!isCancelled) {
-          const message =
-            err instanceof Error
-              ? err.message
-              : String(err ?? 'Failed to load file');
-          setError(message);
-          setLoading(false);
-        }
-      });
+    const promise = readWorkspaceFileContent(activeFile.path, sessionId);
+    if (promise && typeof promise.then === 'function') {
+      promise
+        .then((res) => {
+          if (!isCancelled) {
+            setContent(res);
+            setLoading(false);
+          }
+        })
+        .catch((err) => {
+          if (!isCancelled) {
+            const message =
+              err instanceof Error
+                ? err.message
+                : String(err ?? 'Failed to load file');
+            setError(message);
+            setLoading(false);
+          }
+        });
+    }
 
     return () => {
       isCancelled = true;
     };
-  }, [activeFile?.path, sessionId, isOpen, readWorkspaceFileContent, file]);
+  }, [activeFile?.path, sessionId, isOpen, readWorkspaceFileContent]);
 
   const ext = useMemo(
     () => (activeFile ? getFileExtension(activeFile.name) : ''),
@@ -142,6 +155,11 @@ export const WorkspaceFilePreviewSheet = ({
     [activeFile],
   );
 
+  const pathSegments = useMemo(() => {
+    if (!activeFile?.path) return [];
+    return activeFile.path.replace(/\\/g, '/').split('/').filter(Boolean);
+  }, [activeFile?.path]);
+
   const handleCopy = useCallback(async () => {
     if (content?.content === undefined || content?.content === null) return;
     try {
@@ -150,7 +168,8 @@ export const WorkspaceFilePreviewSheet = ({
       toast.success(
         t('agent.workspace.contentCopied', 'Content copied to clipboard'),
       );
-      setTimeout(() => setIsCopied(false), 2000);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => setIsCopied(false), 2000);
     } catch {
       toast.error('Failed to copy content to clipboard');
     }
@@ -164,7 +183,11 @@ export const WorkspaceFilePreviewSheet = ({
       toast.success(
         t('agent.workspace.pathCopied', 'File path copied to clipboard'),
       );
-      setTimeout(() => setIsPathCopied(false), 2000);
+      if (copyPathTimeoutRef.current) clearTimeout(copyPathTimeoutRef.current);
+      copyPathTimeoutRef.current = setTimeout(
+        () => setIsPathCopied(false),
+        2000,
+      );
     } catch {
       toast.error('Failed to copy file path to clipboard');
     }
@@ -227,10 +250,39 @@ export const WorkspaceFilePreviewSheet = ({
               )}
             </div>
             {activeFile.path && (
-              <div className="flex items-center gap-1 mt-0.5 text-[11px] text-muted-foreground font-mono">
-                <span className="truncate" title={activeFile.path}>
-                  {activeFile.path}
-                </span>
+              <div className="flex items-center gap-1 mt-0.5 text-[11px] text-muted-foreground font-mono min-w-0">
+                <nav
+                  aria-label="Breadcrumb"
+                  data-testid="path-breadcrumb"
+                  className="flex items-center gap-1 truncate text-[11px] text-muted-foreground font-mono min-w-0"
+                  title={activeFile.path}
+                >
+                  {pathSegments.map((segment, idx) => {
+                    const isLast = idx === pathSegments.length - 1;
+                    return (
+                      <span
+                        key={`${segment}-${idx}`}
+                        className="inline-flex items-center gap-1 truncate"
+                      >
+                        {idx > 0 && (
+                          <span className="opacity-40 shrink-0 select-none">
+                            /
+                          </span>
+                        )}
+                        <span
+                          className={cn(
+                            'truncate',
+                            isLast
+                              ? 'text-foreground font-medium'
+                              : 'hover:text-foreground transition-colors',
+                          )}
+                        >
+                          {segment}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </nav>
                 <button
                   type="button"
                   onClick={handleCopyPath}
@@ -414,6 +466,9 @@ export const WorkspaceFilePreviewSheet = ({
               {isHtml && !content.isBinary && (
                 <div className="flex-1 w-full h-full overflow-hidden">
                   {htmlMode === 'preview' ? (
+                    /* Security boundary: sandbox="allow-scripts" enables interactive HTML charts/visualizations
+                       (e.g. Mermaid, Plotly) generated by the agent. allow-same-origin is intentionally excluded
+                       so script execution cannot access local origins, cookies, parent window DOM, or Tauri IPC bridges. */
                     <iframe
                       srcDoc={content.content}
                       sandbox="allow-scripts"
