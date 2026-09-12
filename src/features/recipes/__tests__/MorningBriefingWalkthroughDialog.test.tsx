@@ -17,6 +17,19 @@ const mocks = vi.hoisted(() => ({
   updateScheduledTask: vi.fn(),
   safeInvoke: vi.fn(),
   listMCPServerPresets: vi.fn(),
+  navigateToAppWizard: vi.fn(),
+  runtime: {
+    isNpxReady: true,
+    loading: false,
+    error: null as string | null,
+    probe: {
+      node: true,
+      npx: true,
+      python: true,
+      uv: true,
+    },
+    refresh: vi.fn(),
+  },
   settings: {
     serviceConfigs: {
       openai: { apiKey: 'test-key' },
@@ -66,9 +79,14 @@ vi.mock('../hooks/useMCPServerActions', () => ({
   }),
 }));
 
+vi.mock('@/features/agent/hooks/useRuntimeReadiness', () => ({
+  useRuntimeReadiness: () => mocks.runtime,
+}));
+
 vi.mock('@/lib/backend/assistants', () => ({
   createAssistant: (...args: unknown[]) => mocks.createAssistant(...args),
   updateAssistant: (...args: unknown[]) => mocks.updateAssistant(...args),
+  getAssistant: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('@/lib/backend/scheduled-tasks', () => ({
@@ -84,6 +102,12 @@ vi.mock('@/lib/backend/core', () => ({
 
 vi.mock('@/lib/backend/mcp-server-config', () => ({
   listMCPServerPresets: () => mocks.listMCPServerPresets(),
+}));
+
+vi.mock('@/features/agent/utils/openAppWizard', () => ({
+  APP_WIZARD_ONBOARDING_PROMPT: 'Check Node.js',
+  navigateToAppWizard: (...args: unknown[]) =>
+    mocks.navigateToAppWizard(...args),
 }));
 
 function createMemoryStorage() {
@@ -128,10 +152,24 @@ describe('MorningBriefingWalkthroughDialog', () => {
     }));
     mocks.createScheduledTask.mockResolvedValue({ id: 'task-1' });
     mocks.updateScheduledTask.mockResolvedValue({ id: 'task-1' });
+    mocks.runtime = {
+      isNpxReady: true,
+      loading: false,
+      error: null,
+      probe: {
+        node: true,
+        npx: true,
+        python: true,
+        uv: true,
+      },
+      refresh: vi.fn(),
+    };
+    mocks.navigateToAppWizard.mockResolvedValue(undefined);
     mocks.safeInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'list_mcp_server_configs') return [];
       if (cmd === 'list_assistants') return [];
       if (cmd === 'list_scheduled_tasks') return [];
+      if (cmd === 'probe_mcp_server') return [];
       return null;
     });
     mocks.listMCPServerPresets.mockResolvedValue([
@@ -158,7 +196,7 @@ describe('MorningBriefingWalkthroughDialog', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders modal with header and all sections when open', () => {
+  it('renders modal with header and all sections when open', async () => {
     render(
       <MemoryRouter>
         <MorningBriefingWalkthroughDialog
@@ -172,6 +210,11 @@ describe('MorningBriefingWalkthroughDialog', () => {
       screen.getByText('🌅 모닝 테크 & 금융 브리핑 세팅 (Morning Briefing Setup)'),
     ).toBeInTheDocument();
     expect(screen.getByText('Step 1 · AI 모델 설정 확인')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText('Step 1.5 · 런타임 환경 (Node.js / npx)'),
+      ).toBeInTheDocument();
+    });
     expect(screen.getByText('Step 2 · 무료 확장 도구 설치')).toBeInTheDocument();
     expect(
       screen.getByText('Step 3 · 비서 및 자동 실행 스케줄'),
@@ -183,7 +226,7 @@ describe('MorningBriefingWalkthroughDialog', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows configured status badge when AI providers exist', () => {
+  it('shows configured status badge when AI providers exist', async () => {
     render(
       <MemoryRouter>
         <MorningBriefingWalkthroughDialog
@@ -194,6 +237,9 @@ describe('MorningBriefingWalkthroughDialog', () => {
     );
 
     expect(screen.getByText('연동 완료')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('준비됨')).toBeInTheDocument();
+    });
   });
 
   it('shows alert banner and "설정으로 이동" button when no AI provider is configured', () => {
@@ -279,8 +325,11 @@ describe('MorningBriefingWalkthroughDialog', () => {
       </MemoryRouter>,
     );
 
-    const submitButton = screen.getByRole('button', {
+    const submitButton = await screen.findByRole('button', {
       name: /자동 설정 & 지금 브리핑 받아보기/i,
+    });
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
     });
 
     fireEvent.click(submitButton);
@@ -294,6 +343,14 @@ describe('MorningBriefingWalkthroughDialog', () => {
       expect(mocks.saveServer).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'yahoo-finance' }),
       );
+
+      // 1b. Probes installed servers before success
+      expect(mocks.safeInvoke).toHaveBeenCalledWith('probe_mcp_server', {
+        serverId: 'saved-hn',
+      });
+      expect(mocks.safeInvoke).toHaveBeenCalledWith('probe_mcp_server', {
+        serverId: 'saved-yahoo-finance',
+      });
 
       // 2. Creates assistant with installed server ids
       expect(mocks.createAssistant).toHaveBeenCalledWith(
@@ -338,6 +395,74 @@ describe('MorningBriefingWalkthroughDialog', () => {
         ),
       );
     });
+  });
+
+  it('disables setup and does not create resources when npx is missing', async () => {
+    mocks.runtime = {
+      ...mocks.runtime,
+      isNpxReady: false,
+      probe: {
+        node: false,
+        npx: false,
+        python: false,
+        uv: false,
+      },
+    };
+
+    render(
+      <MemoryRouter>
+        <MorningBriefingWalkthroughDialog
+          open={true}
+          onOpenChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('설치 필요')).toBeInTheDocument();
+    });
+
+    const submitButton = screen.getByRole('button', {
+      name: /자동 설정 & 지금 브리핑 받아보기/i,
+    });
+    expect(submitButton).toBeDisabled();
+    expect(mocks.createAssistant).not.toHaveBeenCalled();
+  });
+
+  it('does not toast success when MCP probe fails after save', async () => {
+    mocks.safeInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'list_mcp_server_configs') return [];
+      if (cmd === 'list_assistants') return [];
+      if (cmd === 'list_scheduled_tasks') return [];
+      if (cmd === 'probe_mcp_server') {
+        throw new Error('npx: command not found');
+      }
+      return null;
+    });
+
+    render(
+      <MemoryRouter>
+        <MorningBriefingWalkthroughDialog
+          open={true}
+          onOpenChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    const submitButton = await screen.findByRole('button', {
+      name: /자동 설정 & 지금 브리핑 받아보기/i,
+    });
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
+    });
+
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(mocks.toastError).toHaveBeenCalled();
+    });
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.createAssistant).not.toHaveBeenCalled();
   });
 
   it('disables the action button and prevents setup when no AI provider is configured', async () => {
@@ -390,6 +515,7 @@ describe('MorningBriefingWalkthroughDialog', () => {
           },
         ];
       }
+      if (cmd === 'probe_mcp_server') return [];
       return null;
     });
 
@@ -404,8 +530,11 @@ describe('MorningBriefingWalkthroughDialog', () => {
       </MemoryRouter>,
     );
 
-    const submitButton = screen.getByRole('button', {
+    const submitButton = await screen.findByRole('button', {
       name: /자동 설정 & 지금 브리핑 받아보기/i,
+    });
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
     });
 
     fireEvent.click(submitButton);
@@ -459,8 +588,11 @@ describe('MorningBriefingWalkthroughDialog', () => {
       </MemoryRouter>,
     );
 
-    const submitButton = screen.getByRole('button', {
+    const submitButton = await screen.findByRole('button', {
       name: /자동 설정 & 지금 브리핑 받아보기/i,
+    });
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
     });
 
     fireEvent.click(submitButton);

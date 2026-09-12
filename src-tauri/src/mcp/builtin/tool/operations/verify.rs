@@ -99,7 +99,7 @@ pub async fn verify_server(
                 result_text,
                 vec![
                     "Use tool__listServers({\"availability\":\"session\"}) to see tools callable in this session.".to_string(),
-                    "agent__updateAgent attaches servers to an agent template for future sessions only; start a new session (or agent__startSession) to run with that access.".to_string(),
+                    "agent__updateAgent attaches servers to an agent template for future sessions only; spawn a new session with agent__spawnSession(configId=...) to run with that access.".to_string(),
                 ],
             )
             .to_mcp_result_with_data(Some(json!({

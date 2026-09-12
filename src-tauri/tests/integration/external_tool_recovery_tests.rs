@@ -213,7 +213,7 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
         "guidance must state updateAgent cannot change the current session: {text}"
     );
     assert!(
-        text.contains("agent__startSession"),
+        text.contains("agent__spawnSession"),
         "guidance should explicitly mention delegation as a recovery path: {text}"
     );
 }
@@ -307,10 +307,12 @@ async fn external_call_reconfigures_existing_builtin_only_proxy() {
         "lazy builtin proxy should not yet have configured external servers"
     );
 
+    // Session load slugifies hyphens so Gemini-safe tool prefixes stay valid
+    // (`grok-configured` → `grok_configured`). The DB display name is unchanged.
     let response = manager
         .call_tool(
             session_id,
-            "grok-configured__search_web",
+            "grok_configured__search_web",
             json!({ "query": "S&P 500 gold oil price May 2026" }),
         )
         .await
@@ -326,7 +328,7 @@ async fn external_call_reconfigures_existing_builtin_only_proxy() {
     assert!(
         configured_servers
             .iter()
-            .any(|server_name| server_name == "grok-configured"),
+            .any(|server_name| server_name == "grok_configured"),
         "external call should replace builtin-only proxy with config-aware proxy containing attached external servers"
     );
     assert!(

@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Loader2,
 } from 'lucide-react';
+import { SessionExportMenu } from './SessionExportMenu';
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
@@ -562,6 +563,10 @@ export function SessionCard({
                 : t('sessionHistory.actions.bookmark', 'Bookmark')}
             </span>
           </Button>
+          <SessionExportMenu
+            sessionId={session.id}
+            className="h-8 w-8 shrink-0"
+          />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

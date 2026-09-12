@@ -17,13 +17,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Copy, Loader2, PanelRight } from 'lucide-react';
+import { PanelRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { useClipboard } from '@/hooks/useClipboard';
-import { messagesToMarkdown } from '@/lib/message-utils';
 import { HeaderStatusBadges } from './HeaderStatusBadges';
 import { PanelAttentionDot } from './PanelAttentionDot';
+import { SessionExportMenu } from './SessionExportMenu';
 
 interface AgentChatHeaderProps {
   children?: React.ReactNode;
@@ -43,11 +42,9 @@ export function AgentChatHeader({
   const shellOpen = isShellOpen();
   const shellAttention = AGENT_PANEL_IDS.some((id) => hasPanelAttention(id));
   const { messages } = useAgentChat();
-  const [isCopying, setIsCopying] = useState(false);
   const [bookmarkOverride, setBookmarkOverride] = useState<
     boolean | undefined
   >();
-  const { copyToClipboard } = useClipboard();
   const activeSessionMetadata = useMemo(() => {
     if (!session?.id) {
       return undefined;
@@ -66,28 +63,6 @@ export function AgentChatHeader({
   useEffect(() => {
     setBookmarkOverride(undefined);
   }, [activeSessionMetadata?.isBookmarked, session?.id, session?.isBookmarked]);
-
-  const handleCopyMessages = async () => {
-    if (isCopying) return;
-    setIsCopying(true);
-    try {
-      const { content, truncated } = messagesToMarkdown(messages);
-      await copyToClipboard(content);
-      toast.success(
-        truncated
-          ? t('agent.header.copySuccessPartial')
-          : t('agent.header.copySuccess'),
-      );
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'NotAllowedError') {
-        toast.error(t('agent.header.copyDenied'));
-      } else {
-        toast.error(t('agent.header.copyError'));
-      }
-    } finally {
-      setIsCopying(false);
-    }
-  };
 
   const handleToggleBookmark = async () => {
     if (!session?.id) {
@@ -115,26 +90,13 @@ export function AgentChatHeader({
       }}
     >
       {children}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleCopyMessages}
-            disabled={isCopying}
-            aria-label={t('agent.header.copyAria')}
-            className="h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {isCopying ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Copy className="h-4 w-4" />
-            )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>
-      </Tooltip>
+      {session?.id ? (
+        <SessionExportMenu
+          sessionId={session.id}
+          messages={messages}
+          showClipboardCopy
+        />
+      ) : null}
 
       <HeaderStatusBadges />
 

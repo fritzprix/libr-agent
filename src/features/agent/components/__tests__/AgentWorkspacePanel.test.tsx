@@ -1,5 +1,8 @@
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { AgentWorkspacePanel } from '../AgentWorkspacePanel';
+import { AgentFilePreviewHost } from '../AgentFilePreviewHost';
+import { AgentFilePreviewProvider } from '@/context/AgentFilePreviewContext';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -41,6 +44,12 @@ const mocks = vi.hoisted(() => ({
 const mockRustBackend = {
   listWorkspaceFiles: vi.fn().mockResolvedValue([]),
   openWorkspaceFileWithDefaultApp: vi.fn(),
+  readWorkspaceFileContent: vi.fn().mockResolvedValue({
+    content: 'test content',
+    isBinary: false,
+    size: 12,
+    mimeType: 'text/markdown',
+  }),
   agentCallBuiltinTool: vi.fn(),
   getWorkspaceOverride: vi.fn().mockResolvedValue(''),
   setWorkspaceOverride: vi.fn(),
@@ -51,6 +60,7 @@ const mockRustBackend = {
 const mockChatActions = {
   submit: vi.fn(),
   injectMessages: vi.fn(),
+  appendToolMessages: vi.fn(),
 };
 
 // Mock dependencies
@@ -131,6 +141,17 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+function renderWorkspacePanel(
+  ui: ReactElement = <AgentWorkspacePanel />,
+) {
+  return render(
+    <AgentFilePreviewProvider>
+      {ui}
+      <AgentFilePreviewHost />
+    </AgentFilePreviewProvider>,
+  );
+}
+
 describe('AgentWorkspacePanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -153,7 +174,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('skips DnD subscription while hidden', async () => {
-    render(<AgentWorkspacePanel isVisible={false} />);
+    renderWorkspacePanel(<AgentWorkspacePanel isVisible={false} />);
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -165,7 +186,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('renders accessibility labels correctly', async () => {
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     // Wait for initial load
     await waitFor(() => {
@@ -190,7 +211,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('triggers file upload dialog on click', async () => {
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -210,7 +231,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('triggers file upload dialog on Enter key', async () => {
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -230,7 +251,7 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('triggers file upload dialog on Space key', async () => {
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -253,7 +274,7 @@ describe('AgentWorkspacePanel', () => {
     vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
     vi.mocked(backend.checkDroppedPathType).mockResolvedValue('directory');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', { paths: ['C:\\workspace'] });
@@ -273,7 +294,7 @@ describe('AgentWorkspacePanel', () => {
     vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
     vi.mocked(backend.checkDroppedPathType).mockResolvedValue('file');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', { paths: ['C:\\workspace\\notes.md'] });
@@ -292,6 +313,17 @@ describe('AgentWorkspacePanel', () => {
           ],
         }),
       );
+      expect(mockChatActions.appendToolMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          role: 'assistant',
+          source: 'ui',
+        }),
+        expect.objectContaining({
+          role: 'tool',
+          source: 'ui',
+        }),
+      ]);
+      expect(mockChatActions.injectMessages).not.toHaveBeenCalled();
     });
 
     expect(backend.setWorkspaceOverride).not.toHaveBeenCalled();
@@ -301,7 +333,7 @@ describe('AgentWorkspacePanel', () => {
     vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
     vi.mocked(backend.checkDroppedPathType).mockResolvedValue('file');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', {
@@ -341,7 +373,7 @@ describe('AgentWorkspacePanel', () => {
       .mockResolvedValueOnce('file')
       .mockResolvedValueOnce('directory');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', {
@@ -365,7 +397,7 @@ describe('AgentWorkspacePanel', () => {
       .mockResolvedValueOnce('directory')
       .mockResolvedValueOnce('directory');
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await act(async () => {
       latestHandler?.('drop', {
@@ -390,7 +422,7 @@ describe('AgentWorkspacePanel', () => {
     });
     vi.mocked(backend.openWorkspaceInExplorer).mockReturnValue(openingPromise);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
@@ -437,7 +469,7 @@ describe('AgentWorkspacePanel', () => {
       { name: 'src', isDirectory: true },
     ]);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getByText('src')).toBeInTheDocument();
@@ -473,7 +505,7 @@ describe('AgentWorkspacePanel', () => {
       { name: 'src', isDirectory: true },
     ]);
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getByText('src')).toBeInTheDocument();
@@ -493,6 +525,36 @@ describe('AgentWorkspacePanel', () => {
     expect(mockRustBackend.agentCallBuiltinTool).not.toHaveBeenCalled();
   });
 
+  it('delegates folder drops on root-level files to workspace override', async () => {
+    vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
+    vi.mocked(backend.checkDroppedPathType).mockResolvedValue('directory');
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      { name: 'README.md', isDirectory: false },
+    ]);
+
+    renderWorkspacePanel();
+
+    await waitFor(() => {
+      expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fileNodeHandler?.('drop', {
+        paths: ['/home/user/new-workspace'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(backend.setWorkspaceOverride).toHaveBeenCalledWith(
+        'session-123',
+        '/home/user/new-workspace',
+      );
+    });
+    expect(toast.error).not.toHaveBeenCalledWith(
+      'agent.workspace.dropFolderIntoSubfolderError',
+    );
+  });
+
   it('imports dropped files on child file item into parent folder', async () => {
     vi.mocked(backend.registerDroppedFiles).mockResolvedValue();
     vi.mocked(backend.checkDroppedPathType).mockResolvedValue('file');
@@ -508,7 +570,7 @@ describe('AgentWorkspacePanel', () => {
       },
     );
 
-    render(<AgentWorkspacePanel />);
+    renderWorkspacePanel();
 
     await waitFor(() => {
       expect(screen.getByText('src')).toBeInTheDocument();
@@ -544,6 +606,146 @@ describe('AgentWorkspacePanel', () => {
         }),
       );
     });
+  });
+
+  it('highlights parent folder when dragging over a child file node and clears on leave', async () => {
+    mockRustBackend.listWorkspaceFiles.mockImplementation(
+      async (dirPath?: string) => {
+        if (!dirPath || dirPath === './') {
+          return [{ name: 'src', isDirectory: true }];
+        }
+        if (dirPath === './src' || dirPath === 'src') {
+          return [{ name: 'index.ts', isDirectory: false }];
+        }
+        return [];
+      },
+    );
+
+    renderWorkspacePanel();
+
+    await waitFor(() => {
+      expect(screen.getByText('src')).toBeInTheDocument();
+    });
+
+    const expandButton = await screen.findByRole('button', { name: 'Expand' });
+    await act(async () => {
+      fireEvent.click(expandButton);
+    });
+
+    expect(await screen.findByText('index.ts')).toBeInTheDocument();
+
+    const srcFolderContainer = screen.getByText('src').closest('.group');
+    expect(srcFolderContainer).not.toHaveClass('ring-primary');
+
+    // Drag over child file -> parent folder is highlighted
+    await act(async () => {
+      fileNodeHandler?.('drag-over', {
+        paths: ['/home/user/new-file.ts'],
+      });
+    });
+
+    expect(srcFolderContainer).toHaveClass('ring-primary');
+
+    // Leave child file -> parent folder highlight is removed
+    await act(async () => {
+      fileNodeHandler?.('leave', {});
+    });
+
+    expect(srcFolderContainer).not.toHaveClass('ring-primary');
+  });
+
+  it('opens preview sheet for previewable file without calling external default app', async () => {
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      {
+        name: 'notes.md',
+        isDirectory: false,
+        path: 'notes.md',
+        size: 100,
+        modified: null,
+      },
+    ]);
+
+    renderWorkspacePanel();
+
+    const fileNode = await screen.findByText('notes.md');
+    expect(fileNode).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(fileNode);
+    });
+
+    // Should NOT call openWorkspaceFileWithDefaultApp
+    expect(
+      mockRustBackend.openWorkspaceFileWithDefaultApp,
+    ).not.toHaveBeenCalled();
+
+    // Should load content via readWorkspaceFileContent
+    await waitFor(() => {
+      expect(mockRustBackend.readWorkspaceFileContent).toHaveBeenCalledWith(
+        './notes.md',
+        'session-123',
+      );
+    });
+  });
+
+  it('calls openWorkspaceFileWithDefaultApp for non-previewable files (e.g. docx)', async () => {
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      {
+        name: 'report.docx',
+        isDirectory: false,
+        path: 'report.docx',
+        size: 5000,
+        modified: null,
+      },
+    ]);
+
+    renderWorkspacePanel();
+
+    const fileNode = await screen.findByText('report.docx');
+    expect(fileNode).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(fileNode);
+    });
+
+    // Directly opens in system default app
+    await waitFor(() => {
+      expect(
+        mockRustBackend.openWorkspaceFileWithDefaultApp,
+      ).toHaveBeenCalledWith('./report.docx', 'session-123');
+    });
+
+    expect(mockRustBackend.readWorkspaceFileContent).not.toHaveBeenCalled();
+  });
+
+  it('calls openWorkspaceFileWithDefaultApp directly for oversized files (>2MB) via dual size gate', async () => {
+    mockRustBackend.listWorkspaceFiles.mockResolvedValueOnce([
+      {
+        name: 'large_code.ts',
+        isDirectory: false,
+        path: 'large_code.ts',
+        size: 3 * 1024 * 1024, // 3MB
+        modified: null,
+      },
+    ]);
+
+    renderWorkspacePanel();
+
+    const fileNode = await screen.findByText('large_code.ts');
+    expect(fileNode).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(fileNode);
+    });
+
+    // Pre-blocked by dual size gate, calls default app
+    await waitFor(() => {
+      expect(
+        mockRustBackend.openWorkspaceFileWithDefaultApp,
+      ).toHaveBeenCalledWith('./large_code.ts', 'session-123');
+    });
+
+    expect(mockRustBackend.readWorkspaceFileContent).not.toHaveBeenCalled();
   });
 });
 

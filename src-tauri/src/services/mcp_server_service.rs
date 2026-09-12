@@ -1,4 +1,5 @@
 use crate::mcp::builtin::service_id::BuiltinServiceId;
+use crate::mcp::utils::sanitize_mcp_server_name;
 use crate::mcp::{MCPServerManager, MCPTool};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use serde_json::Value;
@@ -235,8 +236,9 @@ impl McpServerService {
     pub async fn create_server_config(
         repo: &dyn MCPServerRepository,
         name: String,
-        config: Value,
+        mut config: Value,
     ) -> Result<crate::entity::mcp_server::Model, String> {
+        let name = sanitize_mcp_server_name(&name);
         if BuiltinServiceId::from_alias(&name).is_some() {
             return Err(format!(
                 "Server name '{}' is reserved for a builtin service.",
@@ -249,6 +251,9 @@ impl McpServerService {
             serde_json::from_value(config.clone())
                 .map_err(|e| format!("Invalid MCP server configuration: {}", e))?;
         mcp_config.name = Some(name.clone());
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("name".to_string(), Value::String(name.clone()));
+        }
         let _ = mcp_config;
 
         // Save-first: Install UI returns immediately with verification_status=pending.
@@ -273,6 +278,9 @@ impl McpServerService {
         name: Option<String>,
         config: Option<Value>,
     ) -> Result<crate::entity::mcp_server::Model, String> {
+        // Preserve legacy display names (including whitespace). Session load sanitizes
+        // tool prefixes at runtime; do not rewrite existing DB rows on update.
+        let name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
         if let Some(ref n) = name {
             if BuiltinServiceId::from_alias(n).is_some() {
                 return Err(format!(

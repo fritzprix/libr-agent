@@ -179,6 +179,7 @@ describe('AgentChatContext', () => {
       expect(typeof result.current.cancel).toBe('function');
       expect(typeof result.current.cancelPendingPrompt).toBe('function');
       expect(typeof result.current.retryMessage).toBe('function');
+      expect(typeof result.current.appendToolMessages).toBe('function');
     });
 
     it('should provide combined hook', () => {
@@ -830,6 +831,50 @@ describe('AgentChatContext', () => {
       // retryMessage should not trigger any additional calls
       expect(safeInvoke).toHaveBeenCalledWith('agent_get_service_contexts', {
         sessionId: 'test-session',
+      });
+    });
+
+    it('should invoke agent_append_tool_messages when appendToolMessages is called', async () => {
+      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: true,
+      });
+
+      const { result } = renderHook(() => useAgentChatActions(), {
+        wrapper: TestWrapper,
+      });
+
+      const toolCallMsg: Message = {
+        id: 'tc-1',
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'assistant',
+        content: [],
+        source: 'ui',
+        createdAt: new Date(),
+      };
+
+      const toolResultMsg: Message = {
+        id: 'tr-1',
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'tool',
+        content: [{ type: 'text', text: 'Success' }],
+        source: 'ui',
+        createdAt: new Date(),
+      };
+
+      await act(async () => {
+        await result.current.appendToolMessages([toolCallMsg, toolResultMsg]);
+      });
+
+      expect(safeInvoke).toHaveBeenCalledWith('agent_append_tool_messages', {
+        request: expect.objectContaining({
+          sessionId: 'test-session',
+          messages: expect.arrayContaining([
+            expect.objectContaining({ id: 'tc-1' }),
+            expect.objectContaining({ id: 'tr-1' }),
+          ]),
+        }),
       });
     });
   });

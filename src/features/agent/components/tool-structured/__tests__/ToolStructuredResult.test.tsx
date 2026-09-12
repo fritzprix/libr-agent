@@ -87,6 +87,26 @@ describe('ToolStructuredResult', () => {
     expect(screen.getByText('hello')).toBeInTheDocument();
   });
 
+  it('renders reportResult card', () => {
+    render(
+      <ToolStructuredResult
+        toolName="ui__reportResult"
+        data={{
+          status: 'success',
+          title: 'Final Task Done',
+          criteria: 'criteria check',
+          proof: 'proof check',
+          result: 'All done',
+        }}
+      />,
+    );
+    expect(
+      screen.getByTestId('tool-structured-report-result'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Final Task Done')).toBeInTheDocument();
+    expect(screen.getByText('criteria check')).toBeInTheDocument();
+  });
+
   it('returns null for unsupported or invalid payloads', () => {
     const { container: unsupported } = render(
       <ToolStructuredResult

@@ -188,6 +188,38 @@ export function extractBuiltInServiceAlias(toolName: string): string | null {
 }
 
 /**
+ * Sanitize an MCP server name for use as an LLM tool-name prefix.
+ * Mirrors Rust `sanitize_mcp_server_name` (Gemini-safe: `[A-Za-z_][A-Za-z0-9_]*`).
+ */
+export function sanitizeMcpServerName(name: string): string {
+  const mapped = name
+    .trim()
+    .split('')
+    .map((c) => (/[A-Za-z0-9_]/.test(c) ? c : '_'))
+    .join('');
+
+  const collapsed = mapped.replace(/_+/g, '_');
+  const hadLeadingUnderscore = collapsed.startsWith('_');
+  const core = collapsed.replace(/^_+|_+$/g, '');
+  if (!core) {
+    return 'mcp_server';
+  }
+
+  const out = hadLeadingUnderscore ? `_${core}` : core;
+  return /^[0-9]/.test(out) ? `s_${out}` : out;
+}
+
+/**
+ * True when `name` is already a valid MCP server / tool-prefix identifier.
+ */
+export function isValidMcpServerName(name: string): boolean {
+  if (!name || name.includes('__')) {
+    return false;
+  }
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+}
+
+/**
  * Validates a service alias (name) for use in built-in tool naming.
  *
  * Valid service names:

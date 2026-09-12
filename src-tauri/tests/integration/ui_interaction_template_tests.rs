@@ -309,6 +309,8 @@ async fn report_result_renders_and_instructs_stop() {
             json!({
                 "title": "Done",
                 "status": "success",
+                "criteria": "- File /workspace/answer.txt exists\n- Contains ordinal-logit summary",
+                "proof": "- workspace__readFile /workspace/answer.txt returned non-empty summary",
                 "result": "Wrote /workspace/answer.txt with the ordinal-logit summary."
             }),
             None,
@@ -324,59 +326,180 @@ async fn report_result_renders_and_instructs_stop() {
     );
     assert!(text.contains("status=success"));
     assert!(text.contains("/workspace/answer.txt"));
+    assert!(text.contains("Acceptance criteria:"));
+    assert!(text.contains("Verification proof:"));
+    assert!(
+        text.contains("Result:\nWrote /workspace/answer.txt"),
+        "summary must keep Result body extractable for checkSession: {text}"
+    );
 
     let content = result.content.expect("reportResult should return content");
-    let resource = content
-        .iter()
-        .find_map(|item| match item {
-            MCPContent::Resource { resource, .. } => Some(resource),
-            _ => None,
-        })
-        .expect("reportResult should return HTML resource");
+    assert_eq!(
+        content.len(),
+        2,
+        "reportResult should return text summary + idle-stop resource marker"
+    );
+    assert!(
+        content
+            .iter()
+            .any(|item| matches!(item, MCPContent::Text { .. })),
+        "reportResult must include text summary"
+    );
+    let resource = content.iter().find_map(|item| match item {
+        MCPContent::Resource { resource, .. } => Some(resource),
+        _ => None,
+    });
+    let resource = resource.expect("reportResult must include Resource stop marker");
     let uri = resource["uri"].as_str().unwrap_or("");
     assert!(
         uri.starts_with("ui://result/"),
-        "reportResult URI should use ui://result/: {uri}"
+        "stop-marker URI should use ui://result/: {uri}"
     );
-    let html = resource["text"].as_str().unwrap_or("");
-    assert!(
-        html.contains("var(--background") && html.contains("var(--card"),
-        "reportResult HTML should use host theme CSS variables: {html}"
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("reportResult should return structured_content");
+    assert_eq!(
+        structured.get("status").and_then(|v| v.as_str()),
+        Some("success")
+    );
+    assert_eq!(
+        structured.get("title").and_then(|v| v.as_str()),
+        Some("Done")
+    );
+    assert_eq!(
+        structured.get("criteria").and_then(|v| v.as_str()),
+        Some("- File /workspace/answer.txt exists\n- Contains ordinal-logit summary")
+    );
+    assert_eq!(
+        structured.get("proof").and_then(|v| v.as_str()),
+        Some("- workspace__readFile /workspace/answer.txt returned non-empty summary")
+    );
+    assert_eq!(
+        structured.get("result").and_then(|v| v.as_str()),
+        Some("Wrote /workspace/answer.txt with the ordinal-logit summary.")
     );
     assert!(
-        !html.contains("background: #f9fafb;") && !html.contains("background: white;"),
-        "reportResult HTML must not hardcode light-only surfaces"
+        structured
+            .get("deliverables")
+            .and_then(|v| v.as_array())
+            .is_some(),
+        "deliverables array should be present"
     );
 }
 
 #[tokio::test]
-async fn report_result_markdown_math_loads_katex_and_preserves_latex() {
+async fn report_result_with_export_paths_populates_deliverables() {
     let server = UiServer::new();
 
     let result = server
         .call_tool(
             "reportResult",
             json!({
-                "title": "Maxwell",
                 "status": "success",
-                "format": "markdown",
-                "result": "Inline $E=mc^2$ and:\n\n$$\n\\begin{aligned}\n\\nabla \\cdot \\mathbf{E} &= \\frac{\\rho}{\\epsilon_0} \\\\\n\\nabla \\cdot \\mathbf{B} &= 0\n\\end{aligned}\n$$\n\nCompare $a < b$."
+                "criteria": "- Generated report",
+                "proof": "- File written",
+                "result": "Done",
+                "export_paths": ["Cargo.toml", "non_existent_file.pdf"]
             }),
             None,
         )
         .await
-        .expect("reportResult with math should render");
+        .expect("reportResult should execute");
+
+    assert_eq!(result.is_error, Some(false));
+    let structured = result
+        .structured_content
+        .expect("structured_content expected");
+    let deliverables = structured["deliverables"]
+        .as_array()
+        .expect("deliverables array");
+    assert_eq!(deliverables.len(), 2);
+
+    assert_eq!(deliverables[0]["path"], "Cargo.toml");
+    assert_eq!(deliverables[0]["exists"], false);
+    assert_eq!(deliverables[0]["absolute_path"], serde_json::Value::Null);
+
+    assert_eq!(deliverables[1]["path"], "non_existent_file.pdf");
+    assert_eq!(deliverables[1]["exists"], false);
+    assert_eq!(deliverables[1]["absolute_path"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn report_result_allows_omitting_criteria_and_proof() {
+    let server = UiServer::new();
+
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "status": "success",
+                "result": "Summarized the article for the user."
+            }),
+            None,
+        )
+        .await
+        .expect("reportResult without criteria/proof should succeed");
+    assert_eq!(result.is_error, Some(false));
+
+    let text = extract_text(&result);
+    assert!(
+        !text.contains("Acceptance criteria:"),
+        "summary should omit empty criteria section: {text}"
+    );
+    assert!(
+        !text.contains("Verification proof:"),
+        "summary should omit empty proof section: {text}"
+    );
+    assert!(
+        text.contains("Result:\nSummarized the article for the user."),
+        "summary must keep Result body extractable: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .expect("structured_content expected");
+    assert!(
+        structured.get("criteria").is_none()
+            || structured.get("criteria").is_some_and(|v| v.is_null()),
+        "criteria should be absent/null when omitted: {structured}"
+    );
+    assert!(
+        structured.get("proof").is_none() || structured.get("proof").is_some_and(|v| v.is_null()),
+        "proof should be absent/null when omitted: {structured}"
+    );
+}
+
+#[tokio::test]
+async fn present_interactive_markdown_math_loads_katex_and_preserves_latex() {
+    let server = UiServer::new();
+
+    let result = server
+        .call_tool(
+            "presentInteractive",
+            json!({
+                "title": "Maxwell",
+                "format": "markdown",
+                "content": "Inline $E=mc^2$ and:\n\n$$\n\\begin{aligned}\n\\nabla \\cdot \\mathbf{E} &= \\frac{\\rho}{\\epsilon_0} \\\\\n\\nabla \\cdot \\mathbf{B} &= 0\n\\end{aligned}\n$$\n\nCompare $a < b$."
+            }),
+            None,
+        )
+        .await
+        .expect("presentInteractive with math should render");
 
     assert_eq!(result.is_error, Some(false));
 
-    let content = result.content.expect("reportResult should return content");
+    let content = result
+        .content
+        .expect("presentInteractive should return content");
     let resource = content
         .iter()
         .find_map(|item| match item {
             MCPContent::Resource { resource, .. } => Some(resource),
             _ => None,
         })
-        .expect("reportResult should return HTML resource");
+        .expect("presentInteractive should return HTML resource");
     let html = resource["text"]
         .as_str()
         .expect("HTML resource should include inline text");

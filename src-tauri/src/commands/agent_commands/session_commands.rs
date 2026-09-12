@@ -449,12 +449,14 @@ pub async fn agent_mark_session_viewed(
 }
 
 /// Set the exclusive execution mode for a session.
+///
+/// Returns tool-call IDs auto-approved as a side effect of the mode change.
 #[command]
 pub async fn agent_set_execution_mode(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
     mode: String,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     manager
         .set_execution_mode(&session_id, mode.parse::<ExecutionMode>()?)
         .await

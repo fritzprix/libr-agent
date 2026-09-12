@@ -22,10 +22,15 @@ pub async fn inject_messages(
                 ))
             )
         };
+        // Compaction in flight (Manual or Preflight): queue into pending_events.
+        // Starting a workflow here would reset_session_execution_state and clear
+        // the in-flight compact.
+        let compaction_in_flight = session.compaction.snapshot().await.is_in_flight();
 
         session.metadata.status != SessionStatus::Busy
             && session.metadata.status != SessionStatus::Queued
             && !is_transitioning_to_busy_or_queued
+            && !compaction_in_flight
     };
 
     // Delegate message persistence, caching, and event emission to MessageService

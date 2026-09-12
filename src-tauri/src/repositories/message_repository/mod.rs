@@ -15,4 +15,4 @@ mod types;
 mod tests;
 
 pub use sqlite::SqliteMessageRepository;
-pub use types::{MessagePaginationCursor, MessageRepository, MessageSlicePage};
+pub use types::{MessageForwardPage, MessagePaginationCursor, MessageRepository, MessageSlicePage};

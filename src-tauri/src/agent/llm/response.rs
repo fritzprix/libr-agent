@@ -187,6 +187,7 @@ async fn initialize_pending_execution(
                 .collect(),
             expected_tool_call_ids,
             completed_tool_call_ids: std::collections::HashSet::new(),
+            deferred_history_append: Vec::new(),
         });
     }
 }

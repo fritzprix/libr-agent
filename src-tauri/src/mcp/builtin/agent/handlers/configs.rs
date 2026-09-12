@@ -457,7 +457,7 @@ pub async fn update_agent(
                 vec![
                     "This updates the agent template only — it does not change tools in any currently running session.".to_string(),
                     "Inspect the configuration details to verify the changes.".to_string(),
-                    "Start a new session (or agent__startSession with this config) to apply the updated tool access.".to_string(),
+                    "Spawn a new session with agent__spawnSession(configId=...) to apply the updated tool access.".to_string(),
                 ],
             );
 
@@ -667,7 +667,7 @@ async fn list_agent_configs_from_db(
     let hint = SuccessHint::new(
         text_summary,
         vec![
-            "Use agent__startSession to run a delegated task using one of these configurations"
+            "Use agent__spawnSession(configId=...) to run a delegated task using one of these configurations"
                 .to_string(),
         ],
     );
@@ -680,7 +680,7 @@ async fn list_agent_configs_from_db(
         &response_message,
         "success",
         vec![json!({
-            "toolName": "agent__startSession",
+            "toolName": "agent__spawnSession",
             "reason": "Spawn a new delegated agent session using one of the configurations.",
         })],
     );

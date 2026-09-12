@@ -204,4 +204,58 @@ describe('ServerCard', () => {
     expect(screen.getAllByText('Verifying...').length).toBeGreaterThan(0);
     expect(screen.getByText(/Starting extension process/i)).toBeInTheDocument();
   });
+
+  it('wraps long HTTP transport URLs with break-all', () => {
+    renderCard(
+      <ServerCard
+        server={{
+          ...baseServer,
+          transport: {
+            type: 'http-sse',
+            url: 'https://mcp.exa.ai/mcp?tools=web_search_advanced_exa%2Cweb_search_exa',
+          },
+        }}
+        onEdit={noop}
+        onDelete={noop}
+        onToggleActive={noop}
+      />,
+    );
+
+    const transportLine = screen.getByText(
+      /Transport: http-sse • https:\/\/mcp\.exa\.ai\/mcp/,
+    );
+    expect(transportLine).toHaveClass('break-all');
+    expect(transportLine).toHaveTextContent(
+      'Transport: http-sse • https://mcp.exa.ai/mcp?tools=web_search_advanced_exa%2Cweb_search_exa',
+    );
+  });
+
+  it('omits url-param secrets from the displayed HTTP URL', () => {
+    renderCard(
+      <ServerCard
+        server={{
+          ...baseServer,
+          transport: {
+            type: 'http-sse',
+            url: 'https://mcp.exa.ai/mcp?tools=web_search_exa&api_key=secret',
+          },
+          metadata: {
+            variableDefinitions: {
+              api_key: { target: 'url-param' },
+            },
+          },
+        }}
+        onEdit={noop}
+        onDelete={noop}
+        onToggleActive={noop}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        'Transport: http-sse • https://mcp.exa.ai/mcp?tools=web_search_exa',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/api_key=secret/)).not.toBeInTheDocument();
+  });
 });

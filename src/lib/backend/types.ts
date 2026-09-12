@@ -21,6 +21,20 @@ export interface WorkspaceFileItem {
 }
 
 /**
+ * File content payload returned for in-app workspace preview.
+ */
+export interface WorkspaceFileContent {
+  /** The text content or base64-encoded string for images. */
+  content: string;
+  /** True if content is binary or base64 encoded. */
+  isBinary: boolean;
+  /** The size of the file in bytes. */
+  size: number;
+  /** Detected MIME type. */
+  mimeType: string;
+}
+
+/**
  * Represents an active browser session controlled by the backend.
  */
 export interface BrowserSession {

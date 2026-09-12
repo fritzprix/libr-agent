@@ -248,7 +248,7 @@ async fn reload_preserves_structured_content_in_error_column_envelope() {
         "sessionId": "a1b2c3d4e5",
         "status": "started",
         "responseStatus": "pending",
-        "toolName": "startSession",
+        "toolName": "spawnSession",
     });
 
     let mut message = build_message(&session_id, "tool-structured", 1_000);
@@ -334,4 +334,50 @@ async fn reload_preserves_tool_error_and_structured_content_together() {
         Some(&structured)
     );
     assert!(loaded.error.is_none());
+}
+
+#[tokio::test]
+async fn message_forward_pagination_uses_rowid_cursor_without_offset() {
+    let (session_repo, message_repo) = setup_repos().await;
+    let session_id = format!("pagination-forward-{}", uuid::Uuid::new_v4());
+
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let created_at = 1_712_345_678_900_i64;
+    for id in ["msg-z", "msg-a", "msg-m", "msg-b"] {
+        message_repo
+            .insert(&build_message(&session_id, id, created_at))
+            .await
+            .expect("message insert should succeed");
+    }
+
+    let first = message_repo
+        .get_messages_after_rowid(&session_id, None, 2)
+        .await
+        .expect("first forward page should load");
+    let first_ids: Vec<String> = first
+        .items
+        .iter()
+        .map(|message| message.id.clone())
+        .collect();
+    assert_eq!(first_ids, vec!["msg-z".to_string(), "msg-a".to_string()]);
+    assert!(first.has_more);
+    let last_row_id = first
+        .last_row_id
+        .expect("first page should expose last rowid");
+
+    let second = message_repo
+        .get_messages_after_rowid(&session_id, Some(last_row_id), 2)
+        .await
+        .expect("second forward page should load");
+    let second_ids: Vec<String> = second
+        .items
+        .iter()
+        .map(|message| message.id.clone())
+        .collect();
+    assert_eq!(second_ids, vec!["msg-m".to_string(), "msg-b".to_string()]);
+    assert!(!second.has_more);
 }

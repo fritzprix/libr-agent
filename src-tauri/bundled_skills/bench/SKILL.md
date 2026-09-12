@@ -49,7 +49,7 @@ This skill turns LibrAgent's parent-child delegation primitives into a structure
 | Primitive | Role |
 |---|---|
 | `agent__listAgents(type="configs")` | Find the assistant to bench |
-| `agent__startSession(task="...")` | Spawn a child worker for one problem |
+| `agent__spawnSession(task="...")` | Spawn a child worker for one problem |
 | `agent__checkSession(sessionId, wait=true)` | Block until a child finishes, get its answer |
 | `agent__checkSession(sessionId)` (poll) | Monitor progress without blocking |
 | `agent__stopSession(sessionId)` | Cancel a stuck child |
@@ -118,13 +118,13 @@ Record: `benchmark.name`, `benchmark.assistant`, `benchmark.problems[]`.
 agent__listAgents(type="configs", query="Coding Expert")
 ```
 
-Record the `id` for `agent__startSession`. If the user names a custom assistant, use that ID.
+Record the configuration `id` for `agent__spawnSession`. If the user names a custom assistant, use that configuration template ID (not a session ID).
 
 ### 3. Spawn child sessions & Execution Protocol
 
 For each problem, spawn a child session. Construct the child's `task` prompt dynamically based on the available fields in the problem definition. Do not include static setup or verification headers if those fields are empty, as this will confuse the child worker.
 
-**Benchmark isolation exception:** Do not reuse an existing child session for a benchmark problem. Each problem must start with a fresh session so prior conversation, runtime state, pending messages, and workspace artifacts cannot contaminate the result. Use `agent__startSession` even when an Idle session has the same assistant configuration.
+**Benchmark isolation exception:** Do not reuse an existing child session for a benchmark problem. Each problem must start with a fresh session so prior conversation, runtime state, pending messages, and workspace artifacts cannot contaminate the result. Use `agent__spawnSession` even when an Idle session has the same assistant configuration.
 
 #### Task Formulation Guidelines:
 - Include the `Problem ID`, `Task` description, `Repository` path, and `Expected output` (if they exist in the problem definition).
@@ -154,7 +154,7 @@ Execution Instructions:
 }
 ```
 
-Spawn the session using `agent__startSession` with `waitForResult: false`.
+Spawn the session using `agent__spawnSession` with `waitForResult: false`.
 
 #### Parent Judgment Rule with Fallback Strategy:
 1. **Try JSON parsing:** Attempt to extract and parse the JSON block from the child's final response (using regex like `/\{[\s\S]*?\}/`).
@@ -295,8 +295,8 @@ if (status.state === "running" && status.timedOut) {
 By default, child sessions inherit the parent's `maxFanout`. If you need to bench many problems:
 
 ```
-agent__startSession({
-  agentId: "...",
+agent__spawnSession({
+  configId: "...",
   task: "...",
   maxFanout: 20   // Override parent limit for this child
 })
@@ -319,7 +319,7 @@ When verifying results, use the most lightweight and accurate verification metho
 | Step | Tool | Parameters |
 |---|---|---|
 | Find assistant | `agent__listAgents` | `{ type: "configs", query: "..." }` |
-| Spawn child | `agent__startSession` | `{ agentId, task, waitForResult: false }` |
+| Spawn child | `agent__spawnSession` | `{ configId, task, waitForResult: false }` |
 | Poll child | `agent__checkSession` | `{ sessionId }` |
 | Wait for child | `agent__checkSession` | `{ sessionId, wait: true, timeout: 300 }` |
 | Stop stuck child | `agent__stopSession` | `{ sessionId }` |

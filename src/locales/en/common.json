@@ -887,8 +887,10 @@
       "validationError": "Please fill in all required fields",
       "reservedNameError": "\"{{name}}\" is a reserved builtin service name. Choose a different name.",
       "nameLabel": "Name",
-      "namePlaceholder": "e.g., filesystem, github, sequential-thinking",
-      "nameDesc": "Unique identifier for this extension",
+      "namePlaceholder": "e.g., filesystem, github, sequential_thinking",
+      "nameDesc": "Unique identifier for this extension. Use letters, numbers, and underscores only.",
+      "nameSanitizeHint": "Will be saved as \"{{sanitized}}\" (spaces and special characters become underscores)",
+      "nameRuntimeSanitizeHint": "Display name kept as-is. Tools will use \"{{sanitized}}\" at runtime.",
       "descLabel": "Description",
       "descPlaceholder": "Optional description for this extension",
       "transportLabel": "Transport Type",
@@ -1044,7 +1046,49 @@
         "Almost there, hang tight!",
         "Taking a moment? Time for a quick stretch 🧘",
         "Thanks for your patience, almost ready..."
-      ]
+      ],
+      "combinatorial": {
+        "template": "{{action}} {{target}}{{flavor}}",
+        "actions": [
+          "Sipping",
+          "Tuning",
+          "Baking",
+          "Hunting for",
+          "Dusting off",
+          "Spinning up",
+          "Warming",
+          "Polishing",
+          "Unwrapping",
+          "Recalibrating",
+          "Untangling",
+          "Gently poking"
+        ],
+        "targets": [
+          "digital coffee",
+          "quantum neurons",
+          "crispy responses",
+          "virtual bookshelves",
+          "missing semicolons",
+          "cat pictures",
+          "GPU fans",
+          "cache corners",
+          "entangled tokens",
+          "witty emojis",
+          "latent thoughts",
+          "half-baked ideas"
+        ],
+        "flavors": [
+          "...",
+          " with care...",
+          " at full speed...",
+          " one more time...",
+          " quietly...",
+          " 🌪️",
+          " 🥐",
+          " 🐾",
+          " ✨"
+        ]
+      }
     },
     "messages": {
       "loadingOlder": "Loading older messages...",
@@ -1106,6 +1150,14 @@
       "dockerStillNotReady": "Docker is still not ready. Wait for the engine to start, then try again.",
       "dockerImageRequired": "Select a Docker image before starting a Docker-isolated session.",
       "dockerCreating": "Creating session — preparing Docker image {{image}}…",
+      "dockerNotInstalledTitle": "Docker is not installed",
+      "dockerNotInstalledDescription": "The Docker CLI was not found on this machine. Install Docker Desktop, or start this session in host mode.",
+      "dockerNotInstalledStep1": "Install Docker Desktop from docker.com.",
+      "dockerNotInstalledStep2": "Restart LibrAgent after installing so the docker command is on PATH.",
+      "dockerNotInstalledStep3": "Or start this session in host mode. Commands will run directly on this computer.",
+      "dockerInstallLink": "Download Docker Desktop",
+      "dockerRunInHostMode": "Run in Host Mode",
+      "dockerRunInHostModeHint": "Host mode runs workspace commands on this computer instead of a container.",
       "newSession": "New Session",
       "workspaceOverrideActive": "Workspace Override Active",
       "workspaceOverrideDescription": "The agent will use this directory as its primary workspace for this session.",
@@ -1149,11 +1201,27 @@
       "renameError": "Failed to update session title",
       "renameEmptyError": "Session title cannot be empty"
     },
+    "sessionExport": {
+      "menuAria": "Export session",
+      "menuTooltip": "Export session",
+      "markdown": "Export as Markdown (.md)",
+      "atif": "Export as ATIF trajectory (.json)",
+      "copyClipboard": "Copy visible window (no thinking / size-limited)",
+      "markdownSuccess": "Markdown file saved",
+      "atifSuccess": "ATIF trajectory saved",
+      "openFile": "Open",
+      "openFileError": "Failed to open file",
+      "cancelled": "Export cancelled",
+      "error": "Failed to export session"
+    },
     "workspace": {
       "isolationSettings": "Isolation Settings",
       "isolationTip": "Docker workspace runs your workspace commands safely inside a container rather than directly on your host machine.",
       "useDockerContainer": "Use Docker Container",
       "dockerImage": "Docker Image",
+      "dockerNotInstalledWarning": "Docker is not installed or is not available on PATH.",
+      "dockerDaemonOfflineWarning": "Docker daemon is not running.",
+      "dockerHealthHint": "Install Docker Desktop, start the engine, or switch back to host mode.",
       "loadError": "Failed to load directory",
       "importFileError": "Failed to import file",
       "setOverrideSuccess": "Workspace override set successfully",
@@ -1192,7 +1260,27 @@
       "dropFolderHint": "Drop a folder here to set as workspace",
       "dropDirToastError": "Drop directories in the central area to set workspace override.",
       "dropMixedFoldersError": "Drop files to import them, or a single folder to set workspace override.",
-      "dropFolderIntoSubfolderError": "Dropping folders into subfolders is not supported."
+      "dropFolderIntoSubfolderError": "Dropping folders into subfolders is not supported.",
+      "previewTitle": "File Preview",
+      "previewMode": "Preview",
+      "sourceMode": "Source",
+      "openInDefaultApp": "Open in Default App",
+      "copyContent": "Copy Content",
+      "contentCopied": "Content copied to clipboard",
+      "unsupportedEncoding": "Binary or unsupported encoding. Please open with default application.",
+      "fileTooLarge": "File is too large for inline preview.",
+      "syntaxHighlightDisabled": "Large file (>200KB) - syntax highlighting disabled for performance"
+    },
+    "toolStructured": {
+      "writeCreated": "Created",
+      "writeCreatedAlternate": "Created at alternate path",
+      "writeOverwritten": "Overwritten",
+      "writeAppended": "Appended",
+      "openFile": "Open file",
+      "openingFile": "Opening...",
+      "openFileError": "Failed to open file",
+      "lineCount": "{{count}} lines",
+      "requestedPath": "Requested: {{path}}"
     },
     "statusBar": {
       "retryError": "Failed to retry message",
@@ -1286,8 +1374,11 @@
       "parameters": "Parameters",
       "errorDetails": "Error Details",
       "result": "Result",
-      "executing": "Executing tool..."
+      "executing": "Executing tool...",
+      "calling": "Calling tool..."
     },
+    "toolCalling": "Tool calling...",
+    "toolExecuting": "Tool executing...",
     "compactDivider": {
       "label": "Context compressed above",
       "ariaLabel": "Context compressed at this point"
@@ -1406,6 +1497,7 @@
       "thinkingProcess": "Thinking Process",
       "thinkingProcessWithTime": "Thinking Process {{time}}",
       "thinking": "Thinking...",
+      "preparingPrompt": "Preparing prompt...",
       "expandThinking": "Expand",
       "actionBar": {
         "copyFullAria": "Copy full message",

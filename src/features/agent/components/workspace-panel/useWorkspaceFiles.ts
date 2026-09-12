@@ -167,6 +167,8 @@ export function useWorkspaceFiles(rootPath: string) {
           isExpanded: expanded,
           children,
           parent: parentNodeId,
+          size: file.size,
+          modified: file.modified,
         });
       }
 

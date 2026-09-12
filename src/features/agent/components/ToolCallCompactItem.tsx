@@ -1,6 +1,12 @@
 import React, { useState, memo, useMemo, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
-import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import {
+  ChevronDown,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  Pencil,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import {
@@ -18,23 +24,41 @@ export interface ToolCallCompactItemProps {
   toolCall: ToolCall;
   toolResult?: Message;
   isLast?: boolean;
+  isStreaming?: boolean;
 }
 
 export interface ToolStatusIconProps {
   hasResult: boolean;
   hasError: boolean;
+  isStreaming?: boolean;
 }
 
 /**
- * Status icon showing loading/error/success state
+ * Status icon showing loading/calling/error/success state
  */
 export const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
   hasResult,
   hasError,
+  isStreaming = false,
 }) => {
+  const { t } = useTranslation('common');
+
   if (!hasResult) {
+    if (isStreaming) {
+      return (
+        <Pencil
+          className="w-3.5 h-3.5 text-primary animate-pulse flex-shrink-0"
+          data-testid="tool-status-calling"
+          aria-label={t('agent.toolCalling', 'Tool calling...')}
+        />
+      );
+    }
     return (
-      <Loader2 className="w-3.5 h-3.5 text-primary animate-spin flex-shrink-0" />
+      <Loader2
+        className="w-3.5 h-3.5 text-primary animate-spin flex-shrink-0"
+        data-testid="tool-status-executing"
+        aria-label={t('agent.toolExecuting', 'Executing tool...')}
+      />
     );
   }
 
@@ -53,6 +77,7 @@ interface CompactHeaderRowProps {
   executionTime?: number;
   showChevron?: boolean;
   isExpanded?: boolean;
+  isStreaming?: boolean;
 }
 
 const CompactHeaderRow: React.FC<CompactHeaderRowProps> = ({
@@ -63,9 +88,14 @@ const CompactHeaderRow: React.FC<CompactHeaderRowProps> = ({
   executionTime,
   showChevron = false,
   isExpanded = false,
+  isStreaming = false,
 }) => (
   <div className="flex items-center gap-2">
-    <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
+    <ToolStatusIcon
+      hasResult={!!toolResult}
+      hasError={hasError}
+      isStreaming={isStreaming}
+    />
     <span className="flex-shrink-0 font-medium">{displayToolName}</span>
     {paramSummary ? (
       <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
@@ -105,6 +135,7 @@ const CompactHeaderRow: React.FC<CompactHeaderRowProps> = ({
 const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   toolCall,
   toolResult,
+  isStreaming = false,
 }) => {
   const { t } = useTranslation('common');
   const {
@@ -202,6 +233,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
               paramSummary=""
               showChevron
               isExpanded={isExpanded}
+              isStreaming={isStreaming}
             />
           </button>
           {isExpanded ? details : null}
@@ -219,6 +251,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
           hasError={hasError}
           displayToolName={displayToolName}
           paramSummary={paramSummary}
+          isStreaming={isStreaming}
         />
         {forceVisible ? details : null}
       </div>
@@ -245,6 +278,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
           executionTime={
             typeof executionTime === 'number' ? executionTime : undefined
           }
+          isStreaming={isStreaming}
         />
         {details}
       </div>
@@ -284,6 +318,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
           }
           showChevron
           isExpanded={isExpanded}
+          isStreaming={isStreaming}
         />
       </button>
 
@@ -311,6 +346,7 @@ function arePropsEqual(
   next: ToolCallCompactItemProps,
 ) {
   if (prev.isLast !== next.isLast) return false;
+  if (prev.isStreaming !== next.isStreaming) return false;
   if (prev.toolResult !== next.toolResult) return false;
   if (prev.toolCall.id !== next.toolCall.id) return false;
   if (prev.toolCall.function.name !== next.toolCall.function.name) return false;

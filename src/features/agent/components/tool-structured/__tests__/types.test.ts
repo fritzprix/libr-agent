@@ -3,6 +3,7 @@ import {
   canRenderStructuredToolResult,
 } from '../ToolStructuredResult';
 import {
+  parseReportResult,
   parseRunShellResult,
   parseStrReplaceResult,
   parseWriteFileResult,
@@ -87,5 +88,55 @@ describe('tool-structured types', () => {
         results: [],
       }),
     ).toBe(false);
+    expect(
+      canRenderStructuredToolResult('ui__reportResult', {
+        status: 'success',
+        criteria: 'all done',
+        proof: 'tests pass',
+        result: 'worked',
+      }),
+    ).toBe(true);
+  });
+
+  it('parseReportResult validates reportResult payload and deliverables', () => {
+    const valid = parseReportResult({
+      status: 'success',
+      title: 'Task Done',
+      criteria: 'acceptance check',
+      proof: 'verified',
+      result: 'Summary here',
+      deliverables: [
+        {
+          path: 'reports/out.pdf',
+          absolute_path: '/abs/reports/out.pdf',
+          name: 'out.pdf',
+          size_bytes: 2048,
+          extension: 'pdf',
+          exists: true,
+        },
+      ],
+    });
+
+    expect(valid).not.toBeNull();
+    expect(valid?.status).toBe('success');
+    expect(valid?.deliverables).toHaveLength(1);
+    expect(valid?.deliverables[0].name).toBe('out.pdf');
+
+    // Missing required result
+    expect(
+      parseReportResult({
+        status: 'success',
+        criteria: 'optional',
+        proof: 'optional',
+      }),
+    ).toBeNull();
+
+    // criteria/proof are optional
+    expect(
+      parseReportResult({
+        status: 'success',
+        result: 'plain outcome without verification',
+      }),
+    ).not.toBeNull();
   });
 });

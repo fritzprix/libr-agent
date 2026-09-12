@@ -1,6 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, ChevronDown, Loader2, Play } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronDown,
+  Loader2,
+  Monitor,
+  Play,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -19,18 +25,25 @@ import {
   startDockerDesktop,
 } from '@/lib/backend/workspace';
 
+const DOCKER_DESKTOP_DOWNLOAD_URL =
+  'https://www.docker.com/products/docker-desktop/';
+
 interface DockerErrorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onRunInHostMode: () => void;
   errorDetails?: string | null;
+  notInstalled?: boolean;
 }
 
 export function DockerErrorModal({
   isOpen,
   onClose,
   onRetry,
+  onRunInHostMode,
   errorDetails,
+  notInstalled = false,
 }: DockerErrorModalProps) {
   const { t } = useTranslation();
   const [isStarting, setIsStarting] = useState(false);
@@ -110,7 +123,29 @@ export function DockerErrorModal({
     void waitForEngineThenRetry();
   }, [waitForEngineThenRetry]);
 
+  const handleRunInHostMode = useCallback(() => {
+    onClose();
+    onRunInHostMode();
+  }, [onClose, onRunInHostMode]);
+
   const isBusy = isStarting || isWaitingForEngine;
+  const title = notInstalled
+    ? t('agent.draft.dockerNotInstalledTitle')
+    : t('agent.draft.dockerErrorTitle');
+  const description = notInstalled
+    ? t('agent.draft.dockerNotInstalledDescription')
+    : t('agent.draft.dockerErrorDescription');
+  const steps = notInstalled
+    ? [
+        t('agent.draft.dockerNotInstalledStep1'),
+        t('agent.draft.dockerNotInstalledStep2'),
+        t('agent.draft.dockerNotInstalledStep3'),
+      ]
+    : [
+        t('agent.draft.dockerErrorStep1'),
+        t('agent.draft.dockerErrorStep2'),
+        t('agent.draft.dockerErrorStep3'),
+      ];
 
   return (
     <Dialog
@@ -125,10 +160,10 @@ export function DockerErrorModal({
             <AlertTriangle className="h-6 w-6" />
           </div>
           <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
-            {t('agent.draft.dockerErrorTitle')}
+            {title}
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            {t('agent.draft.dockerErrorDescription')}
+            {description}
           </DialogDescription>
         </DialogHeader>
 
@@ -137,31 +172,32 @@ export function DockerErrorModal({
             {t('agent.draft.dockerTroubleshootingSteps')}
           </p>
           <div className="space-y-2.5">
-            <div className="flex items-start gap-2.5">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                1
-              </span>
-              <span className="min-w-0 break-words leading-normal">
-                {t('agent.draft.dockerErrorStep1')}
-              </span>
-            </div>
-            <div className="flex items-start gap-2.5">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                2
-              </span>
-              <span className="min-w-0 break-words leading-normal">
-                {t('agent.draft.dockerErrorStep2')}
-              </span>
-            </div>
-            <div className="flex items-start gap-2.5">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                3
-              </span>
-              <span className="min-w-0 break-words leading-normal">
-                {t('agent.draft.dockerErrorStep3')}
-              </span>
-            </div>
+            {steps.map((step, index) => (
+              <div key={step} className="flex items-start gap-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                  {index + 1}
+                </span>
+                <span className="min-w-0 break-words leading-normal">
+                  {step}
+                </span>
+              </div>
+            ))}
           </div>
+
+          {notInstalled ? (
+            <a
+              href={DOCKER_DESKTOP_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+            >
+              {t('agent.draft.dockerInstallLink')}
+            </a>
+          ) : null}
+
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {t('agent.draft.dockerRunInHostModeHint')}
+          </p>
 
           {errorDetails ? (
             <div className="mt-4 pt-3 border-t border-border/40">
@@ -202,7 +238,7 @@ export function DockerErrorModal({
             {t('common:cancel', 'Cancel')}
           </Button>
 
-          {launchSupported ? (
+          {!notInstalled && launchSupported ? (
             <Button
               type="button"
               variant="secondary"
@@ -223,10 +259,21 @@ export function DockerErrorModal({
 
           <Button
             type="button"
-            variant="default"
+            variant={notInstalled ? 'default' : 'secondary'}
+            onClick={handleRunInHostMode}
+            disabled={isBusy}
+            className="w-full sm:w-auto gap-2"
+          >
+            <Monitor className="h-4 w-4" />
+            {t('agent.draft.dockerRunInHostMode')}
+          </Button>
+
+          <Button
+            type="button"
+            variant={notInstalled ? 'secondary' : 'default'}
             onClick={handleRetry}
             disabled={isBusy}
-            autoFocus
+            autoFocus={!notInstalled}
             className="w-full sm:w-auto gap-2"
           >
             {isWaitingForEngine ? (

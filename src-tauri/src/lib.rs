@@ -20,6 +20,7 @@ mod search;
 pub mod server;
 pub mod services;
 pub mod session;
+pub mod session_export;
 pub mod session_isolation;
 mod state;
 pub mod utils;
@@ -31,16 +32,16 @@ pub use migration;
 pub use services::SecureFileManager;
 
 use commands::agent_commands::{
-    agent_add_attachment, agent_call_builtin_tool, agent_cancel_pending_prompt,
-    agent_cancel_workflow, agent_clear_all_sessions, agent_create_session,
-    agent_create_session_with_initial_message, agent_delete_attachment, agent_delete_session,
-    agent_delete_session_only, agent_execute_command, agent_execute_ui_tauri_action,
-    agent_factory_reset, agent_get_all_sessions, agent_get_available_tools,
-    agent_get_child_session_ids, agent_get_child_sessions, agent_get_compact_context,
-    agent_get_descendant_session_ids, agent_get_pending_queue, agent_get_service_contexts,
-    agent_get_session, agent_get_tools, agent_handle_compact_error, agent_handle_compact_response,
-    agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
-    agent_init_session_with_messages, agent_inject_channel_message,
+    agent_add_attachment, agent_append_tool_messages, agent_call_builtin_tool,
+    agent_cancel_pending_prompt, agent_cancel_workflow, agent_clear_all_sessions,
+    agent_create_session, agent_create_session_with_initial_message, agent_delete_attachment,
+    agent_delete_session, agent_delete_session_only, agent_execute_command,
+    agent_execute_ui_tauri_action, agent_factory_reset, agent_get_all_sessions,
+    agent_get_available_tools, agent_get_child_session_ids, agent_get_child_sessions,
+    agent_get_compact_context, agent_get_descendant_session_ids, agent_get_pending_queue,
+    agent_get_service_contexts, agent_get_session, agent_get_tools, agent_handle_compact_error,
+    agent_handle_compact_response, agent_handle_llm_error, agent_handle_llm_response,
+    agent_handle_tool_result, agent_init_session_with_messages, agent_inject_channel_message,
     agent_inject_channel_message_auto, agent_inject_messages, agent_list_attention_sessions,
     agent_list_sessions, agent_mark_session_viewed, agent_open_session, agent_pause_workflow,
     agent_report_llm_streaming_issue, agent_respond_channel_permission,
@@ -97,6 +98,7 @@ use commands::scheduled_task_commands::{
     update_scheduled_task,
 };
 use commands::session_commands::remove_session;
+use commands::session_export_commands::export_session_file;
 use commands::settings_commands::{
     delete_setting, get_setting, list_settings, set_setting, update_settings,
 };
@@ -116,8 +118,8 @@ use commands::workspace_commands::{
     get_update_install_capability, get_workspace_dir, get_workspace_override, greet,
     list_workspace_file_paths, list_workspace_file_paths_for_path, list_workspace_files,
     open_workspace_file_with_default_app, open_workspace_in_explorer, open_workspace_in_terminal,
-    read_local_file_as_base64, restart_app, set_workspace_override, start_docker_desktop,
-    submit_interactive_shell_input,
+    probe_runtime_binaries, read_local_file_as_base64, read_workspace_file_content, restart_app,
+    set_workspace_override, start_docker_desktop, submit_interactive_shell_input,
 };
 
 // Re-export state management functions
@@ -201,6 +203,7 @@ pub fn run() {
                 // Session management commands (still needed for workspace isolation)
                 remove_session,
                 export_dataset,
+                export_session_file,
                 delete_attachments,
                 get_app_data_dir,
                 get_app_logs_dir,
@@ -227,6 +230,7 @@ pub fn run() {
                 open_external_url,
                 open_path_with_default_app,
                 open_workspace_file_with_default_app,
+                read_workspace_file_content,
                 open_workspace_in_explorer,
                 open_workspace_in_terminal,
                 get_workspace_override,
@@ -239,6 +243,7 @@ pub fn run() {
                 start_docker_desktop,
                 docker_desktop_launch_supported,
                 check_docker_health,
+                probe_runtime_binaries,
                 // Interactive Browser commands
                 create_browser_session,
                 close_browser_session,
@@ -292,6 +297,7 @@ pub fn run() {
                 agent_delete_attachment,
                 agent_get_service_contexts,
                 agent_inject_messages,
+                agent_append_tool_messages,
                 agent_get_pending_queue,
                 agent_cancel_pending_prompt,
                 agent_inject_channel_message,

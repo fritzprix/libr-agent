@@ -316,8 +316,9 @@ fn build_stable_prefix(
         let mut identity = format!(
             "\n\n## Agent Runtime Identity\n\
             - Agent Name: {}\n\
-            - Agent ID: {}\n\
-            - Session ID: {}",
+            - Agent ID (Config ID): {}\n\
+            - Session ID: {}\n\
+            - Note: Agent ID / Config ID is your configuration template ID (for agent__spawnSession). Session ID is your running instance ID (for agent__messageToSession / agent__checkSession).",
             agent_config.name.trim(),
             agent_id,
             display_session
@@ -343,6 +344,13 @@ fn build_stable_prefix(
     parts.push(
         "\n\n## Session Context\n\
          Runtime may inject a `<session-context>` block with live environment state."
+            .to_string(),
+    );
+
+    // Single golden rule — do not expand into multi-bullet coaching (dilution).
+    parts.push(
+        "\n\n## Core Execution Principles\n\
+         - Before concluding: when the request has checkable acceptance criteria, restate and verify them and include that proof when reporting (or state what remains unmet)."
             .to_string(),
     );
 
@@ -518,7 +526,7 @@ mod tests {
         assert!(prompt.starts_with(
             "Base prompt only.\n\n\n## Agent Runtime Identity\n\
             - Agent Name: Default Assistant\n\
-            - Agent ID: (unknown)\n\
+            - Agent ID (Config ID): (unknown)\n\
             - Session ID: (unknown-session)"
         ));
         assert!(prompt.contains("## Session Context"));

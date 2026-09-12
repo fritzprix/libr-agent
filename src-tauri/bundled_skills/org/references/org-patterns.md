@@ -8,8 +8,8 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 | --- | --- |
 | Create the org (once, from root session) | `agent__createOrg(name="...")` |
 | Assign an existing org-visible child | `agent__messageToSession(sessionId, message)` when an Idle child has the same `assistantId` and compatible workspace |
-| Spawn an org-visible child | `agent__startSession(agentId, task)` from a session already in the org when no suitable child exists or isolation/capacity requires it |
-| Delegate outside Org view | Reuse a matching Idle child with `agent__messageToSession`, or use `agent__startSession(agentId, task)` from a session that is not in an explicit org |
+| Spawn an org-visible child | `agent__spawnSession(configId, task)` from a session already in the org when no suitable child exists or isolation/capacity requires it |
+| Delegate outside Org view | Reuse a matching Idle child with `agent__messageToSession`, or use `agent__spawnSession(configId, task)` from a session that is not in an explicit org |
 | Identify the org root session | Read `orgLineage.rootSessionId` from `.libragent/teamwork.json` |
 | Resume org work | Resume the session matching `orgLineage.rootSessionId`, not a child |
 | Inspect org membership | `agent__getOrg(orgId)` if available |
@@ -38,8 +38,8 @@ agent__createOrg(
 // executionSubstrate.orgLineage.rootSessionId = <returned orgRootSessionId>
 
 // Step 3 — first member has no existing child to reuse, so spawn it
-agent__startSession(
-  agentId: "<researcher-assistant-id>",
+agent__spawnSession(
+  configId: "<researcher-assistant-id>",
   task: "..."
 )
 ```
@@ -72,7 +72,7 @@ workspace; verify it matches the intended org workspace before reuse. For a new
 child, inheritance is automatic when it is started from the org root:
 
 ```
-agent__startSession(agentId: "...", task: "...")
+agent__spawnSession(configId: "...", task: "...")
 ```
 
 If a child starts outside the org inheritance path, it gets its own workspace and will not automatically see the same implementation context unless you explicitly pass `workspaceOverride`.
@@ -83,8 +83,8 @@ When org members need different operating rules (e.g., frontend specialist vs. b
 
 ```
 // Each specialist gets its own workspace directory containing a custom agents.md / SOUL.md
-agent__startSession(
-  agentId: "frontend-expert",
+agent__spawnSession(
+  configId: "frontend-expert",
   task: "Implement the React login component",
   workspaceOverride: "/shared-workspace/frontend/"
 )
@@ -128,7 +128,7 @@ The backend automatically updates the scaffolded `.libragent/teamwork.json` file
       "orgName": "<org-name>",
       "rootSessionId": "<returned-orgRootSessionId>",
       "rootAction": "agent__createOrg",
-      "childAction": "agent__startSession",
+      "childAction": "agent__spawnSession",
       "childArgs": {},
       "compatibilityAlias": "spawnOrgAgent",
       "workspaceSharing": "inherit-parent-workspace-by-default"

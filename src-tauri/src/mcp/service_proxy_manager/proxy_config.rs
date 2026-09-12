@@ -2,10 +2,11 @@ use super::super::session_isolation_config::SessionIsolationConfig;
 use crate::agent::runtime_state::{
     SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
 };
+use crate::mcp::utils::unique_session_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::state::{get_mcp_server_repository, get_settings_repository};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExistingProxyDisposition {
@@ -93,6 +94,7 @@ pub(super) async fn load_requested_server_configs(
                     session_id
                 );
             } else {
+                let mut taken_session_names = HashSet::new();
                 for model in models {
                     if !mcp_server_ids.contains(&model.id) {
                         log::debug!(
@@ -106,13 +108,30 @@ pub(super) async fn load_requested_server_configs(
                     match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
                     {
                         Ok(mut config) => {
-                            let server_name = config.name.unwrap_or_else(|| model.name.clone());
+                            let raw_name = config.name.unwrap_or_else(|| model.name.clone());
+                            let server_name = unique_session_server_name(
+                                &raw_name,
+                                &model.id,
+                                &mut taken_session_names,
+                            );
+                            if server_name != raw_name {
+                                log::info!(
+                                    "Sanitized MCP server name '{}' → '{}' for session {} (ID: {})",
+                                    raw_name,
+                                    server_name,
+                                    session_id,
+                                    model.id
+                                );
+                            }
+                            // Session runtime / tool prefix key only — DB row name is left unchanged
+                            // so legacy display names with spaces remain intact.
                             config.name = Some(server_name.clone());
                             server_name_to_id.insert(server_name.clone(), model.id.clone());
 
                             log::debug!(
-                                "Loading MCP server '{}' (ID: {}) into session {}",
+                                "Loading MCP server '{}' (raw: '{}', ID: {}) into session {}",
                                 server_name,
+                                raw_name,
                                 model.id,
                                 session_id
                             );

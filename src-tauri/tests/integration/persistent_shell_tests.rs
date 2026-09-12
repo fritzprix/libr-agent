@@ -285,6 +285,7 @@ async fn test_unicode_handling() -> Result<()> {
 
 #[tokio::test]
 async fn test_shell_creation_and_reuse() -> Result<()> {
+    tauri_mcp_agent_lib::reset_state();
     let manager = PersistentShellManager::new();
     let session_id = "test-session".to_string();
     let workspace_path = std::env::temp_dir().join("ps_test_shell_reuse");
@@ -314,6 +315,7 @@ async fn test_shell_creation_and_reuse() -> Result<()> {
 
 #[tokio::test]
 async fn test_execute_basic_command_via_manager() -> Result<()> {
+    tauri_mcp_agent_lib::reset_state();
     let manager = PersistentShellManager::new();
     let session_id = "test-exec".to_string();
     let workspace_path = std::env::temp_dir().join("ps_test_execute_basic");
@@ -351,6 +353,7 @@ async fn test_execute_basic_command_via_manager() -> Result<()> {
 
 #[tokio::test]
 async fn test_state_persistence_across_commands_via_manager() -> Result<()> {
+    tauri_mcp_agent_lib::reset_state();
     let manager = PersistentShellManager::new();
     let session_id = "test-state".to_string();
     let workspace_path = std::env::temp_dir().join("ps_test_state_persistence");
@@ -410,6 +413,7 @@ async fn test_state_persistence_across_commands_via_manager() -> Result<()> {
 
 #[tokio::test]
 async fn test_cleanup_all() -> Result<()> {
+    tauri_mcp_agent_lib::reset_state();
     let manager = PersistentShellManager::new();
     let ws1 = std::env::temp_dir().join("ps_test_cleanup_1");
     let ws2 = std::env::temp_dir().join("ps_test_cleanup_2");
@@ -469,9 +473,9 @@ async fn test_child_stdin_delivery_pipes_input_to_python() -> Result<()> {
     .await?;
 
     #[cfg(unix)]
-    let command = "python3 -c \"import sys; print(sys.stdin.readline().strip())\"";
+    let command = "python3 -c \"import sys; data=sys.stdin.buffer.readline(); assert not data.startswith(b'\\xef\\xbb\\xbf'), data; print(data.decode().strip())\"";
     #[cfg(windows)]
-    let command = "python -c \"import sys; print(sys.stdin.readline().strip())\"";
+    let command = "python -c \"import sys; data=sys.stdin.buffer.readline(); assert not data.startswith(b'\\xef\\xbb\\xbf'), data; print(data.decode().strip())\"";
 
     let (stdout, _, exit_code, _) = shell
         .execute_with_input(command, "hello-child-stdin", StdinDelivery::Child)

@@ -239,6 +239,20 @@ async def run_setup(args, password, auth_token, ct0) -> int:
     print(json.dumps(result))
     return 0
 
+
+def sanitize_secret(value: str) -> str:
+    """Strip whitespace and leading UTF-8 BOM injected by Windows pipes.
+
+    PowerShell 5.1 `$OutputEncoding = [System.Text.Encoding]::UTF8` prepends
+    U+FEFF to native stdin. str.strip() does not remove U+FEFF, so secrets
+    hashed or stored with a leading BOM are rejected by upstream services.
+    """
+    cleaned = value.strip()
+    while cleaned.startswith("\ufeff"):
+        cleaned = cleaned.lstrip("\ufeff").strip()
+    return cleaned
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="X account setup script")
     parser.add_argument("--username", required=True, help="X username")
@@ -261,7 +275,9 @@ def main() -> int:
 
     password = args.password
     if args.password_stdin and not (args.auth_token and args.ct0):
-        password = sys.stdin.readline().strip()
+        password = sys.stdin.readline()
+    if password:
+        password = sanitize_secret(password)
 
     totp_secret = args.totp_secret
     if totp_secret == "-":

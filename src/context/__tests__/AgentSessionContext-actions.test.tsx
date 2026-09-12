@@ -138,10 +138,174 @@ describe('AgentSessionContext – User Actions', () => {
                 toolCallId: 'call-2',
                 approved: true,
             });
-            expect(mockClearPendingApproval).not.toHaveBeenCalled();
+            expect(result.current.state.pendingApprovals).toHaveLength(1);
+            expect(result.current.state.pendingApprovals[0]).toMatchObject({
+                toolCallId: 'call-2',
+                approvalKind: 'hard',
+            });
+            expect(mockClearPendingApproval).toHaveBeenCalledTimes(1);
+            expect(mockClearPendingApproval).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                'call-1',
+            );
             expect(mockMarkSessionViewed).toHaveBeenCalledWith(
                 TEST_SESSION_ID,
                 expect.any(Date),
+            );
+        });
+
+        it('clears all pending widgets when Full Auto auto-approves without waiting for events', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            listenMock.mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => ({
+                    state: useAgentSessionState(),
+                    actions: useAgentSessionActions(),
+                }),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(eventHandler).toBeDefined();
+                expect(result.current.state.isSessionLoading).toBe(false);
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-1',
+                        toolName: 'shell',
+                        arguments: '{}',
+                        approvalKind: 'standard',
+                        requestId: 'req-1',
+                        description: 'Approve shell',
+                        inputPreview: '{}',
+                    },
+                });
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-2',
+                        toolName: 'shell',
+                        arguments: '{}',
+                        approvalKind: 'hard',
+                        requestId: 'req-2',
+                        description: 'Approve shell',
+                        inputPreview: '{}',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.state.pendingApprovals).toHaveLength(2);
+            });
+
+            mockMarkSessionViewed.mockClear();
+            mockClearPendingApproval.mockClear();
+
+            await act(async () => {
+                await result.current.actions.setExecutionMode('unsafe');
+            });
+
+            expect(safeInvokeMock).toHaveBeenCalledWith('agent_set_execution_mode', {
+                sessionId: TEST_SESSION_ID,
+                mode: 'unsafe',
+            });
+            expect(result.current.state.executionMode).toBe('unsafe');
+            expect(result.current.state.pendingApprovals).toEqual([]);
+            expect(mockClearPendingApproval).toHaveBeenCalledTimes(2);
+            expect(mockClearPendingApproval).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                'call-1',
+            );
+            expect(mockClearPendingApproval).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                'call-2',
+            );
+            expect(mockMarkSessionViewed).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                expect.any(Date),
+            );
+        });
+
+        it('clears only the approval IDs returned by the backend after a mode change', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            listenMock.mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => ({
+                    state: useAgentSessionState(),
+                    actions: useAgentSessionActions(),
+                }),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(eventHandler).toBeDefined();
+                expect(result.current.state.isSessionLoading).toBe(false);
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-1',
+                        toolName: 'shell',
+                        arguments: '{}',
+                        approvalKind: 'standard',
+                    },
+                });
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-2',
+                        toolName: 'shell',
+                        arguments: '{}',
+                        approvalKind: 'hard',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.state.pendingApprovals).toHaveLength(2);
+            });
+
+            mockClearPendingApproval.mockClear();
+            safeInvokeMock.mockResolvedValueOnce(['call-1']);
+
+            await act(async () => {
+                await result.current.actions.setExecutionMode('unsafe');
+            });
+
+            expect(result.current.state.executionMode).toBe('unsafe');
+            expect(result.current.state.pendingApprovals).toHaveLength(1);
+            expect(result.current.state.pendingApprovals[0]?.toolCallId).toBe(
+                'call-2',
+            );
+            expect(mockClearPendingApproval).toHaveBeenCalledTimes(1);
+            expect(mockClearPendingApproval).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                'call-1',
             );
         });
 
@@ -170,6 +334,60 @@ describe('AgentSessionContext – User Actions', () => {
                 mode: 'unsafe',
             });
             expect(result.current.state.executionMode).toBe('unsafe');
+        });
+
+        it('keeps pending widgets and the previous mode when the backend mode change fails', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            listenMock.mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => ({
+                    state: useAgentSessionState(),
+                    actions: useAgentSessionActions(),
+                }),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(eventHandler).toBeDefined();
+                expect(result.current.state.isSessionLoading).toBe(false);
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-1',
+                        toolName: 'shell',
+                        arguments: '{}',
+                        approvalKind: 'standard',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.state.pendingApprovals).toHaveLength(1);
+            });
+
+            mockClearPendingApproval.mockClear();
+            mockMarkSessionViewed.mockClear();
+            safeInvokeMock.mockRejectedValueOnce(new Error('backend failed'));
+
+            await act(async () => {
+                await result.current.actions.setExecutionMode('unsafe');
+            });
+
+            expect(result.current.state.executionMode).toBe('normal');
+            expect(result.current.state.pendingApprovals).toHaveLength(1);
+            expect(mockClearPendingApproval).not.toHaveBeenCalled();
         });
 
         it('updates local session title and persists it through the list action', async () => {

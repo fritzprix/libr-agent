@@ -1,68 +1,37 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from './LoadingIndicator';
+import {
+  DEFAULT_COMBINATORIAL,
+  DEFAULT_INITIAL,
+  DEFAULT_LATE,
+  DEFAULT_WITTY,
+  buildEarlyPool,
+  buildEndlessPool,
+  isStringArray,
+  nextPhase,
+  parseCombinatorialParts,
+  type CombinatorialParts,
+  type LoaderPhase,
+} from './analysisLoaderMessages';
 
 interface AnalysisLoaderProps {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
 
-const DEFAULT_INITIAL = 'Preparing response...';
-const DEFAULT_WITTY = [
-  'Sipping digital coffee...',
-  'Neurons are stretching...',
-  'Picking the most intellectual emojis...',
-  'Navigating through 0s and 1s...',
-  'Tabs or spaces? Debating the eternal question...',
-  'Tuning quantum entanglement...',
-  'Hunting for missing semicolons...',
-  'Dusting off virtual bookshelves...',
-  'GPU fans spinning at full speed 🌪️',
-  'Baking a fresh, crispy response 🥐',
-  'Briefly admiring a cat picture 🐾',
-  'Searching every corner of cache memory...',
-];
-const DEFAULT_LATE = [
-  'Great answers require proper aging, like fine wine 🍷',
-  'No progress bar, so cycling witty text instead...',
-  'Waiting 3 more seconds might unleash pure genius...',
-  'Almost there, hang tight!',
-  'Taking a moment? Time for a quick stretch 🧘',
-  'Thanks for your patience, almost ready...',
-];
-
-function isStringArray(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every((item) => typeof item === 'string')
-  );
-}
-
-function shuffleArray<T>(array: readonly T[]): T[] {
-  const result = [...array];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
-}
-
 export const AnalysisLoader: React.FC<AnalysisLoaderProps> = ({
   size = 'md',
   className = '',
 }) => {
-  const { t } = useTranslation('common');
-  const [step, setStep] = useState(0);
+  const { t, i18n } = useTranslation('common');
 
-  const shuffledPool = useMemo(() => {
+  const wittyList = useMemo(() => {
     const raw = t('agent.analysisLoader.wittyMessages', {
       returnObjects: true,
       defaultValue: DEFAULT_WITTY,
     });
-    const list = isStringArray(raw) ? raw : DEFAULT_WITTY;
-    const initial = t('agent.analysisLoader.initial', DEFAULT_INITIAL);
-    return shuffleArray([initial, ...list]);
+    return isStringArray(raw) ? raw : DEFAULT_WITTY;
   }, [t]);
 
   const lateList = useMemo(() => {
@@ -73,32 +42,65 @@ export const AnalysisLoader: React.FC<AnalysisLoaderProps> = ({
     return isStringArray(raw) ? raw : DEFAULT_LATE;
   }, [t]);
 
+  const combinatorialParts = useMemo((): CombinatorialParts => {
+    const raw = t('agent.analysisLoader.combinatorial', {
+      returnObjects: true,
+      defaultValue: DEFAULT_COMBINATORIAL,
+    });
+    return parseCombinatorialParts(raw) ?? DEFAULT_COMBINATORIAL;
+  }, [t]);
+
+  const initialMessage = t('agent.analysisLoader.initial', DEFAULT_INITIAL);
+
+  const [phase, setPhase] = useState<LoaderPhase>('early');
+  const [index, setIndex] = useState(0);
+  const [queue, setQueue] = useState(() =>
+    buildEarlyPool(initialMessage, wittyList, combinatorialParts),
+  );
+
+  // Rebuild only when the active language changes (translations are sync on mount).
+  const languageRef = useRef(i18n.language);
   useEffect(() => {
-    // Adaptive cognitive pacing: 1.8s for initial eye-landing, then 1.4s for brisk dopamine cycle
-    const delay = step === 0 ? 1800 : 1400;
+    if (languageRef.current === i18n.language) {
+      return;
+    }
+    languageRef.current = i18n.language;
+    setPhase('early');
+    setIndex(0);
+    setQueue(buildEarlyPool(initialMessage, wittyList, combinatorialParts));
+  }, [i18n.language, initialMessage, wittyList, combinatorialParts]);
+
+  useEffect(() => {
+    // Adaptive pacing: longer first beat on the pinned initial message, then brisk cycle.
+    const delay = phase === 'early' && index === 0 ? 1800 : 1400;
     const timer = setTimeout(() => {
-      setStep((prev) => prev + 1);
+      if (index + 1 < queue.length) {
+        setIndex(index + 1);
+        return;
+      }
+
+      const lastMessage = queue[index];
+      const upcoming = nextPhase(phase);
+
+      if (upcoming === 'late' && lateList.length > 0) {
+        setPhase('late');
+        setQueue([...lateList]);
+        setIndex(0);
+        return;
+      }
+
+      // late → endless, empty late list, or endless wrap: reshuffle + fresh combos
+      setPhase('endless');
+      setQueue(
+        buildEndlessPool(wittyList, combinatorialParts, 24, lastMessage),
+      );
+      setIndex(0);
     }, delay);
 
     return () => clearTimeout(timer);
-  }, [step]);
+  }, [phase, index, queue, lateList, wittyList, combinatorialParts]);
 
-  // Determine current message based on progression step:
-  // Steps 0..shuffledPool.length - 1: Immediately randomized diverse messages
-  // Steps beyond: Progressive late messages (clamped at final reassurance)
-  const currentMessage = useMemo(() => {
-    if (step < shuffledPool.length) {
-      return shuffledPool[step];
-    }
-
-    const lateIndex = step - shuffledPool.length;
-    if (lateIndex < lateList.length) {
-      return lateList[lateIndex];
-    }
-
-    // Clamped at the last reassuring message
-    return lateList[lateList.length - 1] || shuffledPool[0];
-  }, [step, shuffledPool, lateList]);
+  const currentMessage = queue[index] ?? initialMessage;
 
   return (
     <div
@@ -106,7 +108,7 @@ export const AnalysisLoader: React.FC<AnalysisLoaderProps> = ({
     >
       <LoadingIndicator size={size} />
       <span
-        key={currentMessage}
+        key={`${phase}-${index}-${currentMessage}`}
         className="animate-in fade-in duration-300 transition-all truncate"
       >
         {currentMessage}

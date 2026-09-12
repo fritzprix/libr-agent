@@ -72,6 +72,9 @@ function MCPServerDialogComponent({
     showAdvanced,
     setShowAdvanced,
     isValid,
+    isNewServer,
+    sanitizedName,
+    nameNeedsSanitization,
     handleAddEnvVar,
     handleRemoveEnvVar,
     handleUpdateEnvVar,
@@ -144,14 +147,26 @@ function MCPServerDialogComponent({
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           placeholder={t(
             'mcpServer.dialog.namePlaceholder',
-            'e.g., filesystem, github, sequential-thinking',
+            'e.g., filesystem, github, sequential_thinking',
           )}
         />
         <p className="text-xs text-muted-foreground">
-          {t(
-            'mcpServer.dialog.nameDesc',
-            'Unique identifier for this extension',
-          )}
+          {nameNeedsSanitization
+            ? isNewServer
+              ? t(
+                  'mcpServer.dialog.nameSanitizeHint',
+                  'Will be saved as "{{sanitized}}" (spaces and special characters become underscores)',
+                  { sanitized: sanitizedName },
+                )
+              : t(
+                  'mcpServer.dialog.nameRuntimeSanitizeHint',
+                  'Display name kept as-is. Tools will use "{{sanitized}}" at runtime.',
+                  { sanitized: sanitizedName },
+                )
+            : t(
+                'mcpServer.dialog.nameDesc',
+                'Unique identifier for this extension. Use letters, numbers, and underscores only.',
+              )}
         </p>
       </div>
 

@@ -52,7 +52,7 @@ The script reports:
 | `NETWORK_API_ERROR`             | Connection / API network exception                                     |
 | `TOOL_EXECUTION_ERROR`          | Structured tool `error` fields only (rare; not observation heuristics) |
 | `INITIALIZATION_OR_EARLY_ABORT` | Zero turns                                                             |
-| `AGENT_LOOP_OR_STUCK`           | ≥3 repeated adjacent identical tool calls (loop detected)             |
+| `AGENT_LOOP_OR_STUCK`           | ≥3 repeated adjacent identical tool calls (loop detected)              |
 | `HIGH_TURN_COUNT`               | Turns > 30 without repeated-call evidence (inspect manually)           |
 | `VERIFIER_FAILED_WRONG_STATE`   | Default failed bucket                                                  |
 

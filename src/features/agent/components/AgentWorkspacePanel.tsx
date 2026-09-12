@@ -37,11 +37,13 @@ import {
   type DragAndDropEvent,
   type DragAndDropPayload,
 } from '@/context/DnDContext';
+import { useAgentFilePreview } from '@/context/AgentFilePreviewContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { cn } from '@/lib/utils';
 
 import { PanelEyebrow, PanelListFrame } from './panel-chrome';
 import { FileTreeNode } from './workspace-panel/FileTreeNode';
+import { canOpenInAppPreview } from './workspace-panel/filePreview';
 import { useWorkspaceFiles } from './workspace-panel/useWorkspaceFiles';
 import { useWorkspaceOverride } from './workspace-panel/useWorkspaceOverride';
 import { useWorkspaceFileDrop } from './workspace-panel/useWorkspaceFileDrop';
@@ -81,6 +83,7 @@ export function AgentWorkspacePanel({
   const { t } = useTranslation();
   const { openWorkspaceFileWithDefaultApp } = useRustBackend();
   const { session } = useAgentSessionState();
+  const { openFilePreview } = useAgentFilePreview();
 
   const rootPath = './';
   const panelRef = useRef<HTMLDivElement>(null);
@@ -88,6 +91,7 @@ export function AgentWorkspacePanel({
   const [dragState, setDragState] = useState<{ isOver: boolean }>({
     isOver: false,
   });
+  const [activeDropDir, setActiveDropDir] = useState<string | null>(null);
 
   const [isUploading, setIsUploading] = useState(false);
   const [isOpeningNative, setIsOpeningNative] = useState(false);
@@ -135,45 +139,6 @@ export function AgentWorkspacePanel({
     handleDropComplete,
   );
 
-  const handleFolderNodeFileDrop = useCallback(
-    async (paths: string[], targetDir: string) => {
-      if (!session?.id || paths.length === 0) return;
-
-      logger.info('External files dropped on folder node', {
-        pathCount: paths.length,
-        targetDir,
-      });
-
-      try {
-        await registerDroppedFiles(paths);
-        const pathTypes = await Promise.all(
-          paths.map((path) => checkDroppedPathType(path)),
-        );
-
-        const hasDirectories = pathTypes.includes('directory');
-        if (hasDirectories) {
-          toast.error(
-            t(
-              'agent.workspace.dropFolderIntoSubfolderError',
-              'Dropping folders into subfolders is not supported',
-            ),
-          );
-          return;
-        }
-
-        await handleWorkspaceFileDrop(paths, targetDir);
-      } catch (error) {
-        logger.error('Failed to resolve dropped paths on folder node', error);
-        const message =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-        toast.error(t('agent.workspace.importFileError'), {
-          description: message,
-        });
-      }
-    },
-    [handleWorkspaceFileDrop, session?.id, t],
-  );
-
   const handleWorkspacePathDrop = useCallback(
     async (paths: string[]) => {
       if (!session?.id || paths.length === 0) return;
@@ -218,6 +183,58 @@ export function AgentWorkspacePanel({
       }
     },
     [applyWorkspaceOverride, handleWorkspaceFileDrop, session?.id, t],
+  );
+
+  const handleFolderNodeFileDrop = useCallback(
+    async (paths: string[], targetDir: string) => {
+      if (!session?.id || paths.length === 0) return;
+
+      logger.info('External files dropped on folder node', {
+        pathCount: paths.length,
+        targetDir,
+      });
+
+      const isRootTarget =
+        targetDir === rootPath || targetDir === './' || targetDir === '.';
+      if (isRootTarget) {
+        await handleWorkspacePathDrop(paths);
+        return;
+      }
+
+      try {
+        await registerDroppedFiles(paths);
+        const pathTypes = await Promise.all(
+          paths.map((path) => checkDroppedPathType(path)),
+        );
+
+        const hasDirectories = pathTypes.includes('directory');
+        if (hasDirectories) {
+          toast.error(
+            t(
+              'agent.workspace.dropFolderIntoSubfolderError',
+              'Dropping folders into subfolders is not supported',
+            ),
+          );
+          return;
+        }
+
+        await handleWorkspaceFileDrop(paths, targetDir);
+      } catch (error) {
+        logger.error('Failed to resolve dropped paths on folder node', error);
+        const message =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+        toast.error(t('agent.workspace.importFileError'), {
+          description: message,
+        });
+      }
+    },
+    [
+      handleWorkspaceFileDrop,
+      handleWorkspacePathDrop,
+      rootPath,
+      session?.id,
+      t,
+    ],
   );
 
   // Subscribe to DnD events
@@ -307,28 +324,19 @@ export function AgentWorkspacePanel({
     }
   };
 
-  // Open file with system default app
-  const handleOpenFile = useCallback(
-    async (node: FileNode) => {
-      if (node.isDirectory) {
-        logger.warn('Attempted to open a directory, ignoring', {
-          path: node.path,
-          isDirectory: node.isDirectory,
-        });
-        return;
-      }
-
+  const openWithDefaultApp = useCallback(
+    async (filePath: string, fileName?: string) => {
       try {
-        logger.debug('Opening file with default app', { path: node.path });
-        await openWorkspaceFileWithDefaultApp(node.path, session?.id);
-        logger.info('File opened successfully', { path: node.path });
+        logger.debug('Opening file with default app', { path: filePath });
+        await openWorkspaceFileWithDefaultApp(filePath, session?.id);
+        logger.info('File opened successfully', { path: filePath });
         toast.success(t('agent.workspace.fileOpened'), {
           description: t('agent.workspace.fileOpenedDescription', {
-            name: node.name,
+            name: fileName ?? filePath,
           }),
         });
       } catch (error) {
-        logger.error('Failed to open file', { path: node.path, error });
+        logger.error('Failed to open file', { path: filePath, error });
         const message =
           error instanceof Error ? error.message : 'Unknown error occurred';
         toast.error(t('agent.workspace.fileOpenError'), {
@@ -339,7 +347,35 @@ export function AgentWorkspacePanel({
     [openWorkspaceFileWithDefaultApp, session?.id, t],
   );
 
+  // Open file with preview sheet or system default app
+  const handleOpenFile = useCallback(
+    async (node: FileNode) => {
+      if (node.isDirectory) {
+        logger.warn('Attempted to open a directory, ignoring', {
+          path: node.path,
+          isDirectory: node.isDirectory,
+        });
+        return;
+      }
+
+      if (canOpenInAppPreview({ path: node.path, size: node.size })) {
+        logger.debug('Opening file in preview sheet', { path: node.path });
+        openFilePreview({
+          path: node.path,
+          name: node.name,
+          size: node.size,
+          sessionId: session?.id,
+        });
+      } else {
+        await openWithDefaultApp(node.path, node.name);
+      }
+    },
+    [openFilePreview, openWithDefaultApp, session?.id],
+  );
+
   if (!session) return null;
+
+  const isPanelDropActive = dragState.isOver || activeDropDir === rootPath;
 
   return (
     <div
@@ -348,7 +384,7 @@ export function AgentWorkspacePanel({
       className={cn(
         'h-full',
         variant === 'rail' ? 'w-80 flex-shrink-0' : 'w-full',
-        dragState.isOver && 'ring-2 ring-inset ring-success',
+        isPanelDropActive && 'ring-2 ring-inset ring-success',
       )}
     >
       <Card
@@ -357,7 +393,7 @@ export function AgentWorkspacePanel({
           variant === 'rail'
             ? 'border-y-0 border-r-0 border-l border-border/40'
             : 'border-0',
-          dragState.isOver && 'border-success bg-success/5',
+          isPanelDropActive && 'border-success bg-success/5',
         )}
       >
         <CardHeader className="border-b border-border/40 px-4 py-3">
@@ -596,6 +632,8 @@ export function AgentWorkspacePanel({
                   onToggle={toggleDirectory}
                   onOpen={handleOpenFile}
                   onFileDrop={handleFolderNodeFileDrop}
+                  activeDropDir={activeDropDir}
+                  onDragTargetChange={setActiveDropDir}
                 />
               ))}
 

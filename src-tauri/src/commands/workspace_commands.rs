@@ -1,4 +1,6 @@
-use crate::services::{WorkspaceFileItem, WorkspaceRuntimeManager, WorkspaceService};
+use crate::services::{
+    WorkspaceFileContentResponse, WorkspaceFileItem, WorkspaceRuntimeManager, WorkspaceService,
+};
 use crate::session::get_session_manager;
 /// Workspace-related Tauri commands
 ///
@@ -113,6 +115,15 @@ pub async fn open_workspace_file_with_default_app(
     session_id: Option<String>,
 ) -> Result<(), String> {
     WorkspaceService::open_file_with_default_app(file_path, session_id).await
+}
+
+/// Reads a workspace file's content for in-app preview.
+#[tauri::command]
+pub async fn read_workspace_file_content(
+    file_path: String,
+    session_id: Option<String>,
+) -> Result<WorkspaceFileContentResponse, String> {
+    WorkspaceService::read_file_content(file_path, session_id).await
 }
 
 #[tauri::command]
@@ -385,4 +396,30 @@ pub async fn check_docker_health() -> Result<(), String> {
     WorkspaceRuntimeManager::healthcheck()
         .await
         .map_err(|e| e.to_agent_string())
+}
+
+/// Result of a lightweight PATH probe for MCP/runtime onboarding.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeProbeResult {
+    pub node: bool,
+    pub npx: bool,
+    pub python: bool,
+    pub uv: bool,
+}
+
+/// Checks whether common MCP runtime binaries exist on PATH.
+///
+/// Used by Chat hub onboarding and recipe walkthroughs before installing
+/// stdio MCP servers that depend on `npx` / `uv`.
+#[tauri::command]
+pub fn probe_runtime_binaries() -> RuntimeProbeResult {
+    use crate::utils::platform::command_exists;
+
+    RuntimeProbeResult {
+        node: command_exists("node"),
+        npx: command_exists("npx"),
+        python: command_exists("python3") || command_exists("python"),
+        uv: command_exists("uv"),
+    }
 }

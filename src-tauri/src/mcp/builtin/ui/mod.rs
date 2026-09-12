@@ -2,7 +2,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
+use crate::mcp::types::{MCPContent, MCPResult, ServiceContext, ServiceInfo};
 use crate::mcp::MCPTool;
 use ammonia::Builder;
 use async_trait::async_trait;
@@ -385,10 +385,14 @@ impl UiServer {
         ))
     }
 
-    fn report_result(&self, args: Value) -> Result<MCPResult, String> {
-        let result = match args.get("result").and_then(|v| v.as_str()) {
-            Some(v) if !v.trim().is_empty() => v,
-            Some(_) => {
+    async fn report_result(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        let result = match non_empty_string_arg(&args, "result") {
+            Some(v) => v,
+            None if args.get("result").is_some() => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "result must be a non-empty string",
@@ -402,6 +406,10 @@ impl UiServer {
             }
             None => return Ok(missing_param_error("result", ToolGroup::UI)),
         };
+
+        // Optional: only meaningful when the request has checkable criteria.
+        let criteria = non_empty_string_arg(&args, "criteria");
+        let proof = non_empty_string_arg(&args, "proof");
 
         let format = args
             .get("format")
@@ -430,66 +438,151 @@ impl UiServer {
             .to_mcp_result());
         }
 
-        let is_markdown = !matches!(format, "html");
-        let render_content = if is_markdown {
-            result.to_string()
-        } else {
-            sanitize_html_fragment(result)
-        };
-        let content_json = serde_json::to_string(&render_content)
-            .unwrap_or_else(|_| "\"\"".to_string())
-            .replace("</", "<\\/");
+        let export_paths: Vec<String> = args
+            .get("export_paths")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
 
-        let message_id = uuid::Uuid::new_v4().to_string();
+        let mut deliverables = Vec::new();
+        if !export_paths.is_empty() {
+            let workspace_dir = if let Some(ref sid) = session_id {
+                if let Ok(sm) = crate::session::get_session_manager() {
+                    crate::session::resolve_session_workspace_dir(sm, sid)
+                        .await
+                        .ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            for path_str in &export_paths {
+                let (exists, size_bytes, extension, name, absolute_path) = if let Some(ref ws) =
+                    workspace_dir
+                {
+                    let ws_canon = std::fs::canonicalize(ws).unwrap_or_else(|_| ws.clone());
+                    match crate::utils::security::resolve_secure_path(&ws_canon, path_str).await {
+                        Ok(full_path) => {
+                            let exists = full_path.exists();
+                            let size = if exists {
+                                std::fs::metadata(&full_path).map(|m| m.len()).ok()
+                            } else {
+                                None
+                            };
+                            let ext = full_path
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .map(|s| s.to_string());
+                            let file_name = full_path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(path_str)
+                                .to_string();
+                            let abs = full_path.to_string_lossy().replace('\\', "/");
+                            (exists, size, ext, file_name, Some(abs))
+                        }
+                        Err(_) => (false, None, None, path_str.clone(), None),
+                    }
+                } else {
+                    // Safe fallback when no session/workspace is available: do not probe host filesystem
+                    let p = std::path::Path::new(path_str);
+                    let ext = p
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|s| s.to_string());
+                    let file_name = p
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(path_str)
+                        .to_string();
+                    (false, None, ext, file_name, None)
+                };
+
+                deliverables.push(json!({
+                    "path": path_str,
+                    "absolute_path": absolute_path,
+                    "name": name,
+                    "size_bytes": size_bytes,
+                    "extension": extension,
+                    "exists": exists,
+                }));
+            }
+        }
+
         let display_title = title.unwrap_or(match status {
             "partial" => "Partial result",
             "blocked" => "Blocked",
             _ => "Result",
         });
 
-        let mut data = json!({
-            "isMarkdown": is_markdown,
-            "contentJson": content_json,
-            "messageId": message_id,
-            "title": display_title,
-        });
-
-        if !is_markdown {
-            data.as_object_mut()
-                .unwrap()
-                .insert("content".to_string(), json!(render_content));
-        }
-
-        let handlebars = self.handlebars.lock().unwrap();
-        let html = match handlebars.render("present-interactive", &data) {
-            Ok(h) => h,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    format!("Failed to render final result: {}", e),
-                    ToolGroup::UI,
-                )
-                .to_mcp_result());
-            }
-        };
-
-        let summary = format!(
+        // Keep `Result:\n{body}\n\nSTOP:` stable for parent checkSession extraction.
+        let mut summary = format!(
             "Final result reported (status={status}).\n\
-             Title: {display_title}\n\
-             Result:\n{result}\n\n\
+             Title: {display_title}\n"
+        );
+        if let Some(criteria) = criteria {
+            summary.push_str(&format!("Acceptance criteria:\n{criteria}\n\n"));
+        }
+        if let Some(proof) = proof {
+            summary.push_str(&format!("Verification proof:\n{proof}\n\n"));
+        }
+        summary.push_str(&format!(
+            "Result:\n{result}\n\n\
              STOP: Do not call any more tools. The task outcome is already delivered. \
              End your turn now with at most a one-sentence confirmation."
-        );
+        ));
 
-        Ok(crate::mcp::builtin::utils::create_resource_response(
-            &format!("ui://result/{}", message_id),
-            "text/html",
-            &html,
-            "ui",
-            "reportResult",
-            Some(summary.as_str()),
-        ))
+        let structured_data = json!({
+            "type": "reportResult",
+            "status": status,
+            "format": format,
+            "title": display_title,
+            "criteria": criteria,
+            "proof": proof,
+            "result": result,
+            "deliverables": deliverables,
+        });
+
+        // Keep a minimal MCP UI resource so the existing workflow stop path
+        // (`tool` message with Resource → settle idle / RecurringStop) still fires.
+        // The chat UI prefers structured_content (ReportResultCard) over iframe render.
+        let message_id = uuid::Uuid::new_v4().to_string();
+        let stop_marker_resource = MCPContent::Resource {
+            resource: json!({
+                "uri": format!("ui://result/{}", message_id),
+                "mimeType": "text/plain",
+                "text": "",
+            }),
+            service_info: ServiceInfo {
+                server_name: "ui".to_string(),
+                tool_name: "reportResult".to_string(),
+                backend_type: "BuiltInRust".to_string(),
+            },
+        };
+
+        Ok(MCPResult {
+            content: Some(vec![
+                MCPContent::Text { text: summary },
+                stop_marker_resource,
+            ]),
+            structured_content: Some(structured_data),
+            is_error: Some(false),
+        })
     }
+}
+
+fn non_empty_string_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
 }
 
 fn sanitize_html_fragment(content: &str) -> String {
@@ -586,7 +679,7 @@ impl BuiltinMCPServer for UiServer {
     }
 
     fn description(&self) -> &str {
-        "UI tools: presentInteractive for mid-task display/questions; reportResult for the final deliverable when nothing remains to do."
+        "UI tools: presentInteractive for mid-task display/questions; reportResult for the final deliverable with acceptance criteria and verification proof when nothing remains to do."
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
@@ -608,7 +701,7 @@ impl BuiltinMCPServer for UiServer {
             "circuitBreak" => self.circuit_break(args),
             "resumeCircuitBreak" => self.resume_circuit_break(args),
             "presentInteractive" => self.present_interactive(args),
-            "reportResult" => self.report_result(args),
+            "reportResult" => self.report_result(args, _session_id).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

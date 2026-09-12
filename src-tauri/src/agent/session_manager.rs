@@ -429,6 +429,22 @@ impl AgentSessionManager {
         message_injection::inject_messages(self, session_id, messages).await
     }
 
+    /// Append messages into session history without triggering a workflow or touching pending_queue
+    pub async fn append_messages(
+        &self,
+        session_id: &str,
+        messages: Vec<Message>,
+    ) -> Result<(), String> {
+        self.ensure_session_active(session_id).await?;
+        crate::services::MessageService::append_messages_without_workflow(
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+            messages,
+        )
+        .await
+    }
+
     pub async fn get_pending_queue(&self, session_id: &str) -> Result<Vec<Message>, String> {
         self.ensure_session_active(session_id).await?;
         crate::agent::pending_queue::list_pending_messages(&self.active_sessions, session_id).await
@@ -552,7 +568,7 @@ impl AgentSessionManager {
         &self,
         session_id: &str,
         mode: ExecutionMode,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<String>, String> {
         execution_mode::set_execution_mode(self, session_id, mode).await
     }
 

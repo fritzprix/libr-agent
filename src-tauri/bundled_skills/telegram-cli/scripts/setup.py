@@ -103,12 +103,25 @@ def save_config(api_id: int, api_hash: str, phone: str, phone_code_hash: str = "
         pass
 
 
+def sanitize_secret(value: str) -> str:
+    """Strip whitespace and leading UTF-8 BOM injected by Windows pipes.
+
+    PowerShell 5.1 `$OutputEncoding = [System.Text.Encoding]::UTF8` prepends
+    U+FEFF to native stdin. str.strip() does not remove U+FEFF, so secrets
+    hashed or stored with a leading BOM are rejected by upstream services.
+    """
+    cleaned = value.strip()
+    while cleaned.startswith("\ufeff"):
+        cleaned = cleaned.lstrip("\ufeff").strip()
+    return cleaned
+
+
 def read_stdin_line() -> str:
     """Read a single line from stdin (safe for pipes and interactive injection)."""
     line = sys.stdin.readline()
     if not line:
         return ""
-    return line.strip()
+    return sanitize_secret(line)
 
 
 def resolve_secret(
@@ -123,17 +136,17 @@ def resolve_secret(
     Returns (value, error_exit_code). error_exit_code is None on success.
     """
     if direct_value:
-        return direct_value.strip(), None
+        return sanitize_secret(direct_value), None
 
     if env_name:
-        value = os.environ.get(env_name, "").strip()
+        value = sanitize_secret(os.environ.get(env_name, ""))
         if not value:
             print(
                 json.dumps({
                     "status": "error",
                     "message": (
                         f"Environment variable '{env_name}' is empty or unset. "
-                        f"Store the {secret_label} in the shell first (e.g. Read-Host), then run sign_in."
+                        f"Store the {secret_label} in the environment variable first, then run sign_in."
                     ),
                 }),
                 file=sys.stderr,
@@ -353,23 +366,23 @@ def main() -> int:
     parser.add_argument("--phone", help="Telegram phone number with country code")
     parser.add_argument(
         "--code-value",
-        help="Verification code (use with Read-Host in the same PowerShell command in LibrAgent)",
+        help="Verification code (prefer --code-stdin with LibrAgent requireUserInput)",
     )
     parser.add_argument(
         "--password-value",
-        help="2FA password (use with Read-Host in the same PowerShell command in LibrAgent)",
+        help="2FA password (prefer --password-stdin with LibrAgent requireUserInput)",
     )
     parser.add_argument("--code-env", help="Environment variable name holding the verification code")
     parser.add_argument("--password-env", help="Environment variable name holding the 2FA password")
     parser.add_argument(
         "--code-stdin",
         action="store_true",
-        help="Read verification code from stdin (pipe only; not compatible with LibrAgent requireUserInput alone)",
+        help="Read verification code from stdin (LibrAgent auto-pipes requireUserInput here)",
     )
     parser.add_argument(
         "--password-stdin",
         action="store_true",
-        help="Read 2FA password from stdin (pipe only; not compatible with LibrAgent requireUserInput alone)",
+        help="Read 2FA password from stdin (LibrAgent auto-pipes requireUserInput here)",
     )
 
     args = parser.parse_args()

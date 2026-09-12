@@ -180,6 +180,17 @@ pub async fn terminate_session(
             // session is not treated as still cancelled.
             session.cancel_pending.store(false, Ordering::SeqCst);
             session.cancellation_token = CancellationToken::new();
+            // Terminate aborts any open tool batch; clear the marker so later
+            // injects cannot park forever on a ghost PendingToolExecution.
+            if let Some(pending) = session.pending_execution.take() {
+                if !pending.deferred_history_append.is_empty() {
+                    log::warn!(
+                        "Discarding {} deferred history message(s) on terminate for session {}",
+                        pending.deferred_history_append.len(),
+                        session_id
+                    );
+                }
+            }
         }
     }
 

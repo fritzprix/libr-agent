@@ -89,18 +89,19 @@ pub fn report_result_tool() -> MCPTool {
         description: tool_description(
             "Deliver the final task result to the user when there is nothing left to do. This is the explicit completion signal — not for mid-task updates.",
             &[
-                "All required work is already finished (files written, commands succeeded, answer produced).",
                 "You are not waiting on another tool, process, or user clarification.",
-                "Do NOT use this while still exploring, debugging, verifying, or planning next steps.",
+                "Do NOT use this while still exploring, debugging, or planning — finish the work first, then call once.",
             ],
             &[
                 "Call this exactly once when the outcome is ready.",
                 "Put the complete user-facing result in `result` (summary + key outputs/paths). Prefer Markdown.",
+                "When the request has checkable acceptance criteria, put them in `criteria` and verification evidence (or unmet gaps) in `proof`. Skip both when the outcome is not objectively verifiable.",
+                "If your task produced deliverable files, pass their workspace-relative paths to `export_paths` to attach them with Preview/Open/Download actions.",
                 "After this tool returns: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",
             ],
             &[
                 "If you still need user input, use ui__presentInteractive with `interaction` instead.",
-                "If work remains, continue with the appropriate tools — do not call reportResult early.",
+                "If work remains, continue with tools — do not call reportResult early.",
             ],
         ),
         // Keep large body last for model argument ordering.
@@ -130,6 +131,33 @@ pub fn report_result_tool() -> MCPTool {
                         None,
                         None,
                         Some("Optional short title for the result panel"),
+                    ),
+                ),
+                (
+                    "criteria".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some(
+                            "Optional. Checkable acceptance criteria from the user request when they exist; omit when the outcome is not objectively verifiable",
+                        ),
+                    ),
+                ),
+                (
+                    "proof".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some(
+                            "Optional. Evidence that criteria were checked, or unmet gaps for partial/blocked; omit when criteria is omitted",
+                        ),
+                    ),
+                ),
+                (
+                    "export_paths".to_string(),
+                    array_schema(
+                        string_prop(Some(1), Some(1000), None),
+                        Some("Optional workspace-relative paths of final deliverable files (e.g. outputs/report.pdf) to attach to the final result"),
                     ),
                 ),
                 (

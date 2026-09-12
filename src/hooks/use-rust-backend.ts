@@ -4,7 +4,7 @@ import type { MCPResponse } from '@/lib/mcp/protocol';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
 
 // Workspace types
-export type { WorkspaceFileItem } from '@/lib/backend';
+export type { WorkspaceFileItem, WorkspaceFileContent } from '@/lib/backend';
 
 // File system related types
 export interface FileReadParams {
@@ -30,6 +30,10 @@ export interface RustBackendAPI {
     filePath: string,
     sessionId?: string,
   ) => Promise<void>;
+  readWorkspaceFileContent: (
+    filePath: string,
+    sessionId?: string,
+  ) => Promise<client.WorkspaceFileContent>;
 
   // MCP Server Management
   callMCPTool: (
@@ -120,6 +124,7 @@ const backendAPI: RustBackendAPI = {
   // Workspace Management
   listWorkspaceFiles: client.listWorkspaceFiles,
   openWorkspaceFileWithDefaultApp: client.openWorkspaceFileWithDefaultApp,
+  readWorkspaceFileContent: client.readWorkspaceFileContent,
 
   // MCP Server Management
   callMCPTool: client.callTool,

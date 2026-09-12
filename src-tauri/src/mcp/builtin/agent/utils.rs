@@ -183,8 +183,17 @@ pub fn latest_report_result_body(messages: &[Value]) -> Option<String> {
             continue;
         };
 
-        // Identify via the resource sibling, then read the paired text summary.
-        if !content.iter().any(content_item_is_report_result_resource) {
+        // Identify via structuredContent OR resource sibling (legacy).
+        let is_report_result = content.iter().any(content_item_is_report_result_resource)
+            || message
+                .get("metadata")
+                .and_then(|m| m.get("structuredContent"))
+                .is_some_and(|sc| {
+                    sc.get("type").and_then(|v| v.as_str()) == Some("reportResult")
+                        || (sc.get("criteria").is_some() && sc.get("result").is_some())
+                });
+
+        if !is_report_result {
             continue;
         }
 

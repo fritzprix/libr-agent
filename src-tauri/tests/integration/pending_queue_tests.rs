@@ -865,3 +865,649 @@ fn merge_user_message_contents_uses_shared_separator() {
         _ => panic!("expected text"),
     }
 }
+
+#[tokio::test]
+async fn claim_all_pending_messages_preserves_non_user_messages_without_merging() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("non-user-claim-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let mut tool_call_msg = build_user_message(&session_id, "tool-call-1", 1_000);
+    tool_call_msg.role = "assistant".to_string();
+    tool_call_msg.content = vec![];
+
+    let mut tool_result_msg = build_user_message(&session_id, "tool-result-1", 2_000);
+    tool_result_msg.role = "tool".to_string();
+    tool_result_msg.tool_call_id = Some("call-1".to_string());
+    tool_result_msg.content = vec![MCPContent::Text {
+        text: "imported successfully".to_string(),
+    }];
+
+    for msg in [&tool_call_msg, &tool_result_msg] {
+        tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+            &active_sessions,
+            app_handle,
+            &session_id,
+            msg,
+        )
+        .await
+        .expect("enqueue should succeed");
+    }
+
+    let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
+        &active_sessions,
+        app_handle,
+        &session_id,
+    )
+    .await
+    .expect("claim all should succeed");
+
+    assert_eq!(
+        claimed.len(),
+        2,
+        "non-user messages must not be merged and both must survive"
+    );
+    assert_eq!(claimed[0].id, "tool-call-1");
+    assert_eq!(claimed[0].role, "assistant");
+    assert_eq!(claimed[1].id, "tool-result-1");
+    assert_eq!(claimed[1].role, "tool");
+}
+
+#[tokio::test]
+async fn append_messages_without_workflow_bypasses_pending_queue_during_busy() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("append-no-wf-{}", uuid::Uuid::new_v4());
+    let mut metadata = build_session_metadata(&session_id);
+    metadata.status = SessionStatus::Busy;
+    session_repo
+        .upsert_session(&metadata)
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let mut session = build_agent_session(&session_id);
+    session.metadata.status = SessionStatus::Busy;
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let mut tool_call_msg = build_user_message(&session_id, "tc-direct", 1_000);
+    tool_call_msg.role = "assistant".to_string();
+    tool_call_msg.content = vec![];
+
+    let mut tool_result_msg = build_user_message(&session_id, "tr-direct", 2_000);
+    tool_result_msg.role = "tool".to_string();
+    tool_result_msg.tool_call_id = Some("call-direct".to_string());
+    tool_result_msg.content = vec![MCPContent::Text {
+        text: "direct append output".to_string(),
+    }];
+
+    tauri_mcp_agent_lib::services::MessageService::append_messages_without_workflow(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        vec![tool_call_msg, tool_result_msg],
+    )
+    .await
+    .expect("append_messages_without_workflow should succeed");
+
+    // 1. pending queue must remain completely empty
+    let pending = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending");
+    assert_eq!(pending.len(), 0, "pending queue must be empty");
+
+    // 2. session cache must immediately have both messages
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).expect("session exists");
+        let cache = s.messages.read().await;
+        assert_eq!(cache.len(), 2, "cache must have both messages");
+        assert_eq!(cache[0].id, "tc-direct");
+        assert_eq!(cache[1].id, "tr-direct");
+    }
+
+    // 3. SQLite DB must immediately have both messages
+    let db_messages = message_repo
+        .get_by_ids(vec!["tc-direct".to_string(), "tr-direct".to_string()])
+        .await
+        .expect("db lookup");
+    assert_eq!(db_messages.len(), 2, "db must have both messages");
+}
+
+#[tokio::test]
+async fn claim_all_pending_messages_merges_consecutive_user_messages_in_mixed_batch() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("mixed-batch-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let user_1 = build_user_message_with_text(&session_id, "user-1", 1_000, "hello");
+    let user_2 = build_user_message_with_text(&session_id, "user-2", 2_000, "world");
+
+    let mut tool_msg = build_user_message(&session_id, "tool-1", 3_000);
+    tool_msg.role = "tool".to_string();
+    tool_msg.content = vec![MCPContent::Text {
+        text: "tool output".to_string(),
+    }];
+
+    for msg in [&user_1, &user_2, &tool_msg] {
+        tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+            &active_sessions,
+            app_handle,
+            &session_id,
+            msg,
+        )
+        .await
+        .expect("enqueue should succeed");
+    }
+
+    let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
+        &active_sessions,
+        app_handle,
+        &session_id,
+    )
+    .await
+    .expect("claim all should succeed");
+
+    // user_1 and user_2 should be merged into 1, and tool_1 should be kept individually -> total 2
+    assert_eq!(
+        claimed.len(),
+        2,
+        "consecutive user messages merged, tool message separate"
+    );
+    assert_eq!(claimed[0].id, "user-1");
+    assert_eq!(claimed[0].role, "user");
+    let merged_text = match &claimed[0].content[0] {
+        tauri_mcp_agent_lib::mcp::types::MCPContent::Text { text, .. } => text.as_str(),
+        _ => panic!("Expected text content"),
+    };
+    assert_eq!(merged_text, "hello\n\n---\n\nworld");
+
+    assert_eq!(claimed[1].id, "tool-1");
+    assert_eq!(claimed[1].role, "tool");
+}
+
+#[tokio::test]
+async fn inject_messages_to_session_during_busy_splits_user_and_non_user() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("busy-split-{}", uuid::Uuid::new_v4());
+    let mut metadata = build_session_metadata(&session_id);
+    metadata.status = SessionStatus::Busy;
+    session_repo
+        .upsert_session(&metadata)
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let mut session = build_agent_session(&session_id);
+    session.metadata.status = SessionStatus::Busy;
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let user_msg = build_user_message_with_text(&session_id, "user-busy", 1_000, "user prompt");
+    let mut tool_msg = build_user_message(&session_id, "tool-busy", 2_000);
+    tool_msg.role = "tool".to_string();
+    tool_msg.content = vec![MCPContent::Text {
+        text: "tool output".to_string(),
+    }];
+
+    // Call inject_messages_to_session with emit_events_immediately = false (Busy simulation)
+    tauri_mcp_agent_lib::services::MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        vec![user_msg, tool_msg],
+        false,
+    )
+    .await
+    .expect("inject_messages_to_session should succeed");
+
+    // 1. Pending queue should ONLY contain user-busy
+    let pending = tauri_mcp_agent_lib::agent::pending_queue::list_pending_messages(
+        &active_sessions,
+        &session_id,
+    )
+    .await
+    .expect("list pending");
+    assert_eq!(pending.len(), 1, "only user message in pending queue");
+    assert_eq!(pending[0].id, "user-busy");
+
+    // 2. Session cache should immediately contain tool-busy (bypassed pending queue)
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).expect("session exists");
+        let cache = s.messages.read().await;
+        assert_eq!(
+            cache.len(),
+            1,
+            "non-user message directly committed to cache"
+        );
+        assert_eq!(cache[0].id, "tool-busy");
+    }
+
+    // 3. Both messages must be persisted in DB
+    let db_messages = message_repo
+        .get_by_ids(vec!["user-busy".to_string(), "tool-busy".to_string()])
+        .await
+        .expect("db lookup");
+    assert_eq!(db_messages.len(), 2, "both messages in DB");
+}
+
+#[tokio::test]
+async fn take_pending_message_ids_leaves_arrivals_after_snapshot() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("take-snapshot-{}", uuid::Uuid::new_v4());
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), build_agent_session(&session_id));
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let first = build_user_message_with_text(&session_id, "snap-first", 1_000, "first");
+    let second = build_user_message_with_text(&session_id, "snap-second", 2_000, "second");
+    tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        &first,
+    )
+    .await
+    .expect("enqueue first");
+
+    let snapshot = {
+        let sessions = active_sessions.read().await;
+        let ids = sessions
+            .get(&session_id)
+            .expect("session")
+            .pending_events
+            .read()
+            .await
+            .message_ids();
+        ids
+    };
+    assert_eq!(snapshot, vec!["snap-first".to_string()]);
+
+    // Arrival after snapshot must survive a targeted take.
+    tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        &second,
+    )
+    .await
+    .expect("enqueue second");
+
+    let taken = tauri_mcp_agent_lib::agent::pending_queue::take_pending_message_ids(
+        &active_sessions,
+        &session_id,
+        &snapshot,
+    )
+    .await
+    .expect("take snapshot ids");
+    assert_eq!(taken, vec!["snap-first".to_string()]);
+
+    let remaining = {
+        let sessions = active_sessions.read().await;
+        let ids = sessions
+            .get(&session_id)
+            .expect("session")
+            .pending_events
+            .read()
+            .await
+            .message_ids();
+        ids
+    };
+    assert_eq!(
+        remaining,
+        vec!["snap-second".to_string()],
+        "post-snapshot arrival must remain queued"
+    );
+}
+
+#[tokio::test]
+async fn append_during_open_tool_batch_is_deferred_until_batch_completes() {
+    use std::collections::HashSet;
+    use tauri_mcp_agent_lib::agent::state::PendingToolExecution;
+    use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
+
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("defer-tools-{}", uuid::Uuid::new_v4());
+    let mut metadata = build_session_metadata(&session_id);
+    metadata.status = SessionStatus::Busy;
+    session_repo
+        .upsert_session(&metadata)
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let mut session = build_agent_session(&session_id);
+    session.metadata.status = SessionStatus::Busy;
+    session.pending_execution = Some(PendingToolExecution {
+        message_id: "assistant-open".to_string(),
+        total_expected: 1,
+        tool_names: HashMap::from([("call-open".to_string(), "workspace__read".to_string())]),
+        expected_tool_call_ids: HashSet::from(["call-open".to_string()]),
+        completed_tool_call_ids: HashSet::new(),
+        deferred_history_append: Vec::new(),
+    });
+    {
+        let mut cache = session.messages.write().await;
+        let mut open_assistant = build_user_message(&session_id, "assistant-open", 500);
+        open_assistant.role = "assistant".to_string();
+        open_assistant.tool_calls = Some(vec![ToolCall {
+            id: "call-open".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__read".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }]);
+        cache.push(open_assistant);
+    }
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let mut ui_assistant = build_user_message(&session_id, "ui-assistant", 1_000);
+    ui_assistant.role = "assistant".to_string();
+    ui_assistant.content = vec![];
+
+    let mut ui_tool = build_user_message(&session_id, "ui-tool", 2_000);
+    ui_tool.role = "tool".to_string();
+    ui_tool.tool_call_id = Some("call-ui".to_string());
+    ui_tool.content = vec![MCPContent::Text {
+        text: "ui import done".to_string(),
+    }];
+
+    tauri_mcp_agent_lib::services::MessageService::append_messages_without_workflow(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        vec![ui_assistant, ui_tool],
+    )
+    .await
+    .expect("append should defer while tools are open");
+
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).expect("session");
+        let cache = s.messages.read().await;
+        assert_eq!(
+            cache.len(),
+            1,
+            "UI pair must not interleave open tool chain"
+        );
+        assert_eq!(cache[0].id, "assistant-open");
+        let pending = s.pending_execution.as_ref().expect("batch still open");
+        assert_eq!(pending.deferred_history_append.len(), 2);
+    }
+
+    // Completing the open batch clears pending_execution and returns deferred rows.
+    let outcome = tauri_mcp_agent_lib::agent::tools::handle_tool_result(
+        &active_sessions,
+        app_handle,
+        session_id.clone(),
+        "call-open".to_string(),
+        tauri_mcp_agent_lib::commands::agent_commands::ToolExecutionResult {
+            success: true,
+            content: "agent tool done".to_string(),
+            mcp_content: None,
+            structured_content: None,
+            error: None,
+            is_error: false,
+            cancellation: None,
+        },
+    )
+    .await
+    .expect("tool result");
+    let (completed, all_done, deferred) = outcome.expect("accepted result");
+    assert!(all_done);
+    assert_eq!(completed.role, "tool");
+    assert_eq!(deferred.len(), 2);
+
+    tauri_mcp_agent_lib::services::MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        vec![completed],
+        true,
+    )
+    .await
+    .expect("inject completing tool result");
+    tauri_mcp_agent_lib::services::MessageService::inject_messages_to_session(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        deferred,
+        true,
+    )
+    .await
+    .expect("flush deferred UI pair");
+
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).expect("session");
+        let cache = s.messages.read().await;
+        assert_eq!(cache.len(), 4);
+        assert_eq!(cache[0].id, "assistant-open");
+        assert_eq!(cache[1].role, "tool");
+        assert_eq!(cache[1].tool_call_id.as_deref(), Some("call-open"));
+        assert_eq!(cache[2].id, "ui-assistant");
+        assert_eq!(cache[3].id, "ui-tool");
+        assert!(s.pending_execution.is_none());
+    }
+}
+
+#[tokio::test]
+async fn reset_session_execution_state_clears_pending_execution() {
+    use std::collections::HashSet;
+    use tauri_mcp_agent_lib::agent::state::PendingToolExecution;
+
+    let mut session = build_agent_session("reset-pending-exec");
+    session.pending_execution = Some(PendingToolExecution {
+        message_id: "assistant-open".to_string(),
+        total_expected: 1,
+        tool_names: HashMap::new(),
+        expected_tool_call_ids: HashSet::from(["call-open".to_string()]),
+        completed_tool_call_ids: HashSet::new(),
+        deferred_history_append: vec![build_user_message(
+            "reset-pending-exec",
+            "deferred-ui",
+            1_000,
+        )],
+    });
+
+    tauri_mcp_agent_lib::agent::workflow::reset_session_execution_state(&mut session).await;
+
+    assert!(
+        session.pending_execution.is_none(),
+        "restart must not leave a ghost tool batch"
+    );
+}
+
+#[tokio::test]
+async fn non_busy_session_flushes_stale_deferred_history_instead_of_parking() {
+    use std::collections::HashSet;
+    use tauri_mcp_agent_lib::agent::state::PendingToolExecution;
+
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("stale-defer-{}", uuid::Uuid::new_v4());
+    let mut metadata = build_session_metadata(&session_id);
+    metadata.status = SessionStatus::Idle;
+    session_repo
+        .upsert_session(&metadata)
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let mut session = build_agent_session(&session_id);
+    session.metadata.status = SessionStatus::Idle;
+    let mut parked = build_user_message(&session_id, "parked-ui", 900);
+    parked.role = "assistant".to_string();
+    session.pending_execution = Some(PendingToolExecution {
+        message_id: "ghost-assistant".to_string(),
+        total_expected: 1,
+        tool_names: HashMap::new(),
+        expected_tool_call_ids: HashSet::from(["ghost-call".to_string()]),
+        completed_tool_call_ids: HashSet::new(),
+        deferred_history_append: vec![parked],
+    });
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let mut incoming = build_user_message(&session_id, "incoming-ui", 1_000);
+    incoming.role = "assistant".to_string();
+
+    tauri_mcp_agent_lib::services::MessageService::append_messages_without_workflow(
+        &active_sessions,
+        app_handle,
+        &session_id,
+        vec![incoming],
+    )
+    .await
+    .expect("non-Busy append should flush stale deferred rows");
+
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).expect("session");
+        let cache = s.messages.read().await;
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache[0].id, "parked-ui");
+        assert_eq!(cache[1].id, "incoming-ui");
+        assert!(s.pending_execution.is_none());
+    }
+
+    tauri_mcp_agent_lib::reset_state();
+}

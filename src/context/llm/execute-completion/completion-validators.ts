@@ -95,6 +95,7 @@ export function validateAndFinalizeMessage({
       : undefined,
     usage: finalUsage,
     isStreaming: false,
+    streamingPhase: undefined,
   };
 
   logger.info('Completion request completed', {

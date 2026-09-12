@@ -161,6 +161,7 @@ export function useLLMListener({
               role: 'assistant',
               content: [],
               isStreaming: true,
+              streamingPhase: 'prefill',
               createdAt: new Date(),
             });
             return next;
@@ -206,6 +207,7 @@ export function useLLMListener({
                       role: 'assistant',
                       content: [],
                       isStreaming: true,
+                      streamingPhase: 'prefill',
                       createdAt: new Date(),
                     });
                     return next;
@@ -281,6 +283,7 @@ export function useLLMListener({
                     role: 'assistant',
                     content: [],
                     isStreaming: true,
+                    streamingPhase: 'prefill',
                     createdAt: new Date(),
                   });
                   return next;

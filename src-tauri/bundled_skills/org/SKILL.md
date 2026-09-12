@@ -29,7 +29,7 @@ Use `org-restructure` when the org already exists and roles or constitution file
    - The session that calls `agent__createOrg` becomes the org root. Do not call `agent__createOrg` again.
 5. Spawn org-visible members explicitly.
    - Before creating a member for new work, inspect `agent__listAgents(type="sessions")` for an Idle org child with the same assistant ID and compatible workspace, then use `agent__messageToSession` (with `reset=true` for a fresh assignment) when reuse is safe.
-   - Use `agent__startSession(agentId, task)` for org-visible children only when no suitable member exists, a different role/workspace is needed, or additional parallel capacity is required. If the current session already belongs to the org, inheritance is automatic.
+   - Use `agent__spawnSession(configId, task)` for org-visible children only when no suitable member exists, a different role/workspace is needed, or additional parallel capacity is required. If the current session already belongs to the org, inheritance is automatic.
    - To keep a child out of Org view, spawn it from a session that is not part of an explicit org.
 6. Resume through the org root.
    - The org root session is the canonical entry point. Org view should resume the root, not whichever child was last active.

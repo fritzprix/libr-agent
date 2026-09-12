@@ -30,7 +30,10 @@ async fn test_create_server_config_saves_pending_without_blocking_on_verify() {
     .await
     .expect("create must succeed immediately (save-first)");
 
-    assert_eq!(model.name, "bad-server");
+    assert_eq!(
+        model.name, "bad_server",
+        "hyphens in new server names are sanitized to underscores"
+    );
     assert_eq!(
         model.verification_status.as_deref(),
         Some("pending"),
@@ -95,6 +98,64 @@ async fn test_update_server_config_marks_pending_for_unreachable_transport_chang
     assert_eq!(
         config["transport"]["command"], "/tmp/libragent-missing-wrapper/npx.sh",
         "updated transport must be written before background probe"
+    );
+}
+
+#[tokio::test]
+async fn test_create_sanitizes_whitespace_server_name() {
+    let repo = setup_repo().await;
+
+    let model = McpServerService::create_server_config(
+        &repo,
+        "My Server".to_string(),
+        missing_stdio_wrapper_config(),
+    )
+    .await
+    .expect("create must sanitize and persist");
+
+    assert_eq!(model.name, "My_Server");
+
+    let config: serde_json::Value = serde_json::from_str(&model.config).unwrap();
+    assert_eq!(
+        config.get("name").and_then(|v| v.as_str()),
+        Some("My_Server"),
+        "embedded config name must match sanitized model name"
+    );
+}
+
+#[tokio::test]
+async fn test_update_preserves_legacy_whitespace_display_name() {
+    let repo = setup_repo().await;
+
+    // Simulate a legacy row that already has spaces in the stored name.
+    let legacy = repo
+        .create(
+            "Google Drive",
+            serde_json::json!({
+                "name": "Google Drive",
+                "transport": {
+                    "type": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@example/mcp-server"]
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(legacy.name, "Google Drive");
+
+    let updated = McpServerService::update_server_config(
+        &repo,
+        legacy.id.clone(),
+        Some("Google Drive".to_string()),
+        Some(missing_stdio_wrapper_config()),
+    )
+    .await
+    .expect("update must succeed");
+
+    assert_eq!(
+        updated.name, "Google Drive",
+        "legacy whitespace display names must not be rewritten on update"
     );
 }
 

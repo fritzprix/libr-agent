@@ -18,6 +18,17 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     *session.bad_tool_args_retry_count.write().await = 0;
     *session.bad_tool_args_incident_count.write().await = 0;
     *session.reasoning_budget_retry_count.write().await = 0;
+    // Drop any in-flight tool batch marker so a restarted turn cannot treat a
+    // prior PendingToolExecution (and its deferred history) as still open.
+    if let Some(pending) = session.pending_execution.take() {
+        if !pending.deferred_history_append.is_empty() {
+            log::warn!(
+                "Discarding {} deferred history message(s) while resetting execution state for session {}",
+                pending.deferred_history_append.len(),
+                session.metadata.id
+            );
+        }
+    }
     // Safety valve: clear any stale in-flight compaction state before
     // explicitly starting or restarting a workflow from the current stack.
     session.compaction.clear_runtime_state(false).await;
@@ -71,13 +82,19 @@ pub async fn start_workflow(
                 )
             };
 
+            // Queue while compaction is in flight (Manual or Preflight). Starting a
+            // new workflow here would call reset_session_execution_state and clear
+            // the in-flight compact, racing the compact LLM call.
+            let compaction_in_flight = session.compaction.snapshot().await.is_in_flight();
+
             if session.metadata.status == SessionStatus::Busy
                 || session.metadata.status == SessionStatus::Queued
                 || session.metadata.status == SessionStatus::Provisioning
                 || is_transitioning_to_busy
+                || compaction_in_flight
             {
                 log::info!(
-                    "Session {} is busy or queued. Queueing message: {} in pending_events only.",
+                    "Session {} is busy, queued, or compacting. Queueing message: {} in pending_events only.",
                     session_id,
                     user_message.id
                 );

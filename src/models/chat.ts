@@ -126,6 +126,12 @@ export type MessageErrorType =
   | 'CONTEXT_LIMIT_ERROR'
   | 'EMPTY_SELECTION_ERROR';
 
+export type StreamingPhase =
+  | 'prefill'
+  | 'thinking'
+  | 'generating'
+  | 'tool_calling';
+
 export interface Message {
   id: string;
   sessionId: string; // Added sessionId
@@ -142,6 +148,8 @@ export interface Message {
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   isStreaming?: boolean;
+  /** Current phase of streaming execution */
+  streamingPhase?: StreamingPhase;
   /** AI model's internal reasoning process (e.g., chain-of-thought) */
   thinking?: string;
   /** Cryptographic signature or identifier for the thinking content, used for verification or tracking */

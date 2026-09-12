@@ -1,8 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import {
   ChevronRight,
   ChevronDown,
-  File,
   Folder,
   FolderOpen,
   RefreshCw,
@@ -15,6 +14,7 @@ import {
 } from '@/context/DnDContext';
 import { cn } from '@/lib/utils';
 import type { FileNode } from './types';
+import { getFileIconInfo } from './fileIconUtils';
 
 interface FileTreeNodeProps {
   node: FileNode;
@@ -22,6 +22,10 @@ interface FileTreeNodeProps {
   onToggle: (node: FileNode) => void;
   onOpen?: (node: FileNode) => void;
   onFileDrop?: (paths: string[], targetDir: string) => void;
+  /** Currently active drop target directory */
+  activeDropDir?: string | null;
+  /** Callback notifying parent of drag enter/leave on target directory */
+  onDragTargetChange?: (targetDir: string | null) => void;
 }
 
 export const FileTreeNode = ({
@@ -30,29 +34,34 @@ export const FileTreeNode = ({
   onToggle,
   onOpen,
   onFileDrop,
+  activeDropDir,
+  onDragTargetChange,
 }: FileTreeNodeProps) => {
-  const [isDragOver, setIsDragOver] = useState(false);
   const nodeRef = useRef<HTMLDivElement>(null);
   const dnd = useOptionalDnDContext();
   const onFileDropRef = useRef(onFileDrop);
   onFileDropRef.current = onFileDrop;
+  const onDragTargetChangeRef = useRef(onDragTargetChange);
+  onDragTargetChangeRef.current = onDragTargetChange;
+
+  const targetDir = node.isDirectory ? node.path : (node.parent ?? './');
+  const isTargetFolderActive = node.isDirectory && activeDropDir === node.path;
 
   useEffect(() => {
     if (!dnd?.subscribe || !onFileDropRef.current) {
       return;
     }
 
-    const targetDir = node.isDirectory ? node.path : (node.parent ?? './');
     // Folder nodes take priority over child file nodes; both take priority over the base panel (5)
     const priority = node.isDirectory ? 10 : 8;
 
     const handler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
       if (event === 'drag-over') {
-        setIsDragOver(true);
+        onDragTargetChangeRef.current?.(targetDir);
       } else if (event === 'leave') {
-        setIsDragOver(false);
+        onDragTargetChangeRef.current?.(null);
       } else if (event === 'drop') {
-        setIsDragOver(false);
+        onDragTargetChangeRef.current?.(null);
         if (
           payload.paths &&
           payload.paths.length > 0 &&
@@ -67,13 +76,14 @@ export const FileTreeNode = ({
     return () => {
       unsub();
     };
-  }, [node.isDirectory, node.path, node.parent, dnd]);
+  }, [node.isDirectory, targetDir, dnd]);
 
+  const fileIconInfo = node.isDirectory ? null : getFileIconInfo(node.name);
   const Icon = node.isDirectory
-    ? node.isExpanded || isDragOver
+    ? node.isExpanded || isTargetFolderActive
       ? FolderOpen
       : Folder
-    : File;
+    : fileIconInfo!.icon;
   const isInteractive = node.isDirectory || Boolean(onOpen);
 
   return (
@@ -82,7 +92,8 @@ export const FileTreeNode = ({
         ref={nodeRef}
         className={cn(
           'group flex items-center gap-1.5 px-2 py-1.5 text-foreground/85 transition-colors hover:bg-foreground/[0.03]',
-          isDragOver && 'ring-2 ring-primary bg-primary/10 rounded-sm',
+          isTargetFolderActive &&
+            'ring-2 ring-primary bg-primary/10 rounded-sm',
         )}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={() => {
@@ -147,7 +158,14 @@ export const FileTreeNode = ({
           }}
           aria-expanded={node.isDirectory ? node.isExpanded : undefined}
         >
-          <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <Icon
+            className={cn(
+              'h-4 w-4 flex-shrink-0',
+              node.isDirectory
+                ? 'text-muted-foreground'
+                : fileIconInfo?.className,
+            )}
+          />
 
           <span className="flex-1 truncate text-xs" title={node.name}>
             {node.name}
@@ -174,6 +192,8 @@ export const FileTreeNode = ({
               onToggle={onToggle}
               onOpen={onOpen}
               onFileDrop={onFileDrop}
+              activeDropDir={activeDropDir}
+              onDragTargetChange={onDragTargetChange}
             />
           ))}
         </div>

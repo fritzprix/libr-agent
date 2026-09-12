@@ -9,7 +9,15 @@ import {
 } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Settings, Sparkles, X } from 'lucide-react';
+import {
+  AlertCircle,
+  RefreshCw,
+  RotateCcw,
+  Settings,
+  Sparkles,
+  Wrench,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
@@ -18,9 +26,17 @@ import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { getPlaybook } from '@/lib/backend/playbooks';
 import { getAssistant, type AssistantSummary } from '@/lib/backend/assistants';
+import { restartApp } from '@/lib/backend/utils';
 import { useAssistantSummaries } from './hooks/useAssistantSummaries';
+import { useRuntimeReadiness } from './hooks/useRuntimeReadiness';
+import {
+  APP_WIZARD_ONBOARDING_PROMPT,
+  navigateToAppWizard,
+} from './utils/openAppWizard';
 import { useSettings } from '@/hooks/use-settings';
 import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
+
+const RUNTIME_DISMISSED_KEY = 'libragent:runtime:onboarding-dismissed';
 
 const MorningBriefingWalkthroughDialog = lazy(() =>
   import('@/features/recipes').then((m) => ({
@@ -75,9 +91,16 @@ export default function AgentChatStartView() {
     null,
   );
   const [walkthroughOpen, setWalkthroughOpen] = useState(false);
+  const [isOpeningWizard, setIsOpeningWizard] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [searchParams] = useSearchParams();
   const processingPlaybookRef = useRef(false);
   const playbookId = searchParams.get('playbookId');
+  const {
+    isNpxReady,
+    loading: runtimeLoading,
+    refresh: refreshRuntime,
+  } = useRuntimeReadiness();
 
   const [isRecipeDismissed, setIsRecipeDismissed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -92,19 +115,31 @@ export default function AgentChatStartView() {
     }
   });
 
-  const isRecipeVisible = useMemo(() => {
-    if (isRecipeDismissed) return false;
-    if (typeof window === 'undefined') return true;
+  const [isRuntimeDismissed, setIsRuntimeDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
     try {
-      return (
-        localStorage.getItem('libragent:morning-briefing:completed') !==
-          'true' &&
-        localStorage.getItem('libragent:morning-briefing:dismissed') !== 'true'
-      );
+      return localStorage.getItem(RUNTIME_DISMISSED_KEY) === 'true';
     } catch {
-      return true;
+      return false;
     }
-  }, [isRecipeDismissed, walkthroughOpen]);
+  });
+
+  const hasConfiguredProviders = useMemo(
+    () => listConfiguredProviderGroups(settings).length > 0,
+    [settings],
+  );
+
+  const showRuntimeBanner =
+    hasConfiguredProviders &&
+    !runtimeLoading &&
+    !isNpxReady &&
+    !isRuntimeDismissed;
+
+  const isRecipeVisible =
+    hasConfiguredProviders &&
+    !runtimeLoading &&
+    isNpxReady &&
+    !isRecipeDismissed;
 
   const handleDismissRecipe = () => {
     try {
@@ -115,10 +150,46 @@ export default function AgentChatStartView() {
     setIsRecipeDismissed(true);
   };
 
-  const hasConfiguredProviders = useMemo(
-    () => listConfiguredProviderGroups(settings).length > 0,
-    [settings],
-  );
+  const handleDismissRuntime = () => {
+    try {
+      localStorage.setItem(RUNTIME_DISMISSED_KEY, 'true');
+    } catch (e) {
+      logger.warn('Failed to set runtime dismissal flag in localStorage', e);
+    }
+    setIsRuntimeDismissed(true);
+  };
+
+  const handleOpenAppWizard = useCallback(async () => {
+    setIsOpeningWizard(true);
+    try {
+      await navigateToAppWizard(navigate, {
+        prompt: t('onboarding.appWizardPrompt', {
+          defaultValue: APP_WIZARD_ONBOARDING_PROMPT,
+        }),
+        t: (key, defaultValue) => t(key, { defaultValue }),
+      });
+    } catch (error) {
+      logger.error('Failed to open App Wizard from hub', error);
+    } finally {
+      setIsOpeningWizard(false);
+    }
+  }, [navigate, t]);
+
+  const handleRestartApp = useCallback(async () => {
+    setIsRestarting(true);
+    try {
+      await restartApp();
+    } catch (error) {
+      logger.warn('App restart failed', error);
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(
+        t('agent.start.restartFailed', {
+          defaultValue: message,
+        }),
+      );
+      setIsRestarting(false);
+    }
+  }, [t]);
 
   // Handle Playbook Auto-Start
   useEffect(() => {
@@ -250,7 +321,7 @@ export default function AgentChatStartView() {
           </p>
         </div>
 
-        {/* Onboarding Banner */}
+        {/* Step 1: LLM provider */}
         {!hasConfiguredProviders && (
           <div
             data-testid="onboarding-banner"
@@ -285,7 +356,92 @@ export default function AgentChatStartView() {
           </div>
         )}
 
-        {/* Featured Recipe Card */}
+        {/* Step 2: Runtime environment (App Wizard) */}
+        {showRuntimeBanner ? (
+          <div
+            data-testid="runtime-onboarding-banner"
+            className="relative flex flex-col gap-4 rounded-xl border border-sky-500/30 bg-sky-500/10 p-5 text-card-foreground shadow-sm dark:border-sky-400/30 dark:bg-sky-400/10 animate-in fade-in slide-in-from-top-2 duration-500"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="dismiss-runtime-button"
+              className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground"
+              aria-label={t('agent.start.dismissRuntime', {
+                defaultValue: '런타임 안내 닫기',
+              })}
+              onClick={handleDismissRuntime}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            <div className="flex items-start gap-3 pr-8">
+              <Wrench className="h-5 w-5 shrink-0 text-sky-600 dark:text-sky-400 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {t('agent.start.runtimeBannerTitle', {
+                    defaultValue: '런타임 환경 준비 (Node.js / npx)',
+                  })}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {t('agent.start.runtimeBannerDesc', {
+                    defaultValue:
+                      '확장 MCP 서버(npx)를 쓰려면 Node.js가 필요합니다. App Wizard로 설치한 뒤, PATH 반영을 위해 앱을 재시작하세요.',
+                  })}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 self-end sm:self-start">
+              <Button
+                onClick={() => {
+                  handleOpenAppWizard().catch((error: unknown) => {
+                    logger.error('Open App Wizard failed', error);
+                  });
+                }}
+                size="sm"
+                className="gap-1.5"
+                disabled={isOpeningWizard}
+              >
+                <Wrench className="h-4 w-4" />
+                {t('agent.start.openAppWizard', {
+                  defaultValue: 'App Wizard 열기',
+                })}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  refreshRuntime().catch((error: unknown) => {
+                    logger.error('Runtime recheck failed', error);
+                  });
+                }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                {t('agent.start.recheckRuntime', {
+                  defaultValue: '다시 확인',
+                })}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  handleRestartApp().catch((error: unknown) => {
+                    logger.error('App restart failed', error);
+                  });
+                }}
+                disabled={isRestarting}
+              >
+                <RotateCcw className="h-4 w-4" />
+                {t('agent.start.restartApp', {
+                  defaultValue: '앱 재시작',
+                })}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Step 3: Featured Recipe Card (only after LLM + runtime) */}
         {isRecipeVisible && (
           <div
             data-testid="featured-recipe-card"

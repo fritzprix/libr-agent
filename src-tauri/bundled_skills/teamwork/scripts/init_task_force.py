@@ -15,12 +15,12 @@ SUBSTRATE_CHOICES = [SUBSTRATE_PLAIN, SUBSTRATE_ORG, SUBSTRATE_SCHEDULED]
 
 SUBSTRATE_DISPLAY = {
     SUBSTRATE_PLAIN: (
-        "Plain child sessions via agent__startSession(...). "
+        "Plain child sessions via agent__spawnSession(...). "
         "Use delegate for delegation mechanics when needed."
     ),
     SUBSTRATE_ORG: (
         "Explicit org lineage via agent__createOrg(...) once from the root session, "
-        "then agent__startSession(...) for org-visible children. "
+        "then agent__spawnSession(...) for org-visible children. "
         "Org-visible children inherit the governing session's effective workspace by default. "
         "Follow org for org-specific operating rules."
     ),
@@ -234,7 +234,7 @@ def build_teamwork_manifest(
             "orgLineage": {
                 "intended": is_org,
                 "rootAction": "agent__createOrg",
-                "childAction": "agent__startSession",
+                "childAction": "agent__spawnSession",
                 "childArgs": {},
                 "compatibilityAlias": "spawnOrgAgent",
                 "workspaceSharing": "inherit-parent-workspace-by-default",
@@ -347,8 +347,8 @@ def main() -> None:
 Active specialist skill: `{SUBSTRATE_SPECIALIST_SKILL[substrate_mode]}`
 
 ## Execution Notes
-- Plain child sessions: `agent__startSession(...)`, use `delegate` for delegation mechanics
-- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__startSession(...)`, follow `org`
+- Plain child sessions: `agent__spawnSession(...)`, use `delegate` for delegation mechanics
+- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__spawnSession(...)`, follow `org`
 - Recurring automation: `scheduled_task__createScheduledTask(...)` and related scheduled-task tools, follow `schedule`
 
 ## Definition of Done

@@ -47,7 +47,7 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 
 ## Hard runtime rules (always true)
 
-- Builtin tools are named `server__tool` (e.g. `agent__startSession`). Use exact names from the current session tool list.
+- Builtin tools are named `server__tool` (e.g. `agent__spawnSession`). Use exact names from the current session tool list.
 - Child sessions do **not** inherit parent workspace, `agents.md`/`SOUL.md`, or workspace-local skills unless you use org inheritance / `workspaceOverride` / explicit handoff. See `references/session-isolation.md`.
 - `scratchpad__*` is session-private; parents do not read child scratchpads. Deliver results in the child's **final text**.
 - Bundled assistant `prompt.md` updates apply only to **new** DB seeds; existing assistants keep their stored `systemPrompt` until edited or reset.

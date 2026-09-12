@@ -282,6 +282,14 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
         envs.push(("PATH".to_string(), effective_path));
     }
 
+    // Python on Windows defaults to the ANSI code page (e.g. CP949). UTF-8 mode
+    // keeps stdin/stdout aligned with the PowerShell UTF-8 pipe (PEP 540).
+    #[cfg(windows)]
+    {
+        envs.retain(|(key, _)| !key.eq_ignore_ascii_case("PYTHONUTF8"));
+        envs.push(("PYTHONUTF8".to_string(), "1".to_string()));
+    }
+
     envs
 }
 
@@ -335,6 +343,32 @@ mod tests {
         assert!(isolated.iter().any(|(k, _)| k == "LC_ALL"));
         assert!(isolated.iter().any(|(k, _)| k == "XDG_CONFIG_HOME"));
         assert!(isolated.iter().all(|(k, _)| k != "XDG_RUNTIME_DIR"));
+    }
+
+    #[test]
+    fn test_get_isolated_env_forces_python_utf8_on_windows() {
+        let isolated = get_isolated_env();
+        let python_utf8 = isolated
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case("PYTHONUTF8"))
+            .map(|(_, value)| value.as_str());
+
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                python_utf8,
+                Some("1"),
+                "Windows isolated shells must enable Python UTF-8 mode"
+            );
+        }
+
+        #[cfg(not(windows))]
+        {
+            assert!(
+                python_utf8.is_none() || python_utf8 == Some("1"),
+                "non-Windows must not inject a conflicting PYTHONUTF8 override"
+            );
+        }
     }
 
     #[test]

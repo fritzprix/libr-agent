@@ -43,7 +43,7 @@ Composite cheerleading is forbidden: Layer 1 pass does **not** override Layer 2/
 
 ### 1. Brief with a Sprint Contract
 
-When calling `agent__startSession` (or assigning via `agent__messageToSession`), include:
+When calling `agent__spawnSession` (or assigning via `agent__messageToSession`), include:
 
 - **Exact Objective** — concrete deliverable
 - **Authorized paths / FORBIDDEN paths** — invariant gate inputs

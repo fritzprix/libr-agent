@@ -29,6 +29,7 @@ import {
   humanizeVerificationError,
   pendingVerificationHint,
 } from '../utils/verification-feedback';
+import { getTransportEndpointLabel } from '../utils/transport-display';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('ServerCard');
@@ -181,6 +182,11 @@ export const ServerCard = React.memo(
       }
     }, [server.id, t, onRevalidate]);
 
+    const transportEndpoint = getTransportEndpointLabel(
+      server.transport,
+      server.metadata,
+    );
+
     return (
       <Card className="relative overflow-hidden">
         {/* Verification progress bar - animating shimmer when pending */}
@@ -196,7 +202,7 @@ export const ServerCard = React.memo(
           <div className="absolute top-0 left-0 right-0 h-0.5 bg-destructive/70" />
         )}
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div className="flex gap-3 items-start flex-1">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
             {/* Server logo */}
             <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 mt-0.5 border border-border/50">
               {server.metadata?.logo ? (
@@ -222,46 +228,17 @@ export const ServerCard = React.memo(
                 <Server className="w-4 h-4 text-muted-foreground" />
               </div>
             </div>
-            <div className="flex-1">
-              <CardTitle className="text-base">{serverName}</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-base break-words">
+                {serverName}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1 break-words">
                 {server.metadata?.description ||
                   t('mcpServer.noDescription', 'No description')}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-xs text-muted-foreground mt-1 break-all">
                 {t('mcpServer.transport', 'Transport')}: {server.transport.type}
-                {server.transport.type === 'stdio' &&
-                  ` • ${server.transport.command}`}
-                {((server.transport.type as string) === 'http' ||
-                  server.transport.type === 'http-sse') &&
-                  ` • ${(() => {
-                    const urlString = (server.transport as { url: string }).url;
-                    try {
-                      const urlObj = new URL(urlString);
-                      // server.metadata should be queried strictly when parsing structure
-                      const varDefs = (
-                        server.metadata as {
-                          variableDefinitions?: Record<
-                            string,
-                            { target?: string }
-                          >;
-                        }
-                      )?.variableDefinitions;
-                      if (varDefs) {
-                        Object.entries(varDefs).forEach(([key, def]) => {
-                          if (
-                            def.target === 'url-param' &&
-                            urlObj.searchParams.has(key)
-                          ) {
-                            urlObj.searchParams.delete(key);
-                          }
-                        });
-                      }
-                      return urlObj.toString();
-                    } catch {
-                      return urlString; // Fallback to raw string if invalid URL
-                    }
-                  })()}`}
+                {transportEndpoint ? ` • ${transportEndpoint}` : ''}
               </p>
               {/* Tool count / verification status — mutually exclusive display */}
               <div className="mt-1 flex flex-col gap-1">
@@ -381,7 +358,7 @@ export const ServerCard = React.memo(
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <div className="flex flex-col items-end gap-1">
               <div className="flex items-center gap-1">
                 {isToggling && <LoadingSpinner size="sm" />}

@@ -229,7 +229,7 @@ impl MCPServiceProxy {
                         Err(format!(
                             "Built-in server '{}' not enabled in this session.\n\n\
                                      Available servers: [{}]\n\n\
-                                     💡 To fix: Use agent__updateAgent(id=\"<agentId>\", \
+                                     💡 To fix: Use agent__updateAgent(id=\"<id>\", \
                                      builtinCapabilities:[..., \"{}\", ...]) to enable it for this agent, \
                                      or delegate to an agent that already has access.",
                             server_id, available, server_id
@@ -292,7 +292,7 @@ impl MCPServiceProxy {
                         Err(format!(
                             "Built-in server '{}' not enabled in this session.\n\n\
                                      Available servers: [{}]\n\n\
-                                     💡 To fix: Use agent__updateAgent(id=\"<agentId>\", \
+                                     💡 To fix: Use agent__updateAgent(id=\"<id>\", \
                                      builtinCapabilities:[..., \"{}\", ...]) to enable it for this agent, \
                                      or delegate to an agent that already has access.",
                             server_id, available, server_id

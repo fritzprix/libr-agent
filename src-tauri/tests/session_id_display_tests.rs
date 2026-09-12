@@ -169,7 +169,7 @@ fn active_sessions_notice_includes_assistant_routing_identity() {
     let notice =
         format_active_sessions_notice(&[session]).expect("notice should render for one session");
 
-    assert!(notice.contains("`codertask1` [assistant:assistant-coder] \"Coder task\""));
+    assert!(notice.contains("`codertask1` [config:assistant-coder] \"Coder task\""));
 }
 
 #[test]

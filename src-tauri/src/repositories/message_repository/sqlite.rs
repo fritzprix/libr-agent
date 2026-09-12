@@ -12,7 +12,7 @@ use crate::utils::pagination::Page;
 use super::super::error::DbError;
 use super::index_meta;
 use super::persist;
-use super::types::{MessageRepository, MessageRowWithCursor, MessageSlicePage};
+use super::types::{MessageForwardPage, MessageRepository, MessageRowWithCursor, MessageSlicePage};
 
 /// SQLite implementation of MessageRepository using SeaORM
 #[derive(Debug)]
@@ -128,6 +128,29 @@ impl MessageRepository for SqliteMessageRepository {
         let messages: Vec<Message> = models.into_iter().map(persist::model_to_message).collect();
 
         Ok(Page::new(messages, page, page_size, total))
+    }
+
+    async fn get_messages_after_rowid(
+        &self,
+        session_id: &str,
+        after_row_id: Option<i64>,
+        limit: u64,
+    ) -> Result<MessageForwardPage, DbError> {
+        let fetch_limit = persist::validate_slice_limit(limit)?;
+        let after = after_row_id.unwrap_or(0);
+        let rows = self
+            .query_slice_rows(
+                "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage, prompt_tokens \
+                 FROM messages \
+                 WHERE session_id = ? \
+                   AND rowid > ? \
+                 ORDER BY rowid ASC \
+                 LIMIT ?",
+                vec![session_id.into(), after.into(), fetch_limit.into()],
+            )
+            .await?;
+
+        persist::build_forward_page(rows, limit)
     }
 
     async fn insert(&self, message: &Message) -> Result<(), DbError> {

@@ -18,6 +18,14 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('../SessionExportMenu', () => ({
+  SessionExportMenu: () => (
+    <button type="button" aria-label="Export session">
+      Export
+    </button>
+  ),
+}));
+
 // Mock ResizeObserver for Radix UI
 global.ResizeObserver = class ResizeObserver {
   observe() {}
@@ -54,6 +62,9 @@ describe('SessionCard', () => {
     expect(card).not.toBeNull();
     expect(card).toHaveClass('bg-destructive/5');
     expect(card).toHaveClass('border-destructive/30');
+    expect(
+      screen.getByRole('button', { name: 'Export session' }),
+    ).toBeInTheDocument();
   });
 
   it('displays tooltip on delete button hover', async () => {

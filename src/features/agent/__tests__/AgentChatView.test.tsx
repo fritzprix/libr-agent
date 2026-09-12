@@ -111,6 +111,7 @@ vi.mock('@/context/AgentChatContext', () => ({
   ),
   useAgentChatActions: () => ({
     injectMessages: vi.fn(),
+    appendToolMessages: vi.fn(),
   }),
   useAgentChatState: () => ({
     workflowStatus: 'idle' as const,
@@ -156,6 +157,16 @@ vi.mock('../hooks/useAgentResourceAttachment', () => ({
     children: ReactNode;
     sessionId: string;
   }) => <>{props.children}</>,
+}));
+
+vi.mock('@/context/AgentFilePreviewContext', () => ({
+  AgentFilePreviewProvider: ({ children }: { children: ReactNode }) => (
+    <>{children}</>
+  ),
+}));
+
+vi.mock('../components/AgentFilePreviewHost', () => ({
+  AgentFilePreviewHost: () => null,
 }));
 
 vi.mock('../components/AgentChatHeader', () => ({

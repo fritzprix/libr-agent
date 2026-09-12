@@ -8,7 +8,7 @@ Mechanics (spawn, isolation, tool names): **`delegate`**. This file is for **gen
 
 ## 0. Sprint Contract Checklist (before spawn)
 
-Fill these before `agent__startSession` / assignment message:
+Fill these before `agent__spawnSession` / assignment message:
 
 - [ ] Objective is one concrete deliverable (not "improve X")
 - [ ] Authorized paths listed; forbidden paths listed
@@ -21,7 +21,7 @@ If you cannot name a verifiable check, either keep the task on soft `delegate` r
 
 ---
 
-## 1. Initial Task Briefing Template (via `agent__startSession`)
+## 1. Initial Task Briefing Template (via `agent__spawnSession`)
 
 ```markdown
 ### Goal

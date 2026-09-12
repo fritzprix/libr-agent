@@ -260,7 +260,7 @@ impl WorkspaceServer {
             .guidance(vec![
                 "Search workspace files outside .libragent/tmp and .libragent/exports".to_string(),
                 "Use workspace__readProcessOutput or workspace__listProcesses to inspect temp process output".to_string(),
-                "Use workspace__export on real workspace files instead of searching generated export artifacts"
+                "Attach real workspace files via ui__reportResult export_paths instead of searching generated export artifacts"
                     .to_string(),
             ])
             .to_mcp_result());

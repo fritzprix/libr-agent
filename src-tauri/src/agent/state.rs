@@ -26,6 +26,9 @@ pub struct PendingToolExecution {
     pub expected_tool_call_ids: HashSet<String>,
     /// Tool call IDs already completed for the current message execution
     pub completed_tool_call_ids: HashSet<String>,
+    /// History rows that must wait until this batch completes so tool-call /
+    /// tool-result pairing stays contiguous for provider APIs.
+    pub deferred_history_append: Vec<Message>,
 }
 
 /// Pending events waiting to be processed by the workflow
@@ -215,6 +218,15 @@ impl CompactionSnapshot {
             CompactionPhase::Idle => false,
             CompactionPhase::InFlight(in_flight) => in_flight.kind.blocks_workflow(),
         }
+    }
+
+    /// True while any compaction kind is in flight (Manual or Preflight).
+    ///
+    /// Unlike [`Self::blocks_workflow`], this is true for Manual too — callers
+    /// that must avoid racing a new workflow against an in-flight compact
+    /// (e.g. user-message enqueue) should use this.
+    pub fn is_in_flight(&self) -> bool {
+        matches!(self.phase, CompactionPhase::InFlight(_))
     }
 }
 
@@ -764,6 +776,7 @@ mod tests {
             tool_names: HashMap::new(),
             expected_tool_call_ids: HashSet::new(),
             completed_tool_call_ids: HashSet::new(),
+            deferred_history_append: Vec::new(),
         });
         *session.compact_context.write().await = Some(CompactContextRecord {
             id: "cc-1".to_string(),

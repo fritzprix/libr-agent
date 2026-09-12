@@ -14,16 +14,17 @@ use super::messages::{
 
 /// Handle tool execution result from frontend or internal execution
 ///
-/// Returns `Ok(Some(messages))` if all pending tools for this turn have completed,
-/// containing the accumulated tool results to be processed.
-/// Returns `Ok(None)` if we are still waiting for other tools to complete.
+/// Returns `Ok(Some((message, all_completed, deferred)))` when the result is accepted.
+/// `deferred` holds history rows that waited for this tool batch and must be flushed
+/// after the completing tool result is committed (empty unless `all_completed`).
+/// Returns `Ok(None)` if we are still waiting / ignoring stale-duplicate results.
 pub async fn handle_tool_result(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: String,
     tool_call_id: String,
     result: crate::commands::agent_commands::ToolExecutionResult,
-) -> Result<Option<(Message, bool)>, String> {
+) -> Result<Option<(Message, bool, Vec<Message>)>, String> {
     let crate::commands::agent_commands::ToolExecutionResult {
         success,
         content,
@@ -144,12 +145,15 @@ pub async fn handle_tool_result(
 
                 // Check if all results are in
                 let all_completed = pending.completed_tool_call_ids.len() >= pending.total_expected;
-                if all_completed {
-                    // Clear pending state
+                let deferred = if all_completed {
+                    let deferred = std::mem::take(&mut pending.deferred_history_append);
                     session.pending_execution = None;
-                }
+                    deferred
+                } else {
+                    Vec::new()
+                };
 
-                Ok(Some((message, all_completed)))
+                Ok(Some((message, all_completed, deferred)))
             } else {
                 log::warn!(
                     "Received tool result for session {} but no pending execution state found",

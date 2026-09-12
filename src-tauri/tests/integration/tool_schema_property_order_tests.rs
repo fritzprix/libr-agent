@@ -79,7 +79,58 @@ fn report_result_schema_property_order_puts_result_last() {
     use tauri_mcp_agent_lib::mcp::builtin::ui::tools::report_result_tool;
 
     let tool = report_result_tool();
-    assert_property_order(&tool, &["status", "format", "title", "result"]);
+    assert_property_order(
+        &tool,
+        &[
+            "status",
+            "format",
+            "title",
+            "criteria",
+            "proof",
+            "export_paths",
+            "result",
+        ],
+    );
+}
+
+#[test]
+fn report_result_treats_criteria_and_proof_as_optional() {
+    use tauri_mcp_agent_lib::mcp::builtin::ui::tools::report_result_tool;
+    use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
+
+    let tool = report_result_tool();
+    let description = tool.description.as_str();
+    assert!(
+        description.contains("`criteria`") && description.contains("`proof`"),
+        "reportResult should still document optional criteria/proof: {description}"
+    );
+    assert!(
+        description.contains("not objectively verifiable")
+            || description.contains("Skip both when"),
+        "reportResult must allow omitting criteria/proof when unverifiable: {description}"
+    );
+    assert!(
+        !description.contains("syntax-checked"),
+        "executable-check coaching must not duplicate criteria/proof contract: {description}"
+    );
+
+    let JSONSchemaType::Object {
+        required: Some(required),
+        ..
+    } = &tool.input_schema.schema_type
+    else {
+        panic!("reportResult schema should declare required fields");
+    };
+    assert!(
+        required.iter().any(|value| value == "result"),
+        "reportResult must require `result`: {required:?}"
+    );
+    for field in ["criteria", "proof"] {
+        assert!(
+            !required.iter().any(|value| value == field),
+            "reportResult must not require `{field}`: {required:?}"
+        );
+    }
 }
 
 #[test]
@@ -149,13 +200,13 @@ fn start_session_schema_property_order_puts_task_last() {
 
     let tool = all_tools()
         .into_iter()
-        .find(|tool| tool.name == "startSession")
-        .expect("startSession tool");
+        .find(|tool| tool.name == "spawnSession")
+        .expect("spawnSession tool");
 
     assert_property_order(
         &tool,
         &[
-            "agentId",
+            "configId",
             "workspaceOverride",
             "waitForResult",
             "timeout",

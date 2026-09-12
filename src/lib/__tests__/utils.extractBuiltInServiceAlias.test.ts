@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { extractBuiltInServiceAlias, isValidServiceAlias } from '../utils';
+import {
+  extractBuiltInServiceAlias,
+  isValidMcpServerName,
+  isValidServiceAlias,
+  sanitizeMcpServerName,
+} from '../utils';
 
 describe('extractBuiltInServiceAlias', () => {
   it('should extract simple alias for known builtin services', () => {
@@ -15,7 +20,9 @@ describe('extractBuiltInServiceAlias', () => {
   });
 
   it('should return null for unknown services', () => {
-    expect(extractBuiltInServiceAlias('my_long_service_name__doSomething')).toBeNull();
+    expect(
+      extractBuiltInServiceAlias('my_long_service_name__doSomething'),
+    ).toBeNull();
     expect(extractBuiltInServiceAlias('external_server__tool')).toBeNull();
   });
 
@@ -26,7 +33,9 @@ describe('extractBuiltInServiceAlias', () => {
   });
 
   it('should stop at first __ (important: service names should NOT contain __)', () => {
-    expect(extractBuiltInServiceAlias('browser__another__tool')).toBe('browser');
+    expect(extractBuiltInServiceAlias('browser__another__tool')).toBe(
+      'browser',
+    );
   });
 
   describe('edge cases', () => {
@@ -37,6 +46,51 @@ describe('extractBuiltInServiceAlias', () => {
     it('should return null if server part is empty', () => {
       expect(extractBuiltInServiceAlias('__tool')).toBeNull();
     });
+  });
+});
+
+describe('sanitizeMcpServerName', () => {
+  it('replaces spaces and collapses runs', () => {
+    expect(sanitizeMcpServerName('My Server')).toBe('My_Server');
+    expect(sanitizeMcpServerName('My  Server')).toBe('My_Server');
+    expect(sanitizeMcpServerName('Google Drive')).toBe('Google_Drive');
+  });
+
+  it('replaces hyphens and punctuation', () => {
+    expect(sanitizeMcpServerName('yahoo-finance')).toBe('yahoo_finance');
+    expect(sanitizeMcpServerName('a.b@c')).toBe('a_b_c');
+  });
+
+  it('prefixes digit-leading names', () => {
+    expect(sanitizeMcpServerName('2FA Server')).toBe('s_2FA_Server');
+  });
+
+  it('falls back for empty or symbol-only input', () => {
+    expect(sanitizeMcpServerName('')).toBe('mcp_server');
+    expect(sanitizeMcpServerName('@@@')).toBe('mcp_server');
+  });
+
+  it('never emits double underscores', () => {
+    for (const sample of ['My  Server', 'a--b', 'a__b', ' x - y ']) {
+      const sanitized = sanitizeMcpServerName(sample);
+      expect(sanitized.includes('__')).toBe(false);
+      expect(isValidMcpServerName(sanitized)).toBe(true);
+    }
+  });
+});
+
+describe('isValidMcpServerName', () => {
+  it('accepts Gemini-safe identifiers', () => {
+    expect(isValidMcpServerName('filesystem')).toBe(true);
+    expect(isValidMcpServerName('My_Server')).toBe(true);
+    expect(isValidMcpServerName('_x')).toBe(true);
+  });
+
+  it('rejects spaces, hyphens, digits-first, and __', () => {
+    expect(isValidMcpServerName('My Server')).toBe(false);
+    expect(isValidMcpServerName('yahoo-finance')).toBe(false);
+    expect(isValidMcpServerName('2bad')).toBe(false);
+    expect(isValidMcpServerName('a__b')).toBe(false);
   });
 });
 

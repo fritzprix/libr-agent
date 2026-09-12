@@ -130,6 +130,7 @@ jobs:
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-15]
 
@@ -176,8 +177,14 @@ jobs:
         run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
       - name: Build Tauri app
-        run: >-
-          pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        # macOS GitHub runners flake in bundle_dmg.sh (hdiutil detach timeout).
+        # PR CI still builds LibrAgent.app; release/nightly keep producing DMGs.
+        run: |
+          extra_args=()
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            extra_args+=(--bundles app)
+          fi
+          pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}' "${extra_args[@]}"
         shell: bash
         env:
           # Use dummy value for CI if needed, but --config override is preferred

@@ -1,12 +1,28 @@
 import React, { useState } from 'react';
-import { ExternalLink, FilePlus2, FilePenLine, FileText } from 'lucide-react';
+import {
+  ExternalLink,
+  Eye,
+  FilePlus2,
+  FilePenLine,
+  FileText,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { openPathWithDefaultApp } from '@/lib/backend';
 import { getLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useOptionalAgentFilePreview } from '@/context/AgentFilePreviewContext';
 import { UnifiedDiffView } from './UnifiedDiffView';
 import type { WriteFileResult } from './types';
+import {
+  canOpenInAppPreview,
+  fileNameFromPath,
+} from '../workspace-panel/filePreview';
 
 const logger = getLogger('FileWriteActions');
 
@@ -39,11 +55,18 @@ function formatBytes(bytes: number | undefined): string | null {
 export const FileWriteActions: React.FC<FileWriteActionsProps> = ({ data }) => {
   const { t } = useTranslation('common');
   const [isOpening, setIsOpening] = useState(false);
+  const filePreview = useOptionalAgentFilePreview();
   const Icon = actionIcon(data.action);
   const sizeLabel = formatBytes(data.bytes_written);
   // open_path_with_default_app requires an absolute host path
   const openPath = data.absolute_path?.trim() || '';
   const canOpen = openPath.length > 0;
+  const canPreview =
+    Boolean(filePreview) &&
+    canOpenInAppPreview({
+      path: data.path,
+      size: data.bytes_written,
+    });
 
   const actionLabel = (() => {
     switch (data.action) {
@@ -63,7 +86,7 @@ export const FileWriteActions: React.FC<FileWriteActionsProps> = ({ data }) => {
     }
   })();
 
-  const handleOpen = async () => {
+  const handleOpenExternal = async () => {
     if (!canOpen || isOpening) return;
     setIsOpening(true);
     try {
@@ -76,6 +99,15 @@ export const FileWriteActions: React.FC<FileWriteActionsProps> = ({ data }) => {
     } finally {
       setIsOpening(false);
     }
+  };
+
+  const handlePreview = () => {
+    if (!filePreview || !canPreview) return;
+    filePreview.openFilePreview({
+      path: data.path,
+      name: fileNameFromPath(data.path),
+      size: data.bytes_written,
+    });
   };
 
   return (
@@ -114,16 +146,56 @@ export const FileWriteActions: React.FC<FileWriteActionsProps> = ({ data }) => {
             </p>
           ) : null}
         </div>
-        {canOpen ? (
+        {canPreview ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handlePreview}
+              data-testid="tool-structured-preview-file"
+            >
+              <Eye className="mr-1.5 h-3.5 w-3.5" />
+              {t('agent.workspace.previewMode', 'Preview')}
+            </Button>
+            {canOpen ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() => {
+                      void handleOpenExternal();
+                    }}
+                    disabled={isOpening}
+                    aria-label={t(
+                      'agent.workspace.openInDefaultApp',
+                      'Open in Default App',
+                    )}
+                    data-testid="tool-structured-open-default-app"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t('agent.workspace.openInDefaultApp', 'Open in Default App')}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+          </div>
+        ) : canOpen ? (
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="shrink-0"
             onClick={() => {
-              void handleOpen();
+              void handleOpenExternal();
             }}
             disabled={isOpening}
+            data-testid="tool-structured-open-file"
           >
             <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
             {isOpening
