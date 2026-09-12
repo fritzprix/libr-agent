@@ -17,7 +17,7 @@ import { openPathWithDefaultApp, downloadWorkspaceFile } from '@/lib/backend';
 import { getLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { useOptionalAgentFilePreview } from '@/context/AgentFilePreviewContext';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { useOptionalAgentSessionState } from '@/context/AgentSessionContext';
 import type { DeliverableItem } from './types';
 import {
   canOpenInAppPreview,
@@ -81,13 +81,13 @@ export const DeliverableFileActions: React.FC<DeliverableFileActionsProps> = ({
   sessionId: propSessionId,
 }) => {
   const { t } = useTranslation('common');
-  const { session } = useAgentSessionState();
+  const sessionContext = useOptionalAgentSessionState();
   const filePreview = useOptionalAgentFilePreview();
 
   const [isOpening, setIsOpening] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const activeSessionId = propSessionId || session?.id;
+  const activeSessionId = propSessionId || sessionContext?.session?.id;
   const Icon = getFileIcon(item.extension);
   const sizeLabel = formatBytes(item.size_bytes);
   const openPath = item.absolute_path?.trim() || '';

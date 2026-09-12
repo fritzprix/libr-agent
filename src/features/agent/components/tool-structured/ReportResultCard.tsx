@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -10,9 +10,27 @@ import {
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { toast } from 'sonner';
+import {
+  openExternalUrl,
+  openPathWithDefaultApp,
+  openWorkspaceFileWithDefaultApp,
+} from '@/lib/backend';
+import { getLogger } from '@/lib/logger';
+import { useOptionalAgentFilePreview } from '@/context/AgentFilePreviewContext';
+import { useOptionalAgentSessionState } from '@/context/AgentSessionContext';
 import type { ReportResultData } from './types';
 import { DeliverableFileActions } from './DeliverableFileActions';
+import {
+  classifyReportResultLink,
+  displayNameForWorkspacePath,
+} from './reportResultLinks';
+import {
+  canOpenInAppPreview,
+} from '../workspace-panel/filePreview';
 import { cn } from '@/lib/utils';
+
+const logger = getLogger('ReportResultCard');
 
 export interface ReportResultCardProps {
   data: ReportResultData;
@@ -21,9 +39,12 @@ export interface ReportResultCardProps {
 
 export const ReportResultCard: React.FC<ReportResultCardProps> = ({
   data,
-  sessionId,
+  sessionId: propSessionId,
 }) => {
   const { t } = useTranslation('common');
+  const sessionContext = useOptionalAgentSessionState();
+  const filePreview = useOptionalAgentFilePreview();
+  const activeSessionId = propSessionId || sessionContext?.session?.id;
 
   const statusConfig = (() => {
     switch (data.status) {
@@ -62,6 +83,92 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
       : data.status === 'blocked'
         ? t('agent.toolStructured.blockedTitle', 'Blocked')
         : t('agent.toolStructured.resultTitle', 'Final result'));
+
+  const handleResultLinkClick = useCallback(
+    async (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+      // Never let relative markdown hrefs hit the SPA router.
+      event.preventDefault();
+      event.stopPropagation();
+
+      const action = classifyReportResultLink(href, data.deliverables);
+      try {
+        switch (action.kind) {
+          case 'external':
+            await openExternalUrl(action.url);
+            return;
+          case 'workspace': {
+            if (
+              filePreview &&
+              canOpenInAppPreview({ path: action.path })
+            ) {
+              filePreview.openFilePreview({
+                path: action.path,
+                name: displayNameForWorkspacePath(action.path),
+              });
+              return;
+            }
+            if (!activeSessionId) {
+              toast.error(
+                t(
+                  'agent.toolStructured.noSessionForDownload',
+                  'No active session found for download',
+                ),
+              );
+              return;
+            }
+            await openWorkspaceFileWithDefaultApp(
+              action.path,
+              activeSessionId,
+            );
+            return;
+          }
+          case 'host':
+            await openPathWithDefaultApp(action.absolutePath);
+            return;
+          case 'blocked':
+            toast.error(
+              t(
+                'agent.toolStructured.unsupportedResultLink',
+                'This link cannot be opened from the result panel',
+              ),
+            );
+            return;
+        }
+      } catch (error) {
+        logger.error('Failed to open reportResult markdown link', {
+          href,
+          error,
+        });
+        toast.error(
+          t('agent.toolStructured.openFileError', 'Failed to open file'),
+        );
+      }
+    },
+    [activeSessionId, data.deliverables, filePreview, t],
+  );
+
+  const markdownComponents = useMemo(
+    () => ({
+      a: ({
+        href,
+        children,
+        ...props
+      }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+        <a
+          {...props}
+          href={href}
+          data-testid="report-result-markdown-link"
+          className="text-primary hover:bg-primary/10 rounded px-0.5 underline underline-offset-4 font-medium transition-colors"
+          onClick={(event) => {
+            void handleResultLinkClick(event, href ?? '');
+          }}
+        >
+          {children}
+        </a>
+      ),
+    }),
+    [handleResultLinkClick],
+  );
 
   return (
     <div
@@ -134,7 +241,10 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
           {t('agent.toolStructured.resultSummary', 'Outcome')}
         </div>
         <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed rounded-md bg-muted/20 border border-border/50 p-3.5">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}
+          >
             {data.result}
           </ReactMarkdown>
         </div>
@@ -163,7 +273,7 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
               <DeliverableFileActions
                 key={item.path}
                 item={item}
-                sessionId={sessionId}
+                sessionId={activeSessionId}
               />
             ))}
           </div>

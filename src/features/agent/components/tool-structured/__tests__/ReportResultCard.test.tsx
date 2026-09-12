@@ -6,10 +6,15 @@ import type { ReportResultData } from '../types';
 
 const openPathWithDefaultAppMock = vi.fn();
 const downloadWorkspaceFileMock = vi.fn();
+const openExternalUrlMock = vi.fn();
+const openWorkspaceFileWithDefaultAppMock = vi.fn();
 
 vi.mock('@/lib/backend', () => ({
   openPathWithDefaultApp: (...args: unknown[]) => openPathWithDefaultAppMock(...args),
   downloadWorkspaceFile: (...args: unknown[]) => downloadWorkspaceFileMock(...args),
+  openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),
+  openWorkspaceFileWithDefaultApp: (...args: unknown[]) =>
+    openWorkspaceFileWithDefaultAppMock(...args),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -29,7 +34,7 @@ vi.mock('@/context/AgentFilePreviewContext', () => ({
 }));
 
 vi.mock('@/context/AgentSessionContext', () => ({
-  useAgentSessionState: () => ({
+  useOptionalAgentSessionState: () => ({
     session: { id: 'session-test-123' },
   }),
 }));
@@ -138,5 +143,49 @@ describe('ReportResultCard', () => {
       />,
     );
     expect(screen.getAllByText('Blocked').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('opens workspace markdown links via preview instead of navigating', async () => {
+    render(
+      <ReportResultCard
+        data={{
+          ...sampleData,
+          result: 'See [notes](notes.md) for details.',
+          deliverables: [],
+        }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    const link = screen.getByTestId('report-result-markdown-link');
+    fireEvent.click(link);
+
+    await waitFor(() => {
+      expect(openFilePreviewMock).toHaveBeenCalledWith({
+        path: 'notes.md',
+        name: 'notes.md',
+      });
+    });
+    expect(openWorkspaceFileWithDefaultAppMock).not.toHaveBeenCalled();
+  });
+
+  it('opens https markdown links externally', async () => {
+    openExternalUrlMock.mockResolvedValueOnce(undefined);
+    render(
+      <ReportResultCard
+        data={{
+          ...sampleData,
+          result: 'Docs: [site](https://example.com/docs)',
+          deliverables: [],
+        }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('report-result-markdown-link'));
+
+    await waitFor(() => {
+      expect(openExternalUrlMock).toHaveBeenCalledWith('https://example.com/docs');
+    });
   });
 });
