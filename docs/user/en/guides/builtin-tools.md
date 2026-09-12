@@ -62,10 +62,10 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 
 ### 3. Interactive UI (`ui__*`)
 
-| Tool Name                | Description                                                        |
-| :----------------------- | :----------------------------------------------------------------- |
-| `ui__presentInteractive` | Render interactive UI components (selection buttons, forms, cards) |
-| `ui__reportResult`       | Report user selections and form inputs back to the active workflow |
+| Tool Name                | Description                                                                 |
+| :----------------------- | :-------------------------------------------------------------------------- |
+| `ui__presentInteractive` | Render interactive UI components (selection buttons, forms, cards)          |
+| `ui__reportResult`       | Deliver final task results and attached deliverable files (terminal signal) |
 
 ### 4. Browser (`browser__*`) _(Optional)_
 

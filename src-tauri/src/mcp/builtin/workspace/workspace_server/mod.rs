@@ -162,7 +162,6 @@ impl WorkspaceServer {
         let mut tools = Vec::new();
         tools.extend(tools::file_tools());
         tools.extend(tools::code_tools(profile));
-        tools.extend(tools::export_tools());
         tools.extend(tools::terminal_tools());
         tools
     }

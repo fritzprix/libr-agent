@@ -89,18 +89,21 @@ pub fn report_result_tool() -> MCPTool {
         description: tool_description(
             "Deliver the final task result to the user when there is nothing left to do. This is the explicit completion signal — not for mid-task updates.",
             &[
-                "All required work is already finished (files written, answer produced). For code, queries, scripts, or configs that can be executed or syntax-checked: that check already succeeded at least once — fix errors before calling.",
+                "You have restated the request's checkable acceptance criteria and verified against them (or you are reporting partial/blocked with unmet gaps).",
                 "You are not waiting on another tool, process, or user clarification.",
-                "Do NOT use this while still exploring, debugging, or planning — finish checks first, then call once.",
+                "Do NOT use this while still exploring, debugging, or planning — finish criteria checks first, then call once.",
             ],
             &[
                 "Call this exactly once when the outcome is ready.",
+                "Put checkable acceptance criteria from the user request in `criteria`.",
+                "Put verification evidence in `proof` (tool observations, commands, paths, or what remains unmet).",
+                "If your task produced deliverable files, pass their workspace-relative paths to `export_paths` to attach them with Preview/Open/Download actions.",
                 "Put the complete user-facing result in `result` (summary + key outputs/paths). Prefer Markdown.",
                 "After this tool returns: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",
             ],
             &[
                 "If you still need user input, use ui__presentInteractive with `interaction` instead.",
-                "If work remains (including an unrun check on an executable/parseable deliverable), continue with tools — do not call reportResult early.",
+                "If work remains or proof is missing for a claimed success, continue with tools — do not call reportResult early.",
             ],
         ),
         // Keep large body last for model argument ordering.
@@ -133,13 +136,36 @@ pub fn report_result_tool() -> MCPTool {
                     ),
                 ),
                 (
+                    "criteria".to_string(),
+                    string_prop_required(
+                        "Checkable acceptance criteria restated from the user request (what must be true to pass)",
+                    ),
+                ),
+                (
+                    "proof".to_string(),
+                    string_prop_required(
+                        "Evidence that criteria were checked (tool results, commands, paths) or an explicit list of unmet gaps for partial/blocked",
+                    ),
+                ),
+                (
+                    "export_paths".to_string(),
+                    array_schema(
+                        string_prop(Some(1), Some(1000), None),
+                        Some("Optional workspace-relative paths of final deliverable files (e.g. outputs/report.pdf) to attach to the final result"),
+                    ),
+                ),
+                (
                     "result".to_string(),
                     string_prop_required(
                         "Final user-facing result text (what was accomplished, key outputs, paths, and any caveats)",
                     ),
                 ),
             ],
-            vec!["result".to_string()],
+            vec![
+                "criteria".to_string(),
+                "proof".to_string(),
+                "result".to_string(),
+            ],
             None,
         ),
         output_schema: None,

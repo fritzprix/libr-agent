@@ -79,20 +79,49 @@ fn report_result_schema_property_order_puts_result_last() {
     use tauri_mcp_agent_lib::mcp::builtin::ui::tools::report_result_tool;
 
     let tool = report_result_tool();
-    assert_property_order(&tool, &["status", "format", "title", "result"]);
+    assert_property_order(
+        &tool,
+        &[
+            "status",
+            "format",
+            "title",
+            "criteria",
+            "proof",
+            "export_paths",
+            "result",
+        ],
+    );
 }
 
 #[test]
-fn report_result_description_requires_deliverable_check_before_completion() {
+fn report_result_requires_criteria_and_proof_fields() {
     use tauri_mcp_agent_lib::mcp::builtin::ui::tools::report_result_tool;
+    use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
 
     let tool = report_result_tool();
     let description = tool.description.as_str();
     assert!(
-        description.contains("syntax-checked")
-            && description.contains("succeeded at least once"),
-        "reportResult must require a prior execute/syntax check for parseable deliverables: {description}"
+        description.contains("`criteria`") && description.contains("`proof`"),
+        "reportResult must instruct criteria + proof: {description}"
     );
+    assert!(
+        !description.contains("syntax-checked"),
+        "executable-check coaching must not duplicate criteria/proof contract: {description}"
+    );
+
+    let JSONSchemaType::Object {
+        required: Some(required),
+        ..
+    } = &tool.input_schema.schema_type
+    else {
+        panic!("reportResult schema should declare required fields");
+    };
+    for field in ["criteria", "proof", "result"] {
+        assert!(
+            required.iter().any(|value| value == field),
+            "reportResult must require `{field}`: {required:?}"
+        );
+    }
 }
 
 #[test]

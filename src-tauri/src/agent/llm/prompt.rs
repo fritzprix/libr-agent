@@ -347,6 +347,13 @@ fn build_stable_prefix(
             .to_string(),
     );
 
+    // Single golden rule — do not expand into multi-bullet coaching (dilution).
+    parts.push(
+        "\n\n## Core Execution Principles\n\
+         - Before concluding: restate the request's checkable acceptance criteria, verify against them, and include that proof when reporting (or state what remains unmet)."
+            .to_string(),
+    );
+
     // 2. Persona / Voice Template — injected from SOUL.md and kept distinct from
     //    workspace instructions because it defines character, not task guidance.
     if let Some((filename, content)) = &soul_instruction {

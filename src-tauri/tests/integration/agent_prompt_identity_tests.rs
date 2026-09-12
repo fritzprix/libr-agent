@@ -18,6 +18,9 @@ async fn system_prompt_exposes_agent_runtime_identity() {
     assert!(prompt.contains("Agent Name: Ops Bot"));
     assert!(prompt.contains("Agent ID (Config ID): agent-123"));
     assert!(prompt.contains("Session ID: (unknown-session)"));
+    assert!(prompt.contains("## Core Execution Principles"));
+    assert!(prompt.contains("checkable acceptance criteria"));
+    assert!(prompt.contains("include that proof when reporting"));
 }
 
 #[tokio::test]

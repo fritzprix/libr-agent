@@ -70,6 +70,35 @@ export function parseRunShellResult(value: unknown): RunShellResult | null {
   return parsed.success ? parsed.data : null;
 }
 
+export const DeliverableItemSchema = z.object({
+  path: z.string(),
+  absolute_path: z.string().optional().nullable(),
+  name: z.string(),
+  size_bytes: z.number().optional().nullable(),
+  extension: z.string().optional().nullable(),
+  exists: z.boolean(),
+});
+
+export type DeliverableItem = z.infer<typeof DeliverableItemSchema>;
+
+export const ReportResultSchema = z.object({
+  type: z.literal('reportResult').optional(),
+  status: z.enum(['success', 'partial', 'blocked']),
+  format: z.string().optional(),
+  title: z.string().optional(),
+  criteria: z.string(),
+  proof: z.string(),
+  result: z.string(),
+  deliverables: z.array(DeliverableItemSchema).optional().default([]),
+});
+
+export type ReportResultData = z.infer<typeof ReportResultSchema>;
+
+export function parseReportResult(value: unknown): ReportResultData | null {
+  const parsed = ReportResultSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 /** Canonical `service__tool` name used by the structured-result dispatcher. */
 export function resolveStructuredToolKey(toolName: string): string {
   const parsed = parseBuiltinToolName(toolName);

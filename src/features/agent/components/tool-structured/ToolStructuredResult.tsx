@@ -3,12 +3,14 @@ import { FileWriteActions } from './FileWriteActions';
 import { StrReplaceDiffView } from './StrReplaceDiffView';
 import { TerminalOutputBlock } from './TerminalOutputBlock';
 import { AgentSessionToolCard } from './AgentSessionToolCard';
+import { ReportResultCard } from './ReportResultCard';
 import {
   classifyAgentSessionCard,
   isAgentSessionStructuredTool,
   parseAgentSessionToolResult,
 } from './agent-types';
 import {
+  parseReportResult,
   parseRunShellResult,
   parseStrReplaceResult,
   parseWriteFileResult,
@@ -20,6 +22,8 @@ export interface ToolStructuredResultProps {
   data: unknown;
   /** Optional tool-call arguments (e.g. task / message for agent cards). */
   toolArgs?: Record<string, unknown>;
+  /** Optional session ID associated with the tool result. */
+  sessionId?: string;
 }
 
 /**
@@ -37,6 +41,7 @@ export const ToolStructuredResult: React.FC<ToolStructuredResultProps> = ({
   toolName,
   data,
   toolArgs,
+  sessionId,
 }) => {
   const key = resolveStructuredToolKey(toolName);
 
@@ -52,6 +57,12 @@ export const ToolStructuredResult: React.FC<ToolStructuredResultProps> = ({
     case 'workspace__runShell': {
       const parsed = parseRunShellResult(data);
       return parsed ? <TerminalOutputBlock data={parsed} /> : null;
+    }
+    case 'ui__reportResult': {
+      const parsed = parseReportResult(data);
+      return parsed ? (
+        <ReportResultCard data={parsed} sessionId={sessionId} />
+      ) : null;
     }
     case 'agent__spawnSession':
     case 'agent__startSession':
@@ -92,6 +103,8 @@ export function canRenderStructuredToolResult(
       return parseStrReplaceResult(data) !== null;
     case 'workspace__runShell':
       return parseRunShellResult(data) !== null;
+    case 'ui__reportResult':
+      return parseReportResult(data) !== null;
     default: {
       if (!isAgentSessionStructuredTool(toolName)) return false;
       const parsed = parseAgentSessionToolResult(data);
