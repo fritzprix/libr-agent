@@ -499,8 +499,8 @@ def main() -> None:
                     "- **Observed**: Agent failed to execute any turns before termination."
                 )
                 md.append(
-                    "- **Action Plan**: Check adapter setup, model authorization, "
-                    "or initial prompt parsing.\n"
+                    "- **Action Plan**: Check adapter setup, authorization, "
+                    "or initial prompt assembly.\n"
                 )
             if "TOOL_EXECUTION_ERROR" in sorted_failure_groups:
                 md.append("### 4. Explicit Tool Errors")

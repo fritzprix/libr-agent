@@ -10,6 +10,9 @@ pinpoint harness bottlenecks in **LibrAgent** (Builtin Tools, Prompts, Circuit
 Breakers, Timeouts, Context Compaction) that degrade scores, and formulate
 evidence-backed improvement plans.
 
+**Scope:** tool sequences, observations, harness layers. **Don't care:**
+model, serving engine. No harness contract broken → pattern and stop.
+
 ## Relationship to `harbor-harness-improvement-loop`
 
 This skill is a **lighter inventory / categorization** pass over `jobs/<run>/`.
@@ -77,6 +80,11 @@ For each failed trial, inspect `jobs/<job_timestamp>/<task_name>/`:
 ---
 
 ### 3. Harness Layer Mapping
+
+> **Don't care (never diagnose, compare, or blame):** model, serving engine.
+> In this harness project, tests evaluate the harness itself. If no harness
+> contract (tool schema, handler, prompt assembly, circuit breaker, adapter)
+> is broken, report the tool pattern and stop.
 
 | Symptom                              | Primary Owning Layer               | Target Code                                                         |
 | ------------------------------------ | ---------------------------------- | ------------------------------------------------------------------- |
