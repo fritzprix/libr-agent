@@ -55,10 +55,17 @@ async fn str_replace_replaces_single_unique_match() {
         "expected success: {result:?}"
     );
     let text = extract_text_content(&result);
-    assert!(text.contains("Replaced 1 occurrence"), "{text}");
+    assert!(
+        text.contains("Replaced 1 occurrence(s) on line 2 in 'demo.txt'"),
+        "{text}"
+    );
     assert!(
         text.contains("@@"),
-        "success body should include a unified diff so re-read is unnecessary: {text}"
+        "success body should include a string diff: {text}"
+    );
+    assert!(
+        text.contains("- beta") && text.contains("+ BETA"),
+        "success body should include compact diff: {text}"
     );
     assert!(
         !text.contains("readFile to verify"),
@@ -67,6 +74,20 @@ async fn str_replace_replaces_single_unique_match() {
     assert!(
         !text.contains("💡 Suggested Follow-ups:"),
         "strReplace success should not append follow-ups: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured_content");
+    assert_eq!(structured["path"], "demo.txt");
+    assert_eq!(structured["replacements"], 1);
+    let full_diff = structured["unified_diff"].as_str().expect("unified_diff");
+    assert!(
+        full_diff.contains("@@ -1,3 +1,3 @@")
+            && full_diff.contains("- beta")
+            && full_diff.contains("+ BETA"),
+        "structured diff should contain file diff: {full_diff}"
     );
 
     let updated = std::fs::read_to_string(file_path).expect("read updated file");
@@ -140,6 +161,11 @@ async fn str_replace_replace_all_updates_every_match() {
     assert!(
         !result.is_error.unwrap_or(true),
         "expected success: {result:?}"
+    );
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Replaced 3 occurrence(s) on line 1 in 'all.txt'"),
+        "{text}"
     );
     assert_eq!(std::fs::read_to_string(file_path).unwrap(), "bar bar bar\n");
 }
@@ -457,3 +483,69 @@ async fn str_replace_hint_retry_succeeds_on_crlf_file() {
         "updated file should contain new string: {updated}"
     );
 }
+
+#[tokio::test]
+async fn str_replace_compact_body_on_long_single_line_file() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "str-replace-long-line";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let file_path = workspace_dir.join("long_paragraph.tex");
+
+    // Construct a ~2KB single line with a word in the middle
+    let prefix = "a".repeat(1000);
+    let suffix = "b".repeat(1000);
+    let original = format!("{prefix} communicative {suffix}\n");
+    std::fs::write(&file_path, &original).expect("seed long line file");
+
+    let result = server
+        .call_tool(
+            "strReplace",
+            json!({
+                "path": "long_paragraph.tex",
+                "old_string": "communicative",
+                "new_string": "open",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("strReplace should return");
+
+    assert!(!result.is_error.unwrap_or(true), "expected success: {result:?}");
+    let text = extract_text_content(&result);
+
+    // LLM body should be compact: only contains the replacement snippet and line info
+    assert!(
+        text.contains("Replaced 1 occurrence(s) on line 1 in 'long_paragraph.tex'"),
+        "{text}"
+    );
+    assert!(
+        text.contains("- communicative") && text.contains("+ open"),
+        "{text}"
+    );
+    // The body must NOT contain the 2KB line
+    assert!(
+        !text.contains(&prefix),
+        "LLM body should not dump 2KB unchanged context: {text}"
+    );
+    assert!(
+        text.len() < 500,
+        "LLM body should be under 500 chars, got {}",
+        text.len()
+    );
+
+    // structured_content must preserve the full unified diff for the UI viewer
+    let structured = result.structured_content.as_ref().expect("structured_content");
+    let full_diff = structured["unified_diff"].as_str().expect("unified_diff");
+    assert!(
+        full_diff.len() > 2000,
+        "structured unified_diff should maintain full line diff, got {}",
+        full_diff.len()
+    );
+    assert!(
+        full_diff.contains(&prefix),
+        "structured diff must contain original full line content"
+    );
+}
+

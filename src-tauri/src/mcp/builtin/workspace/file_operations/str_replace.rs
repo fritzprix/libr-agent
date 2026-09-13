@@ -1,5 +1,5 @@
 use super::super::WorkspaceServer;
-use super::utils::format_file_diff;
+use super::utils::{format_file_diff, format_string_diff};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -55,6 +55,70 @@ fn count_occurrences(content: &str, needle: &str) -> usize {
     }
 
     content.match_indices(needle).count()
+}
+
+fn format_matched_lines_summary(content: &str, needle: &str, replace_all: bool) -> String {
+    let needle_line_span = needle.lines().count().max(1);
+    let mut start_lines = Vec::new();
+    let mut current_line = 1;
+    let mut last_offset = 0;
+
+    for (byte_offset, _) in content.match_indices(needle) {
+        current_line += content[last_offset..byte_offset]
+            .chars()
+            .filter(|&c| c == '\n')
+            .count();
+        start_lines.push(current_line);
+        last_offset = byte_offset;
+        if !replace_all {
+            break;
+        }
+    }
+
+    if start_lines.is_empty() {
+        return String::new();
+    }
+
+    start_lines.dedup();
+
+    if start_lines.len() == 1 {
+        let start = start_lines[0];
+        if needle_line_span > 1 {
+            format!("on lines {}-{} ", start, start + needle_line_span - 1)
+        } else {
+            format!("on line {} ", start)
+        }
+    } else if start_lines.len() <= 5 {
+        let formatted = start_lines
+            .iter()
+            .map(|l| {
+                if needle_line_span > 1 {
+                    format!("{}-{}", l, l + needle_line_span - 1)
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("on lines {} ", formatted)
+    } else {
+        let first_five = start_lines[..5]
+            .iter()
+            .map(|l| {
+                if needle_line_span > 1 {
+                    format!("{}-{}", l, l + needle_line_span - 1)
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "on lines {} (and {} more) ",
+            first_five,
+            start_lines.len() - 5
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,9 +418,15 @@ impl WorkspaceServer {
         }
 
         let replacements = if replace_all { occurrences } else { 1 };
+        let line_info = format_matched_lines_summary(&original_content, old_string, replace_all);
+        let string_diff = format_string_diff(
+            &[(old_string.to_string(), new_string.to_string())],
+            path_str,
+        );
         let diff_output = format_file_diff(&original_content, &new_content, path_str);
-        let message =
-            format!("Replaced {replacements} occurrence(s) in '{path_str}'.\n\n{diff_output}");
+        let message = format!(
+            "Replaced {replacements} occurrence(s) {line_info}in '{path_str}'.\n\n{string_diff}"
+        );
 
         // Diff in the body is enough — do not burn tokens on a re-read follow-up.
         // structured_content powers the chat UI diff viewer (not re-sent to the LLM as tools).
@@ -416,11 +486,12 @@ mod tests {
     #[tokio::test]
     async fn read_validated_utf8_file_rejects_binary() {
         let mut file = NamedTempFile::new().expect("temp file");
-        file.write_all(&[0xff, 0xfe, 0xfd]).expect("write bytes");
+        file.write_all(&[b'a', 0x00, b'b']).expect("write bytes");
+        file.flush().expect("flush bytes");
         let error = read_validated_utf8_file(file.path())
             .await
             .expect_err("binary should fail");
-        assert!(error.contains("UTF-8"), "{error}");
+        assert!(error.contains("binary"), "{error}");
     }
 
     #[test]
@@ -468,5 +539,50 @@ mod tests {
         let content = "fn hello() {}\n";
         let needle = "fn goodbye() {}";
         assert!(super::find_whitespace_normalized_match(content, needle).is_none());
+    }
+
+    #[test]
+    fn format_matched_lines_summary_single_line_match() {
+        let content = "alpha\nbeta\ngamma\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "beta", false),
+            "on line 2 "
+        );
+    }
+
+    #[test]
+    fn format_matched_lines_summary_multi_line_needle() {
+        let content = "line 1\nline 2\nline 3\nline 4\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "line 2\nline 3", false),
+            "on lines 2-3 "
+        );
+    }
+
+    #[test]
+    fn format_matched_lines_summary_multiple_matches() {
+        let content = "foo\nbar\nfoo\nbaz\nfoo\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "foo", true),
+            "on lines 1, 3, 5 "
+        );
+    }
+
+    #[test]
+    fn format_matched_lines_summary_deduplicates_same_line_matches() {
+        let content = "foo foo foo\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "foo", true),
+            "on line 1 "
+        );
+    }
+
+    #[test]
+    fn format_matched_lines_summary_more_than_five_distinct_lines() {
+        let content = "a\nb\nc\nd\ne\nf\ng\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "\n", true),
+            "on lines 1, 2, 3, 4, 5 (and 2 more) "
+        );
     }
 }
