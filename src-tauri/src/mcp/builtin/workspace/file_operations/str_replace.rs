@@ -57,6 +57,93 @@ fn count_occurrences(content: &str, needle: &str) -> usize {
     content.match_indices(needle).count()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WhitespaceNormalizedMatch {
+    pub start_line: usize,
+    pub end_line: usize,
+    pub exact_text: String,
+}
+
+pub(crate) fn find_whitespace_normalized_match(
+    content: &str,
+    needle: &str,
+) -> Option<WhitespaceNormalizedMatch> {
+    if needle.trim().is_empty() || content.is_empty() {
+        return None;
+    }
+
+    let raw_needle_lines: Vec<&str> = needle.lines().collect();
+    if raw_needle_lines.is_empty() {
+        return None;
+    }
+
+    let first_non_empty = raw_needle_lines.iter().position(|l| !l.trim().is_empty())?;
+    let last_non_empty = raw_needle_lines
+        .iter()
+        .rposition(|l| !l.trim().is_empty())?;
+
+    let trimmed_needle: Vec<&str> = raw_needle_lines[first_non_empty..=last_non_empty]
+        .iter()
+        .map(|l| l.trim())
+        .collect();
+    let window_len = trimmed_needle.len();
+
+    let content_lines: Vec<&str> = content.lines().collect();
+    if content_lines.len() < window_len {
+        return None;
+    }
+
+    let trimmed_content_lines: Vec<&str> = content_lines.iter().map(|l| l.trim()).collect();
+
+    let mut matches = Vec::new();
+    for i in 0..=content_lines.len() - window_len {
+        if trimmed_content_lines[i..i + window_len] == trimmed_needle[..] {
+            matches.push(i);
+            if matches.len() > 1 {
+                // Ambiguous match across multiple locations — do not guess
+                return None;
+            }
+        }
+    }
+
+    if matches.len() == 1 {
+        let start_idx = matches[0];
+        let end_idx = start_idx + window_len;
+
+        // Build line start byte offsets in original content to slice exact on-disk text (preserving CRLF/LF)
+        let mut line_starts = Vec::with_capacity(content_lines.len() + 1);
+        line_starts.push(0);
+        for (pos, b) in content.bytes().enumerate() {
+            if b == b'\n' {
+                line_starts.push(pos + 1);
+            }
+        }
+
+        let start_byte = line_starts[start_idx];
+        let needle_has_trailing_newline = needle.ends_with('\n');
+        let end_byte = if needle_has_trailing_newline {
+            if end_idx < line_starts.len() {
+                line_starts[end_idx]
+            } else {
+                content.len()
+            }
+        } else {
+            let last_line_start = line_starts[end_idx - 1];
+            let last_line_len = content_lines[end_idx - 1].len();
+            last_line_start + last_line_len
+        };
+
+        let exact_text = content[start_byte..end_byte].to_string();
+        Some(WhitespaceNormalizedMatch {
+            start_line: start_idx + 1,
+            end_line: end_idx,
+            exact_text,
+        })
+    } else {
+        None
+    }
+}
+
 impl WorkspaceServer {
     pub async fn handle_str_replace(
         &self,
@@ -171,21 +258,42 @@ impl WorkspaceServer {
 
         let occurrences = count_occurrences(&original_content, old_string);
         if occurrences == 0 {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!("old_string was not found in '{path_str}'"),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Use workspace__readFile on the target path and copy the exact text CURRENTLY in the file"
-                    .to_string(),
-                "Do not reuse old_string from an earlier successful edit — that text is no longer on disk"
-                    .to_string(),
-                "Check whitespace, indentation, and line endings — matching is exact".to_string(),
-                "For larger structural edits, split the change into smaller unique old_string values"
-                    .to_string(),
-            ])
-            .to_mcp_result());
+            let closest_match = find_whitespace_normalized_match(&original_content, old_string);
+            let (error_msg, guidance) = if let Some(m) = closest_match {
+                (
+                    format!(
+                        "old_string was not found in '{path_str}'. A matching block with different whitespace/indentation was found at lines {}-{} (see guidance below).",
+                        m.start_line, m.end_line
+                    ),
+                    vec![
+                        format!(
+                            "Closest match in file (lines {}-{}):\n```\n{}\n```",
+                            m.start_line, m.end_line, m.exact_text
+                        ),
+                        "Copy the exact snippet above into old_string to apply your edit immediately.".to_string(),
+                        "Check whitespace, indentation, and line endings — matching is exact.".to_string(),
+                    ],
+                )
+            } else {
+                (
+                    format!("old_string was not found in '{path_str}'"),
+                    vec![
+                        "Use workspace__readFile on the target path and copy the exact text CURRENTLY in the file"
+                            .to_string(),
+                        "Do not reuse old_string from an earlier successful edit — that text is no longer on disk"
+                            .to_string(),
+                        "Check whitespace, indentation, and line endings — matching is exact".to_string(),
+                        "For larger structural edits, split the change into smaller unique old_string values"
+                            .to_string(),
+                    ],
+                )
+            };
+
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, error_msg, ToolGroup::Workspace)
+                    .guidance(guidance)
+                    .to_mcp_result(),
+            );
         }
 
         if !replace_all && occurrences > 1 {
@@ -313,5 +421,52 @@ mod tests {
             .await
             .expect_err("binary should fail");
         assert!(error.contains("UTF-8"), "{error}");
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_detects_indentation_difference() {
+        let content = "fn main() {\n    let x = 1;\n    let y = 2;\n}\n";
+        let needle = "  let x = 1;\n  let y = 2;";
+        let matched = super::find_whitespace_normalized_match(content, needle)
+            .expect("should find match differing only by indentation");
+        assert_eq!(matched.start_line, 2);
+        assert_eq!(matched.end_line, 3);
+        assert_eq!(matched.exact_text, "    let x = 1;\n    let y = 2;");
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_preserves_crlf_slice() {
+        let content = "fn main() {\r\n    let x = 1;\r\n    let y = 2;\r\n}\r\n";
+        let needle = "  let x = 1;\n  let y = 2;";
+        let matched = super::find_whitespace_normalized_match(content, needle)
+            .expect("should find match in CRLF file");
+        assert_eq!(matched.start_line, 2);
+        assert_eq!(matched.end_line, 3);
+        assert_eq!(matched.exact_text, "    let x = 1;\r\n    let y = 2;");
+        assert!(content.contains(&matched.exact_text));
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_handles_tabs_vs_spaces() {
+        let content = "fn main() {\n\tlet x = 1;\n\tlet y = 2;\n}\n";
+        let needle = "    let x = 1;\n    let y = 2;";
+        let matched = super::find_whitespace_normalized_match(content, needle)
+            .expect("should find match across tabs and spaces");
+        assert_eq!(matched.exact_text, "\tlet x = 1;\n\tlet y = 2;");
+        assert!(content.contains(&matched.exact_text));
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_returns_none_for_ambiguous() {
+        let content = "item:\n  val: 1\nitem:\n  val: 1\n";
+        let needle = "item:\n    val: 1";
+        assert!(super::find_whitespace_normalized_match(content, needle).is_none());
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_returns_none_for_non_matching() {
+        let content = "fn hello() {}\n";
+        let needle = "fn goodbye() {}";
+        assert!(super::find_whitespace_normalized_match(content, needle).is_none());
     }
 }

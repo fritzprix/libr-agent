@@ -341,3 +341,119 @@ async fn write_file_append_preview_uses_raw_content_without_anchors() {
         "preview should be raw lines without anchor pipe separators: {text}"
     );
 }
+
+#[tokio::test]
+async fn str_replace_provides_closest_match_hint_on_whitespace_mismatch() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "str-replace-whitespace-hint";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let file_path = workspace_dir.join("code.py");
+    std::fs::write(
+        &file_path,
+        "def calculate():\n    total = 0\n    return total\n",
+    )
+    .expect("seed");
+
+    let result = server
+        .call_tool(
+            "strReplace",
+            json!({
+                "path": "code.py",
+                "old_string": "  total = 0\n  return total", // 2 spaces instead of 4
+                "new_string": "    return 42"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("strReplace should return");
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "expected error: {result:?}"
+    );
+    let text = extract_text_content(&result);
+    assert!(text.contains("Closest match in file (lines 2-3)"), "{text}");
+    assert!(text.contains("    total = 0\n    return total"), "{text}");
+    assert!(
+        text.contains(
+            "Copy the exact snippet above into old_string to apply your edit immediately"
+        ),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn str_replace_hint_retry_succeeds_on_crlf_file() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "str-replace-crlf-roundtrip";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let file_path = workspace_dir.join("crlf.py");
+    std::fs::write(
+        &file_path,
+        "def greet():\r\n    name = 'world'\r\n    return f'hi {name}'\r\n",
+    )
+    .expect("seed crlf file");
+
+    // 1st call: mismatched indentation and LF instead of CRLF
+    let result1 = server
+        .call_tool(
+            "strReplace",
+            json!({
+                "path": "crlf.py",
+                "old_string": "  name = 'world'\n  return f'hi {name}'",
+                "new_string": "    return 'done'"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("strReplace should return");
+
+    assert!(result1.is_error.unwrap_or(false), "1st call should fail");
+    let err_text = extract_text_content(&result1);
+    assert!(
+        err_text.contains("Closest match in file (lines 2-3)"),
+        "{err_text}"
+    );
+
+    // Extract the suggested snippet between ``` markers
+    let snippet_start = err_text.find("```\n").expect("start of snippet block") + 4;
+    let snippet_end = err_text[snippet_start..]
+        .find("\n```")
+        .expect("end of snippet block")
+        + snippet_start;
+    let exact_snippet = &err_text[snippet_start..snippet_end];
+
+    // Verify the extracted snippet has the actual on-disk CRLF
+    assert!(
+        exact_snippet.contains("\r\n"),
+        "suggested snippet must preserve on-disk CRLF"
+    );
+
+    // 2nd call: using the exact snippet suggested in the error
+    let result2 = server
+        .call_tool(
+            "strReplace",
+            json!({
+                "path": "crlf.py",
+                "old_string": exact_snippet,
+                "new_string": "    name = 'LibrAgent'\r\n    return f'hi {name}'"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("strReplace should return");
+
+    assert!(
+        !result2.is_error.unwrap_or(true),
+        "2nd call with suggested hint must succeed: {result2:?}"
+    );
+    let updated = std::fs::read_to_string(&file_path).expect("read updated file");
+    assert!(
+        updated.contains("name = 'LibrAgent'"),
+        "updated file should contain new string: {updated}"
+    );
+}
