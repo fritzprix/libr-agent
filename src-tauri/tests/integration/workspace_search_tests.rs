@@ -193,7 +193,12 @@ async fn search_skips_internal_tmp_and_exports_when_searching_inside_libragent()
         workspace_dir.join(".libragent/tool-results/visible.txt"),
         "const needle = true;\n",
     )
-    .expect("write visible file");
+    .expect("write tool-results dump");
+    std::fs::write(
+        workspace_dir.join(".libragent/teamwork.json"),
+        "const needle = true;\n",
+    )
+    .expect("write teamwork manifest");
 
     let result = server
         .handle_search(
@@ -208,8 +213,12 @@ async fn search_skips_internal_tmp_and_exports_when_searching_inside_libragent()
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("tool-results/visible.txt"),
+        text.contains("teamwork.json"),
         "non-internal .libragent files should remain searchable: {text}"
+    );
+    assert!(
+        !text.contains("tool-results/visible.txt"),
+        "tool-result dumps should be skipped even when searching .libragent: {text}"
     );
     assert!(
         !text.contains("tmp/process_123/stdout"),
@@ -248,8 +257,81 @@ async fn search_rejects_direct_internal_artifact_file_paths() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("Internal LibrAgent temp/export artifacts are excluded from search"),
+        text.contains("Internal LibrAgent artifacts are excluded from search"),
         "direct internal artifact file searches should be rejected: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_rejects_direct_tool_result_dump_paths() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-reject-tool-result-dump";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tool-results"))
+        .expect("tool-results dir");
+    std::fs::write(
+        workspace_dir.join(".libragent/tool-results/call-1.txt"),
+        "const needle = true;\n",
+    )
+    .expect("write tool-result dump");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".libragent/tool-results/call-1.txt",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Internal LibrAgent artifacts are excluded from search"),
+        "direct tool-result dump searches should be rejected: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_skips_tool_result_dumps_when_searching_workspace_root() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-skip-tool-results-from-root";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(workspace_dir.join("src/main.ts"), "const needle = true;\n")
+        .expect("write source file");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tool-results"))
+        .expect("tool-results dir");
+    std::fs::write(
+        workspace_dir.join(".libragent/tool-results/call-1.txt"),
+        "const needle = true;\n",
+    )
+    .expect("write tool-result dump");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("src/main.ts"),
+        "workspace source should remain searchable: {text}"
+    );
+    assert!(
+        !text.contains("tool-results/call-1.txt"),
+        "tool-result dumps must not appear in workspace search: {text}"
     );
 }
 
@@ -1306,6 +1388,45 @@ async fn glob_files_finds_by_pattern() {
 }
 
 #[tokio::test]
+async fn glob_files_skips_tool_result_dumps() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "glob-files-skip-tool-results";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(workspace_dir.join("src/keep.txt"), "keep\n").expect("write source");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tool-results"))
+        .expect("tool-results dir");
+    std::fs::write(
+        workspace_dir.join(".libragent/tool-results/call-1.txt"),
+        "dump\n",
+    )
+    .expect("write tool-result dump");
+
+    let result = server
+        .handle_glob_files(
+            json!({
+                "path": ".",
+                "filePattern": "*.txt",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("globFiles should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("src/keep.txt"),
+        "workspace txt should match: {text}"
+    );
+    assert!(
+        !text.contains("tool-results/call-1.txt"),
+        "tool-result dumps must not match glob: {text}"
+    );
+}
+
+#[tokio::test]
 async fn grep_files_finds_content() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "grep-files-content";
@@ -1421,6 +1542,66 @@ async fn grep_files_optional_file_pattern_scopes_results() {
 }
 
 #[tokio::test]
+async fn grep_files_file_pattern_expands_brace_globs() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "grep-files-brace-glob";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("match.rs"), "needle\n").expect("write rs");
+    std::fs::write(workspace_dir.join("match.ts"), "needle\n").expect("write ts");
+    std::fs::write(workspace_dir.join("match.py"), "needle\n").expect("write py");
+
+    let result = server
+        .handle_grep_files(
+            json!({
+                "path": ".",
+                "query": "needle",
+                "filePattern": "*.{rs,ts}",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("grepFiles should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(text.contains("match.rs"), "expected rs match: {text}");
+    assert!(text.contains("match.ts"), "expected ts match: {text}");
+    assert!(
+        !text.contains("match.py"),
+        "py file should stay outside the brace glob: {text}"
+    );
+}
+
+#[tokio::test]
+async fn glob_files_file_pattern_expands_brace_globs() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "glob-files-brace-glob";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("a.yaml"), "x\n").expect("write yaml");
+    std::fs::write(workspace_dir.join("b.yml"), "x\n").expect("write yml");
+    std::fs::write(workspace_dir.join("c.json"), "x\n").expect("write json");
+
+    let result = server
+        .handle_glob_files(
+            json!({
+                "path": ".",
+                "filePattern": "*.{yaml,yml}",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("globFiles should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(text.contains("a.yaml"), "expected yaml: {text}");
+    assert!(text.contains("b.yml"), "expected yml: {text}");
+    assert!(!text.contains("c.json"), "json should be excluded: {text}");
+}
+
+#[tokio::test]
 async fn search_files_compat_still_works() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-files-compat";
@@ -1532,5 +1713,75 @@ async fn grep_files_binary_guidance_suggests_run_shell() {
     assert!(
         dir_text.contains("workspace__runShell (`strings`, `grep -a`)"),
         "{dir_text}"
+    );
+}
+
+#[tokio::test]
+async fn grep_files_hard_cuts_long_matching_lines() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "grep-long-matching-line";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    let long_line = format!("{}hf_secret_token{}", "x".repeat(8000), "y".repeat(8000));
+    std::fs::write(workspace_dir.join("blob.json"), format!("{long_line}\n"))
+        .expect("write long matching line");
+
+    let file_result = server
+        .handle_grep_files(
+            json!({
+                "path": "blob.json",
+                "query": "hf_secret_token",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("file grep should succeed");
+    let file_text = extract_text_content(&file_result);
+    assert!(
+        file_text.contains("hf_secret_token"),
+        "preview must keep the match: {file_text}"
+    );
+    assert!(
+        file_text.contains("chars total, line continues"),
+        "long matching lines should hard-cut: {file_text}"
+    );
+    assert!(
+        !file_text.contains(&"x".repeat(400)),
+        "padding before the match must not be echoed: {file_text}"
+    );
+    assert!(
+        file_text.len() < 2000,
+        "file grep observation should stay small: {}",
+        file_text.len()
+    );
+
+    let dir_result = server
+        .handle_grep_files(
+            json!({
+                "path": ".",
+                "query": "hf_secret_token",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("directory grep should succeed");
+    let dir_text = extract_text_content(&dir_result);
+    assert!(
+        dir_text.contains("hf_secret_token"),
+        "directory preview must keep the match: {dir_text}"
+    );
+    assert!(
+        dir_text.contains("chars total, line continues"),
+        "directory grep should hard-cut long lines: {dir_text}"
+    );
+    assert!(
+        !dir_text.contains(&"x".repeat(400)),
+        "directory grep must not echo the padding: {dir_text}"
+    );
+    assert!(
+        dir_text.len() < 2000,
+        "directory grep observation should stay small: {}",
+        dir_text.len()
     );
 }

@@ -130,11 +130,11 @@ impl WorkspaceServer {
             if is_internal_workspace_artifact_path(&export_roots.workspace_canon, &source_path) {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
-                    "Internal LibrAgent temp/export artifacts cannot be exported".to_string(),
+                    "Internal LibrAgent artifacts cannot be exported".to_string(),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Select workspace files or directories outside .libragent/tmp and .libragent/exports".to_string(),
+                    "Select workspace files or directories outside .libragent/tmp, .libragent/exports, and .libragent/tool-results".to_string(),
                     "Use workspace__readProcessOutput or workspace__listProcesses instead of exporting raw temp outputs".to_string(),
                 ])
                 .to_mcp_result());

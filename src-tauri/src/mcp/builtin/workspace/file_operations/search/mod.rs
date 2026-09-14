@@ -9,7 +9,7 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path;
 use crate::mcp::types::MCPResult;
-use helpers::{parse_pagination, reject_empty_optional_str};
+use helpers::{parse_pagination, reject_empty_optional_str, GlobMatcher};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use tracing::warn;
@@ -254,14 +254,13 @@ impl WorkspaceServer {
         if safe_path.is_file() && is_internal_workspace_artifact_path(&workspace_root, &safe_path) {
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
-                "Internal LibrAgent temp/export artifacts are excluded from search".to_string(),
+                "Internal LibrAgent artifacts are excluded from search".to_string(),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Search workspace files outside .libragent/tmp and .libragent/exports".to_string(),
+                "Search workspace files outside .libragent/tmp, .libragent/exports, and .libragent/tool-results".to_string(),
+                "Use workspace__readFile on a spillover path if you need a saved tool dump".to_string(),
                 "Use workspace__readProcessOutput or workspace__listProcesses to inspect temp process output".to_string(),
-                "Attach real workspace files via ui__reportResult export_paths instead of searching generated export artifacts"
-                    .to_string(),
             ])
             .to_mcp_result());
         }
@@ -308,15 +307,19 @@ impl WorkspaceServer {
         };
 
         let glob_pat = match file_pattern {
-            Some(p) => match glob::Pattern::new(p) {
+            Some(p) => match GlobMatcher::parse(p) {
                 Ok(pat) => Some(pat),
                 Err(e) => {
-                    return Ok(guided_error(
-                        ErrorCategory::InvalidInput,
-                        format!("Invalid filePattern: {e}"),
-                        ToolGroup::Workspace,
-                    )
-                    .to_mcp_result());
+                    return Ok(
+                        guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Workspace)
+                            .guidance(vec![
+                                "Use a glob like `*.rs`, `src/**/*.ts`, or `*.{py,yaml}`"
+                                    .to_string(),
+                                "Omit filePattern when you want content search across all files"
+                                    .to_string(),
+                            ])
+                            .to_mcp_result(),
+                    );
                 }
             },
             None => None,
