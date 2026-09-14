@@ -68,7 +68,7 @@ warp = "0.3"
 dashmap = "6.2"
 regex = "1"
 cuid2 = "0.1.6"
-dirs = "6.0"
+dirs = "7.0"
 chromiumoxide = { version = "0.9.1", features = ["fetcher", "rustls", "zip8"] }
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 handlebars = "6.4"
