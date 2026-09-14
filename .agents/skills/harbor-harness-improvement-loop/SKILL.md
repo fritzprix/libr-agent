@@ -8,6 +8,26 @@ description: Analyze Harbor benchmark jobs and ATIF trajectories, identify evide
 Build a repeatable **benchmark → diagnosis → smallest intervention → rerun**
 cycle. Optimize general agent capability, not benchmark-specific shortcuts.
 
+## Analysis scope (non-negotiable)
+
+A job in this repo is a **harness** test. The only question is: which tool,
+prompt, handler, adapter, or telemetry contract failed?
+
+**Don't care (never diagnose, compare, or narrate):** model, serving engine.
+
+Do not put those in findings, owning layers, hypotheses, outcome commentary,
+contract tables, or next-cycle.
+
+Allowed output only:
+
+- tool sequences (name, args, order, repeats)
+- observations (size, hint, error contract)
+- schema / handler / response / prompt / adapter / telemetry source
+
+Reconstruct `intent → tool call → observation → next tool`. First divergence
+is a tool-pattern class. No harness contract broken → write the pattern and
+**stop**.
+
 ## Hard rules
 
 - Treat reward as an outcome, not a cause. Inspect trajectories and source before
@@ -15,9 +35,9 @@ cycle. Optimize general agent capability, not benchmark-specific shortcuts.
 - Separate **measured fact**, **trace interpretation**, and **hypothesis**.
 - Do not claim causality from one trial unless a deterministic contract violation
   is visible. Label single-trial findings as hypotheses.
-- Compare runs only when dataset/task selection, model/provider, assistant,
-  attempts, concurrency, execution mode, workspace mode, timeout/resource policy,
-  and verifier configuration are equivalent.
+- Compare runs only when dataset/task selection, assistant, attempts,
+  concurrency, execution mode, workspace mode, timeout/resource policy, and
+  verifier configuration are equivalent.
 - Never modify benchmark tasks, verifiers, official timeout/resource limits, or
   add task-specific prompt clues to improve scores.
 - Do not recommend a prompt change when a schema, handler, response, or
@@ -35,7 +55,6 @@ Record:
 
 - job paths and git revision
 - dataset, included tasks, attempts, and concurrency
-- reported model/provider and actual session model/provider
 - assistant ID/version, execution mode, workspace mode
 - timeout/resource and verifier settings
 
@@ -67,7 +86,7 @@ Before interpretation, flag:
 - missing or invalid trajectories
 - reward without completed trajectory
 - absent token data
-- model/workspace-mode mismatch
+- workspace-mode mismatch
 - errors, cancelled/incomplete runs, and verifier failures
 - unequal task or attempt coverage between runs
 
@@ -75,11 +94,11 @@ Before interpretation, flag:
 
 Analyze successful and failed trials separately. For each representative trace:
 
-1. Reconstruct the sequence: intent → tool call → observation → next decision.
-2. Find the **first divergence** from an efficient successful path.
+1. Reconstruct the sequence: intent → tool call → observation → next tool.
+2. Find the **first divergence** from an efficient successful path (tool pattern).
 3. Count tool selection, invalid arguments, retries, repeated calls, oversized
    outputs, missing verification, premature completion, and unrecovered errors.
-4. Compare with successful traces for the same task family.
+4. Compare tool sequences with successful traces for the same task family.
 5. Check token/turn/tool-call distributions; do not rely on means alone.
 
 Read [references/evidence-model.md](references/evidence-model.md) before assigning
@@ -89,18 +108,17 @@ a root cause.
 
 Use the narrowest layer that can fix the observed contract:
 
-| Symptom                                                  | Inspect first                                                         |
-| -------------------------------------------------------- | --------------------------------------------------------------------- |
-| Correct tool is unavailable or consistently not selected | tool exposure, name, description, input schema                        |
-| Tool selected with invalid/missing arguments             | schema required fields, enums, examples, validation error             |
-| Same failed action repeats                               | error recovery hint, state feedback, loop/escalation prompt           |
-| Tool succeeds but result misleads or bloats context      | handler output, truncation/pagination, structured content, hints      |
-| Agent uses many micro-tools for one outcome              | tool boundaries, consolidation, backend automation                    |
-| Agent skips planning/verification across unrelated tools | assistant/system/workspace prompt                                     |
-| Prompt tokens grow or cache ratio degrades               | stable/volatile prompt split, tool schema volume, repeated context    |
-| Correct actions still produce wrong workspace state      | handler semantics, isolation/sync, process lifecycle                  |
-| Metrics are missing or contradictory                     | Harbor adapter, Session API telemetry, aggregation script             |
-| Failure varies only by model/configuration               | model binding, provider behavior, sampling/config; do not blame tools |
+| Symptom                                                  | Inspect first                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------ |
+| Correct tool is unavailable or consistently not selected | tool exposure, name, description, input schema                     |
+| Tool selected with invalid/missing arguments             | schema required fields, enums, examples, validation error          |
+| Same failed action repeats                               | error recovery hint, state feedback, loop/escalation prompt        |
+| Tool succeeds but result misleads or bloats context      | handler output, truncation/pagination, structured content, hints   |
+| Agent uses many micro-tools for one outcome              | tool boundaries, consolidation, backend automation                 |
+| Agent skips planning/verification across unrelated tools | assistant/system/workspace prompt                                  |
+| Prompt tokens grow or cache ratio degrades               | stable/volatile prompt split, tool schema volume, repeated context |
+| Correct actions still produce wrong workspace state      | handler semantics, isolation/sync, process lifecycle               |
+| Metrics are missing or contradictory                     | Harbor adapter, Session API telemetry, aggregation script          |
 
 Inspect the actual schema, dispatcher, handler, response builder, prompt assembly,
 and tests for the suspected layer. Use `critique-builtin-tool`,
@@ -179,4 +197,5 @@ Stop and report instead of changing code when:
 - the proposed fix depends on benchmark-specific knowledge
 - the only evidence is hidden reasoning text
 - variance exceeds the observed difference
-- the issue belongs to model/provider behavior and no harness contract is broken
+- the tool pattern is clear but no schema/handler/response/adapter contract is broken
+  (report the pattern; do not invent an owner outside the harness)

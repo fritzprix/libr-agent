@@ -1,5 +1,5 @@
 use super::super::WorkspaceServer;
-use super::utils::format_file_diff;
+use super::utils::{format_file_diff, format_string_diff};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -55,6 +55,157 @@ fn count_occurrences(content: &str, needle: &str) -> usize {
     }
 
     content.match_indices(needle).count()
+}
+
+fn format_matched_lines_summary(content: &str, needle: &str, replace_all: bool) -> String {
+    let needle_line_span = needle.lines().count().max(1);
+    let mut start_lines = Vec::new();
+    let mut current_line = 1;
+    let mut last_offset = 0;
+
+    for (byte_offset, _) in content.match_indices(needle) {
+        current_line += content[last_offset..byte_offset]
+            .chars()
+            .filter(|&c| c == '\n')
+            .count();
+        start_lines.push(current_line);
+        last_offset = byte_offset;
+        if !replace_all {
+            break;
+        }
+    }
+
+    if start_lines.is_empty() {
+        return String::new();
+    }
+
+    start_lines.dedup();
+
+    if start_lines.len() == 1 {
+        let start = start_lines[0];
+        if needle_line_span > 1 {
+            format!("on lines {}-{} ", start, start + needle_line_span - 1)
+        } else {
+            format!("on line {} ", start)
+        }
+    } else if start_lines.len() <= 5 {
+        let formatted = start_lines
+            .iter()
+            .map(|l| {
+                if needle_line_span > 1 {
+                    format!("{}-{}", l, l + needle_line_span - 1)
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("on lines {} ", formatted)
+    } else {
+        let first_five = start_lines[..5]
+            .iter()
+            .map(|l| {
+                if needle_line_span > 1 {
+                    format!("{}-{}", l, l + needle_line_span - 1)
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "on lines {} (and {} more) ",
+            first_five,
+            start_lines.len() - 5
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WhitespaceNormalizedMatch {
+    pub start_line: usize,
+    pub end_line: usize,
+    pub exact_text: String,
+}
+
+pub(crate) fn find_whitespace_normalized_match(
+    content: &str,
+    needle: &str,
+) -> Option<WhitespaceNormalizedMatch> {
+    if needle.trim().is_empty() || content.is_empty() {
+        return None;
+    }
+
+    let raw_needle_lines: Vec<&str> = needle.lines().collect();
+    if raw_needle_lines.is_empty() {
+        return None;
+    }
+
+    let first_non_empty = raw_needle_lines.iter().position(|l| !l.trim().is_empty())?;
+    let last_non_empty = raw_needle_lines
+        .iter()
+        .rposition(|l| !l.trim().is_empty())?;
+
+    let trimmed_needle: Vec<&str> = raw_needle_lines[first_non_empty..=last_non_empty]
+        .iter()
+        .map(|l| l.trim())
+        .collect();
+    let window_len = trimmed_needle.len();
+
+    let content_lines: Vec<&str> = content.lines().collect();
+    if content_lines.len() < window_len {
+        return None;
+    }
+
+    let trimmed_content_lines: Vec<&str> = content_lines.iter().map(|l| l.trim()).collect();
+
+    let mut matches = Vec::new();
+    for i in 0..=content_lines.len() - window_len {
+        if trimmed_content_lines[i..i + window_len] == trimmed_needle[..] {
+            matches.push(i);
+            if matches.len() > 1 {
+                // Ambiguous match across multiple locations — do not guess
+                return None;
+            }
+        }
+    }
+
+    if matches.len() == 1 {
+        let start_idx = matches[0];
+        let end_idx = start_idx + window_len;
+
+        // Build line start byte offsets in original content to slice exact on-disk text (preserving CRLF/LF)
+        let mut line_starts = Vec::with_capacity(content_lines.len() + 1);
+        line_starts.push(0);
+        for (pos, b) in content.bytes().enumerate() {
+            if b == b'\n' {
+                line_starts.push(pos + 1);
+            }
+        }
+
+        let start_byte = line_starts[start_idx];
+        let needle_has_trailing_newline = needle.ends_with('\n');
+        let end_byte = if needle_has_trailing_newline {
+            if end_idx < line_starts.len() {
+                line_starts[end_idx]
+            } else {
+                content.len()
+            }
+        } else {
+            let last_line_start = line_starts[end_idx - 1];
+            let last_line_len = content_lines[end_idx - 1].len();
+            last_line_start + last_line_len
+        };
+
+        let exact_text = content[start_byte..end_byte].to_string();
+        Some(WhitespaceNormalizedMatch {
+            start_line: start_idx + 1,
+            end_line: end_idx,
+            exact_text,
+        })
+    } else {
+        None
+    }
 }
 
 impl WorkspaceServer {
@@ -171,21 +322,42 @@ impl WorkspaceServer {
 
         let occurrences = count_occurrences(&original_content, old_string);
         if occurrences == 0 {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!("old_string was not found in '{path_str}'"),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Use workspace__readFile on the target path and copy the exact text CURRENTLY in the file"
-                    .to_string(),
-                "Do not reuse old_string from an earlier successful edit — that text is no longer on disk"
-                    .to_string(),
-                "Check whitespace, indentation, and line endings — matching is exact".to_string(),
-                "For larger structural edits, split the change into smaller unique old_string values"
-                    .to_string(),
-            ])
-            .to_mcp_result());
+            let closest_match = find_whitespace_normalized_match(&original_content, old_string);
+            let (error_msg, guidance) = if let Some(m) = closest_match {
+                (
+                    format!(
+                        "old_string was not found in '{path_str}'. A matching block with different whitespace/indentation was found at lines {}-{} (see guidance below).",
+                        m.start_line, m.end_line
+                    ),
+                    vec![
+                        format!(
+                            "Closest match in file (lines {}-{}):\n```\n{}\n```",
+                            m.start_line, m.end_line, m.exact_text
+                        ),
+                        "Copy the exact snippet above into old_string to apply your edit immediately.".to_string(),
+                        "Check whitespace, indentation, and line endings — matching is exact.".to_string(),
+                    ],
+                )
+            } else {
+                (
+                    format!("old_string was not found in '{path_str}'"),
+                    vec![
+                        "Use workspace__readFile on the target path and copy the exact text CURRENTLY in the file"
+                            .to_string(),
+                        "Do not reuse old_string from an earlier successful edit — that text is no longer on disk"
+                            .to_string(),
+                        "Check whitespace, indentation, and line endings — matching is exact".to_string(),
+                        "For larger structural edits, split the change into smaller unique old_string values"
+                            .to_string(),
+                    ],
+                )
+            };
+
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, error_msg, ToolGroup::Workspace)
+                    .guidance(guidance)
+                    .to_mcp_result(),
+            );
         }
 
         if !replace_all && occurrences > 1 {
@@ -246,9 +418,15 @@ impl WorkspaceServer {
         }
 
         let replacements = if replace_all { occurrences } else { 1 };
+        let line_info = format_matched_lines_summary(&original_content, old_string, replace_all);
+        let string_diff = format_string_diff(
+            &[(old_string.to_string(), new_string.to_string())],
+            path_str,
+        );
         let diff_output = format_file_diff(&original_content, &new_content, path_str);
-        let message =
-            format!("Replaced {replacements} occurrence(s) in '{path_str}'.\n\n{diff_output}");
+        let message = format!(
+            "Replaced {replacements} occurrence(s) {line_info}in '{path_str}'.\n\n{string_diff}"
+        );
 
         // Diff in the body is enough — do not burn tokens on a re-read follow-up.
         // structured_content powers the chat UI diff viewer (not re-sent to the LLM as tools).
@@ -308,10 +486,103 @@ mod tests {
     #[tokio::test]
     async fn read_validated_utf8_file_rejects_binary() {
         let mut file = NamedTempFile::new().expect("temp file");
-        file.write_all(&[0xff, 0xfe, 0xfd]).expect("write bytes");
+        file.write_all(&[b'a', 0x00, b'b']).expect("write bytes");
+        file.flush().expect("flush bytes");
         let error = read_validated_utf8_file(file.path())
             .await
             .expect_err("binary should fail");
-        assert!(error.contains("UTF-8"), "{error}");
+        assert!(error.contains("binary"), "{error}");
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_detects_indentation_difference() {
+        let content = "fn main() {\n    let x = 1;\n    let y = 2;\n}\n";
+        let needle = "  let x = 1;\n  let y = 2;";
+        let matched = super::find_whitespace_normalized_match(content, needle)
+            .expect("should find match differing only by indentation");
+        assert_eq!(matched.start_line, 2);
+        assert_eq!(matched.end_line, 3);
+        assert_eq!(matched.exact_text, "    let x = 1;\n    let y = 2;");
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_preserves_crlf_slice() {
+        let content = "fn main() {\r\n    let x = 1;\r\n    let y = 2;\r\n}\r\n";
+        let needle = "  let x = 1;\n  let y = 2;";
+        let matched = super::find_whitespace_normalized_match(content, needle)
+            .expect("should find match in CRLF file");
+        assert_eq!(matched.start_line, 2);
+        assert_eq!(matched.end_line, 3);
+        assert_eq!(matched.exact_text, "    let x = 1;\r\n    let y = 2;");
+        assert!(content.contains(&matched.exact_text));
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_handles_tabs_vs_spaces() {
+        let content = "fn main() {\n\tlet x = 1;\n\tlet y = 2;\n}\n";
+        let needle = "    let x = 1;\n    let y = 2;";
+        let matched = super::find_whitespace_normalized_match(content, needle)
+            .expect("should find match across tabs and spaces");
+        assert_eq!(matched.exact_text, "\tlet x = 1;\n\tlet y = 2;");
+        assert!(content.contains(&matched.exact_text));
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_returns_none_for_ambiguous() {
+        let content = "item:\n  val: 1\nitem:\n  val: 1\n";
+        let needle = "item:\n    val: 1";
+        assert!(super::find_whitespace_normalized_match(content, needle).is_none());
+    }
+
+    #[test]
+    fn find_whitespace_normalized_match_returns_none_for_non_matching() {
+        let content = "fn hello() {}\n";
+        let needle = "fn goodbye() {}";
+        assert!(super::find_whitespace_normalized_match(content, needle).is_none());
+    }
+
+    #[test]
+    fn format_matched_lines_summary_single_line_match() {
+        let content = "alpha\nbeta\ngamma\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "beta", false),
+            "on line 2 "
+        );
+    }
+
+    #[test]
+    fn format_matched_lines_summary_multi_line_needle() {
+        let content = "line 1\nline 2\nline 3\nline 4\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "line 2\nline 3", false),
+            "on lines 2-3 "
+        );
+    }
+
+    #[test]
+    fn format_matched_lines_summary_multiple_matches() {
+        let content = "foo\nbar\nfoo\nbaz\nfoo\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "foo", true),
+            "on lines 1, 3, 5 "
+        );
+    }
+
+    #[test]
+    fn format_matched_lines_summary_deduplicates_same_line_matches() {
+        let content = "foo foo foo\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "foo", true),
+            "on line 1 "
+        );
+    }
+
+    #[test]
+    fn format_matched_lines_summary_more_than_five_distinct_lines() {
+        let content = "a\nb\nc\nd\ne\nf\ng\n";
+        assert_eq!(
+            super::format_matched_lines_summary(content, "\n", true),
+            "on lines 1, 2, 3, 4, 5 (and 2 more) "
+        );
     }
 }

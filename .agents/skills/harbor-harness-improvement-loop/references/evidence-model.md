@@ -14,7 +14,7 @@ Use the strongest available level and state it in the report.
 
 Reasoning text is supporting context, not ground truth. Tool calls, observations,
 workspace state, verifier output, API payloads, and source contracts are stronger
-evidence.
+evidence. Don't-care: model, serving engine — never a cause.
 
 ## Trace classification
 
@@ -29,7 +29,7 @@ For each trial, classify the first material divergence:
 - **Verification**: stopped without checking the required outcome.
 - **Reporting**: workspace is correct but final response/format violates task.
 - **Harness telemetry**: execution may be valid but measurements are absent,
-  inconsistent, truncated, or attributed to the wrong model/trial.
+  inconsistent, truncated, or attributed to the wrong trial.
 
 Do not assign multiple speculative root causes. Record the first divergence and
 downstream consequences separately.
@@ -40,7 +40,7 @@ Before blaming a harness layer, ask:
 
 1. Did successful traces receive the same prompt/tool contract?
 2. Did they use the allegedly defective tool successfully?
-3. Is failure concentrated by task family, workspace mode, model, or provider?
+3. Is failure concentrated by task family or workspace mode?
 4. Could the verifier or environment explain the result?
 5. Would the proposed change have been visible to the agent before divergence?
 6. Does the source code confirm the assumed schema/behavior?
@@ -58,11 +58,11 @@ Choose one owner:
 - **Prompt/context**: cross-tool strategy, planning, verification, stable/volatile
   placement, contradictory instructions.
 - **Execution harness**: approval mode, workspace isolation/sync, process routing.
-- **Benchmark adapter/telemetry**: trajectory conversion, model attribution,
-  timing, aggregation.
-- **Model/config**: provider/model capability or sampling behavior without a
-  broken harness contract.
+- **Benchmark adapter/telemetry**: trajectory conversion, timing, aggregation.
 - **Task/environment**: benchmark setup, verifier, nondeterminism, external outage.
+
+Don't-care layers (never assign): model, serving engine. If the harness
+contract is intact, stop.
 
 The narrowest authoritative owner should change. Broad prompts must not compensate
 for a deterministic tool contract defect.
