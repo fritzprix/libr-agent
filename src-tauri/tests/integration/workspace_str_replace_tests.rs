@@ -512,7 +512,10 @@ async fn str_replace_compact_body_on_long_single_line_file() {
         .await
         .expect("strReplace should return");
 
-    assert!(!result.is_error.unwrap_or(true), "expected success: {result:?}");
+    assert!(
+        !result.is_error.unwrap_or(true),
+        "expected success: {result:?}"
+    );
     let text = extract_text_content(&result);
 
     // LLM body should be compact: only contains the replacement snippet and line info
@@ -536,7 +539,10 @@ async fn str_replace_compact_body_on_long_single_line_file() {
     );
 
     // structured_content must preserve the full unified diff for the UI viewer
-    let structured = result.structured_content.as_ref().expect("structured_content");
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured_content");
     let full_diff = structured["unified_diff"].as_str().expect("unified_diff");
     assert!(
         full_diff.len() > 2000,
@@ -548,4 +554,3 @@ async fn str_replace_compact_body_on_long_single_line_file() {
         "structured diff must contain original full line content"
     );
 }
-
