@@ -23,7 +23,7 @@ pub(super) struct SearchContentRequest<'a> {
 pub(super) struct SearchDirectoryRequest<'a> {
     pub workspace_root: &'a Path,
     pub dir: &'a Path,
-    pub file_pattern: Option<&'a glob::Pattern>,
+    pub file_pattern: Option<&'a GlobMatcher>,
     pub search: SearchContentRequest<'a>,
 }
 
@@ -59,6 +59,28 @@ fn line_index_for_offset(line_infos: &[LineInfo], offset: usize) -> Option<usize
         Ok(index) => Some(index),
         Err(0) => Some(0),
         Err(index) => Some(index - 1),
+    }
+}
+
+fn push_grep_hit(
+    hits: &mut Vec<Value>,
+    idx: usize,
+    line: &str,
+    regex: &regex::Regex,
+    show_hashes: bool,
+    prefix_state: &mut u32,
+) {
+    let preview = preview_grep_match_line(line, regex);
+    if show_hashes {
+        let anchor = compute_anchor(line, prefix_state);
+        hits.push(json!({
+            "line": idx + 1,
+            "anchor": anchor,
+            "text": preview
+        }));
+    } else {
+        hits.push(json!({ "line": idx + 1, "text": preview }));
+        *prefix_state = update_prefix_hash_state(*prefix_state, line);
     }
 }
 
@@ -175,17 +197,14 @@ pub(super) async fn search_content_in_file(
     let mut prefix_state = initial_prefix_hash_state();
     for (idx, line) in content.lines().enumerate() {
         if matched_lines.contains(&idx) {
-            if show_hashes {
-                let anchor = compute_anchor(line, &mut prefix_state);
-                matches.push(json!({
-                    "line": idx + 1,
-                    "anchor": anchor,
-                    "text": line
-                }));
-            } else {
-                matches.push(json!({ "line": idx + 1, "text": line }));
-                prefix_state = update_prefix_hash_state(prefix_state, line);
-            }
+            push_grep_hit(
+                &mut matches,
+                idx,
+                line,
+                regex,
+                show_hashes,
+                &mut prefix_state,
+            );
         } else {
             prefix_state = update_prefix_hash_state(prefix_state, line);
         }
@@ -416,17 +435,7 @@ pub(super) async fn search_content_in_dir(
         let mut prefix_state = initial_prefix_hash_state();
         for (idx, line) in content.lines().enumerate() {
             if matched_lines.contains(&idx) {
-                if show_hashes {
-                    let anchor = compute_anchor(line, &mut prefix_state);
-                    hits.push(json!({
-                        "line": idx + 1,
-                        "anchor": anchor,
-                        "text": line
-                    }));
-                } else {
-                    hits.push(json!({ "line": idx + 1, "text": line }));
-                    prefix_state = update_prefix_hash_state(prefix_state, line);
-                }
+                push_grep_hit(&mut hits, idx, line, regex, show_hashes, &mut prefix_state);
             } else {
                 prefix_state = update_prefix_hash_state(prefix_state, line);
             }
