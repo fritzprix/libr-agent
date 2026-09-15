@@ -1,3 +1,20 @@
+## [0.9.10] - 2026-09-16
+
+### 🚀 Features & UI
+
+- **Native Deliverable Cards in `reportResult`**: Delivered final task files and artifacts via interactive native `reportResult` cards in the chat UI, complete with direct file preview, download actions, and deliverable verification before completion.
+- **File Preview Sheet Enhancements**: Added breadcrumb navigation to the workspace `FilePreviewSheet`, improved styling and security context plumbing, and consolidated preview exit state retention.
+- **Optimized `strReplace` Diff Observations**: Streamlined `workspace__editFile` diff observation output with compact formatting and intelligent whitespace/indentation hints to help LLMs self-correct matching errors without context bloat.
+
+### 🐛 Fixes & Hardening
+
+- **Workspace File Search & Glob Matching**: Filtered internal `.libragent/tool-results` dumps from search, list, and export operations, truncated excessively long grep match lines, and added brace-glob expansion support for shell-style file pattern filters.
+- **Teamwork & Skill Alias Path Resolution**: Added support for resolving teamwork and skill alias paths across file previews, deliverables, and zip archive exports.
+- **Report Result Link Navigation & Proof Verification**: Prevented single-page app (SPA) route desynchronization when opening Markdown links within `reportResult`, and enforced completion criteria, proof validation, and idle-stop markers.
+- **Skill Validation & Deployment**: Restored `validate_skill` interfaces and hardened `deploy_skill` execution reliability.
+- **Benchmark Harness Deliverables & Offset Tracking**: Steered shareable deliverables away from ephemeral scratchpad directories and preserved unread spillover log offsets during Harbor benchmark runs.
+- **Agent Guidelines & Harness Runner**: Clarified `pnpm refactor:validate` resource limits in agent guidelines, and ensured executable permissions on the Harbor benchmark runner script.
+
 ## [0.9.9] - 2026-09-11
 
 ### 🚀 Features & UI
