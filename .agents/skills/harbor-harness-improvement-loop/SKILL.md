@@ -160,7 +160,7 @@ After user approval:
 
 1. Apply the minimal change.
 2. Run focused unit/contract tests.
-3. Run `pnpm refactor:validate`.
+3. Run focused lint or formatting checks if necessary. Never run the full `pnpm refactor:validate` pipeline automatically (run only if explicitly requested by the user to avoid system resource starvation).
 4. Rerun a small matched task slice.
 5. If the signal is positive and no regression appears, rerun the broader suite
    with multiple attempts.
