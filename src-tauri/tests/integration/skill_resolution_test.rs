@@ -670,7 +670,10 @@ fn test_extract_skill_alias_relative_path() {
 
     // Non-skill paths must return None
     assert_eq!(extract_skill_alias_relative_path("src/main.rs"), None);
-    assert_eq!(extract_skill_alias_relative_path("/workspace/src/main.rs"), None);
+    assert_eq!(
+        extract_skill_alias_relative_path("/workspace/src/main.rs"),
+        None
+    );
     assert_eq!(extract_skill_alias_relative_path("/tmp/out.txt"), None);
     assert_eq!(extract_skill_alias_relative_path(""), None);
 }
