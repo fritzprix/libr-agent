@@ -18,6 +18,17 @@ CONFIG_PATH = Path.home() / ".libragent" / "telegram_config.json"
 REQUIRED_FIELDS = {"api_id", "api_hash", "phone", "session_name"}
 
 
+def configure_stdio_utf8() -> None:
+    """Force UTF-8 on stdout/stderr to avoid cp949/mojibake issues across platforms."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def get_session_base_path(session_name: str) -> Path:
     """Return Telethon session base path (without .session suffix)."""
     return Path.home() / ".libragent" / session_name
@@ -33,7 +44,7 @@ def check_authorization(cfg: dict) -> tuple[bool, str | None]:
         from telethon import TelegramClient
         from telethon.errors import AuthRestartError
     except ImportError:
-        return False, "telethon is not installed. Run: pip3 install telethon"
+        return False, "telethon is not installed. Run: python -m pip install telethon"
 
     session_path = get_session_base_path(cfg["session_name"])
     client = TelegramClient(str(session_path), int(cfg["api_id"]), cfg["api_hash"])
@@ -53,6 +64,7 @@ def check_authorization(cfg: dict) -> tuple[bool, str | None]:
 
 
 def main() -> int:
+    configure_stdio_utf8()
     # --- Check config file existence ---
     if not CONFIG_PATH.exists():
         print(

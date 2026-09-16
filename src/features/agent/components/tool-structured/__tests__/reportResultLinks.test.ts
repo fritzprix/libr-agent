@@ -94,6 +94,30 @@ describe('classifyReportResultLink', () => {
       kind: 'workspace',
       path: '@skills/workspace/my-skill/SKILL.md',
     });
+    expect(
+      classifyReportResultLink(
+        '/@system-skills/telegram-cli/SKILL.md',
+      ),
+    ).toEqual({
+      kind: 'workspace',
+      path: '@system-skills/telegram-cli/SKILL.md',
+    });
+    expect(
+      classifyReportResultLink(
+        '@system-skills/telegram-cli/SKILL.md',
+      ),
+    ).toEqual({
+      kind: 'workspace',
+      path: '@system-skills/telegram-cli/SKILL.md',
+    });
+    expect(
+      classifyReportResultLink(
+        '/@user-skills/custom/SKILL.md',
+      ),
+    ).toEqual({
+      kind: 'workspace',
+      path: '@user-skills/custom/SKILL.md',
+    });
   });
 
   it('prefers in-app preview for previewable matched deliverables', () => {

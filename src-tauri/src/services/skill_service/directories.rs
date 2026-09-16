@@ -58,31 +58,68 @@ pub fn build_skill_alias_path(
 /// Parse an alias path like `@system-skills/foo/SKILL.md` into the owning
 /// alias namespace plus the relative path to validate within that root.
 ///
-/// These aliases are exact namespaces, not overlapping prefixes, so iteration
-/// order is intentionally not semantically significant.
+/// Supports:
+/// - Canonical aliases: `@system-skills/...`, `@user-skills/...`, `@assistant-skills/...`, `@workspace-skills/...`
+/// - Umbrella `@skills` aliases: `@skills/system/...`, `@skills/user/...`, `@skills/assistant/...`, `@skills/workspace/...`
+/// - Common path normalization: leading `./`, `.\\`, `/workspace/`, `\\workspace\\`, `/@`, `\\@`
 pub fn extract_skill_alias_relative_path(path_str: &str) -> Option<(&'static str, &str)> {
+    let trimmed = path_str.trim();
+    let stripped = trimmed
+        .strip_prefix("./")
+        .or_else(|| trimmed.strip_prefix(".\\"))
+        .or_else(|| trimmed.strip_prefix("/workspace/"))
+        .or_else(|| trimmed.strip_prefix("\\workspace\\"))
+        .or_else(|| {
+            if trimmed.starts_with("/@") || trimmed.starts_with("\\@") {
+                Some(&trimmed[1..])
+            } else {
+                None
+            }
+        })
+        .unwrap_or(trimmed);
+
+    // 1. Direct canonical aliases (@system-skills, @user-skills, etc.)
     for prefix in [
         SYSTEM_SKILLS_ALIAS_PREFIX,
         USER_SKILLS_ALIAS_PREFIX,
         ASSISTANT_SKILLS_ALIAS_PREFIX,
         WORKSPACE_SKILLS_ALIAS_PREFIX,
     ] {
-        if path_str == prefix {
+        if stripped == prefix {
             return Some((prefix, "."));
         }
 
-        if let Some(suffix) = path_str
+        if let Some(suffix) = stripped
             .strip_prefix(&format!("{prefix}/"))
-            .or_else(|| path_str.strip_prefix(&format!("{prefix}\\")))
+            .or_else(|| stripped.strip_prefix(&format!("{prefix}\\")))
         {
-            return Some((
-                prefix,
-                if suffix.trim().is_empty() {
-                    "."
-                } else {
-                    suffix
-                },
-            ));
+            let s = suffix.trim();
+            return Some((prefix, if s.is_empty() { "." } else { s }));
+        }
+    }
+
+    // 2. Umbrella @skills aliases (@skills/system, @skills/user, etc.)
+    const SKILLS_SUB_NAMESPACES: [(&str, &str); 4] = [
+        ("@skills/system", SYSTEM_SKILLS_ALIAS_PREFIX),
+        ("@skills/user", USER_SKILLS_ALIAS_PREFIX),
+        ("@skills/assistant", ASSISTANT_SKILLS_ALIAS_PREFIX),
+        ("@skills/workspace", WORKSPACE_SKILLS_ALIAS_PREFIX),
+    ];
+
+    for (umbrella_prefix, canonical_prefix) in SKILLS_SUB_NAMESPACES {
+        let windows_umbrella = umbrella_prefix.replace('/', "\\");
+        if stripped == umbrella_prefix || stripped == windows_umbrella {
+            return Some((canonical_prefix, "."));
+        }
+
+        if let Some(suffix) = stripped
+            .strip_prefix(&format!("{umbrella_prefix}/"))
+            .or_else(|| stripped.strip_prefix(&format!("{umbrella_prefix}\\")))
+            .or_else(|| stripped.strip_prefix(&format!("{windows_umbrella}/")))
+            .or_else(|| stripped.strip_prefix(&format!("{windows_umbrella}\\")))
+        {
+            let s = suffix.trim();
+            return Some((canonical_prefix, if s.is_empty() { "." } else { s }));
         }
     }
 

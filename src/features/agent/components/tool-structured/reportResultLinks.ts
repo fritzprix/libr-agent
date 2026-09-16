@@ -50,7 +50,15 @@ function normalizeWorkspaceCandidate(href: string): string {
     path === '/.libragent/teamwork' ||
     path.startsWith('/.libragent/teamwork/') ||
     path === '/@skills' ||
-    path.startsWith('/@skills/')
+    path.startsWith('/@skills/') ||
+    path === '/@system-skills' ||
+    path.startsWith('/@system-skills/') ||
+    path === '/@user-skills' ||
+    path.startsWith('/@user-skills/') ||
+    path === '/@assistant-skills' ||
+    path.startsWith('/@assistant-skills/') ||
+    path === '/@workspace-skills' ||
+    path.startsWith('/@workspace-skills/')
   ) {
     path = path.slice(1);
   }

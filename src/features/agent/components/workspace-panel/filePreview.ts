@@ -26,13 +26,27 @@ export function isWorkspaceRelativePath(path: string): boolean {
   if (!trimmed) return false;
 
   let normalized = trimmed.replace(/\\/g, '/');
+  if (normalized.startsWith('./')) {
+    normalized = normalized.slice(2);
+  }
+  if (normalized.startsWith('/workspace/')) {
+    normalized = normalized.slice('/workspace/'.length);
+  }
   if (
     normalized === '/@teamwork' ||
     normalized.startsWith('/@teamwork/') ||
     normalized === '/.libragent/teamwork' ||
     normalized.startsWith('/.libragent/teamwork/') ||
     normalized === '/@skills' ||
-    normalized.startsWith('/@skills/')
+    normalized.startsWith('/@skills/') ||
+    normalized === '/@system-skills' ||
+    normalized.startsWith('/@system-skills/') ||
+    normalized === '/@user-skills' ||
+    normalized.startsWith('/@user-skills/') ||
+    normalized === '/@assistant-skills' ||
+    normalized.startsWith('/@assistant-skills/') ||
+    normalized === '/@workspace-skills' ||
+    normalized.startsWith('/@workspace-skills/')
   ) {
     normalized = normalized.slice(1);
   }
