@@ -22,6 +22,7 @@ pub enum BuiltinServiceId {
     SetupWizard,
     Tool, // Unified Tool Domain
     Media,
+    Desktop,
 }
 
 /// Metadata for a builtin service used to generate registry and helper functions.
@@ -51,6 +52,7 @@ impl BuiltinServiceId {
             "setup-wizard" | "setup_wizard" | "bootstrap" => Some(Self::SetupWizard),
             "tool" => Some(Self::Tool),
             "media" => Some(Self::Media),
+            "desktop" => Some(Self::Desktop),
             _ => None,
         }
     }
@@ -73,6 +75,7 @@ impl BuiltinServiceId {
             Self::SetupWizard => "setup-wizard",
             Self::Tool => "tool",
             Self::Media => "media",
+            Self::Desktop => "desktop",
         }
     }
 }
@@ -152,6 +155,11 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Media,
         canonical: "media",
+        optional: true,
+    },
+    BuiltinServiceEntry {
+        variant: BuiltinServiceId::Desktop,
+        canonical: "desktop",
         optional: true,
     },
 ];

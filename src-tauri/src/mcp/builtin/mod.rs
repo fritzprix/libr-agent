@@ -10,6 +10,7 @@ pub mod agent;
 pub mod attachments;
 pub mod browser;
 pub mod browser_content_store;
+pub mod desktop;
 pub mod error_guidance;
 pub mod history;
 pub mod knowledge;
