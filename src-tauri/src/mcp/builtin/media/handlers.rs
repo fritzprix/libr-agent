@@ -7,6 +7,8 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
+use image::ImageFormat;
+use xcap::Monitor;
 
 /// Maximum allowed download size (20 MB).
 const MAX_BYTES: usize = 20 * 1024 * 1024;
@@ -413,4 +415,261 @@ pub async fn handle_listen_content(
         structured_content: None,
         is_error: Some(false),
     })
+}
+
+// ── Handler: captureScreen ───────────────────────────────────────────────────
+
+fn screen_capture_guidance() -> Vec<String> {
+    vec![
+        "Verify that 'display_index' corresponds to an active monitor (use 0 for primary display).".to_string(),
+        "If capturing a region, ensure 'x', 'y', 'width', and 'height' are all specified and within monitor bounds.".to_string(),
+        "Check operating system screen recording permissions (e.g. macOS System Settings > Privacy & Security, or Wayland compositor permissions).".to_string(),
+        "Omit region coordinates to capture the entire display.".to_string(),
+    ]
+}
+
+type ScreenCapturePayload = (Vec<u8>, u32, u32, String);
+type ScreenCaptureError = (ErrorCategory, String);
+type ScreenCaptureTaskResult = Result<ScreenCapturePayload, ScreenCaptureError>;
+
+/// Handle the `captureScreen` tool.
+pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
+    // 1. Validate display_index
+    let display_index = if let Some(val) = args.get("display_index") {
+        if let Some(i) = val.as_i64() {
+            if i < 0 {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Parameter 'display_index' must be a non-negative integer, got {i}."),
+                    ToolGroup::Media,
+                )
+                .with_guidance(screen_capture_guidance())
+                .to_mcp_result());
+            }
+            i as usize
+        } else {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Parameter 'display_index' must be an integer.".to_string(),
+                ToolGroup::Media,
+            )
+            .with_guidance(screen_capture_guidance())
+            .to_mcp_result());
+        }
+    } else {
+        0
+    };
+
+    // 2. Validate region coordinates
+    let has_x = args.get("x").is_some();
+    let has_y = args.get("y").is_some();
+    let has_w = args.get("width").is_some();
+    let has_h = args.get("height").is_some();
+
+    let region = if has_x || has_y || has_w || has_h {
+        if !(has_x && has_y && has_w && has_h) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Incomplete region parameters. When capturing a specific area, all four parameters ('x', 'y', 'width', 'height') must be provided.",
+                ToolGroup::Media,
+            )
+            .with_guidance(screen_capture_guidance())
+            .to_mcp_result());
+        }
+
+        let x = match args.get("x").and_then(|v| v.as_i64()) {
+            Some(v) if v >= i32::MIN as i64 && v <= i32::MAX as i64 => v as i32,
+            _ => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "Parameter 'x' must be a valid 32-bit integer coordinate.",
+                    ToolGroup::Media,
+                )
+                .with_guidance(screen_capture_guidance())
+                .to_mcp_result());
+            }
+        };
+
+        let y = match args.get("y").and_then(|v| v.as_i64()) {
+            Some(v) if v >= i32::MIN as i64 && v <= i32::MAX as i64 => v as i32,
+            _ => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "Parameter 'y' must be a valid 32-bit integer coordinate.",
+                    ToolGroup::Media,
+                )
+                .with_guidance(screen_capture_guidance())
+                .to_mcp_result());
+            }
+        };
+
+        let width = match args.get("width").and_then(|v| v.as_i64()) {
+            Some(v) if v > 0 && v <= u32::MAX as i64 => v as u32,
+            _ => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "Parameter 'width' must be a positive integer (greater than 0).",
+                    ToolGroup::Media,
+                )
+                .with_guidance(screen_capture_guidance())
+                .to_mcp_result());
+            }
+        };
+
+        let height = match args.get("height").and_then(|v| v.as_i64()) {
+            Some(v) if v > 0 && v <= u32::MAX as i64 => v as u32,
+            _ => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "Parameter 'height' must be a positive integer (greater than 0).",
+                    ToolGroup::Media,
+                )
+                .with_guidance(screen_capture_guidance())
+                .to_mcp_result());
+            }
+        };
+
+        Some((x, y, width, height))
+    } else {
+        None
+    };
+
+    // 3. Perform blocking screen capture
+    let capture_task = tokio::task::spawn_blocking(move || -> ScreenCaptureTaskResult {
+        let monitors = Monitor::all().map_err(|e| {
+            (
+                ErrorCategory::OperationFailed,
+                format!("Failed to enumerate display monitors: {e}"),
+            )
+        })?;
+
+        if monitors.is_empty() {
+            return Err((
+                ErrorCategory::ResourceNotFound,
+                "No active display monitors found on the system.".to_string(),
+            ));
+        }
+
+        let monitor = monitors.get(display_index).ok_or_else(|| {
+            (
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Display index {} is out of range. Available displays: 0 to {}.",
+                    display_index,
+                    monitors.len().saturating_sub(1)
+                ),
+            )
+        })?;
+
+        let mut full_image = monitor.capture_image().map_err(|e| {
+            (
+                ErrorCategory::OperationFailed,
+                format!("Failed to capture display {display_index}: {e}"),
+            )
+        })?;
+
+        let (image, desc) = match region {
+            Some((x, y, w, h)) => {
+                let full_w = full_image.width();
+                let full_h = full_image.height();
+
+                if x < 0
+                    || y < 0
+                    || (x as u32).saturating_add(w) > full_w
+                    || (y as u32).saturating_add(h) > full_h
+                {
+                    return Err((
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "Screen area ({x}, {y}, {w}x{h}) exceeds monitor bounds ({full_w}x{full_h}) on display {display_index}."
+                        ),
+                    ));
+                }
+
+                let cropped = image::imageops::crop(&mut full_image, x as u32, y as u32, w, h).to_image();
+                (
+                    cropped,
+                    format!("Screen area ({x}, {y}, {w}x{h}) on display {display_index}"),
+                )
+            }
+            None => {
+                let w = full_image.width();
+                let h = full_image.height();
+                (full_image, format!("Display {display_index} ({w}x{h})"))
+            }
+        };
+
+        let width = image.width();
+        let height = image.height();
+
+        let mut png_bytes = std::io::Cursor::new(Vec::new());
+        image
+            .write_to(&mut png_bytes, ImageFormat::Png)
+            .map_err(|e| {
+                (
+                    ErrorCategory::OperationFailed,
+                    format!("Failed to encode screenshot as PNG: {e}"),
+                )
+            })?;
+
+        let data = png_bytes.into_inner();
+        if data.len() > MAX_BYTES {
+            return Err((
+                ErrorCategory::OperationFailed,
+                format!(
+                    "Captured screenshot size ({:.1} MB) exceeds maximum allowed payload of {} MB.",
+                    data.len() as f64 / (1024.0 * 1024.0),
+                    MAX_BYTES / (1024 * 1024)
+                ),
+            ));
+        }
+
+        Ok((data, width, height, desc))
+    });
+
+    let capture_result = match capture_task.await {
+        Ok(res) => res,
+        Err(join_err) => {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!("Screen capture worker task panicked or failed: {join_err}"),
+                ToolGroup::Media,
+            )
+            .with_guidance(screen_capture_guidance())
+            .to_mcp_result());
+        }
+    };
+
+    match capture_result {
+        Ok((png_data, width, height, target_desc)) => {
+            let size_kb = png_data.len() / 1024;
+            let base64_data = general_purpose::STANDARD.encode(&png_data);
+
+            Ok(MCPResult {
+                content: Some(vec![
+                    MCPContent::Text {
+                        text: format!(
+                            "✓ Screenshot captured ({width}x{height}, {size_kb} KB, image/png)\n\nTarget: {target_desc}"
+                        ),
+                    },
+                    MCPContent::Image {
+                        data: Some(base64_data),
+                        uri: None,
+                        mime_type: "image/png".to_string(),
+                    },
+                ]),
+                structured_content: Some(serde_json::json!({
+                    "display_index": display_index,
+                    "width": width,
+                    "height": height,
+                    "bytes": png_data.len(),
+                    "mime_type": "image/png"
+                })),
+                is_error: Some(false),
+            })
+        }
+        Err((category, err_msg)) => Ok(guided_error(category, err_msg, ToolGroup::Media)
+            .with_guidance(screen_capture_guidance())
+            .to_mcp_result()),
+    }
 }

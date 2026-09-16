@@ -32,7 +32,7 @@ Essential tools automatically available for basic agent operations and UI intera
 
 Domain-specific tools that can be enabled or disabled under **Assistants → Edit → Tools**:
 
-- **`media__*`**: Image/visual media and audio media parsing and analysis (`seeContent`, `listenContent`)
+- **`media__*`**: Image/visual, audio analysis, and live desktop screen capture (`seeContent`, `listenContent`, `captureScreen`)
 - **`browser__*`**: Headless web browsing, DOM clicks, form typing, screenshot capture
 - **`planning__*`**: Multi-step plan creation (`createGoal`), progress tracking, failure reflection (`reflect`)
 - **`knowledge__*`**: Semantic memory storage and persistent knowledge retrieval
@@ -55,10 +55,11 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 
 ### 2. Media (`media__*`) 🎨 _(Optional)_
 
-| Tool Name              | Description                            | Key Parameters |
-| :--------------------- | :------------------------------------- | :------------- |
-| `media__seeContent`    | Inspect and analyze image/visual media | `url`          |
-| `media__listenContent` | Parse and analyze audio media          | `url`          |
+| Tool Name              | Description                                                          | Key Parameters                                     |
+| :--------------------- | :------------------------------------------------------------------- | :------------------------------------------------- |
+| `media__seeContent`    | Inspect and analyze image/visual media                               | `url`                                              |
+| `media__listenContent` | Parse and analyze audio media                                        | `url`                                              |
+| `media__captureScreen` | Capture live desktop screen or specific region ⚠️ *(approval required)* | `display_index`, `x`, `y`, `width`, `height`       |
 
 ### 3. Interactive UI (`ui__*`)
 

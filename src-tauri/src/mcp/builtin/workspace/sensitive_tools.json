@@ -15,6 +15,7 @@
         "scheduled_task__scheduleCallback",
         "scheduled_task__updateScheduledTask",
         "scheduled_task__toggleScheduledTask",
-        "scheduled_task__deleteScheduledTask"
+        "scheduled_task__deleteScheduledTask",
+        "media__captureScreen"
     ]
 }

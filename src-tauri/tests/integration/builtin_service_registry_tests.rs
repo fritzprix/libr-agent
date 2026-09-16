@@ -721,3 +721,163 @@ fn tool_transport_schema_allows_env_and_header_maps() {
         }
     }
 }
+
+#[test]
+fn media_capture_screen_tool_schema_is_exposed() {
+    let tools = get_static_tools_for_server("media");
+    let capture_tool = tools
+        .into_iter()
+        .find(|t| t.name == "captureScreen")
+        .expect("captureScreen tool must be registered in media server");
+
+    assert_eq!(capture_tool.name, "captureScreen");
+    let props = extract_object_properties(&capture_tool.input_schema, "captureScreen");
+    assert!(
+        props.contains_key("display_index"),
+        "captureScreen should expose display_index"
+    );
+    assert!(props.contains_key("x"), "captureScreen should expose x");
+    assert!(props.contains_key("y"), "captureScreen should expose y");
+    assert!(
+        props.contains_key("width"),
+        "captureScreen should expose width"
+    );
+    assert!(
+        props.contains_key("height"),
+        "captureScreen should expose height"
+    );
+}
+
+#[tokio::test]
+async fn media_capture_screen_execution_returns_valid_content() {
+    use std::sync::Arc;
+    use tauri_mcp_agent_lib::mcp::builtin::media::MediaServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+    use tauri_mcp_agent_lib::session::SessionManager;
+
+    let temp_dir =
+        std::env::temp_dir().join(format!("test-media-session-{}", uuid::Uuid::new_v4()));
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(temp_dir).expect("Failed to create SessionManager"),
+    );
+    let server = MediaServer::new("test-session".to_string(), session_manager);
+
+    let result = server.call_tool("captureScreen", json!({}), None).await;
+
+    match result {
+        Ok(mcp_res) => {
+            let content = mcp_res.content.expect("must have content");
+            if mcp_res.is_error == Some(false) {
+                assert!(content
+                    .iter()
+                    .any(|c| matches!(c, MCPContent::Image { .. })));
+            } else {
+                assert!(content.iter().any(|c| matches!(c, MCPContent::Text { .. })));
+            }
+        }
+        Err(e) => {
+            panic!("call_tool should return Result::Ok(MCPResult) even on error: {e}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn media_capture_screen_is_configured_in_sensitive_tools() {
+    let default_config_str = include_str!("../../src/mcp/builtin/workspace/sensitive_tools.json");
+    let config: serde_json::Value = serde_json::from_str(default_config_str).expect("valid json");
+    let reqs = config
+        .get("requires_approval")
+        .and_then(|v| v.as_array())
+        .expect("requires_approval array");
+
+    assert!(
+        reqs.iter()
+            .any(|v| v.as_str() == Some("media__captureScreen")),
+        "media__captureScreen must be listed in requires_approval"
+    );
+
+    assert!(
+        tauri_mcp_agent_lib::agent::tool_approvals::is_approval_required("media__captureScreen")
+            .await,
+        "runtime approval policy must require approval for media__captureScreen"
+    );
+}
+
+#[tokio::test]
+async fn media_capture_screen_rejects_incomplete_region_args() {
+    use std::sync::Arc;
+    use tauri_mcp_agent_lib::mcp::builtin::media::MediaServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+    use tauri_mcp_agent_lib::session::SessionManager;
+
+    let temp_dir =
+        std::env::temp_dir().join(format!("test-media-session-{}", uuid::Uuid::new_v4()));
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(temp_dir).expect("Failed to create SessionManager"),
+    );
+    let server = MediaServer::new("test-session".to_string(), session_manager);
+
+    // Provide only x and y (missing width and height)
+    let res = server
+        .call_tool("captureScreen", json!({ "x": 100, "y": 100 }), None)
+        .await
+        .expect("handler must return Ok(MCPResult)");
+
+    assert_eq!(
+        res.is_error,
+        Some(true),
+        "incomplete region must fail with is_error=true"
+    );
+    let content_text = res
+        .content
+        .as_ref()
+        .and_then(|c| {
+            c.iter().find_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+        })
+        .unwrap_or("");
+
+    assert!(
+        content_text.contains("Incomplete region parameters"),
+        "error message must mention incomplete region parameters: {content_text}"
+    );
+    assert!(
+        content_text.contains("Guidance") || content_text.contains("display_index"),
+        "error must include screen capture recovery guidance: {content_text}"
+    );
+}
+
+#[tokio::test]
+async fn media_capture_screen_rejects_invalid_inputs() {
+    use std::sync::Arc;
+    use tauri_mcp_agent_lib::mcp::builtin::media::MediaServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+    use tauri_mcp_agent_lib::session::SessionManager;
+
+    let temp_dir =
+        std::env::temp_dir().join(format!("test-media-session-{}", uuid::Uuid::new_v4()));
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(temp_dir).expect("Failed to create SessionManager"),
+    );
+    let server = MediaServer::new("test-session".to_string(), session_manager);
+
+    // Negative display index
+    let res_neg = server
+        .call_tool("captureScreen", json!({ "display_index": -1 }), None)
+        .await
+        .expect("must return Ok(MCPResult)");
+    assert_eq!(res_neg.is_error, Some(true));
+
+    // Zero width
+    let res_zero_w = server
+        .call_tool(
+            "captureScreen",
+            json!({ "x": 0, "y": 0, "width": 0, "height": 100 }),
+            None,
+        )
+        .await
+        .expect("must return Ok(MCPResult)");
+    assert_eq!(res_zero_w.is_error, Some(true));
+}
