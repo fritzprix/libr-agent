@@ -86,25 +86,59 @@ fn parse_key(s: &str) -> Result<Key, String> {
 
 /// Mapping used when converting image-local screenshot coordinates to absolute
 /// virtual-desktop coordinates for OS input.
-#[derive(Debug, Clone, Copy)]
-struct ImageCoordMapping {
-    origin_x: i32,
-    origin_y: i32,
-    width_scale: f64,
-    height_scale: f64,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImageCoordMapping {
+    pub origin_x: i32,
+    pub origin_y: i32,
+    pub width_scale: f64,
+    pub height_scale: f64,
 }
 
 impl ImageCoordMapping {
-    fn to_absolute(self, image_x: i32, image_y: i32) -> (i32, i32) {
+    pub fn to_absolute(self, image_x: i32, image_y: i32) -> (i32, i32) {
         let abs_x = self.origin_x + (image_x as f64 * self.width_scale).round() as i32;
         let abs_y = self.origin_y + (image_y as f64 * self.height_scale).round() as i32;
         (abs_x, abs_y)
     }
 }
 
+fn optional_i32_coord(args: &Value, name: &str) -> Result<Option<i32>, String> {
+    match args.get(name) {
+        None => Ok(None),
+        Some(v) => {
+            let Some(i) = v.as_i64() else {
+                return Err(format!("Parameter '{name}' must be an integer."));
+            };
+            if i < i64::from(i32::MIN) || i > i64::from(i32::MAX) {
+                return Err(format!(
+                    "Parameter '{name}' must be a valid 32-bit integer coordinate."
+                ));
+            }
+            Ok(Some(i as i32))
+        }
+    }
+}
+
+fn optional_positive_f64(args: &Value, name: &str) -> Result<Option<f64>, String> {
+    match args.get(name) {
+        None => Ok(None),
+        Some(v) => {
+            let Some(n) = v.as_f64() else {
+                return Err(format!("Parameter '{name}' must be a number."));
+            };
+            if !(n.is_finite() && n > 0.0) {
+                return Err(format!(
+                    "Parameter '{name}' must be a finite number greater than 0."
+                ));
+            }
+            Ok(Some(n))
+        }
+    }
+}
+
 /// Build an image→absolute mapping from `display_index` and/or explicit origin/scale
 /// fields copied from `media__captureScreen` structured content.
-fn resolve_image_coord_mapping(args: &Value) -> Result<Option<ImageCoordMapping>, String> {
+pub fn resolve_image_coord_mapping(args: &Value) -> Result<Option<ImageCoordMapping>, String> {
     let display_index = match args.get("display_index") {
         None => None,
         Some(v) => {
@@ -120,10 +154,10 @@ fn resolve_image_coord_mapping(args: &Value) -> Result<Option<ImageCoordMapping>
         }
     };
 
-    let origin_x = args.get("origin_x").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let origin_y = args.get("origin_y").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let width_scale = args.get("width_scale").and_then(|v| v.as_f64());
-    let height_scale = args.get("height_scale").and_then(|v| v.as_f64());
+    let origin_x = optional_i32_coord(args, "origin_x")?;
+    let origin_y = optional_i32_coord(args, "origin_y")?;
+    let width_scale = optional_positive_f64(args, "width_scale")?;
+    let height_scale = optional_positive_f64(args, "height_scale")?;
 
     let has_origin = origin_x.is_some() || origin_y.is_some();
     if has_origin && (origin_x.is_none() || origin_y.is_none()) {
@@ -139,18 +173,6 @@ fn resolve_image_coord_mapping(args: &Value) -> Result<Option<ImageCoordMapping>
             "Both 'width_scale' and 'height_scale' must be provided together (copy from media__captureScreen)."
                 .to_string(),
         );
-    }
-    if let Some(ws) = width_scale {
-        if !(ws.is_finite() && ws > 0.0) {
-            return Err("Parameter 'width_scale' must be a finite number greater than 0.".to_string());
-        }
-    }
-    if let Some(hs) = height_scale {
-        if !(hs.is_finite() && hs > 0.0) {
-            return Err(
-                "Parameter 'height_scale' must be a finite number greater than 0.".to_string(),
-            );
-        }
     }
 
     if display_index.is_none() && origin_x.is_none() {
@@ -187,7 +209,9 @@ fn resolve_image_coord_mapping(args: &Value) -> Result<Option<ImageCoordMapping>
         .map_err(|e| format!("Failed to read monitor Y origin: {e}"))?;
     let scale = f64::from(monitor.scale_factor().unwrap_or(1.0));
     if !(scale.is_finite() && scale > 0.0) {
-        return Err("Monitor scale_factor is invalid; cannot convert image coordinates.".to_string());
+        return Err(
+            "Monitor scale_factor is invalid; cannot convert image coordinates.".to_string(),
+        );
     }
 
     // Full-display captureScreen images are typically physical pixels while
@@ -298,28 +322,37 @@ pub async fn handle_computer_control(args: Value) -> Result<MCPResult, String> {
     let mapping = match resolve_image_coord_mapping(&args) {
         Ok(m) => m,
         Err(e) => {
-            return Ok(guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                .to_mcp_result());
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop).to_mcp_result(),
+            );
         }
     };
 
     let raw_x = args.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
     let raw_y = args.get("y").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let raw_start_x = args.get("start_x").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let raw_start_y = args.get("start_y").and_then(|v| v.as_i64()).map(|v| v as i32);
+    let raw_start_x = args
+        .get("start_x")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let raw_start_y = args
+        .get("start_y")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
 
     let (x, y) = match map_optional_point(raw_x, raw_y, mapping) {
         Ok(pair) => pair,
         Err(e) => {
-            return Ok(guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                .to_mcp_result());
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop).to_mcp_result(),
+            );
         }
     };
     let (start_x, start_y) = match map_optional_point(raw_start_x, raw_start_y, mapping) {
         Ok(pair) => pair,
         Err(e) => {
-            return Ok(guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                .to_mcp_result());
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop).to_mcp_result(),
+            );
         }
     };
     let button_str = args
@@ -372,15 +405,19 @@ pub async fn handle_computer_control(args: Value) -> Result<MCPResult, String> {
                 }
             };
             if let Err(e) = validate_coordinates(target_x, target_y) {
-                return Ok(guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                    .to_mcp_result());
+                return Ok(
+                    guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
+                        .to_mcp_result(),
+                );
             }
         }
         "click" | "double_click" | "right_click" | "middle_click" | "mouse_down" | "mouse_up" => {
             if let (Some(target_x), Some(target_y)) = (x, y) {
                 if let Err(e) = validate_coordinates(target_x, target_y) {
-                    return Ok(guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                        .to_mcp_result());
+                    return Ok(
+                        guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
+                            .to_mcp_result(),
+                    );
                 }
             } else if (x.is_some() && y.is_none()) || (x.is_none() && y.is_some()) {
                 return Ok(guided_error(
@@ -404,13 +441,17 @@ pub async fn handle_computer_control(args: Value) -> Result<MCPResult, String> {
                 }
             };
             if let Err(e) = validate_coordinates(dest_x, dest_y) {
-                return Ok(guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                    .to_mcp_result());
+                return Ok(
+                    guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
+                        .to_mcp_result(),
+                );
             }
             if let (Some(s_x), Some(s_y)) = (start_x, start_y) {
                 if let Err(e) = validate_coordinates(s_x, s_y) {
-                    return Ok(guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                        .to_mcp_result());
+                    return Ok(
+                        guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
+                            .to_mcp_result(),
+                    );
                 }
             } else if (start_x.is_some() && start_y.is_none())
                 || (start_x.is_none() && start_y.is_some())

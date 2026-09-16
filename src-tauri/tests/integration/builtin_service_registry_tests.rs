@@ -937,8 +937,10 @@ async fn desktop_computer_control_is_configured_in_sensitive_tools() {
     );
 
     assert!(
-        tauri_mcp_agent_lib::agent::tool_approvals::is_approval_required("desktop__computerControl")
-            .await,
+        tauri_mcp_agent_lib::agent::tool_approvals::is_approval_required(
+            "desktop__computerControl"
+        )
+        .await,
         "runtime approval policy must require approval for desktop__computerControl"
     );
 }
@@ -1002,14 +1004,22 @@ async fn desktop_computer_control_rejects_invalid_coordinates() {
 
     // Incomplete coordinates for move (only x without y)
     let res_missing_y = server
-        .call_tool("computerControl", json!({ "action": "move", "x": 100 }), None)
+        .call_tool(
+            "computerControl",
+            json!({ "action": "move", "x": 100 }),
+            None,
+        )
         .await
         .expect("handler must return Ok(MCPResult)");
     assert_eq!(res_missing_y.is_error, Some(true));
 
     // Incomplete coordinates for move (only y without x)
     let res_missing_x = server
-        .call_tool("computerControl", json!({ "action": "move", "y": 100 }), None)
+        .call_tool(
+            "computerControl",
+            json!({ "action": "move", "y": 100 }),
+            None,
+        )
         .await
         .expect("handler must return Ok(MCPResult)");
     assert_eq!(res_missing_x.is_error, Some(true));
@@ -1089,7 +1099,11 @@ async fn desktop_computer_control_handles_cursor_position_or_sim() {
 
     let server = DesktopServer::new();
     let res = server
-        .call_tool("computerControl", json!({ "action": "cursor_position" }), None)
+        .call_tool(
+            "computerControl",
+            json!({ "action": "cursor_position" }),
+            None,
+        )
         .await
         .expect("handler must return Ok(MCPResult)");
 
@@ -1171,6 +1185,57 @@ async fn desktop_computer_control_rejects_partial_origin() {
     );
 }
 
+#[test]
+fn desktop_image_coord_mapping_converts_origin_and_scale() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::handlers::{
+        resolve_image_coord_mapping, ImageCoordMapping,
+    };
+
+    let mapping = resolve_image_coord_mapping(&json!({
+        "origin_x": 500,
+        "origin_y": 600
+    }))
+    .expect("valid origin mapping")
+    .expect("mapping should be present");
+    assert_eq!(
+        mapping,
+        ImageCoordMapping {
+            origin_x: 500,
+            origin_y: 600,
+            width_scale: 1.0,
+            height_scale: 1.0,
+        }
+    );
+    assert_eq!(mapping.to_absolute(10, 20), (510, 620));
+
+    let scaled = resolve_image_coord_mapping(&json!({
+        "origin_x": 100,
+        "origin_y": 200,
+        "width_scale": 0.5,
+        "height_scale": 2.0
+    }))
+    .expect("valid scaled mapping")
+    .expect("mapping should be present");
+    assert_eq!(scaled.to_absolute(10, 15), (105, 230));
+
+    assert!(resolve_image_coord_mapping(&json!({ "origin_x": 100 }))
+        .expect_err("partial origin")
+        .contains("origin_y"));
+    assert!(
+        resolve_image_coord_mapping(&json!({ "origin_x": "left", "origin_y": 0 }))
+            .expect_err("non-integer origin")
+            .contains("origin_x")
+    );
+    assert!(resolve_image_coord_mapping(&json!({
+        "origin_x": 0,
+        "origin_y": 0,
+        "width_scale": 0.0,
+        "height_scale": 1.0
+    }))
+    .expect_err("non-positive scale")
+    .contains("width_scale"));
+}
+
 #[tokio::test]
 async fn desktop_computer_control_converts_image_coords_using_origin() {
     use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
@@ -1204,10 +1269,26 @@ async fn desktop_computer_control_converts_image_coords_using_origin() {
         })
         .unwrap_or("");
 
+    if res.is_error == Some(false) {
+        assert!(
+            text.contains("510") && text.contains("620"),
+            "handler must convert image-local coords to absolute (510, 620), got: {text}"
+        );
+        let structured = res
+            .structured_content
+            .expect("success must include converted coordinates");
+        assert_eq!(structured.get("x"), Some(&json!(510)));
+        assert_eq!(structured.get("y"), Some(&json!(620)));
+        assert_eq!(structured.get("image_x"), Some(&json!(10)));
+        assert_eq!(structured.get("image_y"), Some(&json!(20)));
+        return;
+    }
+
+    // Headless CI has no display server / input backend. Conversion is covered by
+    // desktop_image_coord_mapping_converts_origin_and_scale; this path only
+    // asserts the request was accepted as a mapping, not rejected as invalid input.
     assert!(
-        text.contains("510") && text.contains("620"),
-        "handler must convert image-local coords to absolute (510, 620), got: {text}"
+        !text.contains("origin_x") && !text.contains("must be provided"),
+        "headless move failure must not be a coordinate-mapping error: {text}"
     );
 }
-
-
