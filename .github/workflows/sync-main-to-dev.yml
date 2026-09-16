@@ -1,0 +1,35 @@
+name: 🔄 Sync main to dev
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-to-dev:
+    name: Sync main into dev/0.9.x
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout dev/0.9.x
+        uses: actions/checkout@v7
+        with:
+          ref: dev/0.9.x
+          fetch-depth: 0
+
+      - name: Configure Git Author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge main into dev/0.9.x
+        run: |
+          git fetch origin main:main
+          if git merge-base --is-ancestor main HEAD; then
+            echo "dev/0.9.x already contains main. Nothing to sync."
+          else
+            echo "Merging main into dev/0.9.x..."
+            git merge main -m "chore: auto-sync main into dev/0.9.x [skip ci]"
+            git push origin dev/0.9.x
+          fi
