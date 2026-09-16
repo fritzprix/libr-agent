@@ -3,6 +3,7 @@ import {
   canOpenInAppPreview,
   fileNameFromPath,
   isWorkspaceRelativePath,
+  stripLeadingSlashFromAuthorizedAlias,
 } from '../workspace-panel/filePreview';
 import type { DeliverableItem } from './types';
 
@@ -44,25 +45,7 @@ function normalizeWorkspaceCandidate(href: string): string {
   if (path.startsWith('/workspace/')) {
     path = path.slice('/workspace/'.length);
   }
-  if (
-    path === '/@teamwork' ||
-    path.startsWith('/@teamwork/') ||
-    path === '/.libragent/teamwork' ||
-    path.startsWith('/.libragent/teamwork/') ||
-    path === '/@skills' ||
-    path.startsWith('/@skills/') ||
-    path === '/@system-skills' ||
-    path.startsWith('/@system-skills/') ||
-    path === '/@user-skills' ||
-    path.startsWith('/@user-skills/') ||
-    path === '/@assistant-skills' ||
-    path.startsWith('/@assistant-skills/') ||
-    path === '/@workspace-skills' ||
-    path.startsWith('/@workspace-skills/')
-  ) {
-    path = path.slice(1);
-  }
-  return path;
+  return stripLeadingSlashFromAuthorizedAlias(path);
 }
 
 function isHttpLike(href: string): boolean {

@@ -494,3 +494,81 @@ async fn read_file_allows_skill_aliases_across_all_managed_scopes() {
         );
     }
 }
+
+#[tokio::test]
+async fn read_file_allows_path_variant_aliases_across_scopes() {
+    let _guard = test_guard().await;
+    let repo = session_repo().await;
+    let base_data_dir = global_base_data_dir();
+    let session_id = "workspace-read-skill-variant-aliases";
+    let assistant_id = "assistant-skill-owner-variant";
+    repo.upsert_session(&make_session(session_id, assistant_id))
+        .await
+        .expect("upsert session");
+
+    let server = build_workspace_server(&base_data_dir, session_id);
+    let scopes = seed_skill_scopes(&base_data_dir, &server, session_id, assistant_id);
+    invalidate_skill_scan_cache();
+
+    for scope in scopes {
+        let canonical_alias = alias_for_scope(&scope);
+        let variants = vec![
+            format!("/{canonical_alias}"),
+            format!("./{canonical_alias}"),
+            format!("/workspace/{canonical_alias}"),
+            canonical_alias.replace('/', "\\"),
+        ];
+
+        for variant in variants {
+            let result = server
+                .handle_read_file(
+                    json!({ "path": variant }),
+                    Some(session_id.to_string()),
+                )
+                .await
+                .expect("readFile should return MCP result for alias variant");
+            assert_success(&result, &format!("{} (variant: {})", scope.label, variant));
+
+            let text = extract_text_content(&result);
+            assert!(
+                text.contains(&scope.token),
+                "token should be readable through variant {variant}: {text}"
+            );
+        }
+
+        let umbrella_alias = match scope.token.as_str() {
+            "SYSTEM_SCOPE_TOKEN" => {
+                canonical_alias.replacen("@system-skills", "@skills/system", 1)
+            }
+            "USER_SCOPE_TOKEN" => {
+                canonical_alias.replacen("@user-skills", "@skills/user", 1)
+            }
+            "ASSISTANT_SCOPE_TOKEN" => {
+                canonical_alias.replacen("@assistant-skills", "@skills/assistant", 1)
+            }
+            "WORKSPACE_SCOPE_TOKEN" => {
+                canonical_alias.replacen("@workspace-skills", "@skills/workspace", 1)
+            }
+            _ => continue,
+        };
+
+        for umbrella_variant in [
+            umbrella_alias.clone(),
+            format!("/{umbrella_alias}"),
+            format!("./{umbrella_alias}"),
+        ] {
+            let result = server
+                .handle_read_file(
+                    json!({ "path": umbrella_variant }),
+                    Some(session_id.to_string()),
+                )
+                .await
+                .expect("readFile should return MCP result for umbrella variant");
+            assert_success(
+                &result,
+                &format!("{} (umbrella: {})", scope.label, umbrella_variant),
+            );
+        }
+    }
+}
+
