@@ -180,9 +180,13 @@ fn build_tool_result_spillover_notice(
         ),
     };
 
+    // Header only — concrete readFile offsets belong in the match arms below.
+    // Harbor traces showed agents re-reading `offset: 1` when that tip appeared
+    // before the remaining-lines tip, repeating the already-shown preview.
     let mut notice = format!(
-        "\n\n... [output truncated: {}] ...\n\nFull output saved to workspace file: `{}`\nRead it in chunks with `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})`.\nDo not call `readFile({{\"path\": \"{}\"}})` on the saved file without `offset` and `size`; that will just truncate again.",
-        truncation_summary, relative_path, relative_path, relative_path
+        "\n\n... [output truncated: {}] ...\n\nFull output saved to workspace file: `{}`\n\
+Do not call `readFile({{\"path\": \"{}\"}})` on the saved file without `offset` and `size`; that will just truncate again.",
+        truncation_summary, relative_path, relative_path
     );
 
     match truncate_kind {
@@ -191,8 +195,15 @@ fn build_tool_result_spillover_notice(
         {
             let next_start_line = preview_line_count + 1;
             notice.push_str(&format!(
-                "\nTo read remaining lines ({} to {}), call `readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 200}})`.",
-                next_start_line, total_line_count, relative_path, next_start_line
+                "\nLines 1-{} are already shown above — do not restart at offset 1.\n\
+To read remaining lines ({} to {}), call `readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 200}})`.\n\
+Then keep incrementing offset by size until you reach line {}.",
+                preview_line_count,
+                next_start_line,
+                total_line_count,
+                relative_path,
+                next_start_line,
+                total_line_count
             ));
         }
         PreviewTruncateKind::LineBoundary if preview_line_count > 0 => {
@@ -366,5 +377,20 @@ mod tests {
         );
         assert!(notice.contains("To read remaining lines ("));
         assert!(!notice.contains("large binary/non-text data"));
+        assert!(
+            notice.contains("\"offset\": 41"),
+            "primary follow-up must start at the first unread line: {notice}"
+        );
+        assert!(
+            notice.contains("do not restart at offset 1"),
+            "notice must discourage re-reading the already-shown prefix: {notice}"
+        );
+        // No concrete readFile call should recommend restarting at offset 1.
+        assert!(
+            !notice.contains(
+                "readFile({\"path\": \".libragent/tool-results/call_text-1.txt\", \"offset\": 1"
+            ),
+            "remaining-lines path must not lead with offset 1: {notice}"
+        );
     }
 }

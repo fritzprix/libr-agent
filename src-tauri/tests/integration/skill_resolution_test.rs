@@ -10,8 +10,8 @@
 use std::fs;
 use std::path::Path;
 use tauri_mcp_agent_lib::services::skill_service::{
-    resolve_skills, ASSISTANT_SKILLS_ALIAS_PREFIX, SYSTEM_SKILLS_ALIAS_PREFIX,
-    USER_SKILLS_ALIAS_PREFIX, WORKSPACE_SKILLS_ALIAS_PREFIX,
+    extract_skill_alias_relative_path, resolve_skills, ASSISTANT_SKILLS_ALIAS_PREFIX,
+    SYSTEM_SKILLS_ALIAS_PREFIX, USER_SKILLS_ALIAS_PREFIX, WORKSPACE_SKILLS_ALIAS_PREFIX,
 };
 use tempfile::TempDir;
 
@@ -594,4 +594,86 @@ async fn test_resolve_skills_workspace_root_fallback() {
     .await;
 
     assert!(result.is_ok());
+}
+
+#[test]
+fn test_extract_skill_alias_relative_path() {
+    // Canonical aliases
+    assert_eq!(
+        extract_skill_alias_relative_path("@system-skills"),
+        Some(("@system-skills", "."))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("@system-skills/telegram-cli/SKILL.md"),
+        Some(("@system-skills", "telegram-cli/SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("@system-skills\\telegram-cli\\SKILL.md"),
+        Some(("@system-skills", "telegram-cli\\SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("  @system-skills/telegram-cli/SKILL.md  "),
+        Some(("@system-skills", "telegram-cli/SKILL.md"))
+    );
+
+    // Leading slash, backslash, ./, .\\
+    assert_eq!(
+        extract_skill_alias_relative_path("/@system-skills/telegram-cli/SKILL.md"),
+        Some(("@system-skills", "telegram-cli/SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("\\@system-skills\\telegram-cli\\SKILL.md"),
+        Some(("@system-skills", "telegram-cli\\SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("./@system-skills/telegram-cli/SKILL.md"),
+        Some(("@system-skills", "telegram-cli/SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path(".\\@system-skills\\telegram-cli\\SKILL.md"),
+        Some(("@system-skills", "telegram-cli\\SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("/workspace/@system-skills/telegram-cli/SKILL.md"),
+        Some(("@system-skills", "telegram-cli/SKILL.md"))
+    );
+
+    // Umbrella @skills aliases
+    assert_eq!(
+        extract_skill_alias_relative_path("@skills/system"),
+        Some(("@system-skills", "."))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("@skills/system/telegram-cli/SKILL.md"),
+        Some(("@system-skills", "telegram-cli/SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("/@skills/system/telegram-cli/SKILL.md"),
+        Some(("@system-skills", "telegram-cli/SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("./@skills/system/telegram-cli/SKILL.md"),
+        Some(("@system-skills", "telegram-cli/SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("@skills/user/my-skill/SKILL.md"),
+        Some(("@user-skills", "my-skill/SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("@skills/workspace/team-skill/SKILL.md"),
+        Some(("@workspace-skills", "team-skill/SKILL.md"))
+    );
+    assert_eq!(
+        extract_skill_alias_relative_path("@skills/assistant/bot-skill/SKILL.md"),
+        Some(("@assistant-skills", "bot-skill/SKILL.md"))
+    );
+
+    // Non-skill paths must return None
+    assert_eq!(extract_skill_alias_relative_path("src/main.rs"), None);
+    assert_eq!(
+        extract_skill_alias_relative_path("/workspace/src/main.rs"),
+        None
+    );
+    assert_eq!(extract_skill_alias_relative_path("/tmp/out.txt"), None);
+    assert_eq!(extract_skill_alias_relative_path(""), None);
 }

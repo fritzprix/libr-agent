@@ -57,14 +57,22 @@ export const CodeBlock = memo(
           getTokenProps,
         }) => (
           <code
-            className={`${highlightClassName} block font-mono text-sm`}
+            className={cn(
+              highlightClassName,
+              'block font-mono text-sm whitespace-pre [tab-size:2]',
+              className,
+            )}
             style={style}
           >
             {tokens.map((line, i) => (
               <div key={i} {...getLineProps({ line })}>
-                {line.map((token, key) => (
-                  <span key={key} {...getTokenProps({ token })} />
-                ))}
+                {line.length === 1 && line[0].content === '' ? (
+                  <span>&#8203;</span>
+                ) : (
+                  line.map((token, key) => (
+                    <span key={key} {...getTokenProps({ token })} />
+                  ))
+                )}
               </div>
             ))}
           </code>

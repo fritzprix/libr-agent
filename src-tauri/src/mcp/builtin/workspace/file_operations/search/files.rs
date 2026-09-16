@@ -15,15 +15,17 @@ pub(super) async fn search_files_only(
 ) -> Result<MCPResult, String> {
     use walkdir::WalkDir;
 
-    let glob_pattern = match glob::Pattern::new(pattern) {
+    let glob_pattern = match GlobMatcher::parse(pattern) {
         Ok(pat) => pat,
         Err(e) => {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!("Invalid pattern: {}", e),
-                ToolGroup::Workspace,
-            )
-            .to_mcp_result());
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Workspace)
+                    .guidance(vec![
+                        "Use a glob like `*.txt`, `**/*.rs`, or `*.{ts,js}`".to_string(),
+                        "Use workspace__listDirectory to explore available files".to_string(),
+                    ])
+                    .to_mcp_result(),
+            );
         }
     };
 

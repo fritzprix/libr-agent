@@ -11,6 +11,20 @@ import os
 import sys
 from pathlib import Path
 
+
+def configure_stdio_utf8() -> None:
+    """Force UTF-8 on stdout/stderr to avoid cp949/mojibake issues across platforms."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
+configure_stdio_utf8()
+
 try:
     from telethon import TelegramClient
     from telethon.errors import (
@@ -24,7 +38,7 @@ try:
     )
 except ImportError:
     print(
-        json.dumps({"status": "error", "message": "telethon is not installed. Run: pip3 install telethon"}),
+        json.dumps({"status": "error", "message": "telethon is not installed. Run: python -m pip install telethon"}),
         file=sys.stderr,
     )
     sys.exit(1)

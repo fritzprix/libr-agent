@@ -347,10 +347,11 @@ fn build_stable_prefix(
             .to_string(),
     );
 
-    // Single golden rule — do not expand into multi-bullet coaching (dilution).
+    // Keep this section short — multi-bullet coaching dilutes attention.
     parts.push(
         "\n\n## Core Execution Principles\n\
-         - Before concluding: when the request has checkable acceptance criteria, restate and verify them and include that proof when reporting (or state what remains unmet)."
+         - Before concluding: when the request has checkable acceptance criteria, restate and verify them and include that proof when reporting (or state what remains unmet).\n\
+         - Shareable deliverables: workspace files + ui__reportResult (use `export_paths` for attachments). Scratchpad is session-private working notes only — never the user-facing deliverable store."
             .to_string(),
     );
 

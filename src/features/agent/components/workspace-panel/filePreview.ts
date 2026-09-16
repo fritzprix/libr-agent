@@ -14,17 +14,42 @@ export function fileNameFromPath(filePath: string): string {
 
 /**
  * True when `path` is a workspace-relative location (not an OS absolute,
- * home, UNC, or `..` traversal path).
+ * home, UNC, or `..` traversal path). Supports authorized alias prefixes
+ * (@teamwork, .libragent/teamwork, @skills).
  *
  * In-app preview reads via `read_workspace_file_content`, which is scoped to the
- * session workspace root. External writes (e.g. `/tmp/out.md`) must open in
- * the host default application instead.
+ * session workspace root and authorized alias roots. External writes (e.g. `/tmp/out.md`)
+ * must open in the host default application instead.
  */
 export function isWorkspaceRelativePath(path: string): boolean {
   const trimmed = path.trim();
   if (!trimmed) return false;
 
-  const normalized = trimmed.replace(/\\/g, '/');
+  let normalized = trimmed.replace(/\\/g, '/');
+  if (normalized.startsWith('./')) {
+    normalized = normalized.slice(2);
+  }
+  if (normalized.startsWith('/workspace/')) {
+    normalized = normalized.slice('/workspace/'.length);
+  }
+  if (
+    normalized === '/@teamwork' ||
+    normalized.startsWith('/@teamwork/') ||
+    normalized === '/.libragent/teamwork' ||
+    normalized.startsWith('/.libragent/teamwork/') ||
+    normalized === '/@skills' ||
+    normalized.startsWith('/@skills/') ||
+    normalized === '/@system-skills' ||
+    normalized.startsWith('/@system-skills/') ||
+    normalized === '/@user-skills' ||
+    normalized.startsWith('/@user-skills/') ||
+    normalized === '/@assistant-skills' ||
+    normalized.startsWith('/@assistant-skills/') ||
+    normalized === '/@workspace-skills' ||
+    normalized.startsWith('/@workspace-skills/')
+  ) {
+    normalized = normalized.slice(1);
+  }
   if (normalized.startsWith('/') || normalized.startsWith('~')) {
     return false;
   }

@@ -14,23 +14,25 @@ description: |
 
 Enables the agent to interact with Telegram on behalf of the user via Telethon (MTProto protocol).
 
-## Path conventions
+## Path Conventions & Aliased Locations
 
-Paths in this skill are relative to the directory containing this `SKILL.md`, not to the workspace root or the shell's current `./`.
-
-- Scripts in this skill use paths like `scripts/...`
-- When a command below says `python scripts/...`, resolve that script path against the skill's absolute Base Directory
-- On Linux/macOS, use `python3` if `python` is unavailable
-- In command examples below, replace `<skill-base-dir>` with the skill's actual absolute Base Directory
+LibrAgent organizes skill resources using canonical `@` aliases across all platforms (Windows, Linux, macOS):
+- **Skill files & documentation**: Use `@system-skills/telegram-cli/SKILL.md` or `@system-skills/telegram-cli/references/cli-reference.md` with workspace tools (`workspace__readFile`, `workspace__listDirectory`, etc.).
+- **Shell execution (`workspace__runInPersistentShell`)**: When invoking python scripts, reference `<skill-base-dir>/scripts/...` using the skill's Base Directory (either the canonical alias `@system-skills/telegram-cli` or the concrete Base Directory injected in your system prompt reference block).
+- On Linux/macOS, use `python3` if `python` is unavailable.
+- Always quote paths to handle spaces properly: `"<skill-base-dir>/scripts/check_config.py"`.
 
 ## ⚠️ Security Rules (Mandatory)
 
-- **NEVER** ask for 2FA password, verification codes, or other transient secrets in chat
-- **NEVER** display or repeat the contents of `~/.libragent/telegram_config.json`
-- Collect transient secrets (verification codes, 2FA passwords) exclusively through `requireUserInput=true` shell prompts — never in chat
-- For verification codes and 2FA, prefer `requireUserInput=true` with `python setup.py --code-stdin` / `--password-stdin` (LibrAgent auto-pipes UI input to child stdin on Windows when these flags are present)
-- **ALWAYS** use `setup.py` to persist credentials and session
-- If the user accidentally pastes a password or code in chat, acknowledge receipt, do NOT echo it back, and immediately run setup to store it properly
+- **NEVER** ask for 2FA passwords, verification codes, or other transient secrets in chat.
+- **NEVER** display or repeat the contents of `~/.libragent/telegram_config.json`.
+- **NEVER pass `--password-value` or `--code-value` as command-line arguments**. Command-line arguments leak into system process tables (`ps aux`, `Get-Process`), shell histories, and execution logs.
+- Collect transient secrets (verification codes, 2FA passwords) **exclusively** through `requireUserInput=true` with `--code-stdin` / `--password-stdin` via `workspace__runInPersistentShell`.
+- If the user accidentally sends a password or code in chat:
+  1. Acknowledge receipt without echoing or repeating the secret text.
+  2. Use `--password-env` with an environment variable or run the setup tool with stdin.
+  3. NEVER echo the secret in output.
+- **ALWAYS** use `setup.py` to persist credentials and session.
 
 ---
 
@@ -38,23 +40,45 @@ Paths in this skill are relative to the directory containing this `SKILL.md`, no
 
 Telegram integration involves these steps:
 
-1. **Detect config** — run `check_config.py` to check if account is configured
+1. **Detect environment & config** — verify Python and run `check_config.py` to check if account is configured
 2. **Setup (first time only)** — gather API ID/Hash, phone number, then run `setup.py` with hidden prompts for code/password
 3. **Dispatch action** — classify the user's request and call `telegram_cli.py` with the right action
 4. **Present results** — format and summarize the output for the user
 
 ---
 
-## Dependencies
+## Dependencies & Environment Setup
 
-Required dependencies (should already be installed):
+### 1. Python Environment Check
+Before running any script, ensure Python 3.9+ is available in the shell:
+- **Check version**:
+  ```bash
+  python --version || python3 --version
+  ```
+- **If Python is not installed**:
+  - **Windows**:
+    ```powershell
+    winget install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
+    ```
+    (Or via Miniconda: `winget install Anaconda.Miniconda3 --silent --accept-package-agreements --accept-source-agreements`)
+  - **macOS**: `brew install python`
+  - **Linux**: `sudo apt update && sudo apt install -y python3 python3-pip`
+  - You may also recommend the **setup-wizard** skill to guide automated environment diagnostics.
 
-- **telethon**: `pip3 install telethon` (MTProto client library)
+### 2. Telethon Installation
+Telethon MTProto client library is required:
+```bash
+# Windows
+python -m pip install telethon
+
+# Linux / macOS
+python3 -m pip install telethon
+```
 
 ## References
 
 These reference files are located in the skill directory:
-- [cli-reference.md](file:///home/fritzprix/my_works/libr-agent/src-tauri/bundled_skills/telegram-cli/references/cli-reference.md) — CLI commands, options, outputs, and errors reference
+- [cli-reference.md](references/cli-reference.md) (or `@system-skills/telegram-cli/references/cli-reference.md`) — CLI commands, options, outputs, and errors reference
 
 ---
 
@@ -65,6 +89,7 @@ Always start by checking if the account is configured:
 ```bash
 python "<skill-base-dir>/scripts/check_config.py"
 ```
+*(On Linux/macOS, use `python3` if `python` is not aliased)*
 
 - Exit code `0` with `"status": "ok"` → configured and authorized, proceed to Step 3
 - Exit code `1` → missing config/session or not authorized (`missing`, `missing_session`, `unauthorized`, `auth_restart_needed`), go to Step 2
@@ -75,9 +100,7 @@ python "<skill-base-dir>/scripts/check_config.py"
 
 ## Step 2: Account Setup (First Time or Reset)
 
-Do **not** run `python "<skill-base-dir>/scripts/setup.py"` bare inside LibrAgent. That old terminal wizard asks for multiple prompts and can time out under the current prompt-resume shell contract.
-
-Instead:
+Do **not** run `python "<skill-base-dir>/scripts/setup.py"` bare without arguments inside LibrAgent.
 
 ### 2.1: Guide API ID/Hash Acquisition
 
@@ -102,49 +125,54 @@ Ask the user for:
 
 **Step A — Send verification code:**
 
-```powershell
-python "<skill-base-dir>/scripts/setup.py" `
-  --api-id 12345678 `
-  --api-hash "abcdef0123456789..." `
-  --phone "+821012345678" `
-  --action send_code
+```bash
+# Windows (PowerShell)
+python "<skill-base-dir>/scripts/setup.py" --api-id 12345678 --api-hash "abcdef0123456789..." --phone "+821012345678" --action send_code
+
+# Linux / macOS (Bash)
+python3 "<skill-base-dir>/scripts/setup.py" --api-id 12345678 --api-hash "abcdef0123456789..." --phone "+821012345678" --action send_code
 ```
 
 This outputs a JSON confirmation that the code was sent. On `AuthRestartError`, the script clears the partial session and retries once. If it still fails, you get `"status": "auth_restart_needed"` — run `send_code` again.
 
 **Step B — Sign in with verification code:**
 
-Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerShell`) with:
+Execute `workspace__runInPersistentShell` tool call with:
+- `command`: `python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-stdin`
+- `requireUserInput`: `true`
+- `inputType`: `"text"`
+- `inputPrompt`: `"텔레그램 인증 코드를 입력하세요:"`
 
-- `requireUserInput=true`
-- `inputType=text`
-- `inputPrompt=텔레그램 인증 코드를 입력하세요:`
-- Command:
-
-  ```powershell
-  python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-stdin
-  ```
+```json
+{
+  "command": "python \"<skill-base-dir>/scripts/setup.py\" --action sign_in --code-stdin",
+  "requireUserInput": true,
+  "inputType": "text",
+  "inputPrompt": "텔레그램 인증 코드를 입력하세요:"
+}
+```
 
 LibrAgent auto-detects `--code-stdin` and pipes the UI input into Python stdin (`stdinDelivery=child`).
 
-**Do not use `Read-Host` inside LibrAgent persistent PowerShell.** Those sessions run `-NonInteractive`, so `Read-Host` raises `PSInvalidOperationException` and exits immediately. The `--code-stdin` / `--password-stdin` path is the supported contract.
-
-**Fallback** only in a fully interactive terminal outside LibrAgent:
-
-```powershell
-$code = Read-Host; python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-value $code
-```
+> [!NOTE]
+> Do not use `Read-Host` inside LibrAgent persistent PowerShell. Those sessions run `-NonInteractive`, so `Read-Host` raises `PSInvalidOperationException`. The `--code-stdin` / `--password-stdin` path is the supported contract across Windows, macOS, and Linux.
 
 **Step C — Handle 2FA (if Step B returns `"password_needed"`):**
 
-- `requireUserInput=true`
-- `inputType=password`
-- `inputPrompt=텔레그램 2FA 비밀번호를 입력하세요:`
-- Command:
+Execute `workspace__runInPersistentShell` tool call with:
+- `command`: `python "<skill-base-dir>/scripts/setup.py" --action sign_in --password-stdin`
+- `requireUserInput`: `true`
+- `inputType`: `"password"`
+- `inputPrompt`: `"텔레그램 2FA 비밀번호를 입력하세요:"`
 
-  ```powershell
-  python "<skill-base-dir>/scripts/setup.py" --action sign_in --password-stdin
-  ```
+```json
+{
+  "command": "python \"<skill-base-dir>/scripts/setup.py\" --action sign_in --password-stdin",
+  "requireUserInput": true,
+  "inputType": "password",
+  "inputPrompt": "텔레그램 2FA 비밀번호를 입력하세요:"
+}
+```
 
 After successful setup, re-run `check_config.py` to confirm `"status": "ok"`, then proceed to Step 3.
 
@@ -153,6 +181,27 @@ After successful setup, re-run `check_config.py` to confirm `"status": "ok"`, th
 ## Step 3: Dispatch Action
 
 Classify the user's request into one of six actions and call `telegram_cli.py`.
+
+### 📌 Saved Messages (나와의 채팅 / 내게 쓰기)
+
+Telegram provides personal cloud storage via "Saved Messages".
+To send or retrieve messages from your Saved Messages:
+- Use `--chat me` (or `@me`, `saved`, `@saved`, `saved messages`, `saved_messages`, `저장한 메시지`, `나와의 채팅`, `내게 쓰기`).
+- The CLI automatically resolves `me` directly to your own Telegram account.
+- **Example — Send to Saved Messages:**
+  ```bash
+  python "<skill-base-dir>/scripts/telegram_cli.py" --action send_message --chat me --message "메모 내용"
+  ```
+- **Example — Read from Saved Messages:**
+  ```bash
+  python "<skill-base-dir>/scripts/telegram_cli.py" --action get_messages --chat me --limit 20
+  ```
+
+### 🔢 Numeric Chat / User IDs & Username Resolution
+- **Numeric User ID** (e.g., `5097924805`): Pass directly as `--chat 5097924805`. The CLI automatically detects numeric strings and resolves them as integer entity IDs.
+- **Numeric Channel / Supergroup ID** (e.g., `-1001234567890`): Pass directly as `--chat -1001234567890`.
+- **Username**: Use `@channel_name` or `channel_name`.
+- **Unknown Chat Name**: If the user only provides a human-readable title (e.g. "가족방" or "팀 채널"), run `list_chats` first to find the exact numeric ID or username.
 
 ### Output handling (recommended for message/search actions)
 

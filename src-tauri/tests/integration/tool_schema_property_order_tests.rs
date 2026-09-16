@@ -110,6 +110,12 @@ fn report_result_treats_criteria_and_proof_as_optional() {
         "reportResult must allow omitting criteria/proof when unverifiable: {description}"
     );
     assert!(
+        description.contains("workspace__writeFile")
+            && description.contains("export_paths")
+            && description.contains("scratchpad"),
+        "reportResult should steer long reports to writeFile+export_paths and away from scratchpad: {description}"
+    );
+    assert!(
         !description.contains("syntax-checked"),
         "executable-check coaching must not duplicate criteria/proof contract: {description}"
     );

@@ -95,6 +95,8 @@ pub fn report_result_tool() -> MCPTool {
             &[
                 "Call this exactly once when the outcome is ready.",
                 "Put the complete user-facing result in `result` (summary + key outputs/paths). Prefer Markdown.",
+                "For long reports: write the full document with workspace__writeFile (e.g. `.libragent/work/report.md`), put a short summary in `result`, and attach the path via `export_paths`. Do not paste the full report into assistant chat.",
+                "Never tell the user the deliverable was saved to scratchpad — scratchpad is private working memory, not a shareable output.",
                 "When the request has checkable acceptance criteria, put them in `criteria` and verification evidence (or unmet gaps) in `proof`. Skip both when the outcome is not objectively verifiable.",
                 "If your task produced deliverable files, pass their workspace-relative paths to `export_paths` to attach them with Preview/Open/Download actions.",
                 "After this tool returns: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",

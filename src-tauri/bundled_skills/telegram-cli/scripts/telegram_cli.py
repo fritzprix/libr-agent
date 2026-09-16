@@ -67,7 +67,7 @@ try:
     )
 except ImportError:
     configure_stdio_utf8()
-    emit_error({"status": "error", "message": "telethon is not installed. Run: pip3 install telethon"})
+    emit_error({"status": "error", "message": "telethon is not installed. Run: python -m pip install telethon"})
     sys.exit(1)
 
 
@@ -183,12 +183,45 @@ def require_query_arg(args: argparse.Namespace) -> bool:
 # ─── Helpers ──────────────────────────────────────────────────────────
 
 def resolve_chat(client: TelegramClient, chat_identifier: str) -> Any | None:
-    """Resolve a chat identifier (username, ID, or 'me') to a Telethon entity."""
-    if chat_identifier == "me":
+    """Resolve a chat identifier (username, numeric ID, or 'me') to a Telethon entity."""
+    raw = chat_identifier.strip()
+    lower = raw.lower()
+    if lower in (
+        "me",
+        "self",
+        "@me",
+        "saved",
+        "@saved",
+        "saved messages",
+        "saved_messages",
+        "저장한 메시지",
+        "저장한메시지",
+        "나와의 채팅",
+        "내게 쓰기",
+        "내게쓰기",
+    ):
+        try:
+            me_user = client.loop.run_until_complete(client.get_me())
+            if me_user:
+                return me_user
+        except Exception:
+            pass
         return "me"
 
+    # Try numeric ID if convertible (e.g. -1001234567890 or 123456789)
     try:
-        return client.loop.run_until_complete(client.get_entity(chat_identifier))
+        numeric_id = int(raw)
+        try:
+            entity = client.loop.run_until_complete(client.get_entity(numeric_id))
+            if entity:
+                return entity
+        except (ValueError, TypeError, RPCError):
+            pass
+    except ValueError:
+        pass
+
+    try:
+        return client.loop.run_until_complete(client.get_entity(raw))
     except (ValueError, TypeError, RPCError):
         return None
     except Exception:

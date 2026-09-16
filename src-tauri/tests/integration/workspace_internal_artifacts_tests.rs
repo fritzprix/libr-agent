@@ -80,8 +80,8 @@ async fn list_directory_hides_internal_tmp_and_exports_inside_libragent() {
         .filter_map(|item| item.get("name").and_then(|value| value.as_str()))
         .collect::<Vec<_>>();
 
-    assert!(names.contains(&"tool-results"));
     assert!(names.contains(&"teamwork.json"));
+    assert!(!names.contains(&"tool-results"));
     assert!(!names.contains(&"tmp"));
     assert!(!names.contains(&"exports"));
 }

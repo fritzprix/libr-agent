@@ -334,6 +334,8 @@ impl WorkspaceServer {
                 let actual_exit_code = entry.exit_code.unwrap_or(-1);
                 let success = entry.status == terminal_manager::ProcessStatus::Finished
                     && actual_exit_code == 0;
+                let interrupted = entry.status == terminal_manager::ProcessStatus::Finished
+                    && validation::is_signal_interrupt_exit(actual_exit_code);
                 let retain_killed_process = entry.status == terminal_manager::ProcessStatus::Killed;
 
                 if !retain_killed_process {
@@ -385,12 +387,17 @@ impl WorkspaceServer {
                     super::super::super::utils::effective_command_cwd(&session_id, &workspace_path)
                         .await;
 
+                let status_label = if interrupted {
+                    "interrupted".to_string()
+                } else {
+                    terminal_manager::process_status_label(&entry.status)
+                };
                 let response = serde_json::json!({
                     "command": command,
                     "exit_code": actual_exit_code,
                     "stdout": stdout,
                     "stderr": stderr,
-                    "status": terminal_manager::process_status_label(&entry.status),
+                    "status": status_label,
                     "duration_ms": duration_ms,
                     "execution_type": "isolated",
                     "cwd": cwd
@@ -400,6 +407,16 @@ impl WorkspaceServer {
                     "Isolated shell command executed: {} (session: {}, status: {:?}, exit: {:?}, duration: {}ms)",
                     command, session_id, entry.status, entry.exit_code, duration_ms
                 );
+
+                if interrupted {
+                    return Ok(super::shell_signal_interrupt_result(
+                        actual_exit_code,
+                        duration_ms,
+                        &stdout,
+                        &stderr,
+                        response,
+                    ));
+                }
 
                 if !success {
                     let error_output = if !stderr.is_empty() {

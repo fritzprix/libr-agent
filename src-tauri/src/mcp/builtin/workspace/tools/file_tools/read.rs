@@ -121,7 +121,7 @@ pub fn create_glob_files_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Glob pattern to match file or directory names (e.g. '*.rs', 'src/**/*.ts')."),
+            Some("Glob pattern to match file or directory names (e.g. '*.rs', 'src/**/*.ts', '*.{ts,js}')."),
         ),
     );
     props.insert(
@@ -171,7 +171,7 @@ pub fn create_grep_files_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Optional glob pattern to limit which files are searched (e.g. '*.rs', 'src/**/*.ts')."),
+            Some("Optional glob pattern to limit which files are searched (e.g. '*.rs', 'src/**/*.ts', '*.{py,yaml}')."),
         ),
     );
     props.insert(
@@ -256,7 +256,7 @@ pub fn create_search_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Glob pattern to filter files by name (e.g. '*.rs', 'src/**/*.ts')."),
+            Some("Glob pattern to filter files by name (e.g. '*.rs', 'src/**/*.ts', '*.{ts,js}')."),
         ),
     );
     props.insert(

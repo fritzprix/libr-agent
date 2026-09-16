@@ -19,6 +19,17 @@ describe('isWorkspaceRelativePath', () => {
     expect(isWorkspaceRelativePath('src/notes.md')).toBe(true);
     expect(isWorkspaceRelativePath('./src/notes.md')).toBe(true);
     expect(isWorkspaceRelativePath('notes.md')).toBe(true);
+    expect(isWorkspaceRelativePath('@teamwork/coordination/KANBAN.md')).toBe(true);
+    expect(isWorkspaceRelativePath('/@teamwork/coordination/KANBAN.md')).toBe(true);
+    expect(isWorkspaceRelativePath('@system-skills/telegram-cli/SKILL.md')).toBe(true);
+    expect(isWorkspaceRelativePath('/@system-skills/telegram-cli/SKILL.md')).toBe(true);
+    expect(isWorkspaceRelativePath('./@system-skills/telegram-cli/SKILL.md')).toBe(true);
+    expect(isWorkspaceRelativePath('/workspace/@system-skills/telegram-cli/SKILL.md')).toBe(true);
+    expect(isWorkspaceRelativePath('@user-skills/my-skill/SKILL.md')).toBe(true);
+    expect(isWorkspaceRelativePath('/@user-skills/my-skill/SKILL.md')).toBe(true);
+    expect(isWorkspaceRelativePath('@skills/system/telegram-cli/SKILL.md')).toBe(true);
+    expect(isWorkspaceRelativePath('/@skills/system/telegram-cli/SKILL.md')).toBe(true);
+    expect(isWorkspaceRelativePath('/.libragent/teamwork/coordination/KANBAN.md')).toBe(true);
   });
 
   it('rejects absolute, home, drive, and traversal paths', () => {

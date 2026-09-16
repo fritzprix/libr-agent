@@ -15,9 +15,9 @@ python "<skill-base-dir>/scripts/telegram_cli.py" --action send_message `
   [--message "메시지 내용" | --message-file "/path/to/message.txt"] `
   [--file "/path/to/attachment"]
 ```
-- Username: `@username` or `username`
-- Chat ID: `-1001234567890` (group/channel) or `123456789` (user)
-- `me` for self (saved messages)
+- **Saved Messages (self)**: `me` (aliases: `@me`, `saved`, `저장한 메시지`, `나와의 채팅`, `내게 쓰기`)
+- **Username**: `@username` or `username`
+- **Numeric Chat / User ID**: `123456789` (user) or `-1001234567890` (channel/group) — automatically detected and converted to integer entity ID
 
 ### Action: `get_messages` — Read recent messages
 ```powershell

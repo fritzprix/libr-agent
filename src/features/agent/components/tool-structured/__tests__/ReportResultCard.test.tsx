@@ -164,6 +164,7 @@ describe('ReportResultCard', () => {
       expect(openFilePreviewMock).toHaveBeenCalledWith({
         path: 'notes.md',
         name: 'notes.md',
+        sessionId: 'session-test-123',
       });
     });
     expect(openWorkspaceFileWithDefaultAppMock).not.toHaveBeenCalled();

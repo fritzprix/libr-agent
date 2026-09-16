@@ -16,6 +16,9 @@ pub enum ErrorCategory {
     OperationFailed,
     Timeout,
     NetworkError,
+    /// Process stopped by a signal (e.g. SIGINT/SIGTERM). Not a tool/protocol
+    /// failure — surface as notice so agents do not treat interrupt as a bug.
+    ProcessInterrupted,
 
     // System errors (escalation needed)
     InternalError,
