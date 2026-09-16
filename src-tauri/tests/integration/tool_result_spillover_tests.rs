@@ -375,12 +375,20 @@ async fn tool_result_spillover_multiline_notice_includes_line_range_guidance() {
         "notice should guide the agent through remaining line ranges: {text}"
     );
     assert!(
+        text.contains("do not restart at offset 1"),
+        "notice should discourage re-reading the already-shown prefix: {text}"
+    );
+    assert!(
         text.contains(&format!("to {total_lines})")),
         "remaining-range guidance should end at the last line: {text}"
     );
     assert!(
         text.contains(", \"offset\":") && text.contains(", \"size\": 200}"),
         "remaining-range guidance should include an explicit readFile offset/size: {text}"
+    );
+    assert!(
+        !text.contains("Read it in chunks with `readFile"),
+        "remaining-lines path must not lead with a generic start-at-offset-1 tip: {text}"
     );
     assert!(
         !text.contains("byte preview; not line-aligned"),

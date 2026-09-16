@@ -8,6 +8,7 @@ use std::path::{Component, Path};
 pub const INTERNAL_WORKSPACE_STATE_DIR: &str = ".libragent";
 pub const INTERNAL_WORKSPACE_TMP_DIR: &str = "tmp";
 pub const INTERNAL_WORKSPACE_EXPORTS_DIR: &str = "exports";
+pub const INTERNAL_WORKSPACE_TOOL_RESULTS_DIR: &str = "tool-results";
 pub const MAX_SYNC_EXECUTION_TIMEOUT_SECONDS: u64 = 300;
 /// Alias kept for call sites; single source of truth is `DEFAULT_DOCKER_WORKDIR`.
 pub const DOCKER_WORKSPACE_ROOT: &str = DEFAULT_DOCKER_WORKDIR;
@@ -166,9 +167,14 @@ pub fn is_internal_workspace_artifact_path(workspace_root: &Path, path: &Path) -
             Some(Component::Normal(first)),
             Some(Component::Normal(second))
         ) if first == OsStr::new(INTERNAL_WORKSPACE_STATE_DIR)
-            && (second == OsStr::new(INTERNAL_WORKSPACE_TMP_DIR)
-                || second == OsStr::new(INTERNAL_WORKSPACE_EXPORTS_DIR))
+            && is_internal_workspace_artifact_subdir(second)
     )
+}
+
+fn is_internal_workspace_artifact_subdir(name: &OsStr) -> bool {
+    name == OsStr::new(INTERNAL_WORKSPACE_TMP_DIR)
+        || name == OsStr::new(INTERNAL_WORKSPACE_EXPORTS_DIR)
+        || name == OsStr::new(INTERNAL_WORKSPACE_TOOL_RESULTS_DIR)
 }
 
 /// Normalize workspace paths for agent-facing output (forward slashes on Windows).
@@ -310,7 +316,7 @@ mod tests {
             &workspace_root,
             &workspace_root.join(".libragent/exports/packages/export.zip"),
         ));
-        assert!(!is_internal_workspace_artifact_path(
+        assert!(is_internal_workspace_artifact_path(
             &workspace_root,
             &workspace_root.join(".libragent/tool-results/output.txt"),
         ));

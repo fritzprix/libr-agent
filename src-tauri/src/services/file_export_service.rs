@@ -1,9 +1,200 @@
+use crate::repositories::session_repository::SessionRepository;
 use crate::session::get_session_manager;
 use std::collections::HashSet;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use zip::{write::FileOptions, ZipWriter};
+
+#[derive(Debug, Clone)]
+pub struct SessionExportRoots {
+    pub workspace_canon: PathBuf,
+    pub teamwork_canon: Option<PathBuf>,
+    pub skill_alias_roots: Vec<(&'static str, PathBuf)>,
+}
+
+impl SessionExportRoots {
+    pub async fn resolve_for_session(
+        session_manager: &crate::session::SessionManager,
+        session_id: &str,
+    ) -> Result<Self, String> {
+        let workspace_dir =
+            crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
+        let workspace_canon = tokio::fs::canonicalize(&workspace_dir)
+            .await
+            .unwrap_or_else(|_| workspace_dir.clone());
+
+        let teamwork_canon = match crate::session::resolve_teamwork_artifact_dir(
+            session_manager,
+            session_id,
+        )
+        .await
+        {
+            Ok(tw) => tokio::fs::canonicalize(&tw).await.ok().or(Some(tw)),
+            Err(_) => None,
+        };
+
+        let assistant_id = if let Some(repo) = crate::state::try_get_session_repository() {
+            repo.get_session(session_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|s| crate::agent::extract_assistant_id_from_session(&s))
+        } else {
+            None
+        };
+
+        let skill_alias_roots = if let Ok((sys, usr, ast, wsk)) =
+            crate::services::skill_service::resolve_skill_directories(
+                assistant_id.as_deref(),
+                Some(session_id),
+                Some(&workspace_dir),
+            )
+            .await
+        {
+            let mut roots = Vec::new();
+            for root in
+                crate::services::skill_service::collect_skill_alias_roots(sys, usr, ast, wsk)
+            {
+                let canon = tokio::fs::canonicalize(&root.root)
+                    .await
+                    .unwrap_or_else(|_| root.root.clone());
+                roots.push((root.prefix, canon));
+            }
+            roots
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self {
+            workspace_canon,
+            teamwork_canon,
+            skill_alias_roots,
+        })
+    }
+
+    pub fn determine_archive_path(
+        &self,
+        abs_canon: &Path,
+        original_path_hint: Option<&str>,
+    ) -> Option<String> {
+        // 1. If path hint explicitly references teamwork alias, check teamwork root first
+        let is_teamwork_hint = original_path_hint
+            .map(|h| {
+                let trimmed = h.trim().trim_start_matches('/');
+                trimmed.starts_with("@teamwork") || trimmed.starts_with(".libragent/teamwork")
+            })
+            .unwrap_or(false);
+
+        if is_teamwork_hint {
+            if let Some(tw_canon) = &self.teamwork_canon {
+                if let Some(rel) =
+                    crate::mcp::builtin::utils::relative_path_under_base(abs_canon, tw_canon)
+                {
+                    let prefix = if original_path_hint
+                        .map(|h| {
+                            h.trim()
+                                .trim_start_matches('/')
+                                .starts_with(".libragent/teamwork")
+                        })
+                        .unwrap_or(false)
+                    {
+                        ".libragent/teamwork"
+                    } else {
+                        "@teamwork"
+                    };
+                    let rel_str = rel.to_string_lossy().replace('\\', "/");
+                    let rel_clean = rel_str.trim_start_matches('/');
+                    return Some(if rel_clean.is_empty() {
+                        prefix.to_string()
+                    } else {
+                        format!("{}/{}", prefix, rel_clean)
+                    });
+                }
+            }
+        }
+
+        // 2. Check skill alias hint
+        if let Some(hint) = original_path_hint {
+            if let Some((alias_prefix, _)) =
+                crate::services::skill_service::extract_skill_alias_relative_path(hint)
+            {
+                for (prefix, root_canon) in &self.skill_alias_roots {
+                    if *prefix == alias_prefix {
+                        if let Some(rel) = crate::mcp::builtin::utils::relative_path_under_base(
+                            abs_canon, root_canon,
+                        ) {
+                            let rel_str = rel.to_string_lossy().replace('\\', "/");
+                            let rel_clean = rel_str.trim_start_matches('/');
+                            return Some(if rel_clean.is_empty() {
+                                prefix.to_string()
+                            } else {
+                                format!("{}/{}", prefix, rel_clean)
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Check workspace root
+        if let Some(rel) =
+            crate::mcp::builtin::utils::relative_path_under_base(abs_canon, &self.workspace_canon)
+        {
+            if crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path(
+                &self.workspace_canon,
+                abs_canon,
+            ) {
+                return None;
+            }
+            return Some(rel.to_string_lossy().replace('\\', "/"));
+        }
+
+        // 4. Check teamwork root (even without explicit hint)
+        if let Some(tw_canon) = &self.teamwork_canon {
+            if let Some(rel) =
+                crate::mcp::builtin::utils::relative_path_under_base(abs_canon, tw_canon)
+            {
+                let prefix = if original_path_hint
+                    .map(|h| {
+                        h.trim()
+                            .trim_start_matches('/')
+                            .starts_with(".libragent/teamwork")
+                    })
+                    .unwrap_or(false)
+                {
+                    ".libragent/teamwork"
+                } else {
+                    "@teamwork"
+                };
+                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                let rel_clean = rel_str.trim_start_matches('/');
+                return Some(if rel_clean.is_empty() {
+                    prefix.to_string()
+                } else {
+                    format!("{}/{}", prefix, rel_clean)
+                });
+            }
+        }
+
+        // 5. Check skill alias roots
+        for (prefix, root_canon) in &self.skill_alias_roots {
+            if let Some(rel) =
+                crate::mcp::builtin::utils::relative_path_under_base(abs_canon, root_canon)
+            {
+                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                let rel_clean = rel_str.trim_start_matches('/');
+                return Some(if rel_clean.is_empty() {
+                    prefix.to_string()
+                } else {
+                    format!("{}/{}", prefix, rel_clean)
+                });
+            }
+        }
+
+        None
+    }
+}
 
 pub struct FileExportService;
 
@@ -19,16 +210,11 @@ impl FileExportService {
         session_id: &str,
         file_path: &str,
     ) -> Result<ExportedFile, String> {
-        // Get workspace directory via SessionManager
-        let session_manager =
-            get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-        let workspace_dir =
-            crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
-
-        // Resolve and validate path securely
-        let full_path = crate::utils::security::resolve_secure_path(&workspace_dir, file_path)
-            .await
-            .map_err(|e| format!("Access denied or file not found: {}", e))?;
+        // Resolve and validate path securely (supports @teamwork, @skills, workspace)
+        let full_path =
+            crate::services::WorkspaceService::resolve_path_for_session(session_id, file_path)
+                .await
+                .map_err(|e| format!("Access denied or file not found: {}", e))?;
 
         // Extract filename
         let filename = full_path
@@ -58,13 +244,8 @@ impl FileExportService {
     ) -> Result<ExportedFile, String> {
         let session_manager =
             get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-        let workspace_dir =
-            crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
-
-        // Canonicalize base for stripping prefixes later
-        let workspace_dir_canon = tokio::fs::canonicalize(&workspace_dir)
-            .await
-            .map_err(|e| format!("Failed to canonicalize workspace: {}", e))?;
+        let export_roots =
+            SessionExportRoots::resolve_for_session(session_manager, session_id).await?;
 
         if files.is_empty() {
             return Err("Files array cannot be empty".to_string());
@@ -95,10 +276,9 @@ impl FileExportService {
         let mut processed_files = Vec::new();
         let mut added_archive_paths = HashSet::<String>::new();
         for file_path in &files {
-            // Resolve path securely
-            let source_path = match crate::utils::security::resolve_secure_path(
-                &workspace_dir,
-                file_path,
+            // Resolve path securely (supports @teamwork, @skills, workspace)
+            let source_path = match crate::services::WorkspaceService::resolve_path_for_session(
+                session_id, file_path,
             )
             .await
             {
@@ -115,6 +295,12 @@ impl FileExportService {
                 WalkDir::new(&source_path)
                     .into_iter()
                     .filter_map(Result::ok)
+                    .filter(|e| {
+                        !crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path(
+                            &export_roots.workspace_canon,
+                            e.path(),
+                        )
+                    })
                     .filter(|e| e.file_type().is_file())
                     .map(|e| e.into_path())
                     .collect()
@@ -128,21 +314,12 @@ impl FileExportService {
                     Err(_) => continue,
                 };
 
-                if !abs_canon.starts_with(&workspace_dir_canon) {
-                    continue;
-                }
+                let archive_path =
+                    match export_roots.determine_archive_path(&abs_canon, Some(file_path)) {
+                        Some(p) => p,
+                        None => continue,
+                    };
 
-                let rel_path = match abs_canon.strip_prefix(&workspace_dir_canon) {
-                    Ok(p) => p,
-                    Err(_) => continue,
-                };
-
-                let archive_path = {
-                    let p = rel_path.to_string_lossy().to_string();
-                    #[cfg(target_os = "windows")]
-                    let p = p.replace('\\', "/");
-                    p
-                };
                 if !added_archive_paths.insert(archive_path.clone()) {
                     continue;
                 }

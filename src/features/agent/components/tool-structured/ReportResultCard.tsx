@@ -25,9 +25,7 @@ import {
   classifyReportResultLink,
   displayNameForWorkspacePath,
 } from './reportResultLinks';
-import {
-  canOpenInAppPreview,
-} from '../workspace-panel/filePreview';
+import { canOpenInAppPreview } from '../workspace-panel/filePreview';
 import { cn } from '@/lib/utils';
 
 const logger = getLogger('ReportResultCard');
@@ -97,13 +95,11 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
             await openExternalUrl(action.url);
             return;
           case 'workspace': {
-            if (
-              filePreview &&
-              canOpenInAppPreview({ path: action.path })
-            ) {
+            if (filePreview && canOpenInAppPreview({ path: action.path })) {
               filePreview.openFilePreview({
                 path: action.path,
                 name: displayNameForWorkspacePath(action.path),
+                sessionId: activeSessionId,
               });
               return;
             }
@@ -116,10 +112,7 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
               );
               return;
             }
-            await openWorkspaceFileWithDefaultApp(
-              action.path,
-              activeSessionId,
-            );
+            await openWorkspaceFileWithDefaultApp(action.path, activeSessionId);
             return;
           }
           case 'host':

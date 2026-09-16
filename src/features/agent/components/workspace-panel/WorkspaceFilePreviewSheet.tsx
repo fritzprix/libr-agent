@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -10,6 +10,8 @@ import {
   Code,
   AlertTriangle,
   Loader2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import {
   Sheet,
@@ -23,6 +25,8 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useRustBackend } from '@/hooks/use-rust-backend';
+import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
+import { isSafeExternalUrl } from '@/features/agent/components/AgentMessageRenderer/utils/url';
 import type { WorkspaceFileContent } from '@/lib/backend';
 import type { FileNode } from './types';
 import {
@@ -56,117 +60,243 @@ export const WorkspaceFilePreviewSheet = ({
 }: WorkspaceFilePreviewSheetProps) => {
   const { t } = useTranslation();
   const { readWorkspaceFileContent } = useRustBackend();
+  const isDark = useIsDarkMode();
+
+  // Retain last non-null file so exit slide-out animation remains smooth
+  const [displayedFile, setDisplayedFile] = useState<FileNode | null>(file);
+
+  useEffect(() => {
+    if (file) {
+      setDisplayedFile(file);
+    }
+  }, [file]);
+
+  const activeFile = file ?? displayedFile;
 
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [htmlMode, setHtmlMode] = useState<'preview' | 'source'>('preview');
   const [isCopied, setIsCopied] = useState(false);
+  const [isPathCopied, setIsPathCopied] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [imageDimensions, setImageDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyPathTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      if (copyPathTimeoutRef.current) clearTimeout(copyPathTimeoutRef.current);
+    };
+  }, []);
 
   // Reset states and fetch when file changes or sheet opens
   useEffect(() => {
-    if (!isOpen || !file || file.isDirectory) {
-      setContent(null);
-      setError(null);
-      setLoading(false);
-      setHtmlMode('preview');
-      setIsCopied(false);
+    if (!isOpen || !activeFile || activeFile.isDirectory) {
+      if (!isOpen) {
+        setIsCopied(false);
+        setIsPathCopied(false);
+      }
       return;
     }
 
     let isCancelled = false;
     setLoading(true);
     setError(null);
+    setIsCopied(false);
+    setIsPathCopied(false);
+    setHtmlMode('preview');
+    setImageDimensions(null);
 
-    readWorkspaceFileContent(file.path, sessionId)
-      .then((res) => {
-        if (!isCancelled) {
-          setContent(res);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!isCancelled) {
-          const message =
-            err instanceof Error
-              ? err.message
-              : String(err ?? 'Failed to load file');
-          setError(message);
-          setLoading(false);
-        }
-      });
+    const promise = readWorkspaceFileContent(activeFile.path, sessionId);
+    if (promise && typeof promise.then === 'function') {
+      promise
+        .then((res) => {
+          if (!isCancelled) {
+            setContent(res);
+            setLoading(false);
+          }
+        })
+        .catch((err) => {
+          if (!isCancelled) {
+            const message =
+              err instanceof Error
+                ? err.message
+                : String(err ?? 'Failed to load file');
+            setError(message);
+            setLoading(false);
+          }
+        });
+    }
 
     return () => {
       isCancelled = true;
     };
-  }, [file, sessionId, isOpen, readWorkspaceFileContent]);
+  }, [activeFile?.path, sessionId, isOpen, readWorkspaceFileContent]);
 
-  const ext = useMemo(() => (file ? getFileExtension(file.name) : ''), [file]);
+  const ext = useMemo(
+    () => (activeFile ? getFileExtension(activeFile.name) : ''),
+    [activeFile],
+  );
   const iconInfo = useMemo(
-    () => (file ? getFileIconInfo(file.name) : null),
-    [file],
+    () => (activeFile ? getFileIconInfo(activeFile.name) : null),
+    [activeFile],
   );
   const isHtml = ext === 'html' || ext === 'htm';
   const isMarkdown = ext === 'md' || ext === 'markdown';
   const isImage = iconInfo?.category === 'image';
   const language = useMemo(
-    () => (file ? getLanguageFromFileName(file.name) : 'text'),
-    [file],
+    () => (activeFile ? getLanguageFromFileName(activeFile.name) : 'text'),
+    [activeFile],
   );
 
+  const pathSegments = useMemo(() => {
+    if (!activeFile?.path) return [];
+    return activeFile.path.replace(/\\/g, '/').split('/').filter(Boolean);
+  }, [activeFile?.path]);
+
   const handleCopy = useCallback(async () => {
-    if (!content?.content) return;
+    if (content?.content === undefined || content?.content === null) return;
     try {
       await navigator.clipboard.writeText(content.content);
       setIsCopied(true);
       toast.success(
         t('agent.workspace.contentCopied', 'Content copied to clipboard'),
       );
-      setTimeout(() => setIsCopied(false), 2000);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => setIsCopied(false), 2000);
     } catch {
       toast.error('Failed to copy content to clipboard');
     }
   }, [content?.content, t]);
 
-  const handleOpenDefault = useCallback(async () => {
-    if (!file) return;
-    await onOpenInDefaultApp(file.path);
-  }, [file, onOpenInDefaultApp]);
+  const handleCopyPath = useCallback(async () => {
+    if (!activeFile?.path) return;
+    try {
+      await navigator.clipboard.writeText(activeFile.path);
+      setIsPathCopied(true);
+      toast.success(
+        t('agent.workspace.pathCopied', 'File path copied to clipboard'),
+      );
+      if (copyPathTimeoutRef.current) clearTimeout(copyPathTimeoutRef.current);
+      copyPathTimeoutRef.current = setTimeout(
+        () => setIsPathCopied(false),
+        2000,
+      );
+    } catch {
+      toast.error('Failed to copy file path to clipboard');
+    }
+  }, [activeFile?.path, t]);
 
-  if (!file) return null;
+  const handleOpenDefault = useCallback(async () => {
+    if (!activeFile) return;
+    await onOpenInDefaultApp(activeFile.path);
+  }, [activeFile, onOpenInDefaultApp]);
+
+  if (!activeFile) return null;
 
   const Icon = iconInfo?.icon;
   const isLargeCodeFile =
     Boolean(content?.content) && (content?.content.length ?? 0) > 200 * 1024;
 
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          setIsMaximized(false);
+          onClose();
+        }
+      }}
+    >
       <SheetContent
         side="right"
         overlayClassName="z-[70]"
-        className="w-[600px] sm:max-w-2xl max-w-full flex flex-col p-0 gap-0 border-l border-border/40 shadow-xl z-[70]"
+        className={cn(
+          'max-w-full flex flex-col p-0 gap-0 border-l border-border/40 shadow-xl z-[70] transition-all duration-200',
+          isMaximized ? 'w-[92vw] sm:max-w-[92vw]' : 'w-[600px] sm:max-w-2xl',
+        )}
       >
         {/* Header */}
         <SheetHeader className="border-b border-border/40 px-4 py-3 flex-shrink-0 flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            {Icon && (
-              <Icon
-                className={cn('h-4 w-4 flex-shrink-0', iconInfo?.className)}
-              />
-            )}
-            <SheetTitle
-              className="truncate text-sm font-medium"
-              title={file.name}
-            >
-              {file.name}
-            </SheetTitle>
-            <SheetDescription className="sr-only">
-              {file.name} preview
-            </SheetDescription>
-            {content?.size !== undefined && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {formatFileSize(content.size)}
-              </Badge>
+          <div className="flex flex-col min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0">
+              {Icon && (
+                <Icon
+                  className={cn('h-4 w-4 flex-shrink-0', iconInfo?.className)}
+                />
+              )}
+              <SheetTitle
+                className="truncate text-sm font-medium"
+                title={activeFile.name}
+              >
+                {activeFile.name}
+              </SheetTitle>
+              <SheetDescription className="sr-only">
+                {activeFile.name} preview
+              </SheetDescription>
+              {content?.size !== undefined && (
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] px-1.5 py-0 shrink-0"
+                >
+                  {formatFileSize(content.size)}
+                </Badge>
+              )}
+            </div>
+            {activeFile.path && (
+              <div className="flex items-center gap-1 mt-0.5 text-[11px] text-muted-foreground font-mono min-w-0">
+                <nav
+                  aria-label="Breadcrumb"
+                  data-testid="path-breadcrumb"
+                  className="flex items-center gap-1 truncate text-[11px] text-muted-foreground font-mono min-w-0"
+                  title={activeFile.path}
+                >
+                  {pathSegments.map((segment, idx) => {
+                    const isLast = idx === pathSegments.length - 1;
+                    return (
+                      <span
+                        key={`${segment}-${idx}`}
+                        className="inline-flex items-center gap-1 truncate"
+                      >
+                        {idx > 0 && (
+                          <span className="opacity-40 shrink-0 select-none">
+                            /
+                          </span>
+                        )}
+                        <span
+                          className={cn(
+                            'truncate',
+                            isLast
+                              ? 'text-foreground font-medium'
+                              : 'hover:text-foreground transition-colors',
+                          )}
+                        >
+                          {segment}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </nav>
+                <button
+                  type="button"
+                  onClick={handleCopyPath}
+                  className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded shrink-0 cursor-pointer"
+                  title={t('agent.workspace.copyPath', 'Copy file path')}
+                  aria-label={t('agent.workspace.copyPath', 'Copy file path')}
+                >
+                  {isPathCopied ? (
+                    <Check className="h-3 w-3 text-emerald-500" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                </button>
+              </div>
             )}
           </div>
 
@@ -218,6 +348,29 @@ export const WorkspaceFilePreviewSheet = ({
                 )}
               </Button>
             )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => setIsMaximized((prev) => !prev)}
+              title={
+                isMaximized
+                  ? t('agent.workspace.restoreSize', 'Restore size')
+                  : t('agent.workspace.maximize', 'Maximize')
+              }
+              aria-label={
+                isMaximized
+                  ? t('agent.workspace.restoreSize', 'Restore size')
+                  : t('agent.workspace.maximize', 'Maximize')
+              }
+            >
+              {isMaximized ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </Button>
 
             <Button
               variant="outline"
@@ -286,12 +439,26 @@ export const WorkspaceFilePreviewSheet = ({
 
               {/* Image Viewer */}
               {isImage && (
-                <div className="flex flex-1 items-center justify-center overflow-auto p-4 bg-muted/10">
+                <div className="flex flex-1 flex-col items-center justify-center overflow-auto p-4 bg-[linear-gradient(45deg,#80808015_25%,transparent_25%),linear-gradient(-45deg,#80808015_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#80808015_75%),linear-gradient(-45deg,transparent_75%,#80808015_75%)] bg-[size:16px_16px]">
                   <img
                     src={`data:${content.mimeType};base64,${content.content}`}
-                    alt={file.name}
+                    alt={activeFile.name}
+                    onLoad={(e) => {
+                      const img = e.currentTarget;
+                      if (img.naturalWidth && img.naturalHeight) {
+                        setImageDimensions({
+                          width: img.naturalWidth,
+                          height: img.naturalHeight,
+                        });
+                      }
+                    }}
                     className="max-h-full max-w-full rounded-md object-contain shadow-xs border border-border/30"
                   />
+                  {imageDimensions && (
+                    <div className="mt-2 text-[11px] font-mono text-muted-foreground bg-background/80 px-2 py-0.5 rounded-full border border-border/40 backdrop-blur-xs">
+                      {imageDimensions.width} × {imageDimensions.height} px
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -299,18 +466,28 @@ export const WorkspaceFilePreviewSheet = ({
               {isHtml && !content.isBinary && (
                 <div className="flex-1 w-full h-full overflow-hidden">
                   {htmlMode === 'preview' ? (
+                    /* Security boundary: sandbox="allow-scripts" enables interactive HTML charts/visualizations
+                       (e.g. Mermaid, Plotly) generated by the agent. allow-same-origin is intentionally excluded
+                       so script execution cannot access local origins, cookies, parent window DOM, or Tauri IPC bridges. */
                     <iframe
                       srcDoc={content.content}
-                      sandbox="allow-scripts allow-modals"
+                      sandbox="allow-scripts"
                       className="w-full h-full border-0 bg-white dark:bg-zinc-950"
-                      title={`Preview of ${file.name}`}
+                      title={`Preview of ${activeFile.name}`}
                       data-testid="html-preview-iframe"
                     />
                   ) : (
-                    <div className="h-full overflow-auto p-4">
-                      <CodeBlock className="language-html">
-                        {content.content}
-                      </CodeBlock>
+                    <div
+                      tabIndex={0}
+                      role="region"
+                      aria-label={t('agent.workspace.sourceMode', 'Source')}
+                      className="h-full overflow-auto p-4 focus:outline-none"
+                    >
+                      <pre className="font-mono text-xs leading-relaxed">
+                        <CodeBlock className="language-html" isDark={isDark}>
+                          {content.content}
+                        </CodeBlock>
+                      </pre>
                     </div>
                   )}
                 </div>
@@ -318,8 +495,40 @@ export const WorkspaceFilePreviewSheet = ({
 
               {/* Markdown Viewer */}
               {isMarkdown && !content.isBinary && (
-                <div className="flex-1 overflow-auto p-6 prose dark:prose-invert max-w-none text-xs leading-relaxed">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <div
+                  tabIndex={0}
+                  role="region"
+                  aria-label={t(
+                    'agent.workspace.markdownPreview',
+                    'Markdown preview',
+                  )}
+                  className="flex-1 overflow-auto p-6 prose dark:prose-invert max-w-none text-xs leading-relaxed focus:outline-none"
+                >
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ href, children, ...props }) => {
+                        if (!isSafeExternalUrl(href)) {
+                          return (
+                            <span className="text-muted-foreground">
+                              {children}
+                            </span>
+                          );
+                        }
+                        return (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:bg-primary/10 rounded px-1 py-0.5 underline underline-offset-4 font-medium transition-colors"
+                            {...props}
+                          >
+                            {children}
+                          </a>
+                        );
+                      },
+                    }}
+                  >
                     {content.content}
                   </ReactMarkdown>
                 </div>
@@ -327,7 +536,12 @@ export const WorkspaceFilePreviewSheet = ({
 
               {/* Code / Config / Text Viewer */}
               {!isHtml && !isMarkdown && !isImage && !content.isBinary && (
-                <div className="flex-1 overflow-auto p-4">
+                <div
+                  tabIndex={0}
+                  role="region"
+                  aria-label={t('agent.workspace.fileContent', 'File content')}
+                  className="flex-1 overflow-auto p-4 focus:outline-none"
+                >
                   {isLargeCodeFile ? (
                     <div>
                       <div className="mb-2 rounded bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-[11px] text-amber-600 dark:text-amber-400">
@@ -341,9 +555,14 @@ export const WorkspaceFilePreviewSheet = ({
                       </pre>
                     </div>
                   ) : (
-                    <CodeBlock className={`language-${language}`}>
-                      {content.content}
-                    </CodeBlock>
+                    <pre className="font-mono text-xs leading-relaxed">
+                      <CodeBlock
+                        className={`language-${language}`}
+                        isDark={isDark}
+                      >
+                        {content.content}
+                      </CodeBlock>
+                    </pre>
                   )}
                 </div>
               )}

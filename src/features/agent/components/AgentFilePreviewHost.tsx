@@ -22,9 +22,7 @@ export function AgentFilePreviewHost() {
   const sessionId = previewFile?.sessionId ?? session?.id;
 
   const file = useMemo<FileNode | null>(() => {
-    if (!previewFile) {
-      return null;
-    }
+    if (!previewFile) return null;
     return {
       id: previewFile.path,
       name: previewFile.name,

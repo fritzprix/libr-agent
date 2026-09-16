@@ -61,6 +61,61 @@ describe('classifyReportResultLink', () => {
     });
   });
 
+  it('classifies teamwork and skill alias links as workspace paths', () => {
+    expect(
+      classifyReportResultLink(
+        '@teamwork/docs/VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+      ),
+    ).toEqual({
+      kind: 'workspace',
+      path: '@teamwork/docs/VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+    });
+    expect(
+      classifyReportResultLink(
+        '/@teamwork/docs/VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+      ),
+    ).toEqual({
+      kind: 'workspace',
+      path: '@teamwork/docs/VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+    });
+    expect(
+      classifyReportResultLink(
+        '/.libragent/teamwork/coordination/KANBAN.md',
+      ),
+    ).toEqual({
+      kind: 'workspace',
+      path: '.libragent/teamwork/coordination/KANBAN.md',
+    });
+    expect(
+      classifyReportResultLink(
+        '@skills/workspace/my-skill/SKILL.md',
+      ),
+    ).toEqual({
+      kind: 'workspace',
+      path: '@skills/workspace/my-skill/SKILL.md',
+    });
+  });
+
+  it('prefers in-app preview for previewable matched deliverables', () => {
+    expect(
+      classifyReportResultLink(
+        '@teamwork/docs/VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+        [
+          {
+            path: '@teamwork/docs/VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+            absolute_path:
+              '/home/user/.libragent/sessions/root/teamwork/docs/VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+            name: 'VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+            exists: true,
+          },
+        ],
+      ),
+    ).toEqual({
+      kind: 'workspace',
+      path: '@teamwork/docs/VIRTUAL-INFLUENCER-MONETIZATION-MASTERSHEET.md',
+    });
+  });
+
   it('blocks empty and hash-only hrefs', () => {
     expect(classifyReportResultLink(undefined)).toEqual({ kind: 'blocked' });
     expect(classifyReportResultLink('#section')).toEqual({ kind: 'blocked' });

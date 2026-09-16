@@ -48,7 +48,9 @@ export const ToolStructuredResult: React.FC<ToolStructuredResultProps> = ({
   switch (key) {
     case 'workspace__writeFile': {
       const parsed = parseWriteFileResult(data);
-      return parsed ? <FileWriteActions data={parsed} /> : null;
+      return parsed ? (
+        <FileWriteActions data={parsed} sessionId={sessionId} />
+      ) : null;
     }
     case 'workspace__strReplace': {
       const parsed = parseStrReplaceResult(data);

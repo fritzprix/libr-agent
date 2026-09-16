@@ -18,7 +18,6 @@ One sentence explaining the decision.
 | Git revision               |          |           |             |
 | Dataset/tasks              |          |           |             |
 | Attempts/concurrency       |          |           |             |
-| Model/provider             |          |           |             |
 | Assistant                  |          |           |             |
 | Execution/workspace mode   |          |           |             |
 | Timeout/resources/verifier |          |           |             |
@@ -77,5 +76,6 @@ percentage without its count.
 
 ## Next cycle
 
-One next hypothesis or instrumentation gap. Do not queue unrelated cleanup.
+One next **harness** hypothesis or instrumentation gap. Do not queue unrelated
+cleanup. Don't-care: model, serving engine.
 ```

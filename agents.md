@@ -46,7 +46,7 @@ See [README.md](README.md) for detailed setup instructions.
 | `pnpm dead-code`         | Find unused code with unimported                                                   |
 | `pnpm refactor:validate` | **Complete validation pipeline** (lint, format, Rust validation, build, dead-code) |
 
-**Workflow Recommendation:** Always run `pnpm refactor:validate` after any code changes to ensure quality and build integrity.
+**Workflow Recommendation:** Run focused, lightweight unit tests or lint for affected files during development. `pnpm refactor:validate` is resource-heavy and must ONLY be executed when explicitly requested by the user or as a final check before a PR.
 
 ### Key Architecture Patterns
 

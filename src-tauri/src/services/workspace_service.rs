@@ -83,17 +83,13 @@ impl WorkspaceService {
         path: Option<String>,
         session_id: Option<String>,
     ) -> Result<Vec<WorkspaceFileItem>, String> {
-        let session_manager =
-            get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
         let session_id = session_id.unwrap_or_else(|| "default".to_string());
-        let base_dir =
-            crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
 
         // Default to current directory if no path provided
         let target_path = path.unwrap_or_else(|| ".".to_string());
 
         // Resolve and validate path securely
-        let full_path = crate::utils::security::resolve_secure_path(&base_dir, &target_path)
+        let full_path = Self::resolve_path_for_session(&session_id, &target_path)
             .await
             .map_err(|e| format!("Invalid path: {}", e))?;
 
@@ -181,13 +177,10 @@ impl WorkspaceService {
         file_path: String,
         session_id: Option<String>,
     ) -> Result<(), String> {
-        let session_manager = get_session_manager().map_err(|e| e.to_string())?;
         let session_id = session_id.unwrap_or_else(|| "default".to_string());
-        let workspace_dir =
-            crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
 
-        // Resolve and validate path securely
-        let full_path = crate::utils::security::resolve_secure_path(&workspace_dir, &file_path)
+        // Resolve and validate path securely (supports @teamwork, @skills, workspace)
+        let full_path = Self::resolve_path_for_session(&session_id, &file_path)
             .await
             .map_err(|e| format!("Access denied or file not found: {}", e))?;
 
@@ -367,10 +360,144 @@ impl WorkspaceService {
         Err("Session ID is required for workspace write operations".to_string())
     }
 
+    /// Resolves a file or directory path for a given session.
+    ///
+    /// Supports:
+    /// 1. Teamwork aliases (`@teamwork/...`, `.libragent/teamwork/...`, `./@teamwork/...`)
+    /// 2. Skill aliases (`@skills/system/...`, `@skills/user/...`, `@skills/workspace/...`, `@skills/assistant/...`)
+    /// 3. Normal workspace-relative paths (`src/main.rs`, `docs/foo.md`, `./data.csv`)
+    /// 4. Container-relative paths (`/workspace/...`)
+    /// 5. Host absolute paths that are contained within authorized roots:
+    ///    - The session's workspace directory
+    ///    - The session's teamwork artifact directory
+    ///    - The session's allowed skill roots
+    pub async fn resolve_path_for_session(
+        session_id: &str,
+        file_path: &str,
+    ) -> Result<PathBuf, String> {
+        let session_manager =
+            get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
+        Self::resolve_path_with_manager(session_manager, session_id, file_path).await
+    }
+
+    pub async fn resolve_path_with_manager(
+        session_manager: &crate::session::SessionManager,
+        session_id: &str,
+        file_path: &str,
+    ) -> Result<PathBuf, String> {
+        // 1. Teamwork alias resolution (@teamwork/..., .libragent/teamwork/...)
+        if let Some(teamwork_rel) = crate::session::extract_teamwork_alias_relative_path(file_path)
+        {
+            let teamwork_root =
+                crate::session::resolve_teamwork_artifact_dir(session_manager, session_id).await?;
+            return crate::utils::security::resolve_secure_path(&teamwork_root, teamwork_rel).await;
+        }
+
+        // 2. Skill alias resolution (@skills/system/..., @skills/user/..., etc.)
+        if let Some((alias_prefix, skill_rel)) =
+            crate::services::skill_service::extract_skill_alias_relative_path(file_path)
+        {
+            let assistant_id = if let Some(repo) = crate::state::try_get_session_repository() {
+                repo.get_session(session_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|session| crate::agent::extract_assistant_id_from_session(&session))
+            } else {
+                None
+            };
+            let workspace_dir =
+                crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
+            let (system_dir, user_dir, assistant_dir, workspace_skill_dir) =
+                crate::services::skill_service::resolve_skill_directories(
+                    assistant_id.as_deref(),
+                    Some(session_id),
+                    Some(&workspace_dir),
+                )
+                .await?;
+            let alias_roots = crate::services::skill_service::collect_skill_alias_roots(
+                system_dir,
+                user_dir,
+                assistant_dir,
+                workspace_skill_dir,
+            );
+            let alias_root = alias_roots
+                .into_iter()
+                .find(|root| root.prefix == alias_prefix)
+                .ok_or_else(|| format!("Skill alias root is not available: {alias_prefix}"))?;
+            return crate::utils::security::resolve_secure_path(&alias_root.root, skill_rel).await;
+        }
+
+        let workspace_dir =
+            crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
+
+        // Normalize container / relative prefixes
+        let trimmed = file_path.trim();
+        let stripped = trimmed
+            .strip_prefix("/workspace/")
+            .or_else(|| trimmed.strip_prefix("\\workspace\\"))
+            .unwrap_or(trimmed);
+
+        let candidate = Path::new(stripped);
+        if candidate.is_absolute() {
+            let canonical_candidate = tokio::fs::canonicalize(candidate)
+                .await
+                .map_err(|e| format!("File not found or invalid path: {e}"))?;
+
+            let mut authorized_roots = Vec::new();
+            if let Ok(canon_ws) = tokio::fs::canonicalize(&workspace_dir).await {
+                authorized_roots.push(canon_ws);
+            }
+            if let Ok(teamwork_root) =
+                crate::session::resolve_teamwork_artifact_dir(session_manager, session_id).await
+            {
+                if let Ok(canon_tw) = tokio::fs::canonicalize(&teamwork_root).await {
+                    authorized_roots.push(canon_tw);
+                }
+            }
+            if let Some(repo) = crate::state::try_get_session_repository() {
+                let assistant_id = repo
+                    .get_session(session_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|s| crate::agent::extract_assistant_id_from_session(&s));
+                if let Ok((sys, usr, ast, wsk)) =
+                    crate::services::skill_service::resolve_skill_directories(
+                        assistant_id.as_deref(),
+                        Some(session_id),
+                        Some(&workspace_dir),
+                    )
+                    .await
+                {
+                    for r in crate::services::skill_service::collect_allowed_skill_roots(
+                        sys, usr, ast, wsk,
+                    ) {
+                        if let Ok(canon_r) = tokio::fs::canonicalize(&r).await {
+                            authorized_roots.push(canon_r);
+                        }
+                    }
+                }
+            }
+
+            for root in &authorized_roots {
+                if canonical_candidate.starts_with(root) {
+                    return Ok(canonical_candidate);
+                }
+            }
+
+            return Err(
+                "Access denied: Path is outside authorized workspace and roots".to_string(),
+            );
+        }
+
+        crate::utils::security::resolve_secure_path(&workspace_dir, stripped).await
+    }
+
     /// Reads a file from the session's workspace for in-app inline preview.
     ///
     /// Enforces:
-    /// - Path security (must be within workspace directory)
+    /// - Path security (must be within workspace directory or authorized roots)
     /// - Strict 2 MB maximum preview size
     /// - Image encoding to base64
     /// - Detection of binary / null bytes / invalid UTF-8 with fallback
@@ -378,14 +505,10 @@ impl WorkspaceService {
         file_path: String,
         session_id: Option<String>,
     ) -> Result<WorkspaceFileContentResponse, String> {
-        let session_manager =
-            get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
         let session_id = session_id.unwrap_or_else(|| "default".to_string());
-        let workspace_dir =
-            crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
 
         // Resolve and validate path securely against traversal
-        let full_path = crate::utils::security::resolve_secure_path(&workspace_dir, &file_path)
+        let full_path = Self::resolve_path_for_session(&session_id, &file_path)
             .await
             .map_err(|e| format!("Access denied or file not found: {e}"))?;
 

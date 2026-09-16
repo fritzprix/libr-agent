@@ -19,6 +19,16 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipContent: ({ children }: Record<string, unknown>) => <div>{children as React.ReactNode}</div>,
 }));
 
+const mockOpenFilePreview = vi.fn();
+
+vi.mock('@/context/AgentFilePreviewContext', () => ({
+  useOptionalAgentFilePreview: () => ({
+    previewFile: null,
+    openFilePreview: mockOpenFilePreview,
+    closeFilePreview: vi.fn(),
+  }),
+}));
+
 vi.mock('../workspace-panel/useDraftWorkspacePreviewTree', () => ({
   useDraftWorkspacePreviewTree: (...args: unknown[]) =>
     mockUseDraftWorkspacePreviewTree(...args),
@@ -108,5 +118,28 @@ describe('AgentDraftWorkspacePreviewPanel', () => {
 
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens file preview when clicking a file node', () => {
+    const workspacePath = 'C:\\workspace';
+
+    render(
+      <AgentDraftWorkspacePreviewPanel
+        workspacePath={workspacePath}
+        workspaceIsolation="host"
+        setWorkspaceIsolation={vi.fn()}
+        dockerImage="python:3.11-slim"
+        setDockerImage={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('main.ts'));
+
+    expect(mockOpenFilePreview).toHaveBeenCalledWith({
+      path: 'src/main.ts',
+      name: 'main.ts',
+      size: undefined,
+    });
   });
 });

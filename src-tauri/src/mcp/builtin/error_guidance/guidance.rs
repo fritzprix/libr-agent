@@ -68,6 +68,11 @@ impl ErrorGuidance {
 
     /// Convert to MCPResult
     pub fn to_mcp_result(&self) -> MCPResult {
+        self.to_mcp_result_with_data(None)
+    }
+
+    /// Convert to MCPResult, optionally attaching structured content.
+    pub fn to_mcp_result_with_data(&self, data: Option<serde_json::Value>) -> MCPResult {
         let guidance_text = format_numbered_guidance(&self.guidance);
 
         let formatted_message = if self.category.uses_error_semantics() {
@@ -86,11 +91,15 @@ impl ErrorGuidance {
             )
         };
 
-        if self.category.uses_error_semantics() {
+        let mut result = if self.category.uses_error_semantics() {
             MCPResult::error(&formatted_message)
         } else {
             MCPResult::informational(&formatted_message)
+        };
+        if let Some(data) = data {
+            result.structured_content = Some(data);
         }
+        result
     }
 
     /// Get default guidance for an error category within a tool group

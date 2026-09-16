@@ -64,46 +64,6 @@ pub async fn ensure_session_workspace_dir(
     Ok(workspace_dir)
 }
 
-async fn resolve_teamwork_root_session_id(
-    session_repo: &dyn SessionRepository,
-    session_id: &str,
-) -> Result<String, String> {
-    let mut current = match session_repo
-        .get_session(session_id)
-        .await
-        .map_err(|e| format!("Failed to load session metadata: {e}"))?
-    {
-        Some(session) => session,
-        None => return Ok(session_id.to_string()),
-    };
-
-    if let Some(org_root_session_id) = current.org_root_session_id.clone() {
-        return Ok(org_root_session_id);
-    }
-
-    // Traverse parent chain limit
-    for _ in 0..64 {
-        let Some(parent_session_id) = current.parent_session_id.clone() else {
-            return Ok(current.id);
-        };
-
-        current = match session_repo
-            .get_session(&parent_session_id)
-            .await
-            .map_err(|e| format!("Failed to load parent session metadata: {e}"))?
-        {
-            Some(session) => session,
-            None => return Ok(parent_session_id),
-        };
-
-        if let Some(org_root_session_id) = current.org_root_session_id.clone() {
-            return Ok(org_root_session_id);
-        }
-    }
-
-    Ok(current.id)
-}
-
 async fn ensure_teamwork_link(
     session_repo: &dyn SessionRepository,
     session_manager: &SessionManager,
@@ -111,7 +71,7 @@ async fn ensure_teamwork_link(
     workspace_root: &Path,
 ) -> Result<(), String> {
     let teamwork_root_session_id =
-        resolve_teamwork_root_session_id(session_repo, session_id).await?;
+        super::resolve_teamwork_root_session_id(Some(session_repo), session_id).await?;
     let teamwork_dir = session_manager
         .get_directory_service()
         .get_teamwork_artifact_dir_unverified(&teamwork_root_session_id);
@@ -201,7 +161,14 @@ pub async fn resolve_session_workspace_dir(
     session_id: &str,
 ) -> Result<PathBuf, String> {
     if let Some(session_repo) = crate::state::try_get_session_repository() {
-        return ensure_session_workspace_dir(session_repo, session_manager, session_id).await;
+        match ensure_session_workspace_dir(session_repo, session_manager, session_id).await {
+            Ok(dir) => return Ok(dir),
+            Err(e) => {
+                log::warn!(
+                    "Failed to ensure session workspace dir for {session_id} via repository: {e}; falling back to default"
+                );
+            }
+        }
     }
 
     Ok(session_manager.get_session_workspace_dir_by_id(session_id))

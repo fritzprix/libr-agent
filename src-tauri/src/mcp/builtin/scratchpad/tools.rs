@@ -19,7 +19,7 @@ fn add_tool() -> MCPTool {
         name: "addNote".to_string(),
         title: Some("Add Scratchpad Note".to_string()),
         description: tool_description(
-            "Add a note to the Working Scratchpad for this session only. Notes stay visible in your own context for findings, file paths, IDs, or intermediate results you reference often. Session-isolated: parent, child, and sibling sessions cannot read these notes — never hand off results by scratchpad ID alone; put deliverables in your final text response.",
+            "Add a note to the Working Scratchpad for this session only. Notes stay visible in your own context for findings, file paths, IDs, or intermediate results you reference often. Session-isolated: parent, child, and sibling sessions cannot read these notes — never hand off results by scratchpad ID alone; put deliverables in your final text response. Not a shareable user deliverable — for shareable output use workspace__writeFile plus ui__reportResult `export_paths`.",
             &["Scratchpad holds at most 10 items."],
             &[
                 "If at the limit, update or clear existing notes first.",

@@ -88,6 +88,18 @@ fn scratchpad_add_note_description_warns_session_isolation() {
         "addNote should tell sub-agents not to hand off via scratchpad alone"
     );
     assert!(
+        add_tool
+            .description
+            .contains("Not a shareable user deliverable"),
+        "addNote should state scratchpad is not a user-facing deliverable"
+    );
+    assert!(
+        add_tool.description.contains("workspace__writeFile")
+            && add_tool.description.contains("ui__reportResult")
+            && add_tool.description.contains("export_paths"),
+        "addNote should point shareable output at writeFile + reportResult export_paths"
+    );
+    assert!(
         !add_tool
             .description
             .contains("always visible in your context"),
