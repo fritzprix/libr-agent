@@ -425,7 +425,7 @@ fn screen_capture_guidance() -> Vec<String> {
         "If capturing a region, ensure 'x', 'y', 'width', and 'height' are all specified and within the captured monitor image bounds (image-local to that monitor).".to_string(),
         "Check operating system screen recording permissions (e.g. macOS System Settings > Privacy & Security, or Wayland compositor permissions).".to_string(),
         "Omit region coordinates to capture the entire display.".to_string(),
-        "Click with desktop__computerControl using the same display_index and image-pixel x/y from this screenshot — the desktop tool converts to absolute coordinates.".to_string(),
+        "Click with desktop__computerControl using the same display_index and raw image-pixel x/y from this screenshot (do not divide by DPI/scale_factor) — the desktop tool converts to absolute coordinates.".to_string(),
     ]
 }
 
@@ -736,8 +736,10 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
                              Target: {target_desc}\n\n\
                              To click a point you see in this image, call desktop__computerControl with \
                              display_index={display_index} and the image-pixel x/y (0,0 = top-left of this image). \
+                             Do not divide coordinates by scale_factor/DPI — pass raw image pixels. \
                              Conversion to absolute screen coordinates is done by the desktop tool.\n\
-                             Cropped-capture origin (if needed): origin_x={origin_x}, origin_y={origin_y}."
+                             Cropped-capture origin (if needed): origin_x={origin_x}, origin_y={origin_y}. \
+                             If width_scale/height_scale are not 1, pass them through from structured content."
                         ),
                     },
                     MCPContent::Image {

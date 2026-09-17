@@ -27,8 +27,9 @@ fn computer_control_tool() -> MCPTool {
 - `cursor_position`: Query and return current mouse cursor coordinates (absolute).
 
 **Coordinates (important):**
-- Preferred workflow: call `media__captureScreen` with a `display_index`, then pass the **same** `display_index` plus **image-pixel** `x`/`y` from that screenshot (0,0 = top-left of the image). This tool converts image coordinates to absolute OS input coordinates.
-- For cropped screenshots, also pass `origin_x`/`origin_y` (and optional `width_scale`/`height_scale`) from the capture response.
+- Preferred workflow: call `media__captureScreen` with a `display_index`, then pass the **same** `display_index` plus **image-pixel** `x`/`y` from that screenshot (0,0 = top-left of the image). This tool converts image coordinates to absolute OS input coordinates (physical pixels; typically 1:1 with the screenshot).
+- For cropped screenshots, also pass `origin_x`/`origin_y` from the capture response. If capture structured content has `width_scale`/`height_scale` other than 1, pass those too (measured monitor_size/image_size).
+- Do not manually divide screenshot coordinates by DPI/`scale_factor` — that causes half-offset clicks.
 - If `display_index` / `origin_*` are omitted, `x`/`y` are treated as absolute virtual-desktop coordinates (may be negative on multi-monitor layouts).
 
 **Notes & Best Practices:**
@@ -94,7 +95,7 @@ fn computer_control_tool() -> MCPTool {
                         None,
                         None,
                         Some(
-                            "Optional image→absolute X scale from media__captureScreen structured content (defaults to 1/scale_factor for display_index mode).",
+                            "Optional image→absolute X scale from media__captureScreen structured content (defaults to 1.0 — screenshot pixels are already physical input pixels).",
                         ),
                     ),
                 ),
@@ -104,7 +105,7 @@ fn computer_control_tool() -> MCPTool {
                         None,
                         None,
                         Some(
-                            "Optional image→absolute Y scale from media__captureScreen structured content.",
+                            "Optional image→absolute Y scale from media__captureScreen structured content (defaults to 1.0).",
                         ),
                     ),
                 ),
