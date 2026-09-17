@@ -1218,6 +1218,26 @@ fn desktop_image_coord_mapping_converts_origin_and_scale() {
     .expect("mapping should be present");
     assert_eq!(scaled.to_absolute(10, 15), (105, 230));
 
+    // Regression: display_index mode must NOT default to 1/scale_factor.
+    // Screenshot pixels are already physical; identity scale keeps clicks aligned
+    // (previously 200% DPI mapped image (352,1772) → absolute (176,886)).
+    if let Ok(Some(display_mapping)) = resolve_image_coord_mapping(&json!({ "display_index": 0 })) {
+        assert!(
+            (display_mapping.width_scale - 1.0).abs() < f64::EPSILON
+                && (display_mapping.height_scale - 1.0).abs() < f64::EPSILON,
+            "display_index without explicit scales must default to identity (1.0), got width_scale={} height_scale={}",
+            display_mapping.width_scale,
+            display_mapping.height_scale
+        );
+        assert_eq!(
+            display_mapping.to_absolute(352, 1772),
+            (
+                display_mapping.origin_x + 352,
+                display_mapping.origin_y + 1772
+            )
+        );
+    }
+
     assert!(resolve_image_coord_mapping(&json!({ "origin_x": 100 }))
         .expect_err("partial origin")
         .contains("origin_y"));

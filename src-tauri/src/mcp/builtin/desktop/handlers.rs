@@ -207,18 +207,20 @@ pub fn resolve_image_coord_mapping(args: &Value) -> Result<Option<ImageCoordMapp
     let mon_y = monitor
         .y()
         .map_err(|e| format!("Failed to read monitor Y origin: {e}"))?;
-    let scale = f64::from(monitor.scale_factor().unwrap_or(1.0));
-    if !(scale.is_finite() && scale > 0.0) {
-        return Err(
-            "Monitor scale_factor is invalid; cannot convert image coordinates.".to_string(),
-        );
-    }
 
-    // Full-display captureScreen images are typically physical pixels while
-    // monitor width/height are logical. Match captureScreen's width_scale =
-    // monitor_w / image_w ≈ 1/scale_factor when image_w ≈ monitor_w * scale.
-    let derived_width_scale = width_scale.unwrap_or(1.0 / scale);
-    let derived_height_scale = height_scale.unwrap_or(1.0 / scale);
+    // Screenshot pixels and Enigo absolute moves both use physical pixels
+    // (Enigo temporarily enables per-monitor DPI awareness on Windows).
+    // On DPI-aware hosts such as Tauri, xcap Monitor::x/y/width/height are
+    // also physical, so image→absolute is identity (scale 1.0).
+    //
+    // Do NOT default to 1/scale_factor: that assumed logical monitor geometry
+    // and double-applied DPI, producing clicks at ~half the screenshot
+    // coordinates (e.g. image (352, 1772) → absolute (176, 886) at 200% DPI).
+    //
+    // When media__captureScreen reports width_scale/height_scale ≠ 1 (its
+    // measured monitor_w/image_w), pass those values through explicitly.
+    let derived_width_scale = width_scale.unwrap_or(1.0);
+    let derived_height_scale = height_scale.unwrap_or(1.0);
 
     Ok(Some(ImageCoordMapping {
         origin_x: mon_x,
