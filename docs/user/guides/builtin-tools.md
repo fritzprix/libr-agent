@@ -81,7 +81,7 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 - `cursor_position`: 현재 마우스 커서 위치 `(x, y)` 조회
 
 > [!TIP]
-> `media__captureScreen`으로 화면을 캡처할 때 사용한 것과 **같은** `display_index`를 `desktop__computerControl`에 넘기고, 스크린샷 이미지 기준 픽셀 좌표 `(x, y)`(이미지 좌상단 = 0,0)를 그대로 사용하세요. 모니터 origin 오프셋은 도구가 자동으로 absolute 좌표로 변환합니다.
+> `media__captureScreen`으로 화면을 캡처할 때 사용한 것과 **같은** `display_index`를 `desktop__computerControl`에 넘기고, 스크린샷 이미지 기준 픽셀 좌표 `(x, y)`(이미지 좌상단 = 0,0)와 캡처 structured content의 `width_scale`/`height_scale`을 그대로 사용하세요. DPI/`scale_factor`로 나누거나 모니터 origin을 수동으로 더하지 마세요 — 도구가 absolute 입력 좌표로 변환합니다.
 
 ### 4. Interactive UI (`ui__*`)
 

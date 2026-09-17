@@ -27,9 +27,9 @@ fn computer_control_tool() -> MCPTool {
 - `cursor_position`: Query and return current mouse cursor coordinates (absolute).
 
 **Coordinates (important):**
-- Preferred workflow: call `media__captureScreen` with a `display_index`, then pass the **same** `display_index` plus **image-pixel** `x`/`y` from that screenshot (0,0 = top-left of the image). This tool converts image coordinates to absolute OS input coordinates (physical pixels; typically 1:1 with the screenshot).
-- For cropped screenshots, also pass `origin_x`/`origin_y` from the capture response. If capture structured content has `width_scale`/`height_scale` other than 1, pass those too (measured monitor_size/image_size).
-- Do not manually divide screenshot coordinates by DPI/`scale_factor` — that causes half-offset clicks.
+- Preferred workflow: call `media__captureScreen` with a `display_index`, then pass the **same** `display_index`, **raw image-pixel** `x`/`y` (0,0 = top-left of the image), and copy `width_scale`/`height_scale` from that capture's structured content (measured monitor_size/image_size; usually 1.0). This tool converts image coordinates to absolute OS input coordinates (physical pixels).
+- For cropped screenshots, also pass `origin_x`/`origin_y` from the capture response.
+- Do not manually divide screenshot coordinates by DPI/`scale_factor` — that causes half-offset clicks. Omitted scales default to identity (1.0).
 - If `display_index` / `origin_*` are omitted, `x`/`y` are treated as absolute virtual-desktop coordinates (may be negative on multi-monitor layouts).
 
 **Notes & Best Practices:**
@@ -95,7 +95,7 @@ fn computer_control_tool() -> MCPTool {
                         None,
                         None,
                         Some(
-                            "Optional image→absolute X scale from media__captureScreen structured content (defaults to 1.0 — screenshot pixels are already physical input pixels).",
+                            "Image→absolute X scale from media__captureScreen structured content. Prefer copying always; defaults to 1.0 (screenshot pixels are already physical input pixels).",
                         ),
                     ),
                 ),
@@ -105,7 +105,7 @@ fn computer_control_tool() -> MCPTool {
                         None,
                         None,
                         Some(
-                            "Optional image→absolute Y scale from media__captureScreen structured content (defaults to 1.0).",
+                            "Image→absolute Y scale from media__captureScreen structured content. Prefer copying always; defaults to 1.0.",
                         ),
                     ),
                 ),

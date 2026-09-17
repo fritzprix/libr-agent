@@ -94,6 +94,26 @@ pub struct ImageCoordMapping {
     pub height_scale: f64,
 }
 
+/// Default image→absolute scale when capture metadata omits `width_scale` /
+/// `height_scale`.
+///
+/// Must stay `1.0`: on DPI-aware hosts (e.g. Tauri) screenshot pixels and Enigo
+/// absolute moves are both physical. Never default to `1/scale_factor` — that
+/// double-applies DPI (e.g. image `(352, 1772)` → absolute `(176, 886)` at 200%).
+pub const DEFAULT_IMAGE_TO_ABSOLUTE_SCALE: f64 = 1.0;
+
+/// Resolve image→absolute scales from optional capture structured-content values.
+#[inline]
+pub fn resolve_image_to_absolute_scales(
+    width_scale: Option<f64>,
+    height_scale: Option<f64>,
+) -> (f64, f64) {
+    (
+        width_scale.unwrap_or(DEFAULT_IMAGE_TO_ABSOLUTE_SCALE),
+        height_scale.unwrap_or(DEFAULT_IMAGE_TO_ABSOLUTE_SCALE),
+    )
+}
+
 impl ImageCoordMapping {
     pub fn to_absolute(self, image_x: i32, image_y: i32) -> (i32, i32) {
         let abs_x = self.origin_x + (image_x as f64 * self.width_scale).round() as i32;
@@ -180,12 +200,15 @@ pub fn resolve_image_coord_mapping(args: &Value) -> Result<Option<ImageCoordMapp
         return Ok(None);
     }
 
+    let (resolved_width_scale, resolved_height_scale) =
+        resolve_image_to_absolute_scales(width_scale, height_scale);
+
     if let (Some(ox), Some(oy)) = (origin_x, origin_y) {
         return Ok(Some(ImageCoordMapping {
             origin_x: ox,
             origin_y: oy,
-            width_scale: width_scale.unwrap_or(1.0),
-            height_scale: height_scale.unwrap_or(1.0),
+            width_scale: resolved_width_scale,
+            height_scale: resolved_height_scale,
         }));
     }
 
@@ -208,25 +231,15 @@ pub fn resolve_image_coord_mapping(args: &Value) -> Result<Option<ImageCoordMapp
         .y()
         .map_err(|e| format!("Failed to read monitor Y origin: {e}"))?;
 
-    // Screenshot pixels and Enigo absolute moves both use physical pixels
-    // (Enigo temporarily enables per-monitor DPI awareness on Windows).
-    // On DPI-aware hosts such as Tauri, xcap Monitor::x/y/width/height are
-    // also physical, so image→absolute is identity (scale 1.0).
-    //
-    // Do NOT default to 1/scale_factor: that assumed logical monitor geometry
-    // and double-applied DPI, producing clicks at ~half the screenshot
-    // coordinates (e.g. image (352, 1772) → absolute (176, 886) at 200% DPI).
-    //
-    // When media__captureScreen reports width_scale/height_scale ≠ 1 (its
-    // measured monitor_w/image_w), pass those values through explicitly.
-    let derived_width_scale = width_scale.unwrap_or(1.0);
-    let derived_height_scale = height_scale.unwrap_or(1.0);
-
+    // Origin comes from the monitor; scales come from
+    // `resolve_image_to_absolute_scales` (identity by default — see
+    // `DEFAULT_IMAGE_TO_ABSOLUTE_SCALE`). Pass measured width_scale/height_scale
+    // from media__captureScreen structured content when present.
     Ok(Some(ImageCoordMapping {
         origin_x: mon_x,
         origin_y: mon_y,
-        width_scale: derived_width_scale,
-        height_scale: derived_height_scale,
+        width_scale: resolved_width_scale,
+        height_scale: resolved_height_scale,
     }))
 }
 
