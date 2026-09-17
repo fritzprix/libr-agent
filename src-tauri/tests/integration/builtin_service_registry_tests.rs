@@ -428,6 +428,8 @@ fn builtin_service_id_serializes_to_canonical_name() {
         (BuiltinServiceId::ScheduledTask, "scheduled_task"),
         (BuiltinServiceId::SetupWizard, "setup-wizard"),
         (BuiltinServiceId::Tool, "tool"),
+        (BuiltinServiceId::Media, "media"),
+        (BuiltinServiceId::Desktop, "desktop"),
     ];
     for (id, expected) in cases {
         let json = serde_json::to_string(&id).unwrap();
@@ -465,6 +467,7 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::scheduled_task::NAME,
         builtin::setup_wizard::NAME,
         builtin::media::NAME,
+        builtin::desktop::NAME,
         builtin::tool::NAME,
     ];
 
@@ -500,6 +503,7 @@ fn builtin_server_names_are_unique() {
         builtin::scheduled_task::NAME,
         builtin::setup_wizard::NAME,
         builtin::media::NAME,
+        builtin::desktop::NAME,
         builtin::tool::NAME,
     ];
 
@@ -548,6 +552,7 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::SetupWizard => builtin::setup_wizard::NAME,
             BuiltinServiceId::Tool => builtin::tool::NAME,
             BuiltinServiceId::Media => builtin::media::NAME,
+            BuiltinServiceId::Desktop => builtin::desktop::NAME,
         };
 
         if name.is_empty() {
@@ -880,4 +885,430 @@ async fn media_capture_screen_rejects_invalid_inputs() {
         .await
         .expect("must return Ok(MCPResult)");
     assert_eq!(res_zero_w.is_error, Some(true));
+}
+
+// ─── Desktop service tests ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn desktop_server_tools_schema_exposure() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+    let tools = server.tools();
+    assert_eq!(tools.len(), 1);
+
+    let tool = &tools[0];
+    assert_eq!(tool.name, "computerControl");
+    assert!(tool.description.contains("Supported actions:"));
+
+    let schema_json = serde_json::to_value(&tool.input_schema).unwrap();
+    let props = schema_json
+        .get("properties")
+        .and_then(|v| v.as_object())
+        .unwrap();
+
+    assert!(props.contains_key("action"));
+    assert!(props.contains_key("display_index"));
+    assert!(props.contains_key("origin_x"));
+    assert!(props.contains_key("origin_y"));
+    assert!(props.contains_key("x"));
+    assert!(props.contains_key("y"));
+    assert!(props.contains_key("button"));
+    assert!(props.contains_key("text"));
+    assert!(props.contains_key("key"));
+    assert!(props.contains_key("modifiers"));
+    assert!(props.contains_key("scroll_amount"));
+}
+
+#[tokio::test]
+async fn desktop_computer_control_is_configured_in_sensitive_tools() {
+    let default_config_str = include_str!("../../src/mcp/builtin/workspace/sensitive_tools.json");
+    let config: serde_json::Value = serde_json::from_str(default_config_str).expect("valid json");
+    let reqs = config
+        .get("requires_approval")
+        .and_then(|v| v.as_array())
+        .expect("requires_approval array");
+
+    assert!(
+        reqs.iter()
+            .any(|v| v.as_str() == Some("desktop__computerControl")),
+        "desktop__computerControl must be listed in requires_approval"
+    );
+
+    assert!(
+        tauri_mcp_agent_lib::agent::tool_approvals::is_approval_required(
+            "desktop__computerControl"
+        )
+        .await,
+        "runtime approval policy must require approval for desktop__computerControl"
+    );
+}
+
+#[tokio::test]
+async fn desktop_computer_control_rejects_missing_action() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+    let res = server
+        .call_tool("computerControl", json!({}), None)
+        .await
+        .expect("handler must return Ok(MCPResult)");
+
+    assert_eq!(res.is_error, Some(true));
+    let text = res
+        .content
+        .as_ref()
+        .and_then(|c| {
+            c.iter().find_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+        })
+        .unwrap_or("");
+    assert!(text.contains("Missing required parameter 'action'"));
+}
+
+#[tokio::test]
+async fn desktop_computer_control_rejects_invalid_action() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+    let res = server
+        .call_tool("computerControl", json!({ "action": "fly_to_moon" }), None)
+        .await
+        .expect("handler must return Ok(MCPResult)");
+
+    assert_eq!(res.is_error, Some(true));
+    let text = res
+        .content
+        .as_ref()
+        .and_then(|c| {
+            c.iter().find_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+        })
+        .unwrap_or("");
+    assert!(text.contains("Unknown action 'fly_to_moon'"));
+}
+
+#[tokio::test]
+async fn desktop_computer_control_rejects_invalid_coordinates() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+
+    // Incomplete coordinates for move (only x without y)
+    let res_missing_y = server
+        .call_tool(
+            "computerControl",
+            json!({ "action": "move", "x": 100 }),
+            None,
+        )
+        .await
+        .expect("handler must return Ok(MCPResult)");
+    assert_eq!(res_missing_y.is_error, Some(true));
+
+    // Incomplete coordinates for move (only y without x)
+    let res_missing_x = server
+        .call_tool(
+            "computerControl",
+            json!({ "action": "move", "y": 100 }),
+            None,
+        )
+        .await
+        .expect("handler must return Ok(MCPResult)");
+    assert_eq!(res_missing_x.is_error, Some(true));
+
+    // Extreme out-of-bounds coordinates
+    if let Ok(monitors) = xcap::Monitor::all() {
+        if !monitors.is_empty() {
+            let res_out_of_bounds = server
+                .call_tool(
+                    "computerControl",
+                    json!({ "action": "move", "x": 999999, "y": 999999 }),
+                    None,
+                )
+                .await
+                .expect("handler must return Ok(MCPResult)");
+            assert_eq!(res_out_of_bounds.is_error, Some(true));
+            let text = res_out_of_bounds
+                .content
+                .as_ref()
+                .and_then(|c| {
+                    c.iter().find_map(|item| match item {
+                        MCPContent::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                })
+                .unwrap_or("");
+            assert!(text.contains("outside all detected screen boundaries"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn desktop_computer_control_rejects_missing_action_parameters() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+
+    // Missing text for type
+    let res_type = server
+        .call_tool("computerControl", json!({ "action": "type" }), None)
+        .await
+        .expect("must return Ok(MCPResult)");
+    assert_eq!(res_type.is_error, Some(true));
+
+    // Exceeding text length limit for type (> 10,000 chars)
+    let long_text = "a".repeat(10_001);
+    let res_long_type = server
+        .call_tool(
+            "computerControl",
+            json!({ "action": "type", "text": long_text }),
+            None,
+        )
+        .await
+        .expect("must return Ok(MCPResult)");
+    assert_eq!(res_long_type.is_error, Some(true));
+
+    // Missing key for key
+    let res_key = server
+        .call_tool("computerControl", json!({ "action": "key" }), None)
+        .await
+        .expect("must return Ok(MCPResult)");
+    assert_eq!(res_key.is_error, Some(true));
+
+    // Missing scroll_amount for scroll
+    let res_scroll = server
+        .call_tool("computerControl", json!({ "action": "scroll" }), None)
+        .await
+        .expect("must return Ok(MCPResult)");
+    assert_eq!(res_scroll.is_error, Some(true));
+}
+
+#[tokio::test]
+async fn desktop_computer_control_handles_cursor_position_or_sim() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+    let res = server
+        .call_tool(
+            "computerControl",
+            json!({ "action": "cursor_position" }),
+            None,
+        )
+        .await
+        .expect("handler must return Ok(MCPResult)");
+
+    // In graphical environments, this succeeds with cursor position and structured content;
+    // in headless CI/containers without DISPLAY, it gracefully returns an error MCPResult with guidance.
+    let content = res.content.expect("must have content");
+    assert!(!content.is_empty());
+
+    if res.is_error == Some(false) {
+        let structured = res
+            .structured_content
+            .expect("must have structured_content on success");
+        assert!(structured.get("x").is_some());
+        assert!(structured.get("y").is_some());
+    }
+}
+
+#[tokio::test]
+async fn desktop_computer_control_accepts_valid_or_unconstrained_coordinates() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+    // In headless environments without monitors, negative coordinates are not blocked by an arbitrary x < 0 check.
+    // When called, the handler must NOT reject with "Coordinates must be non-negative".
+    let res = server
+        .call_tool(
+            "computerControl",
+            json!({ "action": "move", "x": -50, "y": 0 }),
+            None,
+        )
+        .await
+        .expect("must return Ok(MCPResult)");
+
+    let text = res
+        .content
+        .as_ref()
+        .and_then(|c| {
+            c.iter().find_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+        })
+        .unwrap_or("");
+    assert!(
+        !text.contains("Coordinates must be non-negative"),
+        "must not reject negative coordinates globally: {text}"
+    );
+}
+
+#[tokio::test]
+async fn desktop_computer_control_rejects_partial_origin() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+    let res = server
+        .call_tool(
+            "computerControl",
+            json!({ "action": "move", "x": 10, "y": 10, "origin_x": 100 }),
+            None,
+        )
+        .await
+        .expect("must return Ok(MCPResult)");
+    assert_eq!(res.is_error, Some(true));
+    let text = res
+        .content
+        .as_ref()
+        .and_then(|c| {
+            c.iter().find_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+        })
+        .unwrap_or("");
+    assert!(
+        text.contains("origin_x") && text.contains("origin_y"),
+        "partial origin must require both fields: {text}"
+    );
+}
+
+#[test]
+fn desktop_image_coord_mapping_converts_origin_and_scale() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::handlers::{
+        resolve_image_coord_mapping, ImageCoordMapping,
+    };
+
+    let mapping = resolve_image_coord_mapping(&json!({
+        "origin_x": 500,
+        "origin_y": 600
+    }))
+    .expect("valid origin mapping")
+    .expect("mapping should be present");
+    assert_eq!(
+        mapping,
+        ImageCoordMapping {
+            origin_x: 500,
+            origin_y: 600,
+            width_scale: 1.0,
+            height_scale: 1.0,
+        }
+    );
+    assert_eq!(mapping.to_absolute(10, 20), (510, 620));
+
+    let scaled = resolve_image_coord_mapping(&json!({
+        "origin_x": 100,
+        "origin_y": 200,
+        "width_scale": 0.5,
+        "height_scale": 2.0
+    }))
+    .expect("valid scaled mapping")
+    .expect("mapping should be present");
+    assert_eq!(scaled.to_absolute(10, 15), (105, 230));
+
+    // Regression: display_index mode must NOT default to 1/scale_factor.
+    // Screenshot pixels are already physical; identity scale keeps clicks aligned
+    // (previously 200% DPI mapped image (352,1772) → absolute (176,886)).
+    if let Ok(Some(display_mapping)) = resolve_image_coord_mapping(&json!({ "display_index": 0 })) {
+        assert!(
+            (display_mapping.width_scale - 1.0).abs() < f64::EPSILON
+                && (display_mapping.height_scale - 1.0).abs() < f64::EPSILON,
+            "display_index without explicit scales must default to identity (1.0), got width_scale={} height_scale={}",
+            display_mapping.width_scale,
+            display_mapping.height_scale
+        );
+        assert_eq!(
+            display_mapping.to_absolute(352, 1772),
+            (
+                display_mapping.origin_x + 352,
+                display_mapping.origin_y + 1772
+            )
+        );
+    }
+
+    assert!(resolve_image_coord_mapping(&json!({ "origin_x": 100 }))
+        .expect_err("partial origin")
+        .contains("origin_y"));
+    assert!(
+        resolve_image_coord_mapping(&json!({ "origin_x": "left", "origin_y": 0 }))
+            .expect_err("non-integer origin")
+            .contains("origin_x")
+    );
+    assert!(resolve_image_coord_mapping(&json!({
+        "origin_x": 0,
+        "origin_y": 0,
+        "width_scale": 0.0,
+        "height_scale": 1.0
+    }))
+    .expect_err("non-positive scale")
+    .contains("width_scale"));
+}
+
+#[tokio::test]
+async fn desktop_computer_control_converts_image_coords_using_origin() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let server = DesktopServer::new();
+    // Image-local (10, 20) with origin (500, 600) → absolute (510, 620).
+    let res = server
+        .call_tool(
+            "computerControl",
+            json!({
+                "action": "move",
+                "x": 10,
+                "y": 20,
+                "origin_x": 500,
+                "origin_y": 600
+            }),
+            None,
+        )
+        .await
+        .expect("must return Ok(MCPResult)");
+
+    let text = res
+        .content
+        .as_ref()
+        .and_then(|c| {
+            c.iter().find_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+        })
+        .unwrap_or("");
+
+    if res.is_error == Some(false) {
+        assert!(
+            text.contains("510") && text.contains("620"),
+            "handler must convert image-local coords to absolute (510, 620), got: {text}"
+        );
+        let structured = res
+            .structured_content
+            .expect("success must include converted coordinates");
+        assert_eq!(structured.get("x"), Some(&json!(510)));
+        assert_eq!(structured.get("y"), Some(&json!(620)));
+        assert_eq!(structured.get("image_x"), Some(&json!(10)));
+        assert_eq!(structured.get("image_y"), Some(&json!(20)));
+        return;
+    }
+
+    // Headless CI has no display server / input backend. Conversion is covered by
+    // desktop_image_coord_mapping_converts_origin_and_scale; this path only
+    // asserts the request was accepted as a mapping, not rejected as invalid input.
+    assert!(
+        !text.contains("origin_x") && !text.contains("must be provided"),
+        "headless move failure must not be a coordinate-mapping error: {text}"
+    );
 }

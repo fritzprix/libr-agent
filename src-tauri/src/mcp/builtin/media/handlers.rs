@@ -422,13 +422,32 @@ pub async fn handle_listen_content(
 fn screen_capture_guidance() -> Vec<String> {
     vec![
         "Verify that 'display_index' corresponds to an active monitor (use 0 for primary display).".to_string(),
-        "If capturing a region, ensure 'x', 'y', 'width', and 'height' are all specified and within monitor bounds.".to_string(),
+        "If capturing a region, ensure 'x', 'y', 'width', and 'height' are all specified and within the captured monitor image bounds (image-local to that monitor).".to_string(),
         "Check operating system screen recording permissions (e.g. macOS System Settings > Privacy & Security, or Wayland compositor permissions).".to_string(),
         "Omit region coordinates to capture the entire display.".to_string(),
+        "Click with desktop__computerControl using the same display_index and raw image-pixel x/y from this screenshot (do not divide by DPI/scale_factor) — the desktop tool converts to absolute coordinates.".to_string(),
     ]
 }
 
-type ScreenCapturePayload = (Vec<u8>, u32, u32, String);
+/// Successful capture payload returned from the blocking worker.
+struct ScreenCapturePayload {
+    png_data: Vec<u8>,
+    width: u32,
+    height: u32,
+    target_desc: String,
+    /// Absolute virtual-desktop X of image pixel (0, 0).
+    origin_x: i32,
+    /// Absolute virtual-desktop Y of image pixel (0, 0).
+    origin_y: i32,
+    /// Multiply image-local X by this to convert to absolute delta (`monitor_w / image_w`).
+    width_scale: f64,
+    /// Multiply image-local Y by this to convert to absolute delta (`monitor_h / image_h`).
+    height_scale: f64,
+    scale_factor: f32,
+    monitor_width: u32,
+    monitor_height: u32,
+}
+
 type ScreenCaptureError = (ErrorCategory, String);
 type ScreenCaptureTaskResult = Result<ScreenCapturePayload, ScreenCaptureError>;
 
@@ -561,6 +580,32 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
             )
         })?;
 
+        let monitor_x = monitor.x().map_err(|e| {
+            (
+                ErrorCategory::OperationFailed,
+                format!("Failed to read monitor X origin for display {display_index}: {e}"),
+            )
+        })?;
+        let monitor_y = monitor.y().map_err(|e| {
+            (
+                ErrorCategory::OperationFailed,
+                format!("Failed to read monitor Y origin for display {display_index}: {e}"),
+            )
+        })?;
+        let monitor_width = monitor.width().map_err(|e| {
+            (
+                ErrorCategory::OperationFailed,
+                format!("Failed to read monitor width for display {display_index}: {e}"),
+            )
+        })?;
+        let monitor_height = monitor.height().map_err(|e| {
+            (
+                ErrorCategory::OperationFailed,
+                format!("Failed to read monitor height for display {display_index}: {e}"),
+            )
+        })?;
+        let scale_factor = monitor.scale_factor().unwrap_or(1.0);
+
         let mut full_image = monitor.capture_image().map_err(|e| {
             (
                 ErrorCategory::OperationFailed,
@@ -568,11 +613,13 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
             )
         })?;
 
-        let (image, desc) = match region {
-            Some((x, y, w, h)) => {
-                let full_w = full_image.width();
-                let full_h = full_image.height();
+        let full_w = full_image.width().max(1);
+        let full_h = full_image.height().max(1);
+        let width_scale = monitor_width as f64 / full_w as f64;
+        let height_scale = monitor_height as f64 / full_h as f64;
 
+        let (image, desc, origin_x, origin_y) = match region {
+            Some((x, y, w, h)) => {
                 if x < 0
                     || y < 0
                     || (x as u32).saturating_add(w) > full_w
@@ -581,22 +628,32 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
                     return Err((
                         ErrorCategory::InvalidInput,
                         format!(
-                            "Screen area ({x}, {y}, {w}x{h}) exceeds monitor bounds ({full_w}x{full_h}) on display {display_index}."
+                            "Screen area ({x}, {y}, {w}x{h}) exceeds monitor image bounds ({full_w}x{full_h}) on display {display_index}. Region x/y are image-local (0,0 = top-left of this monitor capture), not virtual-desktop absolute."
                         ),
                     ));
                 }
 
-                let cropped = image::imageops::crop(&mut full_image, x as u32, y as u32, w, h).to_image();
+                let cropped =
+                    image::imageops::crop(&mut full_image, x as u32, y as u32, w, h).to_image();
+                let origin_x = monitor_x + ((x as f64) * width_scale).round() as i32;
+                let origin_y = monitor_y + ((y as f64) * height_scale).round() as i32;
                 (
                     cropped,
-                    format!("Screen area ({x}, {y}, {w}x{h}) on display {display_index}"),
+                    format!(
+                        "Screen area image-local ({x}, {y}, {w}x{h}) on display {display_index}; absolute origin ({origin_x}, {origin_y})"
+                    ),
+                    origin_x,
+                    origin_y,
                 )
             }
-            None => {
-                let w = full_image.width();
-                let h = full_image.height();
-                (full_image, format!("Display {display_index} ({w}x{h})"))
-            }
+            None => (
+                full_image,
+                format!(
+                    "Display {display_index} image ({full_w}x{full_h}); absolute origin ({monitor_x}, {monitor_y}); monitor logical size {monitor_width}x{monitor_height}"
+                ),
+                monitor_x,
+                monitor_y,
+            ),
         };
 
         let width = image.width();
@@ -624,7 +681,19 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
             ));
         }
 
-        Ok((data, width, height, desc))
+        Ok(ScreenCapturePayload {
+            png_data: data,
+            width,
+            height,
+            target_desc: desc,
+            origin_x,
+            origin_y,
+            width_scale,
+            height_scale,
+            scale_factor,
+            monitor_width,
+            monitor_height,
+        })
     });
 
     let capture_result = match capture_task.await {
@@ -641,15 +710,36 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
     };
 
     match capture_result {
-        Ok((png_data, width, height, target_desc)) => {
-            let size_kb = png_data.len() / 1024;
-            let base64_data = general_purpose::STANDARD.encode(&png_data);
+        Ok(payload) => {
+            let byte_len = payload.png_data.len();
+            let size_kb = byte_len / 1024;
+            let base64_data = general_purpose::STANDARD.encode(&payload.png_data);
+            let ScreenCapturePayload {
+                png_data: _,
+                width,
+                height,
+                target_desc,
+                origin_x,
+                origin_y,
+                width_scale,
+                height_scale,
+                scale_factor,
+                monitor_width,
+                monitor_height,
+            } = payload;
 
             Ok(MCPResult {
                 content: Some(vec![
                     MCPContent::Text {
                         text: format!(
-                            "✓ Screenshot captured ({width}x{height}, {size_kb} KB, image/png)\n\nTarget: {target_desc}"
+                            "✓ Screenshot captured ({width}x{height}, {size_kb} KB, image/png)\n\n\
+                             Target: {target_desc}\n\n\
+                             To click a point you see in this image, call desktop__computerControl with \
+                             display_index={display_index} and the image-pixel x/y (0,0 = top-left of this image). \
+                             Do not divide coordinates by scale_factor/DPI — pass raw image pixels. \
+                             Conversion to absolute screen coordinates is done by the desktop tool.\n\
+                             Cropped-capture origin (if needed): origin_x={origin_x}, origin_y={origin_y}. \
+                             If width_scale/height_scale are not 1, pass them through from structured content."
                         ),
                     },
                     MCPContent::Image {
@@ -662,8 +752,16 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
                     "display_index": display_index,
                     "width": width,
                     "height": height,
-                    "bytes": png_data.len(),
-                    "mime_type": "image/png"
+                    "bytes": byte_len,
+                    "mime_type": "image/png",
+                    "origin_x": origin_x,
+                    "origin_y": origin_y,
+                    "width_scale": width_scale,
+                    "height_scale": height_scale,
+                    "scale_factor": scale_factor,
+                    "monitor_width": monitor_width,
+                    "monitor_height": monitor_height,
+                    "coordinate_space": "image_local"
                 })),
                 is_error: Some(false),
             })

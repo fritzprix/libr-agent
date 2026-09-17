@@ -60,4 +60,5 @@ pub enum ToolGroup {
     Tool, // Unified Tool Domain (MCP Manager)
     SetupWizard,
     Media,
+    Desktop,
 }

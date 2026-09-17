@@ -77,9 +77,11 @@ fn capture_screen_tool() -> MCPTool {
 
 **Notes & Caveats:**
 - To capture a specific sub-region, ALL four parameters (`x`, `y`, `width`, `height`) must be provided. Partial region arguments will be rejected as an error.
+- Region `x`/`y` are image-local to the selected monitor capture (0,0 = top-left of that monitor), not virtual-desktop absolute coordinates.
 - If region parameters are omitted, the full display at `display_index` will be captured.
 - Maximum payload size is 20 MB.
-- Operating system permissions: Requires screen-recording permission if restricted by the OS (e.g., macOS or Wayland)."#
+- Operating system permissions: Requires screen-recording permission if restricted by the OS (e.g., macOS or Wayland).
+- After capture, click with `desktop__computerControl` using the same `display_index` and raw image-pixel `x`/`y` from this screenshot (do not divide by DPI/`scale_factor`). Conversion to absolute input coordinates is performed by the desktop tool."#
             .to_string(),
         input_schema: object_prop(
             vec![

@@ -45,6 +45,7 @@ fn empty_allowed_builtin_list_enables_core_services_only() {
     assert!(!effective.contains(&"knowledge".to_string()));
     assert!(!effective.contains(&"history".to_string()));
     assert!(!effective.contains(&"media".to_string()));
+    assert!(!effective.contains(&"desktop".to_string()));
     assert!(!effective.contains(&"bootstrap".to_string()));
 }
 

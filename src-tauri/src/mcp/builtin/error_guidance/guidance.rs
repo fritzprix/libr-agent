@@ -316,6 +316,25 @@ impl ErrorGuidance {
                 "Use a workspace-relative path (e.g. 'images/photo.png')".to_string(),
             ],
 
+            // Desktop tool errors
+            (ErrorCategory::InvalidInput, ToolGroup::Desktop) => vec![
+                "Verify that 'action' is one of: click, double_click, right_click, middle_click, move, mouse_down, mouse_up, drag, type, key, scroll, cursor_position".to_string(),
+                "After media__captureScreen, pass the same display_index with image-pixel x/y — computerControl converts to absolute coordinates".to_string(),
+                "For cropped captures, also pass origin_x/origin_y from the capture response".to_string(),
+                "For 'type', ensure the 'text' parameter is provided (max 10,000 characters); for 'key', provide a valid key name (e.g. 'Return', 'Tab', 'Ctrl+c')".to_string(),
+                "Pair every 'mouse_down' with 'mouse_up' to avoid leaving the mouse button held down".to_string(),
+            ],
+            (ErrorCategory::PermissionDenied, ToolGroup::Desktop) => vec![
+                "LibrAgent requires OS accessibility or input simulation permissions".to_string(),
+                "On macOS, grant Accessibility permissions in System Settings > Privacy & Security > Accessibility".to_string(),
+                "On Linux, ensure an active X11 display session is running ($DISPLAY) or Xwayland is accessible".to_string(),
+            ],
+            (ErrorCategory::OperationFailed, ToolGroup::Desktop) => vec![
+                "Verify that the display server connection is available (X11/Xwayland on Linux)".to_string(),
+                "Use media__captureScreen then desktop__computerControl(display_index, image-pixel x/y) — do not manually offset monitor origins".to_string(),
+                "Use desktop__computerControl with action 'cursor_position' to inspect current absolute cursor coordinates".to_string(),
+            ],
+
             // Generic fallbacks
             (ErrorCategory::MissingRequiredParam, _) => vec![
                 "Check the tool documentation for required parameters".to_string(),

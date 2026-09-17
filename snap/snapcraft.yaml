@@ -33,3 +33,5 @@ parts:
       - libappindicator3-1
       - librsvg2-2
       - libssl3
+      - libpipewire-0.3-0
+      - libxkbcommon0
