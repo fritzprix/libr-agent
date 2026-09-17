@@ -521,10 +521,7 @@ async fn read_file_allows_path_variant_aliases_across_scopes() {
 
         for variant in variants {
             let result = server
-                .handle_read_file(
-                    json!({ "path": variant }),
-                    Some(session_id.to_string()),
-                )
+                .handle_read_file(json!({ "path": variant }), Some(session_id.to_string()))
                 .await
                 .expect("readFile should return MCP result for alias variant");
             assert_success(&result, &format!("{} (variant: {})", scope.label, variant));
@@ -537,12 +534,8 @@ async fn read_file_allows_path_variant_aliases_across_scopes() {
         }
 
         let umbrella_alias = match scope.token.as_str() {
-            "SYSTEM_SCOPE_TOKEN" => {
-                canonical_alias.replacen("@system-skills", "@skills/system", 1)
-            }
-            "USER_SCOPE_TOKEN" => {
-                canonical_alias.replacen("@user-skills", "@skills/user", 1)
-            }
+            "SYSTEM_SCOPE_TOKEN" => canonical_alias.replacen("@system-skills", "@skills/system", 1),
+            "USER_SCOPE_TOKEN" => canonical_alias.replacen("@user-skills", "@skills/user", 1),
             "ASSISTANT_SCOPE_TOKEN" => {
                 canonical_alias.replacen("@assistant-skills", "@skills/assistant", 1)
             }
@@ -571,4 +564,3 @@ async fn read_file_allows_path_variant_aliases_across_scopes() {
         }
     }
 }
-

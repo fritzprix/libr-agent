@@ -13,9 +13,10 @@ pub const NAME: &str = "media";
 
 /// Media MCP Server
 ///
-/// Provides `seeContent` and `listenContent` tools that fetch image and audio
-/// content from web URLs or local workspace files and inject them directly into
-/// the LLM conversation as multimodal content items.
+/// Provides `seeContent`, `listenContent`, and `captureScreen` tools that fetch
+/// image and audio content from web URLs or local workspace files, or capture
+/// live desktop screens, and inject them directly into the LLM conversation as
+/// multimodal content items.
 ///
 /// Session-isolated: each session gets its own instance bound to the session
 /// workspace directory, which is used to validate local file paths.
@@ -43,7 +44,8 @@ impl MediaServer {
     pub fn metadata_static() -> BuiltinServerMetadata {
         BuiltinServerMetadata {
             display_name: "Media".to_string(),
-            description: "Fetch images and audio into the agent context".to_string(),
+            description: "Fetch images/audio and capture desktop screen into the agent context"
+                .to_string(),
             icon: None,
         }
     }
@@ -62,7 +64,7 @@ impl BuiltinMCPServer for MediaServer {
     }
 
     fn description(&self) -> &str {
-        "Fetch images and audio from URLs or workspace files and inject them into the agent context"
+        "Fetch images/audio from URLs or workspace files, or capture live desktop screen into the agent context"
     }
 
     fn tools(&self) -> Vec<MCPTool> {
@@ -89,6 +91,7 @@ impl BuiltinMCPServer for MediaServer {
         match tool_name {
             "seeContent" => handlers::handle_see_content(args, workspace_dir).await,
             "listenContent" => handlers::handle_listen_content(args, workspace_dir).await,
+            "captureScreen" => handlers::handle_capture_screen(args).await,
             _ => Err(format!("Unknown tool: {tool_name}")),
         }
     }

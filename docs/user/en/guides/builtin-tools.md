@@ -32,7 +32,8 @@ Essential tools automatically available for basic agent operations and UI intera
 
 Domain-specific tools that can be enabled or disabled under **Assistants → Edit → Tools**:
 
-- **`media__*`**: Image/visual media and audio media parsing and analysis (`seeContent`, `listenContent`)
+- **`media__*`**: Image/visual, audio analysis, and live desktop screen capture (`seeContent`, `listenContent`, `captureScreen`)
+- **`desktop__*`**: Desktop OS mouse & keyboard control, GUI automation (`computerControl`)
 - **`browser__*`**: Headless web browsing, DOM clicks, form typing, screenshot capture
 - **`planning__*`**: Multi-step plan creation (`createGoal`), progress tracking, failure reflection (`reflect`)
 - **`knowledge__*`**: Semantic memory storage and persistent knowledge retrieval
@@ -55,19 +56,41 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 
 ### 2. Media (`media__*`) 🎨 _(Optional)_
 
-| Tool Name              | Description                            | Key Parameters |
-| :--------------------- | :------------------------------------- | :------------- |
-| `media__seeContent`    | Inspect and analyze image/visual media | `url`          |
-| `media__listenContent` | Parse and analyze audio media          | `url`          |
+| Tool Name              | Description                                                          | Key Parameters                                     |
+| :--------------------- | :------------------------------------------------------------------- | :------------------------------------------------- |
+| `media__seeContent`    | Inspect and analyze image/visual media                               | `url`                                              |
+| `media__listenContent` | Parse and analyze audio media                                        | `url`                                              |
+| `media__captureScreen` | Capture live desktop screen or specific region ⚠️ *(approval required)* | `display_index`, `x`, `y`, `width`, `height`       |
 
-### 3. Interactive UI (`ui__*`)
+### 3. Desktop (`desktop__*`) 🖱️ _(Optional)_
+
+Computer Use tool enabling direct OS-level simulation of mouse and keyboard inputs to interact with desktop GUI applications on Windows, macOS, and Linux (X11).
+
+| Tool Name                  | Description                                                                              | Key Parameters                                                                                                   |
+| :------------------------- | :--------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| `desktop__computerControl` | Mouse clicks, movement, drag, text typing, key shortcuts, scrolling ⚠️ *(approval required)* | `action`, `x`, `y`, `start_x`, `start_y`, `button`, `text`, `key`, `modifiers`, `scroll_amount`, `axis`          |
+
+**Supported Actions (`action`):**
+- `click` / `double_click` / `right_click` / `middle_click`: Click mouse button at target coordinates `(x, y)` or current cursor position
+- `move`: Move cursor to absolute screen coordinates `(x, y)`
+- `mouse_down` / `mouse_up`: Press and hold / release mouse button
+- `drag`: Drag mouse with left button held down (optional `start_x`, `start_y`)
+- `type`: Type text string (`text`)
+- `key`: Press key or key combination (`key`: "Return", "Escape", "Ctrl+c", "Alt+F4", etc.)
+- `scroll`: Scroll wheel vertically or horizontally (`scroll_amount`: positive=down/right, negative=up/left, `axis`: "vertical" / "horizontal")
+- `cursor_position`: Query current mouse coordinates `(x, y)`
+
+> [!TIP]
+> First call `media__captureScreen` with a `display_index`, then call `desktop__computerControl` with the **same** `display_index` and the **image-pixel** `(x, y)` from that screenshot (0,0 = top-left of the image). LibrAgent converts those image coordinates to absolute OS input coordinates — do not manually add monitor offsets.
+
+### 4. Interactive UI (`ui__*`)
 
 | Tool Name                | Description                                                                 |
 | :----------------------- | :-------------------------------------------------------------------------- |
 | `ui__presentInteractive` | Render interactive UI components (selection buttons, forms, cards)          |
 | `ui__reportResult`       | Deliver final task results and attached deliverable files (terminal signal) |
 
-### 4. Browser (`browser__*`) _(Optional)_
+### 5. Browser (`browser__*`) _(Optional)_
 
 | Tool Name                   | Description                 |
 | :-------------------------- | :-------------------------- |
@@ -89,7 +112,7 @@ Domain-specific tools that can be enabled or disabled under **Assistants → Edi
 current viewport by default; set `fullPage` to `true` to capture the entire page
 within the 64-million-pixel and 8 MiB PNG limits.
 
-### 5. Planning & Reflection (`planning__*`) _(Optional)_
+### 6. Planning & Reflection (`planning__*`) _(Optional)_
 
 | Tool Name                   | Description                                     |
 | :-------------------------- | :---------------------------------------------- |
@@ -102,7 +125,7 @@ within the 64-million-pixel and 8 MiB PNG limits.
 | `planning__getCurrentState` | Fetch current planning and goal state           |
 | `planning__reflect`         | Generate structured reflection on tool failures |
 
-### 6. Attachments & Scheduled Tasks (`attachments__*` / `scheduled_task__*`)
+### 7. Attachments & Scheduled Tasks (`attachments__*` / `scheduled_task__*`)
 
 | Tool Name                             | Description                                      |
 | :------------------------------------ | :----------------------------------------------- |
