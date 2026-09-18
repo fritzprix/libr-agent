@@ -52,7 +52,9 @@ pub async fn resolve_task_session_resolution(
     session_repo: &dyn SessionRepository,
 ) -> Result<TaskSessionResolution, String> {
     let Some(session_id) = task_session_id else {
-        return Ok(TaskSessionResolution::Create(Uuid::new_v4().to_string()));
+        return Ok(TaskSessionResolution::Create(
+            crate::utils::session_id::generate_session_id(),
+        ));
     };
 
     if active_session_ids.contains(session_id) {

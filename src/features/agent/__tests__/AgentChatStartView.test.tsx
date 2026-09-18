@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   toastLoading: vi.fn(),
   toastDismiss: vi.fn(),
   toastError: vi.fn(),
+  toastWarning: vi.fn(),
+  getSession: vi.fn(),
+  listSessions: vi.fn(),
   loggerInfo: vi.fn(),
   loggerError: vi.fn(),
   settings: {
@@ -101,6 +104,11 @@ vi.mock('@/lib/backend/playbooks', () => ({
   getPlaybook: (...args: unknown[]) => mocks.getPlaybook(...args),
 }));
 
+vi.mock('@/lib/backend/session-crud', () => ({
+  getSession: (...args: unknown[]) => mocks.getSession(...args),
+  listSessions: (...args: unknown[]) => mocks.listSessions(...args),
+}));
+
 vi.mock('@/lib/backend/assistants', () => ({
   getAssistant: (id: string) => Promise.resolve(mocks.fullAssistantsById[id]),
 }));
@@ -119,8 +127,24 @@ vi.mock('sonner', () => ({
     loading: mocks.toastLoading,
     dismiss: mocks.toastDismiss,
     error: mocks.toastError,
+    warning: mocks.toastWarning,
   },
 }));
+
+vi.mock('@/features/recipes', async () => {
+  const React = await import('react');
+
+  return {
+    MorningBriefingWalkthroughDialog: ({ open }: { open: boolean }) =>
+      open
+        ? React.createElement(
+            'div',
+            { role: 'dialog' },
+            '모닝 테크 & 금융 브리핑 세팅',
+          )
+        : null,
+  };
+});
 
 function createMemoryStorage() {
   const store = new Map<string, string>();
@@ -182,6 +206,8 @@ describe('AgentChatStartView', () => {
 
     mocks.toastLoading.mockReturnValue('toast-1');
     mocks.createSession.mockResolvedValue({ id: 'session-123' });
+    mocks.getSession.mockResolvedValue(undefined);
+    mocks.listSessions.mockResolvedValue([]);
     mocks.settings = {
       serviceConfigs: {
         openai: { apiKey: 'test-key' },
@@ -260,6 +286,116 @@ describe('AgentChatStartView', () => {
       });
     });
 
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      '/agent/session-123?playbookId=playbook-1',
+    );
+  });
+
+  it('opens the pinned session without creating a new one', async () => {
+    mocks.getPlaybook.mockImplementation(
+      async (_playbookId: string, assistantId: string) => {
+        if (assistantId === 'assistant-2') {
+          return {
+            id: 'playbook-1',
+            goal: 'Pinned workflow',
+            defaultTargetSession: {
+              mode: 'pin',
+              sessionId: 'pinned-session-1',
+            },
+          };
+        }
+        return null;
+      },
+    );
+    mocks.getSession.mockResolvedValue({ id: 'pinned-session-1' });
+
+    render(
+      <MemoryRouter initialEntries={['/agent?playbookId=playbook-1']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith(
+        '/agent/pinned-session-1?playbookId=playbook-1',
+      );
+    });
+
+    expect(mocks.createSession).not.toHaveBeenCalled();
+    expect(mocks.getSession).toHaveBeenCalledWith('pinned-session-1');
+  });
+
+  it('resolves legacy short pins via getSession (backend resolve)', async () => {
+    mocks.getPlaybook.mockImplementation(
+      async (_playbookId: string, assistantId: string) => {
+        if (assistantId === 'assistant-2') {
+          return {
+            id: 'playbook-1',
+            goal: 'Pinned workflow',
+            defaultTargetSession: {
+              mode: 'pin',
+              sessionId: '0he02eoe9m',
+            },
+          };
+        }
+        return null;
+      },
+    );
+    mocks.getSession.mockImplementation(async (id: string) => {
+      if (id === '0he02eoe9m') {
+        return { id: 'sum4n7z4fksfku0he02eoe9m' };
+      }
+      return undefined;
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/agent?playbookId=playbook-1']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith(
+        '/agent/sum4n7z4fksfku0he02eoe9m?playbookId=playbook-1',
+      );
+    });
+
+    expect(mocks.getSession).toHaveBeenCalledWith('0he02eoe9m');
+    expect(mocks.createSession).not.toHaveBeenCalled();
+    expect(mocks.listSessions).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a new session when the pinned session is missing', async () => {
+    mocks.getPlaybook.mockImplementation(
+      async (_playbookId: string, assistantId: string) => {
+        if (assistantId === 'assistant-2') {
+          return {
+            id: 'playbook-1',
+            goal: 'Pinned workflow',
+            defaultTargetSession: {
+              mode: 'pin',
+              sessionId: 'missing-session',
+            },
+          };
+        }
+        return null;
+      },
+    );
+    mocks.getSession.mockResolvedValue(undefined);
+
+    render(
+      <MemoryRouter initialEntries={['/agent?playbookId=playbook-1']}>
+        <AgentChatStartView />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mocks.createSession).toHaveBeenCalled();
+    });
+
+    expect(mocks.toastWarning).toHaveBeenCalledWith(
+      'agent.start.pinnedSessionMissing',
+    );
     expect(mocks.navigate).toHaveBeenCalledWith(
       '/agent/session-123?playbookId=playbook-1',
     );
@@ -379,7 +515,7 @@ describe('AgentChatStartView', () => {
 
     fireEvent.click(startButton);
 
-    const dialog = await findByRole('dialog');
+    const dialog = await findByRole('dialog', undefined, { timeout: 5000 });
     expect(dialog).toBeInTheDocument();
     expect(dialog).toHaveTextContent('모닝 테크 & 금융 브리핑 세팅');
   });

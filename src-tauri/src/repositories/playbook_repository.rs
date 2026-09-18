@@ -22,6 +22,7 @@ pub trait PlaybookRepository: Send + Sync {
         assistant_id: String,
         goal: String,
         workflow: String,
+        default_target_session: Option<String>,
     ) -> Result<playbook::Model, DbError>;
 
     /// Get a playbook by ID and assistant ID
@@ -38,13 +39,17 @@ pub trait PlaybookRepository: Send + Sync {
         pagination: PaginationParams,
     ) -> Result<Page<playbook::Model>, DbError>;
 
-    /// Update a playbook
+    /// Update a playbook.
+    ///
+    /// `default_target_session`: `None` = leave unchanged; `Some(None)` = clear;
+    /// `Some(Some(json))` = set column.
     async fn update_playbook(
         &self,
         id: &str,
         assistant_id: &str,
         goal: Option<String>,
         workflow: Option<String>,
+        default_target_session: Option<Option<String>>,
         is_bookmarked: Option<bool>,
     ) -> Result<playbook::Model, DbError>;
 
@@ -92,6 +97,7 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         assistant_id: String,
         goal: String,
         workflow: String,
+        default_target_session: Option<String>,
     ) -> Result<playbook::Model, DbError> {
         let now = chrono::Utc::now().timestamp_millis();
 
@@ -102,6 +108,7 @@ impl PlaybookRepository for SqlitePlaybookRepository {
             initial_command: Set(None),
             workflow: Set(workflow),
             success_criteria: Set(None),
+            default_target_session: Set(default_target_session),
             created_at: Set(now),
             updated_at: Set(now),
             is_bookmarked: Set(false),
@@ -167,6 +174,7 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         assistant_id: &str,
         goal: Option<String>,
         workflow: Option<String>,
+        default_target_session: Option<Option<String>>,
         is_bookmarked: Option<bool>,
     ) -> Result<playbook::Model, DbError> {
         // Get existing playbook
@@ -184,6 +192,9 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         }
         if let Some(w) = workflow {
             active_model.workflow = Set(w);
+        }
+        if let Some(pin) = default_target_session {
+            active_model.default_target_session = Set(pin);
         }
         if let Some(b) = is_bookmarked {
             active_model.is_bookmarked = Set(b);
@@ -295,7 +306,8 @@ mod tests {
                 "pb-1".to_string(),
                 "asst-1".to_string(),
                 "Test Goal".to_string(),
-                r#"{"steps": []}"#.to_string(),
+                r#"[]"#.to_string(),
+                None,
             )
             .await
             .expect("Failed to create playbook");
@@ -320,7 +332,8 @@ mod tests {
                 format!("pb-{}", i),
                 assistant_id.to_string(),
                 format!("Goal {}", i),
-                "{}".to_string(),
+                "[]".to_string(),
+                None,
             )
             .await
             .expect("Failed to create");

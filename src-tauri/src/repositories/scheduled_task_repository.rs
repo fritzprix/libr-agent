@@ -7,8 +7,8 @@ use crate::entity::scheduled_task::{self, Entity as ScheduledTaskEntity};
 use crate::execution_mode::ExecutionMode;
 use crate::scheduled::TASK_CATEGORY_SESSION;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, Set,
 };
 
 /// Parameters for creating a scheduled task
@@ -83,11 +83,12 @@ pub trait ScheduledTaskRepository: Send + Sync {
     /// Delete a scheduled task
     async fn delete_scheduled_task(&self, id: &str) -> Result<(), DbErr>;
 
-    /// List enabled SESSION callbacks pinned to a session.
+    /// List SESSION callbacks pinned to a session, including paused rows.
     ///
-    /// Disabled rows (e.g. agent `toggleScheduledTask(enabled=false)`) are omitted
-    /// because the session panel only surfaces active pending callbacks.
-    /// Completed one-shots and orphaned callbacks are deleted by the runner, not disabled.
+    /// Paused callbacks (`enabled = false` with a remaining `next_run_at`) are included so the
+    /// session panel can resume them. Soft-disabled tombstones (`enabled = false` and
+    /// `next_run_at` null) are omitted. The runner deletes completed one-shots and orphaned
+    /// callbacks instead of leaving those tombstones.
     async fn list_session_scheduled_tasks(
         &self,
         session_id: &str,
@@ -256,7 +257,12 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         ScheduledTaskEntity::find()
             .filter(scheduled_task::Column::TaskCategory.eq(TASK_CATEGORY_SESSION))
             .filter(scheduled_task::Column::SessionId.eq(session_id))
-            .filter(scheduled_task::Column::Enabled.eq(true))
+            .filter(
+                Condition::any()
+                    .add(scheduled_task::Column::Enabled.eq(true))
+                    .add(scheduled_task::Column::NextRunAt.is_not_null()),
+            )
+            .order_by_desc(scheduled_task::Column::Enabled)
             .order_by_asc(scheduled_task::Column::NextRunAt)
             .order_by_asc(scheduled_task::Column::CreatedAt)
             .order_by_asc(scheduled_task::Column::Id)

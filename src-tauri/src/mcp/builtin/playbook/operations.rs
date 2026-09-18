@@ -3,13 +3,19 @@ use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
-use crate::repositories::{PaginationParams, PlaybookRepository};
+use crate::repositories::{PaginationParams, PlaybookRepository, SessionRepository};
 use handlebars::Handlebars;
 use serde_json::{json, Value};
 use std::cmp::Ordering;
 
 use super::templates::PLAYBOOK_LIST_TEMPLATE;
-use super::types::Playbook;
+use super::types::{
+    serialize_default_target_session_column, serialize_workflow_steps, Playbook,
+    TargetSessionConfig, TargetSessionMode,
+};
+use crate::utils::session_id::{
+    resolve_session_id_among, should_try_legacy_session_resolve, SessionIdResolve,
+};
 
 fn sort_playbook_models(
     models: &mut [playbook::Model],
@@ -42,7 +48,102 @@ fn sort_playbook_models(
     });
 }
 
-pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
+/// Resolve pin sessionId to storage id (exact, then legacy short/prefix fallback).
+async fn canonicalize_pin_session_id(session_ref: &str) -> Result<String, MCPResult> {
+    let session_ref = session_ref.trim();
+    if session_ref.is_empty() {
+        return Err(invalid_input_error(
+            "defaultTargetSession.mode 'pin' requires a non-empty sessionId",
+            ToolGroup::Playbook,
+        ));
+    }
+
+    let repo = crate::get_session_repository();
+    match repo.get_session(session_ref).await {
+        Ok(Some(_)) => return Ok(session_ref.to_string()),
+        Ok(None) => {}
+        Err(e) => {
+            return Err(operation_failed_error(
+                "resolvePinnedSession",
+                &format!("Failed to look up session '{session_ref}': {e}"),
+                vec!["Retry once the session repository is available".to_string()],
+                ToolGroup::Playbook,
+            ))
+        }
+    }
+
+    if !should_try_legacy_session_resolve(session_ref) {
+        return Err(invalid_input_error(
+            &format!(
+                "Pinned session '{session_ref}' was not found. Use the exact session id from the current session context."
+            ),
+            ToolGroup::Playbook,
+        ));
+    }
+
+    let sessions = match repo.get_all_sessions().await {
+        Ok(sessions) => sessions,
+        Err(e) => {
+            return Err(operation_failed_error(
+                "resolvePinnedSession",
+                &format!("Failed to list sessions while resolving '{session_ref}': {e}"),
+                vec!["Retry once the session repository is available".to_string()],
+                ToolGroup::Playbook,
+            ))
+        }
+    };
+
+    let candidate_ids: Vec<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
+    match resolve_session_id_among(candidate_ids, session_ref) {
+        SessionIdResolve::Unique(resolved) => Ok(resolved.to_string()),
+        SessionIdResolve::Missing => Err(invalid_input_error(
+            &format!(
+                "Pinned session '{session_ref}' was not found. Use the exact session id from the current session context."
+            ),
+            ToolGroup::Playbook,
+        )),
+        SessionIdResolve::Ambiguous(count) => Err(invalid_input_error(
+            &format!(
+                "Pinned session reference '{session_ref}' is ambiguous among {count} sessions. \
+                 Retry with the exact storage session id."
+            ),
+            ToolGroup::Playbook,
+        )),
+    }
+}
+
+async fn canonicalize_default_target_session(
+    mut cfg: TargetSessionConfig,
+    caller_session_id: Option<&str>,
+) -> Result<TargetSessionConfig, MCPResult> {
+    if cfg.mode != TargetSessionMode::Pin {
+        return Ok(cfg);
+    }
+    if cfg.pinned_session_id().is_none() {
+        let Some(caller) = caller_session_id.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Err(invalid_input_error(
+                "defaultTargetSession.mode 'pin' requires sessionId (or call from a session so the caller id can be used)",
+                ToolGroup::Playbook,
+            ));
+        };
+        cfg.session_id = Some(caller.to_string());
+    }
+    let session_ref = cfg
+        .pinned_session_id()
+        .expect("pin sessionId set above")
+        .to_string();
+    let storage_id = canonicalize_pin_session_id(&session_ref).await?;
+    Ok(TargetSessionConfig {
+        mode: TargetSessionMode::Pin,
+        session_id: Some(storage_id),
+    })
+}
+
+pub async fn create_playbook(
+    assistant_id: &str,
+    args: Value,
+    caller_session_id: Option<&str>,
+) -> Result<MCPResult, String> {
     let goal = match args.get("goal").and_then(|v| v.as_str()) {
         Some(g) if !g.trim().is_empty() => g,
         Some(_) => {
@@ -75,14 +176,47 @@ pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
 
     let _success_criteria = args.get("successCriteria");
 
+    let default_target_session = match Playbook::parse_default_target_session_arg(&args) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            return Ok(invalid_input_error(&e, ToolGroup::Playbook));
+        }
+    };
+    let default_target_session = match default_target_session {
+        Some(cfg) => match canonicalize_default_target_session(cfg, caller_session_id).await {
+            Ok(cfg) => Some(cfg),
+            Err(err) => return Ok(err),
+        },
+        None => None,
+    };
+
     let repo = crate::get_playbook_repository();
     let id = uuid::Uuid::new_v4().to_string();
 
-    let workflow_json = match serde_json::to_string(workflow) {
+    let steps: Vec<super::types::PlaybookStep> = match serde_json::from_value(workflow.clone()) {
+        Ok(steps) => steps,
+        Err(e) => {
+            return Ok(invalid_input_error(
+                &format!("Invalid workflow format: {}", e),
+                ToolGroup::Playbook,
+            ))
+        }
+    };
+
+    let workflow_json = match serialize_workflow_steps(&steps) {
         Ok(json) => json,
         Err(e) => {
             return Ok(invalid_input_error(
                 &format!("Invalid workflow format: {}", e),
+                ToolGroup::Playbook,
+            ))
+        }
+    };
+    let pin_json = match serialize_default_target_session_column(default_target_session.as_ref()) {
+        Ok(json) => json,
+        Err(e) => {
+            return Ok(invalid_input_error(
+                &format!("Invalid defaultTargetSession format: {}", e),
                 ToolGroup::Playbook,
             ))
         }
@@ -94,6 +228,7 @@ pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
             assistant_id.to_string(),
             goal.to_string(),
             workflow_json,
+            pin_json,
         )
         .await
     {
@@ -135,13 +270,22 @@ pub fn format_playbook_summary(p: &Playbook) -> String {
     let created = chrono::DateTime::from_timestamp_millis(p.created_at)
         .map(|dt| dt.to_string())
         .unwrap_or_else(|| "unknown".to_string());
+    let pin = match &p.default_target_session {
+        Some(target) if target.mode == TargetSessionMode::Pin => {
+            let storage = target.pinned_session_id().unwrap_or("(missing)");
+            format!(" pin:{storage}")
+        }
+        Some(_) => " pin:self".to_string(),
+        None => String::new(),
+    };
     format!(
-        "id:{} goal:\"{}\" initial:\"{}\" steps:{} createdAt:{}",
+        "id:{} goal:\"{}\" initial:\"{}\" steps:{} createdAt:{}{}",
         p.id,
         p.goal,
         p.initial_command.as_deref().unwrap_or(""),
         p.workflow.len(),
-        created
+        created,
+        pin
     )
 }
 
@@ -439,6 +583,18 @@ pub fn format_playbook_detailed(p: &Playbook) -> String {
     }
     lines.push(format!("Steps: {}", p.workflow.len()));
 
+    if let Some(target) = &p.default_target_session {
+        match target.mode {
+            TargetSessionMode::Pin => {
+                let session_id = target.pinned_session_id().unwrap_or("(missing)");
+                lines.push(format!("Start Launch Target: pin → session {}", session_id));
+            }
+            TargetSessionMode::Self_ => {
+                lines.push("Start Launch Target: self (new session on Start)".to_string());
+            }
+        }
+    }
+
     if !p.workflow.is_empty() {
         lines.push("\n--- Workflow ---".to_string());
         for (i, step) in p.workflow.iter().enumerate() {
@@ -506,7 +662,11 @@ pub async fn delete_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
     }
 }
 
-pub async fn update_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
+pub async fn update_playbook(
+    assistant_id: &str,
+    args: Value,
+    caller_session_id: Option<&str>,
+) -> Result<MCPResult, String> {
     let repo = crate::get_playbook_repository();
 
     let id = match args.get("id").and_then(|v| v.as_str()) {
@@ -582,9 +742,35 @@ pub async fn update_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
             }
         };
     }
+    if playbook_obj
+        .as_object()
+        .is_some_and(|obj| obj.contains_key("defaultTargetSession"))
+    {
+        match playbook_obj.get("defaultTargetSession") {
+            Some(v) if v.is_null() => {
+                existing.default_target_session = None;
+            }
+            Some(v) => match serde_json::from_value::<TargetSessionConfig>(v.clone()) {
+                Ok(cfg) => {
+                    match canonicalize_default_target_session(cfg, caller_session_id).await {
+                        Ok(cfg) => {
+                            existing.default_target_session = Some(cfg);
+                        }
+                        Err(err) => return Ok(err),
+                    }
+                }
+                Err(e) => {
+                    return Ok(invalid_input_error(
+                        &format!("Invalid defaultTargetSession configuration: {}", e),
+                        ToolGroup::Playbook,
+                    ))
+                }
+            },
+            None => {}
+        }
+    }
 
-    // Serialize workflow for update
-    let workflow_json = match serde_json::to_string(&existing.workflow) {
+    let workflow_json = match serialize_workflow_steps(&existing.workflow) {
         Ok(json) => json,
         Err(e) => {
             return Ok(operation_failed_error(
@@ -595,6 +781,18 @@ pub async fn update_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
             ))
         }
     };
+    let pin_json =
+        match serialize_default_target_session_column(existing.default_target_session.as_ref()) {
+            Ok(json) => json,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "updatePlaybook",
+                    &format!("Failed to serialize defaultTargetSession: {}", e),
+                    vec!["Verify defaultTargetSession structure is valid".to_string()],
+                    ToolGroup::Playbook,
+                ))
+            }
+        };
 
     // Execute update via repository
     let updated_model = match repo
@@ -603,6 +801,7 @@ pub async fn update_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
             assistant_id,
             Some(existing.goal.clone()),
             Some(workflow_json),
+            Some(pin_json),
             None,
         )
         .await

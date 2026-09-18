@@ -17,7 +17,7 @@ import { toast } from 'sonner';
 import { useBackendResource } from './GlobalEventContext';
 import type { AgentSession, CreateSessionParams } from '@/models/agent';
 import { getAssistant, listAssistants } from '@/lib/backend/assistants';
-import { createId } from '@paralleldrive/cuid2';
+import { generateSessionId } from '@/lib/session-id';
 import { useSettings } from '@/context/SettingsContext';
 import { useLLMService } from '@/context/LLMServiceContext';
 import { markStartupMilestone } from '@/lib/performance/startup-metrics';
@@ -490,7 +490,7 @@ export function AgentSessionListProvider({
             defaultSessionMaxDepth: advanced.defaultSessionMaxDepth,
             defaultSessionMaxFanout: advanced.defaultSessionMaxFanout,
           },
-          sessionId: createId(),
+          sessionId: generateSessionId(),
         });
 
         // Call Rust backend to create session

@@ -12,8 +12,11 @@ A playbook is a high-level representation of a repeatable workflow.
 | :--- | :--- | :--- |
 | `goal` | `string` | The high-level objective of the playbook. |
 | `initialCommand` | `string` | The original prompt or command that inspired this playbook. |
+| `defaultTargetSession` | `object` | (Optional) Start launch target, stored in its own DB column (not inside `workflow`). `{ "mode": "pin", "sessionId": "<existing>" }` makes Playbook Card Start open that session and UI-inject `selectPlaybook` instead of creating a new session. `{ "mode": "self" }` (or omit) keeps the default new-session Start path. When creating a "세션 플레이북" / session playbook, set `{ "mode": "pin" }` (sessionId can be omitted to pin calling session). Prefer the exact session id; legacy short / `session-…` refs are still accepted and canonicalized on write. |
 | `successCriteria` | `object` | Defines what completion looks like. |
 | `workflow` | `array` | A list of discrete steps to achieve the goal. |
+
+> **Note:** `defaultTargetSession` is a Start UX pin only. When a user asks for a "세션 플레이북" (Session Playbook), always supply `{ mode: "pin" }`. It does not change `selectPlaybook` prompts or add multi-session routing / slots.
 
 ### successCriteria Object
 

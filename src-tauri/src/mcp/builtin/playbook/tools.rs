@@ -21,6 +21,40 @@ fn create_tool_def(
     }
 }
 
+/// Schema for optional Start launch pin (`defaultTargetSession`)
+fn default_target_session_schema() -> JSONSchema {
+    object_prop(
+        vec![
+            (
+                "mode".to_string(),
+                enum_prop(
+                    vec!["self", "pin"],
+                    "self",
+                    Some(
+                        "Start launch mode. 'pin' opens an existing sessionId; 'self' creates a new session (default). \
+                         Always use 'pin' when the user asks for a '세션 플레이북' / 'session playbook' or wants to pin to this session.",
+                    ),
+                ),
+            ),
+            (
+                "sessionId".to_string(),
+                string_prop(
+                    None,
+                    None,
+                    Some(
+                        "Session to open on Start when mode is 'pin'. Omit to pin the calling session. \
+                         Accepts the exact session id (or a unique legacy short ref).",
+                    ),
+                ),
+            ),
+        ],
+        vec!["mode".to_string()],
+        Some(
+            "Optional Start launch target. Set mode 'pin' (omit sessionId to pin current session) when creating a 'session playbook' (세션 플레이북) or when the user asks to automate/pin this session's workflow. Set mode 'self' to start in a new session (default).",
+        ),
+    )
+}
+
 /// Schema for a playbook step
 fn playbook_step_schema() -> JSONSchema {
     object_prop(
@@ -94,6 +128,7 @@ pub fn create_playbook_tool() -> MCPTool {
             &[
                 "Define a clear goal and optional initialCommand.",
                 "List workflow steps with toolName and purpose for each action.",
+                "Set defaultTargetSession to { mode: 'pin' } when creating a 'session playbook' (세션 플레이북) or when the user wants to pin this session's workflow (sessionId is optional; caller session is pinned automatically).",
             ],
             &[
                 "Select the playbook with playbook__selectPlaybook.",
@@ -125,6 +160,10 @@ pub fn create_playbook_tool() -> MCPTool {
                         );
                         schema
                     },
+                ),
+                (
+                    "defaultTargetSession".to_string(),
+                    default_target_session_schema(),
                 ),
             ],
             vec!["goal".to_string(), "workflow".to_string()],
@@ -305,11 +344,12 @@ pub fn update_playbook_tool() -> MCPTool {
         "updatePlaybook",
         "Update Playbook",
         &tool_description(
-            "Update an existing playbook's goal, workflow, or success criteria.",
+            "Update an existing playbook's goal, workflow, success criteria, or Start launch pin.",
             &["Playbook ID from playbook__getPlaybook or playbook__listPlaybooks."],
             &[
                 "Pass id and a playbook object with only fields to change.",
                 "Omit fields to leave them unchanged.",
+                "Set defaultTargetSession to { mode: 'pin', sessionId } to pin Start, or null to clear.",
             ],
             &[
                 "Verify changes with playbook__getPlaybook.",
@@ -357,9 +397,13 @@ pub fn update_playbook_tool() -> MCPTool {
                                     schema
                                 },
                             ),
+                            (
+                                "defaultTargetSession".to_string(),
+                                default_target_session_schema(),
+                            ),
                         ],
                         vec![],
-                        Some("Fields to update. Omit any field you want to leave unchanged."),
+                        Some("Fields to update. Omit any field you want to leave unchanged. Pass defaultTargetSession: null to clear the Start pin."),
                     ),
                 ),
             ],

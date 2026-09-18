@@ -6,8 +6,8 @@ use crate::repositories::{
 };
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
 use crate::scheduled::{
-    is_one_shot_task, is_session_task, normalize_cron, ScheduleTimezone, SCHEDULE_TIMEZONE_LOCAL,
-    TASK_CATEGORY_GLOBAL,
+    is_one_shot_task, is_session_task, normalize_cron, paused_one_shot_remaining_ms,
+    ScheduleTimezone, SCHEDULE_TIMEZONE_LOCAL, TASK_CATEGORY_GLOBAL,
 };
 use crate::state::get_settings_repository;
 use chrono::TimeZone;
@@ -220,21 +220,34 @@ impl ScheduledTaskService {
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("ScheduledTask {id} not found"))?;
+
+        if existing.enabled == enabled {
+            return Ok(existing);
+        }
+
         let next_run_at = if enabled {
-            let schedule_timezone = normalize_schedule_timezone(&existing.schedule_timezone)?;
-            let cron_expression = existing.cron_expression.as_deref().ok_or_else(|| {
-                "Cannot re-enable a one-shot session callback without a cron expression".to_string()
-            })?;
-            enforce_minimum_interval(cron_expression, schedule_timezone, governance)?;
-            Some(
-                compute_next_run_for_schedule_timezone(cron_expression, now_ms, schedule_timezone)?
+            if is_one_shot_task(&existing.cron_expression) {
+                Some(resume_one_shot_next_run_at(&existing, now_ms)?)
+            } else {
+                let schedule_timezone = normalize_schedule_timezone(&existing.schedule_timezone)?;
+                let cron_expression = existing.cron_expression.as_deref().ok_or_else(|| {
+                    "Cannot re-enable a task without a cron expression".to_string()
+                })?;
+                enforce_minimum_interval(cron_expression, schedule_timezone, governance)?;
+                Some(
+                    compute_next_run_for_schedule_timezone(
+                        cron_expression,
+                        now_ms,
+                        schedule_timezone,
+                    )?
                     .ok_or_else(|| {
                         format!(
                             "Invalid cron expression '{}': no future occurrences found",
                             cron_expression
                         )
                     })?,
-            )
+                )
+            }
         } else {
             existing.next_run_at
         };
@@ -266,6 +279,47 @@ impl ScheduledTaskService {
         repo.list_session_scheduled_tasks(session_id)
             .await
             .map_err(|e| e.to_string())
+    }
+
+    pub async fn toggle_session_scheduled_task(
+        repo: &dyn ScheduledTaskRepository,
+        session_id: &str,
+        task_id: &str,
+        enabled: bool,
+    ) -> Result<ScheduledTaskModel, String> {
+        let governance = load_governance_settings().await;
+        Self::toggle_session_scheduled_task_with_governance(
+            repo,
+            session_id,
+            task_id,
+            enabled,
+            &governance,
+        )
+        .await
+    }
+
+    pub async fn toggle_session_scheduled_task_with_governance(
+        repo: &dyn ScheduledTaskRepository,
+        session_id: &str,
+        task_id: &str,
+        enabled: bool,
+        governance: &ScheduledTaskGovernanceSettings,
+    ) -> Result<ScheduledTaskModel, String> {
+        let task = repo
+            .get_scheduled_task(task_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("ScheduledTask {task_id} not found"))?;
+
+        if !is_session_task(&task.task_category) {
+            return Err("Only session callbacks can be toggled from the session panel".to_string());
+        }
+
+        if task.session_id.as_deref() != Some(session_id) {
+            return Err("Session callback does not belong to this session".to_string());
+        }
+
+        Self::toggle_scheduled_task_with_governance(repo, task_id, enabled, governance).await
     }
 
     pub async fn cancel_session_scheduled_task(
@@ -307,6 +361,12 @@ impl ScheduledTaskService {
             .await
             .map_err(|e| e.to_string())
     }
+}
+
+fn resume_one_shot_next_run_at(existing: &ScheduledTaskModel, now_ms: i64) -> Result<i64, String> {
+    paused_one_shot_remaining_ms(existing)
+        .map(|remaining| now_ms + remaining)
+        .ok_or_else(|| "Cannot re-enable a completed one-shot session callback".to_string())
 }
 
 fn normalize_schedule_timezone(schedule_timezone: &str) -> Result<&'static str, String> {

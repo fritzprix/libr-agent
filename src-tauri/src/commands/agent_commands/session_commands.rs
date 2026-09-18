@@ -11,7 +11,9 @@ use crate::repositories::SessionMetadata;
 use crate::services::agent_service::remove_lineage;
 use crate::services::AgentService;
 use crate::state::get_session_repository;
-use crate::utils::session_id::{resolve_session_id_among, SessionIdResolve};
+use crate::utils::session_id::{
+    resolve_session_id_among, should_try_legacy_session_resolve, SessionIdResolve,
+};
 use std::collections::HashMap;
 use tauri::{command, AppHandle, State};
 
@@ -20,10 +22,23 @@ const MAX_SESSION_LIST_LIMIT: u64 = 200;
 
 /// Resolve a UI/route session reference to the stored session id.
 ///
-/// Accepts full storage ids, bare short tokens, or optional `session-{short}` forms
-/// (same contract as HTTP helpers / MCP tools).
+/// Exact storage id first; legacy short suffix / `session-{…}` as read-only fallback.
 async fn resolve_tauri_session_ref(session_ref: &str) -> Result<String, String> {
-    let sessions = get_session_repository()
+    let repo = get_session_repository();
+    if repo
+        .get_session(session_ref)
+        .await
+        .map_err(|e| format!("Failed to look up session: {}", e))?
+        .is_some()
+    {
+        return Ok(session_ref.to_string());
+    }
+
+    if !should_try_legacy_session_resolve(session_ref) {
+        return Err(format!("Session not found: {}", session_ref));
+    }
+
+    let sessions = repo
         .get_all_sessions()
         .await
         .map_err(|e| format!("Failed to list sessions: {}", e))?;
@@ -69,15 +84,17 @@ pub async fn agent_open_session(
 ) -> Result<AgentOpenSessionResponse, String> {
     let message_limit = initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT);
 
-    // Warm reopen: session already active with a ready proxy. Skip alias resolve,
-    // workspace hydrate, and resume/proxy bootstrap — they are no-ops for UX and
-    // dominate switch latency when hopping between recently opened sessions.
+    // Warm reopen when the route already carries the storage id.
     if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
         return Ok(warm);
     }
 
-    // Route / tool cards may pass a display alias; hydrate + resume need the storage key.
+    // Legacy short / session- prefixed routes → storage key.
     let session_id = resolve_tauri_session_ref(&session_id).await?;
+
+    if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
+        return Ok(warm);
+    }
 
     let session_manager = crate::session::get_session_manager()?;
     crate::session::hydrate_persisted_workspace_override_from_global(session_manager, &session_id)
@@ -239,13 +256,17 @@ pub async fn agent_update_session_config(
     })
 }
 
-/// Get session metadata
+/// Get session metadata (accepts exact id or unique legacy short / `session-{…}` ref).
 #[command]
 pub async fn agent_get_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<Option<SessionMetadata>, String> {
-    manager.get_session(&session_id).await
+    let resolved = match resolve_tauri_session_ref(&session_id).await {
+        Ok(id) => id,
+        Err(_) => return Ok(None),
+    };
+    manager.get_session(&resolved).await
 }
 
 /// Get all sessions

@@ -325,7 +325,7 @@ fn build_stable_prefix(
         );
 
         if let Some(ref parent_id) = agent_config.parent_session_id {
-            // Show the short display alias; messageToSession resolves it among accessible sessions.
+            // Show parent session id (same string agents use in tools).
             let display_parent = crate::utils::session_id::display_session_id(parent_id);
             let depth = agent_config.depth.unwrap_or(1);
             identity.push_str(&format!(

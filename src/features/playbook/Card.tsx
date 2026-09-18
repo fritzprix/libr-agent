@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Bookmark, Play, Trash2 } from 'lucide-react';
+import { Bookmark, Pin, Play, Trash2 } from 'lucide-react';
 import type { Playbook } from '@/types/playbook';
 import { cn } from '@/lib/utils';
 import {
@@ -19,6 +20,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { getDateFormatter } from '@/lib/date-utils';
+import { getPinnedLaunchSessionId } from '@/features/playbook/launchTarget';
+import { getAgentSessionMetadata } from '@/lib/backend/agent-commands';
 
 interface PlaybookCardProps {
   playbook: Playbook & { id: string; createdAt: Date };
@@ -27,6 +30,11 @@ interface PlaybookCardProps {
   onDelete: (id: string) => void;
   className?: string;
 }
+
+type PinnedSessionLabel =
+  | { status: 'loading' }
+  | { status: 'ready'; name: string }
+  | { status: 'missing' };
 
 export function PlaybookCard({
   playbook,
@@ -37,10 +45,93 @@ export function PlaybookCard({
 }: PlaybookCardProps) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const pinnedSessionId = getPinnedLaunchSessionId(playbook);
+  const [pinnedLabel, setPinnedLabel] = useState<PinnedSessionLabel | null>(
+    pinnedSessionId ? { status: 'loading' } : null,
+  );
+
+  useEffect(() => {
+    if (!pinnedSessionId) {
+      setPinnedLabel(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPinnedLabel({ status: 'loading' });
+
+    void getAgentSessionMetadata(pinnedSessionId)
+      .then((session) => {
+        if (cancelled) return;
+        const name = session?.name?.trim();
+        if (name) {
+          setPinnedLabel({ status: 'ready', name });
+          return;
+        }
+        // Session row exists but has no name — still better than raw id.
+        if (session) {
+          setPinnedLabel({ status: 'ready', name: '' });
+          return;
+        }
+        setPinnedLabel({ status: 'missing' });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPinnedLabel({ status: 'missing' });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pinnedSessionId]);
 
   const handleStart = () => {
     navigate(`/agent?playbookId=${playbook.id}`);
   };
+
+  const resolvedPinnedName =
+    pinnedLabel?.status === 'ready'
+      ? pinnedLabel.name || t('playbook.card.pinnedSessionUntitled')
+      : null;
+
+  const pinnedBadgeText =
+    resolvedPinnedName ??
+    (pinnedLabel?.status === 'missing'
+      ? t('playbook.card.pinnedSessionMissing')
+      : t('playbook.card.pinnedBadge'));
+
+  const pinnedTooltip = resolvedPinnedName
+    ? t('playbook.card.pinnedBadgeTooltip', {
+        sessionName: resolvedPinnedName,
+      })
+    : pinnedLabel?.status === 'missing'
+      ? t('playbook.card.pinnedSessionMissingTooltip')
+      : t('playbook.card.pinnedBadge');
+
+  const startTooltip = resolvedPinnedName
+    ? t('playbook.card.startPinnedTooltip', {
+        sessionName: resolvedPinnedName,
+      })
+    : pinnedLabel?.status === 'missing'
+      ? t('playbook.card.pinnedSessionMissingTooltip')
+      : t('playbook.card.startPinned');
+
+  const startButton = (
+    <Button
+      size="sm"
+      className="gap-2 w-full max-w-32"
+      onClick={handleStart}
+    >
+      {pinnedSessionId ? (
+        <Pin className="h-3.5 w-3.5" />
+      ) : (
+        <Play className="h-3.5 w-3.5" />
+      )}
+      {pinnedSessionId
+        ? t('playbook.card.startPinned')
+        : t('playbook.card.start')}
+    </Button>
+  );
 
   return (
     <Card
@@ -106,11 +197,29 @@ export function PlaybookCard({
 
       <CardContent className="flex-1 pb-3">
         <div className="text-sm text-muted-foreground line-clamp-3 mb-4">
-          {/* Display steps summary or description if available */}
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <Badge variant="secondary" className="text-xs font-mono">
               {t('playbook.card.steps', { count: playbook.workflow.length })}
             </Badge>
+            {pinnedSessionId ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'text-xs font-normal gap-1 max-w-[12rem] truncate',
+                      pinnedLabel?.status === 'missing'
+                        ? 'text-destructive/80 border-destructive/30'
+                        : 'text-muted-foreground',
+                    )}
+                  >
+                    <Pin className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{pinnedBadgeText}</span>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>{pinnedTooltip}</TooltipContent>
+              </Tooltip>
+            ) : null}
           </div>
           {playbook.initialCommand && (
             <p className="italic text-xs border-l-2 pl-2 border-border/50 text-muted-foreground/80 truncate">
@@ -136,14 +245,14 @@ export function PlaybookCard({
           <TooltipContent>{t('playbook.card.deleteTooltip')}</TooltipContent>
         </Tooltip>
 
-        <Button
-          size="sm"
-          className="gap-2 w-full max-w-32"
-          onClick={handleStart}
-        >
-          <Play className="h-3.5 w-3.5" />
-          {t('playbook.card.start')}
-        </Button>
+        {pinnedSessionId ? (
+          <Tooltip>
+            <TooltipTrigger asChild>{startButton}</TooltipTrigger>
+            <TooltipContent>{startTooltip}</TooltipContent>
+          </Tooltip>
+        ) : (
+          startButton
+        )}
       </CardFooter>
     </Card>
   );

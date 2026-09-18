@@ -1,10 +1,23 @@
 /**
+ * Launch targeting for Playbook Card Start.
+ * `pin` + sessionId = open that existing session and inject selectPlaybook.
+ * Omitted / `self` = today's unpinned path (create a new session).
+ */
+export type PlaybookTargetSessionMode = 'self' | 'pin';
+
+export type PlaybookDefaultTargetSession =
+  | { mode: 'self'; sessionId?: string }
+  | { mode: 'pin'; sessionId: string };
+
+/**
  * An individual step that makes up a playbook (workflow).
  * This step provides guidance and direction for problem solving.
+ *
+ * Optional fields mirror Rust `PlaybookStep` (`step_id` / `required_data` as Option).
  */
 export interface PlaybookStep {
-  /** Unique identifier for the step */
-  stepId: string;
+  /** Unique identifier for the step (optional; may be omitted in stored JSON) */
+  stepId?: string;
 
   /** Describes the goal of this step, such as "competitor technology stack analysis" */
   description: string;
@@ -22,9 +35,10 @@ export interface PlaybookStep {
   };
 
   /**
-   * Specifies what data is needed to achieve the above purpose
+   * Specifies what data is needed to achieve the above purpose.
+   * Normalized to `[]` when omitted during schema parse.
    */
-  requiredData: string[];
+  requiredData?: string[];
 
   /** Names the output of this step so it can be referenced by other steps */
   outputVariable: string;
@@ -63,4 +77,10 @@ export interface Playbook {
 
   /** Whether the playbook is bookmarked by the user */
   isBookmarked?: boolean;
+
+  /**
+   * Optional Start launch target. When mode is `pin` and sessionId exists,
+   * Start opens that session instead of creating a new one.
+   */
+  defaultTargetSession?: PlaybookDefaultTargetSession;
 }

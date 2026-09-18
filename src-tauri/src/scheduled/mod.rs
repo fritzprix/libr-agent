@@ -23,6 +23,28 @@ pub fn is_one_shot_task(cron_expression: &Option<String>) -> bool {
     cron_expression.is_none()
 }
 
+/// Frozen remaining duration for a paused one-shot callback.
+///
+/// Pause stores the original fire time in `next_run_at` and uses `updated_at` as the
+/// pause timestamp so remaining time does not elapse while the callback is disabled.
+pub fn paused_one_shot_remaining_ms(task: &crate::entity::scheduled_task::Model) -> Option<i64> {
+    if task.enabled || !is_one_shot_task(&task.cron_expression) {
+        return None;
+    }
+    task.next_run_at.map(|next| (next - task.updated_at).max(0))
+}
+
+/// Next-run timestamp shown in the session panel and used when resuming a one-shot.
+pub fn session_callback_display_next_run_at(
+    task: &crate::entity::scheduled_task::Model,
+    now_ms: i64,
+) -> Option<i64> {
+    match paused_one_shot_remaining_ms(task) {
+        Some(remaining) => Some(now_ms + remaining),
+        None => task.next_run_at,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduleTimezone {
     Utc,
