@@ -81,7 +81,7 @@ fn capture_screen_tool() -> MCPTool {
 - If region parameters are omitted, the full display at `display_index` will be captured.
 - Maximum payload size is 20 MB.
 - Operating system permissions: Requires screen-recording permission if restricted by the OS (e.g., macOS or Wayland).
-- After capture, click with `desktop__computerControl` using the same `display_index`, raw image-pixel `x`/`y` (do not divide by DPI/`scale_factor`), and copy `width_scale`/`height_scale` from this tool's structured content. Conversion to absolute input coordinates is performed by the desktop tool."#
+- After capture, click with `desktop__computerControl` using the same `display_index` and raw image-pixel `x`/`y` (do not divide by DPI/`scale_factor`). Pass `width_scale`/`height_scale` from the capture response when listed (omitted scales default to 1.0). Conversion to absolute input coordinates is performed by the desktop tool."#
             .to_string(),
         input_schema: object_prop(
             vec![

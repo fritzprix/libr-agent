@@ -1187,27 +1187,10 @@ async fn desktop_computer_control_rejects_partial_origin() {
 
 #[test]
 fn desktop_image_coord_mapping_converts_origin_and_scale() {
-    use tauri_mcp_agent_lib::mcp::builtin::desktop::handlers::{
-        resolve_image_coord_mapping, ImageCoordMapping,
-    };
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::handlers::resolve_image_coord_mapping;
 
-    let mapping = resolve_image_coord_mapping(&json!({
-        "origin_x": 500,
-        "origin_y": 600
-    }))
-    .expect("valid origin mapping")
-    .expect("mapping should be present");
-    assert_eq!(
-        mapping,
-        ImageCoordMapping {
-            origin_x: 500,
-            origin_y: 600,
-            width_scale: 1.0,
-            height_scale: 1.0,
-        }
-    );
-    assert_eq!(mapping.to_absolute(10, 20), (510, 620));
-
+    // Origin + explicit scales (identity-default coverage lives in
+    // `desktop_image_coord_default_scales_are_identity`).
     let scaled = resolve_image_coord_mapping(&json!({
         "origin_x": 100,
         "origin_y": 200,
@@ -1265,6 +1248,7 @@ fn desktop_image_coord_default_scales_are_identity() {
     .expect("mapping should be present");
     assert_eq!(mapping.width_scale, DEFAULT_IMAGE_TO_ABSOLUTE_SCALE);
     assert_eq!(mapping.height_scale, DEFAULT_IMAGE_TO_ABSOLUTE_SCALE);
+    assert_eq!(mapping.to_absolute(10, 20), (110, 220));
     // Previously 200% DPI + 1/scale_factor mapped (352, 1772) → (176, 886).
     assert_eq!(mapping.to_absolute(352, 1772), (452, 1972));
 }
