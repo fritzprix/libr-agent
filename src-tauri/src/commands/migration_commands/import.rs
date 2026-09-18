@@ -585,6 +585,7 @@ async fn import_playbooks_data(
             active.initial_command = Set(r.initial_command);
             active.workflow = Set(r.workflow);
             active.success_criteria = Set(r.success_criteria);
+            active.default_target_session = Set(r.default_target_session);
             active.is_bookmarked = Set(r.is_bookmarked);
             active.updated_at = Set(now);
             if let Err(e) = active.update(txn).await {
@@ -600,6 +601,7 @@ async fn import_playbooks_data(
                 initial_command: Set(r.initial_command),
                 workflow: Set(r.workflow),
                 success_criteria: Set(r.success_criteria),
+                default_target_session: Set(r.default_target_session),
                 created_at: Set(r.created_at),
                 updated_at: Set(now),
                 is_bookmarked: Set(r.is_bookmarked),

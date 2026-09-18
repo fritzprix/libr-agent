@@ -8,6 +8,7 @@ import {
   getPlaybook,
   upsertPlaybook,
   getPlaybooksPage,
+  serializeDefaultTargetSessionForBackend,
 } from './playbooks';
 import { safeInvoke } from './core';
 import type { Playbook, PlaybookStep } from '@/types/playbook';
@@ -27,24 +28,30 @@ vi.mock('@/lib/logger', () => ({
 
 // Mock the schemas — mirrors real behavior: returns undefined (not null) on failure
 // and only accepts strings (matching the real function signature).
-vi.mock('@/lib/schemas/playbook', () => ({
-  safeParsePlaybookWorkflow: vi.fn((input: string) => {
-    if (input === 'invalid') return undefined;
-    try {
-      return JSON.parse(input) as { steps: PlaybookStep[] };
-    } catch {
-      return undefined;
-    }
-  }),
-  safeParseSuccessCriteria: vi.fn((input: string) => {
-    if (input === 'invalid') return undefined;
-    try {
-      return JSON.parse(input) as { description: string };
-    } catch {
-      return undefined;
-    }
-  }),
-}));
+vi.mock('@/lib/schemas/playbook', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/schemas/playbook')>(
+    '@/lib/schemas/playbook',
+  );
+  return {
+    ...actual,
+    safeParsePlaybookWorkflow: vi.fn((input: string) => {
+      if (input === 'invalid') return undefined;
+      try {
+        return actual.normalizePlaybookWorkflow(JSON.parse(input));
+      } catch {
+        return undefined;
+      }
+    }),
+    safeParseSuccessCriteria: vi.fn((input: string) => {
+      if (input === 'invalid') return undefined;
+      try {
+        return JSON.parse(input) as { description: string };
+      } catch {
+        return undefined;
+      }
+    }),
+  };
+});
 
 describe('playbooks backend wrapper', () => {
   beforeEach(() => {
@@ -63,14 +70,14 @@ describe('playbooks backend wrapper', () => {
     outputVariable: 'testOutput',
   };
 
-  const mockWorkflow = { steps: [mockStep] };
+  const mockWorkflow = [mockStep];
 
   const mockDto = {
     id: 'playbook-1',
     assistantId: 'agent-1',
     goal: 'Test Goal',
     initialCommand: 'Start',
-    workflow: JSON.stringify(mockWorkflow),
+    workflow: mockWorkflow,
     successCriteria: JSON.stringify({ description: 'Done' }),
     createdAt: mockDate,
     updatedAt: mockDate,
@@ -86,6 +93,29 @@ describe('playbooks backend wrapper', () => {
     successCriteria: { description: 'Done' },
   };
 
+  describe('serializeDefaultTargetSessionForBackend', () => {
+    it('returns null when unpinned', () => {
+      expect(serializeDefaultTargetSessionForBackend(undefined)).toBeNull();
+    });
+
+    it('returns pin payload when valid', () => {
+      expect(
+        serializeDefaultTargetSessionForBackend({
+          mode: 'pin',
+          sessionId: 'sess-1',
+        }),
+      ).toEqual({ mode: 'pin', sessionId: 'sess-1' });
+    });
+
+    it('drops invalid pin without sessionId', () => {
+      expect(
+        serializeDefaultTargetSessionForBackend({
+          mode: 'pin',
+        } as unknown as Playbook['defaultTargetSession']),
+      ).toBeNull();
+    });
+  });
+
   describe('createPlaybook', () => {
     it('calls safeInvoke and deserializes response', async () => {
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockDto);
@@ -99,12 +129,39 @@ describe('playbooks backend wrapper', () => {
         initialCommand: 'Start',
         workflow: mockPlaybook.workflow,
         successCriteria: mockPlaybook.successCriteria,
+        defaultTargetSession: null,
       });
 
       expect(result.id).toBe('playbook-1');
       expect(result.agentId).toBe('agent-1');
       expect(result.goal).toBe('Test Goal');
       expect(result.workflow).toEqual([mockStep]);
+    });
+
+    it('sends pin column and deserializes defaultTargetSession', async () => {
+      const pinnedDto = {
+        ...mockDto,
+        workflow: [mockStep],
+        defaultTargetSession: { mode: 'pin', sessionId: 'sess-1' },
+      };
+      vi.mocked(safeInvoke).mockResolvedValueOnce(pinnedDto);
+
+      const result = await createPlaybook({
+        ...mockPlaybook,
+        defaultTargetSession: { mode: 'pin', sessionId: 'sess-1' },
+      });
+
+      expect(safeInvoke).toHaveBeenCalledWith(
+        'create_playbook',
+        expect.objectContaining({
+          workflow: [mockStep],
+          defaultTargetSession: { mode: 'pin', sessionId: 'sess-1' },
+        }),
+      );
+      expect(result.defaultTargetSession).toEqual({
+        mode: 'pin',
+        sessionId: 'sess-1',
+      });
     });
 
     it('handles invalid JSON strings during deserialization safely', async () => {
@@ -134,12 +191,32 @@ describe('playbooks backend wrapper', () => {
       expect(result.workflow).toEqual([mockStep]);
       expect(result.successCriteria).toEqual({ description: 'Done' });
     });
+
+    it('falls back to envelope pin when column is absent', async () => {
+      const envelopeDto = {
+        ...mockDto,
+        workflow: {
+          steps: [mockStep],
+          defaultTargetSession: { mode: 'pin', sessionId: 'legacy-pin' },
+        },
+      };
+      vi.mocked(safeInvoke).mockResolvedValueOnce(envelopeDto);
+
+      const result = await createPlaybook(mockPlaybook);
+
+      expect(result.defaultTargetSession).toEqual({
+        mode: 'pin',
+        sessionId: 'legacy-pin',
+      });
+    });
   });
 
   describe('updatePlaybook', () => {
     it('throws error if id is missing', async () => {
       const invalidPlaybook = { ...mockPlaybook, id: undefined };
-      await expect(updatePlaybook(invalidPlaybook)).rejects.toThrow('Playbook ID required for update');
+      await expect(updatePlaybook(invalidPlaybook)).rejects.toThrow(
+        'Playbook ID required for update',
+      );
     });
 
     it('calls safeInvoke and deserializes response', async () => {
@@ -153,6 +230,7 @@ describe('playbooks backend wrapper', () => {
         goal: 'Test Goal',
         workflow: mockPlaybook.workflow,
         successCriteria: mockPlaybook.successCriteria,
+        defaultTargetSession: null,
       });
 
       expect(result.id).toBe('playbook-1');
@@ -176,7 +254,10 @@ describe('playbooks backend wrapper', () => {
     it('calls safeInvoke with correct arguments (with agentId)', async () => {
       vi.mocked(safeInvoke).mockResolvedValueOnce([mockDto]);
 
-      const result = await listPlaybooks({ agentId: 'agent-1', sortBy: 'created_at' });
+      const result = await listPlaybooks({
+        agentId: 'agent-1',
+        sortBy: 'created_at',
+      });
 
       expect(safeInvoke).toHaveBeenCalledWith('list_playbooks', {
         assistantId: 'agent-1',
@@ -240,7 +321,9 @@ describe('playbooks backend wrapper', () => {
   describe('upsertPlaybook', () => {
     it('throws error if id is missing', async () => {
       const invalidPlaybook = { ...mockPlaybook, id: undefined };
-      await expect(upsertPlaybook(invalidPlaybook)).rejects.toThrow('Playbook ID is required for upsert');
+      await expect(upsertPlaybook(invalidPlaybook)).rejects.toThrow(
+        'Playbook ID is required for upsert',
+      );
     });
 
     it('calls updatePlaybook if playbook exists', async () => {
@@ -249,8 +332,15 @@ describe('playbooks backend wrapper', () => {
 
       await upsertPlaybook(mockPlaybook);
 
-      expect(safeInvoke).toHaveBeenNthCalledWith(1, 'get_playbook', { id: 'playbook-1', assistantId: 'agent-1' });
-      expect(safeInvoke).toHaveBeenNthCalledWith(2, 'update_playbook', expect.any(Object));
+      expect(safeInvoke).toHaveBeenNthCalledWith(1, 'get_playbook', {
+        id: 'playbook-1',
+        assistantId: 'agent-1',
+      });
+      expect(safeInvoke).toHaveBeenNthCalledWith(
+        2,
+        'update_playbook',
+        expect.any(Object),
+      );
     });
 
     it('calls createPlaybook if playbook does not exist', async () => {
@@ -259,8 +349,15 @@ describe('playbooks backend wrapper', () => {
 
       await upsertPlaybook(mockPlaybook);
 
-      expect(safeInvoke).toHaveBeenNthCalledWith(1, 'get_playbook', { id: 'playbook-1', assistantId: 'agent-1' });
-      expect(safeInvoke).toHaveBeenNthCalledWith(2, 'create_playbook', expect.any(Object));
+      expect(safeInvoke).toHaveBeenNthCalledWith(1, 'get_playbook', {
+        id: 'playbook-1',
+        assistantId: 'agent-1',
+      });
+      expect(safeInvoke).toHaveBeenNthCalledWith(
+        2,
+        'create_playbook',
+        expect.any(Object),
+      );
     });
   });
 

@@ -1,50 +1,26 @@
-//! Session ID display aliases and reverse lookup.
+//! Session IDs: one string for storage, prompts, and tools.
 //!
 //! # Contract
 //!
-//! - **Storage keys** (opaque): legacy `session-<timestamp…>`, or modern bare 10-hex
-//!   spawn ids (`a1b2c3d4e5`). Never rewrite existing rows.
-//! - **Agent/HTTP-facing display**: always the short token only (no `session-` prefix),
-//!   where the token is the last [`SESSION_ID_SHORT_LEN`] chars of the unique part
-//!   (or the whole unique part when shorter). Legacy storage keys never render as a
-//!   useless truncated `session-` label.
-//! - **Tool/API input acceptance**: full stored id, optional `session-{short}` form,
-//!   or bare short token.
-//! - **Resolution order**: exact stored-id match first; otherwise display alias / short
-//!   token among a caller-provided candidate set (MCP tools scope this to the caller's
-//!   **delegated descendants**). Zero matches → missing; multiple → ambiguous.
-//!
-//! # Hard rule (do not regress)
-//!
-//! DB / cache message lookups, turn counts, and wait loops must use
-//! [`StorageSessionId`] (`SessionMetadata.id` after resolve). Never pass
-//! [`display_session_id`] output into those APIs — for legacy `session-…` rows the
-//! display token is a **different string** and yields empty history → false
-//! "No final answer yet." (#1689 footgun).
+//! - **New sessions**: [`generate_session_id`] → bare 10-hex. Display == storage.
+//! - **Lookup (read only)**: exact match first; if missing, accept legacy refs
+//!   that agents/URLs/HTTP clients used before unification:
+//!   bare last-10 suffix, or optional `session-{suffix}` / `session-{full}`.
+//!   Ambiguous suffixes fail closed.
 
 use std::fmt;
 
-/// Length of the unique short token used in display aliases.
+/// Length of canonical new session ids and of the legacy suffix matcher.
 pub const SESSION_ID_SHORT_LEN: usize = 10;
 
-/// Historical / optional prefix still accepted on input (`session-{short}`).
-/// Display output no longer includes this prefix.
-pub const SESSION_ID_DISPLAY_PREFIX: &str = "session-";
+/// Historical prefix still accepted on **input** only (`session-{id-or-suffix}`).
+pub const SESSION_ID_LEGACY_PREFIX: &str = "session-";
 
-/// Opaque storage session key — the value stored as `sessions.id` /
-/// `SessionMetadata.id` after resolution.
-///
-/// Construct only via [`StorageSessionId::from_resolved`]. Message fetches and
-/// other DB lookups take this type so `display_session_id(...)` (`String`) cannot
-/// be passed by accident at compile time.
+/// Opaque storage session key (`sessions.id` / `SessionMetadata.id`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StorageSessionId(String);
 
 impl StorageSessionId {
-    /// Wrap an already-resolved storage key (`SessionMetadata.id`).
-    ///
-    /// Do **not** pass [`display_session_id`] output here unless the session's
-    /// storage key is itself the short token (modern spawn ids).
     pub fn from_resolved(id: impl Into<String>) -> Self {
         Self(id.into())
     }
@@ -67,24 +43,31 @@ impl fmt::Display for StorageSessionId {
     }
 }
 
-/// Outcome of resolving an agent-supplied session reference against candidates.
+/// Outcome of resolving a session reference against candidates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionIdResolve<'a> {
-    /// Exactly one stored id matched (exact or alias).
     Unique(&'a str),
-    /// No candidate matched.
     Missing,
-    /// More than one candidate matched the same alias/token.
     Ambiguous(usize),
 }
 
-/// Extract the short unique token from a stored session id.
-///
-/// - Bare short ids (`a1b2c3d4e5`) → themselves
-/// - Prefixed ids (`session-…`) → last [`SESSION_ID_SHORT_LEN`] chars of the unique part
-pub fn session_id_short_token(session_id: &str) -> String {
+/// New session id: 10 lowercase hex chars.
+#[must_use]
+pub fn generate_session_id() -> String {
+    let hex = uuid::Uuid::new_v4().simple().to_string();
+    hex[..SESSION_ID_SHORT_LEN].to_string()
+}
+
+/// Agent/HTTP-facing id — identical to the storage key (no truncation).
+#[must_use]
+pub fn display_session_id(session_id: &str) -> String {
+    session_id.to_string()
+}
+
+/// Last [`SESSION_ID_SHORT_LEN`] chars of the unique part (after optional `session-`).
+fn legacy_short_suffix(session_id: &str) -> String {
     let unique = session_id
-        .strip_prefix(SESSION_ID_DISPLAY_PREFIX)
+        .strip_prefix(SESSION_ID_LEGACY_PREFIX)
         .unwrap_or(session_id);
     let char_count = unique.chars().count();
     if char_count <= SESSION_ID_SHORT_LEN {
@@ -96,32 +79,37 @@ pub fn session_id_short_token(session_id: &str) -> String {
         .collect()
 }
 
-/// External session reference: short token only (no `session-` prefix).
-///
-/// Idempotent for values that are already a short display token.
-pub fn display_session_id(session_id: &str) -> String {
-    session_id_short_token(session_id)
-}
-
-/// Whether `input_ref` (full id, optional `session-{short}`, or bare short token)
-/// refers to `stored_id`.
-pub fn session_id_matches_ref(stored_id: &str, input_ref: &str) -> bool {
+/// Whether `input_ref` refers to `stored_id` (exact or legacy short/prefix form).
+pub fn session_id_matches_legacy_ref(stored_id: &str, input_ref: &str) -> bool {
     if stored_id == input_ref {
         return true;
     }
-    if display_session_id(stored_id) == input_ref {
-        return true;
-    }
     let input_token = input_ref
-        .strip_prefix(SESSION_ID_DISPLAY_PREFIX)
+        .strip_prefix(SESSION_ID_LEGACY_PREFIX)
         .unwrap_or(input_ref);
-    let stored_token = session_id_short_token(stored_id);
-    input_token == stored_token || stored_id == input_token
+    let stored_suffix = legacy_short_suffix(stored_id);
+    input_token == stored_suffix || stored_id == input_token
 }
 
-/// Resolve an agent-supplied session reference against known candidate ids.
+/// Whether a miss on exact lookup might still resolve via legacy short / `session-` forms.
 ///
-/// Prefer exact stored-id match. Otherwise match display alias / short token.
+/// Skip full-table scans when the ref cannot be a legacy alias (e.g. a long bare id that
+/// simply does not exist).
+#[must_use]
+pub fn should_try_legacy_session_resolve(input_ref: &str) -> bool {
+    let trimmed = input_ref.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.starts_with(SESSION_ID_LEGACY_PREFIX) {
+        return true;
+    }
+    trimmed.chars().count() == SESSION_ID_SHORT_LEN
+}
+
+/// Resolve a session reference among known storage ids.
+///
+/// Exact match wins. Otherwise unique legacy short/prefix match among candidates.
 pub fn resolve_session_id_among<'a>(
     candidate_ids: impl IntoIterator<Item = &'a str>,
     input_ref: &str,
@@ -135,7 +123,7 @@ pub fn resolve_session_id_among<'a>(
     let matches: Vec<&str> = candidates
         .iter()
         .copied()
-        .filter(|id| session_id_matches_ref(id, input_ref))
+        .filter(|id| session_id_matches_legacy_ref(id, input_ref))
         .collect();
 
     match matches.as_slice() {
@@ -145,32 +133,64 @@ pub fn resolve_session_id_among<'a>(
     }
 }
 
-/// Pure guard for the display-token-as-storage-key footgun.
-///
-/// Returns `Err` when `lookup_id` is not an exact candidate storage id but *is*
-/// a display alias of one — the #1689/`checkSession` empty-history failure mode.
-pub fn reject_display_token_used_as_storage_key(
-    lookup_id: &str,
-    known_storage_ids: &[&str],
-) -> Result<(), String> {
-    if known_storage_ids.contains(&lookup_id) {
-        return Ok(());
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_is_identity() {
+        assert_eq!(display_session_id("sum4n7z4fksfku0he02eoe9m"), "sum4n7z4fksfku0he02eoe9m");
+        assert_eq!(display_session_id("a1b2c3d4e5"), "a1b2c3d4e5");
     }
 
-    let aliased: Vec<&str> = known_storage_ids
-        .iter()
-        .copied()
-        .filter(|id| session_id_matches_ref(id, lookup_id))
-        .collect();
-
-    if aliased.is_empty() {
-        return Ok(());
+    #[test]
+    fn resolve_exact_and_legacy_short_suffix() {
+        let ids = ["sum4n7z4fksfku0he02eoe9m", "a1b2c3d4e5"];
+        assert_eq!(
+            resolve_session_id_among(ids, "sum4n7z4fksfku0he02eoe9m"),
+            SessionIdResolve::Unique("sum4n7z4fksfku0he02eoe9m")
+        );
+        assert_eq!(
+            resolve_session_id_among(ids, "0he02eoe9m"),
+            SessionIdResolve::Unique("sum4n7z4fksfku0he02eoe9m")
+        );
+        assert_eq!(
+            resolve_session_id_among(ids, "a1b2c3d4e5"),
+            SessionIdResolve::Unique("a1b2c3d4e5")
+        );
     }
 
-    Err(format!(
-        "BUG: session message/status lookup used display token '{lookup_id}' instead of storage id '{}'. \
-         Pass SessionMetadata.id / StorageSessionId::from_resolved(...), never display_session_id(). \
-         Display-token lookups return empty history and false \"No final answer yet.\"",
-        aliased.join(", ")
-    ))
+    #[test]
+    fn resolve_legacy_session_prefix() {
+        let ids = ["session-1735123456789012345"];
+        assert_eq!(
+            resolve_session_id_among(ids, "6789012345"),
+            SessionIdResolve::Unique("session-1735123456789012345")
+        );
+        assert_eq!(
+            resolve_session_id_among(ids, "session-6789012345"),
+            SessionIdResolve::Unique("session-1735123456789012345")
+        );
+    }
+
+    #[test]
+    fn resolve_ambiguous_short_suffix() {
+        let ids = ["xxxx6789012345", "yyyy6789012345"];
+        assert_eq!(
+            resolve_session_id_among(ids, "6789012345"),
+            SessionIdResolve::Ambiguous(2)
+        );
+    }
+
+    #[test]
+    fn legacy_resolve_gate() {
+        assert!(should_try_legacy_session_resolve("0he02eoe9m"));
+        assert!(should_try_legacy_session_resolve("session-6789012345"));
+        assert!(should_try_legacy_session_resolve("a1b2c3d4e5"));
+        assert!(!should_try_legacy_session_resolve(
+            "sum4n7z4fksfku0he02eoe9m"
+        ));
+        assert!(!should_try_legacy_session_resolve(""));
+        assert!(!should_try_legacy_session_resolve("   "));
+    }
 }

@@ -228,12 +228,11 @@ fn build_agent_config(assistant: &AssistantModel) -> Result<(AgentConfig, Option
     Ok((agent_config, assistant_id))
 }
 
-/// Generate a compact spawn session ID: 10-char hex (no prefix).
+/// Generate a compact session ID: 10-char hex (no prefix).
 ///
-/// Legacy `session-...` IDs remain valid opaque DB keys; only new spawns use this form.
+/// Alias of [`crate::utils::session_id::generate_session_id`] — Storage ID == Display ID.
 pub fn generate_spawn_session_id() -> String {
-    let hex = uuid::Uuid::new_v4().simple().to_string();
-    hex[..10].to_string()
+    crate::utils::session_id::generate_session_id()
 }
 
 fn build_session_name(

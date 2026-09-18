@@ -188,20 +188,13 @@ async fn spawn_session_impl(
         Err(err) if err.contains("Assistant not found:") => {
             let requested_id = &assistant_id;
 
-            let is_session_id = if crate::utils::session_id::session_id_matches_ref(
-                caller_session_id,
-                requested_id,
-            ) {
+            let is_session_id = if caller_session_id == requested_id.as_str() {
                 true
             } else if let Ok(Some(_)) = crate::state::get_session_repository()
                 .get_session(requested_id)
                 .await
             {
                 true
-            } else if let Ok(all_sessions) = manager.get_all_sessions().await {
-                all_sessions
-                    .iter()
-                    .any(|s| crate::utils::session_id::session_id_matches_ref(&s.id, requested_id))
             } else {
                 false
             };
@@ -444,7 +437,7 @@ pub async fn stop_session(
         .ok_or("AgentSessionManager not available")?;
     let session_ref = read_required_string(&args, "sessionId")?;
 
-    if crate::utils::session_id::session_id_matches_ref(caller_session_id, &session_ref) {
+    if crate::utils::session_id::session_id_matches_legacy_ref(caller_session_id, &session_ref) {
         return Ok(self_target_session_action_result(
             "stopSession",
             "Self-termination is not allowed via stopSession.",
@@ -537,7 +530,7 @@ pub async fn compact_session_context(
         .map(|value| value.clamp(5, 300))
         .unwrap_or(60);
 
-    if crate::utils::session_id::session_id_matches_ref(caller_session_id, &session_ref) {
+    if crate::utils::session_id::session_id_matches_legacy_ref(caller_session_id, &session_ref) {
         return Ok(self_target_session_action_result(
             "compactSessionContext",
                 "Self-compaction is not allowed via compactSessionContext.",
@@ -733,7 +726,7 @@ pub async fn delete_session(
     let session_ref = read_required_string(&args, "sessionId")?;
 
     // 1. Prevent self-deletion (matching stopSession pattern)
-    if crate::utils::session_id::session_id_matches_ref(caller_session_id, &session_ref) {
+    if crate::utils::session_id::session_id_matches_legacy_ref(caller_session_id, &session_ref) {
         return Ok(self_target_session_action_result(
             "deleteSession",
             "Self-deletion is not allowed via deleteSession.",

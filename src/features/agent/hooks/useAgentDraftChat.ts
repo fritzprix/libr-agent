@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createId } from '@paralleldrive/cuid2';
+import { generateSessionId } from '@/lib/session-id';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
@@ -392,7 +393,7 @@ export function useAgentDraftChat() {
       }
 
       setIsSubmitting(true);
-      const newSessionId = createId();
+      const newSessionId = generateSessionId();
       const now = new Date();
       let toastId: string | number | undefined;
 

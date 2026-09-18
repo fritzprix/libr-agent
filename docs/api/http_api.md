@@ -28,7 +28,7 @@ LibrAgent uses standard HTTP status codes to indicate the success or failure of 
 | :---- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `200` | **Success**: The request was handled successfully.                                                                                                                                   |
 | `201` | **Created**: The resource (e.g., Session) was successfully created.                                                                                                                  |
-| `400` | **Bad Request**: The request body is malformed, contains invalid values (e.g., non-absolute paths), or a session reference is **ambiguous** (short token matches multiple sessions). |
+| `400` | **Bad Request**: The request body is malformed or contains invalid values (e.g., non-absolute paths). |
 | `404` | **Not Found**: The requested resource (Assistant, Session) does not exist.                                                                                                           |
 | `500` | **Internal Error**: An unexpected server-side error occurred (e.g., DB failure, config corruption).                                                                                  |
 
@@ -38,14 +38,14 @@ LibrAgent uses standard HTTP status codes to indicate the success or failure of 
 
 ### Session ID forms (external)
 
-HTTP session APIs treat session identifiers as **external** references:
+HTTP session APIs use one session id string for responses. Requests accept the
+exact storage id, and as a **read-only** legacy fallback also accept a bare
+last-10 suffix or optional `session-{suffix}` when it uniquely matches.
 
-| Direction                                                              | Form                                                                                                                                            |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Responses**                                                          | Short token only (last 10 characters of the unique part). No `session-` prefix. Example: `a1b2c3d4e5`                                           |
-| **Requests** (path `:id`, body `parentSessionId` / `orgRootSessionId`) | Full storage id, bare short token, or optional `session-{short}` — all accepted. Exact storage match wins; ambiguous short tokens return `400`. |
-
-Internal DB / Tauri UI keys are unchanged (legacy `session-<long>` or bare 10-hex spawn ids).
+| Direction                | Form                                                                 |
+| ------------------------ | -------------------------------------------------------------------- |
+| **Responses**            | Exact storage id (new sessions: 10 lowercase hex, e.g. `a1b2c3d4e5`) |
+| **Requests** (`:id`, …)  | Exact id first; unique legacy short / `session-{…}` fallback         |
 
 ---
 
@@ -73,12 +73,12 @@ Creates a new isolated agent session and starts an initial workflow.
   },
   "executionMode": "normal | yolo | unsafe (optional)",
   "request": "initial user prompt (optional; omit or blank to create an idle session without starting a workflow)",
-  "parentSessionId": "string (optional; storage id, short token, or session-{short})",
+  "parentSessionId": "string (optional; exact id or unique legacy short ref)",
   "maxDepth": 5,
   "maxFanout": 3,
   "orgId": "string (optional)",
   "orgName": "string (optional)",
-  "orgRootSessionId": "string (optional; storage id, short token, or session-{short})"
+  "orgRootSessionId": "string (optional; exact id or unique legacy short ref)"
 }
 ```
 
@@ -109,7 +109,7 @@ Creates a new isolated agent session and starts an initial workflow.
 }
 ```
 
-`id`, `parentSessionId`, `lineageId`, and `orgRootSessionId` are always short display tokens (no `session-` prefix).
+`id`, `parentSessionId`, `lineageId`, and `orgRootSessionId` are exact session ids (new sessions: 10 hex).
 
 ---
 
@@ -119,7 +119,7 @@ Retrieves current session metadata and execution state.
 
 - **Method**: `GET`
 - **Path**: `/api/sessions/:id`
-- **`:id`**: storage id, short token, or optional `session-{short}`
+- **`:id`**: exact session id, or unique legacy short / `session-{…}` ref
 
 #### Response Body
 
@@ -190,7 +190,7 @@ Deletes a session and cascaded descendants from the database and in-memory state
 }
 ```
 
-`deletedIds` use short display tokens.
+`deletedIds` are exact session ids.
 
 ---
 

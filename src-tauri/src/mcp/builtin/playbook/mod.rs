@@ -11,9 +11,12 @@ mod templates;
 mod tools;
 mod types;
 
-// Re-export for use in other modules (e.g., PlaybookReferenceResolver)
+// Re-export for use in other modules (e.g., PlaybookReferenceResolver, PlaybookService)
 pub use operations::format_playbook_detailed;
-pub use types::Playbook;
+pub use types::{
+    parse_workflow_payload, serialize_default_target_session_column, serialize_workflow_steps,
+    Playbook, TargetSessionConfig,
+};
 
 /// Playbook MCP Server
 #[derive(Debug)]
@@ -186,16 +189,21 @@ impl BuiltinMCPServer for PlaybookServer {
         &self,
         tool_name: &str,
         args: Value,
-        _session_id: Option<String>,
+        session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        let caller = session_id.as_deref();
         match tool_name {
-            "createPlaybook" => operations::create_playbook(&self.assistant_id, args).await,
+            "createPlaybook" => {
+                operations::create_playbook(&self.assistant_id, args, caller).await
+            }
             "selectPlaybook" => operations::select_playbook(&self.assistant_id, args).await,
             "listPlaybooks" => operations::list_playbooks(&self.assistant_id, args, false).await,
             "getPlaybookPage" => operations::list_playbooks(&self.assistant_id, args, true).await,
             "deletePlaybook" => operations::delete_playbook(&self.assistant_id, args).await,
             "getPlaybook" => operations::get_playbook(&self.assistant_id, args).await,
-            "updatePlaybook" => operations::update_playbook(&self.assistant_id, args).await,
+            "updatePlaybook" => {
+                operations::update_playbook(&self.assistant_id, args, caller).await
+            }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }
