@@ -1,27 +1,53 @@
 ---
 name: schedule
-description: Create and manage global scheduled tasks in LibrAgent (cron-based). Use when automation should outlive the current session, wake a specific assistant on a cron, or run recurring background work app-wide. For one-shot delays or session-bound recurrence inside the active conversation, use session-schedule instead.
+description: Create and manage app-wide global scheduled tasks in LibrAgent (cron-based). Use when automation must outlive the current session, run recurring background cron jobs independently of any session, or coordinate multi-agent scheduled workflows. NEVER use for in-session reminders, 'remind me', 'follow up', or temporary delays (use session-schedule instead).
 ---
 
 # Schedule
 
-Global scheduled tasks wake an assistant later without requiring the current session to stay open. They are not org identity and they are not session-bound follow-ups.
+Global scheduled tasks wake an assistant on a cron cadence without requiring the current session to stay open. They run app-wide, are not bound to any conversation session, and do not retain session context.
+
+## Priority & UX Policy
+
+When a user in an active chat session asks to schedule a reminder, follow-up, or future task, their natural expectation is that it will happen **within the context of their current conversation**.
+
+Therefore:
+- **`session-schedule` is the PRIMARY DEFAULT** for session-originated scheduling requests.
+- **`schedule` is strictly for GLOBAL / BACKGROUND automation** that must run independently of the current session.
+- **If intent is ambiguous** (e.g., "매일 9시에 요약해줘" with no global/permanent wording):
+  1. **Proceed with `session-schedule` immediately** (do not ask first).
+  2. **Ask only when** the request looks like always-on automation that should survive this chat (recurring wall-clock work with no tie to this conversation's task/context), and a wrong choice would strand the user. Then explain once and confirm:
+     - **Session Schedule (default)**: stays in this chat; dies if the session is deleted.
+     - **Global Scheduled Task**: app-wide cron; survives closing/deleting this session; no session history.
+
+## When NOT to use this
+
+Do NOT use `schedule` (`createScheduledTask`) for:
+- "remind me in 5 minutes" / "10분 뒤에 알려줘" → use `session-schedule` (`scheduleCallback`)
+- "let me know about this later" / "나중에 알려줘" → use `session-schedule`
+- "follow up on this task" / "작업 끝나고 알려줘" → use `session-schedule`
+- "tomorrow at 9" / "내일 9시에 알려줘" when continuing this chat → use `session-schedule`
+- Any relative delay or timer (seconds, minutes, hours, or days) → use `session-schedule`
+- Any reminder where the user expects the response/action in the current chat → use `session-schedule`
 
 ## Routing decision
 
 ```text
 Should the run stay bound to the current session?
-  Yes -> session-schedule (scheduled_task__scheduleCallback)
-  No  -> schedule (scheduled_task__createScheduledTask)
+  Yes                  -> session-schedule (scheduled_task__scheduleCallback) [DEFAULT]
+  Unclear / Ambiguous  -> session-schedule immediately [DEFAULT]
+                          ask only if always-on / session-surviving intent is plausible
+  No (Explicit global) -> schedule (scheduled_task__createScheduledTask)
 ```
 
-Recurring vs one-shot is **not** the primary split. Global tasks require cron. Session-bound one-shots use `session-schedule`.
+Recurring vs one-shot is **not** the primary split. Global tasks require cron. Session-bound one-shots and session-bound recurring callbacks use `session-schedule`.
 
 ## Workflow
 
 ### 1. Confirm global scheduling is appropriate
 
-- Use global tasks for cron-based wake-ups, background recurrence, heartbeat loops, or assistant-level automation.
+- Use global tasks ONLY for cron-based wake-ups, background recurrence, heartbeat loops, or assistant-level automation that must survive session destruction.
+- If the user asked for a reminder, follow-up, or delay inside this chat, STOP and switch to `session-schedule`.
 - Do not require teamwork scaffolding for a standalone global task.
 - If the user wants org-visible lineage or org-root resume behavior, stop and use `org`.
 
@@ -66,6 +92,6 @@ If the user only wants one global cron job with no multi-agent constitution, ski
 
 ## Guardrails
 
-- Do not use global scheduled tasks for simple in-session delays; use `session-schedule`.
+- Do not use global scheduled tasks for simple in-session delays or reminders; use `session-schedule`.
 - Use `workspaceOverride` only when the scheduled run must target a specific existing workspace.
 - Backend minimum-interval policy still applies. Do not assume unlimited frequency.
