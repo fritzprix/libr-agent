@@ -37,6 +37,16 @@ impl ScheduledTaskServer {
             icon: None,
         }
     }
+
+    /// Service context only surfaces SESSION callbacks for this session.
+    /// GLOBAL cron tasks are managed via tools / SchedulerWorker, not ambient SC.
+    fn is_own_session_callback(
+        task: &crate::entity::scheduled_task::Model,
+        session_id: &str,
+    ) -> bool {
+        task.task_category == crate::scheduled::TASK_CATEGORY_SESSION
+            && task.session_id.as_deref() == Some(session_id)
+    }
 }
 
 #[async_trait]
@@ -88,14 +98,8 @@ impl BuiltinMCPServer for ScheduledTaskServer {
             }
         };
 
-        // Filter out session tasks belonging to other sessions
-        tasks.retain(|task| {
-            if task.task_category == crate::scheduled::TASK_CATEGORY_SESSION {
-                task.session_id.as_deref() == Some(self.session_id.as_str())
-            } else {
-                true
-            }
-        });
+        // SESSION callbacks for this session only — GLOBAL tasks stay on-demand via tools.
+        tasks.retain(|task| Self::is_own_session_callback(task, self.session_id.as_str()));
 
         if tasks.is_empty() {
             // Idle: omit prompt text so volatile SC stays lean.
@@ -159,10 +163,15 @@ impl BuiltinMCPServer for ScheduledTaskServer {
     async fn has_active_state(&self) -> bool {
         use crate::repositories::ScheduledTaskRepository;
 
+        let session_id = self.session_id.as_str();
         crate::state::get_scheduled_task_repository()
             .list_scheduled_tasks(None)
             .await
-            .map(|tasks| !tasks.is_empty())
+            .map(|tasks| {
+                tasks
+                    .iter()
+                    .any(|task| Self::is_own_session_callback(task, session_id))
+            })
             .unwrap_or(false)
     }
 }

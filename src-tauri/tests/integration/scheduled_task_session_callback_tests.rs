@@ -507,3 +507,109 @@ async fn scheduled_task_server_session_isolation_checks() {
     assert!(!context.context_prompt.contains(&callback_task.id));
     assert!(!context.context_prompt.contains("Session A callback"));
 }
+
+#[tokio::test]
+async fn service_context_excludes_global_tasks_and_reports_idle_without_session_callbacks() {
+    use tauri_mcp_agent_lib::mcp::builtin::scheduled_task::ScheduledTaskServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+    use tauri_mcp_agent_lib::repositories::SqliteScheduledTaskRepository;
+    use tauri_mcp_agent_lib::{set_scheduled_task_repository, set_session_repository};
+
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db.clone());
+
+    set_session_repository(session_repo.clone());
+    set_scheduled_task_repository(SqliteScheduledTaskRepository::new(db.clone()));
+
+    let session_id = "session-sc-global-filter";
+    session_repo
+        .upsert_session(&make_session(session_id, "assistant-1"))
+        .await
+        .expect("session should be persisted");
+
+    let governance = ScheduledTaskGovernanceSettings::default();
+    let global_task = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Nightly wiki mine".to_string(),
+            task_category: TASK_CATEGORY_GLOBAL.to_string(),
+            cron_expression: Some("0 3 * * *".to_string()),
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Mine the wiki".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: None,
+            session_id: None,
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: None,
+        },
+        &governance,
+    )
+    .await
+    .expect("global task should be created");
+
+    let server = ScheduledTaskServer::new(session_id.to_string(), std::sync::Arc::new(db.clone()))
+        .await
+        .expect("server should initialize");
+
+    // GLOBAL-only: ambient SC stays empty; has_active_state skips the server.
+    assert!(!server.has_active_state().await);
+    let idle_context = server.get_service_context(None).await;
+    assert!(idle_context.context_prompt.trim().is_empty());
+    assert!(!idle_context.context_prompt.contains(&global_task.id));
+    assert!(!idle_context.context_prompt.contains("Nightly wiki mine"));
+
+    // On-demand list still surfaces GLOBAL tasks.
+    let list_result = server
+        .call_tool(
+            "listScheduledTasks",
+            serde_json::json!({}),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("listScheduledTasks should succeed");
+    assert_ne!(list_result.is_error, Some(true));
+    let listed_ids: Vec<&str> = list_result
+        .structured_content
+        .as_ref()
+        .expect("structured content")
+        .get("tasks")
+        .and_then(|v| v.as_array())
+        .expect("tasks array")
+        .iter()
+        .filter_map(|t| t.get("id").and_then(|id| id.as_str()))
+        .collect();
+    assert!(listed_ids.contains(&global_task.id.as_str()));
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let session_task = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Session follow-up".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Check back".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: Some(session_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: Some(now_ms + 60_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("session callback should be created");
+
+    assert!(server.has_active_state().await);
+    let active_context = server.get_service_context(None).await;
+    assert!(active_context.context_prompt.contains("## Scheduled Tasks"));
+    assert!(active_context.context_prompt.contains(&session_task.id));
+    assert!(active_context.context_prompt.contains("Session follow-up"));
+    assert!(!active_context.context_prompt.contains(&global_task.id));
+    assert!(!active_context.context_prompt.contains("Nightly wiki mine"));
+}
