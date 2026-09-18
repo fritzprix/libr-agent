@@ -4,7 +4,10 @@ import { Clock, Loader2, Timer, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui';
+import { Switch } from '@/components/ui/switch';
 import { getDateTimeFormatter } from '@/lib/date-utils';
+import type { SessionScheduledTask } from '@/lib/backend/scheduled-tasks';
+import { cn } from '@/lib/utils';
 import { useSessionSchedules } from '../hooks/useSessionSchedules';
 import { toast } from 'sonner';
 
@@ -34,19 +37,17 @@ export function SessionSchedulesSection({
   isVisible = true,
 }: SessionSchedulesSectionProps) {
   const { t } = useTranslation();
-  const { tasks, loading, cancellingIds, cancelTask } = useSessionSchedules(
-    sessionId,
-    isVisible,
-  );
+  const { tasks, loading, cancellingIds, togglingIds, cancelTask, toggleTask } =
+    useSessionSchedules(sessionId, isVisible);
   const [, setTick] = useState(0);
 
-  const hasOneShot = useMemo(
-    () => tasks.some((task) => task.isOneShot),
+  const hasActiveOneShot = useMemo(
+    () => tasks.some((task) => task.isOneShot && task.enabled),
     [tasks],
   );
 
   useEffect(() => {
-    if (!isVisible || !hasOneShot) {
+    if (!isVisible || !hasActiveOneShot) {
       return;
     }
 
@@ -55,7 +56,7 @@ export function SessionSchedulesSection({
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [hasOneShot, isVisible]);
+  }, [hasActiveOneShot, isVisible]);
 
   const formatNextRun = (nextRunAt: number | null): string => {
     if (!nextRunAt) {
@@ -73,6 +74,19 @@ export function SessionSchedulesSection({
         t(
           'agent.planning.schedules.cancelFailed',
           'Failed to cancel scheduled callback',
+        ),
+      );
+    }
+  };
+
+  const handleToggle = async (task: SessionScheduledTask) => {
+    try {
+      await toggleTask(task);
+    } catch {
+      toast.error(
+        t(
+          'agent.planning.schedules.toggleFailed',
+          'Failed to update scheduled callback',
         ),
       );
     }
@@ -111,9 +125,33 @@ export function SessionSchedulesSection({
               {tasks.map((task) => (
                 <div
                   key={task.id}
-                  className="border-b border-border/25 px-3 py-3 last:border-b-0"
+                  className={cn(
+                    'border-b border-border/25 px-3 py-3 last:border-b-0',
+                    !task.enabled && 'opacity-70',
+                  )}
                 >
                   <div className="flex items-start gap-2">
+                    <Switch
+                      checked={task.enabled}
+                      onCheckedChange={() => void handleToggle(task)}
+                      className="mt-0.5 shrink-0"
+                      disabled={
+                        togglingIds.has(task.id) || cancellingIds.has(task.id)
+                      }
+                      aria-label={
+                        task.enabled
+                          ? t(
+                              'agent.planning.schedules.pauseAria',
+                              'Pause {{name}}',
+                              { name: task.name },
+                            )
+                          : t(
+                              'agent.planning.schedules.resumeAria',
+                              'Resume {{name}}',
+                              { name: task.name },
+                            )
+                      }
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="truncate text-sm font-medium text-foreground">
@@ -129,6 +167,11 @@ export function SessionSchedulesSection({
                               'agent.planning.schedules.recurring',
                               'Recurring',
                             )}
+                          </Badge>
+                        )}
+                        {task.enabled ? null : (
+                          <Badge variant="outline" className="text-[10px]">
+                            {t('agent.planning.schedules.paused', 'Paused')}
                           </Badge>
                         )}
                       </div>
@@ -166,7 +209,9 @@ export function SessionSchedulesSection({
                       size="icon"
                       className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
                       onClick={() => void handleCancel(task.id)}
-                      disabled={cancellingIds.has(task.id)}
+                      disabled={
+                        cancellingIds.has(task.id) || togglingIds.has(task.id)
+                      }
                       aria-label={t(
                         'agent.planning.schedules.cancelAria',
                         'Cancel {{name}}',

@@ -1,5 +1,7 @@
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
-use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
+use crate::scheduled::{
+    session_callback_display_next_run_at, TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION,
+};
 use serde_json::{json, Value};
 
 pub fn render_task_line(task: &ScheduledTaskModel) -> String {
@@ -14,7 +16,10 @@ pub fn render_task_line(task: &ScheduledTaskModel) -> String {
         task.id,
         task.name,
         if task.enabled { "enabled" } else { "disabled" },
-        format_timestamp(task.next_run_at),
+        format_timestamp(session_callback_display_next_run_at(
+            task,
+            chrono::Utc::now().timestamp_millis(),
+        )),
         task.assistant_id,
         execution_mode_label(task),
     )
@@ -68,7 +73,10 @@ Message:\n{}",
         } else {
             "no"
         },
-        format_timestamp(task.next_run_at),
+        format_timestamp(session_callback_display_next_run_at(
+            task,
+            chrono::Utc::now().timestamp_millis(),
+        )),
         format_timestamp(task.last_run_at),
         created_by_session,
         pinned_session,
