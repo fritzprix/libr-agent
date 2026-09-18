@@ -139,7 +139,10 @@ mod tests {
 
     #[test]
     fn display_is_identity() {
-        assert_eq!(display_session_id("sum4n7z4fksfku0he02eoe9m"), "sum4n7z4fksfku0he02eoe9m");
+        assert_eq!(
+            display_session_id("sum4n7z4fksfku0he02eoe9m"),
+            "sum4n7z4fksfku0he02eoe9m"
+        );
         assert_eq!(display_session_id("a1b2c3d4e5"), "a1b2c3d4e5");
     }
 

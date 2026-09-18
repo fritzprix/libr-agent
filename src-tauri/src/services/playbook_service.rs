@@ -62,8 +62,7 @@ fn normalize_for_storage(
     let pin_cfg: Option<TargetSessionConfig> = match default_target_session {
         Some(Value::Null) => None,
         Some(v) => Some(
-            serde_json::from_value(v)
-                .map_err(|e| format!("Invalid defaultTargetSession: {e}"))?,
+            serde_json::from_value(v).map_err(|e| format!("Invalid defaultTargetSession: {e}"))?,
         ),
         None => envelope_target,
     };
@@ -128,16 +127,9 @@ impl PlaybookService {
             }
         };
 
-        repo.update_playbook(
-            id,
-            &assistant_id,
-            goal,
-            workflow_json,
-            pin_update,
-            None,
-        )
-        .await
-        .map_err(|e| format!("Failed to update playbook: {}", e))
+        repo.update_playbook(id, &assistant_id, goal, workflow_json, pin_update, None)
+            .await
+            .map_err(|e| format!("Failed to update playbook: {}", e))
     }
 
     pub async fn delete_playbook(

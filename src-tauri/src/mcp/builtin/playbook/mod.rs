@@ -193,17 +193,13 @@ impl BuiltinMCPServer for PlaybookServer {
     ) -> Result<MCPResult, String> {
         let caller = session_id.as_deref();
         match tool_name {
-            "createPlaybook" => {
-                operations::create_playbook(&self.assistant_id, args, caller).await
-            }
+            "createPlaybook" => operations::create_playbook(&self.assistant_id, args, caller).await,
             "selectPlaybook" => operations::select_playbook(&self.assistant_id, args).await,
             "listPlaybooks" => operations::list_playbooks(&self.assistant_id, args, false).await,
             "getPlaybookPage" => operations::list_playbooks(&self.assistant_id, args, true).await,
             "deletePlaybook" => operations::delete_playbook(&self.assistant_id, args).await,
             "getPlaybook" => operations::get_playbook(&self.assistant_id, args).await,
-            "updatePlaybook" => {
-                operations::update_playbook(&self.assistant_id, args, caller).await
-            }
+            "updatePlaybook" => operations::update_playbook(&self.assistant_id, args, caller).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

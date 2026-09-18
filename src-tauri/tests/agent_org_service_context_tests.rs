@@ -311,9 +311,9 @@ async fn service_context_composes_child_and_org_context() {
 
     // Agent-facing ids match storage ids exactly.
     assert!(prompt.contains("### Sub-Agents (1)"));
-    assert!(prompt.contains(
-        "- Idle: `child-org-session` [config:assistant-test] \"Child Analyst\""
-    ));
+    assert!(
+        prompt.contains("- Idle: `child-org-session` [config:assistant-test] \"Child Analyst\"")
+    );
     assert!(prompt.contains("### Explicit Org Layer"));
     assert!(prompt.contains("- Org: Beta Org (ID: org-beta)"));
     assert!(prompt.contains("## Agent Delegation"));

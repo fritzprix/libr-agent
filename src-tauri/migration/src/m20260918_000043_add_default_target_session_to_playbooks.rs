@@ -14,7 +14,11 @@ impl MigrationTrait for Migration {
                 .alter_table(
                     Table::alter()
                         .table(Playbooks::Table)
-                        .add_column(ColumnDef::new(Playbooks::DefaultTargetSession).text().null())
+                        .add_column(
+                            ColumnDef::new(Playbooks::DefaultTargetSession)
+                                .text()
+                                .null(),
+                        )
                         .to_owned(),
                 )
                 .await?;

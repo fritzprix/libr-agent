@@ -204,9 +204,7 @@ async fn resolve_delegated_session_ref(
     }
 
     if !crate::utils::session_id::should_try_legacy_session_resolve(target_ref) {
-        return Err(crate::mcp::builtin::error_guidance::missing_agent_session_error(
-            target_ref,
-        ));
+        return Err(crate::mcp::builtin::error_guidance::missing_agent_session_error(target_ref));
     }
 
     // Legacy short-suffix / session- prefix: unique match among delegated descendants.

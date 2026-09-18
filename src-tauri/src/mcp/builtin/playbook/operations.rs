@@ -212,8 +212,7 @@ pub async fn create_playbook(
             ))
         }
     };
-    let pin_json = match serialize_default_target_session_column(default_target_session.as_ref())
-    {
+    let pin_json = match serialize_default_target_session_column(default_target_session.as_ref()) {
         Ok(json) => json,
         Err(e) => {
             return Ok(invalid_input_error(
@@ -782,19 +781,18 @@ pub async fn update_playbook(
             ))
         }
     };
-    let pin_json = match serialize_default_target_session_column(
-        existing.default_target_session.as_ref(),
-    ) {
-        Ok(json) => json,
-        Err(e) => {
-            return Ok(operation_failed_error(
-                "updatePlaybook",
-                &format!("Failed to serialize defaultTargetSession: {}", e),
-                vec!["Verify defaultTargetSession structure is valid".to_string()],
-                ToolGroup::Playbook,
-            ))
-        }
-    };
+    let pin_json =
+        match serialize_default_target_session_column(existing.default_target_session.as_ref()) {
+            Ok(json) => json,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "updatePlaybook",
+                    &format!("Failed to serialize defaultTargetSession: {}", e),
+                    vec!["Verify defaultTargetSession structure is valid".to_string()],
+                    ToolGroup::Playbook,
+                ))
+            }
+        };
 
     // Execute update via repository
     let updated_model = match repo

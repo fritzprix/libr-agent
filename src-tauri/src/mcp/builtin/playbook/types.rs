@@ -141,9 +141,7 @@ fn parse_stored_target_session(value: &Value) -> Option<TargetSessionConfig> {
     match serde_json::from_value::<TargetSessionConfig>(value.clone()) {
         Ok(cfg) => {
             if cfg.mode == TargetSessionMode::Pin && cfg.pinned_session_id().is_none() {
-                log::warn!(
-                    "Ignoring defaultTargetSession pin without a non-empty sessionId"
-                );
+                log::warn!("Ignoring defaultTargetSession pin without a non-empty sessionId");
                 None
             } else {
                 Some(cfg)
@@ -297,7 +295,8 @@ mod tests {
 
     #[test]
     fn parse_step_without_optional_fields() {
-        let raw = r#"[{"description":"d","action":{"toolName":"t","purpose":"p"},"outputVariable":"o"}]"#;
+        let raw =
+            r#"[{"description":"d","action":{"toolName":"t","purpose":"p"},"outputVariable":"o"}]"#;
         let (steps, target) = parse_workflow_payload(raw);
         assert_eq!(steps.len(), 1);
         assert!(steps[0].step_id.is_none());
