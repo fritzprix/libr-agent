@@ -81,7 +81,7 @@ Computer Use tool enabling direct OS-level simulation of mouse and keyboard inpu
 - `cursor_position`: Query current mouse coordinates `(x, y)`
 
 > [!TIP]
-> First call `media__captureScreen` with a `display_index`, then call `desktop__computerControl` with the **same** `display_index` and the **image-pixel** `(x, y)` from that screenshot (0,0 = top-left of the image). LibrAgent converts those image coordinates to absolute OS input coordinates — do not manually add monitor offsets.
+> First call `media__captureScreen` with a `display_index`, then call `desktop__computerControl` with the **same** `display_index` and the **raw image-pixel** `(x, y)` from that screenshot (0,0 = top-left of the image). Pass `width_scale`/`height_scale` from the capture response when listed. Do not divide by DPI/`scale_factor` or manually add monitor offsets — LibrAgent converts image coordinates to absolute OS input coordinates.
 
 ### 4. Interactive UI (`ui__*`)
 

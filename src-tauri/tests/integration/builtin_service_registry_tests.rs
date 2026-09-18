@@ -1187,27 +1187,10 @@ async fn desktop_computer_control_rejects_partial_origin() {
 
 #[test]
 fn desktop_image_coord_mapping_converts_origin_and_scale() {
-    use tauri_mcp_agent_lib::mcp::builtin::desktop::handlers::{
-        resolve_image_coord_mapping, ImageCoordMapping,
-    };
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::handlers::resolve_image_coord_mapping;
 
-    let mapping = resolve_image_coord_mapping(&json!({
-        "origin_x": 500,
-        "origin_y": 600
-    }))
-    .expect("valid origin mapping")
-    .expect("mapping should be present");
-    assert_eq!(
-        mapping,
-        ImageCoordMapping {
-            origin_x: 500,
-            origin_y: 600,
-            width_scale: 1.0,
-            height_scale: 1.0,
-        }
-    );
-    assert_eq!(mapping.to_absolute(10, 20), (510, 620));
-
+    // Origin + explicit scales (identity-default coverage lives in
+    // `desktop_image_coord_default_scales_are_identity`).
     let scaled = resolve_image_coord_mapping(&json!({
         "origin_x": 100,
         "origin_y": 200,
@@ -1217,26 +1200,6 @@ fn desktop_image_coord_mapping_converts_origin_and_scale() {
     .expect("valid scaled mapping")
     .expect("mapping should be present");
     assert_eq!(scaled.to_absolute(10, 15), (105, 230));
-
-    // Regression: display_index mode must NOT default to 1/scale_factor.
-    // Screenshot pixels are already physical; identity scale keeps clicks aligned
-    // (previously 200% DPI mapped image (352,1772) → absolute (176,886)).
-    if let Ok(Some(display_mapping)) = resolve_image_coord_mapping(&json!({ "display_index": 0 })) {
-        assert!(
-            (display_mapping.width_scale - 1.0).abs() < f64::EPSILON
-                && (display_mapping.height_scale - 1.0).abs() < f64::EPSILON,
-            "display_index without explicit scales must default to identity (1.0), got width_scale={} height_scale={}",
-            display_mapping.width_scale,
-            display_mapping.height_scale
-        );
-        assert_eq!(
-            display_mapping.to_absolute(352, 1772),
-            (
-                display_mapping.origin_x + 352,
-                display_mapping.origin_y + 1772
-            )
-        );
-    }
 
     assert!(resolve_image_coord_mapping(&json!({ "origin_x": 100 }))
         .expect_err("partial origin")
@@ -1254,6 +1217,40 @@ fn desktop_image_coord_mapping_converts_origin_and_scale() {
     }))
     .expect_err("non-positive scale")
     .contains("width_scale"));
+}
+
+/// Regression: omitted scales must default to identity (1.0), never 1/scale_factor.
+/// Both origin and display_index paths share `resolve_image_to_absolute_scales`,
+/// so this guards the bug in CI without requiring a physical monitor.
+#[test]
+fn desktop_image_coord_default_scales_are_identity() {
+    use tauri_mcp_agent_lib::mcp::builtin::desktop::handlers::{
+        resolve_image_coord_mapping, resolve_image_to_absolute_scales,
+        DEFAULT_IMAGE_TO_ABSOLUTE_SCALE,
+    };
+
+    assert_eq!(
+        DEFAULT_IMAGE_TO_ABSOLUTE_SCALE, 1.0,
+        "identity default required so DPI is not double-applied"
+    );
+    assert_eq!(resolve_image_to_absolute_scales(None, None), (1.0, 1.0));
+    assert_eq!(
+        resolve_image_to_absolute_scales(Some(0.5), Some(2.0)),
+        (0.5, 2.0)
+    );
+
+    // Origin path (no monitor needed) must use the same shared default.
+    let mapping = resolve_image_coord_mapping(&json!({
+        "origin_x": 100,
+        "origin_y": 200
+    }))
+    .expect("valid origin mapping")
+    .expect("mapping should be present");
+    assert_eq!(mapping.width_scale, DEFAULT_IMAGE_TO_ABSOLUTE_SCALE);
+    assert_eq!(mapping.height_scale, DEFAULT_IMAGE_TO_ABSOLUTE_SCALE);
+    assert_eq!(mapping.to_absolute(10, 20), (110, 220));
+    // Previously 200% DPI + 1/scale_factor mapped (352, 1772) → (176, 886).
+    assert_eq!(mapping.to_absolute(352, 1772), (452, 1972));
 }
 
 #[tokio::test]
