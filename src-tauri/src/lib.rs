@@ -95,7 +95,7 @@ use commands::playbook_commands::{
 use commands::scheduled_task_commands::{
     cancel_session_scheduled_task, create_scheduled_task, delete_scheduled_task,
     get_scheduled_task, list_scheduled_tasks, list_session_scheduled_tasks, toggle_scheduled_task,
-    update_scheduled_task,
+    toggle_session_scheduled_task, update_scheduled_task,
 };
 use commands::session_commands::remove_session;
 use commands::session_export_commands::export_session_file;
@@ -342,6 +342,7 @@ pub fn run() {
                 toggle_scheduled_task,
                 delete_scheduled_task,
                 list_session_scheduled_tasks,
+                toggle_session_scheduled_task,
                 cancel_session_scheduled_task,
                 set_setting,
                 update_settings,

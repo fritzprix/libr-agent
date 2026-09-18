@@ -8,6 +8,7 @@ import {
   deleteScheduledTask,
   listSessionScheduledTasks,
   cancelSessionScheduledTask,
+  toggleSessionScheduledTask,
 } from './scheduled-tasks';
 import { safeInvoke } from './core';
 
@@ -149,6 +150,26 @@ describe('session scheduled tasks backend wrapper', () => {
 
     expect(safeInvoke).toHaveBeenCalledWith('list_session_scheduled_tasks', {
       sessionId: 'session-1',
+    });
+  });
+
+  it('toggleSessionScheduledTask calls safeInvoke with session, task, and enabled', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce({
+      id: 'task-1',
+      name: 'Callback',
+      message: 'Ping',
+      sessionId: 'session-1',
+      isOneShot: true,
+      enabled: false,
+      nextRunAt: 1234,
+    });
+
+    await toggleSessionScheduledTask('session-1', 'task-1', false);
+
+    expect(safeInvoke).toHaveBeenCalledWith('toggle_session_scheduled_task', {
+      sessionId: 'session-1',
+      taskId: 'task-1',
+      enabled: false,
     });
   });
 

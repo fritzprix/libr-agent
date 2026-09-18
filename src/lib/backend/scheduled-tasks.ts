@@ -35,6 +35,7 @@ export interface SessionScheduledTask {
   message: string;
   sessionId: string | null;
   isOneShot: boolean;
+  enabled: boolean;
   nextRunAt: number | null;
 }
 
@@ -105,6 +106,23 @@ export async function listSessionScheduledTasks(
 ): Promise<SessionScheduledTask[]> {
   return safeInvoke<SessionScheduledTask[]>('list_session_scheduled_tasks', {
     sessionId,
+  });
+}
+
+export async function toggleSessionScheduledTask(
+  sessionId: string,
+  taskId: string,
+  enabled: boolean,
+): Promise<SessionScheduledTask> {
+  logger.info('Toggling session scheduled task', {
+    sessionId,
+    taskId,
+    enabled,
+  });
+  return safeInvoke<SessionScheduledTask>('toggle_session_scheduled_task', {
+    sessionId,
+    taskId,
+    enabled,
   });
 }
 

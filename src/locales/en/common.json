@@ -1433,7 +1433,11 @@
         "nextRun": "Next run: {{time}}",
         "nextRunNone": "Not scheduled",
         "cancelFailed": "Failed to cancel scheduled callback",
-        "cancelAria": "Cancel {{name}}"
+        "cancelAria": "Cancel {{name}}",
+        "paused": "Paused",
+        "toggleFailed": "Failed to update scheduled callback",
+        "pauseAria": "Pause {{name}}",
+        "resumeAria": "Resume {{name}}"
       }
     },
     "processes": {

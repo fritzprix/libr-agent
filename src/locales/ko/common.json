@@ -1423,7 +1423,11 @@
         "nextRun": "다음 실행: {{time}}",
         "nextRunNone": "예약 없음",
         "cancelFailed": "예약 콜백 취소에 실패했습니다",
-        "cancelAria": "{{name}} 취소"
+        "cancelAria": "{{name}} 취소",
+        "paused": "일시정지",
+        "toggleFailed": "예약 콜백 상태 변경에 실패했습니다",
+        "pauseAria": "{{name}} 일시정지",
+        "resumeAria": "{{name}} 재개"
       }
     },
     "processes": {
