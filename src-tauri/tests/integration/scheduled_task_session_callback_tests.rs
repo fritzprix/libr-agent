@@ -613,6 +613,20 @@ async fn service_context_excludes_global_tasks_and_reports_idle_without_session_
     assert!(!active_context.context_prompt.contains(&global_task.id));
     assert!(!active_context.context_prompt.contains("Nightly wiki mine"));
 
+    // Disabled SESSION callbacks must not keep ambient SC alive.
+    ScheduledTaskService::toggle_scheduled_task_with_governance(
+        &scheduled_repo,
+        &session_task.id,
+        false,
+        &governance,
+    )
+    .await
+    .expect("toggle disable should succeed");
+    assert!(!server.has_active_state().await);
+    let disabled_context = server.get_service_context(None).await;
+    assert!(disabled_context.context_prompt.trim().is_empty());
+    assert!(!disabled_context.context_prompt.contains(&session_task.id));
+
     // When the session callback is deleted (mirroring runner one-shot completion or orphan cleanup),
     // the session reverts to an idle state with zero ambient service context.
     scheduled_repo
@@ -622,4 +636,77 @@ async fn service_context_excludes_global_tasks_and_reports_idle_without_session_
     assert!(!server.has_active_state().await);
     let post_completion_context = server.get_service_context(None).await;
     assert!(post_completion_context.context_prompt.trim().is_empty());
+}
+
+#[tokio::test]
+async fn runner_deletes_completed_one_shot_and_orphaned_session_callbacks() {
+    use tauri_mcp_agent_lib::scheduled::runner::{
+        delete_orphaned_session_callback, finalize_session_callback_schedule,
+    };
+
+    let db = common::setup_test_db_with_migrations().await;
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db);
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let governance = ScheduledTaskGovernanceSettings::default();
+
+    let one_shot = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "One-shot follow-up".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Check back".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: Some("session-runner-oneshot".to_string()),
+            session_id: Some("session-runner-oneshot".to_string()),
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: Some(now_ms - 1_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("one-shot should be created");
+
+    finalize_session_callback_schedule(&scheduled_repo, &one_shot, now_ms)
+        .await
+        .expect("one-shot finalize should delete the row");
+    assert!(scheduled_repo
+        .get_scheduled_task(&one_shot.id)
+        .await
+        .expect("lookup should succeed")
+        .is_none());
+
+    let orphan = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Orphan callback".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Gone session".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: Some("missing-session".to_string()),
+            session_id: Some("missing-session".to_string()),
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: Some(now_ms - 1_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("orphan callback should be created");
+
+    delete_orphaned_session_callback(&scheduled_repo, &orphan, "missing-session")
+        .await
+        .expect("orphan cleanup should delete the row");
+    assert!(scheduled_repo
+        .get_scheduled_task(&orphan.id)
+        .await
+        .expect("lookup should succeed")
+        .is_none());
 }

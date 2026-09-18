@@ -349,15 +349,7 @@ async fn execute_session_callback(
 
     if !active_session_ids.contains(session_id) && !session_exists_in_repo {
         let repo = get_scheduled_task_repository();
-        repo.delete_scheduled_task(&task.id)
-            .await
-            .map_err(|e| format!("Failed to delete orphaned SESSION task {}: {e}", task.id))?;
-        log::warn!(
-            "⏰ SESSION task '{}' ({}) deleted — target session {} no longer exists",
-            task.name,
-            task.id,
-            session_id
-        );
+        delete_orphaned_session_callback(repo, task, session_id).await?;
         return Ok(());
     }
 
@@ -414,6 +406,37 @@ async fn execute_session_callback(
 
     inject_scheduled_message(manager, session_id, task).await?;
 
+    finalize_session_callback_schedule(repo, task, now_ms).await?;
+
+    log::info!("⏰ Triggered SESSION callback '{}'", task.name);
+    Ok(())
+}
+
+/// Delete a SESSION callback whose pinned session no longer exists.
+pub async fn delete_orphaned_session_callback(
+    repo: &dyn ScheduledTaskRepository,
+    task: &crate::entity::scheduled_task::Model,
+    session_id: &str,
+) -> Result<(), String> {
+    repo.delete_scheduled_task(&task.id)
+        .await
+        .map_err(|e| format!("Failed to delete orphaned SESSION task {}: {e}", task.id))?;
+    log::warn!(
+        "⏰ SESSION task '{}' ({}) deleted — target session {} no longer exists",
+        task.name,
+        task.id,
+        session_id
+    );
+    Ok(())
+}
+
+/// After a SESSION callback message was injected, finalize the schedule row:
+/// one-shots are deleted; recurring tasks advance `next_run_at`.
+pub async fn finalize_session_callback_schedule(
+    repo: &dyn ScheduledTaskRepository,
+    task: &crate::entity::scheduled_task::Model,
+    now_ms: i64,
+) -> Result<(), String> {
     if is_one_shot_task(&task.cron_expression) {
         repo.delete_scheduled_task(&task.id).await.map_err(|e| {
             format!(
@@ -421,24 +444,20 @@ async fn execute_session_callback(
                 task.id
             )
         })?;
-    } else {
-        let cron_expression = task.cron_expression.as_deref().ok_or_else(|| {
-            format!(
-                "SESSION recurring task '{}' ({}) is missing a cron expression",
-                task.name, task.id
-            )
-        })?;
-        let next_run_at = compute_next_run_for_schedule_timezone(
-            cron_expression,
-            now_ms,
-            &task.schedule_timezone,
-        )?;
-        repo.record_run(&task.id, None, now_ms, next_run_at)
-            .await
-            .map_err(|e| format!("Failed to record SESSION run: {e}"))?;
+        return Ok(());
     }
 
-    log::info!("⏰ Triggered SESSION callback '{}'", task.name);
+    let cron_expression = task.cron_expression.as_deref().ok_or_else(|| {
+        format!(
+            "SESSION recurring task '{}' ({}) is missing a cron expression",
+            task.name, task.id
+        )
+    })?;
+    let next_run_at =
+        compute_next_run_for_schedule_timezone(cron_expression, now_ms, &task.schedule_timezone)?;
+    repo.record_run(&task.id, None, now_ms, next_run_at)
+        .await
+        .map_err(|e| format!("Failed to record SESSION run: {e}"))?;
     Ok(())
 }
 

@@ -78,15 +78,15 @@ Requirements:
 After creation, use the returned task ID:
 
 - `getScheduledTask(taskId)` — inspect timing, message, and enabled state
-- `toggleScheduledTask(taskId, enabled=false)` — cancel or pause before it fires
-- `deleteScheduledTask(taskId)` — remove it entirely
+- `toggleScheduledTask(taskId, enabled=false)` — pause without deleting (ambient SC clears while paused)
+- `deleteScheduledTask(taskId)` — cancel / remove it entirely
 
 The user can also manage and cancel schedules directly from the session Planning panel.
 
 ### 4. Set expectations honestly
 
-- One-shot schedules disable themselves after firing.
-- If the session is deleted, session schedules are invalidated; they do not create a replacement session.
+- One-shot schedules are deleted after they fire.
+- If the session is deleted, session schedules are removed; they do not create a replacement session.
 - Recurring session schedules keep firing until paused, deleted, or the session is removed.
 - Injected messages appear in the chat stream when the schedule fires.
 

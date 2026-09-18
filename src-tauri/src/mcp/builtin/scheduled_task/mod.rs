@@ -38,13 +38,14 @@ impl ScheduledTaskServer {
         }
     }
 
-    /// Service context only surfaces SESSION callbacks for this session.
-    /// GLOBAL cron tasks are managed via tools / SchedulerWorker, not ambient SC.
-    fn is_own_session_callback(
+    /// Ambient SC only surfaces enabled SESSION callbacks for this session.
+    /// GLOBAL cron tasks and disabled callbacks stay on-demand via tools.
+    fn is_active_own_session_callback(
         task: &crate::entity::scheduled_task::Model,
         session_id: &str,
     ) -> bool {
-        task.task_category == crate::scheduled::TASK_CATEGORY_SESSION
+        task.enabled
+            && task.task_category == crate::scheduled::TASK_CATEGORY_SESSION
             && task.session_id.as_deref() == Some(session_id)
     }
 }
@@ -98,8 +99,8 @@ impl BuiltinMCPServer for ScheduledTaskServer {
             }
         };
 
-        // SESSION callbacks for this session only — GLOBAL tasks stay on-demand via tools.
-        tasks.retain(|task| Self::is_own_session_callback(task, self.session_id.as_str()));
+        // Enabled SESSION callbacks for this session only — GLOBAL / disabled stay on-demand.
+        tasks.retain(|task| Self::is_active_own_session_callback(task, self.session_id.as_str()));
 
         if tasks.is_empty() {
             // Idle: omit prompt text so volatile SC stays lean.
@@ -113,17 +114,14 @@ impl BuiltinMCPServer for ScheduledTaskServer {
                 .with_volatility(ContextVolatility::Volatile);
         }
 
-        let enabled_count = tasks.iter().filter(|task| task.enabled).count();
-        let disabled_count = tasks.len().saturating_sub(enabled_count);
-        let mut upcoming_tasks = tasks.iter().filter(|task| task.enabled).collect::<Vec<_>>();
+        let pending_count = tasks.len();
+        let mut upcoming_tasks = tasks.iter().collect::<Vec<_>>();
         upcoming_tasks.sort_by_key(|task| task.next_run_at.unwrap_or(i64::MAX));
 
         let mut context_lines = vec![
             "## Scheduled Tasks".to_string(),
             String::new(),
-            format!("- Total: {}", tasks.len()),
-            format!("- Enabled: {}", enabled_count),
-            format!("- Disabled: {}", disabled_count),
+            format!("- Pending: {}", pending_count),
             format!("- Caller session: {}", self.session_id),
         ];
 
@@ -138,7 +136,7 @@ impl BuiltinMCPServer for ScheduledTaskServer {
                     formatting::format_timestamp(task.next_run_at)
                 ));
             }
-            if tasks.len() > 3 {
+            if pending_count > 3 {
                 context_lines.push(
                     "Use scheduled_task__listScheduledTasks() for the full schedule set."
                         .to_string(),
@@ -148,9 +146,9 @@ impl BuiltinMCPServer for ScheduledTaskServer {
 
         ServiceContext::new(context_lines.join("\n"))
             .with_structured_state(json!({
-                "total": tasks.len(),
-                "enabled": enabled_count,
-                "disabled": disabled_count,
+                "total": pending_count,
+                "enabled": pending_count,
+                "disabled": 0,
                 "tasks": tasks
                     .iter()
                     .take(5)
@@ -170,7 +168,7 @@ impl BuiltinMCPServer for ScheduledTaskServer {
             .map(|tasks| {
                 tasks
                     .iter()
-                    .any(|task| Self::is_own_session_callback(task, session_id))
+                    .any(|task| Self::is_active_own_session_callback(task, session_id))
             })
             .unwrap_or(false)
     }

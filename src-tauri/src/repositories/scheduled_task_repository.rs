@@ -85,8 +85,9 @@ pub trait ScheduledTaskRepository: Send + Sync {
 
     /// List enabled SESSION callbacks pinned to a session.
     ///
-    /// Disabled rows (runner orphan handling, etc.) are omitted
+    /// Disabled rows (e.g. agent `toggleScheduledTask(enabled=false)`) are omitted
     /// because the session panel only surfaces active pending callbacks.
+    /// Completed one-shots and orphaned callbacks are deleted by the runner, not disabled.
     async fn list_session_scheduled_tasks(
         &self,
         session_id: &str,
