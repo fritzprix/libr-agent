@@ -252,6 +252,7 @@ pub async fn export_migration(
             initial_command: p.initial_command,
             workflow: p.workflow,
             success_criteria: p.success_criteria,
+            default_target_session: p.default_target_session,
             created_at: p.created_at,
             updated_at: p.updated_at,
             is_bookmarked: p.is_bookmarked,

@@ -152,10 +152,10 @@ pub async fn load_accessible_delegated_session(
     .to_mcp_result())
 }
 
-/// Resolve a full session id, bare short token, or optional `session-{short}` form.
+/// Resolve a session id among delegated descendants.
 ///
-/// Exact DB hits win. Otherwise alias resolution is scoped to delegated descendants of
-/// `caller_session_id` so short refs stay unambiguous within the caller's tree.
+/// Exact storage id first (ancestor check via parent-chain walk — no full dump).
+/// Legacy short / `session-{…}` refs fall back to unique match among descendants only.
 async fn resolve_delegated_session_ref(
     manager: &crate::agent::AgentSessionManager,
     caller_session_id: &str,
@@ -163,7 +163,28 @@ async fn resolve_delegated_session_ref(
     tool_name: &str,
 ) -> Result<String, MCPResult> {
     match manager.get_session(target_ref).await {
-        Ok(Some(_)) => return Ok(target_ref.to_string()),
+        Ok(Some(_)) => {
+            return match is_delegated_descendant_via_walk(manager, caller_session_id, target_ref)
+                .await
+            {
+                Ok(true) => Ok(target_ref.to_string()),
+                Ok(false) => Err(
+                    crate::mcp::builtin::error_guidance::missing_agent_session_error(target_ref),
+                ),
+                Err(error) => Err(guided_error(
+                    ErrorCategory::InternalError,
+                    format!(
+                        "Failed to verify delegated access for {}: {}",
+                        tool_name, error
+                    ),
+                    ToolGroup::Agent,
+                )
+                .with_guidance(vec![
+                    "Retry the operation once session metadata is available again".to_string(),
+                ])
+                .to_mcp_result()),
+            };
+        }
         Ok(None) => {}
         Err(error) => {
             return Err(guided_error(
@@ -182,6 +203,11 @@ async fn resolve_delegated_session_ref(
         }
     }
 
+    if !crate::utils::session_id::should_try_legacy_session_resolve(target_ref) {
+        return Err(crate::mcp::builtin::error_guidance::missing_agent_session_error(target_ref));
+    }
+
+    // Legacy short-suffix / session- prefix: unique match among delegated descendants.
     let all_sessions = match manager.get_all_sessions().await {
         Ok(sessions) => sessions,
         Err(error) => {
@@ -233,15 +259,47 @@ async fn resolve_delegated_session_ref(
                 ToolGroup::Agent,
             )
             .with_guidance(vec![
-                "Multiple delegated sessions share this short alias; confirm the target by name via list(type=\"sessions\")".to_string(),
+                "Multiple delegated sessions share this short alias; confirm the target via list(type=\"sessions\")".to_string(),
                 format!(
-                    "Retry {} with an exact storage id if available, or remove unused sibling sessions so aliases are unique",
+                    "Retry {} with the exact storage session id",
                     tool_name
                 ),
             ])
             .to_mcp_result())
         }
     }
+}
+
+/// Walk `parent_session_id` links from `target` up to `caller` (O(depth) lookups).
+async fn is_delegated_descendant_via_walk(
+    manager: &crate::agent::AgentSessionManager,
+    caller_session_id: &str,
+    target_session_id: &str,
+) -> Result<bool, String> {
+    if caller_session_id == target_session_id {
+        return Ok(false);
+    }
+
+    let mut current = match manager.get_session(target_session_id).await? {
+        Some(session) => session,
+        None => return Ok(false),
+    };
+    let mut seen = HashSet::new();
+
+    while let Some(parent_id) = current.parent_session_id {
+        if !seen.insert(parent_id.clone()) {
+            return Ok(false);
+        }
+        if parent_id == caller_session_id {
+            return Ok(true);
+        }
+        current = match manager.get_session(&parent_id).await? {
+            Some(session) => session,
+            None => return Ok(false),
+        };
+    }
+
+    Ok(false)
 }
 
 pub async fn prepare_teamwork_workspace(

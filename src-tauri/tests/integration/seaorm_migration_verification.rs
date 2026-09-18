@@ -206,6 +206,7 @@ async fn test_playbook_crud_operations() {
         initial_command: Set(Some("test command".to_string())),
         workflow: Set("[]".to_string()),
         success_criteria: Set(Some("{}".to_string())),
+        default_target_session: Set(None),
         created_at: Set(1000),
         updated_at: Set(1000),
         is_bookmarked: Set(false),

@@ -39,6 +39,8 @@ pub struct PlaybookRecord {
     pub initial_command: Option<String>,
     pub workflow: String,
     pub success_criteria: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_target_session: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub is_bookmarked: bool,

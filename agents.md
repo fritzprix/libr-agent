@@ -10,6 +10,22 @@ This workspace contains both application code (React/TypeScript frontend + Rust/
 
 ---
 
+## 🚫 절대 원칙: 오버엔지니어링 & 불필요한 추상화 금지 (KISS / YAGNI)
+
+> [!CAUTION]
+> **이 프로젝트는 100만 동접 분산 웹서비스가 아닌 개인 로컬(Tauri + SQLite) 데스크톱 앱입니다.**
+> 수십~수백 개 수준의 데이터를 다루는 로컬 환경에 분산 시스템급의 과도한 계층 분리나 불필요한 다중 추상화를 절대 도입하지 마십시오.
+
+1. **Dual State / Dual ID 설계 절대 금지**:
+   - 프롬프트 토큰 몇 바이트 아끼겠다고 ID를 잘라내거나(Display vs Storage 분리), 불필요한 상태 이원화를 만들어 복잡한 역방향 매핑(reverse lookup) 및 불일치 버그를 유발하지 마십시오.
+   - 단일 고유 ID(SSOT) 원칙을 철저히 유지하십시오. 에이전트가 보는 ID와 DB/내부 시스템이 찾는 ID는 100% 동일해야 합니다.
+2. **방어 코드 남발보다 단순한 구조 우선**:
+   - 복잡도를 키우는 수백 줄의 껍데기 래퍼, 뉴타입, 매핑 알고리즘보다 처음부터 문제가 생기지 않는 단순하고 직관적인 설계를 우선하십시오.
+3. **YAGNI (You Aren't Gonna Need It)**:
+   - "나중에 필요할지도 모른다"는 상상 속의 확장성을 위해 코드를 미리 꼬아놓지 마십시오. 당장 필요한 기능만 가장 단순한 형태로 구현하십시오.
+
+---
+
 ## Code Guidelines
 
 ### Technology Stack

@@ -201,21 +201,11 @@ impl SessionManager {
         };
 
         if let Some(session_id) = unused_session_id {
-            // Rename this pooled session to a unique session
-            let timestamp_nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-            let new_session_id = format!("session-{timestamp_nanos}");
+            let new_session_id = crate::utils::session_id::generate_session_id();
             self.rename_session(&session_id, &new_session_id).await?;
             Ok(new_session_id)
         } else {
-            // No pooled sessions available, create a new one
-            let timestamp_nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-            let new_session_id = format!("session-{timestamp_nanos}");
+            let new_session_id = crate::utils::session_id::generate_session_id();
             self.create_session_workspace_async(&new_session_id).await?;
             Ok(new_session_id)
         }

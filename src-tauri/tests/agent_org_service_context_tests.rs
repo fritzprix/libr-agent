@@ -309,10 +309,11 @@ async fn service_context_composes_child_and_org_context() {
 
     let prompt = compose_service_context_prompt(&repo, "parent-org-session").await;
 
-    // Agent-facing ids are short tokens only (no `session-` prefix).
-    // Fixture `child-org-session` (17 chars) → last 10: `rg-session`.
+    // Agent-facing ids match storage ids exactly.
     assert!(prompt.contains("### Sub-Agents (1)"));
-    assert!(prompt.contains("- Idle: `rg-session` [config:assistant-test] \"Child Analyst\""));
+    assert!(
+        prompt.contains("- Idle: `child-org-session` [config:assistant-test] \"Child Analyst\"")
+    );
     assert!(prompt.contains("### Explicit Org Layer"));
     assert!(prompt.contains("- Org: Beta Org (ID: org-beta)"));
     assert!(prompt.contains("## Agent Delegation"));
@@ -436,11 +437,10 @@ async fn service_context_includes_active_sessions_notice() {
     assert!(prompt.contains("agent__messageToSession"));
     assert!(prompt.contains("agent__spawnSession"));
 
-    // Agent-facing ids are short tokens only (no `session-` prefix).
-    //   child-idle (10) → child-idle; child-paused (12) → ild-paused; child-error (11) → hild-error
+    // Agent-facing ids match storage ids exactly.
     assert!(prompt.contains("- Idle: `child-idle` [config:assistant-test] \"Active Child 1\""));
-    assert!(prompt.contains("- Paused: `ild-paused` [config:assistant-test] \"Active Child 2\""));
-    assert!(prompt.contains("- Error: `hild-error` [config:assistant-test] \"Error Child\""));
+    assert!(prompt.contains("- Paused: `child-paused` [config:assistant-test] \"Active Child 2\""));
+    assert!(prompt.contains("- Error: `child-error` [config:assistant-test] \"Error Child\""));
 }
 
 #[test]

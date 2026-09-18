@@ -1,7 +1,13 @@
 import { safeInvoke } from './core';
-import type { Playbook } from '@/types/playbook';
+import type {
+  Playbook,
+  PlaybookDefaultTargetSession,
+  PlaybookStep,
+} from '@/types/playbook';
 import type { Page } from '@/lib/db/types';
 import {
+  normalizePlaybookWorkflow,
+  PlaybookDefaultTargetSessionSchema,
   safeParsePlaybookWorkflow,
   safeParseSuccessCriteria,
 } from '@/lib/schemas/playbook';
@@ -17,37 +23,102 @@ interface PlaybookDto {
   assistantId: string;
   goal: string;
   initialCommand?: string;
-  workflow: unknown; // JSON
-  successCriteria?: unknown; // JSON
+  workflow: unknown; // steps array (legacy envelope still accepted on read)
+  successCriteria?: unknown;
   createdAt: number;
   updatedAt: number;
   isBookmarked: boolean;
+  defaultTargetSession?: unknown;
 }
 
-// Frontend Playbook type lacks ID/createdAt sometimes depending on where it's used?
-// Check `types/playbook.ts`:
-// export interface Playbook { id?: string; agentId: string; ... }
-
-function deserializePlaybook(dto: PlaybookDto): Playbook & {
+type DeserializedPlaybook = Playbook & {
   id: string;
   createdAt: Date;
   updatedAt: Date;
-} {
-  // Parse workflow JSON string to PlaybookStep[] with validation
-  let workflow: Playbook['workflow'] = [];
-  if (typeof dto.workflow === 'string') {
-    const parsed = safeParsePlaybookWorkflow(dto.workflow);
-    if (parsed) {
-      workflow = parsed.steps;
-    } else {
-      logger.warn('Invalid workflow JSON in playbook', { id: dto.id });
-      workflow = [];
-    }
-  } else if (dto.workflow && typeof dto.workflow === 'object') {
-    // Already parsed, try to validate structure
-    const validated = safeParsePlaybookWorkflow(JSON.stringify(dto.workflow));
-    workflow = validated?.steps || (dto.workflow as Playbook['workflow']);
+};
+
+function parseDefaultTargetSession(
+  value: unknown,
+): PlaybookDefaultTargetSession | undefined {
+  if (value == null) {
+    return undefined;
   }
+  const result = PlaybookDefaultTargetSessionSchema.safeParse(value);
+  if (result.success) {
+    return result.data;
+  }
+  logger.warn('Ignoring invalid defaultTargetSession on playbook DTO');
+  return undefined;
+}
+
+function extractWorkflowParts(workflow: unknown): {
+  steps: PlaybookStep[];
+  defaultTargetSession?: PlaybookDefaultTargetSession;
+} {
+  if (typeof workflow === 'string') {
+    const parsed = safeParsePlaybookWorkflow(workflow);
+    if (parsed) {
+      return {
+        steps: parsed.steps,
+        defaultTargetSession: parsed.defaultTargetSession,
+      };
+    }
+    logger.warn('Invalid workflow JSON in playbook');
+    return { steps: [] };
+  }
+
+  if (workflow == null) {
+    return { steps: [] };
+  }
+
+  const normalized = normalizePlaybookWorkflow(workflow);
+  if (normalized) {
+    return {
+      steps: normalized.steps,
+      defaultTargetSession: normalized.defaultTargetSession,
+    };
+  }
+
+  // Legacy: already an array of steps without envelope validation
+  if (Array.isArray(workflow)) {
+    return { steps: workflow as PlaybookStep[] };
+  }
+
+  logger.warn('Unrecognized playbook workflow shape');
+  return { steps: [] };
+}
+
+/**
+ * Persist pin as a dedicated column value (not inside workflow JSON).
+ * Invalid pin configs (mode pin without sessionId) are dropped.
+ */
+export function serializeDefaultTargetSessionForBackend(
+  target: Playbook['defaultTargetSession'],
+): PlaybookDefaultTargetSession | null {
+  if (!target) {
+    return null;
+  }
+  if (target.mode === 'pin') {
+    const sessionId = target.sessionId?.trim();
+    if (!sessionId) {
+      return null;
+    }
+    return { mode: 'pin', sessionId };
+  }
+  return {
+    mode: 'self',
+    ...(target.sessionId?.trim()
+      ? { sessionId: target.sessionId.trim() }
+      : {}),
+  };
+}
+
+function deserializePlaybook(dto: PlaybookDto): DeserializedPlaybook {
+  const { steps: workflow, defaultTargetSession: envelopeTarget } =
+    extractWorkflowParts(dto.workflow);
+
+  const defaultTargetSession =
+    parseDefaultTargetSession(dto.defaultTargetSession) ?? envelopeTarget;
 
   // Parse successCriteria JSON string with validation
   let successCriteria: Playbook['successCriteria'] = { description: '' };
@@ -75,6 +146,7 @@ function deserializePlaybook(dto: PlaybookDto): Playbook & {
     createdAt: new Date(dto.createdAt),
     updatedAt: new Date(dto.updatedAt),
     isBookmarked: dto.isBookmarked,
+    defaultTargetSession,
   };
 }
 
@@ -86,6 +158,9 @@ export async function createPlaybook(playbook: Playbook): Promise<Playbook> {
     initialCommand: playbook.initialCommand,
     workflow: playbook.workflow,
     successCriteria: playbook.successCriteria,
+    defaultTargetSession: serializeDefaultTargetSessionForBackend(
+      playbook.defaultTargetSession,
+    ),
   });
   return deserializePlaybook(dto);
 }
@@ -99,6 +174,9 @@ export async function updatePlaybook(playbook: Playbook): Promise<Playbook> {
     goal: playbook.goal,
     workflow: playbook.workflow,
     successCriteria: playbook.successCriteria,
+    defaultTargetSession: serializeDefaultTargetSessionForBackend(
+      playbook.defaultTargetSession,
+    ),
   });
   return deserializePlaybook(dto);
 }

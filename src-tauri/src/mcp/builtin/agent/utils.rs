@@ -275,11 +275,7 @@ pub fn build_agent_tool_data(
     data
 }
 
-/// Insert agent-facing `sessionId` (display token) plus UI-only `storageSessionId`.
-///
-/// Agents must keep using the short display token. The desktop UI Open Session
-/// button must navigate with the opaque storage key so `agent_open_session` /
-/// event filters match DB rows (legacy `session-…` display ≠ storage).
+/// Insert `sessionId` (and `storageSessionId` alias — same value) for tool payloads.
 pub fn insert_agent_session_id_fields(
     data: &mut serde_json::Map<String, Value>,
     storage_session_id: &str,
@@ -301,7 +297,6 @@ pub fn build_agent_session_tool_data(
     turn_count: usize,
     next_actions: Vec<Value>,
 ) -> serde_json::Map<String, Value> {
-    // Agent-facing: always emit short display token (no `session-` prefix), never storage keys.
     let display_id = crate::utils::session_id::display_session_id(session_id);
     let mut data = build_agent_tool_data(
         tool_name,

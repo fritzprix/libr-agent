@@ -4,29 +4,48 @@ use crate::agent::types::CreateSessionResponse;
 use crate::models::chat::Message;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
-use crate::utils::session_id::{display_session_id, resolve_session_id_among, SessionIdResolve};
+use crate::state::get_session_repository;
+use crate::utils::session_id::{
+    display_session_id, resolve_session_id_among, should_try_legacy_session_resolve,
+    SessionIdResolve,
+};
 use warp::http::StatusCode;
 
 use super::types::ErrorResponse;
 
-/// Collect all stored session ids for HTTP alias resolution (global scope).
-pub async fn collect_session_id_candidates() -> Result<Vec<String>, String> {
-    let repo = crate::state::get_session_repository();
-    let sessions = repo
-        .get_all_sessions()
-        .await
-        .map_err(|e| format!("Failed to list sessions: {}", e))?;
-    Ok(sessions.into_iter().map(|session| session.id).collect())
-}
-
 /// Resolve a path/body session reference to the stored session id.
 ///
-/// Accepts full storage ids, bare short tokens, or optional `session-{short}` forms.
-/// Ambiguous aliases return HTTP 400; missing refs return 404.
+/// Exact match first; legacy short suffix / `session-{…}` as read-only fallback.
 pub async fn resolve_http_session_ref(input_ref: &str) -> Result<String, (StatusCode, String)> {
-    let candidates = collect_session_id_candidates()
+    let repo = get_session_repository();
+    if repo
+        .get_session(input_ref)
         .await
-        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .is_some()
+    {
+        return Ok(input_ref.to_string());
+    }
+
+    if !should_try_legacy_session_resolve(input_ref) {
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("Session not found: {}", input_ref),
+        ));
+    }
+
+    let candidates = repo
+        .get_all_sessions()
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to list sessions: {error}"),
+            )
+        })?
+        .into_iter()
+        .map(|session| session.id)
+        .collect::<Vec<_>>();
     let candidate_refs: Vec<&str> = candidates.iter().map(|id| id.as_str()).collect();
 
     match resolve_session_id_among(candidate_refs, input_ref) {
