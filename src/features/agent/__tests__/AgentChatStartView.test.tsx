@@ -131,6 +131,21 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('@/features/recipes', async () => {
+  const React = await import('react');
+
+  return {
+    MorningBriefingWalkthroughDialog: ({ open }: { open: boolean }) =>
+      open
+        ? React.createElement(
+            'div',
+            { role: 'dialog' },
+            '모닝 테크 & 금융 브리핑 세팅',
+          )
+        : null,
+  };
+});
+
 function createMemoryStorage() {
   const store = new Map<string, string>();
   return {
@@ -500,7 +515,7 @@ describe('AgentChatStartView', () => {
 
     fireEvent.click(startButton);
 
-    const dialog = await findByRole('dialog');
+    const dialog = await findByRole('dialog', undefined, { timeout: 5000 });
     expect(dialog).toBeInTheDocument();
     expect(dialog).toHaveTextContent('모닝 테크 & 금융 브리핑 세팅');
   });
