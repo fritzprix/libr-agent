@@ -35,10 +35,14 @@ function deserializePlaybook(dto: PlaybookDto): Playbook & {
 } {
   // Parse workflow JSON string to PlaybookStep[] with validation
   let workflow: Playbook['workflow'] = [];
+  let defaultTargetSession: Playbook['defaultTargetSession'] = undefined;
+  let sessionSlots: Playbook['sessionSlots'] = undefined;
   if (typeof dto.workflow === 'string') {
     const parsed = safeParsePlaybookWorkflow(dto.workflow);
     if (parsed) {
       workflow = parsed.steps;
+      defaultTargetSession = parsed.defaultTargetSession;
+      sessionSlots = parsed.sessionSlots;
     } else {
       logger.warn('Invalid workflow JSON in playbook', { id: dto.id });
       workflow = [];
@@ -47,6 +51,8 @@ function deserializePlaybook(dto: PlaybookDto): Playbook & {
     // Already parsed, try to validate structure
     const validated = safeParsePlaybookWorkflow(JSON.stringify(dto.workflow));
     workflow = validated?.steps || (dto.workflow as Playbook['workflow']);
+    defaultTargetSession = validated?.defaultTargetSession;
+    sessionSlots = validated?.sessionSlots;
   }
 
   // Parse successCriteria JSON string with validation
@@ -70,6 +76,8 @@ function deserializePlaybook(dto: PlaybookDto): Playbook & {
     agentId: dto.assistantId,
     goal: dto.goal,
     initialCommand: dto.initialCommand || '',
+    defaultTargetSession,
+    sessionSlots,
     workflow,
     successCriteria,
     createdAt: new Date(dto.createdAt),
@@ -79,12 +87,21 @@ function deserializePlaybook(dto: PlaybookDto): Playbook & {
 }
 
 export async function createPlaybook(playbook: Playbook): Promise<Playbook> {
+  const workflowPayload =
+    playbook.defaultTargetSession || playbook.sessionSlots
+      ? {
+          steps: playbook.workflow,
+          defaultTargetSession: playbook.defaultTargetSession,
+          sessionSlots: playbook.sessionSlots,
+        }
+      : playbook.workflow;
+
   const dto = await safeInvoke<PlaybookDto>('create_playbook', {
     id: playbook.id || '',
     assistantId: playbook.agentId,
     goal: playbook.goal,
     initialCommand: playbook.initialCommand,
-    workflow: playbook.workflow,
+    workflow: workflowPayload,
     successCriteria: playbook.successCriteria,
   });
   return deserializePlaybook(dto);
@@ -93,11 +110,20 @@ export async function createPlaybook(playbook: Playbook): Promise<Playbook> {
 export async function updatePlaybook(playbook: Playbook): Promise<Playbook> {
   if (!playbook.id) throw new Error('Playbook ID required for update');
 
+  const workflowPayload =
+    playbook.defaultTargetSession || playbook.sessionSlots
+      ? {
+          steps: playbook.workflow,
+          defaultTargetSession: playbook.defaultTargetSession,
+          sessionSlots: playbook.sessionSlots,
+        }
+      : playbook.workflow;
+
   const dto = await safeInvoke<PlaybookDto>('update_playbook', {
     id: playbook.id,
     assistantId: playbook.agentId,
     goal: playbook.goal,
-    workflow: playbook.workflow,
+    workflow: workflowPayload,
     successCriteria: playbook.successCriteria,
   });
   return deserializePlaybook(dto);

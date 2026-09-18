@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::cmp::Ordering;
 
 use super::templates::PLAYBOOK_LIST_TEMPLATE;
-use super::types::Playbook;
+use super::types::{Playbook, SessionSlotConfig, TargetSessionConfig, TargetSessionMode};
 
 fn sort_playbook_models(
     models: &mut [playbook::Model],
@@ -75,16 +75,52 @@ pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
 
     let _success_criteria = args.get("successCriteria");
 
+    let default_target_session: Option<TargetSessionConfig> = match args.get("defaultTargetSession")
+    {
+        Some(v) if !v.is_null() => match serde_json::from_value(v.clone()) {
+            Ok(cfg) => Some(cfg),
+            Err(e) => {
+                return Ok(invalid_input_error(
+                    &format!("Invalid defaultTargetSession configuration: {}", e),
+                    ToolGroup::Playbook,
+                ));
+            }
+        },
+        _ => None,
+    };
+    let session_slots: Option<std::collections::HashMap<String, SessionSlotConfig>> =
+        match args.get("sessionSlots") {
+            Some(v) if !v.is_null() => match serde_json::from_value(v.clone()) {
+                Ok(slots) => Some(slots),
+                Err(e) => {
+                    return Ok(invalid_input_error(
+                        &format!("Invalid sessionSlots configuration: {}", e),
+                        ToolGroup::Playbook,
+                    ));
+                }
+            },
+            _ => None,
+        };
+
     let repo = crate::get_playbook_repository();
     let id = uuid::Uuid::new_v4().to_string();
 
-    let workflow_json = match serde_json::to_string(workflow) {
-        Ok(json) => json,
-        Err(e) => {
-            return Ok(invalid_input_error(
-                &format!("Invalid workflow format: {}", e),
-                ToolGroup::Playbook,
-            ))
+    let workflow_json = if default_target_session.is_some() || session_slots.is_some() {
+        serde_json::json!({
+            "steps": workflow,
+            "defaultTargetSession": default_target_session,
+            "sessionSlots": session_slots,
+        })
+        .to_string()
+    } else {
+        match serde_json::to_string(workflow) {
+            Ok(json) => json,
+            Err(e) => {
+                return Ok(invalid_input_error(
+                    &format!("Invalid workflow format: {}", e),
+                    ToolGroup::Playbook,
+                ))
+            }
         }
     };
 
@@ -399,6 +435,33 @@ pub async fn select_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
         None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
     };
 
+    let pinned_session_slots: Option<std::collections::HashMap<String, String>> =
+        match args.get("pinnedSessionSlots") {
+            Some(v) if !v.is_null() => match serde_json::from_value(v.clone()) {
+                Ok(slots) => Some(slots),
+                Err(e) => {
+                    return Ok(invalid_input_error(
+                        &format!("Invalid pinnedSessionSlots configuration: {}", e),
+                        ToolGroup::Playbook,
+                    ));
+                }
+            },
+            _ => None,
+        };
+    let variables: Option<std::collections::HashMap<String, String>> = match args.get("variables") {
+        Some(v) if !v.is_null() => match serde_json::from_value(v.clone()) {
+            Ok(vars) => Some(vars),
+            Err(e) => {
+                return Ok(invalid_input_error(
+                    &format!("Invalid variables configuration: {}", e),
+                    ToolGroup::Playbook,
+                ));
+            }
+        },
+        _ => None,
+    };
+    let target_session_id = args.get("targetSessionId").and_then(|v| v.as_str());
+
     let model = match repo.get_playbook(id, assistant_id).await {
         Ok(model) => model,
         Err(e) => {
@@ -413,16 +476,117 @@ pub async fn select_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
 
     match model {
         Some(model) => {
-            let playbook = Playbook::from_model(&model);
+            let mut playbook = Playbook::from_model(&model);
+
+            // Apply runtime targetSessionId override if specified (forces pin mode)
+            if let Some(target_id) = target_session_id {
+                if let Some(ref mut dt) = playbook.default_target_session {
+                    dt.mode = TargetSessionMode::Pin;
+                    dt.session_id = Some(target_id.to_string());
+                } else {
+                    playbook.default_target_session = Some(TargetSessionConfig {
+                        mode: TargetSessionMode::Pin,
+                        session_id: Some(target_id.to_string()),
+                        config_id: None,
+                        session_slot: None,
+                    });
+                }
+            }
+
+            // Apply runtime pinnedSessionSlots mappings if specified (dynamic slot registration)
+            if let Some(ref pinned_slots) = pinned_session_slots {
+                let slots = playbook
+                    .session_slots
+                    .get_or_insert_with(std::collections::HashMap::new);
+                for (slot_name, session_id) in pinned_slots {
+                    if let Some(slot) = slots.get_mut(slot_name) {
+                        slot.mode = TargetSessionMode::Pin;
+                        slot.session_id = Some(session_id.clone());
+                    } else {
+                        slots.insert(
+                            slot_name.clone(),
+                            SessionSlotConfig {
+                                mode: TargetSessionMode::Pin,
+                                config_id: None,
+                                session_id: Some(session_id.clone()),
+                                reuse_across_steps: Some(true),
+                            },
+                        );
+                    }
+                }
+            }
+
+            // Apply automatic promptTemplate variable interpolation if variables were provided
+            let mut interpolated_prompts = std::collections::HashMap::new();
+            if let Some(ref vars) = variables {
+                for step in &mut playbook.workflow {
+                    if let Some(ref tpl) = step.prompt_template {
+                        let interpolated = interpolate_variables(tpl, vars);
+                        if interpolated != *tpl {
+                            let step_id =
+                                step.step_id.clone().unwrap_or_else(|| "step".to_string());
+                            interpolated_prompts.insert(step_id, interpolated.clone());
+                            step.prompt_template = Some(interpolated);
+                        }
+                    }
+                }
+            }
+
             let details = format_playbook_detailed(&playbook);
+
+            let has_delegation = playbook
+                .default_target_session
+                .as_ref()
+                .map(|d| d.mode != TargetSessionMode::Self_)
+                .unwrap_or(false)
+                || playbook
+                    .session_slots
+                    .as_ref()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false)
+                || playbook.workflow.iter().any(|step| {
+                    step.target_session
+                        .as_ref()
+                        .map(|t| t.mode != TargetSessionMode::Self_)
+                        .unwrap_or(false)
+                        || step.session_slot.is_some()
+                        || step.prompt_template.is_some()
+                });
+
+            let delegation_instructions = if has_delegation {
+                "\nSession Routing & Multi-Agent Delegation Instructions:\n- For steps with 'spawn' or session slots: use `agent__spawnSession(configId=..., task=...)` to create child workers. Retain and reuse the spawned session ID across steps targeting the same slot.\n- For steps with 'pin': use `agent__messageToSession(sessionId=..., message=...)` to dispatch work to the pinned session.\n- For steps with 'promptTemplate': substitute any {variable_name} placeholders with outputs from required previous steps before dispatching.\n"
+            } else {
+                ""
+            };
+
+            let interpolation_notice = if !interpolated_prompts.is_empty() {
+                let mut lines = vec!["\nAutomated Prompt Template Substitutions:".to_string()];
+                for (s_id, text) in &interpolated_prompts {
+                    lines.push(format!("- Step \"{}\": \"{}\"", s_id, text));
+                }
+                format!("{}\n", lines.join("\n"))
+            } else {
+                String::new()
+            };
+
             let prompt = format!(
-                "[select_playbook] Playbook \"{}\" (ID: {}) has been selected for execution.\n\nPlaybook Details:\n---\n{}\n---\n\nInstructions:\n1. Review the workflow steps and success criteria above\n2. Establish todos based on the workflow steps\n3. Begin executing the tasks according to the defined steps\n4. Track progress and verify against success criteria\n\nYou may now proceed with execution.",
-                playbook.goal, playbook.id, details
+                "[select_playbook] Playbook \"{}\" (ID: {}) has been selected for execution.\n\nPlaybook Details:\n---\n{}\n---\n{}{}\nInstructions:\n1. Review the workflow steps, routing targets, and success criteria above\n2. Establish todos based on the workflow steps\n3. Begin executing the tasks according to the defined steps and session targets\n4. Track progress and verify against success criteria\n\nYou may now proceed with execution.",
+                playbook.goal, playbook.id, details, interpolation_notice, delegation_instructions
             );
 
             Ok(MCPResult {
                 content: Some(vec![MCPContent::Text { text: prompt }]),
-                structured_content: Some(json!({ "playbook": playbook })),
+                structured_content: Some(json!({
+                    "playbook": playbook,
+                    "executionContext": {
+                        "defaultTargetSession": playbook.default_target_session,
+                        "sessionSlots": playbook.session_slots,
+                        "pinnedSessionSlots": pinned_session_slots,
+                        "targetSessionId": target_session_id,
+                        "variables": variables,
+                        "interpolatedPrompts": interpolated_prompts,
+                    }
+                })),
                 is_error: Some(false),
             })
         }
@@ -437,6 +601,51 @@ pub fn format_playbook_detailed(p: &Playbook) -> String {
     if let Some(cmd) = &p.initial_command {
         lines.push(format!("Initial Command: {}", cmd));
     }
+
+    if let Some(default_target) = &p.default_target_session {
+        let mode_str = match default_target.mode {
+            TargetSessionMode::Self_ => "self",
+            TargetSessionMode::Pin => "pin",
+            TargetSessionMode::Spawn => "spawn",
+        };
+        let mut parts = vec![format!("Mode={}", mode_str)];
+        if let Some(s) = &default_target.session_id {
+            parts.push(format!("Session: {}", s));
+        }
+        if let Some(c) = &default_target.config_id {
+            parts.push(format!("Config: {}", c));
+        }
+        if let Some(slot) = &default_target.session_slot {
+            parts.push(format!("Slot: {}", slot));
+        }
+        lines.push(format!("Default Target Session: {}", parts.join(", ")));
+    }
+
+    if let Some(slots) = &p.session_slots {
+        if !slots.is_empty() {
+            lines.push("\n--- Session Slots ---".to_string());
+            for (name, slot) in slots {
+                let mode_str = match slot.mode {
+                    TargetSessionMode::Self_ => "self",
+                    TargetSessionMode::Pin => "pin",
+                    TargetSessionMode::Spawn => "spawn",
+                };
+                let mut parts = vec![format!("Mode={}", mode_str)];
+                if let Some(c) = &slot.config_id {
+                    parts.push(format!("Config: {}", c));
+                }
+                if let Some(s) = &slot.session_id {
+                    parts.push(format!("Session: {}", s));
+                }
+                parts.push(format!(
+                    "Reuse: {}",
+                    slot.reuse_across_steps.unwrap_or(true)
+                ));
+                lines.push(format!("   Slot \"{}\": {}", name, parts.join(", ")));
+            }
+        }
+    }
+
     lines.push(format!("Steps: {}", p.workflow.len()));
 
     if !p.workflow.is_empty() {
@@ -448,6 +657,29 @@ pub fn format_playbook_detailed(p: &Playbook) -> String {
                 step.step_id.as_deref().unwrap_or("N/A")
             ));
             lines.push(format!("   Description: {}", step.description));
+            if let Some(target) = &step.target_session {
+                let mode_str = match target.mode {
+                    TargetSessionMode::Self_ => "self",
+                    TargetSessionMode::Pin => "pin",
+                    TargetSessionMode::Spawn => "spawn",
+                };
+                let mut parts = vec![format!("Mode={}", mode_str)];
+                if let Some(s) = &target.session_id {
+                    parts.push(format!("Session: {}", s));
+                }
+                if let Some(c) = &target.config_id {
+                    parts.push(format!("Config: {}", c));
+                }
+                if let Some(slot) = &target.session_slot {
+                    parts.push(format!("Slot: {}", slot));
+                }
+                lines.push(format!("   Target Session: {}", parts.join(", ")));
+            } else if let Some(slot) = &step.session_slot {
+                lines.push(format!("   Target Session Slot: \"{}\"", slot));
+            }
+            if let Some(tpl) = &step.prompt_template {
+                lines.push(format!("   Prompt Template: \"{}\"", tpl));
+            }
             lines.push(format!(
                 "   Tool: {} (Purpose: {})",
                 step.action.tool_name, step.action.purpose
@@ -468,6 +700,25 @@ pub fn format_playbook_detailed(p: &Playbook) -> String {
     }
 
     lines.join("\n")
+}
+
+/// Interpolate variable placeholders like {var_name} in a prompt template
+pub fn interpolate_variables(
+    template: &str,
+    variables: &std::collections::HashMap<String, String>,
+) -> String {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"\{([a-zA-Z0-9_-]+)\}").expect("valid regex"));
+    RE.replace_all(template, |caps: &regex::Captures| {
+        let key = &caps[1];
+        if let Some(val) = variables.get(key) {
+            val.clone()
+        } else {
+            caps[0].to_string()
+        }
+    })
+    .to_string()
 }
 
 pub async fn delete_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
@@ -571,6 +822,36 @@ pub async fn update_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
             }
         };
     }
+    if let Some(d) = playbook_obj.get("defaultTargetSession") {
+        if d.is_null() {
+            existing.default_target_session = None;
+        } else {
+            existing.default_target_session = match serde_json::from_value(d.clone()) {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    return Ok(invalid_input_error(
+                        &format!("Invalid defaultTargetSession format: {}", e),
+                        ToolGroup::Playbook,
+                    ));
+                }
+            };
+        }
+    }
+    if let Some(s) = playbook_obj.get("sessionSlots") {
+        if s.is_null() {
+            existing.session_slots = None;
+        } else {
+            existing.session_slots = match serde_json::from_value(s.clone()) {
+                Ok(slots) => Some(slots),
+                Err(e) => {
+                    return Ok(invalid_input_error(
+                        &format!("Invalid sessionSlots format: {}", e),
+                        ToolGroup::Playbook,
+                    ));
+                }
+            };
+        }
+    }
     if let Some(s) = playbook_obj.get("successCriteria") {
         existing.success_criteria = match serde_json::from_value(s.clone()) {
             Ok(sc) => sc,
@@ -584,17 +865,27 @@ pub async fn update_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
     }
 
     // Serialize workflow for update
-    let workflow_json = match serde_json::to_string(&existing.workflow) {
-        Ok(json) => json,
-        Err(e) => {
-            return Ok(operation_failed_error(
-                "updatePlaybook",
-                &format!("Failed to serialize workflow: {}", e),
-                vec!["Verify workflow structure is valid".to_string()],
-                ToolGroup::Playbook,
-            ))
-        }
-    };
+    let workflow_json =
+        if existing.default_target_session.is_some() || existing.session_slots.is_some() {
+            serde_json::json!({
+                "steps": existing.workflow,
+                "defaultTargetSession": existing.default_target_session,
+                "sessionSlots": existing.session_slots,
+            })
+            .to_string()
+        } else {
+            match serde_json::to_string(&existing.workflow) {
+                Ok(json) => json,
+                Err(e) => {
+                    return Ok(operation_failed_error(
+                        "updatePlaybook",
+                        &format!("Failed to serialize workflow: {}", e),
+                        vec!["Verify workflow structure is valid".to_string()],
+                        ToolGroup::Playbook,
+                    ))
+                }
+            }
+        };
 
     // Execute update via repository
     let updated_model = match repo

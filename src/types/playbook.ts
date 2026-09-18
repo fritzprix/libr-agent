@@ -1,3 +1,15 @@
+import type {
+  TargetSessionMode,
+  TargetSessionConfig,
+  SessionSlotConfig,
+} from '@/lib/schemas/playbook';
+
+export type {
+  TargetSessionMode,
+  TargetSessionConfig,
+  SessionSlotConfig,
+};
+
 /**
  * An individual step that makes up a playbook (workflow).
  * This step provides guidance and direction for problem solving.
@@ -20,6 +32,15 @@ export interface PlaybookStep {
      */
     purpose: string;
   };
+
+  /** Step-level session targeting override (if omitted, defaultTargetSession applies) */
+  targetSession?: TargetSessionConfig;
+
+  /** Logical session slot name (shorthand for targetSession with sessionSlot) */
+  sessionSlot?: string;
+
+  /** Optional prompt template with {var_name} placeholders for variable injection */
+  promptTemplate?: string;
 
   /**
    * Specifies what data is needed to achieve the above purpose
@@ -45,7 +66,13 @@ export interface Playbook {
   goal: string;
 
   /** Stores the user's initial natural language command as-is */
-  initialCommand: string;
+  initialCommand?: string;
+
+  /** Default session targeting configuration for steps in this playbook */
+  defaultTargetSession?: TargetSessionConfig;
+
+  /** Named session slot configurations for role-based multi-session routing */
+  sessionSlots?: Record<string, SessionSlotConfig>;
 
   /** Set of sequential steps for achieving the goal */
   workflow: PlaybookStep[];

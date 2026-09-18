@@ -21,6 +21,32 @@ fn create_tool_def(
     }
 }
 
+/// Schema for target session configuration
+fn target_session_config_schema(desc: Option<&str>) -> JSONSchema {
+    object_prop(
+        vec![
+            (
+                "mode".to_string(),
+                enum_prop(
+                    vec!["self", "pin", "spawn"],
+                    "self",
+                    Some("Target session mode: 'self' (current session), 'pin' (existing session), 'spawn' (new session)"),
+                ),
+            ),
+            (
+                "sessionId".to_string(),
+                string_prop(None, None, Some("Session ID when mode is 'pin'")),
+            ),
+            (
+                "configId".to_string(),
+                string_prop(None, None, Some("Assistant config ID when mode is 'spawn'")),
+            ),
+        ],
+        vec!["mode".to_string()],
+        desc,
+    )
+}
+
 /// Schema for a playbook step
 fn playbook_step_schema() -> JSONSchema {
     object_prop(
@@ -45,6 +71,26 @@ fn playbook_step_schema() -> JSONSchema {
                     ],
                     vec!["toolName".to_string(), "purpose".to_string()],
                     Some("Action to perform"),
+                ),
+            ),
+            (
+                "targetSession".to_string(),
+                target_session_config_schema(Some("Step-level target session override")),
+            ),
+            (
+                "sessionSlot".to_string(),
+                string_prop(
+                    None,
+                    None,
+                    Some("Logical session slot name for cross-step session reuse"),
+                ),
+            ),
+            (
+                "promptTemplate".to_string(),
+                string_prop(
+                    None,
+                    None,
+                    Some("Prompt template with {variable} placeholders"),
                 ),
             ),
             (
@@ -94,6 +140,7 @@ pub fn create_playbook_tool() -> MCPTool {
             &[
                 "Define a clear goal and optional initialCommand.",
                 "List workflow steps with toolName and purpose for each action.",
+                "Optionally configure defaultTargetSession or sessionSlots for multi-session delegation.",
             ],
             &[
                 "Select the playbook with playbook__selectPlaybook.",
@@ -109,6 +156,16 @@ pub fn create_playbook_tool() -> MCPTool {
                         None,
                         None,
                         Some("Original command. If omitted, the playbook is stored without an initial command."),
+                    ),
+                ),
+                (
+                    "defaultTargetSession".to_string(),
+                    target_session_config_schema(Some("Default target session configuration for all steps in the playbook")),
+                ),
+                (
+                    "sessionSlots".to_string(),
+                    object_map_prop(
+                        Some("Named session slot configurations mapping slot name to slot definition"),
                     ),
                 ),
                 (
@@ -141,14 +198,40 @@ pub fn select_playbook_tool() -> MCPTool {
         &tool_description(
             "Select and prepare a playbook for execution.",
             &["Playbook ID from playbook__listPlaybooks or playbook__getPlaybook."],
-            &["Pass the playbook id to load it into the active workflow context."],
+            &[
+                "Pass the playbook id to load it into the active workflow context.",
+                "Optionally pass variables to automatically substitute placeholders into step promptTemplate fields.",
+                "Optionally pass pinnedSessionSlots or targetSessionId to bind runtime sessions to slots.",
+            ],
             &[
                 "Review steps with playbook__getPlaybook.",
                 "Update the playbook with playbook__updatePlaybook if steps need changes.",
             ],
         ),
         object_prop(
-            vec![("id".to_string(), string_prop_required("Playbook ID"))],
+            vec![
+                ("id".to_string(), string_prop_required("Playbook ID")),
+                (
+                    "variables".to_string(),
+                    object_map_prop(
+                        Some("Optional map of variable values to automatically substitute into prompt templates (e.g. {\"data\": \"report.csv\"})"),
+                    ),
+                ),
+                (
+                    "pinnedSessionSlots".to_string(),
+                    object_map_prop(
+                        Some("Runtime session ID mapping for named slots (e.g. {\"analyst\": \"sess-123\"})"),
+                    ),
+                ),
+                (
+                    "targetSessionId".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Runtime session ID override for defaultTargetSession with 'pin' mode"),
+                    ),
+                ),
+            ],
             vec!["id".to_string()],
             None,
         ),
@@ -337,6 +420,16 @@ pub fn update_playbook_tool() -> MCPTool {
                                     None,
                                     None,
                                     Some("Original command. If omitted, keep the current initial command unchanged."),
+                                ),
+                            ),
+                            (
+                                "defaultTargetSession".to_string(),
+                                target_session_config_schema(Some("Default target session configuration. If omitted, keep unchanged.")),
+                            ),
+                            (
+                                "sessionSlots".to_string(),
+                                object_map_prop(
+                                    Some("Named session slot configurations. If omitted, keep unchanged."),
                                 ),
                             ),
                             (

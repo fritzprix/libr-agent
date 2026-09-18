@@ -12,8 +12,11 @@ mod tools;
 mod types;
 
 // Re-export for use in other modules (e.g., PlaybookReferenceResolver)
-pub use operations::format_playbook_detailed;
-pub use types::Playbook;
+pub use operations::{format_playbook_detailed, interpolate_variables};
+pub use types::{
+    Playbook, PlaybookAction, PlaybookStep, SessionSlotConfig, TargetSessionConfig,
+    TargetSessionMode,
+};
 
 /// Playbook MCP Server
 #[derive(Debug)]

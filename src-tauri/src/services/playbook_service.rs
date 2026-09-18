@@ -63,15 +63,83 @@ impl PlaybookService {
     ) -> Result<PlaybookModel, String> {
         let assistant_id = Self::get_assistant_id_from_session(session_repo, session_id).await?;
 
-        repo.update_playbook(
-            id,
-            &assistant_id,
-            goal,
-            workflow.map(|v| v.to_string()),
-            None,
-        )
-        .await
-        .map_err(|e| format!("Failed to update playbook: {}", e))
+        let workflow_str = match workflow {
+            Some(Value::Array(steps)) => {
+                // If workflow is provided as a plain array of steps, preserve existing session targeting and step configs
+                if let Ok(Some(existing_model)) = repo.get_playbook(id, &assistant_id).await {
+                    let existing_pb =
+                        crate::mcp::builtin::playbook::Playbook::from_model(&existing_model);
+
+                    let merged_steps: Vec<Value> = steps
+                        .into_iter()
+                        .map(|mut step_val| {
+                            if let Some(step_obj) = step_val.as_object_mut() {
+                                if let Some(step_id) =
+                                    step_obj.get("stepId").and_then(|id| id.as_str())
+                                {
+                                    if let Some(existing_step) = existing_pb
+                                        .workflow
+                                        .iter()
+                                        .find(|s| s.step_id.as_deref() == Some(step_id))
+                                    {
+                                        if !step_obj.contains_key("promptTemplate") {
+                                            if let Some(ref pt) = existing_step.prompt_template {
+                                                step_obj.insert(
+                                                    "promptTemplate".to_string(),
+                                                    Value::String(pt.clone()),
+                                                );
+                                            }
+                                        }
+                                        if !step_obj.contains_key("sessionSlot") {
+                                            if let Some(ref ss) = existing_step.session_slot {
+                                                step_obj.insert(
+                                                    "sessionSlot".to_string(),
+                                                    Value::String(ss.clone()),
+                                                );
+                                            }
+                                        }
+                                        if !step_obj.contains_key("targetSession") {
+                                            if let Some(ref ts) = existing_step.target_session {
+                                                if let Ok(ts_val) = serde_json::to_value(ts) {
+                                                    step_obj.insert(
+                                                        "targetSession".to_string(),
+                                                        ts_val,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            step_val
+                        })
+                        .collect();
+
+                    if existing_pb.default_target_session.is_some()
+                        || existing_pb.session_slots.is_some()
+                    {
+                        Some(
+                            serde_json::json!({
+                                "steps": merged_steps,
+                                "defaultTargetSession": existing_pb.default_target_session,
+                                "sessionSlots": existing_pb.session_slots,
+                            })
+                            .to_string(),
+                        )
+                    } else {
+                        Some(Value::Array(merged_steps).to_string())
+                    }
+                } else {
+                    Some(Value::Array(steps).to_string())
+                }
+            }
+            Some(v) => Some(v.to_string()),
+            None => None,
+        };
+
+        repo.update_playbook(id, &assistant_id, goal, workflow_str, None)
+            .await
+            .map_err(|e| format!("Failed to update playbook: {}", e))
     }
 
     pub async fn delete_playbook(
