@@ -612,4 +612,14 @@ async fn service_context_excludes_global_tasks_and_reports_idle_without_session_
     assert!(active_context.context_prompt.contains("Session follow-up"));
     assert!(!active_context.context_prompt.contains(&global_task.id));
     assert!(!active_context.context_prompt.contains("Nightly wiki mine"));
+
+    // When the session callback is deleted (mirroring runner one-shot completion or orphan cleanup),
+    // the session reverts to an idle state with zero ambient service context.
+    scheduled_repo
+        .delete_scheduled_task(&session_task.id)
+        .await
+        .expect("session callback deletion should succeed");
+    assert!(!server.has_active_state().await);
+    let post_completion_context = server.get_service_context(None).await;
+    assert!(post_completion_context.context_prompt.trim().is_empty());
 }

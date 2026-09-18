@@ -349,18 +349,11 @@ async fn execute_session_callback(
 
     if !active_session_ids.contains(session_id) && !session_exists_in_repo {
         let repo = get_scheduled_task_repository();
-        repo.update_scheduled_task(
-            &task.id,
-            UpdateScheduledTaskParams {
-                enabled: Some(false),
-                next_run_at: Some(None),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| format!("Failed to disable orphaned SESSION task {}: {e}", task.id))?;
+        repo.delete_scheduled_task(&task.id)
+            .await
+            .map_err(|e| format!("Failed to delete orphaned SESSION task {}: {e}", task.id))?;
         log::warn!(
-            "⏰ SESSION task '{}' ({}) disabled — target session {} no longer exists",
+            "⏰ SESSION task '{}' ({}) deleted — target session {} no longer exists",
             task.name,
             task.id,
             session_id
@@ -422,19 +415,12 @@ async fn execute_session_callback(
     inject_scheduled_message(manager, session_id, task).await?;
 
     if is_one_shot_task(&task.cron_expression) {
-        repo.record_run(&task.id, None, now_ms, None)
-            .await
-            .map_err(|e| format!("Failed to record one-shot SESSION run: {e}"))?;
-        repo.update_scheduled_task(
-            &task.id,
-            UpdateScheduledTaskParams {
-                enabled: Some(false),
-                next_run_at: Some(None),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| format!("Failed to disable one-shot SESSION task {}: {e}", task.id))?;
+        repo.delete_scheduled_task(&task.id).await.map_err(|e| {
+            format!(
+                "Failed to delete completed one-shot SESSION task {}: {e}",
+                task.id
+            )
+        })?;
     } else {
         let cron_expression = task.cron_expression.as_deref().ok_or_else(|| {
             format!(
