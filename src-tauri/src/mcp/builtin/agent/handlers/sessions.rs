@@ -188,16 +188,13 @@ async fn spawn_session_impl(
         Err(err) if err.contains("Assistant not found:") => {
             let requested_id = &assistant_id;
 
-            let is_session_id = if caller_session_id == requested_id.as_str() {
-                true
-            } else if let Ok(Some(_)) = crate::state::get_session_repository()
-                .get_session(requested_id)
-                .await
-            {
-                true
-            } else {
-                false
-            };
+            let is_session_id = caller_session_id == requested_id.as_str()
+                || matches!(
+                    crate::state::get_session_repository()
+                        .get_session(requested_id)
+                        .await,
+                    Ok(Some(_))
+                );
 
             if is_session_id {
                 return Ok(session_id_passed_as_agent_config_error(requested_id));
