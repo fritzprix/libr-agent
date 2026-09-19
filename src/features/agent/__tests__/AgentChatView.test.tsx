@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   setSearchParams: vi.fn(),
   workflowStatus: 'idle' as 'idle' | 'busy' | 'queued' | 'paused' | 'error',
   injectMessages: vi.fn().mockResolvedValue(undefined),
+  appendToolMessages: vi.fn().mockResolvedValue(undefined),
+  submit: vi.fn().mockResolvedValue(undefined),
 }));
 
 function createBaseRuntimeState(): SessionRuntimeState {
@@ -118,7 +120,8 @@ vi.mock('@/context/AgentChatContext', () => ({
   ),
   useAgentChatActions: () => ({
     injectMessages: mocks.injectMessages,
-    appendToolMessages: vi.fn(),
+    appendToolMessages: mocks.appendToolMessages,
+    submit: mocks.submit,
   }),
   useAgentChatState: () => ({
     workflowStatus: mocks.workflowStatus,
@@ -238,9 +241,13 @@ vi.mock('@/lib/backend/agent-commands', () => ({
   agentCallBuiltinTool: vi.fn(),
 }));
 
-vi.mock('@/lib/chat-utils', () => ({
-  createToolMessagePair: vi.fn(),
-}));
+vi.mock('@/lib/chat-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/chat-utils')>();
+  return {
+    ...actual,
+    createToolMessagePair: vi.fn(),
+  };
+});
 
 vi.mock('@paralleldrive/cuid2', () => ({
   createId: () => 'tool-call-id',
@@ -275,6 +282,8 @@ describe('AgentChatView', () => {
     mocks.setSearchParams = vi.fn();
     mocks.workflowStatus = 'idle';
     mocks.injectMessages = vi.fn().mockResolvedValue(undefined);
+    mocks.appendToolMessages = vi.fn().mockResolvedValue(undefined);
+    mocks.submit = vi.fn().mockResolvedValue(undefined);
     vi.mocked(agentCallBuiltinTool).mockReset();
     vi.mocked(createToolMessagePair).mockReset();
     vi.mocked(toast.loading).mockClear();
@@ -479,7 +488,7 @@ describe('AgentChatView', () => {
     expect(screen.getByText('mock-side-panel-shell')).toBeInTheDocument();
   });
 
-  it('shows immediate playbook-start feedback and injects selectPlaybook when idle', async () => {
+  it('records selectPlaybook then submits to start the LLM turn', async () => {
     const playbookId = 'playbook-1';
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
@@ -514,8 +523,14 @@ describe('AgentChatView', () => {
     });
 
     await waitFor(() => {
-      expect(mocks.injectMessages).toHaveBeenCalled();
+      expect(mocks.appendToolMessages).toHaveBeenCalled();
     });
+
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalled();
+    });
+
+    expect(mocks.injectMessages).not.toHaveBeenCalled();
 
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith(
@@ -531,41 +546,13 @@ describe('AgentChatView', () => {
     });
   });
 
-  it('shows waiting feedback when playbook start is blocked by a busy session', () => {
+  it('still submits playbook kickoff when the session is already busy', async () => {
     const playbookId = 'playbook-busy';
     mocks.agentSessionState = createSessionState({
       session: createMockSession(),
     });
     mocks.searchParams = new URLSearchParams(`playbookId=${playbookId}`);
     mocks.workflowStatus = 'busy';
-
-    render(<AgentChatView />);
-
-    expect(screen.getByTestId('playbook-launch-pending')).toHaveTextContent(
-      'Waiting for the current run to finish before starting the playbook…',
-    );
-    expect(toast.loading).toHaveBeenCalledWith(
-      'Waiting for the current run to finish before starting the playbook…',
-      expect.objectContaining({ id: playbookStartToastId(playbookId) }),
-    );
-    expect(agentCallBuiltinTool).not.toHaveBeenCalled();
-    expect(mocks.injectMessages).not.toHaveBeenCalled();
-  });
-
-  it('does not flip back to waiting after launch when workflow becomes busy', async () => {
-    const playbookId = 'playbook-race';
-    let resolveInject: (() => void) | undefined;
-    mocks.injectMessages = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveInject = resolve;
-        }),
-    );
-    mocks.agentSessionState = createSessionState({
-      session: createMockSession(),
-    });
-    mocks.searchParams = new URLSearchParams(`playbookId=${playbookId}`);
-    mocks.workflowStatus = 'idle';
 
     vi.mocked(agentCallBuiltinTool).mockResolvedValue({
       content: [{ type: 'text', text: 'selected' }],
@@ -575,41 +562,12 @@ describe('AgentChatView', () => {
       { id: 'tr', role: 'tool' },
     ] as never);
 
-    const { rerender } = render(<AgentChatView />);
-
-    expect(screen.getByTestId('playbook-launch-pending')).toHaveTextContent(
-      'Starting playbook…',
-    );
+    render(<AgentChatView />);
 
     await waitFor(() => {
-      expect(mocks.injectMessages).toHaveBeenCalled();
+      expect(mocks.submit).toHaveBeenCalled();
     });
-
-    // Simulate inject kicking the workflow to busy while playbookId is still present.
-    mocks.workflowStatus = 'busy';
-    rerender(<AgentChatView />);
-
-    expect(screen.getByTestId('playbook-launch-pending')).toHaveTextContent(
-      'Starting playbook…',
-    );
-    expect(toast.loading).not.toHaveBeenCalledWith(
-      'Waiting for the current run to finish before starting the playbook…',
-      expect.anything(),
-    );
-
-    resolveInject?.();
-
-    await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith(
-        'Playbook started automatically',
-        expect.objectContaining({ id: playbookStartToastId(playbookId) }),
-      );
-    });
-
-    await waitFor(() => {
-      expect(
-        screen.queryByTestId('playbook-launch-pending'),
-      ).not.toBeInTheDocument();
-    });
+    expect(mocks.appendToolMessages).toHaveBeenCalled();
+    expect(mocks.injectMessages).not.toHaveBeenCalled();
   });
 });

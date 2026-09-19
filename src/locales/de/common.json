@@ -1198,7 +1198,7 @@
     "chat": {
       "loadingSession": "Sitzung wird geladen...",
       "startingPlaybookWorkflow": "Playbook wird gestartet…",
-      "playbookWaitingForIdle": "Warte auf das Ende des aktuellen Laufs, bevor das Playbook startet…",
+      "playbookContinuePrompt": "Führe das ausgewählte Playbook aus und folge seinen Workflow-Schritten.",
       "playbookStartedAutomatically": "Playbook automatisch gestartet",
       "failedToStartPlaybookWorkflow": "Playbook-Workflow konnte nicht gestartet werden",
       "sessionContextUnavailable": "Sitzungskontext ist nicht verfügbar.",

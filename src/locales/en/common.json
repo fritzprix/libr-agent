@@ -1560,7 +1560,7 @@
     "chat": {
       "loadingSession": "Loading session...",
       "startingPlaybookWorkflow": "Starting playbook…",
-      "playbookWaitingForIdle": "Waiting for the current run to finish before starting the playbook…",
+      "playbookContinuePrompt": "Execute the selected playbook and follow its workflow steps.",
       "playbookStartedAutomatically": "Playbook started automatically",
       "failedToStartPlaybookWorkflow": "Failed to start playbook workflow",
       "sessionContextUnavailable": "Session context is unavailable.",

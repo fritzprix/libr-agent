@@ -10,14 +10,9 @@ import {
 } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
-import { createId } from '@paralleldrive/cuid2';
-import { createToolMessagePair } from '@/lib/chat-utils';
 import { MCPContent } from '@/lib/mcp';
 import { toast } from 'sonner';
-import {
-  useAgentChatActions,
-  useAgentChatState,
-} from '@/context/AgentChatContext';
+import { useAgentChatActions } from '@/context/AgentChatContext';
 import {
   AgentSessionProvider,
   useAgentSessionState,
@@ -62,6 +57,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { playbookStartToastId } from './playbookStartFeedback';
+import { recordUiToolInvocation } from './lib/recordUiToolInvocation';
 
 const logger = getLogger('AgentChatView');
 
@@ -239,12 +235,11 @@ function AgentChatInner() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const { pendingInteractiveShellPrompt, session } = useAgentSessionState();
-  const { injectMessages } = useAgentChatActions();
-  const { workflowStatus } = useAgentChatState();
+  const { appendToolMessages, submit } = useAgentChatActions();
   const hasExecutedPlaybookRef = useRef(false);
   const hasOpenedShellRef = useRef(!isMobile && showSidePanel);
   const [playbookLaunchPhase, setPlaybookLaunchPhase] = useState<
-    'waiting' | 'starting' | null
+    'starting' | null
   >(null);
 
   useEffect(() => {
@@ -274,19 +269,18 @@ function AgentChatInner() {
           { id: selectedPlaybookId },
         );
 
-        const toolCallId = createId();
-        const [toolCallMsg, toolResultMsg] = createToolMessagePair(
-          'playbook__selectPlaybook',
-          { id: selectedPlaybookId },
-          result.content ?? [],
-          toolCallId,
-          sessionId,
-          undefined,
-          assistantId,
-          'ui',
+        await recordUiToolInvocation(
+          { appendToolMessages, submit },
+          {
+            toolName: 'playbook__selectPlaybook',
+            params: { id: selectedPlaybookId },
+            result: result.content ?? [],
+            sessionId,
+            assistantId,
+            kickoffUserText: t('agent.chat.playbookContinuePrompt'),
+          },
         );
 
-        await injectMessages([toolCallMsg, toolResultMsg]);
         toast.success(t('agent.chat.playbookStartedAutomatically'), {
           id: toastId,
         });
@@ -297,38 +291,20 @@ function AgentChatInner() {
         });
       }
     },
-    [assistantId, injectMessages, sessionId, t],
+    [appendToolMessages, assistantId, sessionId, submit, t],
   );
 
   useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
-
-    // Param already cleared after launch kickoff — never re-enter waiting.
-    if (!playbookId) {
-      setPlaybookLaunchPhase((prev) => (prev === 'waiting' ? null : prev));
+    if (!sessionId || !playbookId || hasExecutedPlaybookRef.current) {
       return;
     }
 
     const toastId = playbookStartToastId(playbookId);
-
-    // Once launch has started, ignore later busy/queued transitions that would
-    // otherwise flip the banner back to "waiting" and overwrite the success toast.
-    if (hasExecutedPlaybookRef.current) {
-      return;
-    }
-
-    if (workflowStatus !== 'idle') {
-      setPlaybookLaunchPhase('waiting');
-      toast.loading(t('agent.chat.playbookWaitingForIdle'), { id: toastId });
-      return;
-    }
-
     hasExecutedPlaybookRef.current = true;
     setPlaybookLaunchPhase('starting');
     toast.loading(t('agent.chat.startingPlaybookWorkflow'), { id: toastId });
 
+    // Record selectPlaybook in history, then submit() kicks LLM (queues if busy).
     void executePlaybookSelection(playbookId, toastId).finally(() => {
       setPlaybookLaunchPhase(null);
     });
@@ -348,15 +324,12 @@ function AgentChatInner() {
     sessionId,
     setSearchParams,
     t,
-    workflowStatus,
   ]);
 
   const playbookLaunchLabel =
-    playbookLaunchPhase === 'waiting'
-      ? t('agent.chat.playbookWaitingForIdle')
-      : playbookLaunchPhase === 'starting'
-        ? t('agent.chat.startingPlaybookWorkflow')
-        : null;
+    playbookLaunchPhase === 'starting'
+      ? t('agent.chat.startingPlaybookWorkflow')
+      : null;
 
   const handleSidePanelSheetOpenChange = useCallback(
     (nextOpen: boolean) => {

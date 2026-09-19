@@ -1198,7 +1198,7 @@
     "chat": {
       "loadingSession": "Carregando sessão...",
       "startingPlaybookWorkflow": "Iniciando roteiro…",
-      "playbookWaitingForIdle": "Aguardando a execução atual terminar antes de iniciar o roteiro…",
+      "playbookContinuePrompt": "Execute o roteiro selecionado e siga as etapas do fluxo.",
       "playbookStartedAutomatically": "Roteiro iniciado automaticamente",
       "failedToStartPlaybookWorkflow": "Falha ao iniciar o fluxo do roteiro",
       "sessionContextUnavailable": "O contexto da sessão não está disponível.",

@@ -1144,7 +1144,7 @@
       "failedToStartPlaybookWorkflow": "プレイブックワークフローの開始に失敗しました",
       "loadingSession": "セッションを読み込み中...",
       "startingPlaybookWorkflow": "プレイブックを開始中…",
-      "playbookWaitingForIdle": "現在の実行が終わってからプレイブックを開始します…",
+      "playbookContinuePrompt": "選択したプレイブックを実行し、ワークフローの手順に従ってください。",
       "playbookStartedAutomatically": "プレイブックが自動的に開始されました",
       "sessionContextUnavailable": "セッションコンテキストを利用できません。",
       "sessionNotFoundOrFailed": "セッションが見つからないか、読み込みに失敗しました。"

@@ -108,6 +108,10 @@ interface AgentChatActionsContextValue {
    * Inject messages into the session for starting/continuing agent conversation turns.
    * - Idle: starts an LLM workflow immediately.
    * - Busy: enqueues user prompts into the FIFO pending queue for processing in the next turn.
+   *
+   * Prefer `submit()` for user turns. UI tool pairs must use `appendToolMessages`
+   * (+ optional submit) via `recordUiToolInvocation` / `uiToolInjectionPolicy`
+   * — never inject tool pairs here.
    */
   injectMessages: (messages: Message[]) => Promise<void>;
 
@@ -116,6 +120,7 @@ interface AgentChatActionsContextValue {
    * - Safe recording only: NEVER triggers an LLM workflow.
    * - Bypasses the pending queue: immediately persists to cache & DB, emitting MessageAdded events.
    * - Use this when recording UI actions to prevent spinning loaders and pending queue pollution.
+   * - See `UI_TOOL_HISTORY_ONLY` in `uiToolInjectionPolicy` for tools that stay history-only.
    */
   appendToolMessages: (messages: Message[]) => Promise<void>;
 
