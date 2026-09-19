@@ -1,4 +1,6 @@
-## [0.9.11] - 2026-09-19
+## [0.9.12] - 2026-09-19
+
+> **Release note:** `v0.9.11` could not be published. An empty immutable GitHub Release permanently reserved that tag name, so this patch ships the same intended changes as `v0.9.12`.
 
 ### 🚀 Features & UI
 
@@ -13,6 +15,10 @@
 - **UI Tool History & Turn Decoupling**: Separated UI tool pair recording from LLM submission turn kickoff via negative-list policy, preventing unintentional model invocations while preserving complete interaction history.
 - **Workspace Pipeline Error Diagnostics**: Added warning diagnostics when shell pipelines return exit code 0 despite upstream stderr failures.
 - **Reminder Routing & CI Automation**: Clarified in-chat reminder routing to prefer session callbacks, and added automated back-sync workflow from `main` to `dev/0.9.x`.
+
+## [0.9.11] - 2026-09-19
+
+Skipped publishing — tag permanently unusable after a deleted immutable GitHub Release. See [0.9.12].
 
 ## [0.9.10] - 2026-09-16
 
