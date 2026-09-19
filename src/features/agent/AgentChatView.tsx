@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type ReactNode,
   type CSSProperties,
 } from 'react';
@@ -52,6 +53,7 @@ import {
   isDocumentMessageLayout,
 } from '@/features/agent/lib/message-layout';
 import { cn } from '@/lib/utils';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
   Sheet,
   SheetContent,
@@ -59,6 +61,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { playbookStartToastId } from './playbookStartFeedback';
 
 const logger = getLogger('AgentChatView');
 
@@ -240,6 +243,9 @@ function AgentChatInner() {
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
   const hasOpenedShellRef = useRef(!isMobile && showSidePanel);
+  const [playbookLaunchPhase, setPlaybookLaunchPhase] = useState<
+    'waiting' | 'starting' | null
+  >(null);
 
   useEffect(() => {
     if (!isMobile && showSidePanel) {
@@ -255,7 +261,7 @@ function AgentChatInner() {
   const assistantId = session?.assistant?.id;
 
   const executePlaybookSelection = useCallback(
-    async (selectedPlaybookId: string) => {
+    async (selectedPlaybookId: string, toastId: string) => {
       if (!sessionId) return;
       logger.info('Auto-executing playbook', {
         playbookId: selectedPlaybookId,
@@ -281,27 +287,51 @@ function AgentChatInner() {
         );
 
         await injectMessages([toolCallMsg, toolResultMsg]);
-        toast.success(t('agent.chat.playbookStartedAutomatically'));
+        toast.success(t('agent.chat.playbookStartedAutomatically'), {
+          id: toastId,
+        });
       } catch (error) {
         logger.error('Failed to auto-select playbook', error);
-        toast.error(t('agent.chat.failedToStartPlaybookWorkflow'));
+        toast.error(t('agent.chat.failedToStartPlaybookWorkflow'), {
+          id: toastId,
+        });
       }
     },
-    [assistantId, injectMessages, sessionId],
+    [assistantId, injectMessages, sessionId, t],
   );
 
   useEffect(() => {
-    if (
-      !playbookId ||
-      !sessionId ||
-      workflowStatus !== 'idle' ||
-      hasExecutedPlaybookRef.current
-    ) {
+    if (!sessionId) {
+      return;
+    }
+
+    // Param already cleared after launch kickoff — never re-enter waiting.
+    if (!playbookId) {
+      setPlaybookLaunchPhase((prev) => (prev === 'waiting' ? null : prev));
+      return;
+    }
+
+    const toastId = playbookStartToastId(playbookId);
+
+    // Once launch has started, ignore later busy/queued transitions that would
+    // otherwise flip the banner back to "waiting" and overwrite the success toast.
+    if (hasExecutedPlaybookRef.current) {
+      return;
+    }
+
+    if (workflowStatus !== 'idle') {
+      setPlaybookLaunchPhase('waiting');
+      toast.loading(t('agent.chat.playbookWaitingForIdle'), { id: toastId });
       return;
     }
 
     hasExecutedPlaybookRef.current = true;
-    void executePlaybookSelection(playbookId);
+    setPlaybookLaunchPhase('starting');
+    toast.loading(t('agent.chat.startingPlaybookWorkflow'), { id: toastId });
+
+    void executePlaybookSelection(playbookId, toastId).finally(() => {
+      setPlaybookLaunchPhase(null);
+    });
 
     // Remove query param to prevent re-execution on refresh or render.
     setSearchParams(
@@ -317,8 +347,16 @@ function AgentChatInner() {
     playbookId,
     sessionId,
     setSearchParams,
+    t,
     workflowStatus,
   ]);
+
+  const playbookLaunchLabel =
+    playbookLaunchPhase === 'waiting'
+      ? t('agent.chat.playbookWaitingForIdle')
+      : playbookLaunchPhase === 'starting'
+        ? t('agent.chat.startingPlaybookWorkflow')
+        : null;
 
   const handleSidePanelSheetOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -360,6 +398,17 @@ function AgentChatInner() {
           {/* Chat keeps full width — panel is a pure overlay, never shrinks this column. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <AgentChatStatusBar />
+            {playbookLaunchLabel ? (
+              <div
+                className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-4 py-2 text-sm text-muted-foreground"
+                data-testid="playbook-launch-pending"
+                role="status"
+                aria-live="polite"
+              >
+                <LoadingSpinner size="sm" className="border-2 shrink-0" />
+                <span>{playbookLaunchLabel}</span>
+              </div>
+            ) : null}
             <AgentChatMessages />
           </div>
 

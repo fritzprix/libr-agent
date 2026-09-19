@@ -1190,12 +1190,15 @@
       "manageAssistants": "+ 管理助手",
       "playbookNotFound": "未找到剧本",
       "assistantNotFound": "未找到助手",
+      "preparingPlaybook": "正在准备剧本…",
       "startingPlaybook": "正在启动剧本：{{goal}}",
       "failedToStartPlaybookSession": "启动剧本会话失败",
       "startingSession": "正在启动会话..."
     },
     "chat": {
       "loadingSession": "正在加载会话...",
+      "startingPlaybookWorkflow": "正在启动剧本…",
+      "playbookWaitingForIdle": "当前运行结束后再启动剧本…",
       "playbookStartedAutomatically": "已自动启动剧本",
       "failedToStartPlaybookWorkflow": "启动剧本工作流失败",
       "sessionContextUnavailable": "会话上下文不可用。",

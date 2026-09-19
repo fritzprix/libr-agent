@@ -1538,6 +1538,7 @@
       "manageAssistants": "+ 어시스턴트 관리",
       "playbookNotFound": "플레이북을 찾을 수 없습니다",
       "assistantNotFound": "어시스턴트를 찾을 수 없습니다",
+      "preparingPlaybook": "플레이북 준비 중…",
       "startingPlaybook": "플레이북 시작 중: {{goal}}",
       "pinnedSessionMissing": "고정된 세션을 찾을 수 없습니다. 새 세션으로 시작합니다.",
       "failedToStartPlaybookSession": "플레이북 세션을 시작하지 못했습니다",
@@ -1548,6 +1549,8 @@
     },
     "chat": {
       "loadingSession": "세션 불러오는 중...",
+      "startingPlaybookWorkflow": "플레이북 시작 중…",
+      "playbookWaitingForIdle": "현재 실행이 끝난 뒤 플레이북을 시작합니다…",
       "playbookStartedAutomatically": "플레이북이 자동으로 시작되었습니다",
       "failedToStartPlaybookWorkflow": "플레이북 워크플로우를 시작하지 못했습니다",
       "sessionContextUnavailable": "세션 컨텍스트를 사용할 수 없습니다.",

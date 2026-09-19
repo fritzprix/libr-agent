@@ -1548,6 +1548,7 @@
       "manageAssistants": "+ Manage Assistants",
       "playbookNotFound": "Playbook not found",
       "assistantNotFound": "Assistant not found",
+      "preparingPlaybook": "Preparing playbook…",
       "startingPlaybook": "Starting playbook: {{goal}}",
       "pinnedSessionMissing": "Pinned session not found. Starting a new session instead.",
       "failedToStartPlaybookSession": "Failed to start playbook session",
@@ -1558,6 +1559,8 @@
     },
     "chat": {
       "loadingSession": "Loading session...",
+      "startingPlaybookWorkflow": "Starting playbook…",
+      "playbookWaitingForIdle": "Waiting for the current run to finish before starting the playbook…",
       "playbookStartedAutomatically": "Playbook started automatically",
       "failedToStartPlaybookWorkflow": "Failed to start playbook workflow",
       "sessionContextUnavailable": "Session context is unavailable.",

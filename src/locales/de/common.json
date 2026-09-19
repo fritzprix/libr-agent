@@ -1190,12 +1190,15 @@
       "manageAssistants": "+ Assistenten verwalten",
       "playbookNotFound": "Playbook nicht gefunden",
       "assistantNotFound": "Assistent nicht gefunden",
+      "preparingPlaybook": "Playbook wird vorbereitet…",
       "startingPlaybook": "Playbook wird gestartet: {{goal}}",
       "failedToStartPlaybookSession": "Playbook-Sitzung konnte nicht gestartet werden",
       "startingSession": "Sitzung wird gestartet..."
     },
     "chat": {
       "loadingSession": "Sitzung wird geladen...",
+      "startingPlaybookWorkflow": "Playbook wird gestartet…",
+      "playbookWaitingForIdle": "Warte auf das Ende des aktuellen Laufs, bevor das Playbook startet…",
       "playbookStartedAutomatically": "Playbook automatisch gestartet",
       "failedToStartPlaybookWorkflow": "Playbook-Workflow konnte nicht gestartet werden",
       "sessionContextUnavailable": "Sitzungskontext ist nicht verfügbar.",

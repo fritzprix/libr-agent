@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,13 +7,20 @@ import { toast } from 'sonner';
 import type { AgentSessionStateContextValue } from '@/context/agent-session/types';
 import type { AgentSession } from '@/models/agent';
 import type { SessionRuntimeState } from '@/models/agent-ipc';
+import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
+import { createToolMessagePair } from '@/lib/chat-utils';
 import AgentChatView from '../AgentChatView';
+import { playbookStartToastId } from '../playbookStartFeedback';
 
 const mocks = vi.hoisted(() => ({
   agentSessionState: undefined as AgentSessionStateContextValue | undefined,
   isMobile: false,
   showSidePanel: false,
   activeTab: 'workspace' as 'workspace' | 'planning' | 'processes',
+  searchParams: new URLSearchParams(),
+  setSearchParams: vi.fn(),
+  workflowStatus: 'idle' as 'idle' | 'busy' | 'queued' | 'paused' | 'error',
+  injectMessages: vi.fn().mockResolvedValue(undefined),
 }));
 
 function createBaseRuntimeState(): SessionRuntimeState {
@@ -93,7 +100,7 @@ function createMockSession(): AgentSession {
 
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ sessionId: 'session-2' }),
-  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  useSearchParams: () => [mocks.searchParams, mocks.setSearchParams],
 }));
 
 vi.mock('@/context/AgentSessionContext', () => ({
@@ -110,11 +117,11 @@ vi.mock('@/context/AgentChatContext', () => ({
     <div data-testid="chat-provider">{children}</div>
   ),
   useAgentChatActions: () => ({
-    injectMessages: vi.fn(),
+    injectMessages: mocks.injectMessages,
     appendToolMessages: vi.fn(),
   }),
   useAgentChatState: () => ({
-    workflowStatus: 'idle' as const,
+    workflowStatus: mocks.workflowStatus,
   }),
 }));
 
@@ -264,6 +271,12 @@ describe('AgentChatView', () => {
     mocks.isMobile = false;
     mocks.showSidePanel = false;
     mocks.activeTab = 'workspace';
+    mocks.searchParams = new URLSearchParams();
+    mocks.setSearchParams = vi.fn();
+    mocks.workflowStatus = 'idle';
+    mocks.injectMessages = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(agentCallBuiltinTool).mockReset();
+    vi.mocked(createToolMessagePair).mockReset();
     vi.mocked(toast.loading).mockClear();
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.warning).mockClear();
@@ -464,5 +477,139 @@ describe('AgentChatView', () => {
     expect(screen.getByTestId('sheet-content-right')).toBeInTheDocument();
     expect(screen.queryByTestId('sheet-content-left')).not.toBeInTheDocument();
     expect(screen.getByText('mock-side-panel-shell')).toBeInTheDocument();
+  });
+
+  it('shows immediate playbook-start feedback and injects selectPlaybook when idle', async () => {
+    const playbookId = 'playbook-1';
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+    });
+    mocks.searchParams = new URLSearchParams(`playbookId=${playbookId}`);
+    mocks.workflowStatus = 'idle';
+
+    vi.mocked(agentCallBuiltinTool).mockResolvedValue({
+      content: [{ type: 'text', text: 'selected' }],
+    });
+    vi.mocked(createToolMessagePair).mockReturnValue([
+      { id: 'tc', role: 'assistant' },
+      { id: 'tr', role: 'tool' },
+    ] as never);
+
+    render(<AgentChatView />);
+
+    expect(screen.getByTestId('playbook-launch-pending')).toHaveTextContent(
+      'Starting playbook…',
+    );
+    expect(toast.loading).toHaveBeenCalledWith(
+      'Starting playbook…',
+      expect.objectContaining({ id: playbookStartToastId(playbookId) }),
+    );
+
+    await waitFor(() => {
+      expect(agentCallBuiltinTool).toHaveBeenCalledWith(
+        'session-1',
+        'playbook__selectPlaybook',
+        { id: playbookId },
+      );
+    });
+
+    await waitFor(() => {
+      expect(mocks.injectMessages).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(
+        'Playbook started automatically',
+        expect.objectContaining({ id: playbookStartToastId(playbookId) }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId('playbook-launch-pending'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows waiting feedback when playbook start is blocked by a busy session', () => {
+    const playbookId = 'playbook-busy';
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+    });
+    mocks.searchParams = new URLSearchParams(`playbookId=${playbookId}`);
+    mocks.workflowStatus = 'busy';
+
+    render(<AgentChatView />);
+
+    expect(screen.getByTestId('playbook-launch-pending')).toHaveTextContent(
+      'Waiting for the current run to finish before starting the playbook…',
+    );
+    expect(toast.loading).toHaveBeenCalledWith(
+      'Waiting for the current run to finish before starting the playbook…',
+      expect.objectContaining({ id: playbookStartToastId(playbookId) }),
+    );
+    expect(agentCallBuiltinTool).not.toHaveBeenCalled();
+    expect(mocks.injectMessages).not.toHaveBeenCalled();
+  });
+
+  it('does not flip back to waiting after launch when workflow becomes busy', async () => {
+    const playbookId = 'playbook-race';
+    let resolveInject: (() => void) | undefined;
+    mocks.injectMessages = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInject = resolve;
+        }),
+    );
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+    });
+    mocks.searchParams = new URLSearchParams(`playbookId=${playbookId}`);
+    mocks.workflowStatus = 'idle';
+
+    vi.mocked(agentCallBuiltinTool).mockResolvedValue({
+      content: [{ type: 'text', text: 'selected' }],
+    });
+    vi.mocked(createToolMessagePair).mockReturnValue([
+      { id: 'tc', role: 'assistant' },
+      { id: 'tr', role: 'tool' },
+    ] as never);
+
+    const { rerender } = render(<AgentChatView />);
+
+    expect(screen.getByTestId('playbook-launch-pending')).toHaveTextContent(
+      'Starting playbook…',
+    );
+
+    await waitFor(() => {
+      expect(mocks.injectMessages).toHaveBeenCalled();
+    });
+
+    // Simulate inject kicking the workflow to busy while playbookId is still present.
+    mocks.workflowStatus = 'busy';
+    rerender(<AgentChatView />);
+
+    expect(screen.getByTestId('playbook-launch-pending')).toHaveTextContent(
+      'Starting playbook…',
+    );
+    expect(toast.loading).not.toHaveBeenCalledWith(
+      'Waiting for the current run to finish before starting the playbook…',
+      expect.anything(),
+    );
+
+    resolveInject?.();
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(
+        'Playbook started automatically',
+        expect.objectContaining({ id: playbookStartToastId(playbookId) }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId('playbook-launch-pending'),
+      ).not.toBeInTheDocument();
+    });
   });
 });
