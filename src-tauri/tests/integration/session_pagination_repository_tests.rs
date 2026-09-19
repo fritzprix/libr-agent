@@ -167,7 +167,13 @@ async fn list_sessions_filters_bookmarked_and_status_before_limit() {
     for (id, name, updated_at, bookmarked, status) in [
         ("bm-busy", "Alpha Busy", 5_000, true, SessionStatus::Busy),
         ("bm-idle", "Alpha Idle", 4_000, true, SessionStatus::Idle),
-        ("plain-busy", "Alpha Plain", 3_000, false, SessionStatus::Busy),
+        (
+            "plain-busy",
+            "Alpha Plain",
+            3_000,
+            false,
+            SessionStatus::Busy,
+        ),
         ("bm-other", "Beta", 2_000, true, SessionStatus::Busy),
     ] {
         let mut session = build_session(id, updated_at);
