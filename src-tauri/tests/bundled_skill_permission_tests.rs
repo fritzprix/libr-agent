@@ -49,7 +49,8 @@ with tempfile.TemporaryDirectory() as tmp:
     os.chmod(target, 0o644)
     harden(target)
     mode = stat.S_IMODE(target.stat().st_mode)
-    assert mode == 0o600, f"expected 0o600, got {{oct(mode)}}"
+    if os.name != "nt":
+        assert mode == 0o600, f"expected 0o600, got {{oct(mode)}}"
 
 # Missing path must not raise
 harden(Path(tempfile.gettempdir()) / "libragent-missing-harden-target.json")
@@ -150,8 +151,9 @@ with tempfile.TemporaryDirectory() as tmp:
 
         code = main()
         assert code == 0
-        assert stat.S_IMODE(config.stat().st_mode) == 0o600
-        assert stat.S_IMODE(session.stat().st_mode) == 0o600
+        if os.name != "nt":
+            assert stat.S_IMODE(config.stat().st_mode) == 0o600
+            assert stat.S_IMODE(session.stat().st_mode) == 0o600
 
 print("ok")
 "#,
