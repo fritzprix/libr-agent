@@ -85,8 +85,10 @@ pub trait ScheduledTaskRepository: Send + Sync {
 
     /// List SESSION callbacks pinned to a session, including paused rows.
     ///
-    /// Completed one-shots and orphaned callbacks (`enabled = false` and `next_run_at` null)
-    /// are omitted so the session panel can re-enable paused tasks without showing history.
+    /// Paused callbacks (`enabled = false` with a remaining `next_run_at`) are included so the
+    /// session panel can resume them. Soft-disabled tombstones (`enabled = false` and
+    /// `next_run_at` null) are omitted. The runner deletes completed one-shots and orphaned
+    /// callbacks instead of leaving those tombstones.
     async fn list_session_scheduled_tasks(
         &self,
         session_id: &str,

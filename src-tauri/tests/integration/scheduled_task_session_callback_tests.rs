@@ -809,6 +809,209 @@ async fn scheduled_task_server_session_isolation_checks() {
     assert!(!context.context_prompt.contains("Session A callback"));
 }
 
+#[tokio::test]
+async fn service_context_excludes_global_tasks_and_reports_idle_without_session_callbacks() {
+    use tauri_mcp_agent_lib::mcp::builtin::scheduled_task::ScheduledTaskServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+    use tauri_mcp_agent_lib::repositories::SqliteScheduledTaskRepository;
+    use tauri_mcp_agent_lib::{set_scheduled_task_repository, set_session_repository};
+
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db.clone());
+
+    set_session_repository(session_repo.clone());
+    set_scheduled_task_repository(SqliteScheduledTaskRepository::new(db.clone()));
+
+    let session_id = "session-sc-global-filter";
+    session_repo
+        .upsert_session(&make_session(session_id, "assistant-1"))
+        .await
+        .expect("session should be persisted");
+
+    let governance = ScheduledTaskGovernanceSettings::default();
+    let global_task = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Nightly wiki mine".to_string(),
+            task_category: TASK_CATEGORY_GLOBAL.to_string(),
+            cron_expression: Some("0 3 * * *".to_string()),
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Mine the wiki".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: None,
+            session_id: None,
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: None,
+        },
+        &governance,
+    )
+    .await
+    .expect("global task should be created");
+
+    let server = ScheduledTaskServer::new(session_id.to_string(), std::sync::Arc::new(db.clone()))
+        .await
+        .expect("server should initialize");
+
+    // GLOBAL-only: ambient SC stays empty; has_active_state skips the server.
+    assert!(!server.has_active_state().await);
+    let idle_context = server.get_service_context(None).await;
+    assert!(idle_context.context_prompt.trim().is_empty());
+    assert!(!idle_context.context_prompt.contains(&global_task.id));
+    assert!(!idle_context.context_prompt.contains("Nightly wiki mine"));
+
+    // On-demand list still surfaces GLOBAL tasks.
+    let list_result = server
+        .call_tool(
+            "listScheduledTasks",
+            serde_json::json!({}),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("listScheduledTasks should succeed");
+    assert_ne!(list_result.is_error, Some(true));
+    let listed_ids: Vec<&str> = list_result
+        .structured_content
+        .as_ref()
+        .expect("structured content")
+        .get("tasks")
+        .and_then(|v| v.as_array())
+        .expect("tasks array")
+        .iter()
+        .filter_map(|t| t.get("id").and_then(|id| id.as_str()))
+        .collect();
+    assert!(listed_ids.contains(&global_task.id.as_str()));
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let session_task = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Session follow-up".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Check back".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: Some(session_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: Some(now_ms + 60_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("session callback should be created");
+
+    assert!(server.has_active_state().await);
+    let active_context = server.get_service_context(None).await;
+    assert!(active_context.context_prompt.contains("## Scheduled Tasks"));
+    assert!(active_context.context_prompt.contains(&session_task.id));
+    assert!(active_context.context_prompt.contains("Session follow-up"));
+    assert!(!active_context.context_prompt.contains(&global_task.id));
+    assert!(!active_context.context_prompt.contains("Nightly wiki mine"));
+
+    // Disabled SESSION callbacks must not keep ambient SC alive.
+    ScheduledTaskService::toggle_scheduled_task_with_governance(
+        &scheduled_repo,
+        &session_task.id,
+        false,
+        &governance,
+    )
+    .await
+    .expect("toggle disable should succeed");
+    assert!(!server.has_active_state().await);
+    let disabled_context = server.get_service_context(None).await;
+    assert!(disabled_context.context_prompt.trim().is_empty());
+    assert!(!disabled_context.context_prompt.contains(&session_task.id));
+
+    // When the session callback is deleted (mirroring runner one-shot completion or orphan cleanup),
+    // the session reverts to an idle state with zero ambient service context.
+    scheduled_repo
+        .delete_scheduled_task(&session_task.id)
+        .await
+        .expect("session callback deletion should succeed");
+    assert!(!server.has_active_state().await);
+    let post_completion_context = server.get_service_context(None).await;
+    assert!(post_completion_context.context_prompt.trim().is_empty());
+}
+
+#[tokio::test]
+async fn runner_deletes_completed_one_shot_and_orphaned_session_callbacks() {
+    use tauri_mcp_agent_lib::scheduled::runner::{
+        delete_orphaned_session_callback, finalize_session_callback_schedule,
+    };
+
+    let db = common::setup_test_db_with_migrations().await;
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db);
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let governance = ScheduledTaskGovernanceSettings::default();
+
+    let one_shot = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "One-shot follow-up".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Check back".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: Some("session-runner-oneshot".to_string()),
+            session_id: Some("session-runner-oneshot".to_string()),
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: Some(now_ms - 1_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("one-shot should be created");
+
+    finalize_session_callback_schedule(&scheduled_repo, &one_shot, now_ms)
+        .await
+        .expect("one-shot finalize should delete the row");
+    assert!(scheduled_repo
+        .get_scheduled_task(&one_shot.id)
+        .await
+        .expect("lookup should succeed")
+        .is_none());
+
+    let orphan = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Orphan callback".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Gone session".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: Some("missing-session".to_string()),
+            session_id: Some("missing-session".to_string()),
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: Some(now_ms - 1_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("orphan callback should be created");
+
+    delete_orphaned_session_callback(&scheduled_repo, &orphan, "missing-session")
+        .await
+        .expect("orphan cleanup should delete the row");
+    assert!(scheduled_repo
+        .get_scheduled_task(&orphan.id)
+        .await
+        .expect("lookup should succeed")
+        .is_none());
+}
+
 fn sample_session_task(
     enabled: bool,
     cron_expression: Option<String>,
