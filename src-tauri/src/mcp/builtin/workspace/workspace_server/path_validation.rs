@@ -187,10 +187,7 @@ impl WorkspaceServer {
 /// Recovery for path-validation failures. Outside-workdir mapping errors steer to
 /// `workspace__runShell` (file tools cannot map those paths); other failures keep
 /// the caller's fallback (often `listDirectory`).
-pub(crate) fn path_validation_failure_guidance(
-    error: &str,
-    fallback: Vec<String>,
-) -> Vec<String> {
+pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String>) -> Vec<String> {
     if error.contains(crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER) {
         vec![
             "Use workspace__runShell for this container path (ls/cat to inspect; mkdir -p + redirect or cp to write).".to_string(),
@@ -224,7 +221,8 @@ mod guidance_tests {
     #[test]
     fn other_errors_keep_fallback() {
         let fallback = vec!["Use workspace__listDirectory to see available paths".to_string()];
-        let guidance = path_validation_failure_guidance("Security error: blocked", fallback.clone());
+        let guidance =
+            path_validation_failure_guidance("Security error: blocked", fallback.clone());
         assert_eq!(guidance, fallback);
     }
 }

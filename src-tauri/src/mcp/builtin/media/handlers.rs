@@ -277,8 +277,9 @@ async fn read_workspace_media_bytes(
     };
     match read_local_bytes(&resolved).await {
         Ok(data) => Ok(data),
-        Err(e) => Err(guided_error(ErrorCategory::ResourceNotFound, e, ToolGroup::Media)
-            .to_mcp_result()),
+        Err(e) => {
+            Err(guided_error(ErrorCategory::ResourceNotFound, e, ToolGroup::Media).to_mcp_result())
+        }
     }
 }
 

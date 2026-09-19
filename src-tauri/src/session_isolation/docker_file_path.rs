@@ -40,9 +40,10 @@ pub async fn map_docker_container_file_tool_path(
         return Ok(None);
     }
 
-    let host_workspace = session.docker_host_workspace_path.as_ref().ok_or_else(|| {
-        format!("Missing Docker host workspace path for session {session_id}")
-    })?;
+    let host_workspace = session
+        .docker_host_workspace_path
+        .as_ref()
+        .ok_or_else(|| format!("Missing Docker host workspace path for session {session_id}"))?;
     let workdir = session
         .docker_config
         .as_ref()
