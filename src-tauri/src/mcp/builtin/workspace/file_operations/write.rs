@@ -1,3 +1,4 @@
+use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
 use super::utils::{
     format_file_content_preview, format_file_size, format_preview_line, initial_prefix_hash_state,
@@ -237,10 +238,13 @@ impl WorkspaceServer {
                     format!("Path validation failed: {}", e),
                     ToolGroup::Workspace,
                 )
-                .guidance(vec![
-                    "Verify the target path is not a protected location".to_string(),
-                    "Use workspace__listDirectory to see available paths".to_string(),
-                ])
+                .guidance(path_validation_failure_guidance(
+                    &e,
+                    vec![
+                        "Verify the target path is not a protected location".to_string(),
+                        "Use workspace__listDirectory to see available paths".to_string(),
+                    ],
+                ))
                 .to_mcp_result());
             }
         };

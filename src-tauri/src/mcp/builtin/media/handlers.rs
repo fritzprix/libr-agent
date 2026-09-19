@@ -185,6 +185,41 @@ pub async fn read_local_bytes(path: &Path) -> Result<Vec<u8>, String> {
 
 // ── Handler: seeContent ───────────────────────────────────────────────────────
 
+/// Resolve a local path against the session workspace.
+///
+/// Relative paths join `workspace_dir`. Absolute Docker workdir paths (e.g. `/app/…`)
+/// are remapped to the host workspace when the session is Docker-isolated.
+async fn resolve_media_local_path(
+    path: &Path,
+    workspace_dir: &Path,
+    session_id: &str,
+) -> Result<std::path::PathBuf, String> {
+    let path_str = path.to_string_lossy();
+    if let Some(mapped) =
+        crate::session_isolation::map_docker_container_file_tool_path(session_id, &path_str).await?
+    {
+        return Ok(mapped);
+    }
+    Ok(resolve_local_path(path, workspace_dir))
+}
+
+/// Resolve, (for attach mode) sync, and workspace-bound a local media file path.
+async fn prepare_local_media_path(
+    path: &Path,
+    workspace_dir: &Path,
+    session_id: &str,
+) -> Result<std::path::PathBuf, String> {
+    let resolved = resolve_media_local_path(path, workspace_dir, session_id).await?;
+    // Pull before canonicalize so attach-mode files that exist only in the
+    // container become visible on the host staging workspace.
+    if let Some(session) = crate::services::container_attach_fs::load_session(session_id).await? {
+        crate::services::container_attach_fs::pull_container_file_to_host(&session, &resolved)
+            .await?;
+    }
+    ensure_within_workspace(&resolved, workspace_dir)?;
+    Ok(resolved)
+}
+
 /// Resolve a local path against the session workspace when it is relative.
 fn resolve_local_path(path: &Path, workspace_dir: &Path) -> std::path::PathBuf {
     if path.is_absolute() {
@@ -213,10 +248,45 @@ fn ensure_within_workspace(path: &Path, workspace_dir: &Path) -> Result<(), Stri
     }
 }
 
+fn media_local_path_error_category(error: &str) -> ErrorCategory {
+    if error.contains(crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER)
+        || error.contains("outside the session workspace")
+    {
+        ErrorCategory::PermissionDenied
+    } else if error.contains("Cannot resolve path") || error.contains("Failed to read file") {
+        ErrorCategory::ResourceNotFound
+    } else {
+        ErrorCategory::OperationFailed
+    }
+}
+
+/// Map/sync a workspace-local media path and read its bytes.
+async fn read_workspace_media_bytes(
+    raw_path: &Path,
+    workspace_dir: &Path,
+    session_id: &str,
+) -> Result<Vec<u8>, MCPResult> {
+    let resolved = match prepare_local_media_path(raw_path, workspace_dir, session_id).await {
+        Ok(path) => path,
+        Err(e) => {
+            return Err(
+                guided_error(media_local_path_error_category(&e), e, ToolGroup::Media)
+                    .to_mcp_result(),
+            );
+        }
+    };
+    match read_local_bytes(&resolved).await {
+        Ok(data) => Ok(data),
+        Err(e) => Err(guided_error(ErrorCategory::ResourceNotFound, e, ToolGroup::Media)
+            .to_mcp_result()),
+    }
+}
+
 /// Handle the `seeContent` tool.
 pub async fn handle_see_content(
     args: Value,
     workspace_dir: std::path::PathBuf,
+    session_id: String,
 ) -> Result<MCPResult, String> {
     let url_str = match args.get("url").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
@@ -248,23 +318,9 @@ pub async fn handle_see_content(
                 }
             },
             ContentSource::LocalFile(raw_path) => {
-                let resolved = resolve_local_path(&raw_path, &workspace_dir);
-                if let Err(e) = ensure_within_workspace(&resolved, &workspace_dir) {
-                    return Ok(
-                        guided_error(ErrorCategory::PermissionDenied, e, ToolGroup::Media)
-                            .to_mcp_result(),
-                    );
-                }
-                match read_local_bytes(&resolved).await {
+                match read_workspace_media_bytes(&raw_path, &workspace_dir, &session_id).await {
                     Ok(data) => (data, None),
-                    Err(e) => {
-                        return Ok(guided_error(
-                            ErrorCategory::ResourceNotFound,
-                            e,
-                            ToolGroup::Media,
-                        )
-                        .to_mcp_result())
-                    }
+                    Err(result) => return Ok(result),
                 }
             }
         }
@@ -320,6 +376,7 @@ pub async fn handle_see_content(
 pub async fn handle_listen_content(
     args: Value,
     workspace_dir: std::path::PathBuf,
+    session_id: String,
 ) -> Result<MCPResult, String> {
     let url_str = match args.get("url").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
@@ -351,23 +408,9 @@ pub async fn handle_listen_content(
                 }
             },
             ContentSource::LocalFile(raw_path) => {
-                let resolved = resolve_local_path(&raw_path, &workspace_dir);
-                if let Err(e) = ensure_within_workspace(&resolved, &workspace_dir) {
-                    return Ok(
-                        guided_error(ErrorCategory::PermissionDenied, e, ToolGroup::Media)
-                            .to_mcp_result(),
-                    );
-                }
-                match read_local_bytes(&resolved).await {
+                match read_workspace_media_bytes(&raw_path, &workspace_dir, &session_id).await {
                     Ok(data) => (data, None),
-                    Err(e) => {
-                        return Ok(guided_error(
-                            ErrorCategory::ResourceNotFound,
-                            e,
-                            ToolGroup::Media,
-                        )
-                        .to_mcp_result())
-                    }
+                    Err(result) => return Ok(result),
                 }
             }
         }
@@ -769,5 +812,42 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
         Err((category, err_msg)) => Ok(guided_error(category, err_msg, ToolGroup::Media)
             .with_guidance(screen_capture_guidance())
             .to_mcp_result()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session_isolation::PathMappingLayer;
+    use std::path::PathBuf;
+
+    #[test]
+    fn relative_local_path_joins_workspace() {
+        let workspace = PathBuf::from("/tmp/ws");
+        let resolved = resolve_local_path(Path::new("image.gif"), &workspace);
+        assert_eq!(resolved, workspace.join("image.gif"));
+    }
+
+    #[test]
+    fn docker_workdir_absolute_maps_like_workspace_tools() {
+        let host = PathBuf::from("/tmp/staging");
+        let mapper = PathMappingLayer::with_container_root(host.clone(), "/app");
+        assert_eq!(
+            mapper.container_to_host("/app/image.gif"),
+            Some(host.join("image.gif"))
+        );
+        assert_eq!(mapper.container_to_host("/logs/artifacts/x"), None);
+    }
+
+    #[test]
+    fn outside_workdir_error_is_permission_denied() {
+        let err = format!(
+            "Docker container path '/logs/x' is outside /app. Shell commands may access it, but {} /app paths to the host workspace.",
+            crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER
+        );
+        assert_eq!(
+            media_local_path_error_category(&err),
+            ErrorCategory::PermissionDenied
+        );
     }
 }
