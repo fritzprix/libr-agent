@@ -125,6 +125,93 @@ describe('useSessionHistorySearch', () => {
     expect(result.current.hasMoreSessions).toBe(true);
   });
 
+  it('forwards bookmarked and status filters to the server search request', async () => {
+    safeInvoke.mockResolvedValue({
+      items: [makeMetadata('hit-1', 'Alpha Hit', 2_000)],
+      nextCursor: undefined,
+    });
+
+    const { result } = renderHook(() =>
+      useSessionHistorySearch({
+        searchQuery: 'alpha',
+        bookmarkedOnly: true,
+        statusFilter: 'busy',
+        browseSessions,
+        browseHasMore: true,
+        browseLoading: false,
+        browseLoadingMore: false,
+        onBrowseLoadMore,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(safeInvoke).toHaveBeenCalledWith('agent_list_sessions', {
+        request: {
+          limit: 20,
+          search: 'alpha',
+          bookmarkedOnly: true,
+          status: 'busy',
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.displaySessions).toHaveLength(1);
+    });
+  });
+
+  it('merges child sessions into the search result set', async () => {
+    safeInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'agent_list_sessions') {
+        return {
+          items: [makeMetadata('parent', 'Alpha Parent', 3_000)],
+          nextCursor: undefined,
+        };
+      }
+      if (cmd === 'agent_get_child_sessions') {
+        return [
+          {
+            ...makeMetadata('child', 'Child Session', 2_000),
+            parentSessionId: 'parent',
+          },
+        ];
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    const { result } = renderHook(() =>
+      useSessionHistorySearch({
+        searchQuery: 'alpha',
+        browseSessions,
+        browseHasMore: false,
+        browseLoading: false,
+        browseLoadingMore: false,
+        onBrowseLoadMore,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.displaySessions.map((session) => session.id)).toEqual([
+        'parent',
+      ]);
+    });
+
+    await act(async () => {
+      await result.current.ensureSearchChildrenLoaded('parent');
+    });
+
+    await waitFor(() => {
+      expect(result.current.displaySessions.map((session) => session.id)).toEqual([
+        'parent',
+        'child',
+      ]);
+    });
+
+    expect(safeInvoke).toHaveBeenCalledWith('agent_get_child_sessions', {
+      sessionId: 'parent',
+    });
+  });
+
   it('loads more search results with the same search cursor', async () => {
     safeInvoke
       .mockResolvedValueOnce({

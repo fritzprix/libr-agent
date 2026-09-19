@@ -324,6 +324,8 @@ export interface AgentSessionListRequest {
   cursor?: AgentSessionListCursor;
   limit?: number;
   search?: string;
+  bookmarkedOnly?: boolean;
+  status?: AgentSessionMetadata['status'];
 }
 
 export interface AgentSessionListResponse {

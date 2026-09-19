@@ -9,6 +9,7 @@ import type {
   AgentSessionListCursor,
   AgentSessionListRequest,
   AgentSessionListResponse,
+  AgentSessionMetadata,
 } from '@/models/agent-ipc';
 import {
   mapSessionMetadataList,
@@ -17,12 +18,15 @@ import {
 import { dedupeSessionsById } from '@/context/agent-session-list/collections';
 import { sortSessionsByLatestActivity } from '@/lib/session-metadata';
 import { SESSION_LIST_PAGE_SIZE } from '@/context/agent-session-list/startup-cache';
+import type { SessionStatus } from '@/lib/session-utils';
 
 const logger = getLogger('useSessionHistorySearch');
 const SEARCH_DEBOUNCE_MS = 300;
 
 interface UseSessionHistorySearchArgs {
   searchQuery: string;
+  bookmarkedOnly?: boolean;
+  statusFilter?: 'all' | SessionStatus;
   browseSessions: AgentSession[];
   browseHasMore: boolean;
   browseLoading: boolean;
@@ -41,6 +45,8 @@ interface UseSessionHistorySearchResult {
   clientSearchQuery: string;
   isServerSearchActive: boolean;
   loadMore: () => void | Promise<void>;
+  /** Load direct children into the active search result set. */
+  ensureSearchChildrenLoaded: (parentSessionId: string) => Promise<void>;
   /** Remove a session and any loaded descendants from search results. */
   removeSearchSessionTree: (sessionId: string) => void;
   /** Remove one session and clear parent links on loaded children. */
@@ -71,8 +77,37 @@ function collectSubtreeIds(
   return idsToRemove;
 }
 
+function buildSearchRequest({
+  search,
+  cursor,
+  bookmarkedOnly,
+  statusFilter,
+}: {
+  search: string;
+  cursor?: AgentSessionListCursor;
+  bookmarkedOnly: boolean;
+  statusFilter: 'all' | SessionStatus;
+}): AgentSessionListRequest {
+  const request: AgentSessionListRequest = {
+    limit: SESSION_LIST_PAGE_SIZE,
+    search,
+  };
+  if (cursor) {
+    request.cursor = cursor;
+  }
+  if (bookmarkedOnly) {
+    request.bookmarkedOnly = true;
+  }
+  if (statusFilter !== 'all') {
+    request.status = statusFilter;
+  }
+  return request;
+}
+
 export function useSessionHistorySearch({
   searchQuery,
+  bookmarkedOnly = false,
+  statusFilter = 'all',
   browseSessions,
   browseHasMore,
   browseLoading,
@@ -81,8 +116,12 @@ export function useSessionHistorySearch({
   refreshToken = 0,
 }: UseSessionHistorySearchArgs): UseSessionHistorySearchResult {
   const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
+  const trimmedInput = searchQuery.trim();
   const trimmedDebounced = debouncedSearchQuery.trim();
-  const isDebouncing = searchQuery.trim() !== trimmedDebounced;
+  const isDebouncing = trimmedInput !== trimmedDebounced;
+  /** True once the user typed a query — even before debounce settles. */
+  const wantsServerSearch = trimmedInput.length > 0;
+  const isServerSearchActive = trimmedDebounced.length > 0;
 
   const [searchSessions, setSearchSessions] = useState<AgentSession[]>([]);
   const [searchCursor, setSearchCursor] = useState<
@@ -97,6 +136,8 @@ export function useSessionHistorySearch({
   const searchCursorRef = useRef<AgentSessionListCursor | undefined>(undefined);
   const isSearchLoadingMoreRef = useRef(false);
   const assistantsByIdRef = useRef<Map<string, Assistant>>(new Map());
+  const childrenLoadCompletedRef = useRef(new Set<string>());
+  const childrenLoadInflightRef = useRef(new Map<string, Promise<void>>());
 
   useEffect(() => {
     searchCursorRef.current = searchCursor;
@@ -111,6 +152,8 @@ export function useSessionHistorySearch({
     if (!trimmedDebounced) {
       requestGenerationRef.current += 1;
       assistantsByIdRef.current = new Map();
+      childrenLoadCompletedRef.current = new Set();
+      childrenLoadInflightRef.current = new Map();
       setSearchSessions([]);
       setSearchCursor(undefined);
       setSearchHasMore(false);
@@ -121,14 +164,17 @@ export function useSessionHistorySearch({
     }
 
     const generation = ++requestGenerationRef.current;
+    childrenLoadCompletedRef.current = new Set();
+    childrenLoadInflightRef.current = new Map();
     setIsSearchLoading(true);
     resetSearchLoadingMore();
     setActiveSearchQuery(trimmedDebounced);
 
-    const request: AgentSessionListRequest = {
-      limit: SESSION_LIST_PAGE_SIZE,
+    const request = buildSearchRequest({
       search: trimmedDebounced,
-    };
+      bookmarkedOnly,
+      statusFilter,
+    });
 
     void (async () => {
       try {
@@ -168,7 +214,13 @@ export function useSessionHistorySearch({
         }
       }
     })();
-  }, [trimmedDebounced, refreshToken, resetSearchLoadingMore]);
+  }, [
+    trimmedDebounced,
+    bookmarkedOnly,
+    statusFilter,
+    refreshToken,
+    resetSearchLoadingMore,
+  ]);
 
   const loadMoreSearch = useCallback(async () => {
     const cursor = searchCursorRef.current;
@@ -185,11 +237,12 @@ export function useSessionHistorySearch({
       const response = await safeInvoke<AgentSessionListResponse>(
         'agent_list_sessions',
         {
-          request: {
-            cursor,
-            limit: SESSION_LIST_PAGE_SIZE,
+          request: buildSearchRequest({
             search: query,
-          } satisfies AgentSessionListRequest,
+            cursor,
+            bookmarkedOnly,
+            statusFilter,
+          }),
         },
       );
       if (generation !== requestGenerationRef.current) {
@@ -228,7 +281,76 @@ export function useSessionHistorySearch({
       isSearchLoadingMoreRef.current = false;
       setIsSearchLoadingMore(false);
     }
-  }, [activeSearchQuery]);
+  }, [activeSearchQuery, bookmarkedOnly, statusFilter]);
+
+  const ensureSearchChildrenLoaded = useCallback(
+    async (parentSessionId: string) => {
+      if (!isServerSearchActive) {
+        return;
+      }
+      if (childrenLoadCompletedRef.current.has(parentSessionId)) {
+        return;
+      }
+
+      const existing = childrenLoadInflightRef.current.get(parentSessionId);
+      if (existing) {
+        return existing;
+      }
+
+      const loadPromise = (async () => {
+        try {
+          const childMetadata = await safeInvoke<AgentSessionMetadata[]>(
+            'agent_get_child_sessions',
+            { sessionId: parentSessionId },
+          );
+
+          if (Array.isArray(childMetadata) && childMetadata.length > 0) {
+            let assistantsById = assistantsByIdRef.current;
+            if (assistantsById.size === 0) {
+              assistantsById = new Map(
+                (await listAssistants()).map((assistant) => [
+                  assistant.id,
+                  assistant,
+                ]),
+              );
+              assistantsByIdRef.current = assistantsById;
+            }
+
+            setSearchSessions((previous) => {
+              const pendingApprovalCounts = new Map(
+                previous.map((session) => [
+                  session.id,
+                  session.pendingApprovalCount ?? 0,
+                ]),
+              );
+              const incoming = mapSessionMetadataList(
+                childMetadata,
+                pendingApprovalCounts,
+                assistantsById,
+              );
+              return sortSessionsByLatestActivity(
+                dedupeSessionsById([...previous, ...incoming]),
+              );
+            });
+          }
+
+          childrenLoadCompletedRef.current.add(parentSessionId);
+        } catch (error) {
+          logger.error('Failed to load search child sessions', {
+            parentSessionId,
+            error,
+          });
+          throw error;
+        } finally {
+          childrenLoadInflightRef.current.delete(parentSessionId);
+        }
+      })();
+
+      childrenLoadInflightRef.current.set(parentSessionId, loadPromise);
+      return loadPromise;
+    },
+    [isServerSearchActive],
+  );
 
   const removeSearchSessionTree = useCallback((sessionId: string) => {
     setSearchSessions((previous) => {
@@ -262,13 +384,27 @@ export function useSessionHistorySearch({
     [],
   );
 
-  const isServerSearchActive = trimmedDebounced.length > 0;
-
   const idleMutations = {
+    ensureSearchChildrenLoaded,
     removeSearchSessionTree,
     removeSearchSessionOnly,
     setSearchSessionBookmarked,
   };
+
+  // Debouncing into the first server search: keep browse unfiltered and show loading
+  // instead of client-filtering the sidebar page (which looks like "missing results").
+  if (wantsServerSearch && !isServerSearchActive) {
+    return {
+      displaySessions: browseSessions,
+      hasMoreSessions: false,
+      isLoading: true,
+      isLoadingMore: false,
+      clientSearchQuery: '',
+      isServerSearchActive: false,
+      loadMore: onBrowseLoadMore,
+      ...idleMutations,
+    };
+  }
 
   if (!isServerSearchActive) {
     return {

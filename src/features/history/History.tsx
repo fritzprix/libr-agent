@@ -71,11 +71,14 @@ export default function History() {
     clientSearchQuery,
     isServerSearchActive,
     loadMore: handleDisplayLoadMore,
+    ensureSearchChildrenLoaded,
     removeSearchSessionTree,
     removeSearchSessionOnly,
     setSearchSessionBookmarked,
   } = useSessionHistorySearch({
     searchQuery,
+    bookmarkedOnly: showBookmarkedOnly,
+    statusFilter: activeStatusFilter,
     browseSessions: sessions,
     browseHasMore: hasMoreSessions,
     browseLoading: isSessionsListLoading,
@@ -181,7 +184,11 @@ export default function History() {
 
   const handleEnsureChildrenLoaded = useCallback(
     (sessionId: string) => {
-      void ensureChildrenLoaded(sessionId).catch((error) => {
+      const loadChildren = isServerSearchActive
+        ? ensureSearchChildrenLoaded
+        : ensureChildrenLoaded;
+
+      void loadChildren(sessionId).catch((error) => {
         logger.error('Failed to load child sessions', { sessionId, error });
         toast.error(
           t(
@@ -191,7 +198,12 @@ export default function History() {
         );
       });
     },
-    [ensureChildrenLoaded, t],
+    [
+      ensureChildrenLoaded,
+      ensureSearchChildrenLoaded,
+      isServerSearchActive,
+      t,
+    ],
   );
 
   return (

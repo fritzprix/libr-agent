@@ -335,8 +335,18 @@ impl AgentSessionManager {
         cursor: Option<SessionListCursor>,
         limit: u64,
         search: Option<&str>,
+        bookmarked_only: bool,
+        status: Option<&str>,
     ) -> Result<SessionListPage, String> {
-        crate::agent::lifecycle::list_sessions(&self.session_repo, cursor, limit, search).await
+        crate::agent::lifecycle::list_sessions(
+            &self.session_repo,
+            cursor,
+            limit,
+            search,
+            bookmarked_only,
+            status,
+        )
+        .await
     }
 
     pub async fn list_attention_sessions(&self) -> Result<Vec<SessionMetadata>, String> {

@@ -298,11 +298,14 @@ pub trait SessionRepository: Send + Sync {
     ///
     /// When `search` is non-empty (after trim), results are restricted to sessions
     /// whose name/id or linked assistant name/config contain the query (case-insensitive).
+    /// `bookmarked_only` and `status` further narrow the page before the limit is applied.
     async fn list_sessions(
         &self,
         cursor: Option<SessionListCursor>,
         limit: u64,
         search: Option<&str>,
+        bookmarked_only: bool,
+        status: Option<&str>,
     ) -> Result<SessionListPage, DbError>;
 
     /// List sessions that still have unread attention for notifications.
@@ -552,6 +555,8 @@ impl SessionRepository for SqliteSessionRepository {
         cursor: Option<SessionListCursor>,
         limit: u64,
         search: Option<&str>,
+        bookmarked_only: bool,
+        status: Option<&str>,
     ) -> Result<SessionListPage, DbError> {
         let normalized_limit = limit.clamp(1, 200);
         let mut condition = Condition::all();
@@ -570,6 +575,16 @@ impl SessionRepository for SqliteSessionRepository {
 
         if let Some(search_condition) = session_search_condition(search) {
             condition = condition.add(search_condition);
+        }
+
+        if bookmarked_only {
+            condition = condition.add(session::Column::IsBookmarked.eq(true));
+        }
+
+        if let Some(status) = status.map(str::trim).filter(|value| !value.is_empty()) {
+            // Reject unknown statuses rather than matching a literal no-row value.
+            SessionStatus::from_str(status)?;
+            condition = condition.add(session::Column::Status.eq(status));
         }
 
         let mut models = Session::find()

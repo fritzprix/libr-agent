@@ -6,6 +6,7 @@ use super::session_repository::{
 use crate::execution_mode::ExecutionMode;
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -190,6 +191,8 @@ impl SessionRepository for InMemorySessionRepository {
         cursor: Option<SessionListCursor>,
         limit: u64,
         search: Option<&str>,
+        bookmarked_only: bool,
+        status: Option<&str>,
     ) -> Result<SessionListPage, DbError> {
         let sessions = self.sessions.read().await;
         let normalized_limit = limit.clamp(1, 200) as usize;
@@ -220,6 +223,15 @@ impl SessionRepository for InMemorySessionRepository {
                     .contains(&lower_query)
                     || session.id.to_lowercase().contains(&lower_query)
             });
+        }
+
+        if bookmarked_only {
+            result.retain(|session| session.is_bookmarked);
+        }
+
+        if let Some(status) = status.map(str::trim).filter(|value| !value.is_empty()) {
+            let parsed = SessionStatus::from_str(status)?;
+            result.retain(|session| session.status == parsed);
         }
 
         let next_cursor = if result.len() > normalized_limit {
