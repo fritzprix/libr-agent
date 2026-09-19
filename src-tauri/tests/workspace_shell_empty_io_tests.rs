@@ -46,4 +46,3 @@ fn pipeline_failure_stderr_warning_is_generated() {
     assert!(w.contains("pipefail"));
     assert!(w.contains("pipeline"));
 }
-

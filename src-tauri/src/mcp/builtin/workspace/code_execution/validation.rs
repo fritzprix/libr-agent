@@ -764,7 +764,9 @@ index 111..222 100644
         assert!(has_shell_pipeline("xxd main.db-wal | head -50"));
         assert!(has_shell_pipeline("cat file.txt | grep foo | wc -l"));
         assert!(!has_shell_pipeline("which foo || echo not found"));
-        assert!(!has_shell_pipeline("python app.py --arg1 || python app.py --arg2"));
+        assert!(!has_shell_pipeline(
+            "python app.py --arg1 || python app.py --arg2"
+        ));
         assert!(!has_shell_pipeline("ls -la"));
     }
 
@@ -804,4 +806,3 @@ index 111..222 100644
         .is_none());
     }
 }
-
