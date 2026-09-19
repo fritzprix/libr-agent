@@ -16,13 +16,13 @@ fn see_tool() -> MCPTool {
 
 **Notes:**
 - Maximum file size: 20 MB.
-- Local paths must be inside the session workspace."#
+- Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/image.png`)."#
             .to_string(),
         input_schema: object_prop(
             vec![(
                 "url".to_string(),
                 string_prop_required(
-                    "URL or workspace-relative path of the image to fetch (e.g. https://example.com/photo.jpg or screenshots/capture.png).",
+                    "URL or local image path (https://…, workspace-relative, or Docker workdir absolute like /app/photo.jpg).",
                 ),
             )],
             vec!["url".to_string()],
@@ -44,13 +44,13 @@ fn listen_tool() -> MCPTool {
 
 **Notes:**
 - Maximum file size: 20 MB.
-- Local paths must be inside the session workspace."#
+- Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/clip.mp3`)."#
             .to_string(),
         input_schema: object_prop(
             vec![(
                 "url".to_string(),
                 string_prop_required(
-                    "URL or workspace-relative path of the audio file to fetch (e.g. https://example.com/clip.mp3 or recordings/audio.wav).",
+                    "URL or local audio path (https://…, workspace-relative, or Docker workdir absolute like /app/clip.mp3).",
                 ),
             )],
             vec!["url".to_string()],

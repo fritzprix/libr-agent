@@ -49,12 +49,6 @@ impl MediaServer {
             icon: None,
         }
     }
-
-    /// Resolve the workspace directory for the current session.
-    fn workspace_dir(&self) -> std::path::PathBuf {
-        self.session_manager
-            .get_session_workspace_dir_by_id(&self.session_id)
-    }
 }
 
 #[async_trait]
@@ -77,10 +71,12 @@ impl BuiltinMCPServer for MediaServer {
         args: Value,
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let workspace_dir = match _session_id {
-            Some(ref sid) => self.session_manager.get_session_workspace_dir_by_id(sid),
-            None => self.workspace_dir(),
-        };
+        let session_id = _session_id
+            .clone()
+            .unwrap_or_else(|| self.session_id.clone());
+        let workspace_dir = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
 
         log::debug!(
             "Media server tool called: {} (workspace: {})",
@@ -89,8 +85,10 @@ impl BuiltinMCPServer for MediaServer {
         );
 
         match tool_name {
-            "seeContent" => handlers::handle_see_content(args, workspace_dir).await,
-            "listenContent" => handlers::handle_listen_content(args, workspace_dir).await,
+            "seeContent" => handlers::handle_see_content(args, workspace_dir, session_id).await,
+            "listenContent" => {
+                handlers::handle_listen_content(args, workspace_dir, session_id).await
+            }
             "captureScreen" => handlers::handle_capture_screen(args).await,
             _ => Err(format!("Unknown tool: {tool_name}")),
         }

@@ -4,11 +4,15 @@ use tracing::info;
 use crate::repositories::session_repository::SessionRepository;
 
 pub(crate) mod common;
+pub(crate) mod docker_file_path;
 pub mod path_mapper;
 pub mod platforms;
 pub mod runtime;
 pub mod types;
 
+pub use docker_file_path::{
+    map_docker_container_file_tool_path, OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER,
+};
 pub use path_mapper::PathMappingLayer;
 pub use runtime::{ShellDialect, SpawnedShell};
 pub use types::*;

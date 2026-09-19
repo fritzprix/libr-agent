@@ -1,7 +1,4 @@
 use super::WorkspaceServer;
-use crate::models::workspace_isolation::WorkspaceIsolationMode;
-use crate::repositories::SessionRepository;
-use crate::session_isolation::PathMappingLayer;
 use crate::SecureFileManager;
 use std::path::PathBuf;
 
@@ -121,43 +118,12 @@ impl WorkspaceServer {
         path_str: &str,
         target_session_id: &str,
     ) -> Result<Option<String>, String> {
-        if !path_str.starts_with('/') {
-            return Ok(None);
-        }
-
-        let Some(session_repo) = crate::state::try_get_session_repository() else {
-            return Ok(None);
-        };
-        let Some(session) = session_repo
-            .get_session(target_session_id)
-            .await
-            .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
-        else {
-            return Ok(None);
-        };
-
-        if session.workspace_isolation != WorkspaceIsolationMode::Docker {
-            return Ok(None);
-        }
-
-        let host_workspace = session.docker_host_workspace_path.as_ref().ok_or_else(|| {
-            format!("Missing Docker host workspace path for session {target_session_id}")
-        })?;
-        let workdir = session
-            .docker_config
-            .as_ref()
-            .map(|config| config.workdir().to_string())
-            .unwrap_or_else(|| {
-                crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR.to_string()
-            });
-        let mapper = PathMappingLayer::with_container_root(PathBuf::from(host_workspace), &workdir);
-        let Some(host_path) = mapper.container_to_host(path_str) else {
-            return Err(format!(
-                "Docker container path '{path_str}' is outside {workdir}. Shell commands may access it, but workspace file tools only map {workdir} paths to the host workspace."
-            ));
-        };
-
-        Ok(Some(host_path.to_string_lossy().to_string()))
+        let mapped = crate::session_isolation::map_docker_container_file_tool_path(
+            target_session_id,
+            path_str,
+        )
+        .await?;
+        Ok(mapped.map(|path| path.to_string_lossy().to_string()))
     }
 
     /// After a mutating file tool write, push staging → attach container when needed.
@@ -215,5 +181,50 @@ impl WorkspaceServer {
             &file_manager,
             path_str,
         )
+    }
+}
+
+/// Recovery for path-validation failures. Outside-workdir mapping errors steer to
+/// `workspace__runShell` (file tools cannot map those paths); other failures keep
+/// the caller's fallback (often `listDirectory`).
+pub(crate) fn path_validation_failure_guidance(
+    error: &str,
+    fallback: Vec<String>,
+) -> Vec<String> {
+    if error.contains(crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER) {
+        vec![
+            "Use workspace__runShell for this container path (ls/cat to inspect; mkdir -p + redirect or cp to write).".to_string(),
+            "Do not retry as a workspace-relative path — that targets a different location under the workdir.".to_string(),
+        ]
+    } else {
+        fallback
+    }
+}
+
+#[cfg(test)]
+mod guidance_tests {
+    use super::path_validation_failure_guidance;
+    use crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER;
+
+    #[test]
+    fn outside_workdir_guidance_prefers_run_shell() {
+        let err = format!("… {OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER} /app …");
+        let guidance = path_validation_failure_guidance(
+            &err,
+            vec!["Use workspace__listDirectory to see available paths".to_string()],
+        );
+        assert!(guidance
+            .iter()
+            .any(|line| line.contains("workspace__runShell")));
+        assert!(guidance
+            .iter()
+            .all(|line| !line.contains("workspace__listDirectory")));
+    }
+
+    #[test]
+    fn other_errors_keep_fallback() {
+        let fallback = vec!["Use workspace__listDirectory to see available paths".to_string()];
+        let guidance = path_validation_failure_guidance("Security error: blocked", fallback.clone());
+        assert_eq!(guidance, fallback);
     }
 }
