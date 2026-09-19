@@ -1,3 +1,19 @@
+## [0.9.11] - 2026-09-19
+
+### 🚀 Features & UI
+
+- **Desktop Automation & Screen Capture (`media__captureScreen`, `desktop__computerControl`)**: Introduced native cross-platform screen capture (`captureScreen`) with sub-region cropping, coordinate handoff, and full execution approval safeguards, paired with OS-level mouse and keyboard input automation (`computerControl`) with server-side physical coordinate conversion.
+- **Playbook Direct Launch & Pinned Session**: Added `default_target_session` support for Playbooks to start directly on pinned sessions via `selectPlaybook` injection with immediate start feedback, launch banner, and unified session identifiers (SSOT).
+- **Session Callbacks Pause & Resume**: Added interactive pause and resume controls for session callbacks in the planning panel, freezing one-shot remaining time while recalculating recurring schedules upon resumption.
+
+### 🐛 Fixes & Hardening
+
+- **Desktop DPI Scale Defaults**: Hardened screen capture DPI coordinate scaling defaults to 1:1 physical mappings, eliminating halved click targets and doubled coordinates on high-DPI displays.
+- **Scheduled Task Ambient Context Hygiene**: Filtered ambient service context to keep only the active session's callbacks, excluding global scheduled tasks from volatile prompt injection, and cleaned up completed one-shot / orphaned session tasks.
+- **UI Tool History & Turn Decoupling**: Separated UI tool pair recording from LLM submission turn kickoff via negative-list policy, preventing unintentional model invocations while preserving complete interaction history.
+- **Workspace Pipeline Error Diagnostics**: Added warning diagnostics when shell pipelines return exit code 0 despite upstream stderr failures.
+- **Reminder Routing & CI Automation**: Clarified in-chat reminder routing to prefer session callbacks, and added automated back-sync workflow from `main` to `dev/0.9.x`.
+
 ## [0.9.10] - 2026-09-16
 
 ### 🚀 Features & UI
