@@ -221,6 +221,15 @@ pub enum ToolCancellationSource {
 pub struct ListAgentSessionsRequest {
     pub cursor: Option<SessionListCursorDto>,
     pub limit: Option<u64>,
+    /// Case-insensitive substring match on session name/id and assistant name/config.
+    #[serde(default)]
+    pub search: Option<String>,
+    /// When true, only bookmarked sessions are returned.
+    #[serde(default)]
+    pub bookmarked_only: Option<bool>,
+    /// When set, only sessions with this status are returned (`idle`, `busy`, …).
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
