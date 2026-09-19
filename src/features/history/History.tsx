@@ -9,6 +9,7 @@ import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { SessionHistoryPanel } from '@/features/agent/components/SessionHistoryPanel';
 import type { SessionStatus } from '@/lib/session-utils';
+import { useSessionHistorySearch } from './useSessionHistorySearch';
 
 const logger = getLogger('History');
 
@@ -35,6 +36,7 @@ export default function History() {
     'all' | SessionStatus
   >('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchRefreshToken, setSearchRefreshToken] = useState(0);
 
   const showBookmarkedOnly = location.hash === '#bookmarked-sessions';
 
@@ -49,6 +51,39 @@ export default function History() {
     [navigate],
   );
 
+  const handleBrowseLoadMore = useCallback(() => {
+    void loadMoreSessions().catch((error) => {
+      logger.error('Failed to load more sessions', error);
+      toast.error(
+        t(
+          'sessionHistory.toasts.loadMoreFailed',
+          'Failed to load more sessions',
+        ),
+      );
+    });
+  }, [loadMoreSessions, t]);
+
+  const {
+    displaySessions,
+    hasMoreSessions: displayHasMore,
+    isLoading: displayLoading,
+    isLoadingMore: displayLoadingMore,
+    clientSearchQuery,
+    isServerSearchActive,
+    loadMore: handleDisplayLoadMore,
+    removeSearchSessionTree,
+    removeSearchSessionOnly,
+    setSearchSessionBookmarked,
+  } = useSessionHistorySearch({
+    searchQuery,
+    browseSessions: sessions,
+    browseHasMore: hasMoreSessions,
+    browseLoading: isSessionsListLoading,
+    browseLoadingMore: isLoadingMoreSessions,
+    onBrowseLoadMore: handleBrowseLoadMore,
+    refreshToken: searchRefreshToken,
+  });
+
   const handleResumeSession = useCallback(
     (sessionId: string) => {
       navigate(`/agent/${sessionId}`);
@@ -60,6 +95,9 @@ export default function History() {
     async (sessionId: string) => {
       try {
         await deleteSession(sessionId);
+        if (isServerSearchActive) {
+          removeSearchSessionTree(sessionId);
+        }
         toast.success(t('sessionHistory.toasts.deleted', 'Session deleted'));
       } catch (error) {
         logger.error('Failed to delete session', error);
@@ -68,13 +106,16 @@ export default function History() {
         );
       }
     },
-    [deleteSession, t],
+    [deleteSession, isServerSearchActive, removeSearchSessionTree, t],
   );
 
   const handleDeleteSessionOnly = useCallback(
     async (sessionId: string) => {
       try {
         await deleteSessionOnly(sessionId);
+        if (isServerSearchActive) {
+          removeSearchSessionOnly(sessionId);
+        }
         toast.success(t('sessionHistory.toasts.deleted', 'Session deleted'));
       } catch (error) {
         logger.error('Failed to delete session only', error);
@@ -83,15 +124,51 @@ export default function History() {
         );
       }
     },
-    [deleteSessionOnly, t],
+    [deleteSessionOnly, isServerSearchActive, removeSearchSessionOnly, t],
+  );
+
+  const handleToggleBookmark = useCallback(
+    async (sessionId: string) => {
+      const currentBookmarked =
+        displaySessions.find((session) => session.id === sessionId)
+          ?.isBookmarked ?? false;
+      const nextBookmarked = !currentBookmarked;
+
+      if (isServerSearchActive) {
+        setSearchSessionBookmarked(sessionId, nextBookmarked);
+      }
+
+      try {
+        await toggleBookmark(sessionId, currentBookmarked);
+      } catch (error) {
+        if (isServerSearchActive) {
+          setSearchSessionBookmarked(sessionId, currentBookmarked);
+        }
+        logger.error('Failed to toggle bookmark', error);
+        toast.error(
+          t(
+            'sessionHistory.toasts.bookmarkFailed',
+            'Failed to update bookmark',
+          ),
+        );
+      }
+    },
+    [
+      displaySessions,
+      isServerSearchActive,
+      setSearchSessionBookmarked,
+      t,
+      toggleBookmark,
+    ],
   );
 
   const handleRefreshSessions = useCallback(() => {
     loadSessions(true);
+    setSearchRefreshToken((token) => token + 1);
   }, [loadSessions]);
 
   const handleLoadMoreSessions = useCallback(() => {
-    void loadMoreSessions().catch((error) => {
+    void Promise.resolve(handleDisplayLoadMore()).catch((error) => {
       logger.error('Failed to load more sessions', error);
       toast.error(
         t(
@@ -100,7 +177,7 @@ export default function History() {
         ),
       );
     });
-  }, [loadMoreSessions, t]);
+  }, [handleDisplayLoadMore, t]);
 
   const handleEnsureChildrenLoaded = useCallback(
     (sessionId: string) => {
@@ -120,12 +197,13 @@ export default function History() {
   return (
     <div className="flex min-h-full w-full flex-col text-foreground">
       <SessionHistoryPanel
-        sessions={sessions}
-        isLoading={isSessionsListLoading}
-        hasMoreSessions={hasMoreSessions}
-        isLoadingMoreSessions={isLoadingMoreSessions}
+        sessions={displaySessions}
+        isLoading={displayLoading}
+        hasMoreSessions={displayHasMore}
+        isLoadingMoreSessions={displayLoadingMore}
         activeStatusFilter={activeStatusFilter}
         searchQuery={searchQuery}
+        clientSearchQuery={clientSearchQuery}
         onActiveStatusFilterChange={setActiveStatusFilter}
         onSearchQueryChange={setSearchQuery}
         onRefresh={handleRefreshSessions}
@@ -135,7 +213,7 @@ export default function History() {
         onResume={handleResumeSession}
         onDelete={handleDeleteSession}
         onDeleteOnly={handleDeleteSessionOnly}
-        onToggleBookmark={toggleBookmark}
+        onToggleBookmark={handleToggleBookmark}
         showBookmarkedOnly={showBookmarkedOnly}
         onShowBookmarkedOnlyChange={handleShowBookmarkedOnlyChange}
         heading={t('sessionHistory.heading', 'Session History')}

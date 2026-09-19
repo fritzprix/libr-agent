@@ -23,14 +23,15 @@ pub async fn get_all_sessions(
         .map_err(|e| format!("Failed to get all sessions: {}", e))
 }
 
-/// List sessions using cursor pagination.
+/// List sessions using cursor pagination, optionally filtered by search text.
 pub async fn list_sessions(
     session_repo: &Arc<dyn SessionRepository>,
     cursor: Option<SessionListCursor>,
     limit: u64,
+    search: Option<&str>,
 ) -> Result<SessionListPage, String> {
     session_repo
-        .list_sessions(cursor, limit)
+        .list_sessions(cursor, limit, search)
         .await
         .map_err(|e| format!("Failed to list sessions: {}", e))
 }

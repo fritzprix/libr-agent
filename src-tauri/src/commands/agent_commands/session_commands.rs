@@ -286,14 +286,20 @@ pub async fn agent_list_sessions(
     let request = request.unwrap_or(ListAgentSessionsRequest {
         cursor: None,
         limit: None,
+        search: None,
     });
     let limit = request
         .limit
         .unwrap_or(DEFAULT_SESSION_LIST_LIMIT)
         .clamp(1, MAX_SESSION_LIST_LIMIT);
+    let search = request
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
 
     manager
-        .list_sessions(request.cursor.map(Into::into), limit)
+        .list_sessions(request.cursor.map(Into::into), limit, search)
         .await
         .map(Into::into)
 }

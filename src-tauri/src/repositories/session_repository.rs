@@ -39,6 +39,45 @@ const SESSION_UPSERT_COLUMNS: [session::Column; 24] = [
     session::Column::DockerHostWorkspacePath,
 ];
 
+fn normalize_session_search_query(search: Option<&str>) -> Option<String> {
+    search
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_lowercase())
+}
+
+/// Escape `!`, `%`, and `_` so LIKE matches them literally (`!` is the ESCAPE char).
+fn escape_like_pattern(query: &str) -> String {
+    query
+        .replace('!', "!!")
+        .replace('%', "!%")
+        .replace('_', "!_")
+}
+
+fn session_search_condition(search: Option<&str>) -> Option<Condition> {
+    let query = normalize_session_search_query(search)?;
+    let pattern = format!("%{}%", escape_like_pattern(&query));
+
+    Some(
+        Condition::any()
+            .add(Expr::cust_with_values(
+                "LOWER(IFNULL(name, '')) LIKE ? ESCAPE '!'",
+                [sea_orm::Value::from(pattern.clone())],
+            ))
+            .add(Expr::cust_with_values(
+                "LOWER(id) LIKE ? ESCAPE '!'",
+                [sea_orm::Value::from(pattern.clone())],
+            ))
+            .add(Expr::cust_with_values(
+                "assistant_id IN (SELECT id FROM assistants WHERE LOWER(name) LIKE ? ESCAPE '!' OR LOWER(config) LIKE ? ESCAPE '!')",
+                [
+                    sea_orm::Value::from(pattern.clone()),
+                    sea_orm::Value::from(pattern),
+                ],
+            )),
+    )
+}
+
 /// Session status enum representing the agent workflow state
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -256,10 +295,14 @@ pub trait SessionRepository: Send + Sync {
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError>;
 
     /// List sessions ordered by most recent activity with cursor pagination.
+    ///
+    /// When `search` is non-empty (after trim), results are restricted to sessions
+    /// whose name/id or linked assistant name/config contain the query (case-insensitive).
     async fn list_sessions(
         &self,
         cursor: Option<SessionListCursor>,
         limit: u64,
+        search: Option<&str>,
     ) -> Result<SessionListPage, DbError>;
 
     /// List sessions that still have unread attention for notifications.
@@ -508,6 +551,7 @@ impl SessionRepository for SqliteSessionRepository {
         &self,
         cursor: Option<SessionListCursor>,
         limit: u64,
+        search: Option<&str>,
     ) -> Result<SessionListPage, DbError> {
         let normalized_limit = limit.clamp(1, 200);
         let mut condition = Condition::all();
@@ -522,6 +566,10 @@ impl SessionRepository for SqliteSessionRepository {
                             .add(session::Column::Id.lt(cursor.id)),
                     ),
             );
+        }
+
+        if let Some(search_condition) = session_search_condition(search) {
+            condition = condition.add(search_condition);
         }
 
         let mut models = Session::find()

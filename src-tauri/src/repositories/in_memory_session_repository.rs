@@ -189,6 +189,7 @@ impl SessionRepository for InMemorySessionRepository {
         &self,
         cursor: Option<SessionListCursor>,
         limit: u64,
+        search: Option<&str>,
     ) -> Result<SessionListPage, DbError> {
         let sessions = self.sessions.read().await;
         let normalized_limit = limit.clamp(1, 200) as usize;
@@ -205,6 +206,19 @@ impl SessionRepository for InMemorySessionRepository {
             result.retain(|session| {
                 session.updated_at < cursor.updated_at
                     || (session.updated_at == cursor.updated_at && session.id < cursor.id)
+            });
+        }
+
+        if let Some(query) = search.map(str::trim).filter(|value| !value.is_empty()) {
+            let lower_query = query.to_lowercase();
+            result.retain(|session| {
+                session
+                    .name
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&lower_query)
+                    || session.id.to_lowercase().contains(&lower_query)
             });
         }
 

@@ -320,6 +320,12 @@ export interface AgentSessionListCursor {
   id: string;
 }
 
+export interface AgentSessionListRequest {
+  cursor?: AgentSessionListCursor;
+  limit?: number;
+  search?: string;
+}
+
 export interface AgentSessionListResponse {
   items: AgentSessionMetadata[];
   nextCursor?: AgentSessionListCursor;
