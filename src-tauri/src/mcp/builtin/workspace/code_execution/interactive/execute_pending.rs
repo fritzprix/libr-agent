@@ -323,8 +323,14 @@ impl WorkspaceServer {
         let text_message = if redact_output {
             format!("{header}\n\n{output_redacted_notice}\n\n{shell_state}{file_tools_warning}")
         } else {
-            let io_message =
+            let mut io_message =
                 format_command_io_message(&header, "Command output", &stdout, "Stderr", &stderr);
+            if let Some(warning) =
+                validation::exit_zero_stderr_warning(&pending.display_command, &stderr)
+            {
+                io_message.push_str("\n\n");
+                io_message.push_str(warning);
+            }
             format!("{io_message}\n\n{shell_state}{file_tools_warning}")
         };
 
