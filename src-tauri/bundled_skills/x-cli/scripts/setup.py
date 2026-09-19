@@ -3,104 +3,17 @@ import argparse
 import asyncio
 from getpass import getpass
 import json
-import re
+import os
 import sys
 from pathlib import Path
 
-# --- Twikit Monkey Patches ---
-try:
-    _tx_mod = __import__('twikit.x_client_transaction.transaction', fromlist=['ClientTransaction'])
-    _tx_mod.ON_DEMAND_FILE_REGEX = re.compile(r',(\d+):[\'\"]ondemand\.s[\'\"]')
-    _tx_mod.ON_DEMAND_HASH_PATTERN = r',{}:\"([0-9a-f]+)\"'
-    
-    async def _patched_get_indices(self, home_page_response, session, headers):
-        key_byte_indices = []
-        response = self.validate_response(home_page_response) or self.home_page_response
-        
-        match_file = _tx_mod.ON_DEMAND_FILE_REGEX.search(str(response))
-        if not match_file:
-            raise Exception("Couldn't find ondemand script index on X homepage. X might be blocking request or page format changed.")
-            
-        on_demand_file_index = match_file.group(1)
-        regex = re.compile(_tx_mod.ON_DEMAND_HASH_PATTERN.format(on_demand_file_index))
-        match_hash = regex.search(str(response))
-        if not match_hash:
-            raise Exception("Couldn't find ondemand script hash on X homepage.")
-            
-        filename = match_hash.group(1)
-        on_demand_file_url = f'https://abs.twimg.com/responsive-web/client-web/ondemand.s.{filename}a.js'
-        on_demand_file_response = await session.request(method='GET', url=on_demand_file_url, headers=headers)
-        
-        key_byte_indices_match = _tx_mod.INDICES_REGEX.finditer(str(on_demand_file_response.text))
-        for item in key_byte_indices_match:
-            key_byte_indices.append(item.group(2))
-        
-        if not key_byte_indices:
-            raise Exception("Couldn't get KEY_BYTE indices from ondemand script.")
-        key_byte_indices = list(map(int, key_byte_indices))
-        if len(key_byte_indices) < 2:
-            raise Exception(
-                f"Expected at least 2 KEY_BYTE indices from ondemand script, got {len(key_byte_indices)}."
-            )
-        return key_byte_indices[0], key_byte_indices[1:]
-        
-    _tx_mod.ClientTransaction.get_indices = _patched_get_indices
-except Exception:
-    pass
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
-try:
-    from twikit.user import User
-    
-    class SafeDict(dict):
-        def __init__(self, *args, _ctx=None, **kwargs):
-            super().__init__(*args, **kwargs)
-            self._ctx = _ctx
+from twikit_patches import apply_twikit_patches  # noqa: E402
 
-        def __getitem__(self, key):
-            try:
-                val = super().__getitem__(key)
-                if isinstance(val, dict) and not isinstance(val, SafeDict):
-                    child_ctx = 'entities' if self._ctx == 'legacy' and key == 'entities' else self._ctx
-                    return SafeDict(val, _ctx=child_ctx)
-                return val
-            except KeyError:
-                if key == 'entities' and self._ctx == 'legacy':
-                    return SafeDict(_ctx='entities')
-                if self._ctx == 'legacy' and key in ('description', 'url'):
-                    return ""
-                if self._ctx == 'entities' and key == 'description':
-                    return SafeDict({'urls': []}, _ctx='entities')
-                if self._ctx == 'entities' and key == 'url':
-                    return SafeDict(_ctx='entities')
-                if key in ('withheld_in_countries', 'pinned_tweet_ids_str', 'description_urls', 'urls'):
-                    return []
-                if key in ('possibly_sensitive', 'can_dm', 'can_media_tag', 'want_retweets', 
-                           'default_profile', 'default_profile_image', 'has_custom_timelines', 
-                           'is_translator', 'protected', 'verified', 'is_blue_verified'):
-                    return False
-                if key in ('followers_count', 'fast_followers_count', 'normal_followers_count', 
-                           'friends_count', 'favourites_count', 'listed_count', 'media_count', 
-                           'statuses_count'):
-                    return 0
-                return ""
-
-        def get(self, key, default=None):
-            try:
-                return self[key]
-            except Exception:
-                return default
-
-    _original_user_init = User.__init__
-    def _patched_user_init(self, client, data):
-        safe_data = SafeDict(data)
-        if 'legacy' in safe_data:
-            safe_data['legacy'] = SafeDict(safe_data['legacy'], _ctx='legacy')
-        _original_user_init(self, client, safe_data)
-        
-    User.__init__ = _patched_user_init
-except Exception:
-    pass
-# -----------------------------
+apply_twikit_patches()
 
 try:
     from twikit import Client
@@ -110,6 +23,24 @@ except ImportError:
 
 CONFIG_PATH = Path.home() / ".libragent" / "x_config.json"
 COOKIES_PATH = Path.home() / ".libragent" / "x_cookies.json"
+OP_TIMEOUT_SEC = 60
+
+
+async def await_op(awaitable):
+    """Await a Twikit coroutine with a hard timeout."""
+    try:
+        return await asyncio.wait_for(awaitable, timeout=OP_TIMEOUT_SEC)
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(f"X operation timed out after {OP_TIMEOUT_SEC}s") from exc
+
+
+def harden_private_file(path: Path) -> None:
+    """Restrict credential files to owner read/write only (best-effort)."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
 
 def prompt_required_value(prompt: str, secret: bool = False) -> str:
     try:
@@ -176,21 +107,30 @@ async def run_setup(args, password, auth_token, ct0) -> int:
                 print(json.dumps({"status": "error", "message": "Password is required for credentials login."}), file=sys.stderr)
                 return 3
 
-            await client.login(
-                auth_info_1=args.username,
-                auth_info_2=args.email,
-                password=password,
-                totp_secret=args.totp_secret,
+            await await_op(
+                client.login(
+                    auth_info_1=args.username,
+                    auth_info_2=args.email,
+                    password=password,
+                    totp_secret=args.totp_secret,
+                )
             )
 
         client.save_cookies(str(COOKIES_PATH))
+        harden_private_file(COOKIES_PATH)
 
         config_data = {
             "username": args.username,
             "email": args.email,
         }
         CONFIG_PATH.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
+        harden_private_file(CONFIG_PATH)
 
+    except TimeoutError as e:
+        CONFIG_PATH.unlink(missing_ok=True)
+        COOKIES_PATH.unlink(missing_ok=True)
+        print(json.dumps({"status": "error", "message": str(e)}), file=sys.stderr)
+        return 1
     except Exception as e:
         # Clean up files on authentication failure to avoid partial state
         CONFIG_PATH.unlink(missing_ok=True)
@@ -222,7 +162,7 @@ async def run_setup(args, password, auth_token, ct0) -> int:
 
     validation_warning: str | None = None
     try:
-        await client.get_latest_timeline(count=1)
+        await await_op(client.get_latest_timeline(count=1))
     except Exception as e:
         validation_warning = str(e)
 

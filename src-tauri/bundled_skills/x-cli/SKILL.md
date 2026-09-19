@@ -195,3 +195,20 @@ python "<skill-base-dir>/scripts/x_cli.py" --action retweet \
 python "<skill-base-dir>/scripts/x_cli.py" --action delete_tweet \
   --tweet-id "1234567890"
 ```
+
+---
+
+## Platform notes (Windows)
+
+### Encoding
+
+On Windows, large or Unicode payloads can break under `cp949`. Prefer:
+
+1. Write tweet text with `workspace__writeFile` as UTF-8, then use `--message-file`.
+2. Avoid embedding `$` / backticks in PowerShell double-quoted strings — use `--message-file` instead.
+
+LibrAgent persistent shells set UTF-8 without BOM and `PYTHONUTF8=1`. `setup.py` also strips a leading UTF-8 BOM from stdin secrets (`sanitize_secret`).
+
+### Timeouts
+
+Network actions time out after **60 seconds** and return JSON error exit code `2`. Retry once after checking connectivity; do not hang waiting indefinitely.

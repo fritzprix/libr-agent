@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Check LibrAgent X config and session file existence.
+Check LibrAgent Instagram config and session file existence.
 
 Exit codes:
   0 — Config exists and session file exists
@@ -10,13 +10,15 @@ Exit codes:
 Prints a JSON status object to stdout.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import sys
 from pathlib import Path
 
-CONFIG_PATH = Path.home() / ".libragent" / "x_config.json"
-COOKIES_PATH = Path.home() / ".libragent" / "x_cookies.json"
+CONFIG_PATH = Path.home() / ".libragent" / "ig_config.json"
+SESSION_PATH = Path.home() / ".libragent" / "ig_session.json"
 
 
 def harden_private_file(path: Path) -> None:
@@ -28,12 +30,12 @@ def harden_private_file(path: Path) -> None:
 
 
 def main() -> int:
-    if not CONFIG_PATH.exists() or not COOKIES_PATH.exists():
+    if not CONFIG_PATH.exists() or not SESSION_PATH.exists():
         print(
             json.dumps(
                 {
                     "status": "missing",
-                    "message": "No X configuration or cookies found. Setup is required.",
+                    "message": "No Instagram configuration or session found. Setup is required.",
                     "action": "setup",
                 }
             )
@@ -47,19 +49,19 @@ def main() -> int:
             json.dumps(
                 {
                     "status": "corrupt",
-                    "message": f"X config file is unreadable: {e}",
+                    "message": f"Instagram config file is unreadable: {e}",
                     "action": "reset",
                 }
             )
         )
         return 2
 
-    if not cfg.get("username") or not cfg.get("email"):
+    if not cfg.get("username"):
         print(
             json.dumps(
                 {
                     "status": "incomplete",
-                    "message": "X config is missing username or email.",
+                    "message": "Instagram config is missing username.",
                     "action": "reset",
                 }
             )
@@ -67,18 +69,18 @@ def main() -> int:
         return 2
 
     try:
-        cookies_text = COOKIES_PATH.read_text(encoding="utf-8-sig").strip()
-        if not cookies_text:
-            raise ValueError("Cookies file is empty")
-        cookies_data = json.loads(cookies_text)
-        if not cookies_data:
-            raise ValueError("Cookies JSON data is empty or invalid")
+        session_text = SESSION_PATH.read_text(encoding="utf-8-sig").strip()
+        if not session_text:
+            raise ValueError("Session file is empty")
+        session_data = json.loads(session_text)
+        if not session_data:
+            raise ValueError("Session JSON data is empty or invalid")
     except (json.JSONDecodeError, OSError, ValueError) as e:
         print(
             json.dumps(
                 {
                     "status": "corrupt",
-                    "message": f"X cookies file is unreadable or empty: {e}",
+                    "message": f"Instagram session file is unreadable or empty: {e}",
                     "action": "reset",
                 }
             )
@@ -86,18 +88,19 @@ def main() -> int:
         return 2
 
     harden_private_file(CONFIG_PATH)
-    harden_private_file(COOKIES_PATH)
+    harden_private_file(SESSION_PATH)
 
     print(
         json.dumps(
             {
                 "status": "ok",
                 "username": cfg["username"],
-                "message": "X configuration and session are valid.",
+                "message": "Instagram configuration and session are valid.",
             }
         )
     )
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
