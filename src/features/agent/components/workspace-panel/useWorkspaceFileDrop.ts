@@ -5,9 +5,8 @@ import { useAgentChatActions } from '@/context/AgentChatContext';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { createId } from '@paralleldrive/cuid2';
-import { createToolMessagePair } from '@/lib/chat-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
+import { recordUiToolInvocation } from '@/features/agent/lib/recordUiToolInvocation';
 
 import { normalizePath } from './useWorkspaceFiles';
 
@@ -20,7 +19,7 @@ export function useWorkspaceFileDrop(
   const { t } = useTranslation();
   const { agentCallBuiltinTool } = useRustBackend();
   const { session } = useAgentSessionState();
-  const { appendToolMessages } = useAgentChatActions();
+  const { appendToolMessages, submit } = useAgentChatActions();
 
   const handleWorkspaceFileDrop = useCallback(
     async (paths: string[], targetDir?: string) => {
@@ -60,9 +59,6 @@ export function useWorkspaceFileDrop(
           structuredContent?: unknown;
           isError?: boolean;
         };
-
-        // Create tool messages for chat history
-        const toolCallId = createId();
 
         // Build a safe textual result for UI.
         let resultText = '';
@@ -114,19 +110,17 @@ export function useWorkspaceFileDrop(
           }`;
         }
 
-        const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-          'workspace__importFiles',
-          { files: filesToImport },
-          stringToMCPContentArray(resultText),
-          toolCallId,
-          session.id,
-          undefined,
-          session.assistant?.id,
-          'ui',
+        // Neg-list: history-only — do not kick off LLM via submit.
+        await recordUiToolInvocation(
+          { appendToolMessages, submit },
+          {
+            toolName: 'workspace__importFiles',
+            params: { files: filesToImport },
+            result: stringToMCPContentArray(resultText),
+            sessionId: session.id,
+            assistantId: session.assistant?.id,
+          },
         );
-
-        // Submit messages atomically using appendToolMessages
-        await appendToolMessages([toolCallMessage, toolResultMessage]);
 
         // Refresh directory after import
         onDropComplete(targetDir);
@@ -145,6 +139,7 @@ export function useWorkspaceFileDrop(
       session,
       rootPath,
       onDropComplete,
+      submit,
       t,
     ],
   );

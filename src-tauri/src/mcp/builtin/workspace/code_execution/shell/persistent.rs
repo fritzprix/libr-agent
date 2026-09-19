@@ -145,13 +145,19 @@ impl WorkspaceServer {
                         ""
                     };
 
-                    let io_message = format_command_io_message(
+                    let mut io_message = format_command_io_message(
                         &header,
                         "Command output",
                         &stdout,
                         "Stderr",
                         &stderr,
                     );
+                    if let Some(warning) =
+                        super::super::validation::exit_zero_stderr_warning(command, &stderr)
+                    {
+                        io_message.push_str("\n\n");
+                        io_message.push_str(warning);
+                    }
                     let text_message =
                         format!("{}\n\n{}{}", io_message, shell_state, file_tools_warning);
 

@@ -32,7 +32,8 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 
 특정 목적(웹 탐색, 미디어 파싱, 세부 계획 수립 등)을 위해 어시스턴트 설정(**Assistants → Edit → Tools**)에서 켜거나 끌 수 있는 도구입니다.
 
-- **`media__*`**: 이미지/시각 매체 및 오디오 매체 분석 (`seeContent`, `listenContent`)
+- **`media__*`**: 이미지/시각 매체, 오디오 분석 및 데스크톱 화면 캡처 (`seeContent`, `listenContent`, `captureScreen`)
+- **`desktop__*`**: 데스크톱 마우스 및 키보드 OS 제어, GUI 조작 자동화 (`computerControl`)
 - **`browser__*`**: 헤드리스 브라우저 웹 탐색, 클릭, 텍스트 입력, 스크린샷
 - **`planning__*`**: 다단계 계획 수립(`createGoal`), 단계별 상태 업데이트, 실패 성찰(`reflect`)
 - **`knowledge__*`**: 시맨틱 지식 저장 및 영구 메모리 검색
@@ -55,19 +56,41 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 
 ### 2. Media (`media__*`) 🎨 _(선택)_
 
-| 도구 이름              | 설명                            | 주요 파라미터 |
-| :--------------------- | :------------------------------ | :------------ |
-| `media__seeContent`    | 이미지/비주얼 매체 분석 및 조회 | `url`         |
-| `media__listenContent` | 오디오/음성 매체 파싱 및 분석   | `url`         |
+| 도구 이름              | 설명                                                      | 주요 파라미터                                      |
+| :--------------------- | :-------------------------------------------------------- | :------------------------------------------------- |
+| `media__seeContent`    | 이미지/비주얼 매체 분석 및 조회                           | `url`                                              |
+| `media__listenContent` | 오디오/음성 매체 파싱 및 분석                             | `url`                                              |
+| `media__captureScreen` | 데스크톱 화면 또는 지정 영역 캡처 ⚠️ *(실행 승인 필요)*     | `display_index`, `x`, `y`, `width`, `height`       |
 
-### 3. Interactive UI (`ui__*`)
+### 3. Desktop (`desktop__*`) 🖱️ _(선택)_
+
+데스크톱 환경(Windows, macOS, Linux X11)에서 마우스와 키보드를 직접 시뮬레이션하여 GUI 애플리케이션과 상호작용하는 Computer Use 도구입니다.
+
+| 도구 이름                  | 설명                                                                 | 주요 파라미터                                                                    |
+| :------------------------- | :------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
+| `desktop__computerControl` | 마우스 클릭/이동/드래그, 키보드 입력/단축키, 스크롤 실행 ⚠️ *(승인 필요)* | `action`, `x`, `y`, `start_x`, `start_y`, `button`, `text`, `key`, `modifiers`, `scroll_amount`, `axis` |
+
+**지원하는 액션 (`action`):**
+- `click` / `double_click` / `right_click` / `middle_click`: 지정 좌표 또는 현재 커서 위치 클릭
+- `move`: 화면 절대 좌표 `(x, y)`로 마우스 커서 이동
+- `mouse_down` / `mouse_up`: 마우스 버튼 누르기/놓기
+- `drag`: 마우스 좌클릭 상태로 드래그 (시작 좌표 `start_x`, `start_y` 지정 가능)
+- `type`: 문자열 텍스트 타이핑 (`text`)
+- `key`: 단일 키 또는 단축키 조합 입력 (`key`: "Return", "Escape", "Ctrl+c", "Alt+F4" 등)
+- `scroll`: 수직 또는 수평 휠 스크롤 (`scroll_amount`: 양수=아래/오른쪽, 음수=위/왼쪽, `axis`: "vertical" / "horizontal")
+- `cursor_position`: 현재 마우스 커서 위치 `(x, y)` 조회
+
+> [!TIP]
+> `media__captureScreen`으로 화면을 캡처할 때 사용한 것과 **같은** `display_index`를 `desktop__computerControl`에 넘기고, 스크린샷 이미지 기준 픽셀 좌표 `(x, y)`(이미지 좌상단 = 0,0)를 그대로 사용하세요. 캡처 응답에 `width_scale`/`height_scale`이 있으면 함께 넘기세요. DPI/`scale_factor`로 나누거나 모니터 origin을 수동으로 더하지 마세요 — 도구가 absolute 입력 좌표로 변환합니다.
+
+### 4. Interactive UI (`ui__*`)
 
 | 도구 이름                | 설명                                                |
 | :----------------------- | :-------------------------------------------------- |
 | `ui__presentInteractive` | 대화형 카드, 선택 버튼, 양식 등 UI 컴포넌트 렌더링  |
 | `ui__reportResult`       | 최종 작업 결과 보고 및 산출물 파일 전달 (종료 신호) |
 
-### 4. Browser (`browser__*`) _(선택)_
+### 5. Browser (`browser__*`) _(선택)_
 
 | 도구 이름                   | 설명                       |
 | :-------------------------- | :------------------------- |
@@ -89,7 +112,7 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 현재 뷰포트를 캡처하며, `fullPage`를 `true`로 설정하면 6,400만 픽셀 및 8 MiB PNG
 제한 내에서 전체 페이지를 캡처합니다.
 
-### 5. Planning & Reflection (`planning__*`) _(선택)_
+### 6. Planning & Reflection (`planning__*`) _(선택)_
 
 | 도구 이름                   | 설명                                                    |
 | :-------------------------- | :------------------------------------------------------ |
@@ -102,7 +125,7 @@ LibrAgent 내장 도구는 **모든 세션에 기본으로 활성화되는 코�
 | `planning__getCurrentState` | 현재 수립된 계획 및 목표 상태 조회                      |
 | `planning__reflect`         | 도구 에러 발생 시 원인 성찰(Critique) 및 교정 방안 수립 |
 
-### 6. Attachments & Scheduled Tasks (`attachments__*` / `scheduled_task__*`)
+### 7. Attachments & Scheduled Tasks (`attachments__*` / `scheduled_task__*`)
 
 | 도구 이름                             | 설명                            |
 | :------------------------------------ | :------------------------------ |

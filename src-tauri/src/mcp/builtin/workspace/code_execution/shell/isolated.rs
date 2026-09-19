@@ -450,8 +450,13 @@ impl WorkspaceServer {
                     "Command executed in {} (exit code: 0)",
                     format_duration_ms(duration_ms)
                 );
-                let text_message =
+                let mut text_message =
                     format_command_io_message(&header, "Output", &stdout, "Stderr", &stderr);
+
+                if let Some(warning) = validation::exit_zero_stderr_warning(command, &stderr) {
+                    text_message.push_str("\n\n");
+                    text_message.push_str(warning);
+                }
 
                 // Only escalate when the output *tail* looks like a waiting stdin prompt.
                 // Whole-buffer scans (e.g. "? ", "confirm") false-positive on diffs/logs.

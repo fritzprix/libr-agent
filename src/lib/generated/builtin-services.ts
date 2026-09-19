@@ -21,6 +21,7 @@ export const BUILTIN_SERVICE_CANONICAL_NAMES = [
   'setup-wizard',
   'tool',
   'media',
+  'desktop',
 ] as const;
 
 export type BuiltinServiceCanonicalName =
@@ -47,9 +48,11 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'bootstrap',
   'tool',
   'media',
+  'desktop',
 ] as const;
 
-export type BuiltinServiceAlias = (typeof ALL_BUILTIN_SERVICE_ALIASES)[number];
+export type BuiltinServiceAlias =
+  (typeof ALL_BUILTIN_SERVICE_ALIASES)[number];
 
 /** Core builtin services (optional: false in Rust) */
 export const CORE_BUILTIN_SERVICE_ALIASES = [
@@ -72,4 +75,5 @@ export const OPTIONAL_BUILTIN_SERVICE_ALIASES = [
   'browser',
   'setup-wizard',
   'media',
+  'desktop',
 ] as const;

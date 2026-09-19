@@ -136,5 +136,8 @@ pub(crate) async fn create_builtin_server(
         BuiltinServiceId::Media => Ok(Some(Box::new(
             crate::mcp::builtin::media::MediaServer::new(_session_id, _session_manager),
         ))),
+        BuiltinServiceId::Desktop => Ok(Some(Box::new(
+            crate::mcp::builtin::desktop::DesktopServer::new(),
+        ))),
     }
 }

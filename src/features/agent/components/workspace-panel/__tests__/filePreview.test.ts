@@ -4,6 +4,7 @@ import {
   fileNameFromPath,
   isWorkspaceRelativePath,
   PREVIEW_MAX_BYTES,
+  stripLeadingSlashFromAuthorizedAlias,
 } from '../filePreview';
 
 describe('fileNameFromPath', () => {
@@ -11,6 +12,32 @@ describe('fileNameFromPath', () => {
     expect(fileNameFromPath('src/notes.md')).toBe('notes.md');
     expect(fileNameFromPath('src\\notes.md')).toBe('notes.md');
     expect(fileNameFromPath('notes.md')).toBe('notes.md');
+  });
+});
+
+describe('stripLeadingSlashFromAuthorizedAlias', () => {
+  it('strips leading slash from all authorized alias roots', () => {
+    expect(stripLeadingSlashFromAuthorizedAlias('/@teamwork')).toBe('@teamwork');
+    expect(
+      stripLeadingSlashFromAuthorizedAlias('/@teamwork/coordination/KANBAN.md'),
+    ).toBe('@teamwork/coordination/KANBAN.md');
+    expect(
+      stripLeadingSlashFromAuthorizedAlias('/@system-skills/telegram-cli/SKILL.md'),
+    ).toBe('@system-skills/telegram-cli/SKILL.md');
+    expect(
+      stripLeadingSlashFromAuthorizedAlias('/@user-skills/custom/SKILL.md'),
+    ).toBe('@user-skills/custom/SKILL.md');
+    expect(
+      stripLeadingSlashFromAuthorizedAlias('/@skills/system/telegram-cli/SKILL.md'),
+    ).toBe('@skills/system/telegram-cli/SKILL.md');
+    expect(
+      stripLeadingSlashFromAuthorizedAlias('/.libragent/teamwork/KANBAN.md'),
+    ).toBe('.libragent/teamwork/KANBAN.md');
+  });
+
+  it('leaves non-alias paths untouched', () => {
+    expect(stripLeadingSlashFromAuthorizedAlias('/tmp/out.md')).toBe('/tmp/out.md');
+    expect(stripLeadingSlashFromAuthorizedAlias('src/notes.md')).toBe('src/notes.md');
   });
 });
 

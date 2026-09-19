@@ -4,19 +4,15 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type ReactNode,
   type CSSProperties,
 } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
-import { createId } from '@paralleldrive/cuid2';
-import { createToolMessagePair } from '@/lib/chat-utils';
 import { MCPContent } from '@/lib/mcp';
 import { toast } from 'sonner';
-import {
-  useAgentChatActions,
-  useAgentChatState,
-} from '@/context/AgentChatContext';
+import { useAgentChatActions } from '@/context/AgentChatContext';
 import {
   AgentSessionProvider,
   useAgentSessionState,
@@ -52,6 +48,7 @@ import {
   isDocumentMessageLayout,
 } from '@/features/agent/lib/message-layout';
 import { cn } from '@/lib/utils';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
   Sheet,
   SheetContent,
@@ -59,6 +56,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { playbookStartToastId } from './playbookStartFeedback';
+import { recordUiToolInvocation } from './lib/recordUiToolInvocation';
 
 const logger = getLogger('AgentChatView');
 
@@ -236,10 +235,12 @@ function AgentChatInner() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const { pendingInteractiveShellPrompt, session } = useAgentSessionState();
-  const { injectMessages } = useAgentChatActions();
-  const { workflowStatus } = useAgentChatState();
+  const { appendToolMessages, submit } = useAgentChatActions();
   const hasExecutedPlaybookRef = useRef(false);
   const hasOpenedShellRef = useRef(!isMobile && showSidePanel);
+  const [playbookLaunchPhase, setPlaybookLaunchPhase] = useState<
+    'starting' | null
+  >(null);
 
   useEffect(() => {
     if (!isMobile && showSidePanel) {
@@ -255,7 +256,7 @@ function AgentChatInner() {
   const assistantId = session?.assistant?.id;
 
   const executePlaybookSelection = useCallback(
-    async (selectedPlaybookId: string) => {
+    async (selectedPlaybookId: string, toastId: string) => {
       if (!sessionId) return;
       logger.info('Auto-executing playbook', {
         playbookId: selectedPlaybookId,
@@ -268,40 +269,45 @@ function AgentChatInner() {
           { id: selectedPlaybookId },
         );
 
-        const toolCallId = createId();
-        const [toolCallMsg, toolResultMsg] = createToolMessagePair(
-          'playbook__selectPlaybook',
-          { id: selectedPlaybookId },
-          result.content ?? [],
-          toolCallId,
-          sessionId,
-          undefined,
-          assistantId,
-          'ui',
+        await recordUiToolInvocation(
+          { appendToolMessages, submit },
+          {
+            toolName: 'playbook__selectPlaybook',
+            params: { id: selectedPlaybookId },
+            result: result.content ?? [],
+            sessionId,
+            assistantId,
+            kickoffUserText: t('agent.chat.playbookContinuePrompt'),
+          },
         );
 
-        await injectMessages([toolCallMsg, toolResultMsg]);
-        toast.success(t('agent.chat.playbookStartedAutomatically'));
+        toast.success(t('agent.chat.playbookStartedAutomatically'), {
+          id: toastId,
+        });
       } catch (error) {
         logger.error('Failed to auto-select playbook', error);
-        toast.error(t('agent.chat.failedToStartPlaybookWorkflow'));
+        toast.error(t('agent.chat.failedToStartPlaybookWorkflow'), {
+          id: toastId,
+        });
       }
     },
-    [assistantId, injectMessages, sessionId],
+    [appendToolMessages, assistantId, sessionId, submit, t],
   );
 
   useEffect(() => {
-    if (
-      !playbookId ||
-      !sessionId ||
-      workflowStatus !== 'idle' ||
-      hasExecutedPlaybookRef.current
-    ) {
+    if (!sessionId || !playbookId || hasExecutedPlaybookRef.current) {
       return;
     }
 
+    const toastId = playbookStartToastId(playbookId);
     hasExecutedPlaybookRef.current = true;
-    void executePlaybookSelection(playbookId);
+    setPlaybookLaunchPhase('starting');
+    toast.loading(t('agent.chat.startingPlaybookWorkflow'), { id: toastId });
+
+    // Record selectPlaybook in history, then submit() kicks LLM (queues if busy).
+    void executePlaybookSelection(playbookId, toastId).finally(() => {
+      setPlaybookLaunchPhase(null);
+    });
 
     // Remove query param to prevent re-execution on refresh or render.
     setSearchParams(
@@ -317,8 +323,13 @@ function AgentChatInner() {
     playbookId,
     sessionId,
     setSearchParams,
-    workflowStatus,
+    t,
   ]);
+
+  const playbookLaunchLabel =
+    playbookLaunchPhase === 'starting'
+      ? t('agent.chat.startingPlaybookWorkflow')
+      : null;
 
   const handleSidePanelSheetOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -360,6 +371,17 @@ function AgentChatInner() {
           {/* Chat keeps full width — panel is a pure overlay, never shrinks this column. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <AgentChatStatusBar />
+            {playbookLaunchLabel ? (
+              <div
+                className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-4 py-2 text-sm text-muted-foreground"
+                data-testid="playbook-launch-pending"
+                role="status"
+                aria-live="polite"
+              >
+                <LoadingSpinner size="sm" className="border-2 shrink-0" />
+                <span>{playbookLaunchLabel}</span>
+              </div>
+            ) : null}
             <AgentChatMessages />
           </div>
 

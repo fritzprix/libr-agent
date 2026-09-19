@@ -4,7 +4,9 @@ use crate::agent::ExecutionMode;
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
 use crate::repositories::UpdateScheduledTaskParams;
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
-use crate::scheduled::{is_one_shot_task, TASK_CATEGORY_GLOBAL};
+use crate::scheduled::{
+    is_one_shot_task, session_callback_display_next_run_at, TASK_CATEGORY_GLOBAL,
+};
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::get_scheduled_task_repository;
 use serde::{Deserialize, Serialize};
@@ -43,18 +45,22 @@ pub struct SessionScheduledTaskDto {
     pub message: String,
     pub session_id: Option<String>,
     pub is_one_shot: bool,
+    pub enabled: bool,
     pub next_run_at: Option<i64>,
 }
 
 impl From<ScheduledTaskModel> for SessionScheduledTaskDto {
     fn from(m: ScheduledTaskModel) -> Self {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let next_run_at = session_callback_display_next_run_at(&m, now_ms);
         Self {
             id: m.id,
             name: m.name,
             message: m.message,
             session_id: m.session_id,
             is_one_shot: is_one_shot_task(&m.cron_expression),
-            next_run_at: m.next_run_at,
+            enabled: m.enabled,
+            next_run_at,
         }
     }
 }
@@ -252,6 +258,23 @@ pub async fn list_session_scheduled_tasks(
                 .map(SessionScheduledTaskDto::from)
                 .collect()
         })
+}
+
+/// Toggle enabled/disabled state of a SESSION callback from the active session panel
+#[command]
+pub async fn toggle_session_scheduled_task(
+    session_id: String,
+    task_id: String,
+    enabled: bool,
+) -> Result<SessionScheduledTaskDto, String> {
+    ScheduledTaskService::toggle_session_scheduled_task(
+        get_scheduled_task_repository(),
+        &session_id,
+        &task_id,
+        enabled,
+    )
+    .await
+    .map(SessionScheduledTaskDto::from)
 }
 
 /// Cancel a SESSION callback from the active session panel

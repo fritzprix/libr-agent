@@ -619,7 +619,7 @@ pub async fn handle_schedule_callback(
 
     Ok(SuccessHint::new(
         format!(
-            "Session callback scheduled (ID: {}).\n\n{}\n\n{} scheduled_task__getScheduledTask(\"{}\") can show details; scheduled_task__toggleScheduledTask(\"{}\", enabled=false) can cancel.",
+            "Session callback scheduled (ID: {}).\n\n{}\n\n{} scheduled_task__getScheduledTask(\"{}\") can show details; scheduled_task__deleteScheduledTask(\"{}\") cancels it.",
             created.id,
             render_task_detail(&created),
             hint_headers::TIP,

@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   PlaybookStepSchema,
   PlaybookWorkflowSchema,
+  PlaybookDefaultTargetSessionSchema,
   SuccessCriteriaSchema,
   parsePlaybookWorkflow,
   parseSuccessCriteria,
   safeParsePlaybookWorkflow,
   safeParseSuccessCriteria,
+  normalizePlaybookWorkflow,
 } from '../playbook';
 
 describe('Playbook Schemas Validation', () => {
@@ -26,9 +28,46 @@ describe('Playbook Schemas Validation', () => {
       expect(result.success).toBe(true);
     });
 
+    it('allows omitted stepId and requiredData (Rust Option parity)', () => {
+      const result = PlaybookStepSchema.safeParse({
+        description: 'Test step',
+        action: { toolName: 'test-tool', purpose: 'Testing' },
+        outputVariable: 'result',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.stepId).toBeUndefined();
+        expect(result.data.requiredData).toEqual([]);
+      }
+    });
+
     it('fails if required fields are missing', () => {
       const result = PlaybookStepSchema.safeParse({ stepId: '1' });
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('PlaybookDefaultTargetSessionSchema', () => {
+    it('accepts pin with sessionId', () => {
+      const result = PlaybookDefaultTargetSessionSchema.safeParse({
+        mode: 'pin',
+        sessionId: 'sess-1',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects pin without sessionId', () => {
+      const result = PlaybookDefaultTargetSessionSchema.safeParse({
+        mode: 'pin',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts self without sessionId', () => {
+      const result = PlaybookDefaultTargetSessionSchema.safeParse({
+        mode: 'self',
+      });
+      expect(result.success).toBe(true);
     });
   });
 
@@ -148,6 +187,58 @@ describe('Playbook Schemas Validation', () => {
         const result = safeParsePlaybookWorkflow(validWorkflowJSON);
         expect(result).toBeDefined();
         expect(result?.steps).toHaveLength(1);
+      });
+
+      it('parses legacy raw steps arrays', () => {
+        const legacy = JSON.stringify([
+          {
+            stepId: '1',
+            description: 'desc',
+            action: { toolName: 'tool', purpose: 'purpose' },
+            requiredData: [],
+            outputVariable: 'out',
+          },
+        ]);
+        const result = safeParsePlaybookWorkflow(legacy);
+        expect(result?.steps).toHaveLength(1);
+        expect(result?.defaultTargetSession).toBeUndefined();
+      });
+
+      it('parses pin launch target from envelope', () => {
+        const withPin = JSON.stringify({
+          steps: [
+            {
+              stepId: '1',
+              description: 'desc',
+              action: { toolName: 'tool', purpose: 'purpose' },
+              requiredData: [],
+              outputVariable: 'out',
+            },
+          ],
+          defaultTargetSession: { mode: 'pin', sessionId: 'sess-1' },
+        });
+        const result = safeParsePlaybookWorkflow(withPin);
+        expect(result?.defaultTargetSession).toEqual({
+          mode: 'pin',
+          sessionId: 'sess-1',
+        });
+      });
+
+      it('keeps steps when pin is invalid and drops the pin', () => {
+        const invalidPin = {
+          steps: [
+            {
+              stepId: '1',
+              description: 'desc',
+              action: { toolName: 'tool', purpose: 'purpose' },
+              outputVariable: 'out',
+            },
+          ],
+          defaultTargetSession: { mode: 'pin' },
+        };
+        const result = normalizePlaybookWorkflow(invalidPin);
+        expect(result?.steps).toHaveLength(1);
+        expect(result?.defaultTargetSession).toBeUndefined();
       });
 
       it('returns undefined for invalid schema', () => {

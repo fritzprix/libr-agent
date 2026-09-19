@@ -1190,12 +1190,15 @@
       "manageAssistants": "+ Gérer les assistants",
       "playbookNotFound": "Scénario introuvable",
       "assistantNotFound": "Assistant introuvable",
+      "preparingPlaybook": "Préparation du scénario…",
       "startingPlaybook": "Démarrage du scénario : {{goal}}",
       "failedToStartPlaybookSession": "Échec du démarrage de la session du scénario",
       "startingSession": "Démarrage de la session..."
     },
     "chat": {
       "loadingSession": "Chargement de la session...",
+      "startingPlaybookWorkflow": "Démarrage du scénario…",
+      "playbookContinuePrompt": "Exécutez le scénario sélectionné et suivez ses étapes.",
       "playbookStartedAutomatically": "Scénario démarré automatiquement",
       "failedToStartPlaybookWorkflow": "Échec du démarrage du workflow du scénario",
       "sessionContextUnavailable": "Le contexte de session est indisponible.",

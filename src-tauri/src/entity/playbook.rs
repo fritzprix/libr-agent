@@ -13,8 +13,10 @@ pub struct Model {
     pub assistant_id: String,
     pub goal: String,
     pub initial_command: Option<String>,
-    pub workflow: String,                 // JSON stored as TEXT
+    pub workflow: String,                 // JSON stored as TEXT (steps array)
     pub success_criteria: Option<String>, // JSON stored as TEXT
+    /// Start launch pin JSON (`{ mode, sessionId? }`), stored separately from workflow.
+    pub default_target_session: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub is_bookmarked: bool,

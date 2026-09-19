@@ -1190,12 +1190,15 @@
       "manageAssistants": "+ Gerenciar assistentes",
       "playbookNotFound": "Roteiro não encontrado",
       "assistantNotFound": "Assistente não encontrado",
+      "preparingPlaybook": "Preparando roteiro…",
       "startingPlaybook": "Iniciando roteiro: {{goal}}",
       "failedToStartPlaybookSession": "Falha ao iniciar a sessão do roteiro",
       "startingSession": "Iniciando sessão..."
     },
     "chat": {
       "loadingSession": "Carregando sessão...",
+      "startingPlaybookWorkflow": "Iniciando roteiro…",
+      "playbookContinuePrompt": "Execute o roteiro selecionado e siga as etapas do fluxo.",
       "playbookStartedAutomatically": "Roteiro iniciado automaticamente",
       "failedToStartPlaybookWorkflow": "Falha ao iniciar o fluxo do roteiro",
       "sessionContextUnavailable": "O contexto da sessão não está disponível.",

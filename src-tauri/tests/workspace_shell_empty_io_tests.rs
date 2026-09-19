@@ -32,3 +32,17 @@ fn non_empty_streams_unchanged() {
         "hdr\n\nOutput:\nhi\n\nStderr:\nerr"
     );
 }
+
+#[test]
+fn pipeline_failure_stderr_warning_is_generated() {
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::code_execution::validation::exit_zero_stderr_warning;
+
+    let warning = exit_zero_stderr_warning(
+        "cd /app && xxd main.db-wal | head -50",
+        "xxd: main.db-wal: No such file or directory",
+    );
+    assert!(warning.is_some());
+    let w = warning.unwrap();
+    assert!(w.contains("pipefail"));
+    assert!(w.contains("pipeline"));
+}

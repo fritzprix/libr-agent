@@ -22,7 +22,8 @@ sudo apt-get update && sudo apt-get install -y \
   libglib2.0-dev libgtk-3-dev libsoup-3.0-dev \
   libjavascriptcoregtk-4.1-dev libwebkit2gtk-4.1-dev \
   build-essential curl wget file libxdo-dev \
-  libssl-dev libayatana-appindicator3-dev librsvg2-dev
+  libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+  libpipewire-0.3-dev libclang-dev libegl-dev libgbm-dev libxkbcommon-dev
 ```
 
 > **WebKit 관련**: 컨테이너/헤드리스 환경에서 `webkit2gtk` 오류 발생 시, 실제 데스크탑 세션에서 실행하세요. 소프트웨어 렌더링 플래그 강제 사용은 추천하지 않습니다.

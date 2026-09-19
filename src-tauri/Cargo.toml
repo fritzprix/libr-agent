@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.9.10"
+version = "0.9.12"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -73,6 +73,9 @@ chromiumoxide = { version = "0.9.1", features = ["fetcher", "rustls", "zip8"] }
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 handlebars = "6.4"
 ammonia = "4.0"
+xcap = "0.9"
+image = { version = "0.25", default-features = false, features = ["png"] }
+enigo = "0.6.1"
 jsonschema = "0.49"
 
 # Windows-only: ANSI code-page decode for stdio; ExpandEnvironmentStrings for registry PATH;

@@ -11,6 +11,7 @@ pub async fn create_playbook(
     _initial_command: Option<String>,
     workflow: Value,
     _success_criteria: Option<Value>,
+    default_target_session: Option<Value>,
 ) -> Result<PlaybookDto, String> {
     let result = PlaybookService::create_playbook(
         get_playbook_repository(),
@@ -19,6 +20,7 @@ pub async fn create_playbook(
         &session_id,
         goal,
         workflow,
+        default_target_session,
     )
     .await?;
     Ok(result.into())
@@ -31,6 +33,7 @@ pub async fn update_playbook(
     goal: Option<String>,
     workflow: Option<Value>,
     _success_criteria: Option<Value>,
+    default_target_session: Option<Value>,
 ) -> Result<PlaybookDto, String> {
     let result = PlaybookService::update_playbook(
         get_playbook_repository(),
@@ -39,6 +42,7 @@ pub async fn update_playbook(
         &session_id,
         goal,
         workflow,
+        default_target_session,
     )
     .await?;
     Ok(result.into())

@@ -464,6 +464,45 @@ pub fn shell_signal_interrupt_guidance(exit_code: i32) -> Vec<String> {
     ]
 }
 
+/// Returns true if the command contains a shell pipeline (`|` not part of `||`).
+pub fn has_shell_pipeline(command: &str) -> bool {
+    let mut chars = command.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '|' {
+            if chars.peek() == Some(&'|') {
+                chars.next();
+            } else {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Warning appended when a command returns exit code 0 but stderr contains explicit failure markers.
+///
+/// This catches cases where an upstream command in a pipeline failed (e.g. `xxd missing | head`),
+/// but the overall pipeline exit code is 0 because the shell returns the exit status of the
+/// rightmost command by default.
+pub fn exit_zero_stderr_warning(command: &str, stderr: &str) -> Option<&'static str> {
+    if stderr.trim().is_empty() || !has_shell_pipeline(command) {
+        return None;
+    }
+
+    let stderr_lower = stderr.to_lowercase();
+    let has_failure_marker = stderr_lower.contains("no such file")
+        || stderr_lower.contains("command not found")
+        || stderr_lower.contains("error:")
+        || stderr_lower.contains("cannot open")
+        || stderr_lower.contains("permission denied");
+
+    if has_failure_marker {
+        Some("⚠️ Note: Stderr reports errors despite exit code 0. In a shell pipeline, exit code 0 reflects the last command; an upstream command may have failed. Consider `set -o pipefail` or running commands separately.")
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -718,5 +757,52 @@ index 111..222 100644
     fn test_shell_command_failure_guidance_routes_sigint() {
         let guidance = shell_command_failure_guidance(Some(130), "", "", "python app.py");
         assert!(guidance.iter().any(|step| step.contains("SIGINT")));
+    }
+
+    #[test]
+    fn test_has_shell_pipeline() {
+        assert!(has_shell_pipeline("xxd main.db-wal | head -50"));
+        assert!(has_shell_pipeline("cat file.txt | grep foo | wc -l"));
+        assert!(!has_shell_pipeline("which foo || echo not found"));
+        assert!(!has_shell_pipeline(
+            "python app.py --arg1 || python app.py --arg2"
+        ));
+        assert!(!has_shell_pipeline("ls -la"));
+    }
+
+    #[test]
+    fn test_exit_zero_stderr_warning() {
+        // Pipeline with stderr failure marker -> warning generated
+        let warning = exit_zero_stderr_warning(
+            "cd /app && xxd main.db-wal | head -50",
+            "xxd: main.db-wal: No such file or directory",
+        );
+        assert!(warning.is_some());
+        assert!(warning.unwrap().contains("pipefail"));
+
+        // Pipeline with command not found
+        let warning_cnf = exit_zero_stderr_warning(
+            "some_missing_cmd | head -10",
+            "bash: line 1: some_missing_cmd: command not found",
+        );
+        assert!(warning_cnf.is_some());
+
+        // Pipeline with clean/empty stderr -> no warning
+        assert!(exit_zero_stderr_warning("cat file.txt | head -5", "").is_none());
+        assert!(exit_zero_stderr_warning("cat file.txt | head -5", "   ").is_none());
+
+        // Pipeline with non-failure stderr -> no warning
+        assert!(exit_zero_stderr_warning(
+            "cargo test | tee test.log",
+            "warning: unused variable `x`"
+        )
+        .is_none());
+
+        // Non-pipeline command with stderr failure marker -> no pipeline warning
+        assert!(exit_zero_stderr_warning(
+            "python script.py",
+            "FileNotFoundError: [Errno 2] No such file or directory: 'foo'"
+        )
+        .is_none());
     }
 }

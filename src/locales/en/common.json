@@ -982,6 +982,13 @@
       "steps_one": "{{count}} Step",
       "steps_other": "{{count}} Steps",
       "start": "Start",
+      "startPinned": "Continue",
+      "startPinnedTooltip": "Opens “{{sessionName}}”",
+      "pinnedBadge": "Pinned session",
+      "pinnedBadgeTooltip": "Start reuses “{{sessionName}}”",
+      "pinnedSessionUntitled": "Untitled session",
+      "pinnedSessionMissing": "Session missing",
+      "pinnedSessionMissingTooltip": "Pinned session is gone — Start will create a new one",
       "deleteTooltip": "Delete Playbook",
       "created": "Created {{date}}",
       "bookmark": "Bookmark"
@@ -1433,7 +1440,11 @@
         "nextRun": "Next run: {{time}}",
         "nextRunNone": "Not scheduled",
         "cancelFailed": "Failed to cancel scheduled callback",
-        "cancelAria": "Cancel {{name}}"
+        "cancelAria": "Cancel {{name}}",
+        "paused": "Paused",
+        "toggleFailed": "Failed to update scheduled callback",
+        "pauseAria": "Pause {{name}}",
+        "resumeAria": "Resume {{name}}"
       }
     },
     "processes": {
@@ -1537,7 +1548,9 @@
       "manageAssistants": "+ Manage Assistants",
       "playbookNotFound": "Playbook not found",
       "assistantNotFound": "Assistant not found",
+      "preparingPlaybook": "Preparing playbook…",
       "startingPlaybook": "Starting playbook: {{goal}}",
+      "pinnedSessionMissing": "Pinned session not found. Starting a new session instead.",
       "failedToStartPlaybookSession": "Failed to start playbook session",
       "startingSession": "Starting session...",
       "featuredRecipeTitle": "Create Your Morning Briefing Assistant in 5 Minutes",
@@ -1546,6 +1559,8 @@
     },
     "chat": {
       "loadingSession": "Loading session...",
+      "startingPlaybookWorkflow": "Starting playbook…",
+      "playbookContinuePrompt": "Execute the selected playbook and follow its workflow steps.",
       "playbookStartedAutomatically": "Playbook started automatically",
       "failedToStartPlaybookWorkflow": "Failed to start playbook workflow",
       "sessionContextUnavailable": "Session context is unavailable.",

@@ -409,6 +409,7 @@ async fn test_playbook_listing_respects_sorting_and_bookmark_priority() {
             initial_command: Set(None),
             workflow: Set("[]".to_string()),
             success_criteria: Set(None),
+            default_target_session: Set(None),
             created_at: Set(created_at),
             updated_at: Set(updated_at),
             is_bookmarked: Set(is_bookmarked),

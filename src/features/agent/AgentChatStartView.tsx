@@ -26,7 +26,10 @@ import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { getPlaybook } from '@/lib/backend/playbooks';
 import { getAssistant, type AssistantSummary } from '@/lib/backend/assistants';
+import { getSession } from '@/lib/backend/session-crud';
 import { restartApp } from '@/lib/backend/utils';
+import { resolvePlaybookLaunchTarget } from '@/features/playbook/launchTarget';
+import { playbookStartToastId } from './playbookStartFeedback';
 import { useAssistantSummaries } from './hooks/useAssistantSummaries';
 import { useRuntimeReadiness } from './hooks/useRuntimeReadiness';
 import {
@@ -201,7 +204,7 @@ export default function AgentChatStartView() {
       return;
     }
 
-    let toastId: string | number | undefined;
+    const toastId = playbookStartToastId(playbookId);
 
     const initPlaybookSession = async () => {
       try {
@@ -209,13 +212,12 @@ export default function AgentChatStartView() {
         setIsCreating(true);
         logger.info('Auto-starting playbook session', { playbookId });
 
-        if (!toastId) toastId = toast.loading('Starting playbook...');
+        toast.loading(t('agent.start.preparingPlaybook'), { id: toastId });
 
         const match = await findPlaybookMatch(playbookId, assistants);
 
         if (!match) {
-          if (toastId) toast.dismiss(toastId);
-          toast.error(t('agent.start.playbookNotFound'));
+          toast.error(t('agent.start.playbookNotFound'), { id: toastId });
           return;
         }
 
@@ -223,30 +225,57 @@ export default function AgentChatStartView() {
         const fullAssistant = await getAssistant(targetAssistant.id);
 
         if (!fullAssistant) {
-          if (toastId) toast.dismiss(toastId);
-          toast.error(t('agent.start.assistantNotFound'));
+          toast.error(t('agent.start.assistantNotFound'), { id: toastId });
           return;
         }
 
-        if (toastId)
-          toast.loading(
-            t('agent.start.startingPlaybook', { goal: playbook.goal }),
-            {
-              id: toastId,
-            },
-          );
+        const launch = await resolvePlaybookLaunchTarget(
+          playbook,
+          async (sessionRef) => {
+            // Backend agent_get_session resolves legacy short / session- refs.
+            const session = await getSession(sessionRef);
+            return session?.id ?? null;
+          },
+        );
+
+        if (launch.kind === 'pinned') {
+          // Keep the same toast id so AgentChatView can continue the feedback
+          // without a silent gap after navigation.
+          toast.loading(t('agent.chat.startingPlaybookWorkflow'), {
+            id: toastId,
+          });
+          logger.info('Opening pinned playbook session', {
+            playbookId,
+            sessionId: launch.sessionId,
+          });
+          navigate(`/agent/${launch.sessionId}?playbookId=${playbookId}`);
+          return;
+        }
+
+        if (launch.reason === 'session-missing') {
+          toast.warning(t('agent.start.pinnedSessionMissing'));
+        }
+
+        toast.loading(
+          t('agent.start.startingPlaybook', { goal: playbook.goal }),
+          { id: toastId },
+        );
 
         const session = await createSession({
           assistant: fullAssistant,
           name: playbook.goal,
         });
-        if (toastId) toast.dismiss(toastId);
 
+        // Leave loading toast for AgentChatView (same id) after navigation.
+        toast.loading(t('agent.chat.startingPlaybookWorkflow'), {
+          id: toastId,
+        });
         navigate(`/agent/${session.id}?playbookId=${playbookId}`);
       } catch (error) {
-        if (toastId) toast.dismiss(toastId);
+        toast.error(t('agent.start.failedToStartPlaybookSession'), {
+          id: toastId,
+        });
         logger.error('Failed to start playbook session', error);
-        toast.error(t('agent.start.failedToStartPlaybookSession'));
       } finally {
         processingPlaybookRef.current = false;
         setIsCreating(false);
@@ -254,7 +283,7 @@ export default function AgentChatStartView() {
     };
 
     void initPlaybookSession();
-  }, [assistants, createSession, navigate, playbookId]);
+  }, [assistants, createSession, navigate, playbookId, t]);
 
   const handleAssistantSelect = useCallback(
     (assistantId: string) => {

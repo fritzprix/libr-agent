@@ -12,10 +12,33 @@ export function fileNameFromPath(filePath: string): string {
   return parts[parts.length - 1] || filePath;
 }
 
+export const AUTHORIZED_ALIAS_PREFIXES = [
+  '@teamwork',
+  '.libragent/teamwork',
+  '@skills',
+  '@system-skills',
+  '@user-skills',
+  '@assistant-skills',
+  '@workspace-skills',
+] as const;
+
+/**
+ * Strips leading slash from authorized alias paths (e.g. `/@system-skills/...` -> `@system-skills/...`).
+ */
+export function stripLeadingSlashFromAuthorizedAlias(path: string): string {
+  for (const prefix of AUTHORIZED_ALIAS_PREFIXES) {
+    const withSlash = `/${prefix}`;
+    if (path === withSlash || path.startsWith(`${withSlash}/`)) {
+      return path.slice(1);
+    }
+  }
+  return path;
+}
+
 /**
  * True when `path` is a workspace-relative location (not an OS absolute,
  * home, UNC, or `..` traversal path). Supports authorized alias prefixes
- * (@teamwork, .libragent/teamwork, @skills).
+ * (@teamwork, .libragent/teamwork, @skills, @system-skills, @user-skills, etc.).
  *
  * In-app preview reads via `read_workspace_file_content`, which is scoped to the
  * session workspace root and authorized alias roots. External writes (e.g. `/tmp/out.md`)
@@ -32,24 +55,7 @@ export function isWorkspaceRelativePath(path: string): boolean {
   if (normalized.startsWith('/workspace/')) {
     normalized = normalized.slice('/workspace/'.length);
   }
-  if (
-    normalized === '/@teamwork' ||
-    normalized.startsWith('/@teamwork/') ||
-    normalized === '/.libragent/teamwork' ||
-    normalized.startsWith('/.libragent/teamwork/') ||
-    normalized === '/@skills' ||
-    normalized.startsWith('/@skills/') ||
-    normalized === '/@system-skills' ||
-    normalized.startsWith('/@system-skills/') ||
-    normalized === '/@user-skills' ||
-    normalized.startsWith('/@user-skills/') ||
-    normalized === '/@assistant-skills' ||
-    normalized.startsWith('/@assistant-skills/') ||
-    normalized === '/@workspace-skills' ||
-    normalized.startsWith('/@workspace-skills/')
-  ) {
-    normalized = normalized.slice(1);
-  }
+  normalized = stripLeadingSlashFromAuthorizedAlias(normalized);
   if (normalized.startsWith('/') || normalized.startsWith('~')) {
     return false;
   }

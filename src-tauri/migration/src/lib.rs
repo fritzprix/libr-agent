@@ -44,6 +44,7 @@ mod m20260621_000039_normalize_execution_mode_columns;
 mod m20260704_000040_add_docker_workspace_isolation;
 mod m20260716_000041_add_reset_planning_state_to_scheduled_tasks;
 mod m20260725_000042_create_pending_queue;
+mod m20260918_000043_add_default_target_session_to_playbooks;
 
 pub struct Migrator;
 
@@ -93,6 +94,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260704_000040_add_docker_workspace_isolation::Migration),
             Box::new(m20260716_000041_add_reset_planning_state_to_scheduled_tasks::Migration),
             Box::new(m20260725_000042_create_pending_queue::Migration),
+            Box::new(m20260918_000043_add_default_target_session_to_playbooks::Migration),
         ]
     }
 }

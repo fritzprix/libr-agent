@@ -458,17 +458,13 @@ export function useAgentSessionEvents(
         const response = await openAgentSession(sessionId);
         if (!isMounted) return;
 
-        // Events and further commands use storage ids. If the route still has a
-        // display alias, remount on the resolved storage key.
+        // Prefer the session id returned by open (should match the route).
         const resolvedSessionId = response.session.id;
         if (resolvedSessionId !== sessionId) {
-          logger.info('Normalizing session route to storage id', {
+          logger.info('Normalizing session route to opened session id', {
             from: sessionId,
             to: resolvedSessionId,
           });
-          // Cache under the storage id so the remount can warm-paint Ready when
-          // open() already returned a ready snapshot (alias listeners drop
-          // storage-id runtime events).
           putOpenSessionView(resolvedSessionId, {
             ...response,
             runtimeState: response.runtimeState ?? HYDRATING_RUNTIME_STATE,
