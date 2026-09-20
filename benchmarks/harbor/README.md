@@ -101,8 +101,10 @@ source session creation uses when no per-session model is set. Override with
 LibrAgent still runs the assistant's tools/API keys from the selected assistant;
 `-m` is for Harbor reporting / Hub upload metadata (model_info + token rows).
 
-Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
-`--ve` (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) for LLM-judge tasks.
+Note: Harbor Index **HLE** tasks may require judge API keys via `--verifier-env` /
+`--ve` (e.g. `JUDGE_MODELS`, `OPENAI_API_KEY`). LibrAgent’s curated
+`fritzprix/libragent-media-desktop-10@v1.2` **excludes** HLE — all ten tasks use
+deterministic pytest / exact-string verifiers.
 
 ## Running any Harbor Hub dataset
 
