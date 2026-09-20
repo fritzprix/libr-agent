@@ -548,6 +548,15 @@ pub async fn agent_execute_command(
                         .to_string(),
             })
         }
+        Command::Reload => {
+            manager.reload_session(&session_id).await?;
+
+            Ok(CommandResult {
+                success: true,
+                message: "Session tools and workspace context reloaded. Conversation history kept."
+                    .to_string(),
+            })
+        }
         Command::Permission { mode } => {
             manager
                 .set_execution_mode(&session_id, mode)

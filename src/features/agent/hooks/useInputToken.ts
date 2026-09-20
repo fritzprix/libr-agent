@@ -229,6 +229,12 @@ export function useInputToken(
           'Reset session (clear messages cache and database history)',
       },
       {
+        id: '/reload',
+        label: '/reload',
+        description:
+          'Reload session tools and workspace context without clearing history',
+      },
+      {
         id: '/permission yolo',
         label: '/permission yolo',
         description: 'Execute tools automatically without requiring approval',
