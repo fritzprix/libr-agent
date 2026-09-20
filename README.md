@@ -68,13 +68,19 @@ _From a single agent to a coordinated swarm — recursive delegation, MCP toolin
 - Connect Workspace + Shell
 - Let an agent read, modify, test, and iterate without sending your code to a cloud VM
 
-### 3. Turn research into a repeatable workflow
+### 3. Deploy one-click workflow recipes
+
+- Launch the **Morning Briefing** recipe walkthrough from the Chat home screen or Scheduled Tasks
+- Installs Hacker News + Yahoo Finance MCP presets, configures a specialized assistant, and sets up a scheduled daily 9 AM task
+- Unattended background execution delivering a synthesized tech & market briefing every morning
+
+### 4. Turn research into a repeatable workflow
 
 - Add Browser + Knowledge
 - Ask: _"Track these 5 competitor blogs and give me a summary every morning"_
-- Convert a one-off task into a scheduled pipeline
+- Convert a one-off task into a scheduled pipeline with Scheduled Tasks
 
-### 4. Go from one assistant to a real team
+### 5. Go from one assistant to a real team
 
 - Scaffold a shared workspace with `teamwork`
 - Split work with `delegate`
@@ -113,12 +119,13 @@ MCP (Model Context Protocol) is the open standard behind LibrAgent's extensibili
 
 Most AI tools are impressive in demos and brittle in production. LibrAgent is obsessively engineered for long-running, real work:
 
-| Substrate     | Capabilities                                                                                          |
-| ------------- | ----------------------------------------------------------------------------------------------------- |
-| **Workspace** | Line-precise editing, multi-file ops, unified search, `@file`/`@skill`/`@playbook` context injection  |
-| **Shell**     | Isolated execution AND persistent shells — async process monitoring (`poll`, `read output`, `list`)   |
-| **Browser**   | Headless browser automation with a Playwright-like interaction model and cache consistency guarantees |
-| **Knowledge** | Graph-based knowledge management with entity/relation extraction (v2), BM25 full-text search          |
+| Substrate     | Capabilities                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| **Workspace** | Line-precise editing, multi-file ops, unified search, `@file`/`@skill`/`@playbook` context injection    |
+| **Shell**     | Isolated execution AND persistent shells — async process monitoring (`poll`, `read output`, `list`)     |
+| **Browser**   | Isolated `--browser-sidecar` process with Playwright interaction model and cache consistency guarantees |
+| **Knowledge** | Graph-based knowledge management with entity/relation extraction (v2), BM25 full-text search            |
+| **Export**    | Clean Markdown reports and ATIF v1.7 trajectory exports with automated internal noise filtering         |
 
 **Reliability engineering included**: Context compaction, loop prevention, circuit breakers, and stale-response guards keep agents productive in sessions that last hours — not minutes.
 
@@ -155,7 +162,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 - **developer workflow**: `git-workflow`, `bench`
 - **workspace onboarding**: `agent-init`
 - **coordination and assistants**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
-- **external integrations**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
+- **external integrations**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`
 - **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **specialized operations**: `computer-diagnosis`
 
@@ -211,6 +218,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 Download the latest installer for your platform from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.9.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_x64-setup.exe) · [`LibrAgent_0.9.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.9.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.9.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_amd64.AppImage) · [`LibrAgent_0.9.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_amd64.deb) · [`LibrAgent-0.9.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent-0.9.12-1.x86_64.rpm)

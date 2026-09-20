@@ -20,11 +20,13 @@ Language: [한국어](/) · **English**
 
 - [**Assistants**](guides/assistants.md) — Custom agents (General / Tools / Skills)
 - [**Playbooks**](guides/playbooks.md) — Re-run successful workflows
-- [**Automation**](guides/automation.md) — **Scheduled Tasks**
-- [**Sessions**](guides/sessions.md) — Bookmark and delete (including sub-agents)
+- [**Solution Recipes**](guides/recipes.md) — One-click workflow bundles
+- [**Scheduled Tasks**](guides/scheduled-tasks.md) · [**Automation Overview**](guides/automation.md)
+- [**Sessions**](guides/sessions.md) · [**Session Export**](guides/session-export.md)
 - [**Skills**](guides/skills.md) · [**Sub-agents**](guides/sub-agents.md)
-- [**Extensions**](guides/extensions.md) · [**Custom MCP**](guides/custom-mcp.md)
-- [**Troubleshooting**](guides/troubleshooting.md)
+- [**Extensions (MCP Tools)**](guides/extensions.md) · [**Custom MCP**](guides/custom-mcp.md)
+- [**Browser Automation (Sidecar)**](guides/browser-sidecar.md) · [**Built-in Tools**](guides/builtin-tools.md)
+- [**Navigation Guide**](guides/navigation-guide.md) · [**Troubleshooting**](guides/troubleshooting.md)
 
 ## FAQ
 
