@@ -29,9 +29,12 @@
       "addServersLink": "在设置中添加服务器",
       "searchPlaceholder": "搜索服务器...",
       "noMatch": "没有匹配您搜索的服务器",
+      "filtering": "过滤中...",
+      "loading": "正在加载 MCP 服务器...",
       "transport": {
         "stdio": "stdio",
-        "http": "http"
+        "http": "http",
+        "sse": "sse"
       }
     },
     "edit": {
@@ -117,7 +120,12 @@
     "delete": "删除",
     "restartNow": "立即重启",
     "copy": "复制",
-    "copied": "已复制!"
+    "copied": "已复制!",
+    "clear": "清除",
+    "download": "下载",
+    "refresh": "刷新",
+    "retry": "重试",
+    "settings": "设置"
   },
   "baseBubble": {
     "copy": "将 {{title}} 复制到剪贴板",
@@ -162,6 +170,9 @@
     "collapseSession": "折叠子会话",
     "loadingSessionChildren": "正在加载子会话"
   },
+  "history": {
+    "refresh": "刷新"
+  },
   "sessionHistory": {
     "heading": "会话历史",
     "description": "浏览并管理您的对话会话",
@@ -180,6 +191,7 @@
     "clearLineageFocus": "清除血统聚焦",
     "noSessionsMatching": "未找到匹配 \"{{query}}\" 的会话",
     "clearSearch": "清除搜索",
+    "bookmarkedCountSummary": "{{count}} 个已加书签的会话",
     "bookmarkedSection": {
       "heading": "已收藏的会话",
       "description": "置顶的会话会显示在这里，方便快速返回；完整历史记录仍保留在下方。",
@@ -242,6 +254,9 @@
       "parent": "父级",
       "root": "根级",
       "descendants": "{{count}} 个后代会话",
+      "hiddenChildren": "由于过滤隐藏了 {{count}} 个",
+      "unloadedChildren": "{{count}} 个未加载",
+      "unloadedChildrenHint": "加载更多会话以查看不在此页上的子会话。",
       "parentBadge": "父级: {{id}}",
       "lineageBadge": "血统: {{id}}",
       "lineageFilterAria": "按血统 {{id}} 过滤",
@@ -343,7 +358,8 @@
       "advanced": "高级",
       "extensions": "扩展",
       "dev": "开发",
-      "system": "系统"
+      "system": "系统",
+      "experimental": "实验性功能"
     },
     "llmPreference": "默认 LLM",
     "messageWindowSize": "消息窗口大小",
@@ -438,10 +454,8 @@
       "hideApiKey": "隐藏 API 密钥",
       "baseUrl": "基础 URL",
       "baseUrlPlaceholder": "http://localhost:11434",
-      "use3rdParty": "使用第三方 OpenAI 兼容 API",
-      "customModelId": "自定义模型 ID",
-      "customModelIdPlaceholder": "例如：llama-3.1-70b, mistral-large",
-      "customModelIdDescription": "输入您的第三方 API 支持的模型 ID（例如：LM Studio, LocalAI）"
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1（可选代理）",
+      "openaiBaseUrlHint": "对于 vLLM、LM Studio、LocalAI 和其他 OpenAI 兼容服务器，请在下方添加自定义 OpenAI 提供商。"
     },
     "chatInterface": {
       "diffContextLines": "Diff 上下文行数",
@@ -497,6 +511,8 @@
       "maxRetriesDescription": "失败的 AI 请求的最大重试次数。",
       "retryDelay": "重试延迟 (ms)",
       "retryDelayDescription": "重试尝试之间的毫秒延迟。",
+      "requestReliability": "请求可靠性",
+      "requestReliabilityDescription": "控制失败的 AI 提供商请求的重试方式。",
       "circuitBreaker": "工具循环阈值",
       "circuitBreakerDescription": "触发熔断器前的重复错误或工具调用次数。",
       "maxOutputTokens": "最大输出 Token (默认)",
@@ -529,6 +545,8 @@
         "high": "高等 - 沙箱（最安全）"
       },
       "shellIsolationDescription": "控制 shell 命令的环境隔离。基础级别允许用户安装的工具，高等提供最大安全性。",
+      "shellRuntimeBootstrap": "Shell 运行时引导",
+      "shellRuntimeBootstrapDescription": "启用后，持久化 Shell 仅加载 conda.sh 和 nvm.sh（而非完整的 Shell rc）。仅扩展 PATH 而不运行 conda activate。",
       "performance": "性能与并发",
       "performanceDescription": "这些运行时限制控制可同时运行的代理和工作区进程数量。",
       "title": "高级运行时控制",
@@ -538,7 +556,13 @@
       "loopPreventionThresholdPlaceholder": "例如 3",
       "loopPreventionHardBreakOffset": "强制停止偏移量",
       "loopPreventionHardBreakOffsetPlaceholder": "例如 2",
-      "loopPreventionHardBreakOffsetDescription": "在自然恢复警告后允许的额外相同工具调用次数，超过该次数将强制停止工作流。当阈值=3且偏移量=1时，在第3次调用时触发自然恢复，在第4次调用时强制停止。"
+      "loopPreventionHardBreakOffsetDescription": "在自然恢复警告后允许的额外相同工具调用次数，超过该次数将强制停止工作流。当阈值=3且偏移量=1时，在第3次调用时触发自然恢复，在第4次调用时强制停止。",
+      "thinkingLoopMinPatternLength": "思考循环最小模式长度",
+      "thinkingLoopMinPatternLengthDescription": "触发思考循环检测所需的最小重复字符串长度。较大值可在较长推理过程中避免误报。",
+      "thinkingLoopMinPatternLengthPlaceholder": "例如 256",
+      "thinkingLoopMinRepetitions": "思考循环最小重复次数",
+      "thinkingLoopMinRepetitionsDescription": "思考块流中必须出现的重复模式最小次数，以触发思考循环检测。",
+      "thinkingLoopMinRepetitionsPlaceholder": "例如 4"
     },
     "system": {
       "title": "系统与性能",
@@ -632,6 +656,120 @@
       "success": "所有会话已删除。建议重启。",
       "error": "清除会话失败。"
     },
+    "migration": {
+      "title": "数据迁移",
+      "subtitle": "将 LibrAgent 设置、助手、调度器和自定义技能迁移至另一台设备。",
+      "errors": {
+        "occurred": "发生错误:",
+        "reset": "重置",
+        "wrongPassword": "密码不正确。请重试。",
+        "passwordMinLength": "密码必须至少为 4 个字符。",
+        "passwordMismatch": "密码不匹配。"
+      },
+      "toasts": {
+        "backupPasswordVerified": "备份文件密码验证通过",
+        "exportSuccess": "数据导出成功！",
+        "exportFailed": "导出失败: {{error}}",
+        "exportEncryptedSuccess": "加密数据导出成功！",
+        "importSuccess": "迁移数据导入成功！",
+        "importFailed": "导入失败: {{error}}",
+        "mcpReverifyPartial": "部分 MCP 服务器重新验证失败: {{servers}}",
+        "mcpReverifySuccess": "MCP 服务器重新验证完成。",
+        "reverifyFailed": "重新验证失败: {{error}}"
+      },
+      "export": {
+        "title": "导出设置",
+        "description": "将此设备上的所有设置和用户技能数据打包为单个归档文件 (`.libragent-migration`)。",
+        "securityWarningLabel": "⚠️ 安全提示:",
+        "securityWarning": "API 密钥和访问令牌默认会被掩码遮蔽。仅在通过其他安全渠道转移时才启用下方选项。",
+        "includeSensitiveLabel": "包含敏感数据 (完整 Settings 表)",
+        "includeSensitiveDescription": "在备份归档中保存完整设置表中的明文数据，包括 API 密钥和访问令牌。",
+        "selectPathLabel": "选择导出路径",
+        "selectPathPlaceholder": "选择要导出的文件夹...",
+        "browse": "浏览",
+        "runExport": "执行导出"
+      },
+      "import": {
+        "title": "导入设置",
+        "description": "加载先前导出的 `.libragent-migration` 归档文件以更新当前环境。",
+        "autoBackupInfo": "在导入前，将自动创建当前数据库的**自动备份**以防数据丢失。如果导入失败，将立即恢复到先前的状态。",
+        "archiveFileLabel": "迁移归档文件",
+        "selectAndValidate": "选择文件并验证",
+        "runImportWaiting": "执行导入 (等待文件分析)",
+        "runImport": "执行导入"
+      },
+      "loading": {
+        "inspectingTitle": "正在分析文件结构...",
+        "inspectingDescription": "正在检查内容并执行威胁分析以防御 ZIP Slip。",
+        "exportingTitle": "正在写入迁移文件...",
+        "exportingDescription": "正在序列化设置表并归档技能文件。",
+        "importingTitle": "正在应用到环境数据库...",
+        "importingDescription": "在隔离事务中应用设置并验证外键约束。",
+        "selectingTitle": "等待用户输入...",
+        "selectingDescription": "请在文件夹/文件资源管理器窗口中完成选择。"
+      },
+      "preview": {
+        "analysisComplete": "迁移归档文件分析完成",
+        "compatible": "✅ 兼容性通过",
+        "newerVersionWarning": "⚠️ 较高版本警告",
+        "incompatible": "❌ 不兼容",
+        "compatibilityInfo": "兼容性信息:",
+        "backupAppVersion": "备份应用版本",
+        "exportedAt": "导出时间",
+        "totalSize": "备份总大小",
+        "unknown": "未知",
+        "sectionsList": "包含的备份区域",
+        "sectionName": "区域名称",
+        "itemCount": "项目数",
+        "fileSize": "文件大小",
+        "itemCountValue": "{{count}} 项",
+        "conflictStrategyLabel": "导入冲突解决方式",
+        "cancelAndBack": "取消并返回"
+      },
+      "strategy": {
+        "skipTitle": "跳过 (保留现有)",
+        "skipDescription": "当名称或 ID 冲突时，保留此设备上的现有设置。",
+        "overwriteTitle": "覆盖",
+        "overwriteDescription": "删除所有现有本地记录，完全替换为备份数据。",
+        "mergeTitle": "合并",
+        "mergeDescription": "保留现有设置并注入新项目。为确保安全，非 settings 数据将按“跳过”处理。"
+      },
+      "complete": {
+        "exportTitle": "导出完成！",
+        "importTitle": "导入成功！",
+        "exportDescription": "已成功打包并创建当前环境设置的备份文件。",
+        "importDescription": "导入的设置已通过完整性验证并安全应用。请完成下方清理以激活更改。",
+        "savePath": "保存路径:",
+        "fileSize": "文件大小:",
+        "includedSections": "包含区域:",
+        "section": "区域",
+        "success": "成功",
+        "skipped": "已跳过",
+        "errors": "错误",
+        "mcpRestoreLabel": "🔌 MCP 及后台环境恢复:",
+        "mcpRestoreDescription": "导入后，MCP 服务需要刷新令牌并进行验证才能在新主机/环境中正常运行。请点击下方验证按钮。",
+        "mcpReverifyButton": "重新认证并验证 MCP 服务器",
+        "backToMain": "返回迁移首页"
+      },
+      "exportPassword": {
+        "title": "设置备份安全密码",
+        "description": "因为此备份包含敏感数据（API 密钥、凭据等），您必须设置密码来加密备份文件。稍后恢复（导入）备份时将需要此密码。",
+        "passwordLabel": "输入密码 (至少 4 个字符)",
+        "passwordPlaceholder": "请输入密码",
+        "confirmLabel": "确认密码",
+        "confirmPlaceholder": "请再次输入密码",
+        "cancel": "取消",
+        "runExport": "执行导出"
+      },
+      "importPassword": {
+        "title": "输入安全密码",
+        "description": "此备份文件已加密。需要密码才能预览并导入。请输入您在导出时设置的密码。",
+        "passwordLabel": "密码",
+        "passwordPlaceholder": "请输入密码",
+        "cancel": "取消",
+        "confirm": "确认"
+      }
+    },
     "skills": {
       "modalTitle": "可用技能 ({{count}})",
       "noSkills": "未找到技能。",
@@ -643,6 +781,7 @@
       "importSuccess_other": "导入了 {{count}} 个技能",
       "importSuccessWithOverwrite_one": "导入了 {{count}} 个技能（覆盖 {{overwrittenCount}} 个）",
       "importSuccessWithOverwrite_other": "导入了 {{count}} 个技能（覆盖 {{overwrittenCount}} 个）",
+      "importSuccess": "技能导入成功",
       "importFailed": "导入技能失败",
       "overrideSuccess": "技能覆盖成功",
       "overrideFailed": "覆盖技能失败",
@@ -663,7 +802,18 @@
       "revert": "还原到全局",
       "resetTitle": "重置技能覆盖？",
       "resetConfirm": "这将移除所有助手特定的技能并还原到全局默认值。此操作无法撤销。",
-      "importSuccess": "技能导入成功"
+      "locked": "已锁定",
+      "skipped": "已跳过",
+      "resetUserSkillsTitle": "重置用户技能？",
+      "resetUserSkillsDescription": "这将删除所有自定义用户技能并恢复为捆绑默认设置。此操作无法撤销。",
+      "resetUserSkills": "重置用户技能",
+      "importingUserSkills": "正在检查拖入的技能包...",
+      "importSuccessWithSkipped_one": "已导入 {{count}} 个技能（已跳过 {{skippedCount}} 个）",
+      "importSuccessWithSkipped_other": "已导入 {{count}} 个技能（已跳过 {{skippedCount}} 个）",
+      "importSuccessWithOverwriteAndSkipped_one": "已导入 {{count}} 个技能（已覆盖 {{overwrittenCount}} 个，已跳过 {{skippedCount}} 个）",
+      "importSuccessWithOverwriteAndSkipped_other": "已导入 {{count}} 个技能（已覆盖 {{overwrittenCount}} 个，已跳过 {{skippedCount}} 个）",
+      "importSkippedOnly_one": "已跳过 {{count}} 个冲突技能",
+      "importSkippedOnly_other": "已跳过 {{count}} 个冲突技能"
     },
     "dev": {
       "devOnly": "仅限开发",
@@ -697,6 +847,27 @@
       "compact": "紧凑摘要",
       "windowDescription": "保留最近的 N 条消息。简单且可预测。",
       "compactDescription": "总结旧轮次并保留最近的窗口。更适合长会话。"
+    },
+    "experimental": {
+      "title": "实验性功能",
+      "summary": "这些功能正在开发中。开启以抢先预览，但请注意可能不稳定。",
+      "inlineAudioAttachment": {
+        "title": "内联音频附件",
+        "description": "将附加的音频文件转换为 LLM 请求的 base64 内联内容。禁用此功能可将音频文件仅作为工作区引用，从而显著节省上下文窗口 Token。"
+      },
+      "toolLoopRecoveryPolicy": {
+        "title": "工具循环恢复",
+        "description": "默认情况下，重复的工具循环会触发干净的重新采样，而不会在工具错误中注入提示文本。当重试预算耗尽时，熔断器将停止运行。"
+      },
+      "toolLoopMaxResampleRetries": {
+        "title": "最大重采样重试次数",
+        "description": "检测到重复工具循环签名时，硬停止前尝试干净重采样的次数。",
+        "placeholder": "例如 2"
+      },
+      "toolLoopLegacyGuidanceEnabled": {
+        "title": "在工具结果中显示循环警告 (旧版)",
+        "description": "默认关闭。启用后，将循环防范指引作为工具错误注入，而不是静默干净重采样。"
+      }
     }
   },
   "mcpServer": {
@@ -735,12 +906,15 @@
     },
     "dialog": {
       "titleNew": "添加扩展",
+      "titleInstall": "安装扩展：{{name}}",
       "titleEdit": "编辑扩展: {{name}}",
       "validationError": "请填写所有必填字段",
       "reservedNameError": "\"{{name}}\" 是保留的内置服务名称。请选择其他名称。",
       "nameLabel": "名称",
       "namePlaceholder": "例如：filesystem, github, sequential-thinking",
       "nameDesc": "此扩展的唯一标识符",
+      "nameSanitizeHint": "将保存为 \"{{sanitized}}\"（空格和特殊字符会变为下划线）",
+      "nameRuntimeSanitizeHint": "显示名称保持原样。工具将在运行时使用 \"{{sanitized}}\"。",
       "descLabel": "描述",
       "descPlaceholder": "此扩展的可选描述",
       "transportLabel": "传输类型",
@@ -755,6 +929,7 @@
       "envVarsLabel": "环境变量",
       "addEnvVar": "添加变量",
       "requiredConfig": "必填配置",
+      "optionalConfig": "可选默认值",
       "noCustomEnv": "未配置自定义环境变量。",
       "customVarsLabel": "自定义变量",
       "envVarKeyPlaceholder": "键 (例如 API_KEY)",
@@ -768,6 +943,10 @@
       "apiKeyPlaceholder": "秘密令牌",
       "apiKeyDesc": "自动添加 'Authorization: Bearer <token>' 请求头。",
       "advancedSettings": "高级设置",
+      "configuration": "配置",
+      "required": "必填",
+      "noUserConfigNeeded": "无需额外配置。安装即可添加此扩展。",
+      "oauthAdvancedHint": "端点、作用域和 PKCE 位于高级设置中。",
       "customHeadersLabel": "自定义请求头",
       "addHeader": "添加请求头",
       "noCustomHeaders": "未配置自定义请求头。",
@@ -780,11 +959,14 @@
       "sseLabel": "启用服务器发送事件 (SSE)",
       "sseDesc": "为流式响应保持启用状态。对于无状态 HTTP 请禁用。",
       "cancel": "取消",
+      "install": "安装",
+      "installing": "正在安装...",
       "save": "保存",
       "saving": "正在保存..."
     },
     "toasts": {
       "saved": "扩展保存成功",
+      "installed": "扩展安装成功",
       "saveFailed": "保存扩展失败: {{error}}",
       "deleted": "扩展删除成功",
       "deleteFailed": "删除扩展失败: {{error}}",
@@ -824,6 +1006,13 @@
       "steps_one": "{{count}} 步",
       "steps_other": "{{count}} 步",
       "start": "开始",
+      "startPinned": "继续",
+      "startPinnedTooltip": "打开 “{{sessionName}}”",
+      "pinnedBadge": "固定会话",
+      "pinnedBadgeTooltip": "启动时复用 “{{sessionName}}”",
+      "pinnedSessionUntitled": "无标题会话",
+      "pinnedSessionMissing": "会话不存在",
+      "pinnedSessionMissingTooltip": "固定的会话已失效 — 启动将创建新会话",
       "deleteTooltip": "删除剧本",
       "created": "创建于 {{date}}",
       "bookmark": "书签"
@@ -865,9 +1054,79 @@
     }
   },
   "agent": {
+    "analysisLoader": {
+      "initial": "正在准备回答...",
+      "wittyMessages": [
+        "正在享用数字咖啡...",
+        "神经元正在拉伸激活...",
+        "挑选最具智慧的表情符号...",
+        "在 0 与 1 之间穿梭寻路...",
+        "Tab 还是空格？思考永恒的问题...",
+        "正在调谐量子纠缠...",
+        "搜寻遗漏的分号...",
+        "拂去虚拟书架上的微尘...",
+        "GPU 风扇全力运转中 🌪️",
+        "新鲜香脆的回复正在烘焙 🥐",
+        "偷闲欣赏一张小猫照片 🐾",
+        "搜寻高速缓存的每个角落..."
+      ],
+      "lateMessages": [
+        "优秀的回答如同陈酿佳酿，需要时间 🍷",
+        "没有进度条，轮播趣味文字代替...",
+        "再等 3 秒，或许就能见证真正的灵感...",
+        "马上就好，请稍候！",
+        "花了一点时间？不妨简单伸展一下 🧘",
+        "感谢您的耐心等待，即将准备就绪..."
+      ],
+      "combinatorial": {
+        "template": "{{action}} {{target}}{{flavor}}",
+        "actions": [
+          "正在品味",
+          "正在微调",
+          "正在烘焙",
+          "正在搜寻",
+          "正在拂去",
+          "正在启动",
+          "正在预热",
+          "正在润色",
+          "正在解构",
+          "正在校准",
+          "正在理清",
+          "正在轻触"
+        ],
+        "targets": [
+          "数字咖啡",
+          "量子神经元",
+          "香脆回答",
+          "虚拟书架",
+          "丢失的分号",
+          "小猫照片",
+          "GPU 风扇",
+          "缓存角落",
+          "纠缠令牌",
+          "趣味表情",
+          "潜在思绪",
+          "雏形构想"
+        ],
+        "flavors": [
+          "...",
+          " 细致地...",
+          " 全速运转中...",
+          " 再来一次...",
+          " 静静地...",
+          " 🌪️",
+          " 🥐",
+          " 🐾",
+          " ✨"
+        ]
+      }
+    },
     "messages": {
       "loadingOlder": "正在加载更早的消息...",
-      "scrollToLoadOlder": "向上滚动以加载更早的消息"
+      "scrollToLoadOlder": "向上滚动以加载更早的消息",
+      "scrollToLatest": "滚动到底部最新消息",
+      "pendingApprovalsJump_one": "有 {{count}} 个工具等待批准 — 点击处理",
+      "pendingApprovalsJump_other": "有 {{count}} 个工具等待批准 — 点击处理"
     },
     "approval": {
       "hardTitle": "需要高级审批",
@@ -879,10 +1138,14 @@
       "standardBadge": "标准审批",
       "arguments": "参数",
       "reject": "拒绝",
+      "rejectShortcut": "拒绝 (Esc)",
       "hardApprove": "批准高风险操作",
-      "approve": "批准"
+      "approve": "批准",
+      "approveShortcut": "批准 (⌘↵ / Ctrl+↵)",
+      "approveShortcutBadge": "⌘↵"
     },
     "draft": {
+      "llmRequired": "请先配置 AI 模型提供商。",
       "send": "发送消息",
       "attachFiles": "附加文件",
       "attachedFiles": "已附加文件",
@@ -916,6 +1179,8 @@
       "dockerRetryButton": "重试启动会话",
       "dockerWaitingForEngine": "正在等待 Docker 引擎…",
       "dockerStillNotReady": "Docker 尚未就绪。请等待引擎启动后再试。",
+      "dockerImageRequired": "启动 Docker 隔离会话前请选择 Docker 镜像。",
+      "dockerCreating": "正在创建会话 — 正在准备 Docker 镜像 {{image}}…",
       "dockerNotInstalledTitle": "未安装 Docker",
       "dockerNotInstalledDescription": "在此计算机上未找到 Docker CLI。请安装 Docker Desktop，或使用主机模式启动此会话。",
       "dockerNotInstalledStep1": "从 docker.com 安装 Docker Desktop。",
@@ -943,8 +1208,15 @@
       "copyTooltip": "将对话复制为 Markdown",
       "toggleWorkspaceAria": "切换工作区文件面板",
       "toggleWorkspaceTooltip": "切换工作区文件面板",
+      "toggleShellAria": "切换 Agent 面板",
+      "toggleShellTooltip": "切换 Agent 面板",
+      "toggleShellHasUpdatesAria": "切换 Agent 面板（有更新）",
+      "toggleProcessesAria": "切换后台进程面板",
+      "toggleProcessesTooltip": "切换后台进程面板",
+      "toggleProcessesHasUpdatesAria": "切换后台进程面板（有更新）",
       "togglePlanningAria": "切换 AI 计划面板",
       "togglePlanningTooltip": "切换 AI 计划面板",
+      "togglePlanningHasUpdatesAria": "切换 AI 规划面板（有更新）",
       "statusBadgesAria": "面板更新徽章",
       "panelBadgeAria": "{{panel}} 有更新 — 点击打开",
       "panelBadgeLive": "{{panel}} 有更新",
@@ -974,6 +1246,12 @@
       "error": "导出会话失败"
     },
     "workspace": {
+      "maximize": "最大化",
+      "restoreSize": "还原大小",
+      "isolationSettings": "隔离环境设置",
+      "isolationTip": "Docker 工作区可在容器内部安全执行命令，而非直接在宿主机运行。",
+      "useDockerContainer": "使用 Docker 容器",
+      "dockerImage": "Docker 镜像",
       "dockerNotInstalledWarning": "未安装 Docker，或 PATH 中找不到 Docker。",
       "dockerDaemonOfflineWarning": "Docker 守护进程未运行。",
       "dockerHealthHint": "请安装 Docker Desktop、启动引擎，或切换回主机模式。",
@@ -1015,7 +1293,27 @@
       "dropFolderHint": "拖放文件夹至此处以设为工作区",
       "dropDirToastError": "将目录拖放到中央区域以设置工作区覆盖。",
       "dropMixedFoldersError": "拖放文件可导入它们，拖放单个文件夹可设置工作区覆盖。",
-      "dropFolderIntoSubfolderError": "不支持将文件夹拖放到子文件夹中。"
+      "dropFolderIntoSubfolderError": "不支持将文件夹拖放到子文件夹中。",
+      "previewTitle": "文件预览",
+      "previewMode": "预览",
+      "sourceMode": "源码",
+      "openInDefaultApp": "在默认应用中打开",
+      "copyContent": "复制内容",
+      "contentCopied": "内容已复制到剪贴板",
+      "unsupportedEncoding": "二进制或不受支持的编码。请使用默认应用打开。",
+      "fileTooLarge": "文件过大，无法在内联预览中显示。",
+      "syntaxHighlightDisabled": "大文件 (>200KB) - 为保证性能已禁用语法高亮"
+    },
+    "toolStructured": {
+      "writeCreated": "已创建",
+      "writeCreatedAlternate": "在备用路径创建",
+      "writeOverwritten": "已覆盖",
+      "writeAppended": "已追加",
+      "openFile": "打开文件",
+      "openingFile": "正在打开...",
+      "openFileError": "打开文件失败",
+      "lineCount": "{{count}} 行",
+      "requestedPath": "请求路径: {{path}}"
     },
     "statusBar": {
       "retryError": "重试消息失败",
@@ -1025,6 +1323,7 @@
       "toolsCount": "{{totalCount}}({{mcpCount}}) 个可用 • 内置 {{builtinCount}}",
       "statusCompacting": "正在后台压缩对话上下文...",
       "statusAwaitingCompact": "等待上下文压缩完成...",
+      "statusAwaitingApproval": "等待批准 — 请审核待处理的工具操作。",
       "statusError": "发生错误: {{error}}",
       "statusIdle": "准备就绪。输入消息开始对话。",
       "statusBusy": "正在处理您的请求... 代理正在思考并使用工具。",
@@ -1051,10 +1350,20 @@
       "mcpServerReadyTools": "{{count}} 个工具",
       "mcpServerTimedOut": "超时",
       "mcpServerFailedShort": "失败",
+      "executionModeNormalTitle": "普通模式。强制执行策略阻止与批准规则。",
+      "executionModeYoloTitle": "YOLO 模式。标准操作自动批准，但关键操作仍需手动批准。",
+      "executionModeUnsafeTitle": "全自动模式。所有工具执行均自动批准，流程不中断。",
       "mcpResultSuccess": "MCP 服务器已就绪",
       "mcpResultPartial": "部分 MCP 服务器加载失败或超时",
       "mcpResultFailed": "MCP 服务器加载失败",
-      "mcpResultDismiss": "关闭"
+      "mcpResultDismiss": "关闭",
+      "batchModelUpdate": {
+        "title": "批量更新子会话",
+        "description": "所选会话 \"{{parentSessionName}}\" 拥有 {{subSessionCount}} 个子会话。是否也将它们的模型一并更新为 {{newProvider}} / {{newModel}}？",
+        "cancel": "取消",
+        "onlyThis": "仅更新此会话",
+        "all": "同时更新子会话"
+      }
     },
     "attachment": {
       "sessionError": "无法附加文件：会话不可用。",
@@ -1098,8 +1407,11 @@
       "parameters": "参数",
       "errorDetails": "错误详情",
       "result": "结果",
-      "executing": "正在执行工具..."
+      "executing": "正在执行工具...",
+      "calling": "正在调用工具..."
     },
+    "toolCalling": "正在调用工具...",
+    "toolExecuting": "正在执行工具...",
     "compactDivider": {
       "label": "上下文已在上方压缩",
       "ariaLabel": "上下文在此处压缩"
@@ -1109,7 +1421,8 @@
       "model": "模型",
       "loading": "正在加载...",
       "refreshModels": "刷新模型",
-      "refreshRequiresApiKey": "添加 API 密钥以启用模型刷新"
+      "refreshRequiresApiKey": "添加 API 密钥以启用模型刷新",
+      "configureRequired": "配置 AI 模型"
     },
     "toolsModal": {
       "title": "可用工具",
@@ -1122,6 +1435,13 @@
       "badgeBuiltin": "内置",
       "badgeMcp": "mcp",
       "viewSchema": "查看输入模式"
+    },
+    "panels": {
+      "shellTitle": "智能体面板",
+      "resizeHandleAria": "调整智能体面板大小",
+      "tabHasUpdatesAria": "{{tab}}（有更新）",
+      "close": "关闭面板",
+      "closeAria": "关闭智能体面板"
     },
     "planning": {
       "title": "AI 计划",
@@ -1136,7 +1456,67 @@
       "noScratchpad": "没有草稿板笔记",
       "untitledNote": "未命名笔记",
       "moreTasks": "个更多任务",
-      "updated": "已更新"
+      "updated": "已更新",
+      "schedules": {
+        "title": "定时任务列表",
+        "empty": "暂无定时任务",
+        "oneShot": "单次",
+        "recurring": "周期性",
+        "remaining": "剩余 {{time}}",
+        "nextRun": "下次运行: {{time}}",
+        "nextRunNone": "未安排",
+        "cancelFailed": "取消计划回调失败",
+        "cancelAria": "取消 {{name}}",
+        "paused": "已暂停",
+        "toggleFailed": "更新计划回调失败",
+        "pauseAria": "暂停 {{name}}",
+        "resumeAria": "恢复 {{name}}"
+      }
+    },
+    "processes": {
+      "title": "后台进程",
+      "empty": "当前没有后台进程正在运行。",
+      "loading": "正在加载进程…",
+      "loadingOutput": "正在加载输出…",
+      "loadError": "加载进程失败",
+      "invalidPayload": "进程列表响应无效",
+      "invalidOutputPayload": "进程输出响应无效",
+      "retry": "重试",
+      "refresh": "刷新",
+      "refreshAria": "刷新进程列表",
+      "summaryTotal": "共 {{count}} 个",
+      "summaryRunning": "{{count}} 个正在运行",
+      "summaryFinished": "{{count}} 个已完成",
+      "exitCode": "退出码: {{code}}",
+      "readOutput": "查看输出",
+      "readOutputAria": "读取进程输出",
+      "poll": "检查状态",
+      "pollAria": "刷新进程状态",
+      "stop": "停止",
+      "stopAria": "停止进程",
+      "stopSuccess": "已请求停止进程",
+      "stopError": "停止进程失败",
+      "pollError": "轮询进程状态失败",
+      "readError": "读取进程输出失败",
+      "outputTitle": "进程输出",
+      "outputMeta": "状态: {{status}} · 数据流: {{stream}}",
+      "emptyStream": "(空)",
+      "noOutput": "无可用输出",
+      "status": {
+        "starting": "启动中",
+        "running": "运行中",
+        "finished": "已完成",
+        "failed": "失败",
+        "killed": "已强行终止"
+      }
+    },
+    "pendingQueue": {
+      "label": "排队提示词",
+      "next": "下一个",
+      "queued": "已排队",
+      "cancel": "取消排队",
+      "cancelNamed": "取消排队的提示词: {{preview}}",
+      "more": "还有 +{{count}} 个"
     },
     "bubble": {
       "toolError": "工具执行错误",
@@ -1154,6 +1534,7 @@
       "thinkingProcess": "思考过程",
       "thinkingProcessWithTime": "思考过程 {{time}}",
       "thinking": "正在思考...",
+      "preparingPrompt": "正在准备提示词...",
       "expandThinking": "展开",
       "actionBar": {
         "copyFullAria": "复制完整消息",
@@ -1184,6 +1565,9 @@
       "heroSubtitle": "选择一个助手以开始新的自主会话。",
       "builtinAssistants": "内置助手",
       "myAssistants": "我的助手",
+      "onboardingBannerTitle": "需要配置 AI 模型",
+      "onboardingBannerDesc": "要开始使用智能体会话，请先配置 AI 模型提供商（OpenAI、Anthropic、Ollama 等）。",
+      "goToSettings": "前往配置 AI 模型",
       "assistantsLoadFailed": "加载助手失败。",
       "noAssistantsAvailable": "还没有可用的助手。",
       "createAssistant": "创建助手",
@@ -1192,8 +1576,12 @@
       "assistantNotFound": "未找到助手",
       "preparingPlaybook": "正在准备剧本…",
       "startingPlaybook": "正在启动剧本：{{goal}}",
+      "pinnedSessionMissing": "未找到置顶会话。改为启动新会话。",
       "failedToStartPlaybookSession": "启动剧本会话失败",
-      "startingSession": "正在启动会话..."
+      "startingSession": "正在启动会话...",
+      "featuredRecipeTitle": "5 分钟打造专属早间简报助手",
+      "featuredRecipeDesc": "结合 Hacker News 科技趋势与 Yahoo Finance 实时指标，每天早晨为您播报简报。",
+      "startWalkthrough": "开始引导教程"
     },
     "chat": {
       "loadingSession": "正在加载会话...",
@@ -1202,7 +1590,29 @@
       "playbookStartedAutomatically": "已自动启动剧本",
       "failedToStartPlaybookWorkflow": "启动剧本工作流失败",
       "sessionContextUnavailable": "会话上下文不可用。",
-      "sessionNotFoundOrFailed": "未找到会话或加载失败。"
+      "sessionNotFoundOrFailed": "未找到会话或加载失败。",
+      "yoloModeActive": "YOLO 模式已激活",
+      "fullAutoModeActive": "Full Auto 已激活"
+    },
+    "mediaRenderer": {
+      "failedToLoadImage": "无法加载图像",
+      "failedToLoadAudio": "无法加载音频",
+      "failedToLoadVideo": "无法加载视频",
+      "unsupportedClipboard": "当前环境不支持复制图像到剪贴板",
+      "copySuccess": "图像已复制到剪贴板",
+      "copyError": "复制图像到剪贴板失败",
+      "copyAria": "复制图像到剪贴板",
+      "copyTooltip": "复制图像",
+      "downloadCancelled": "下载已取消",
+      "downloadSuccess": "图像下载完成",
+      "downloadError": "下载图像失败",
+      "openFile": "打开",
+      "openFileError": "打开文件失败",
+      "downloadAria": "下载图像",
+      "downloadTooltip": "下载图像",
+      "imageAlt": "工具输出结果",
+      "unsupportedAudio": "您的浏览器不支持音频元素。",
+      "unsupportedVideo": "您的浏览器不支持视频元素。"
     }
   },
   "scheduledTasks": {
@@ -1211,13 +1621,35 @@
     "newTask": "新任务",
     "noTasks": "暂无计划任务",
     "createFirst": "创建您的第一个任务",
+    "createBlank": "创建空白任务",
+    "starterTemplates": {
+      "title": "推荐入门模板",
+      "subtitle": "使用预设模板快速创建定期自动化任务",
+      "useTemplate": "使用此模板",
+      "pcAuditTitle": "每日 PC 健康与安全巡检",
+      "pcAuditDesc": "每天午夜检查磁盘占用、未提交的 Git 更改、可疑进程和依赖包安全漏洞。",
+      "pcAuditName": "每日 PC 健康与安全巡检",
+      "pcAuditMessage": "使用工作区 Shell 综合检查磁盘空间 (df -h)、长时间运行的进程、未提交的 Git 状态以及包漏洞 (audit)，然后生成每日 Markdown 简报。",
+      "webSummaryTitle": "网站更新与头条简报",
+      "webSummaryDesc": "每天早晨使用浏览器访问技术新闻或博客，总结前 3 条核心头条。",
+      "webSummaryName": "网站更新与头条简报",
+      "webSummaryMessage": "使用浏览器工具访问 Hacker News (https://news.ycombinator.com)，将今日前 3 条重要技术头条整理成 3 点简报。",
+      "openWalkthrough": "打开早间简报指引流程"
+    },
     "disabled": "已禁用",
+    "executionModeUnsafe": "完全自动 (Full Auto)",
     "nextRun": "下一次运行: {{time}}",
     "nextRunNone": "—",
     "editTask": "编辑任务",
     "deleteTask": "删除任务",
     "editTaskAria": "编辑任务: {{name}}",
     "deleteTaskAria": "删除任务: {{name}}",
+    "deleteConfirm": {
+      "title": "删除预定任务？",
+      "description": "将永久删除 \"{{name}}\"。此操作无法撤销。",
+      "confirm": "删除",
+      "deleting": "正在删除…"
+    },
     "modal": {
       "titleNew": "新计划任务",
       "titleEdit": "编辑计划任务",
@@ -1241,6 +1673,16 @@
       "messageHint": "使用 @playbook:、@skill: 或 @file: 进行自动补全",
       "workspaceAutocompleteHint": "工作区覆盖可启用 @skill: 和 @file: 自动补全。",
       "messagePlaceholder": "输入消息… 使用 @playbook:、@skill: 或 @file: 进行自动补全",
+      "executionModeLabel": "执行模式",
+      "executionModeNormal": "标准",
+      "executionModeYolo": "YOLO",
+      "executionModeUnsafe": "完全自动 (Full Auto)",
+      "executionModeNormalHint": "严格执行安全策略拦截与审批规则。",
+      "executionModeYoloHint": "普通批准会自动通过；核心关键操作仍需手动批准。",
+      "executionModeUnsafeHint": "所有工具执行均自动批准，适合持续无人值守运行。",
+      "unsafeNotice": "⚡ 自动应用 Full Auto 模式，使终端命令在无人值守执行期间不被中断。",
+      "resetPlanningLabel": "运行前重置规划状态",
+      "resetPlanningHint": "在注入消息前清空目标、待办与草稿。不会清空聊天历史记录。",
       "cancel": "取消",
       "saveChanges": "保存更改",
       "createTask": "创建任务",
@@ -1273,8 +1715,12 @@
         "hours_other": "每 {{count}} 小时",
         "daily": "每日 {{time}}",
         "weekly": "每周 {{day}} 的 {{time}}",
-        "monthly": "每月第 {{day}} 天的 {{time}}"
+        "monthly": "每月第 {{day}} 天的 {{time}}",
+        "custom": "自定义：{{cron}}"
       },
+      "customHint": "此计划使用高级 Cron 表达式。在下方编辑表达式，或切换为简单计划（将替换当前表达式）。",
+      "customLabel": "Cron 表达式",
+      "switchToSimple": "切换为简单计划",
       "days": {
         "0": "星期日",
         "1": "星期一",
@@ -1297,7 +1743,8 @@
     "title": "错误",
     "unknownError": "发生未知错误。",
     "retrying": "正在重试...",
-    "tryAgain": "重试"
+    "tryAgain": "重试",
+    "goToSettings": "在设置中配置 API 密钥"
   },
   "knowledge": {
     "untitledEntry": "未命名知识条目",
@@ -1313,7 +1760,33 @@
     "fields": {
       "createdAt": "创建时间",
       "primaryEntities": "主要实体",
-      "relationships": "关系"
+      "relationships": "关系",
+      "content": "内容",
+      "description": "描述"
+    },
+    "filter": "过滤",
+    "filtered": "已过滤",
+    "linked": "已关联",
+    "primary": "主",
+    "inspectorTitle": "知识检视器",
+    "chunkEntry": "知识分块",
+    "chunkDetails": "分块详情",
+    "graphEntity": "知识实体",
+    "linkedEntities": "关联实体",
+    "linkedRelationships": "关系",
+    "connectedRelationships": "已连接的关系",
+    "noConnectedRelationships": "没有已连接的关系。",
+    "linkedChunks": "关联分块",
+    "noLinkedChunks": "没有关联分块。",
+    "confirmDeleteAction": "永久删除",
+    "refreshingResults": "正在更新结果...",
+    "streamTitle": "精选流",
+    "inspectEntity": "检视实体",
+    "noMatchingChunksForEntity": "没有与该实体匹配的分块。",
+    "viewMode": {
+      "split": "拆分",
+      "graph": "图谱",
+      "cards": "卡片"
     },
     "entitiesTitle": "实体",
     "noEntities": "此条目没有关联实体。",
@@ -1342,9 +1815,53 @@
     "cancel": "取消",
     "graph": {
       "empty": "此知识条目没有关联图谱数据。",
+      "loading": "正在加载知识图谱...",
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "resetView": "重置视图",
+      "reheatPhysics": "重新激活物理模拟",
+      "entitiesCount": "个实体",
+      "relationsCount": "个关系",
+      "focusedMode": "1 阶焦点模式",
+      "noDescription": "无可用描述。",
+      "clickToFocus": "点击聚焦邻域",
       "primaryEntity": "主要实体",
       "relatedEntity": "相关实体"
     },
     "excerpt": "摘录"
+  },
+  "recipes": {
+    "morningBriefing": {
+      "title": "早间科技与金融简报",
+      "desc": "结合 Hacker News 科技趋势与 Yahoo Finance 实时指标，生成每日早间简报。",
+      "modalTitle": "🌅 早间科技与金融简报设置",
+      "step1Title": "步骤 1 · 检查 AI 模型配置",
+      "step2Title": "步骤 2 · 安装免费扩展",
+      "step3Title": "步骤 3 · 助手与自动化调度",
+      "connected": "已连接",
+      "required": "需要配置",
+      "connectedDesc": "AI 模型提供商已配置，可以生成简报。",
+      "unconfiguredTitle": "未配置 AI 模型提供商。",
+      "unconfiguredDesc": "要生成简报，请先配置 AI 模型提供商（OpenAI、Anthropic、Ollama 等）。",
+      "goToSettings": "前往设置",
+      "freeTag": "💡 100% 免费 · 无需 API 密钥",
+      "hnTitle": "Hacker News (hn)",
+      "hnDesc": "实时获取 Hacker News 热门科技与开发者动态",
+      "yfTitle": "Yahoo Finance (yahoo-finance)",
+      "yfDesc": "无需 API 密钥即可获取标普 500、纳斯达克、外汇等实时全球金融指标",
+      "builtinToolsBadge": "已启用内置工具",
+      "scheduleBadge": "每天 09:00 AM (YOLO 模式)",
+      "settingUp": "正在设置...",
+      "actionButton": "🚀 自动配置并立即接收简报",
+      "llmRequiredToast": "请先配置 AI 模型提供商。",
+      "setupSuccess": "早间简报助手与定时任务已成功创建！",
+      "setupError": "设置早间简报失败。",
+      "assistantName": "早间简报助手",
+      "assistantDesc": "专注于总结 Hacker News 科技趋势和全球金融指标的助手",
+      "assistantSystemPrompt": "你是一名专业的早间简报助手，能够快速精炼地总结全球科技趋势和关键金融指标。利用 Hacker News 工具总结排名前 3 的技术动态，利用 Yahoo Finance 工具汇总标普 500、纳斯达克及主要汇率，输出排版整齐的 Markdown 简报。",
+      "scheduledTaskName": "每日早间 9:00 简报",
+      "scheduledTaskMessage": "综合今日 Hacker News 前 3 条热门故事和关键市场指数（标普 500、纳斯达克），撰写一份每日早间简报。",
+      "testRunPrompt": "立即查看今日 Hacker News 前 3 条热门故事和主要股指，生成今日早间简报报告。"
+    }
   }
 }

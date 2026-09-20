@@ -32,15 +32,15 @@ export function useSkillsDnD(
           setIsDragging(false);
           if (payload.paths && payload.paths.length > 0) {
             const filePath = payload.paths[0];
-            const toastId = toast.loading(t('skills.importing'));
+            const toastId = toast.loading(t('settings.skills.importing'));
 
             try {
               await importAssistantSkills(draftId, filePath);
-              toast.success(t('skills.importSuccess'), { id: toastId });
+              toast.success(t('settings.skills.importSuccess'), { id: toastId });
               fetchSkills();
             } catch (error) {
               logger.error('Failed to import skills:', error);
-              toast.error(`${t('skills.importFailed')}: ${error}`, {
+              toast.error(`${t('settings.skills.importFailed')}: ${error}`, {
                 id: toastId,
               });
             }

@@ -29,9 +29,12 @@
       "addServersLink": "Add servers in Settings",
       "searchPlaceholder": "Search servers...",
       "noMatch": "No servers match your search",
+      "filtering": "Filtering...",
+      "loading": "Loading MCP servers...",
       "transport": {
         "stdio": "stdio",
-        "http": "http"
+        "http": "http",
+        "sse": "sse"
       }
     },
     "edit": {
@@ -117,7 +120,12 @@
     "delete": "Delete",
     "restartNow": "Restart now",
     "copy": "Copy",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "clear": "Clear",
+    "download": "Download",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "settings": "Settings"
   },
   "baseBubble": {
     "copy": "Copy {{title}} to clipboard",
@@ -161,6 +169,9 @@
     "expandSession": "Expand session children",
     "collapseSession": "Collapse session children",
     "loadingSessionChildren": "Loading session children"
+  },
+  "history": {
+    "refresh": "Refresh"
   },
   "sessionHistory": {
     "heading": "Session History",
@@ -770,6 +781,7 @@
       "importSuccess_other": "Imported {{count}} skills",
       "importSuccessWithOverwrite_one": "Imported {{count}} skill ({{overwrittenCount}} overwritten)",
       "importSuccessWithOverwrite_other": "Imported {{count}} skills ({{overwrittenCount}} overwritten)",
+      "importSuccess": "Skill imported successfully",
       "importFailed": "Failed to import skills",
       "overrideSuccess": "Skill overridden successfully",
       "overrideFailed": "Failed to override skill",
@@ -789,7 +801,19 @@
       "override": "Override for this assistant",
       "revert": "Revert to global",
       "resetTitle": "Reset Skills Override?",
-      "resetConfirm": "This will remove all assistant-specific skills and revert to global defaults. This action cannot be undone."
+      "resetConfirm": "This will remove all assistant-specific skills and revert to global defaults. This action cannot be undone.",
+      "locked": "Locked",
+      "skipped": "Skipped",
+      "resetUserSkillsTitle": "Reset user skills?",
+      "resetUserSkillsDescription": "This will remove all customized user skills and revert them to bundled defaults. This action cannot be undone.",
+      "resetUserSkills": "Reset user skills",
+      "importingUserSkills": "Inspecting dropped skill package...",
+      "importSuccessWithSkipped_one": "Imported {{count}} skill ({{skippedCount}} skipped)",
+      "importSuccessWithSkipped_other": "Imported {{count}} skills ({{skippedCount}} skipped)",
+      "importSuccessWithOverwriteAndSkipped_one": "Imported {{count}} skill ({{overwrittenCount}} overwritten, {{skippedCount}} skipped)",
+      "importSuccessWithOverwriteAndSkipped_other": "Imported {{count}} skills ({{overwrittenCount}} overwritten, {{skippedCount}} skipped)",
+      "importSkippedOnly_one": "Skipped {{count}} conflicting skill",
+      "importSkippedOnly_other": "Skipped {{count}} conflicting skills"
     },
     "dev": {
       "devOnly": "DEV ONLY",
@@ -1222,6 +1246,8 @@
       "error": "Failed to export session"
     },
     "workspace": {
+      "maximize": "Maximize",
+      "restoreSize": "Restore size",
       "isolationSettings": "Isolation Settings",
       "isolationTip": "Docker workspace runs your workspace commands safely inside a container rather than directly on your host machine.",
       "useDockerContainer": "Use Docker Container",
@@ -1734,7 +1760,33 @@
     "fields": {
       "createdAt": "Created",
       "primaryEntities": "Primary entities",
-      "relationships": "Relationships"
+      "relationships": "Relationships",
+      "content": "Content",
+      "description": "Description"
+    },
+    "filter": "Filter",
+    "filtered": "Filtered",
+    "linked": "Linked",
+    "primary": "Primary",
+    "inspectorTitle": "Knowledge Inspector",
+    "chunkEntry": "Knowledge Chunk",
+    "chunkDetails": "Chunk Details",
+    "graphEntity": "Knowledge Entity",
+    "linkedEntities": "Linked Entities",
+    "linkedRelationships": "Relationships",
+    "connectedRelationships": "Connected Relationships",
+    "noConnectedRelationships": "No connected relationships.",
+    "linkedChunks": "Linked Chunks",
+    "noLinkedChunks": "No linked chunks.",
+    "confirmDeleteAction": "Delete permanently",
+    "refreshingResults": "Updating results...",
+    "streamTitle": "Curated Stream",
+    "inspectEntity": "Inspect Entity",
+    "noMatchingChunksForEntity": "No matching chunks for this entity.",
+    "viewMode": {
+      "split": "Split",
+      "graph": "Graph",
+      "cards": "Cards"
     },
     "entitiesTitle": "Entities",
     "noEntities": "No linked entities for this entry.",
@@ -1763,6 +1815,16 @@
     "cancel": "Cancel",
     "graph": {
       "empty": "No graph data linked to this knowledge entry.",
+      "loading": "Loading knowledge graph...",
+      "zoomIn": "Zoom In",
+      "zoomOut": "Zoom Out",
+      "resetView": "Reset View",
+      "reheatPhysics": "Reheat Physics",
+      "entitiesCount": "entities",
+      "relationsCount": "relations",
+      "focusedMode": "1-Hop Focused",
+      "noDescription": "No description available.",
+      "clickToFocus": "Click to focus neighborhood",
       "primaryEntity": "Primary entity",
       "relatedEntity": "Related entity"
     },

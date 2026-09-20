@@ -1,4 +1,5 @@
 {
+  "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "アシスタント名 *",
     "namePlaceholder": "アシスタント名を入力...",
@@ -28,9 +29,12 @@
       "addServersLink": "設定でサーバーを追加",
       "searchPlaceholder": "サーバーを検索...",
       "noMatch": "検索に一致するサーバーはありません",
+      "filtering": "フィルタリング中...",
+      "loading": "MCPサーバーを読み込み中...",
       "transport": {
         "stdio": "stdio",
-        "http": "http"
+        "http": "http",
+        "sse": "sse"
       }
     },
     "edit": {
@@ -116,7 +120,12 @@
     "delete": "削除",
     "restartNow": "今すぐ再起動",
     "copy": "コピー",
-    "copied": "コピーしました！"
+    "copied": "コピーしました！",
+    "clear": "クリア",
+    "download": "ダウンロード",
+    "refresh": "更新",
+    "retry": "再試行",
+    "settings": "設定"
   },
   "baseBubble": {
     "copy": "{{title}} をクリップボードにコピー",
@@ -161,6 +170,9 @@
     "collapseSession": "子セッションを折りたたむ",
     "loadingSessionChildren": "子セッションを読み込み中"
   },
+  "history": {
+    "refresh": "更新"
+  },
   "sessionHistory": {
     "heading": "セッション履歴",
     "description": "会話セッションの閲覧と管理",
@@ -179,6 +191,7 @@
     "clearLineageFocus": "系統のフォーカスをクリア",
     "noSessionsMatching": "\"{{query}}\" に一致するセッションは見つかりませんでした",
     "clearSearch": "検索をクリア",
+    "bookmarkedCountSummary": "{{count}} 件のブックマークされたセッション",
     "bookmarkedSection": {
       "heading": "ブックマークしたセッション",
       "description": "固定したセッションへここからすぐ戻れます。完全な履歴は下にそのまま表示されます。",
@@ -197,12 +210,29 @@
     },
     "tabs": {
       "all": "すべて",
+      "bookmarked": "ブックマーク",
       "busy": "実行中",
       "idle": "待機中",
       "paused": "一時停止中",
       "error": "エラー",
-      "bookmarked": "ブックマーク",
       "queued": "待機中"
+    },
+    "statusFilter": {
+      "label": "ステータス",
+      "all": "すべてのステータス"
+    },
+    "bookmarkFilter": {
+      "focused": "ブックマークしたセッションを表示中",
+      "clear": "すべてのセッションを表示",
+      "empty": "ブックマークしたセッションはまだありません"
+    },
+    "sort": {
+      "label": "セッションを並び替え",
+      "updatedAt": "最新のアクティビティ",
+      "createdAt": "作成日",
+      "name": "名前",
+      "ascending": "昇順で並び替え",
+      "descending": "降順で並び替え"
     },
     "lineageHint": {
       "child": "↳ {{parentName}} の子",
@@ -223,10 +253,18 @@
       "child": "子",
       "parent": "親",
       "root": "ルート",
+      "descendants": "子孫セッション {{count}} 件",
+      "hiddenChildren": "フィルターにより {{count}} 件非表示",
+      "unloadedChildren": "{{count}} 件未読み込み",
+      "unloadedChildrenHint": "このページにない子セッションを表示するには、さらにセッションを読み込んでください。",
       "parentBadge": "親: {{id}}",
       "lineageBadge": "系統: {{id}}",
       "lineageFilterAria": "系統 {{id}} でフィルタリング",
       "statusAriaLabel": "セッションステータス: {{status}}",
+      "descendantBusy": "実行中: {{count}}",
+      "descendantIdle": "待機中: {{count}}",
+      "descendantPaused": "一時停止中: {{count}}",
+      "descendantError": "エラー: {{count}}",
       "model": "モデル:",
       "createdAt": "{{time}} に作成",
       "updatedAt": "{{time}} に更新",
@@ -234,12 +272,7 @@
       "subagentsCount_one": "+{{count}} 個のサブエージェント",
       "subagentsCount_other": "+{{count}} 個のサブエージェント",
       "subagentsKept": "保持されたサブエージェント",
-      "bookmarkedBadge": "ブックマーク済み",
-      "descendantBusy": "実行中: {{count}}",
-      "descendantError": "エラー: {{count}}",
-      "descendantIdle": "待機中: {{count}}",
-      "descendantPaused": "一時停止中: {{count}}",
-      "descendants": "子孫セッション {{count}} 件"
+      "bookmarkedBadge": "ブックマーク済み"
     },
     "actions": {
       "view": "表示",
@@ -253,6 +286,9 @@
       "viewAria": "セッション {{name}} を表示",
       "continueAria": "セッション {{name}} を続行",
       "resumeAria": "セッション {{name}} を再開",
+      "expandChildrenAria": "「{{name}}」の子セッションを展開",
+      "collapseChildrenAria": "「{{name}}」の子セッションを折りたたむ",
+      "loadingChildrenAria": "「{{name}}」の子セッションを読み込み中",
       "groupAria": "セッションアクション",
       "deleteTooltip": "セッションを削除",
       "deleteAria": "セッション {{name}} を削除",
@@ -264,38 +300,40 @@
       "confirmDelete": "削除を確定",
       "confirmDeleteAria": "削除を確定",
       "cancel": "キャンセル",
-      "cancelDeletionAria": "削除をキャンセル",
-      "collapseChildrenAria": "「{{name}}」の子セッションを折りたたむ",
-      "loadingChildrenAria": "「{{name}}」の子セッションを読み込み中",
-      "expandChildrenAria": "「{{name}}」の子セッションを展開"
+      "cancelDeletionAria": "削除をキャンセル"
     },
     "emptyState": {
       "title": "セッションはまだありません",
       "subtitle": "会話を開始して最初のセッションを作成してください"
     },
-    "statusFilter": {
-      "all": "すべてのステータス",
-      "label": "ステータス"
-    },
-    "bookmarkFilter": {
-      "focused": "ブックマークしたセッションを表示中",
-      "clear": "すべてのセッションを表示",
-      "empty": "ブックマークしたセッションはまだありません"
-    },
-    "sort": {
-      "label": "セッションを並び替え",
-      "updatedAt": "最新のアクティビティ",
-      "createdAt": "作成日",
-      "name": "名前",
-      "ascending": "昇順で並び替え",
-      "descending": "降順で並び替え"
-    },
     "loadMore": "さらに読み込む",
     "loadingMore": "読み込み中...",
     "moreAvailable": "さらにあり"
   },
+  "orgHistory": {
+    "heading": "Org ビュー",
+    "description": "明示的に作成された Org 系統のみを表示します。単発の委譲セッションは通常の履歴に残ります。",
+    "cardLabel": "明示的な Org",
+    "rootLabel": "ルートセッション",
+    "updatedLabel": "更新日",
+    "resumeRoot": "ルートセッションを再開",
+    "delete": "組織を削除",
+    "deleteConfirm": {
+      "title": "組織を削除しますか？",
+      "description": "この組織と、それに関連するすべてのメンバーセッション、ファイル、履歴が完全に削除されます。この操作は元に戻せません。"
+    },
+    "toasts": {
+      "deleted": "組織を削除しました",
+      "deleteFailed": "組織の削除に失敗しました"
+    },
+    "emptyState": {
+      "title": "Org 系統はまだありません",
+      "subtitle": "まず明示的に Org を作成し、その後 Org 対応ツールでメンバーを生成してください。通常のサブエージェント系統はここには表示されません。"
+    }
+  },
   "settings": {
     "title": "設定",
+    "versionLabel": "{{appName}} v{{version}}",
     "unsaved": "未保存",
     "saved": "設定を保存しました",
     "saving": "保存中...",
@@ -320,7 +358,8 @@
       "advanced": "高度な設定",
       "extensions": "拡張機能",
       "dev": "開発",
-      "system": "システム"
+      "system": "システム",
+      "experimental": "実験的機能"
     },
     "llmPreference": "デフォルトLLM",
     "messageWindowSize": "メッセージウィンドウサイズ",
@@ -331,6 +370,8 @@
     "toolCallGroupVisibleCount": "ツール呼び出し表示数",
     "toolCallGroupVisibleCountDescription": "折りたたまれたグループビューに表示するツール呼び出し数",
     "toolCallGroupVisibleCountPlaceholder": "例: 4",
+    "decreaseToolCallCount": "表示するツール呼び出し数を減らす",
+    "increaseToolCallCount": "表示するツール呼び出し数を増やす",
     "general": {
       "skillsDirectory": "スキルディレクトリ",
       "skillsDirectorySelectTitle": "スキルディレクトリを選択",
@@ -364,9 +405,9 @@
       "agentHubUrlLabel": "エージェントハブURL",
       "agentHubUrlDescription": "リモートエージェントハブサーバーのURL。設定すると、アシスタントはこのサーバーと同期されます。",
       "agentHubUrlPlaceholder": "https://api.agenthub.com",
+      "responseBehavior": "応答の挙動",
       "decreaseRetries": "再試行回数を減らす",
       "increaseRetries": "再試行回数を増やす",
-      "responseBehavior": "応答の挙動",
       "providers": {
         "openai": {
           "name": "OpenAI",
@@ -413,10 +454,8 @@
       "hideApiKey": "APIキーを非表示",
       "baseUrl": "ベースURL",
       "baseUrlPlaceholder": "http://localhost:11434",
-      "use3rdParty": "サードパーティのOpenAI互換APIを使用",
-      "customModelId": "カスタムモデルID",
-      "customModelIdPlaceholder": "例: llama-3.1-70b, mistral-large",
-      "customModelIdDescription": "サードパーティAPIがサポートするモデルIDを入力してください（例: LM Studio, LocalAI）"
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1（オプションのプロキシ）",
+      "openaiBaseUrlHint": "vLLM、LM Studio、LocalAI、その他のOpenAI互換サーバーの場合は、以下にカスタムOpenAIプロバイダーを追加してください。"
     },
     "chatInterface": {
       "diffContextLines": "Diffコンテキスト行数",
@@ -426,6 +465,12 @@
       "increaseDiffLines": "Diffコンテキスト行数を増やす"
     },
     "display": {
+      "fontFamilyOptions": {
+        "pretendard": "Pretendard (標準サンセリフ)",
+        "inter": "Inter (クリーンなUI向けサンセリフ)",
+        "nanumSquareNeo": "NanumSquare Neo (モダンな幾何学系)",
+        "d2coding": "D2Coding (開発者向け等幅)"
+      },
       "metricsTitle": "パフォーマンス指標",
       "metricDisplayMode": "指標表示モード",
       "inline": "インライン（メッセージ内に表示）",
@@ -444,19 +489,13 @@
       "toolDetailSimple": "簡易（ツール名のみ）",
       "toolDetailDeveloper": "開発者（パラメータ、エラー、タイミング）",
       "toolDetailLevelDescription": "簡易モードはツール名とステータスアイコンのみを表示します。開発者モードは完全なパラメータ、エラー詳細、実行時間を表示します。",
+      "uiVisualsTitle": "UI 表示",
       "fontFamily": "フォントファミリー",
       "fontFamilyDescription": "UI のデフォルトフォントファミリーを変更します。",
       "messageLayout": "メッセージレイアウト",
       "messageLayoutDocument": "ドキュメント（全幅コーディングレイアウト）",
       "messageLayoutBubble": "吹き出し（クラシックチャット）",
       "messageLayoutDescription": "ドキュメントモードはコードと diff の可読幅を最大化します。吹き出しモードは従来のチャットバブルを維持します。",
-      "fontFamilyOptions": {
-        "d2coding": "D2Coding (開発者向け等幅)",
-        "inter": "Inter (クリーンなUI向けサンセリフ)",
-        "nanumSquareNeo": "NanumSquare Neo (モダンな幾何学系)",
-        "pretendard": "Pretendard (標準サンセリフ)"
-      },
-      "uiVisualsTitle": "UI 表示",
       "colorTheme": "カラーテーマ",
       "colorThemeDescription": "インターフェースのアクセントカラーテーマを選択します。",
       "colorThemes": {
@@ -472,22 +511,33 @@
       "maxRetriesDescription": "失敗したAIリクエストの最大再試行回数。",
       "retryDelay": "再試行遅延 (ms)",
       "retryDelayDescription": "再試行間の遅延時間（ミリ秒）。",
+      "requestReliability": "リクエストの信頼性",
+      "requestReliabilityDescription": "失敗した AI プロバイダーリクエストの再試行方法を制御します。",
       "circuitBreaker": "ツールループしきい値",
       "circuitBreakerDescription": "サーキットブレーカーをトリガーするまでの連続エラーまたはツール呼び出しの回数。",
       "maxOutputTokens": "最大出力トークン（デフォルト）",
       "maxOutputTokensDescription": "アシスタントによって指定されていない場合の、新しいセッションのデフォルト最大出力トークン数。",
       "defaultSessionMaxDepth": "セッション分岐制限（高度）",
       "defaultSessionMaxDepthDescription": "デフォルトで許可される子セッションのレベル数を制御します。無制限にするには0を設定してください。ほとんどのユーザーはデフォルトのままで問題ありません。",
+      "defaultSessionMaxDepthPlaceholder": "例: 3",
       "defaultSessionMaxFanout": "セッション子要素制限（高度）",
       "defaultSessionMaxFanoutDescription": "各親セッションがデフォルトで作成できる直接の子セッション数を制御します。無制限にするには0を設定してください。ほとんどのユーザーはデフォルトのままで問題ありません。",
+      "defaultSessionMaxFanoutPlaceholder": "0 = 無制限",
       "maxConcurrentActiveSessions": "最大同時アクティブエージェントセッション数",
       "maxConcurrentActiveSessionsDescription": "LLMループを同時に実行するエージェントセッションの最大数。値を大きくすると、より多くのAPIクォータとメモリを使用します。",
+      "maxConcurrentActiveSessionsPlaceholder": "例: 4",
       "maxSuspendedSessions": "最大サスペンドエージェントセッション数",
       "maxSuspendedSessionsDescription": "子エージェントの完了を待機して一時停止できるエージェントセッションの最大数。アクティブセッション数以上にする必要があります。",
+      "maxSuspendedSessionsPlaceholder": "例: 8",
       "maxConcurrentActiveProcesses": "最大同時アクティブシェルプロセス数",
       "maxConcurrentActiveProcessesDescription": "すべてのエージェントセッションで同時に実行されるシェル/コードプロセスの最大数。",
+      "maxConcurrentActiveProcessesPlaceholder": "例: 10",
       "maxSuspendedProcesses": "最大サスペンドシェルプロセス数",
       "maxSuspendedProcessesDescription": "pollProcessで待機して一時停止できるプロセスの最大数。アクティブプロセス数以上にする必要があります。",
+      "maxSuspendedProcessesPlaceholder": "例: 20",
+      "toolResultInlineLimit": "ツール結果のインライン上限 (KB)",
+      "toolResultInlineLimitPlaceholder": "例: 16",
+      "toolResultInlineLimitDescription": "ツール出力をどれだけインライン表示するかを制御します。この値を超えると LibrAgent は完全な結果をワークスペースファイルに退避します。値を小さくするとエージェントのコンテキストをより軽く保てます。",
       "shellIsolation": "シェル分離レベル",
       "shellIsolationModes": {
         "basic": "基本 - すべてのPATHへのアクセス（安全性が低い）",
@@ -495,25 +545,24 @@
         "high": "高 - サンドボックス化（最も安全）"
       },
       "shellIsolationDescription": "シェルコマンドの環境分離を制御します。基本はユーザーがインストールしたツールを許可し、高は最大のセキュリティを提供します。",
-      "defaultSessionMaxDepthPlaceholder": "例: 3",
-      "defaultSessionMaxFanoutPlaceholder": "0 = 無制限",
+      "shellRuntimeBootstrap": "シェルランタイムブートストラップ",
+      "shellRuntimeBootstrapDescription": "有効にすると、永続シェルは完全なシェル rc の代わりに conda.sh と nvm.sh のみを読み込みます。conda activate を実行せずに PATH のみを拡張します。",
+      "performance": "パフォーマンスと並行実行",
+      "performanceDescription": "これらの実行時制限は、同時に実行できるエージェント数とワークスペースプロセス数を制御します。",
+      "title": "高度な実行時制御",
+      "summary": "これらの設定は、実行時の安全策、マルチエージェントの制限、シェル分離を変更します。ほとんどのユーザーは変更しないままで構いません。",
       "loopPreventionThreshold": "ループ防止しきい値",
       "loopPreventionThresholdDescription": "同一のツール結果が繰り返された回数です。これを超えると、エージェントは自然回復を試みるか強制停止を行います。",
       "loopPreventionThresholdPlaceholder": "例: 3",
       "loopPreventionHardBreakOffset": "ハードブレイクオフセット",
       "loopPreventionHardBreakOffsetPlaceholder": "例: 2",
       "loopPreventionHardBreakOffsetDescription": "自然回復警告の後、ワークフローを強制停止するまでに許容される追加の同一ツール呼び出し回数。しきい値=3、オフセット=1の場合、3回目の呼び出しで警告、4回目の呼び出しで停止します。",
-      "maxConcurrentActiveProcessesPlaceholder": "例: 10",
-      "maxConcurrentActiveSessionsPlaceholder": "例: 4",
-      "maxSuspendedProcessesPlaceholder": "例: 20",
-      "maxSuspendedSessionsPlaceholder": "例: 8",
-      "performance": "パフォーマンスと並行実行",
-      "performanceDescription": "これらの実行時制限は、同時に実行できるエージェント数とワークスペースプロセス数を制御します。",
-      "summary": "これらの設定は、実行時の安全策、マルチエージェントの制限、シェル分離を変更します。ほとんどのユーザーは変更しないままで構いません。",
-      "title": "高度な実行時制御",
-      "toolResultInlineLimit": "ツール結果のインライン上限 (KB)",
-      "toolResultInlineLimitDescription": "ツール出力をどれだけインライン表示するかを制御します。この値を超えると LibrAgent は完全な結果をワークスペースファイルに退避します。値を小さくするとエージェントのコンテキストをより軽く保てます。",
-      "toolResultInlineLimitPlaceholder": "例: 16"
+      "thinkingLoopMinPatternLength": "思考ループ最小パターン長",
+      "thinkingLoopMinPatternLengthDescription": "思考ループ検出をトリガーするために必要な最小繰り返し文字列長です。値を大きくすると、長い推論過程での誤検知を防げます。",
+      "thinkingLoopMinPatternLengthPlaceholder": "例: 256",
+      "thinkingLoopMinRepetitions": "思考ループ最小繰り返し回数",
+      "thinkingLoopMinRepetitionsDescription": "思考ループ検出をトリガーするために、思考ブロックストリーム内で同一パターンが繰り返される最小回数です。",
+      "thinkingLoopMinRepetitionsPlaceholder": "例: 4"
     },
     "system": {
       "title": "システムとパフォーマンス",
@@ -532,6 +581,11 @@
       "maxFileUploadSizeDescription": "単一ファイルのアップロード最大サイズ。大きなドキュメントを頻繁に扱う場合は値を大きくしてください。",
       "workspaceCapacity": "ワークスペース容量 (MB)",
       "workspaceCapacityDescription": "現在のワークスペースのテキストコンテンツの合計制限。",
+      "automation": "自動化ガバナンス",
+      "scheduledTaskMinimumInterval": "スケジュール済みタスクの最小間隔 (分)",
+      "scheduledTaskMinimumIntervalDescription": "新規または再有効化されたスケジュール済みタスクに許可される最小間隔です。ガードを無効にするには 0 に設定してください。",
+      "maxScheduledTaskGroups": "スケジュール済みタスクグループの最大数",
+      "maxScheduledTaskGroupsDescription": "定期的なチームワーク自動化全体で許可される、異なるスケジュール済みタスクグループの最大数です。",
       "backgroundTasks": "バックグラウンドタスク",
       "preventSleepDuringAgentWork": "アプリ実行中のスリープ防止",
       "preventSleepDuringAgentWorkDescription": "LibrAgent の起動中、システムのアイドルスリープを防ぎます。ディスプレイを強制点灯はしません。既定はオンです。",
@@ -549,6 +603,8 @@
       "networkRestartFailed": "アプリの再起動に失敗しました。手動で再起動してください。",
       "networkRestartNotice": "HTTPサーバーのネットワーク設定への変更は、アプリの再起動後に適用されます。",
       "placeholders": {
+        "scheduledTaskMinimumInterval": "0 = 無効",
+        "maxScheduledTaskGroups": "例: 10",
         "maxFileUploadSize": "例: 50",
         "workspaceCapacity": "例: 10",
         "searchIndexFrequency": "例: 5",
@@ -556,18 +612,11 @@
         "mcpServerStartupTimeout": "例: 30",
         "mcpToolTimeout": "0 (無効)",
         "activeSessionRetention": "例: 24",
-        "httpServerPort": "例: 3030",
-        "maxScheduledTaskGroups": "例: 10",
-        "scheduledTaskMinimumInterval": "0 = 無効"
+        "httpServerPort": "例: 3030"
       },
-      "automation": "自動化ガバナンス",
       "description": "アプリの実行時設定、バックグラウンドワーカー、自動化の上限、ネットワーク動作を制御します。",
-      "maxScheduledTaskGroups": "スケジュール済みタスクグループの最大数",
-      "maxScheduledTaskGroupsDescription": "定期的なチームワーク自動化全体で許可される、異なるスケジュール済みタスクグループの最大数です。",
-      "networkRestartPending": "ネットワーク設定を変更しました。変更を保存してからアプリを再起動して適用してください。",
       "restartRequired": "保存後に再起動が必要です",
-      "scheduledTaskMinimumInterval": "スケジュール済みタスクの最小間隔 (分)",
-      "scheduledTaskMinimumIntervalDescription": "新規または再有効化されたスケジュール済みタスクに許可される最小間隔です。ガードを無効にするには 0 に設定してください。"
+      "networkRestartPending": "ネットワーク設定を変更しました。変更を保存してからアプリを再起動して適用してください。"
     },
     "about": {
       "title": "このアプリについて",
@@ -590,12 +639,12 @@
       "button": "すべてのデータと設定をリセット",
       "confirmTitle": "工場リセットの確認",
       "confirmDescription": "セッション、アシスタント、MCPサーバー、プレイブックを含むすべてのデータが永久に削除されます。よろしいですか？",
+      "typeReset": "工場出荷時リセットを有効にするには RESET と入力してください。",
+      "typeResetPlaceholder": "RESET と入力",
       "confirmButton": "すべてをリセット",
       "resetting": "リセット中...",
       "success": "工場リセットが完了しました。変更を完全に適用するには再起動が必要です。",
-      "error": "工場リセットに失敗しました。詳細はログを確認してください。",
-      "typeReset": "工場出荷時リセットを有効にするには RESET と入力してください。",
-      "typeResetPlaceholder": "RESET と入力"
+      "error": "工場リセットに失敗しました。詳細はログを確認してください。"
     },
     "dataReset": {
       "title": "データとリセット",
@@ -607,6 +656,120 @@
       "success": "すべてのセッションが削除されました。再起動を推奨します。",
       "error": "セッションの消去に失敗しました。"
     },
+    "migration": {
+      "title": "データ移行",
+      "subtitle": "LibrAgent の設定、アシスタント、スケジューラ、カスタムスキルを別のデバイスに移行します。",
+      "errors": {
+        "occurred": "エラーが発生しました:",
+        "reset": "初期化",
+        "wrongPassword": "パスワードが正しくありません。もう一度お試しください。",
+        "passwordMinLength": "パスワードは最低 4 文字以上である必要があります。",
+        "passwordMismatch": "パスワードが一致しません。"
+      },
+      "toasts": {
+        "backupPasswordVerified": "バックアップファイルのパスワードが確認されました",
+        "exportSuccess": "データを正常にエクスポートしました！",
+        "exportFailed": "エクスポートに失敗しました: {{error}}",
+        "exportEncryptedSuccess": "暗号化データを正常にエクスポートしました！",
+        "importSuccess": "移行データを正常にインポートしました！",
+        "importFailed": "インポートに失敗しました: {{error}}",
+        "mcpReverifyPartial": "一部の MCP サーバーの再検証に失敗しました: {{servers}}",
+        "mcpReverifySuccess": "MCP サーバーの再検証が完了しました。",
+        "reverifyFailed": "再検証に失敗しました: {{error}}"
+      },
+      "export": {
+        "title": "設定のエクスポート",
+        "description": "このデバイスのすべての設定とユーザースキルデータを単一のアーカイブファイル (`.libragent-migration`) にパッケージ化します。",
+        "securityWarningLabel": "⚠️ セキュリティに関する注意:",
+        "securityWarning": "API キーおよびアクセストークンはデフォルトでマスクされます。別の安全なチャネル経由で移動する場合のみ、以下のオプションを有効にしてください。",
+        "includeSensitiveLabel": "機密データを含める (Settings テーブル全体)",
+        "includeSensitiveDescription": "API キーやアクセストークンを含む settings テーブル全体の平文データをバックアップアーカイブに保存します。",
+        "selectPathLabel": "エクスポート先パスの選択",
+        "selectPathPlaceholder": "エクスポート先フォルダを選択してください...",
+        "browse": "参照",
+        "runExport": "エクスポートを実行"
+      },
+      "import": {
+        "title": "設定のインポート",
+        "description": "以前にエクスポートした `.libragent-migration` アーカイブファイルを読み込み、現在の環境を更新します。",
+        "autoBackupInfo": "インポート前に、データ損失を防ぐため現在のデータベースの**自動バックアップ**が作成され、失敗した場合は直ちに以前の状態に復元されます。",
+        "archiveFileLabel": "移行アーカイブファイル",
+        "selectAndValidate": "ファイルを選択して検証",
+        "runImportWaiting": "インポートを実行 (ファイル解析待機中)",
+        "runImport": "インポートを実行"
+      },
+      "loading": {
+        "inspectingTitle": "ファイル構造を解析中...",
+        "inspectingDescription": "内容を検査し、ZIP Slip 防御のための脅威分析を実行しています。",
+        "exportingTitle": "移行ファイルを書き込み中...",
+        "exportingDescription": "設定テーブルのシリアライズおよびスキルファイルのアーカービングを実行しています。",
+        "importingTitle": "環境データベースに適用中...",
+        "importingDescription": "分離されたトランザクション内で設定を適用し、外部キー制約を検証しています。",
+        "selectingTitle": "ユーザーの入力待ち...",
+        "selectingDescription": "フォルダ/ファイルエクスプローラーウィンドウで選択を完了してください。"
+      },
+      "preview": {
+        "analysisComplete": "移行アーカイブファイルの解析が完了しました",
+        "compatible": "✅ 互換性チェック合格",
+        "newerVersionWarning": "⚠️ 上位バージョン警告",
+        "incompatible": "❌ 互換性なし",
+        "compatibilityInfo": "互換性情報:",
+        "backupAppVersion": "バックアップアプリのバージョン",
+        "exportedAt": "エクスポート日時",
+        "totalSize": "バックアップ総サイズ",
+        "unknown": "不明",
+        "sectionsList": "含まれるバックアップセクション",
+        "sectionName": "セクション名",
+        "itemCount": "項目数",
+        "fileSize": "ファイルサイズ",
+        "itemCountValue": "{{count}} 項目",
+        "conflictStrategyLabel": "インポート時の競合解決方法",
+        "cancelAndBack": "キャンセルして戻る"
+      },
+      "strategy": {
+        "skipTitle": "スキップ (既存を保持)",
+        "skipDescription": "名前や ID が重複する場合、このデバイスの既存設定を保持します。",
+        "overwriteTitle": "上書き",
+        "overwriteDescription": "既存のローカルレコードをすべて削除し、バックアップデータに完全に置き換えます。",
+        "mergeTitle": "マージ",
+        "mergeDescription": "既存の設定を維持しながら新しい項目を注入します。安全のため、settings 以外のデータはスキップとして扱われます。"
+      },
+      "complete": {
+        "exportTitle": "エクスポート完了！",
+        "importTitle": "インポート成功！",
+        "exportDescription": "現在の環境設定のバックアップファイルが正常にパッケージ化され、作成されました。",
+        "importDescription": "インポートされた設定は整合性チェックを通過し、安全に適用されました。変更を有効にするため、以下の手順を実行してください。",
+        "savePath": "保存先パス:",
+        "fileSize": "ファイルサイズ:",
+        "includedSections": "含まれるセクション:",
+        "section": "セクション",
+        "success": "成功",
+        "skipped": "スキップ",
+        "errors": "エラー",
+        "mcpRestoreLabel": "🔌 MCP およびバックグラウンド環境の復元:",
+        "mcpRestoreDescription": "インポート後、MCP サービスが新しいホスト/環境で正常に動作するためにトークンの更新と検証が必要です。下の検証ボタンをクリックしてください。",
+        "mcpReverifyButton": "MCP サーバーの再認証と整合性検証",
+        "backToMain": "移行ホームに戻る"
+      },
+      "exportPassword": {
+        "title": "バックアップのセキュリティパスワードを設定",
+        "description": "このバックアップには機密データ（API キー、認証情報など）が含まれるため、ファイルを暗号化保護するためのパスワードを設定する必要があります。このパスワードは後で復元（インポート）する際に必要です。",
+        "passwordLabel": "パスワード入力 (最低 4 文字)",
+        "passwordPlaceholder": "パスワードを入力してください",
+        "confirmLabel": "パスワードの確認",
+        "confirmPlaceholder": "もう一度パスワードを入力してください",
+        "cancel": "キャンセル",
+        "runExport": "エクスポートを実行"
+      },
+      "importPassword": {
+        "title": "セキュリティパスワードの入力",
+        "description": "このバックアップファイルは暗号化されています。プレビューおよびインポートにはパスワードが必要です。エクスポート時に設定したパスワードを入力してください。",
+        "passwordLabel": "パスワード",
+        "passwordPlaceholder": "パスワードを入力してください",
+        "cancel": "キャンセル",
+        "confirm": "確認"
+      }
+    },
     "skills": {
       "modalTitle": "利用可能なスキル ({{count}})",
       "noSkills": "スキルは見つかりませんでした。",
@@ -614,6 +777,10 @@
       "saveFirst": "スキルを管理するには、まずアシスタントを保存してください。",
       "fetchFailed": "スキルの取得に失敗しました",
       "importing": "スキルをインポート中...",
+      "importSuccess_one": "{{count}} 個のスキルをインポートしました",
+      "importSuccess_other": "{{count}} 個のスキルをインポートしました",
+      "importSuccessWithOverwrite_one": "{{count}} 個のスキルをインポートしました（{{overwrittenCount}} 個を上書き）",
+      "importSuccessWithOverwrite_other": "{{count}} 個のスキルをインポートしました（{{overwrittenCount}} 個を上書き）",
       "importSuccess": "スキルを正常にインポートしました",
       "importFailed": "スキルのインポートに失敗しました",
       "overrideSuccess": "スキルを正常に上書きしました",
@@ -622,6 +789,9 @@
       "revertFailed": "スキルの復元に失敗しました",
       "resetSuccess": "アシスタントスキルのリセットが完了しました",
       "resetFailed": "スキルのリセットに失敗しました",
+      "deleteUserSkill": "{{name}} を削除",
+      "userSkillDeleted": "ユーザースキルを削除しました。",
+      "userSkillsReset": "ユーザースキルをリセットしました。",
       "dragDropDesc": "スキルを上書きするには、zipファイルまたはフォルダをドラッグ＆ドロップしてください。",
       "resetTooltip": "すべてのアシスタント固有のスキルを削除",
       "reset": "上書きをリセット",
@@ -632,50 +802,73 @@
       "revert": "グローバルに戻す",
       "resetTitle": "スキル上書きをリセットしますか？",
       "resetConfirm": "これにより、すべてのアシスタント固有のスキルが削除され、グローバルのデフォルトに戻ります。この操作は取り消せません。",
-      "deleteUserSkill": "{{name}} を削除",
-      "importSuccessWithOverwrite_one": "{{count}} 個のスキルをインポートしました（{{overwrittenCount}} 個を上書き）",
-      "importSuccessWithOverwrite_other": "{{count}} 個のスキルをインポートしました（{{overwrittenCount}} 個を上書き）",
-      "importSuccess_one": "{{count}} 個のスキルをインポートしました",
-      "importSuccess_other": "{{count}} 個のスキルをインポートしました",
-      "userSkillDeleted": "ユーザースキルを削除しました。",
-      "userSkillsReset": "ユーザースキルをリセットしました。"
+      "locked": "ロック中",
+      "skipped": "スキップ済み",
+      "resetUserSkillsTitle": "ユーザースキルを初期化しますか？",
+      "resetUserSkillsDescription": "すべてのカスタムユーザースキルが削除され、標準の初期設定に戻ります。この操作は取り消せません。",
+      "resetUserSkills": "ユーザースキルの初期化",
+      "importingUserSkills": "ドロップされたスキルパッケージを検証中...",
+      "importSuccessWithSkipped_one": "{{count}} 個のスキルをインポートしました ({{skippedCount}} 個スキップ)",
+      "importSuccessWithSkipped_other": "{{count}} 個のスキルをインポートしました ({{skippedCount}} 個スキップ)",
+      "importSuccessWithOverwriteAndSkipped_one": "{{count}} 個のスキルをインポートしました ({{overwrittenCount}} 個上書き、{{skippedCount}} 個スキップ)",
+      "importSuccessWithOverwriteAndSkipped_other": "{{count}} 個のスキルをインポートしました ({{overwrittenCount}} 個上書き、{{skippedCount}} 個スキップ)",
+      "importSkippedOnly_one": "競合する {{count}} 個のスキルをスキップしました",
+      "importSkippedOnly_other": "競合する {{count}} 個のスキルをスキップしました"
     },
-    "contextStrategy": {
-      "compact": "コンパクト",
-      "compactDescription": "古いターンを要約しつつ、最近のウィンドウを保持します。長いセッションに向いています。",
-      "window": "スライディングウィンドウ",
-      "windowDescription": "直近 N 件のメッセージを保持します。シンプルで予測しやすい方法です。"
-    },
-    "contextStrategyLabel": "コンテキスト管理戦略",
-    "decreaseToolCallCount": "表示するツール呼び出し数を減らす",
     "dev": {
-      "compactUses": "compact() は {{count}} 件のサンプルメッセージを使用します:",
       "devOnly": "開発専用",
-      "emptyResponse": "（空の応答）",
-      "error": "エラー",
-      "model": "モデル: {{model}}",
+      "testerTitle": "sampleText / compact テスター",
+      "provider": "プロバイダー",
       "noKey": " （キーなし）",
-      "ok": "OK",
       "promptLabel": "プロンプト（sampleText 用）",
       "promptPlaceholder": "テスト用プロンプトを入力...",
-      "provider": "プロバイダー",
-      "runCompact": "compact() を実行",
-      "runSampleText": "sampleText() を実行",
+      "compactUses": "compact() は {{count}} 件のサンプルメッセージを使用します:",
       "running": "実行中…",
-      "testerTitle": "sampleText / compact テスター",
-      "tokensInfo": "トークン: プロンプト {{promptTokens}} + 補完 {{completionTokens}} = 合計 {{totalTokens}}"
+      "runSampleText": "sampleText() を実行",
+      "runCompact": "compact() を実行",
+      "error": "エラー",
+      "ok": "OK",
+      "model": "モデル: {{model}}",
+      "tokensInfo": "トークン: プロンプト {{promptTokens}} + 補完 {{completionTokens}} = 合計 {{totalTokens}}",
+      "emptyResponse": "（空の応答）"
     },
-    "discardAndLeave": "破棄して移動",
-    "discardChanges": "破棄",
-    "discardDescription": "このページの未保存の変更をすべて、最後に保存された状態へ戻します。",
-    "discardTitle": "未保存の変更を破棄しますか？",
-    "increaseToolCallCount": "表示するツール呼び出し数を増やす",
-    "leaveDescription": "未保存の変更があります。移動前に保存するか、破棄してこのページを離れてください。",
-    "leaveTitle": "保存せずに移動しますか？",
     "pendingChanges": "{{count}} セクションが変更されました",
-    "saveAndLeave": "保存して移動",
+    "discardChanges": "破棄",
     "saveChanges": "変更を保存",
-    "versionLabel": "{{appName}} v{{version}}"
+    "discardTitle": "未保存の変更を破棄しますか？",
+    "discardDescription": "このページの未保存の変更をすべて、最後に保存された状態へ戻します。",
+    "leaveTitle": "保存せずに移動しますか？",
+    "leaveDescription": "未保存の変更があります。移動前に保存するか、破棄してこのページを離れてください。",
+    "discardAndLeave": "破棄して移動",
+    "saveAndLeave": "保存して移動",
+    "contextStrategyLabel": "コンテキスト管理戦略",
+    "contextStrategy": {
+      "window": "スライディングウィンドウ",
+      "compact": "コンパクト",
+      "windowDescription": "直近 N 件のメッセージを保持します。シンプルで予測しやすい方法です。",
+      "compactDescription": "古いターンを要約しつつ、最近のウィンドウを保持します。長いセッションに向いています。"
+    },
+    "experimental": {
+      "title": "実験的機能",
+      "summary": "現在開発中の機能です。初期機能をプレビューするには有効化してください。ただし、不安定な場合があります。",
+      "inlineAudioAttachment": {
+        "title": "インライン音声添付",
+        "description": "添付された音声ファイルを LLM リクエスト用の base64 インラインコンテンツに変換します。無効にすると音声ファイルがワークスペース参照のみとなり、コンテキストウィンドウのトークンを大幅に節約できます。"
+      },
+      "toolLoopRecoveryPolicy": {
+        "title": "ツールループ回復",
+        "description": "デフォルトでは、繰り返されるツールループが検出されると、ツールエラーにガイダンスを挿入せずクリーンな再サンプリングを試みます。再試行回数を使い果たすとサーキットブレーカーにより停止します。"
+      },
+      "toolLoopMaxResampleRetries": {
+        "title": "最大再サンプル試行回数",
+        "description": "繰り返されるツールループのシグネチャが検出された際、ハードストップ前にクリーンな再サンプリングを試みる回数です。",
+        "placeholder": "例: 2"
+      },
+      "toolLoopLegacyGuidanceEnabled": {
+        "title": "ツール結果にループ警告を表示 (レガシー)",
+        "description": "デフォルトはオフ。有効にすると、クリーンな再サンプリングの代わりにループ防止ガイダンスをツールエラーとして挿入します。"
+      }
+    }
   },
   "mcpServer": {
     "title": "拡張機能",
@@ -713,12 +906,15 @@
     },
     "dialog": {
       "titleNew": "拡張機能を追加",
+      "titleInstall": "拡張機能のインストール: {{name}}",
       "titleEdit": "拡張機能を編集: {{name}}",
       "validationError": "すべての必須項目を入力してください",
       "reservedNameError": "\"{{name}}\" は予約済みの組み込みサービス名です。別の名前を選択してください。",
       "nameLabel": "名前",
       "namePlaceholder": "例: filesystem, github, sequential-thinking",
       "nameDesc": "この拡張機能の一意の識別子",
+      "nameSanitizeHint": "\"{{sanitized}}\" として保存されます（スペースや特殊文字はアンダースコアに変換されます）",
+      "nameRuntimeSanitizeHint": "表示名はそのまま保持されます。ツール実行時には \"{{sanitized}}\" が使用されます。",
       "descLabel": "説明",
       "descPlaceholder": "この拡張機能の任意の説明",
       "transportLabel": "トランスポートタイプ",
@@ -733,6 +929,7 @@
       "envVarsLabel": "環境変数",
       "addEnvVar": "変数を追加",
       "requiredConfig": "必須設定",
+      "optionalConfig": "オプションのデフォルト値",
       "noCustomEnv": "カスタム環境変数は設定されていません。",
       "customVarsLabel": "カスタム変数",
       "envVarKeyPlaceholder": "キー (例: API_KEY)",
@@ -746,6 +943,10 @@
       "apiKeyPlaceholder": "秘密トークン",
       "apiKeyDesc": "自動的に 'Authorization: Bearer <token>' ヘッダーを追加します。",
       "advancedSettings": "高度な設定",
+      "configuration": "設定",
+      "required": "必須",
+      "noUserConfigNeeded": "追加の設定は不要です。インストールするとこの拡張機能が追加されます。",
+      "oauthAdvancedHint": "エンドポイント、スコープ、PKCEは詳細設定にあります。",
       "customHeadersLabel": "カスタムヘッダー",
       "addHeader": "ヘッダーを追加",
       "noCustomHeaders": "カスタムヘッダーは設定されていません。",
@@ -758,11 +959,14 @@
       "sseLabel": "Server-Sent Events (SSE) を有効にする",
       "sseDesc": "ストリーミングレスポンスの場合は有効のままにしてください。ステートレスHTTPの場合は無効にします。",
       "cancel": "キャンセル",
+      "install": "インストール",
+      "installing": "インストール中...",
       "save": "保存",
       "saving": "保存中..."
     },
     "toasts": {
       "saved": "拡張機能を保存しました",
+      "installed": "拡張機能が正常にインストールされました",
       "saveFailed": "拡張機能の保存に失敗しました: {{error}}",
       "deleted": "拡張機能を削除しました",
       "deleteFailed": "拡張機能の削除に失敗しました: {{error}}",
@@ -772,12 +976,12 @@
       "deactivated": "無効"
     },
     "toolsModal": {
-      "connecting": "サーバーに接続中…",
       "description": "MCPサーバーから返されたツール名と説明です。",
+      "connecting": "サーバーに接続中…",
       "failedToLoad": "ツールの読み込みに失敗しました",
-      "inputSchema": "入力スキーマ",
       "noTools": "ツールが返されませんでした。",
       "toolListAria": "ツール一覧",
+      "inputSchema": "入力スキーマ",
       "toolsCount_one": "({{count}} 個のツール)",
       "toolsCount_other": "({{count}} 個のツール)"
     }
@@ -787,6 +991,10 @@
     "description": "自動化ワークフローの閲覧と実行",
     "searchPlaceholder": "プレイブックを検索...",
     "loading": "プレイブックを読み込み中...",
+    "list": {
+      "refreshAria": "プレイブックを更新",
+      "refreshTooltip": "プレイブックを更新"
+    },
     "emptyState": {
       "title": "プレイブックを開始",
       "description": "プレイブックは、エージェントが正常に実行した複雑なリクエストの記録です。",
@@ -798,6 +1006,13 @@
       "steps_one": "{{count}} ステップ",
       "steps_other": "{{count}} ステップ",
       "start": "開始",
+      "startPinned": "再開",
+      "startPinnedTooltip": "「{{sessionName}}」を開きます",
+      "pinnedBadge": "ピン留めセッション",
+      "pinnedBadgeTooltip": "開始時に「{{sessionName}}」を再利用します",
+      "pinnedSessionUntitled": "無題のセッション",
+      "pinnedSessionMissing": "セッションが見つかりません",
+      "pinnedSessionMissingTooltip": "ピン留めされたセッションが失われました — 開始すると新規作成されます",
       "deleteTooltip": "プレイブックを削除",
       "created": "{{date}} に作成",
       "bookmark": "ブックマーク"
@@ -836,14 +1051,110 @@
       "bookmarkFailed": "ブックマークの更新に失敗しました",
       "deleted": "プレイブックを削除しました",
       "deleteFailed": "プレイブックの削除に失敗しました"
-    },
-    "list": {
-      "refreshAria": "プレイブックを更新",
-      "refreshTooltip": "プレイブックを更新"
     }
   },
   "agent": {
+    "analysisLoader": {
+      "initial": "回答を準備中...",
+      "wittyMessages": [
+        "デジタルコーヒーを一口飲んでいます...",
+        "ニューロンがストレッチを開始しました...",
+        "最も知的な絵文字を選んでいます...",
+        "0と1の間を探索中...",
+        "タブかスペースか？永遠の議論中...",
+        "量子もつれを調整中...",
+        "足りないセミコロンを探しています...",
+        "仮想本棚のホコリを払っています...",
+        "GPUファンが全力で回転中 🌪️",
+        "焼き立ての回答を準備中 🥐",
+        "猫の写真を少し眺めています 🐾",
+        "キャッシュメモリの隅々を検索中..."
+      ],
+      "lateMessages": [
+        "優れた回答にはワインのような熟成が必要です 🍷",
+        "進捗バーの代わりに機知に富んだテキストを表示中...",
+        "あと3秒待つと驚くべきアイデアが出るかも...",
+        "もうすぐ完了します。少々お待ちを！",
+        "少し長引いています。軽いストレッチはいかがですか？ 🧘",
+        "お待ちいただきありがとうございます、まもなく準備完了です..."
+      ],
+      "combinatorial": {
+        "template": "{{action}} {{target}}{{flavor}}",
+        "actions": [
+          "調整中",
+          "確認中",
+          "準備中",
+          "探索中",
+          "点検中",
+          "起動中",
+          "温め中",
+          "推敲中",
+          "分析中",
+          "較正中",
+          "整理中",
+          "触発中"
+        ],
+        "targets": [
+          "デジタルコーヒー",
+          "量子ニューロン",
+          "新鮮な回答",
+          "仮想本棚",
+          "セミコロン",
+          "猫の写真",
+          "GPUファン",
+          "キャッシュの隅",
+          "トークン",
+          "絵文字",
+          "潜在的思考",
+          "着想"
+        ],
+        "flavors": [
+          "...",
+          " 丁寧に...",
+          " 全力で...",
+          " もう一度...",
+          " 静かに...",
+          " 🌪️",
+          " 🥐",
+          " 🐾",
+          " ✨"
+        ]
+      }
+    },
+    "messages": {
+      "loadingOlder": "過去のメッセージを読み込み中...",
+      "scrollToLoadOlder": "上にスクロールして過去のメッセージを読み込む",
+      "scrollToLatest": "最新メッセージへスクロール",
+      "pendingApprovalsJump_one": "承認待ちのツールが {{count}} 件あります — 移動して確認",
+      "pendingApprovalsJump_other": "承認待ちのツールが {{count}} 件あります — 移動して確認"
+    },
+    "approval": {
+      "hardTitle": "強力な承認が必要です",
+      "title": "承認が必要です",
+      "hardDescriptionYolo": "YOLO モードが有効ですが、この高リスク操作には手動承認が必要です。",
+      "hardDescription": "この高リスク操作には明示的な承認が必要です。",
+      "description": "エージェントがこのツールを実行しようとしています。",
+      "hardBadge": "強力な承認",
+      "standardBadge": "標準承認",
+      "arguments": "引数",
+      "reject": "拒否",
+      "rejectShortcut": "拒否 (Esc)",
+      "hardApprove": "高リスク操作を承認",
+      "approve": "承認",
+      "approveShortcut": "承認 (⌘↵ / Ctrl+↵)",
+      "approveShortcutBadge": "⌘↵"
+    },
     "draft": {
+      "llmRequired": "まずAIモデルプロバイダーを設定してください。",
+      "send": "メッセージを送信",
+      "attachFiles": "ファイルを添付",
+      "attachedFiles": "添付ファイル",
+      "removeWorkspaceOverride": "ワークスペース上書きを削除",
+      "removeFile": "{{name}} を削除",
+      "dropFilesHint": "ここにファイルをドロップ...",
+      "unsupportedFile": "サポートされていないファイルです！",
+      "uploading": "アップロード中...",
+      "placeholder": "{{name}} にメッセージ...",
       "failedToRegisterDroppedFiles": "ドロップされたファイルの登録に失敗しました",
       "dropFilesInChatInput": "ファイルをチャット入力にドロップして添付します。",
       "failedToProcessFile": "処理に失敗しました: {{file}}",
@@ -868,6 +1179,8 @@
       "dockerRetryButton": "セッション開始を再試行",
       "dockerWaitingForEngine": "Dockerエンジンを待機中…",
       "dockerStillNotReady": "Dockerはまだ準備できていません。エンジンの起動を待ってから、もう一度お試しください。",
+      "dockerImageRequired": "Docker分離セッションを開始する前にDockerイメージを選択してください。",
+      "dockerCreating": "セッションを作成中 — Dockerイメージ {{image}} を準備中…",
       "dockerNotInstalledTitle": "Dockerがインストールされていません",
       "dockerNotInstalledDescription": "このマシンで Docker CLI が見つかりませんでした。Docker Desktop をインストールするか、ホストモードでこのセッションを開始してください。",
       "dockerNotInstalledStep1": "docker.com から Docker Desktop をインストールしてください。",
@@ -879,21 +1192,12 @@
       "newSession": "新しいセッション",
       "workspaceOverrideActive": "ワークスペースの上書きが有効です",
       "workspaceOverrideDescription": "エージェントはこのセッションの主要なワークスペースとしてこのディレクトリを使用します。",
+      "filesWillBeListedAfterStart": "ファイルはセッション開始後に一覧表示されます",
       "basicTools": "基本ツール",
       "basicToolsDescription": "ファイルの読み取り、タスクの管理、コードの実行などのコア機能が含まれています。いつでもあなたを助けます！",
       "addTools": "+ ツールを追加",
       "addMoreCapabilities": "設定でさらに機能を追加",
-      "localContext": "ローカルコンテキスト",
-      "attachFiles": "ファイルを添付",
-      "attachedFiles": "添付ファイル",
-      "dropFilesHint": "ここにファイルをドロップ...",
-      "filesWillBeListedAfterStart": "ファイルはセッション開始後に一覧表示されます",
-      "placeholder": "{{name}} にメッセージ...",
-      "removeFile": "{{name}} を削除",
-      "removeWorkspaceOverride": "ワークスペース上書きを削除",
-      "send": "メッセージを送信",
-      "unsupportedFile": "サポートされていないファイルです！",
-      "uploading": "アップロード中..."
+      "localContext": "ローカルコンテキスト"
     },
     "header": {
       "copySuccess": "会話をクリップボードにコピーしました",
@@ -904,8 +1208,15 @@
       "copyTooltip": "会話をMarkdownとしてコピー",
       "toggleWorkspaceAria": "ワークスペースファイルパネルを切り替え",
       "toggleWorkspaceTooltip": "ワークスペースファイルパネルを切り替え",
+      "toggleShellAria": "エージェントパネルの切り替え",
+      "toggleShellTooltip": "エージェントパネルの切り替え",
+      "toggleShellHasUpdatesAria": "エージェントパネルの切り替え（更新あり）",
+      "toggleProcessesAria": "バックグラウンドプロセスの切り替え",
+      "toggleProcessesTooltip": "バックグラウンドプロセスの切り替え",
+      "toggleProcessesHasUpdatesAria": "バックグラウンドプロセスの切り替え（更新あり）",
       "togglePlanningAria": "AIプランニングパネルを切り替え",
       "togglePlanningTooltip": "AIプランニングパネルを切り替え",
+      "togglePlanningHasUpdatesAria": "AIプランニングパネルの切り替え（更新あり）",
       "statusBadgesAria": "パネル更新バッジ",
       "panelBadgeAria": "{{panel}} に更新があります — クリックして開く",
       "panelBadgeLive": "{{panel}} に更新があります",
@@ -935,6 +1246,12 @@
       "error": "セッションのエクスポートに失敗しました"
     },
     "workspace": {
+      "maximize": "最大化",
+      "restoreSize": "元のサイズに戻す",
+      "isolationSettings": "分離環境設定",
+      "isolationTip": "Dockerワークスペースはホスト環境ではなくコンテナ内で安全にコマンドを実行します。",
+      "useDockerContainer": "Dockerコンテナを使用",
+      "dockerImage": "Dockerイメージ",
       "dockerNotInstalledWarning": "Docker がインストールされていないか、PATH で利用できません。",
       "dockerDaemonOfflineWarning": "Docker デーモンが実行されていません。",
       "dockerHealthHint": "Docker Desktop をインストールするか、エンジンを起動するか、ホストモードに切り替えてください。",
@@ -976,7 +1293,27 @@
       "dropFolderHint": "ここにフォルダをドロップしてワークスペースとして設定",
       "dropDirToastError": "ワークスペースの上書きを設定するには、中央のエリアにディレクトリをドロップしてください。",
       "dropMixedFoldersError": "ファイルはインポート用にドロップし、ワークスペースの上書きには単一のフォルダーをドロップしてください。",
-      "dropFolderIntoSubfolderError": "サブフォルダーへのフォルダーのドロップはサポートされていません。"
+      "dropFolderIntoSubfolderError": "サブフォルダーへのフォルダーのドロップはサポートされていません。",
+      "previewTitle": "ファイルプレビュー",
+      "previewMode": "プレビュー",
+      "sourceMode": "ソース",
+      "openInDefaultApp": "既定のアプリで開く",
+      "copyContent": "内容をコピー",
+      "contentCopied": "内容をクリップボードにコピーしました",
+      "unsupportedEncoding": "バイナリまたはサポートされていないエンコーディングです。既定のアプリで開いてください。",
+      "fileTooLarge": "ファイルが大きすぎるため、インラインプレビューを表示できません。",
+      "syntaxHighlightDisabled": "大容量ファイル (>200KB) - パフォーマンスのため構文ハイライトが無効化されています"
+    },
+    "toolStructured": {
+      "writeCreated": "作成済み",
+      "writeCreatedAlternate": "代替パスに作成されました",
+      "writeOverwritten": "上書き済み",
+      "writeAppended": "追記済み",
+      "openFile": "ファイルを開く",
+      "openingFile": "開いています...",
+      "openFileError": "ファイルを開けませんでした",
+      "lineCount": "{{count}} 行",
+      "requestedPath": "要求パス: {{path}}"
     },
     "statusBar": {
       "retryError": "メッセージの再試行に失敗しました",
@@ -986,6 +1323,7 @@
       "toolsCount": "利用可能 {{totalCount}}({{mcpCount}}) • 組み込み {{builtinCount}}",
       "statusCompacting": "バックグラウンドで会話コンテキストを圧縮中...",
       "statusAwaitingCompact": "コンテキストの圧縮完了を待機中...",
+      "statusAwaitingApproval": "承認待ち — 保留中のツールアクションを確認してください。",
       "statusError": "エラーが発生しました: {{error}}",
       "statusIdle": "入力準備完了。メッセージを入力して開始してください。",
       "statusBusy": "リクエストを処理中... エージェントが思考しツールを使用しています。",
@@ -1012,10 +1350,20 @@
       "mcpServerReadyTools": "{{count}} ツール",
       "mcpServerTimedOut": "タイムアウト",
       "mcpServerFailedShort": "失敗",
+      "executionModeNormalTitle": "通常モード。ポリシー制限と承認ルールが適用されます。",
+      "executionModeYoloTitle": "YOLO モード。標準的な承認は自動化されますが、重要なアクションは手動承認が必要です。",
+      "executionModeUnsafeTitle": "フルオートモード。中断のないワークフローのため、すべてのツール実行が自動承認されます。",
       "mcpResultSuccess": "MCPサーバーの準備完了",
       "mcpResultPartial": "一部のMCPサーバーの読み込みに失敗またはタイムアウト",
       "mcpResultFailed": "MCPサーバーの読み込みに失敗",
-      "mcpResultDismiss": "閉じる"
+      "mcpResultDismiss": "閉じる",
+      "batchModelUpdate": {
+        "title": "サブセッションの一括更新",
+        "description": "選択したセッション「{{parentSessionName}}」には {{subSessionCount}} 個のサブセッションがあります。それらのモデルも {{newProvider}} / {{newModel}} に更新しますか？",
+        "cancel": "キャンセル",
+        "onlyThis": "このセッションのみ",
+        "all": "サブセッションも更新"
+      }
     },
     "attachment": {
       "sessionError": "ファイルを添付できません：セッションが利用不可です。",
@@ -1059,8 +1407,11 @@
       "parameters": "パラメータ",
       "errorDetails": "エラー詳細",
       "result": "結果",
-      "executing": "ツールを実行中..."
+      "executing": "ツールを実行中...",
+      "calling": "ツールを呼び出しています..."
     },
+    "toolCalling": "ツールを呼び出しています...",
+    "toolExecuting": "ツールを実行しています...",
     "compactDivider": {
       "label": "コンテキストは上記で圧縮されました",
       "ariaLabel": "コンテキストはこの時点で圧縮されました"
@@ -1070,7 +1421,8 @@
       "model": "モデル",
       "loading": "読み込み中...",
       "refreshModels": "モデルを更新",
-      "refreshRequiresApiKey": "モデルの更新を有効にするには API キーを追加してください"
+      "refreshRequiresApiKey": "モデルの更新を有効にするには API キーを追加してください",
+      "configureRequired": "AI モデルを設定"
     },
     "toolsModal": {
       "title": "利用可能なツール",
@@ -1083,6 +1435,13 @@
       "badgeBuiltin": "組み込み",
       "badgeMcp": "mcp",
       "viewSchema": "入力スキーマを表示"
+    },
+    "panels": {
+      "shellTitle": "エージェントパネル",
+      "resizeHandleAria": "エージェントパネルのサイズを変更",
+      "tabHasUpdatesAria": "{{tab}} (更新あり)",
+      "close": "パネルを閉じる",
+      "closeAria": "エージェントパネルを閉じる"
     },
     "planning": {
       "title": "AIプランニング",
@@ -1097,7 +1456,67 @@
       "noScratchpad": "スクラッチパッドのメモはありません",
       "untitledNote": "無題のメモ",
       "moreTasks": "件の追加タスク",
-      "updated": "更新済み"
+      "updated": "更新済み",
+      "schedules": {
+        "title": "スケジュールタスク一覧",
+        "empty": "スケジュールタスクはありません",
+        "oneShot": "1回限り",
+        "recurring": "定期実行",
+        "remaining": "残り {{time}}",
+        "nextRun": "次回の実行: {{time}}",
+        "nextRunNone": "スケジュールなし",
+        "cancelFailed": "スケジュールされたコールバックのキャンセルに失敗しました",
+        "cancelAria": "{{name}} をキャンセル",
+        "paused": "一時停止中",
+        "toggleFailed": "スケジュールされたコールバックの更新に失敗しました",
+        "pauseAria": "{{name}} を一時停止",
+        "resumeAria": "{{name}} を再開"
+      }
+    },
+    "processes": {
+      "title": "バックグラウンドプロセス",
+      "empty": "現在実行中のバックグラウンドプロセスはありません。",
+      "loading": "プロセスを読み込み中…",
+      "loadingOutput": "出力を読み込み中…",
+      "loadError": "プロセスの読み込みに失敗しました",
+      "invalidPayload": "プロセスリストの応答が無効です",
+      "invalidOutputPayload": "プロセス出力の応答が無効です",
+      "retry": "再試行",
+      "refresh": "更新",
+      "refreshAria": "プロセスリストを更新",
+      "summaryTotal": "合計 {{count}}",
+      "summaryRunning": "{{count}} 件実行中",
+      "summaryFinished": "{{count}} 件完了",
+      "exitCode": "終了コード: {{code}}",
+      "readOutput": "出力を表示",
+      "readOutputAria": "プロセス出力を読み取る",
+      "poll": "ステータスを確認",
+      "pollAria": "プロセスステータスを更新",
+      "stop": "停止",
+      "stopAria": "プロセスを停止",
+      "stopSuccess": "プロセスの停止を要求しました",
+      "stopError": "プロセスの停止に失敗しました",
+      "pollError": "プロセスステータスの取得に失敗しました",
+      "readError": "プロセス出力の読み取りに失敗しました",
+      "outputTitle": "プロセス出力",
+      "outputMeta": "ステータス: {{status}} · ストリーム: {{stream}}",
+      "emptyStream": "(空)",
+      "noOutput": "出力はありません",
+      "status": {
+        "starting": "起動中",
+        "running": "実行中",
+        "finished": "完了",
+        "failed": "失敗",
+        "killed": "強制終了"
+      }
+    },
+    "pendingQueue": {
+      "label": "キュー内のプロンプト",
+      "next": "次へ",
+      "queued": "待機中",
+      "cancel": "キャンセル",
+      "cancelNamed": "待機中のプロンプトをキャンセル: {{preview}}",
+      "more": "他 {{count}} 件"
     },
     "bubble": {
       "toolError": "ツール実行エラー",
@@ -1115,6 +1534,7 @@
       "thinkingProcess": "思考プロセス",
       "thinkingProcessWithTime": "思考プロセス {{time}}",
       "thinking": "思考中...",
+      "preparingPrompt": "プロンプトを準備中...",
       "expandThinking": "展開",
       "actionBar": {
         "copyFullAria": "メッセージ全体をコピー",
@@ -1140,47 +1560,59 @@
         "exportPdfError": "PDF のエクスポートに失敗しました"
       }
     },
+    "start": {
+      "heroTitle": "今日は何をしますか？",
+      "heroSubtitle": "新しい自律セッションを開始するアシスタントを選択してください。",
+      "builtinAssistants": "組み込みアシスタント",
+      "myAssistants": "マイアシスタント",
+      "onboardingBannerTitle": "AI モデルの設定が必要です",
+      "onboardingBannerDesc": "エージェントセッションを開始するには、まず AI モデルプロバイダー（OpenAI、Anthropic、Ollama など）を設定してください。",
+      "goToSettings": "AI モデルを設定する",
+      "assistantsLoadFailed": "アシスタントの読み込みに失敗しました。",
+      "noAssistantsAvailable": "利用可能なアシスタントはまだありません。",
+      "createAssistant": "アシスタントを作成",
+      "manageAssistants": "+ アシスタントを管理",
+      "playbookNotFound": "プレイブックが見つかりません",
+      "assistantNotFound": "アシスタントが見つかりません",
+      "preparingPlaybook": "プレイブックを準備中…",
+      "startingPlaybook": "プレイブックを開始中: {{goal}}",
+      "pinnedSessionMissing": "ピン留めされたセッションが見つかりません。代わりに新しいセッションを開始します。",
+      "failedToStartPlaybookSession": "プレイブックセッションの開始に失敗しました",
+      "startingSession": "セッションを開始中...",
+      "featuredRecipeTitle": "5分で作る自分だけのモーニングブリーフィングアシスタント",
+      "featuredRecipeDesc": "Hacker News のテックトレンドと Yahoo Finance のリアルタイム指標を組み合わせ、毎朝ブリーフィングを行います。",
+      "startWalkthrough": "ガイド付きウォークスルーを開始"
+    },
     "chat": {
-      "failedToStartPlaybookWorkflow": "プレイブックワークフローの開始に失敗しました",
       "loadingSession": "セッションを読み込み中...",
       "startingPlaybookWorkflow": "プレイブックを開始中…",
       "playbookContinuePrompt": "選択したプレイブックを実行し、ワークフローの手順に従ってください。",
       "playbookStartedAutomatically": "プレイブックが自動的に開始されました",
+      "failedToStartPlaybookWorkflow": "プレイブックワークフローの開始に失敗しました",
       "sessionContextUnavailable": "セッションコンテキストを利用できません。",
-      "sessionNotFoundOrFailed": "セッションが見つからないか、読み込みに失敗しました。"
+      "sessionNotFoundOrFailed": "セッションが見つからないか、読み込みに失敗しました。",
+      "yoloModeActive": "YOLO モードが有効です",
+      "fullAutoModeActive": "Full Auto モードが有効です"
     },
-    "messages": {
-      "loadingOlder": "過去のメッセージを読み込み中...",
-      "scrollToLoadOlder": "上にスクロールして過去のメッセージを読み込む"
-    },
-    "approval": {
-      "hardTitle": "強力な承認が必要です",
-      "title": "承認が必要です",
-      "hardDescriptionYolo": "YOLO モードが有効ですが、この高リスク操作には手動承認が必要です。",
-      "hardDescription": "この高リスク操作には明示的な承認が必要です。",
-      "description": "エージェントがこのツールを実行しようとしています。",
-      "hardBadge": "強力な承認",
-      "standardBadge": "標準承認",
-      "arguments": "引数",
-      "reject": "拒否",
-      "hardApprove": "高リスク操作を承認",
-      "approve": "承認"
-    },
-    "start": {
-      "assistantNotFound": "アシスタントが見つかりません",
-      "assistantsLoadFailed": "アシスタントの読み込みに失敗しました。",
-      "builtinAssistants": "組み込みアシスタント",
-      "createAssistant": "アシスタントを作成",
-      "failedToStartPlaybookSession": "プレイブックセッションの開始に失敗しました",
-      "heroSubtitle": "新しい自律セッションを開始するアシスタントを選択してください。",
-      "heroTitle": "今日は何をしますか？",
-      "manageAssistants": "+ アシスタントを管理",
-      "myAssistants": "マイアシスタント",
-      "noAssistantsAvailable": "利用可能なアシスタントはまだありません。",
-      "playbookNotFound": "プレイブックが見つかりません",
-      "preparingPlaybook": "プレイブックを準備中…",
-      "startingPlaybook": "プレイブックを開始中: {{goal}}",
-      "startingSession": "セッションを開始中..."
+    "mediaRenderer": {
+      "failedToLoadImage": "画像を読み込めませんでした",
+      "failedToLoadAudio": "音声を読み込めませんでした",
+      "failedToLoadVideo": "動画を読み込めませんでした",
+      "unsupportedClipboard": "この環境ではクリップボードへの画像コピーはサポートされていません",
+      "copySuccess": "画像をクリップボードにコピーしました",
+      "copyError": "画像をクリップボードにコピーできませんでした",
+      "copyAria": "画像をクリップボードにコピー",
+      "copyTooltip": "画像をコピー",
+      "downloadCancelled": "ダウンロードがキャンセルされました",
+      "downloadSuccess": "画像がダウンロードされました",
+      "downloadError": "画像のダウンロードに失敗しました",
+      "openFile": "開く",
+      "openFileError": "ファイルを開けませんでした",
+      "downloadAria": "画像をダウンロード",
+      "downloadTooltip": "画像をダウンロード",
+      "imageAlt": "ツール出力画像",
+      "unsupportedAudio": "お使いのブラウザはオーディオ要素をサポートしていません。",
+      "unsupportedVideo": "お使いのブラウザはビデオ要素をサポートしていません。"
     }
   },
   "scheduledTasks": {
@@ -1189,13 +1621,35 @@
     "newTask": "新しいタスク",
     "noTasks": "スケジュール済みタスクはまだありません",
     "createFirst": "最初のタスクを作成",
+    "createBlank": "空白のタスクを作成",
+    "starterTemplates": {
+      "title": "おすすめスターターテンプレート",
+      "subtitle": "事前設定されたテンプレートを使用して定期的な自動化タスクを素早く設定できます",
+      "useTemplate": "このテンプレートを使用",
+      "pcAuditTitle": "毎日のPC健全性＆セキュリティ診断",
+      "pcAuditDesc": "毎晩午前0時にディスク使用量、未コミットのGit変更、不審なプロセス、パッケージ脆弱性を点検します。",
+      "pcAuditName": "毎日のPC健全性＆セキュリティ診断",
+      "pcAuditMessage": "ワークスペースシェルを使用して、ディスク空き容量 (df -h)、長時間稼働プロセス、未コミットのGit状態、パッケージ脆弱性 (audit) を総合点検し、日次ブリーフィングMarkdownレポートを作成してください。",
+      "webSummaryTitle": "Webサイト更新＆ヘッドライン要約",
+      "webSummaryDesc": "毎朝ブラウザで技術ニュースやブログを確認し、主要ヘッドライン3件を要約します。",
+      "webSummaryName": "Webサイト更新＆ヘッドライン要約",
+      "webSummaryMessage": "ブラウザツールを使用してHacker News (https://news.ycombinator.com) を確認し、今日の主要技術ニュース3件を箇条書きで要約してください。",
+      "openWalkthrough": "モーニングブリーフィングのガイドを開く"
+    },
     "disabled": "無効",
+    "executionModeUnsafe": "フルオート (Full Auto)",
     "nextRun": "次回の実行: {{time}}",
     "nextRunNone": "—",
     "editTask": "タスクを編集",
     "deleteTask": "タスクを削除",
     "editTaskAria": "タスクを編集: {{name}}",
     "deleteTaskAria": "タスクを削除: {{name}}",
+    "deleteConfirm": {
+      "title": "予約タスクを削除しますか？",
+      "description": "「{{name}}」が完全に削除されます。この操作は元に戻せません。",
+      "confirm": "削除",
+      "deleting": "削除中…"
+    },
     "modal": {
       "titleNew": "新しいスケジュール済みタスク",
       "titleEdit": "スケジュール済みタスクを編集",
@@ -1217,12 +1671,22 @@
       "workspaceClearAria": "ワークスペースの上書きをクリア",
       "messageLabel": "メッセージ",
       "messageHint": "オートコンプリートには @playbook:、@skill: または @file: を使用してください",
+      "workspaceAutocompleteHint": "ワークスペース上書きを有効にすると @skill: と @file: のオートコンプリートが使えます。",
       "messagePlaceholder": "メッセージを入力… オートコンプリートには @playbook:、@skill: または @file: を使用してください",
+      "executionModeLabel": "実行モード",
+      "executionModeNormal": "標準",
+      "executionModeYolo": "YOLO",
+      "executionModeUnsafe": "フルオート (Full Auto)",
+      "executionModeNormalHint": "ポリシーブロックと承認ルールが適用されます。",
+      "executionModeYoloHint": "標準の承認は自動化され、重要な承認のみ手動確認が必要です。",
+      "executionModeUnsafeHint": "すべてのツール実行が自動承認され、無人での連続実行が可能です。",
+      "unsafeNotice": "⚡ 無人実行中にターミナルコマンドが中断されないよう、Full Auto モードが適用されます。",
+      "resetPlanningLabel": "実行前にプランニング状態をリセット",
+      "resetPlanningHint": "メッセージ送信前に目標、Todo、メモをクリアします。チャット履歴は消去されません。",
       "cancel": "キャンセル",
       "saveChanges": "変更を保存",
       "createTask": "タスクを作成",
-      "saving": "保存中…",
-      "workspaceAutocompleteHint": "ワークスペース上書きを有効にすると @skill: と @file: のオートコンプリートが使えます。"
+      "saving": "保存中…"
     },
     "schedule": {
       "repeat": "繰り返し",
@@ -1251,8 +1715,12 @@
         "hours_other": "{{count}} 時間ごと",
         "daily": "毎日 {{time}}",
         "weekly": "毎週 {{day}} の {{time}}",
-        "monthly": "毎月 {{day}} 日の {{time}}"
+        "monthly": "毎月 {{day}} 日の {{time}}",
+        "custom": "カスタム: {{cron}}"
       },
+      "customHint": "このスケジュールは簡易エディタで表現できない高度なcron式です。下部で式を編集するか、簡易スケジュールに切り替えてください。",
+      "customLabel": "Cron式",
+      "switchToSimple": "簡易スケジュールに切り替え",
       "days": {
         "0": "日曜日",
         "1": "月曜日",
@@ -1264,87 +1732,136 @@
       }
     }
   },
+  "mentions": {
+    "skillSourceWorkspace": "ワークスペース",
+    "skillSourceAssistant": "アシスタント",
+    "skillSourceUser": "ユーザー",
+    "skillSourceSystem": "システム",
+    "skillSourceGlobal": "グローバル"
+  },
   "errorBubble": {
     "title": "エラー",
     "unknownError": "不明なエラーが発生しました。",
     "retrying": "再試行中...",
-    "tryAgain": "もう一度試す"
+    "tryAgain": "もう一度試す",
+    "goToSettings": "設定でAPIキーを設定"
   },
-  "appName": "LibrAgent",
   "knowledge": {
-    "assistantFilterAll": "すべてのアシスタント",
-    "assistantFilterPlaceholder": "アシスタントで絞り込む",
-    "browserDescription": "まずチャンクを見つけてから、その根拠とグラフ上の近傍を確認します。",
-    "browserTitle": "ナレッジブラウザー",
-    "cancel": "キャンセル",
-    "close": "閉じる",
-    "confirmDelete": "このナレッジエントリを削除し、孤立したグラフデータも整理しますか？",
-    "confirmDeleteTitle": "ナレッジエントリを削除",
-    "delete": "削除",
-    "deleteFailed": "ナレッジエントリの削除に失敗しました。",
-    "deleteSuccess": "ナレッジエントリを削除しました。",
-    "deleteSuccessDescription": "孤立エンティティ {{entities}} 件と孤立リレーション {{relationships}} 件を削除しました。",
-    "detailDescription": "選択したエントリ、その根拠、およびローカルグラフを確認します。",
+    "untitledEntry": "無題のナレッジエントリ",
     "detailTitle": "ナレッジ詳細",
-    "emptyState": "現在のフィルターに一致するナレッジエントリはありません。",
-    "endOfResults": "現在の結果はここまでです。",
-    "entitiesTitle": "エンティティ",
-    "excerpt": "抜粋",
+    "detailDescription": "選択したエントリ、その根拠、およびローカルグラフを確認します。",
+    "close": "閉じる",
+    "delete": "削除",
+    "tabs": {
+      "overview": "概要",
+      "graph": "グラフ"
+    },
+    "metadataTitle": "メタデータ",
     "fields": {
       "createdAt": "作成日",
       "primaryEntities": "主要エンティティ",
-      "relationships": "リレーション"
+      "relationships": "リレーション",
+      "content": "内容",
+      "description": "説明"
     },
+    "filter": "フィルター",
+    "filtered": "フィルター済み",
+    "linked": "リンク済み",
+    "primary": "プライマリ",
+    "inspectorTitle": "ナレッジインスペクター",
+    "chunkEntry": "ナレッジチャンク",
+    "chunkDetails": "チャンク詳細",
+    "graphEntity": "ナレッジエンティティ",
+    "linkedEntities": "リンクされたエンティティ",
+    "linkedRelationships": "リレーション",
+    "connectedRelationships": "接続されたリレーション",
+    "noConnectedRelationships": "接続されたリレーションはありません。",
+    "linkedChunks": "リンクされたチャンク",
+    "noLinkedChunks": "リンクされたチャンクはありません。",
+    "confirmDeleteAction": "完全に削除",
+    "refreshingResults": "結果を更新中...",
+    "streamTitle": "キュレーションストリーム",
+    "inspectEntity": "エンティティを検査",
+    "noMatchingChunksForEntity": "このエンティティに一致するチャンクはありません。",
+    "viewMode": {
+      "split": "分割",
+      "graph": "グラフ",
+      "cards": "カード"
+    },
+    "entitiesTitle": "エンティティ",
+    "noEntities": "このエントリに紐づくエンティティはありません。",
+    "primaryEntity": "主要",
+    "relationshipListTitle": "リレーション",
+    "noRelationships": "このエントリに紐づくリレーションはありません。",
+    "loadListFailed": "グローバルナレッジエントリの読み込みに失敗しました。",
+    "loadDetailFailed": "ナレッジ詳細の読み込みに失敗しました。",
+    "loadMoreFailed": "ナレッジエントリの追加読み込みに失敗しました。",
+    "deleteSuccess": "ナレッジエントリを削除しました。",
+    "deleteSuccessDescription": "孤立エンティティ {{entities}} 件と孤立リレーション {{relationships}} 件を削除しました。",
+    "deleteFailed": "ナレッジエントリの削除に失敗しました。",
+    "pageTitle": "グローバルナレッジ",
+    "pageSubtitle": "共有メモリを検索し、根拠を確認し、古くなったナレッジを整理します。",
+    "refresh": "更新",
+    "browserTitle": "ナレッジブラウザー",
+    "browserDescription": "まずチャンクを見つけてから、その根拠とグラフ上の近傍を確認します。",
+    "searchPlaceholder": "コンテンツ、タグ、またはソースを検索...",
+    "assistantFilterPlaceholder": "アシスタントで絞り込む",
+    "assistantFilterAll": "すべてのアシスタント",
+    "emptyState": "現在のフィルターに一致するナレッジエントリはありません。",
+    "loadMore": "さらに読み込む",
+    "endOfResults": "現在の結果はここまでです。",
+    "confirmDeleteTitle": "ナレッジエントリを削除",
+    "confirmDelete": "このナレッジエントリを削除し、孤立したグラフデータも整理しますか？",
+    "cancel": "キャンセル",
     "graph": {
       "empty": "このナレッジエントリに紐づくグラフデータはありません。",
+      "loading": "ナレッジグラフを読み込み中...",
+      "zoomIn": "拡大",
+      "zoomOut": "縮小",
+      "resetView": "ビューをリセット",
+      "reheatPhysics": "物理シミュレーション再開",
+      "entitiesCount": "件のエンティティ",
+      "relationsCount": "件のリレーション",
+      "focusedMode": "1ホップフォーカス",
+      "noDescription": "説明はありません。",
+      "clickToFocus": "クリックして近傍をフォーカス",
       "primaryEntity": "主要エンティティ",
       "relatedEntity": "関連エンティティ"
     },
-    "loadDetailFailed": "ナレッジ詳細の読み込みに失敗しました。",
-    "loadListFailed": "グローバルナレッジエントリの読み込みに失敗しました。",
-    "loadMore": "さらに読み込む",
-    "loadMoreFailed": "ナレッジエントリの追加読み込みに失敗しました。",
-    "metadataTitle": "メタデータ",
-    "noEntities": "このエントリに紐づくエンティティはありません。",
-    "noRelationships": "このエントリに紐づくリレーションはありません。",
-    "pageSubtitle": "共有メモリを検索し、根拠を確認し、古くなったナレッジを整理します。",
-    "pageTitle": "グローバルナレッジ",
-    "primaryEntity": "主要",
-    "refresh": "更新",
-    "relationshipListTitle": "リレーション",
-    "searchPlaceholder": "コンテンツ、タグ、またはソースを検索...",
-    "tabs": {
-      "graph": "グラフ",
-      "overview": "概要"
-    },
-    "untitledEntry": "無題のナレッジエントリ"
+    "excerpt": "抜粋"
   },
-  "mentions": {
-    "skillSourceAssistant": "アシスタント",
-    "skillSourceGlobal": "グローバル",
-    "skillSourceSystem": "システム",
-    "skillSourceUser": "ユーザー",
-    "skillSourceWorkspace": "ワークスペース"
-  },
-  "orgHistory": {
-    "cardLabel": "明示的な Org",
-    "delete": "組織を削除",
-    "deleteConfirm": {
-      "description": "この組織と、それに関連するすべてのメンバーセッション、ファイル、履歴が完全に削除されます。この操作は元に戻せません。",
-      "title": "組織を削除しますか？"
-    },
-    "description": "明示的に作成された Org 系統のみを表示します。単発の委譲セッションは通常の履歴に残ります。",
-    "emptyState": {
-      "subtitle": "まず明示的に Org を作成し、その後 Org 対応ツールでメンバーを生成してください。通常のサブエージェント系統はここには表示されません。",
-      "title": "Org 系統はまだありません"
-    },
-    "heading": "Org ビュー",
-    "resumeRoot": "ルートセッションを再開",
-    "rootLabel": "ルートセッション",
-    "toasts": {
-      "deleteFailed": "組織の削除に失敗しました",
-      "deleted": "組織を削除しました"
-    },
-    "updatedLabel": "更新日"
+  "recipes": {
+    "morningBriefing": {
+      "title": "モーニングテック＆金融ブリーフィング",
+      "desc": "Hacker Newsの技術トレンドとYahoo Financeのリアルタイム指標を組み合わせ、毎朝のブリーフィングをお届けします。",
+      "modalTitle": "🌅 モーニングテック＆金融ブリーフィング設定",
+      "step1Title": "ステップ 1 · AIモデル設定の確認",
+      "step2Title": "ステップ 2 · 無料拡張機能のインストール",
+      "step3Title": "ステップ 3 · アシスタント＆自動実行スケジュール",
+      "connected": "接続済み",
+      "required": "設定が必要",
+      "connectedDesc": "AIモデルプロバイダーが接続されており、ブリーフィング生成の準備が整っています。",
+      "unconfiguredTitle": "AIモデルプロバイダーが設定されていません。",
+      "unconfiguredDesc": "ブリーフィングを生成するには、まずAIモデルプロバイダー（OpenAI、Anthropic、Ollamaなど）を設定してください。",
+      "goToSettings": "設定へ移動",
+      "freeTag": "💡 100% 無料 · APIキー不要",
+      "hnTitle": "Hacker News (hn)",
+      "hnDesc": "Hacker Newsから注目のテクノロジー・開発トレンド記事をリアルタイムに取得",
+      "yfTitle": "Yahoo Finance (yahoo-finance)",
+      "yfDesc": "APIキーなしでS&P 500、ナスダック、為替レートなどの主要金融指標を取得",
+      "builtinToolsBadge": "内蔵ツール有効",
+      "scheduleBadge": "毎日 09:00 AM (YOLOモード)",
+      "settingUp": "設定中...",
+      "actionButton": "🚀 自動設定して今すぐブリーフィングを受信",
+      "llmRequiredToast": "まずAIモデルプロバイダーを設定してください。",
+      "setupSuccess": "モーニングブリーフィングのアシスタントとスケジュールタスクが正常に作成されました！",
+      "setupError": "モーニングブリーフィングの設定に失敗しました。",
+      "assistantName": "モーニングブリーフィングアシスタント",
+      "assistantDesc": "Hacker Newsの技術トレンドと主要金融指標を要約する専門アシスタント",
+      "assistantSystemPrompt": "あなたは毎朝グローバルな技術トレンドと主要な金融指標を迅速かつ明確に要約する専門ブリーフィングアシスタントです。Hacker News（hnツール）を使用して上位3つの開発・技術トピックを要約し、Yahoo Finance（yahoo-financeツール）を使用してS&P 500、ナスダック、主要為替レートをまとめた簡潔なMarkdownレポートを作成してください。",
+      "scheduledTaskName": "毎朝9時 モーニングブリーフィング",
+      "scheduledTaskMessage": "本日のHacker News人気記事トップ3と主要市場指標（S&P 500、ナスダック）を統合し、毎日のモーニングブリーフィングを作成してください。",
+      "testRunPrompt": "本日注目のHacker News記事トップ3と主要株価指数を確認し、今すぐモーニングブリーフィングを作成してください。"
+    }
   }
 }

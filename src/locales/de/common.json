@@ -29,9 +29,12 @@
       "addServersLink": "Server in den Einstellungen hinzufügen",
       "searchPlaceholder": "Server suchen...",
       "noMatch": "Keine Server entsprechen Ihrer Suche",
+      "filtering": "Filtern...",
+      "loading": "MCP-Server werden geladen...",
       "transport": {
         "stdio": "stdio",
-        "http": "http"
+        "http": "http",
+        "sse": "sse"
       }
     },
     "edit": {
@@ -117,7 +120,12 @@
     "delete": "Löschen",
     "restartNow": "Jetzt neu starten",
     "copy": "Kopieren",
-    "copied": "Kopiert!"
+    "copied": "Kopiert!",
+    "clear": "Löschen",
+    "download": "Herunterladen",
+    "refresh": "Aktualisieren",
+    "retry": "Wiederholen",
+    "settings": "Einstellungen"
   },
   "baseBubble": {
     "copy": "{{title}} in die Zwischenablage kopieren",
@@ -162,6 +170,9 @@
     "collapseSession": "Untersitzungen einklappen",
     "loadingSessionChildren": "Untersitzungen werden geladen"
   },
+  "history": {
+    "refresh": "Aktualisieren"
+  },
   "sessionHistory": {
     "heading": "Sitzungsverlauf",
     "description": "Durchsuchen und verwalten Sie Ihre Konversationssitzungen",
@@ -180,6 +191,7 @@
     "clearLineageFocus": "Abstammungsfokus löschen",
     "noSessionsMatching": "Keine Sitzungen für \"{{query}}\" gefunden",
     "clearSearch": "Suche löschen",
+    "bookmarkedCountSummary": "{{count}} mit Lesezeichen versehene Sitzungen",
     "bookmarkedSection": {
       "heading": "Gespeicherte Sitzungen",
       "description": "Markierte Sitzungen bleiben hier für den Schnellzugriff, während der vollständige Verlauf darunter sichtbar bleibt.",
@@ -242,6 +254,9 @@
       "parent": "Elternteil",
       "root": "Wurzel",
       "descendants": "{{count}} Nachkommen",
+      "hiddenChildren": "{{count}} durch Filter ausgeblendet",
+      "unloadedChildren": "{{count}} nicht geladen",
+      "unloadedChildrenHint": "Laden Sie weitere Sitzungen, um untergeordnete Sitzungen anzuzeigen, die nicht auf dieser Seite sind.",
       "parentBadge": "Elternteil: {{id}}",
       "lineageBadge": "Abstammung: {{id}}",
       "lineageFilterAria": "Nach Abstammung {{id}} filtern",
@@ -343,7 +358,8 @@
       "advanced": "Erweitert",
       "extensions": "Erweiterungen",
       "dev": "Entwickler",
-      "system": "System"
+      "system": "System",
+      "experimental": "Experimentell"
     },
     "llmPreference": "Standard-LLM",
     "messageWindowSize": "Fenstergröße für Nachrichten",
@@ -438,10 +454,8 @@
       "hideApiKey": "API-Schlüssel ausblenden",
       "baseUrl": "Basis-URL",
       "baseUrlPlaceholder": "http://localhost:11434",
-      "use3rdParty": "Drittanbieter OpenAI-kompatible API verwenden",
-      "customModelId": "Benutzerdefinierte Modell-ID",
-      "customModelIdPlaceholder": "z.B. llama-3.1-70b, mistral-large",
-      "customModelIdDescription": "Geben Sie die Modell-ID ein, die von Ihrer Drittanbieter-API unterstützt wird (z.B. LM Studio, LocalAI)"
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1 (optionaler Proxy)",
+      "openaiBaseUrlHint": "Für vLLM, LM Studio, LocalAI und andere OpenAI-kompatible Server fügen Sie unten einen benutzerdefinierten OpenAI-Anbieter hinzu."
     },
     "chatInterface": {
       "diffContextLines": "Diff-Kontextzeilen",
@@ -497,6 +511,8 @@
       "maxRetriesDescription": "Maximale Anzahl von Wiederholungen für fehlgeschlagene KI-Anfragen.",
       "retryDelay": "Wiederholungsverzögerung (ms)",
       "retryDelayDescription": "Verzögerung in Millisekunden zwischen Wiederholungsversuchen.",
+      "requestReliability": "Anfrage-Zuverlässigkeit",
+      "requestReliabilityDescription": "Steuert, wie fehlgeschlagene AI-Provider-Anfragen wiederholt werden.",
       "circuitBreaker": "Werkzeugschleifen-Schwellenwert",
       "circuitBreakerDescription": "Anzahl wiederholter Fehler oder Werkzeugaufrufe, bevor der Schutzschalter ausgelöst wird.",
       "maxOutputTokens": "Max. Ausgabe-Token (Standard)",
@@ -529,6 +545,8 @@
         "high": "Hoch - Sandbox (am sichersten)"
       },
       "shellIsolationDescription": "Steuert die Umgebungsisolation für Shell-Befehle. Basis erlaubt vom Benutzer installierte Werkzeuge, Hoch bietet maximale Sicherheit.",
+      "shellRuntimeBootstrap": "Shell-Laufzeit-Bootstrap",
+      "shellRuntimeBootstrapDescription": "Wenn aktiviert, laden persistente Shells nur conda.sh und nvm.sh (nicht die gesamte Shell-rc). PATH wird erweitert, ohne conda activate auszuführen.",
       "performance": "Leistung und Parallelität",
       "performanceDescription": "Diese Laufzeitlimits steuern, wie viele Agenten und Arbeitsbereichsprozesse gleichzeitig laufen können.",
       "title": "Erweiterte Laufzeitsteuerung",
@@ -538,7 +556,13 @@
       "loopPreventionThresholdPlaceholder": "z. B. 3",
       "loopPreventionHardBreakOffset": "Hard-Break-Offset",
       "loopPreventionHardBreakOffsetPlaceholder": "z. B. 2",
-      "loopPreventionHardBreakOffsetDescription": "Zusätzliche identische Werkzeugaufrufe, die nach der Warnung zur natürlichen Wiederherstellung zulässig sind, bevor der Workflow hart gestoppt wird. Bei Schwellenwert=3 und Offset=1 erfolgt die natürliche Wiederherstellung beim 3. Aufruf und der harte Stopp beim 4. Aufruf."
+      "loopPreventionHardBreakOffsetDescription": "Zusätzliche identische Werkzeugaufrufe, die nach der Warnung zur natürlichen Wiederherstellung zulässig sind, bevor der Workflow hart gestoppt wird. Bei Schwellenwert=3 und Offset=1 erfolgt die natürliche Wiederherstellung beim 3. Aufruf und der harte Stopp beim 4. Aufruf.",
+      "thinkingLoopMinPatternLength": "Minimale Denkschleifen-Musterlänge",
+      "thinkingLoopMinPatternLengthDescription": "Minimale wiederholte Zeichenkettenlänge, die erforderlich ist, um eine Denkschleifenerkennung auszulösen. Größere Werte verhindern Fehlalarme bei langen Denkpfaden.",
+      "thinkingLoopMinPatternLengthPlaceholder": "z. B. 256",
+      "thinkingLoopMinRepetitions": "Minimale Denkschleifen-Wiederholungen",
+      "thinkingLoopMinRepetitionsDescription": "Minimale Anzahl von Wiederholungen eines Musters im Denkblock-Stream, um eine Denkschleifenerkennung auszulösen.",
+      "thinkingLoopMinRepetitionsPlaceholder": "z. B. 4"
     },
     "system": {
       "title": "System & Leistung",
@@ -632,6 +656,120 @@
       "success": "Alle Sitzungen wurden gelöscht. Neustart empfohlen.",
       "error": "Fehler beim Löschen der Sitzungen."
     },
+    "migration": {
+      "title": "Datenmigration",
+      "subtitle": "Übertragen Sie LibrAgent-Einstellungen, Assistenten, Zeitpläne und benutzerdefinierte Skills auf ein anderes Gerät.",
+      "errors": {
+        "occurred": "Fehler aufgetreten:",
+        "reset": "Zurücksetzen",
+        "wrongPassword": "Falsches Passwort. Bitte versuchen Sie es erneut.",
+        "passwordMinLength": "Das Passwort muss mindestens 4 Zeichen lang sein.",
+        "passwordMismatch": "Passwörter stimmen nicht überein."
+      },
+      "toasts": {
+        "backupPasswordVerified": "Passwort der Sicherungsdatei bestätigt",
+        "exportSuccess": "Daten erfolgreich exportiert!",
+        "exportFailed": "Export fehlgeschlagen: {{error}}",
+        "exportEncryptedSuccess": "Verschlüsselte Daten erfolgreich exportiert!",
+        "importSuccess": "Migrationsdaten erfolgreich importiert!",
+        "importFailed": "Import fehlgeschlagen: {{error}}",
+        "mcpReverifyPartial": "Einige MCP-Server konnten nicht neu überprüft werden: {{servers}}",
+        "mcpReverifySuccess": "MCP-Server-Neuüberprüfung abgeschlossen.",
+        "reverifyFailed": "Neuüberprüfung fehlgeschlagen: {{error}}"
+      },
+      "export": {
+        "title": "Einstellungen exportieren",
+        "description": "Packen Sie alle Einstellungen und Benutzer-Skill-Daten von diesem Gerät in eine einzelne Archivdatei (`.libragent-migration`).",
+        "securityWarningLabel": "⚠️ Sicherheitshinweis:",
+        "securityWarning": "API-Schlüssel und Zugriffstokens werden standardmäßig maskiert. Aktivieren Sie die Option unten nur, wenn Sie diese über einen anderen sicheren Kanal übertragen.",
+        "includeSensitiveLabel": "Sensible Daten einschließen (gesamte Settings-Tabelle)",
+        "includeSensitiveDescription": "Speichern Sie Klartextdaten aus der gesamten Einstellungstabelle – einschließlich API-Schlüsseln und Zugriffstokens – im Backup-Archiv.",
+        "selectPathLabel": "Exportpfad auswählen",
+        "selectPathPlaceholder": "Wählen Sie einen Ordner für den Export aus...",
+        "browse": "Durchsuchen",
+        "runExport": "Export ausführen"
+      },
+      "import": {
+        "title": "Einstellungen importieren",
+        "description": "Laden Sie eine zuvor exportierte `.libragent-migration`-Archivdatei, um die aktuelle Umgebung zu aktualisieren.",
+        "autoBackupInfo": "Vor dem Import wird ein automatisches Backup der aktuellen Datenbank erstellt, um Datenverlust zu verhindern. Wenn der Import fehlschlägt, wird der vorherige Zustand sofort wiederhergestellt.",
+        "archiveFileLabel": "Migrations-Archivdatei",
+        "selectAndValidate": "Datei auswählen und prüfen",
+        "runImportWaiting": "Import ausführen (Warte auf Dateianalyse)",
+        "runImport": "Import ausführen"
+      },
+      "loading": {
+        "inspectingTitle": "Dateistruktur wird analysiert...",
+        "inspectingDescription": "Inhalt wird überprüft und eine Bedrohungsanalyse für den ZIP-Slip-Schutz durchgeführt.",
+        "exportingTitle": "Migrationsdatei wird geschrieben...",
+        "exportingDescription": "Einstellungstabellen werden serialisiert und Skill-Dateien archiviert.",
+        "importingTitle": "Wird auf Umgebungsdatenbank angewendet...",
+        "importingDescription": "Einstellungen werden in einer isolierten Transaktion angewendet und Fremdschlüssel-Einschränkungen validiert.",
+        "selectingTitle": "Warten auf Benutzereingabe...",
+        "selectingDescription": "Bitte schließen Sie Ihre Auswahl im Datei-Explorer-Fenster ab."
+      },
+      "preview": {
+        "analysisComplete": "Analyse des Migrationsarchivs abgeschlossen",
+        "compatible": "✅ Kompatibel",
+        "newerVersionWarning": "⚠️ Warnung: Neuere Version",
+        "incompatible": "❌ Nicht kompatibel",
+        "compatibilityInfo": "Kompatibilitätsinformationen:",
+        "backupAppVersion": "Version der Backup-App",
+        "exportedAt": "Exportiert am",
+        "totalSize": "Gesamte Backup-Größe",
+        "unknown": "Unbekannt",
+        "sectionsList": "Enthaltene Backup-Bereiche",
+        "sectionName": "Bereichsname",
+        "itemCount": "Anzahl Elemente",
+        "fileSize": "Dateigröße",
+        "itemCountValue": "{{count}} Elemente",
+        "conflictStrategyLabel": "Konfliktlösungsstrategie beim Import",
+        "cancelAndBack": "Abbrechen und zurück"
+      },
+      "strategy": {
+        "skipTitle": "Überspringen (Bestehendes behalten)",
+        "skipDescription": "Bei Namens- oder ID-Konflikten die bestehenden Einstellungen auf diesem Gerät beibehalten.",
+        "overwriteTitle": "Überschreiben",
+        "overwriteDescription": "Alle vorhandenen lokalen Einträge entfernen und vollständig durch Backup-Daten ersetzen.",
+        "mergeTitle": "Zusammenführen",
+        "mergeDescription": "Bestehende Einstellungen beibehalten und neue Elemente einfügen. Aus Sicherheitsgründen werden Nicht-Einstellungsdaten als Überspringen behandelt."
+      },
+      "complete": {
+        "exportTitle": "Export abgeschlossen!",
+        "importTitle": "Import erfolgreich!",
+        "exportDescription": "Eine Sicherungsdatei der aktuellen Umgebungseinstellungen wurde erfolgreich erstellt und verpackt.",
+        "importDescription": "Importierte Einstellungen haben die Integritätsprüfung bestanden und wurden sicher angewendet. Führen Sie die Bereinigung unten durch, um die Änderungen zu aktivieren.",
+        "savePath": "Speicherpfad:",
+        "fileSize": "Dateigröße:",
+        "includedSections": "Enthaltene Abschnitte:",
+        "section": "Bereich",
+        "success": "Erfolg",
+        "skipped": "Übersprungen",
+        "errors": "Fehler",
+        "mcpRestoreLabel": "🔌 MCP- und Hintergrundumgebungs-Wiederherstellung:",
+        "mcpRestoreDescription": "Nach dem Import müssen MCP-Dienste Token erneuern und überprüft werden, um auf dem neuen Host ordnungsgemäß zu funktionieren. Klicken Sie unten auf Überprüfen.",
+        "mcpReverifyButton": "MCP-Server erneut authentifizieren und validieren",
+        "backToMain": "Zurück zur Migrations-Startseite"
+      },
+      "exportPassword": {
+        "title": "Sicherheits-Passwort für Backup festlegen",
+        "description": "Da dieses Backup sensible Daten (API-Schlüssel, Zugangsdaten usw.) enthält, müssen Sie ein Passwort festlegen, um die Datei zu verschlüsseln. Dieses Passwort wird später beim Wiederherstellen (Importieren) benötigt.",
+        "passwordLabel": "Passwort eingeben (mindestens 4 Zeichen)",
+        "passwordPlaceholder": "Passwort eingeben",
+        "confirmLabel": "Passwort bestätigen",
+        "confirmPlaceholder": "Passwort erneut eingeben",
+        "cancel": "Abbrechen",
+        "runExport": "Export ausführen"
+      },
+      "importPassword": {
+        "title": "Sicherheits-Passwort eingeben",
+        "description": "Diese Backup-Datei ist verschlüsselt. Ein Passwort ist erforderlich, um eine Vorschau anzuzeigen und zu importieren. Geben Sie das beim Export festgelegte Passwort ein.",
+        "passwordLabel": "Passwort",
+        "passwordPlaceholder": "Passwort eingeben",
+        "cancel": "Abbrechen",
+        "confirm": "Bestätigen"
+      }
+    },
     "skills": {
       "modalTitle": "Verfügbare Skills ({{count}})",
       "noSkills": "Keine Skills gefunden.",
@@ -643,6 +781,7 @@
       "importSuccess_other": "{{count}} Skills importiert",
       "importSuccessWithOverwrite_one": "{{count}} Skill importiert ({{overwrittenCount}} überschrieben)",
       "importSuccessWithOverwrite_other": "{{count}} Skills importiert ({{overwrittenCount}} überschrieben)",
+      "importSuccess": "Skills erfolgreich importiert",
       "importFailed": "Fehler beim Importieren der Skills",
       "overrideSuccess": "Skill erfolgreich überschrieben",
       "overrideFailed": "Fehler beim Überschreiben des Skills",
@@ -663,7 +802,18 @@
       "revert": "Auf Global zurücksetzen",
       "resetTitle": "Skill-Überschreibung zurücksetzen?",
       "resetConfirm": "Dies entfernt alle assistentenspezifischen Skills und setzt sie auf die globalen Standardwerte zurück. Diese Aktion kann nicht rückgängig gemacht werden.",
-      "importSuccess": "Skills erfolgreich importiert"
+      "locked": "Gesperrt",
+      "skipped": "Übersprungen",
+      "resetUserSkillsTitle": "Benutzer-Skills zurücksetzen?",
+      "resetUserSkillsDescription": "Dadurch werden alle angepassten Benutzer-Skills entfernt und auf die mitgelieferten Standardwerte zurückgesetzt. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "resetUserSkills": "Benutzer-Skills zurücksetzen",
+      "importingUserSkills": "Abgelegtes Skill-Paket wird überprüft...",
+      "importSuccessWithSkipped_one": "{{count}} Skill importiert ({{skippedCount}} übersprungen)",
+      "importSuccessWithSkipped_other": "{{count}} Skills importiert ({{skippedCount}} übersprungen)",
+      "importSuccessWithOverwriteAndSkipped_one": "{{count}} Skill importiert ({{overwrittenCount}} überschrieben, {{skippedCount}} übersprungen)",
+      "importSuccessWithOverwriteAndSkipped_other": "{{count}} Skills importiert ({{overwrittenCount}} überschrieben, {{skippedCount}} übersprungen)",
+      "importSkippedOnly_one": "{{count}} in Konflikt stehender Skill übersprungen",
+      "importSkippedOnly_other": "{{count}} in Konflikt stehende Skills übersprungen"
     },
     "dev": {
       "devOnly": "NUR ENTWICKLUNG",
@@ -697,6 +847,27 @@
       "compact": "Kompakt",
       "windowDescription": "Behalte die letzten N Nachrichten. Einfach und vorhersehbar.",
       "compactDescription": "Fasst alte Turns zusammen und behält ein aktuelles Fenster. Besser für lange Sitzungen."
+    },
+    "experimental": {
+      "title": "Experimentelle Funktionen",
+      "summary": "Diese Funktionen befinden sich in der Entwicklung. Aktivieren Sie sie, um frühe Fähigkeiten zu testen, beachten Sie jedoch, dass sie instabil sein können.",
+      "inlineAudioAttachment": {
+        "title": "Inline-Audio-Anhänge",
+        "description": "Wandelt angehängte Audiodateien in Base64-Inline-Inhalte für LLM-Anfragen um. Das Deaktivieren spart erhebliche Kontext-Tokens, indem Audiodateien als reine Workspace-Referenzen belassen werden."
+      },
+      "toolLoopRecoveryPolicy": {
+        "title": "Werkzeugschleifen-Wiederherstellung",
+        "description": "Standardmäßig lösen wiederholte Werkzeugschleifen ein sauberes Resampling aus, ohne Hinweistext in Werkzeugfehler einzufügen. Bei erschöpftem Wiederholungskontingent stoppt der Schutzschalter den Durchlauf."
+      },
+      "toolLoopMaxResampleRetries": {
+        "title": "Maximale Resample-Wiederholungen",
+        "description": "Wie viele saubere Resample-Versuche unternommen werden, wenn eine wiederholte Werkzeugschleifensignatur erkannt wird, bevor hart gestoppt wird.",
+        "placeholder": "z. B. 2"
+      },
+      "toolLoopLegacyGuidanceEnabled": {
+        "title": "Schleifenwarnungen in Werkzeugergebnissen anzeigen (Legacy)",
+        "description": "Standardmäßig aus. Wenn aktiviert, werden Schleifenverhinderungs-Hinweise als Werkzeugfehler eingefügt, anstatt leise mit einem sauberen Resampling neu zu versuchen."
+      }
     }
   },
   "mcpServer": {
@@ -735,12 +906,15 @@
     },
     "dialog": {
       "titleNew": "Erweiterung hinzufügen",
+      "titleInstall": "Erweiterung installieren: {{name}}",
       "titleEdit": "Erweiterung bearbeiten: {{name}}",
       "validationError": "Bitte füllen Sie alle Pflichtfelder aus",
       "reservedNameError": "\"{{name}}\" ist ein reservierter Name für einen integrierten Dienst. Wählen Sie einen anderen Namen.",
       "nameLabel": "Name",
       "namePlaceholder": "z.B. filesystem, github, sequential-thinking",
       "nameDesc": "Eindeutige Kennung für diese Erweiterung",
+      "nameSanitizeHint": "Wird als \"{{sanitized}}\" gespeichert (Leerzeichen und Sonderzeichen werden zu Unterstrichen)",
+      "nameRuntimeSanitizeHint": "Anzeigename bleibt unverändert. Werkzeuge verwenden zur Laufzeit \"{{sanitized}}\".",
       "descLabel": "Beschreibung",
       "descPlaceholder": "Optionale Beschreibung für diese Erweiterung",
       "transportLabel": "Transport-Typ",
@@ -755,6 +929,7 @@
       "envVarsLabel": "Umgebungsvariablen",
       "addEnvVar": "Variable hinzufügen",
       "requiredConfig": "Erforderliche Konfiguration",
+      "optionalConfig": "Optionale Standardwerte",
       "noCustomEnv": "Keine benutzerdefinierten Umgebungsvariablen konfiguriert.",
       "customVarsLabel": "Benutzerdefinierte Variablen",
       "envVarKeyPlaceholder": "Schlüssel (z.B. API_KEY)",
@@ -768,6 +943,10 @@
       "apiKeyPlaceholder": "Geheimer Token",
       "apiKeyDesc": "Fügt automatisch den Header 'Authorization: Bearer <token>' hinzu.",
       "advancedSettings": "Erweiterte Einstellungen",
+      "configuration": "Konfiguration",
+      "required": "erforderlich",
+      "noUserConfigNeeded": "Keine zusätzliche Konfiguration erforderlich. Installieren Sie diese Erweiterung direkt.",
+      "oauthAdvancedHint": "Endpunkte, Scopes und PKCE finden Sie unter den erweiterten Einstellungen.",
       "customHeadersLabel": "Benutzerdefinierte Header",
       "addHeader": "Header hinzufügen",
       "noCustomHeaders": "Keine benutzerdefinierten Header konfiguriert.",
@@ -780,11 +959,14 @@
       "sseLabel": "Server-Sent Events (SSE) aktivieren",
       "sseDesc": "Aktiviert lassen für Streaming-Antworten. Deaktivieren für zustandsloses HTTP.",
       "cancel": "Abbrechen",
+      "install": "Installieren",
+      "installing": "Wird installiert...",
       "save": "Speichern",
       "saving": "Speichervorgang..."
     },
     "toasts": {
       "saved": "Erweiterung erfolgreich gespeichert",
+      "installed": "Erweiterung erfolgreich installiert",
       "saveFailed": "Fehler beim Speichern der Erweiterung: {{error}}",
       "deleted": "Erweiterung erfolgreich gelöscht",
       "deleteFailed": "Fehler beim Löschen der Erweiterung: {{error}}",
@@ -824,6 +1006,13 @@
       "steps_one": "{{count}} Schritt",
       "steps_other": "{{count}} Schritte",
       "start": "Start",
+      "startPinned": "Fortsetzen",
+      "startPinnedTooltip": "Öffnet „{{sessionName}}“",
+      "pinnedBadge": "Gepinnte Sitzung",
+      "pinnedBadgeTooltip": "Start verwendet „{{sessionName}}“ wieder",
+      "pinnedSessionUntitled": "Unbenannte Sitzung",
+      "pinnedSessionMissing": "Sitzung fehlt",
+      "pinnedSessionMissingTooltip": "Gepinnte Sitzung existiert nicht mehr — Start erstellt eine neue",
       "deleteTooltip": "Playbook löschen",
       "created": "Erstellt am {{date}}",
       "bookmark": "Lesezeichen"
@@ -865,9 +1054,79 @@
     }
   },
   "agent": {
+    "analysisLoader": {
+      "initial": "Antwort wird vorbereitet...",
+      "wittyMessages": [
+        "Digitaler Kaffee wird getrunken...",
+        "Neuronen dehnen sich...",
+        "Intellektuellste Emojis werden ausgewählt...",
+        "Navigation durch 0en und 1en...",
+        "Tabs oder Leerzeichen? Ewige Debatte...",
+        "Quantenverschränkung wird abgestimmt...",
+        "Verlorene Semikolons werden gesucht...",
+        "Virtuelle Bücherregale werden entstaubt...",
+        "GPU-Lüfter drehen mit voller Kraft 🌪️",
+        "Frische, knusprige Antwort wird gebacken 🥐",
+        "Kurze Bewunderung eines Katzenbildes 🐾",
+        "Cache-Speicher wird durchsucht..."
+      ],
+      "lateMessages": [
+        "Gute Antworten reifen wie edler Wein 🍷",
+        "Kein Ladebalken, daher witzige Texte im Wechsel...",
+        "Noch 3 Sekunden warten entfesselt vielleicht pure Genialität...",
+        "Fast geschafft, halte durch!",
+        "Dauert es kurz? Zeit für eine kleine Dehnung 🧘",
+        "Danke für die Geduld, gleich bereit..."
+      ],
+      "combinatorial": {
+        "template": "{{action}} {{target}}{{flavor}}",
+        "actions": [
+          "Trinken von",
+          "Abstimmen von",
+          "Backen von",
+          "Suchen nach",
+          "Entstauben von",
+          "Hochfahren von",
+          "Aufwärmen von",
+          "Polieren von",
+          "Entwirren von",
+          "Neukalibrieren von",
+          "Klären von",
+          "Antippen von"
+        ],
+        "targets": [
+          "digitalem Kaffee",
+          "Quantenneuronen",
+          "knusprigen Antworten",
+          "virtuellen Bücherregalen",
+          "fehlenden Semikolons",
+          "Katzenbildern",
+          "GPU-Lüftern",
+          "Cache-Ecken",
+          "verschränkten Tokens",
+          "witzigen Emojis",
+          "latenten Gedanken",
+          "halbfertigen Ideen"
+        ],
+        "flavors": [
+          "...",
+          " mit Sorgfalt...",
+          " auf Hochtouren...",
+          " noch einmal...",
+          " leise...",
+          " 🌪️",
+          " 🥐",
+          " 🐾",
+          " ✨"
+        ]
+      }
+    },
     "messages": {
       "loadingOlder": "Ältere Nachrichten werden geladen...",
-      "scrollToLoadOlder": "Nach oben scrollen, um ältere Nachrichten zu laden"
+      "scrollToLoadOlder": "Nach oben scrollen, um ältere Nachrichten zu laden",
+      "scrollToLatest": "Zu den neuesten Nachrichten scrollen",
+      "pendingApprovalsJump_one": "{{count}} Werkzeug wartet auf Genehmigung — springen zum Antworten",
+      "pendingApprovalsJump_other": "{{count}} Werkzeuge warten auf Genehmigung — springen zum Antworten"
     },
     "approval": {
       "hardTitle": "Erweiterte Genehmigung erforderlich",
@@ -879,10 +1138,14 @@
       "standardBadge": "Standardgenehmigung",
       "arguments": "Argumente",
       "reject": "Ablehnen",
+      "rejectShortcut": "Ablehnen (Esc)",
       "hardApprove": "Risikoreiche Aktion genehmigen",
-      "approve": "Genehmigen"
+      "approve": "Genehmigen",
+      "approveShortcut": "Genehmigen (⌘↵ / Ctrl+↵)",
+      "approveShortcutBadge": "⌘↵"
     },
     "draft": {
+      "llmRequired": "Bitte konfigurieren Sie zuerst einen KI-Modellanbieter.",
       "send": "Nachricht senden",
       "attachFiles": "Dateien anhängen",
       "attachedFiles": "Angehängte Dateien",
@@ -916,6 +1179,8 @@
       "dockerRetryButton": "Sitzungsstart erneut versuchen",
       "dockerWaitingForEngine": "Warte auf Docker-Engine…",
       "dockerStillNotReady": "Docker ist noch nicht bereit. Warten Sie, bis die Engine gestartet ist, und versuchen Sie es erneut.",
+      "dockerImageRequired": "Wählen Sie ein Docker-Image, bevor Sie eine Docker-isolierte Sitzung starten.",
+      "dockerCreating": "Sitzung wird erstellt — Docker-Image {{image}} wird vorbereitet…",
       "dockerNotInstalledTitle": "Docker ist nicht installiert",
       "dockerNotInstalledDescription": "Die Docker-CLI wurde auf diesem Rechner nicht gefunden. Installieren Sie Docker Desktop oder starten Sie diese Sitzung im Host-Modus.",
       "dockerNotInstalledStep1": "Installieren Sie Docker Desktop von docker.com.",
@@ -943,8 +1208,15 @@
       "copyTooltip": "Konversation als Markdown kopieren",
       "toggleWorkspaceAria": "Arbeitsbereich-Dateipanel umschalten",
       "toggleWorkspaceTooltip": "Arbeitsbereich-Dateipanel umschalten",
+      "toggleShellAria": "Agent-Panels umschalten",
+      "toggleShellTooltip": "Agent-Panels umschalten",
+      "toggleShellHasUpdatesAria": "Agent-Panels umschalten (hat Aktualisierungen)",
+      "toggleProcessesAria": "Hintergrundprozess-Panel umschalten",
+      "toggleProcessesTooltip": "Hintergrundprozess-Panel umschalten",
+      "toggleProcessesHasUpdatesAria": "Hintergrundprozess-Panel umschalten (hat Aktualisierungen)",
       "togglePlanningAria": "KI-Planungspanel umschalten",
       "togglePlanningTooltip": "KI-Planungspanel umschalten",
+      "togglePlanningHasUpdatesAria": "KI-Planungs-Panel umschalten (hat Aktualisierungen)",
       "statusBadgesAria": "Panel-Update-Badges",
       "panelBadgeAria": "{{panel}} hat Updates — zum Öffnen klicken",
       "panelBadgeLive": "{{panel}} hat Updates",
@@ -974,6 +1246,12 @@
       "error": "Sitzung konnte nicht exportiert werden"
     },
     "workspace": {
+      "maximize": "Maximieren",
+      "restoreSize": "Größe wiederherstellen",
+      "isolationSettings": "Isolierungseinstellungen",
+      "isolationTip": "Der Docker-Arbeitsbereich führt Befehle sicher in einem Container aus, nicht auf Ihrem Host-System.",
+      "useDockerContainer": "Docker-Container verwenden",
+      "dockerImage": "Docker-Image",
       "dockerNotInstalledWarning": "Docker ist nicht installiert oder im PATH nicht verfügbar.",
       "dockerDaemonOfflineWarning": "Der Docker-Daemon läuft nicht.",
       "dockerHealthHint": "Installieren Sie Docker Desktop, starten Sie die Engine oder wechseln Sie zurück in den Host-Modus.",
@@ -1015,7 +1293,27 @@
       "dropFolderHint": "Ordner hier ablegen, um ihn als Arbeitsbereich zu setzen",
       "dropDirToastError": "Ordner im zentralen Bereich ablegen, um die Arbeitsbereich-Überschreibung zu setzen.",
       "dropMixedFoldersError": "Legen Sie Dateien ab, um sie zu importieren, oder einen einzelnen Ordner, um die Arbeitsbereich-Überschreibung zu setzen.",
-      "dropFolderIntoSubfolderError": "Das Ablegen von Ordnern in Unterordnern wird nicht unterstützt."
+      "dropFolderIntoSubfolderError": "Das Ablegen von Ordnern in Unterordnern wird nicht unterstützt.",
+      "previewTitle": "Dateivorschau",
+      "previewMode": "Vorschau",
+      "sourceMode": "Quelle",
+      "openInDefaultApp": "In Standard-App öffnen",
+      "copyContent": "Inhalt kopieren",
+      "contentCopied": "Inhalt in die Zwischenablage kopiert",
+      "unsupportedEncoding": "Binärdatei oder nicht unterstützte Kodierung. Bitte mit Standardanwendung öffnen.",
+      "fileTooLarge": "Datei ist zu groß für eine Inline-Vorschau.",
+      "syntaxHighlightDisabled": "Große Datei (>200 KB) – Syntaxhervorhebung zur Leistungsoptimierung deaktiviert"
+    },
+    "toolStructured": {
+      "writeCreated": "Erstellt",
+      "writeCreatedAlternate": "Unter alternativem Pfad erstellt",
+      "writeOverwritten": "Überschrieben",
+      "writeAppended": "Angehängt",
+      "openFile": "Datei öffnen",
+      "openingFile": "Wird geöffnet...",
+      "openFileError": "Datei konnte nicht geöffnet werden",
+      "lineCount": "{{count}} Zeilen",
+      "requestedPath": "Angeforderter Pfad: {{path}}"
     },
     "statusBar": {
       "retryError": "Fehler beim erneuten Senden der Nachricht",
@@ -1025,6 +1323,7 @@
       "toolsCount": "{{totalCount}}({{mcpCount}}) verfügbar • integriert {{builtinCount}}",
       "statusCompacting": "Konversationskontext wird im Hintergrund komprimiert...",
       "statusAwaitingCompact": "Warten auf Abschluss der Kontextkomprimierung...",
+      "statusAwaitingApproval": "Wartet auf Genehmigung – bitte ausstehende Tool-Aktionen überprüfen.",
       "statusError": "Ein Fehler ist aufgetreten: {{error}}",
       "statusIdle": "Bereit für Eingabe. Tippen Sie eine Nachricht, um zu beginnen.",
       "statusBusy": "Anfrage wird verarbeitet... Agent denkt nach und verwendet Werkzeuge.",
@@ -1051,10 +1350,20 @@
       "mcpServerReadyTools": "{{count}} Werkzeuge",
       "mcpServerTimedOut": "Zeitüberschreitung",
       "mcpServerFailedShort": "Fehlgeschlagen",
+      "executionModeNormalTitle": "Normaler Modus. Richtlinienblockierungen und Genehmigungsregeln werden erzwungen.",
+      "executionModeYoloTitle": "YOLO-Modus. Standardaktionen werden automatisch genehmigt, kritische Aktionen erfordern weiterhin manuelle Freigabe.",
+      "executionModeUnsafeTitle": "Vollautomatik-Modus. Alle Tool-Ausführungen werden für einen unterbrechungsfreien Ablauf automatisch genehmigt.",
       "mcpResultSuccess": "MCP-Server bereit",
       "mcpResultPartial": "Einige MCP-Server sind fehlgeschlagen oder abgelaufen",
       "mcpResultFailed": "MCP-Server konnten nicht geladen werden",
-      "mcpResultDismiss": "Schließen"
+      "mcpResultDismiss": "Schließen",
+      "batchModelUpdate": {
+        "title": "Untergeordnete Sitzungen stapelweise aktualisieren",
+        "description": "Die ausgewählte Sitzung „{{parentSessionName}}“ hat {{subSessionCount}} untergeordnete Sitzungen. Möchten Sie deren Modelle ebenfalls auf {{newProvider}} / {{newModel}} aktualisieren?",
+        "cancel": "Abbrechen",
+        "onlyThis": "Nur diese Sitzung",
+        "all": "Auch untergeordnete Sitzungen aktualisieren"
+      }
     },
     "attachment": {
       "sessionError": "Datei kann nicht angehängt werden: Sitzung nicht verfügbar.",
@@ -1098,8 +1407,11 @@
       "parameters": "Parameter",
       "errorDetails": "Fehlerdetails",
       "result": "Ergebnis",
-      "executing": "Werkzeug wird ausgeführt..."
+      "executing": "Werkzeug wird ausgeführt...",
+      "calling": "Tool wird aufgerufen..."
     },
+    "toolCalling": "Werkzeug wird aufgerufen...",
+    "toolExecuting": "Werkzeug wird ausgeführt...",
     "compactDivider": {
       "label": "Kontext oben komprimiert",
       "ariaLabel": "Kontext an dieser Stelle komprimiert"
@@ -1109,7 +1421,8 @@
       "model": "Modell",
       "loading": "Ladevorgang...",
       "refreshModels": "Modelle aktualisieren",
-      "refreshRequiresApiKey": "Fügen Sie einen API-Schlüssel hinzu, um die Modellaktualisierung zu aktivieren"
+      "refreshRequiresApiKey": "Fügen Sie einen API-Schlüssel hinzu, um die Modellaktualisierung zu aktivieren",
+      "configureRequired": "KI-Modell konfigurieren"
     },
     "toolsModal": {
       "title": "Verfügbare Werkzeuge",
@@ -1122,6 +1435,13 @@
       "badgeBuiltin": "integriert",
       "badgeMcp": "mcp",
       "viewSchema": "Eingabeschema anzeigen"
+    },
+    "panels": {
+      "shellTitle": "Agent-Panels",
+      "resizeHandleAria": "Größe der Agent-Panels anpassen",
+      "tabHasUpdatesAria": "{{tab}} (hat Aktualisierungen)",
+      "close": "Panel schließen",
+      "closeAria": "Agent-Panels schließen"
     },
     "planning": {
       "title": "KI-Planung",
@@ -1136,7 +1456,67 @@
       "noScratchpad": "Keine Scratchpad-Notizen",
       "untitledNote": "Unbenannte Notiz",
       "moreTasks": "weitere Aufgaben",
-      "updated": "aktualisiert"
+      "updated": "aktualisiert",
+      "schedules": {
+        "title": "Geplante Aufgaben",
+        "empty": "Keine geplanten Aufgaben",
+        "oneShot": "Einmalig",
+        "recurring": "Wiederkehrend",
+        "remaining": "Noch {{time}}",
+        "nextRun": "Nächste Ausführung: {{time}}",
+        "nextRunNone": "Nicht geplant",
+        "cancelFailed": "Geplanter Rückruf konnte nicht abgebrochen werden",
+        "cancelAria": "{{name}} abbrechen",
+        "paused": "Pausiert",
+        "toggleFailed": "Geplanter Rückruf konnte nicht aktualisiert werden",
+        "pauseAria": "{{name}} pausieren",
+        "resumeAria": "{{name}} fortsetzen"
+      }
+    },
+    "processes": {
+      "title": "Hintergrundprozesse",
+      "empty": "Zurzeit laufen keine Hintergrundprozesse.",
+      "loading": "Prozesse werden geladen…",
+      "loadingOutput": "Ausgabe wird geladen…",
+      "loadError": "Prozesse konnten nicht geladen werden",
+      "invalidPayload": "Ungültige Antwort der Prozessliste",
+      "invalidOutputPayload": "Ungültige Antwort der Prozessausgabe",
+      "retry": "Wiederholen",
+      "refresh": "Aktualisieren",
+      "refreshAria": "Prozessliste aktualisieren",
+      "summaryTotal": "{{count}} gesamt",
+      "summaryRunning": "{{count}} aktiv",
+      "summaryFinished": "{{count}} abgeschlossen",
+      "exitCode": "Exit-Code: {{code}}",
+      "readOutput": "Ausgabe anzeigen",
+      "readOutputAria": "Prozessausgabe lesen",
+      "poll": "Status prüfen",
+      "pollAria": "Prozessstatus aktualisieren",
+      "stop": "Stoppen",
+      "stopAria": "Prozess stoppen",
+      "stopSuccess": "Prozessstopp angefordert",
+      "stopError": "Prozess konnte nicht gestoppt werden",
+      "pollError": "Prozessstatus konnte nicht abgefragt werden",
+      "readError": "Prozessausgabe konnte nicht gelesen werden",
+      "outputTitle": "Prozessausgabe",
+      "outputMeta": "Status: {{status}} · Stream: {{stream}}",
+      "emptyStream": "(leer)",
+      "noOutput": "Keine Ausgabe verfügbar",
+      "status": {
+        "starting": "startet",
+        "running": "läuft",
+        "finished": "abgeschlossen",
+        "failed": "fehlgeschlagen",
+        "killed": "beendet"
+      }
+    },
+    "pendingQueue": {
+      "label": "Wartende Prompts",
+      "next": "Weiter",
+      "queued": "In Warteschlange",
+      "cancel": "Abbrechen",
+      "cancelNamed": "Wartenden Prompt abbrechen: {{preview}}",
+      "more": "+{{count}} weitere"
     },
     "bubble": {
       "toolError": "Werkzeugausführungsfehler",
@@ -1154,6 +1534,7 @@
       "thinkingProcess": "Denkprozess",
       "thinkingProcessWithTime": "Denkprozess {{time}}",
       "thinking": "Denke...",
+      "preparingPrompt": "Prompt wird vorbereitet...",
       "expandThinking": "Erweitern",
       "actionBar": {
         "copyFullAria": "Vollständige Nachricht kopieren",
@@ -1184,6 +1565,9 @@
       "heroSubtitle": "Wählen Sie einen Assistenten, um eine neue autonome Sitzung zu starten.",
       "builtinAssistants": "Integrierte Assistenten",
       "myAssistants": "Meine Assistenten",
+      "onboardingBannerTitle": "KI-Modellkonfiguration erforderlich",
+      "onboardingBannerDesc": "Um Agenten-Sitzungen zu verwenden, konfigurieren Sie bitte zuerst einen KI-Modellanbieter (OpenAI, Anthropic, Ollama usw.).",
+      "goToSettings": "KI-Modell konfigurieren",
       "assistantsLoadFailed": "Assistenten konnten nicht geladen werden.",
       "noAssistantsAvailable": "Noch keine Assistenten verfügbar.",
       "createAssistant": "Assistent erstellen",
@@ -1192,8 +1576,12 @@
       "assistantNotFound": "Assistent nicht gefunden",
       "preparingPlaybook": "Playbook wird vorbereitet…",
       "startingPlaybook": "Playbook wird gestartet: {{goal}}",
+      "pinnedSessionMissing": "Angeheftete Sitzung nicht gefunden. Neue Sitzung wird gestartet.",
       "failedToStartPlaybookSession": "Playbook-Sitzung konnte nicht gestartet werden",
-      "startingSession": "Sitzung wird gestartet..."
+      "startingSession": "Sitzung wird gestartet...",
+      "featuredRecipeTitle": "Erstellen Sie Ihren Morgen-Briefing-Assistenten in 5 Minuten",
+      "featuredRecipeDesc": "Kombinieren Sie Hacker News-Technologietrends mit Echtzeit-Indikatoren von Yahoo Finance für ein tägliches Morgen-Briefing.",
+      "startWalkthrough": "Geführten Rundgang starten"
     },
     "chat": {
       "loadingSession": "Sitzung wird geladen...",
@@ -1202,7 +1590,29 @@
       "playbookStartedAutomatically": "Playbook automatisch gestartet",
       "failedToStartPlaybookWorkflow": "Playbook-Workflow konnte nicht gestartet werden",
       "sessionContextUnavailable": "Sitzungskontext ist nicht verfügbar.",
-      "sessionNotFoundOrFailed": "Sitzung nicht gefunden oder Laden fehlgeschlagen."
+      "sessionNotFoundOrFailed": "Sitzung nicht gefunden oder Laden fehlgeschlagen.",
+      "yoloModeActive": "YOLO-Modus aktiv",
+      "fullAutoModeActive": "Full-Auto-Modus aktiv"
+    },
+    "mediaRenderer": {
+      "failedToLoadImage": "Bild konnte nicht geladen werden",
+      "failedToLoadAudio": "Audio konnte nicht geladen werden",
+      "failedToLoadVideo": "Video konnte nicht geladen werden",
+      "unsupportedClipboard": "Zwischenablage für Bilder wird in dieser Umgebung nicht unterstützt",
+      "copySuccess": "Bild in Zwischenablage kopiert",
+      "copyError": "Kopieren in Zwischenablage fehlgeschlagen",
+      "copyAria": "Bild in die Zwischenablage kopieren",
+      "copyTooltip": "Bild kopieren",
+      "downloadCancelled": "Download abgebrochen",
+      "downloadSuccess": "Bild heruntergeladen",
+      "downloadError": "Herunterladen des Bildes fehlgeschlagen",
+      "openFile": "Öffnen",
+      "openFileError": "Datei konnte nicht geöffnet werden",
+      "downloadAria": "Bild herunterladen",
+      "downloadTooltip": "Bild herunterladen",
+      "imageAlt": "Werkzeug-Ausgabe",
+      "unsupportedAudio": "Ihr Browser unterstützt das Audio-Element nicht.",
+      "unsupportedVideo": "Ihr Browser unterstützt das Video-Element nicht."
     }
   },
   "scheduledTasks": {
@@ -1211,13 +1621,35 @@
     "newTask": "Neue Aufgabe",
     "noTasks": "Noch keine geplanten Aufgaben",
     "createFirst": "Erstellen Sie Ihre erste Aufgabe",
+    "createBlank": "Leere Aufgabe erstellen",
+    "starterTemplates": {
+      "title": "Empfohlene Starter-Vorlagen",
+      "subtitle": "Richten Sie wiederkehrende automatisierte Aufgaben schnell mit vorkonfigurierten Vorlagen ein",
+      "useTemplate": "Diese Vorlage verwenden",
+      "pcAuditTitle": "Täglicher PC-Zustands- & Sicherheitscheck",
+      "pcAuditDesc": "Überprüft jeden Mitternacht Festplattenspeicher, nicht gespeicherte Git-Änderungen, verdächtige Prozesse und Paket-Sicherheitslücken.",
+      "pcAuditName": "Täglicher PC-Zustands- & Sicherheitscheck",
+      "pcAuditMessage": "Verwenden Sie die Workspace-Shell für eine umfassende Prüfung von Speicherplatz (df -h), Prozessen, Git-Status und Paket-Schwachstellen (audit) und erstellen Sie einen täglichen Markdown-Bericht.",
+      "webSummaryTitle": "Website-Updates & Schlagzeilen-Briefing",
+      "webSummaryDesc": "Besucht jeden Morgen Tech-News oder Blogs im Browser, um die Top-3-Schlagzeilen zusammenzufassen.",
+      "webSummaryName": "Website-Updates & Schlagzeilen-Briefing",
+      "webSummaryMessage": "Besuche Hacker News (https://news.ycombinator.com) mit dem Browser-Werkzeug und fasse die heutigen Top 3 Tech-Schlagzeilen in 3 Stichpunkten zusammen.",
+      "openWalkthrough": "Morgen-Briefing-Anleitung öffnen"
+    },
     "disabled": "deaktiviert",
+    "executionModeUnsafe": "Vollautomatisch (Full Auto)",
     "nextRun": "Nächste Ausführung: {{time}}",
     "nextRunNone": "—",
     "editTask": "Aufgabe bearbeiten",
     "deleteTask": "Aufgabe löschen",
     "editTaskAria": "Aufgabe bearbeiten: {{name}}",
     "deleteTaskAria": "Aufgabe löschen: {{name}}",
+    "deleteConfirm": {
+      "title": "Geplante Aufgabe löschen?",
+      "description": "Dadurch wird „{{name}}“ dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "confirm": "Löschen",
+      "deleting": "Wird gelöscht…"
+    },
     "modal": {
       "titleNew": "Neue geplante Aufgabe",
       "titleEdit": "Geplante Aufgabe bearbeiten",
@@ -1241,6 +1673,16 @@
       "messageHint": "Verwenden Sie @playbook:, @skill: oder @file: für Autovervollständigung",
       "workspaceAutocompleteHint": "Die Arbeitsbereichsüberschreibung aktiviert die Autovervollständigung für @skill: und @file:.",
       "messagePlaceholder": "Nachricht eingeben… @playbook:, @skill: oder @file: für Autovervollständigung verwenden",
+      "executionModeLabel": "Ausführungsmodus",
+      "executionModeNormal": "Normal",
+      "executionModeYolo": "YOLO",
+      "executionModeUnsafe": "Vollautomatisch (Full Auto)",
+      "executionModeNormalHint": "Sicherheitsrichtlinien und Genehmigungsregeln werden durchgesetzt.",
+      "executionModeYoloHint": "Standardgenehmigungen erfolgen automatisch; kritische Aktionen erfordern manuelle Bestätigung.",
+      "executionModeUnsafeHint": "Alle Werkzeuge werden automatisch genehmigt für kontinuierliche unbeaufsichtigte Ausführung.",
+      "unsafeNotice": "⚡ Der Full-Auto-Modus wird angewendet, damit Terminalbefehle während der unbeaufsichtigten Ausführung nicht unterbrochen werden.",
+      "resetPlanningLabel": "Planungsstatus vor Ausführung zurücksetzen",
+      "resetPlanningHint": "Löscht Ziel, Aufgaben und Notizen vor dem Einfügen der Nachricht. Der Chatverlauf bleibt erhalten.",
       "cancel": "Abbrechen",
       "saveChanges": "Änderungen speichern",
       "createTask": "Aufgabe erstellen",
@@ -1273,8 +1715,12 @@
         "hours_other": "Alle {{count}} Stunden",
         "daily": "Täglich um {{time}}",
         "weekly": "Jeden {{day}} um {{time}}",
-        "monthly": "Monatlich am {{day}}. Tag um {{time}}"
+        "monthly": "Monatlich am {{day}}. Tag um {{time}}",
+        "custom": "Benutzerdefiniert: {{cron}}"
       },
+      "customHint": "Dieser Zeitplan verwendet einen erweiterten Cron-Ausdruck. Bearbeiten Sie den Ausdruck unten oder wechseln Sie zu einem einfachen Zeitplan.",
+      "customLabel": "Cron-Ausdruck",
+      "switchToSimple": "Zu einfachem Zeitplan wechseln",
       "days": {
         "0": "Sonntag",
         "1": "Montag",
@@ -1297,7 +1743,8 @@
     "title": "Fehler",
     "unknownError": "Ein unbekannter Fehler ist aufgetreten.",
     "retrying": "Wird wiederholt...",
-    "tryAgain": "Erneut versuchen"
+    "tryAgain": "Erneut versuchen",
+    "goToSettings": "API-Schlüssel in Einstellungen konfigurieren"
   },
   "knowledge": {
     "untitledEntry": "Unbenannter Wissenseintrag",
@@ -1313,7 +1760,33 @@
     "fields": {
       "createdAt": "Erstellt",
       "primaryEntities": "Primäre Entitäten",
-      "relationships": "Beziehungen"
+      "relationships": "Beziehungen",
+      "content": "Inhalt",
+      "description": "Beschreibung"
+    },
+    "filter": "Filtern",
+    "filtered": "Gefiltert",
+    "linked": "Verknüpft",
+    "primary": "Primär",
+    "inspectorTitle": "Wissens-Inspektor",
+    "chunkEntry": "Wissens-Chunk",
+    "chunkDetails": "Chunk-Details",
+    "graphEntity": "Wissenseinheit",
+    "linkedEntities": "Verknüpfte Einheiten",
+    "linkedRelationships": "Beziehungen",
+    "connectedRelationships": "Verbundene Beziehungen",
+    "noConnectedRelationships": "Keine verbundenen Beziehungen.",
+    "linkedChunks": "Verknüpfte Chunks",
+    "noLinkedChunks": "Keine verknüpften Chunks.",
+    "confirmDeleteAction": "Dauerhaft löschen",
+    "refreshingResults": "Ergebnisse werden aktualisiert...",
+    "streamTitle": "Kuratierter Stream",
+    "inspectEntity": "Einheit untersuchen",
+    "noMatchingChunksForEntity": "Keine passenden Chunks für diese Einheit gefunden.",
+    "viewMode": {
+      "split": "Geteilt",
+      "graph": "Graph",
+      "cards": "Karten"
     },
     "entitiesTitle": "Entitäten",
     "noEntities": "Keine verknüpften Entitäten für diesen Eintrag.",
@@ -1342,9 +1815,53 @@
     "cancel": "Abbrechen",
     "graph": {
       "empty": "Mit diesem Wissenseintrag sind keine Graphdaten verknüpft.",
+      "loading": "Wissensgraph wird geladen...",
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "resetView": "Ansicht zurücksetzen",
+      "reheatPhysics": "Physiksimulation neu starten",
+      "entitiesCount": "Einheiten",
+      "relationsCount": "Beziehungen",
+      "focusedMode": "1-Hop-Fokus",
+      "noDescription": "Keine Beschreibung verfügbar.",
+      "clickToFocus": "Klicken, um Nachbarschaft zu fokussieren",
       "primaryEntity": "Primäre Entität",
       "relatedEntity": "Verknüpfte Entität"
     },
     "excerpt": "Auszug"
+  },
+  "recipes": {
+    "morningBriefing": {
+      "title": "Morgen-Briefing zu Tech & Finanzen",
+      "desc": "Kombinieren Sie Hacker News Tech-Trends mit Echtzeitdaten von Yahoo Finance für Ihr tägliches Morgen-Briefing.",
+      "modalTitle": "🌅 Einrichtung Morgen-Briefing",
+      "step1Title": "Schritt 1 · KI-Modellkonfiguration prüfen",
+      "step2Title": "Schritt 2 · Kostenlose Erweiterungen installieren",
+      "step3Title": "Schritt 3 · Assistent & automatischer Zeitplan",
+      "connected": "Verbunden",
+      "required": "Konfiguration erforderlich",
+      "connectedDesc": "KI-Modellanbieter ist konfiguriert und bereit für die Briefing-Erstellung.",
+      "unconfiguredTitle": "Kein KI-Modellanbieter konfiguriert.",
+      "unconfiguredDesc": "Um Briefings zu erstellen, konfigurieren Sie bitte zuerst einen KI-Modellanbieter (OpenAI, Anthropic, Ollama usw.).",
+      "goToSettings": "Zu den Einstellungen",
+      "freeTag": "💡 100% kostenlos · Kein API-Schlüssel nötig",
+      "hnTitle": "Hacker News (hn)",
+      "hnDesc": "Trends und Entwickler-Neuigkeiten von Hacker News in Echtzeit abrufen",
+      "yfTitle": "Yahoo Finance (yahoo-finance)",
+      "yfDesc": "Weltweite Marktindizes (S&P 500, Nasdaq, Devisen) in Echtzeit ohne API-Schlüssel",
+      "builtinToolsBadge": "Integrierte Werkzeuge aktiviert",
+      "scheduleBadge": "Täglich 09:00 Uhr (YOLO-Modus)",
+      "settingUp": "Wird eingerichtet...",
+      "actionButton": "🚀 Automatisch einrichten & jetzt Briefing erhalten",
+      "llmRequiredToast": "Bitte konfigurieren Sie zuerst einen KI-Modellanbieter.",
+      "setupSuccess": "Morgen-Briefing-Assistent und geplante Aufgabe erfolgreich erstellt!",
+      "setupError": "Fehler beim Einrichten des Morgen-Briefings.",
+      "assistantName": "Morgen-Briefing-Assistent",
+      "assistantDesc": "Spezialisierter Assistent zur Zusammenfassung von Tech-Trends und Finanzkennzahlen",
+      "assistantSystemPrompt": "Sie sind ein professioneller Briefing-Assistent, der täglich präzise Zusammenfassungen globaler Tech-Trends und Finanzindikatoren liefert. Nutzen Sie Hacker News für die Top 3 Entwicklungsthemen und Yahoo Finance für Indizes wie S&P 500 und Währungen, um einen kompakten Markdown-Bericht zu erstellen.",
+      "scheduledTaskName": "Tägliches 9:00 Uhr Morgen-Briefing",
+      "scheduledTaskMessage": "Fasse die heutigen 3 wichtigsten Hacker News Geschichten und Schlüsselindizes (S&P 500, Nasdaq) in einem Morgen-Briefing zusammen.",
+      "testRunPrompt": "Überprüfe jetzt die Top 3 Hacker News Geschichten und Indizes und erstelle das heutige Morgen-Briefing."
+    }
   }
 }
