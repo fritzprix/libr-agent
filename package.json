@@ -42,6 +42,7 @@
     "test:run:validate": "node scripts/run-vitest-validate.cjs",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives",
     "lint:fix": "eslint . --ext ts,tsx --fix",
+    "i18n:audit": "node scripts/audit-i18n.cjs",
     "format": "prettier --write --log-level warn .",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\" --ignore-path .prettierignore",
     "format:check:all": "prettier --check .",

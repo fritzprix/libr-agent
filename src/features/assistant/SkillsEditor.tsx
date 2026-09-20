@@ -56,11 +56,11 @@ export default function SkillsEditor() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t('skills.title')}</CardTitle>
+          <CardTitle>{t('settings.skills.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            {t('skills.saveFirst')}
+            {t('settings.skills.saveFirst')}
           </p>
         </CardContent>
       </Card>
@@ -75,10 +75,10 @@ export default function SkillsEditor() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="flex flex-col space-y-1">
             <CardTitle className="text-sm font-medium">
-              {t('skills.title')}
+              {t('settings.skills.title')}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {t('skills.dragDropDesc')}
+              {t('settings.skills.dragDropDesc')}
             </p>
           </div>
 
@@ -88,11 +88,11 @@ export default function SkillsEditor() {
                 variant="outline"
                 size="sm"
                 onClick={handleReset}
-                title={t('skills.resetTooltip')}
+                title={t('settings.skills.resetTooltip')}
                 className="text-destructive border-destructive/50 hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                {t('skills.reset')}
+                {t('settings.skills.reset')}
               </Button>
             )}
             <Button
@@ -112,7 +112,7 @@ export default function SkillsEditor() {
             <div className="absolute inset-0 z-50 bg-background/80 flex items-center justify-center rounded-lg border-2 border-dashed border-primary">
               <div className="flex flex-col items-center">
                 <Upload className="h-10 w-10 text-primary mb-2" />
-                <p className="text-lg font-medium">{t('skills.dropHere')}</p>
+                <p className="text-lg font-medium">{t('settings.skills.dropHere')}</p>
               </div>
             </div>
           )}
@@ -120,7 +120,7 @@ export default function SkillsEditor() {
           <div className="space-y-2">
             {skills.length === 0 ? (
               <div className="text-sm text-muted-foreground text-center py-4">
-                {t('skills.noSkills')}
+                {t('settings.skills.noSkills')}
               </div>
             ) : (
               skills.map((skill) => {
@@ -147,11 +147,11 @@ export default function SkillsEditor() {
                           </span>
                           {skill.source === 'assistant' ? (
                             <Badge variant="secondary" className="text-xs">
-                              {t('skills.sourceAssistant')}
+                              {t('settings.skills.sourceAssistant')}
                             </Badge>
                           ) : (
                             <Badge variant="outline" className="text-xs">
-                              {t('skills.sourceGlobal')}
+                              {t('settings.skills.sourceGlobal')}
                             </Badge>
                           )}
                         </div>
@@ -166,7 +166,7 @@ export default function SkillsEditor() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleOverride(skill.name)}
-                          title={t('skills.override')}
+                          title={t('settings.skills.override')}
                           disabled={isDisabled || loadingSkills[skill.name]}
                         >
                           {loadingSkills[skill.name] ? (
@@ -181,7 +181,7 @@ export default function SkillsEditor() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleRevert(skill.name)}
-                          title={t('skills.revert')}
+                          title={t('settings.skills.revert')}
                           disabled={isDisabled || loadingSkills[skill.name]}
                         >
                           {loadingSkills[skill.name] ? (
@@ -206,9 +206,9 @@ export default function SkillsEditor() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('skills.resetTitle')}</AlertDialogTitle>
+            <AlertDialogTitle>{t('settings.skills.resetTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('skills.resetConfirm')}
+              {t('settings.skills.resetConfirm')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -226,7 +226,7 @@ export default function SkillsEditor() {
               {isResetting && (
                 <RefreshCw className="w-3 h-3 mr-2 animate-spin" />
               )}
-              {t('skills.reset')}
+              {t('settings.skills.reset')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
