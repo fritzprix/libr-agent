@@ -105,6 +105,10 @@ def test_resolve_container_workdir_prefers_task_config(
         "benchmarks.harbor.libragent_agent.docker_inspect_workdir",
         lambda _cid: "/should-not-use",
     )
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_path_is_dir",
+        lambda _cid, path: path == "/custom/task/root",
+    )
     assert resolve_container_workdir(_Env(), container_id="cid") == "/custom/task/root"
 
 
@@ -124,6 +128,10 @@ def test_resolve_container_workdir_uses_image_workdir_when_task_omits(
     monkeypatch.setattr(
         "benchmarks.harbor.libragent_agent.docker_exec_pwd",
         lambda _cid: "/should-not-use",
+    )
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_path_is_dir",
+        lambda _cid, path: path == "/workspace",
     )
     assert resolve_container_workdir(_Env(), container_id="cid") == "/workspace"
 
@@ -145,10 +153,50 @@ def test_resolve_container_workdir_uses_live_pwd_when_inspect_empty(
         "benchmarks.harbor.libragent_agent.docker_exec_pwd",
         lambda _cid: "/home/agent",
     )
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_path_is_dir",
+        lambda _cid, path: path == "/home/agent",
+    )
     assert resolve_container_workdir(_Env(), container_id="cid") == "/home/agent"
 
 
-def test_resolve_container_workdir_falls_back_to_app_with_warning(
+def test_resolve_container_workdir_skips_missing_image_workdir_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OSWorld hosts may advertise WORKDIR=/app while /app is absent."""
+
+    class _EnvConfig:
+        workdir = None
+
+    class _Env:
+        task_env_config = _EnvConfig()
+
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_inspect_workdir",
+        lambda _cid: "/app",
+    )
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_exec_pwd",
+        lambda _cid: None,
+    )
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_path_is_dir",
+        lambda _cid, path: path in {"/osworld", "/tmp", "/"},
+    )
+    assert resolve_container_workdir(_Env(), container_id="cid") == "/osworld"
+
+
+def test_resolve_container_workdir_falls_back_to_app_without_container() -> None:
+    class _EnvConfig:
+        workdir = None
+
+    class _Env:
+        task_env_config = _EnvConfig()
+
+    assert resolve_container_workdir(_Env(), container_id=None) == "/app"
+
+
+def test_resolve_container_workdir_uses_root_when_app_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _EnvConfig:
@@ -159,13 +207,63 @@ def test_resolve_container_workdir_falls_back_to_app_with_warning(
 
     monkeypatch.setattr(
         "benchmarks.harbor.libragent_agent.docker_inspect_workdir",
-        lambda _cid: None,
+        lambda _cid: "/app",
     )
     monkeypatch.setattr(
         "benchmarks.harbor.libragent_agent.docker_exec_pwd",
         lambda _cid: None,
     )
-    assert resolve_container_workdir(_Env(), container_id="cid") == "/app"
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_path_is_dir",
+        lambda _cid, path: path == "/",
+    )
+    assert resolve_container_workdir(_Env(), container_id="cid") == "/"
+
+
+@pytest.mark.asyncio
+async def test_download_container_workdir_skips_missing_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class _Env:
+        async def download_dir(self, source_dir: str, target_dir: str) -> None:
+            calls.append((source_dir, target_dir))
+
+    monkeypatch.setattr(
+        "benchmarks.harbor.libragent_agent.docker_path_is_dir",
+        lambda _cid, _path: False,
+    )
+    adapter = LibrAgentHarborAdapter.__new__(LibrAgentHarborAdapter)
+    await LibrAgentHarborAdapter._download_container_workdir(
+        adapter,
+        _Env(),
+        container_id="cid",
+        container_workdir="/app",
+        target_dir="/tmp/out",
+        label="final",
+    )
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_download_container_workdir_skips_root_workdir() -> None:
+    calls: list[tuple[str, str]] = []
+
+    class _Env:
+        async def download_dir(self, source_dir: str, target_dir: str) -> None:
+            calls.append((source_dir, target_dir))
+
+    adapter = LibrAgentHarborAdapter.__new__(LibrAgentHarborAdapter)
+    await LibrAgentHarborAdapter._download_container_workdir(
+        adapter,
+        _Env(),
+        container_id="cid",
+        container_workdir="/",
+        target_dir="/tmp/out",
+        label="final",
+    )
+    assert calls == []
 
 
 def test_attach_session_payload_shape() -> None:

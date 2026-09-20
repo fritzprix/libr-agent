@@ -1,6 +1,7 @@
 //! workspace__readFile handler and helpers.
 
 use super::super::edit_mode::{read_file_anchor_output_suffix, read_file_anchor_prefix_note};
+use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
 use super::utils::{detect_language, format_file_size};
 #[cfg(test)]
@@ -111,11 +112,14 @@ impl WorkspaceServer {
                     format!("Path validation failed: {}", e),
                     ToolGroup::Workspace,
                 )
-                .guidance(vec![
-                    "Verify the file path is correct".to_string(),
-                    "Use workspace__listDirectory to see available files".to_string(),
-                    "Ensure you have read permissions for the file".to_string(),
-                ])
+                .guidance(path_validation_failure_guidance(
+                    &e,
+                    vec![
+                        "Verify the file path is correct".to_string(),
+                        "Use workspace__listDirectory to see available files".to_string(),
+                        "Ensure you have read permissions for the file".to_string(),
+                    ],
+                ))
                 .to_mcp_result());
             }
         };

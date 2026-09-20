@@ -374,6 +374,38 @@ fn with_rewrite_loop_hint(mut guidance: Vec<String>, command: &str) -> Vec<Strin
     guidance
 }
 
+/// True when Docker/OCI could not start the process because the configured
+/// container working directory is missing (`chdir to cwd (...) failed`).
+///
+/// Harbor traces show exit 127 with this stderr; the generic "command not found"
+/// recovery misleads agents into apt-install loops.
+pub fn looks_like_docker_chdir_workdir_failure(stdout: &str, stderr: &str) -> bool {
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{stdout}\n{stderr}"),
+        (false, true) => stdout.to_string(),
+        (true, false) => stderr.to_string(),
+        (true, true) => return false,
+    };
+    let lower = combined.to_ascii_lowercase();
+    if !lower.contains("chdir to cwd") {
+        return false;
+    }
+    lower.contains("oci runtime")
+        || lower.contains("unable to start container process")
+        || lower.contains("set in config.json failed")
+        || lower.contains("no such file or directory")
+}
+
+fn docker_chdir_workdir_failure_guidance() -> Vec<String> {
+    vec![
+        "Container shell could not start: the configured working directory is missing (Docker chdir failed) — this is not a missing binary."
+            .to_string(),
+        "Do not install packages or retry the same command expecting PATH fixes.".to_string(),
+        "Prefer non-shell tools for the goal (e.g. desktop__computerControl / media__captureScreen), or report the isolation/workdir failure if shell is required."
+            .to_string(),
+    ]
+}
+
 /// Outcome-conditioned next-step hints for failed one-shot / persistent shell runs.
 pub fn shell_command_failure_guidance(
     exit_code: Option<i32>,
@@ -383,6 +415,9 @@ pub fn shell_command_failure_guidance(
 ) -> Vec<String> {
     if looks_like_shell_quote_parse_error(stdout, stderr) {
         return write_file_then_shell_guidance();
+    }
+    if looks_like_docker_chdir_workdir_failure(stdout, stderr) {
+        return docker_chdir_workdir_failure_guidance();
     }
 
     match exit_code {
@@ -728,6 +763,45 @@ index 111..222 100644
         assert!(
             !joined.contains("rewriting the entire script"),
             "missing binaries are not rewrite-loop cases: {joined}"
+        );
+    }
+
+    #[test]
+    fn test_looks_like_docker_chdir_workdir_failure() {
+        let oci = r#"OCI runtime exec failed: exec failed: unable to start container process: chdir to cwd ("/app") set in config.json failed: no such file or directory"#;
+        assert!(looks_like_docker_chdir_workdir_failure("", oci));
+        assert!(looks_like_docker_chdir_workdir_failure(oci, ""));
+        assert!(!looks_like_docker_chdir_workdir_failure(
+            "",
+            "bash: line 1: foo: command not found"
+        ));
+        assert!(!looks_like_docker_chdir_workdir_failure(
+            "",
+            "chdir: cannot change directory"
+        ));
+    }
+
+    #[test]
+    fn test_shell_command_failure_guidance_docker_chdir_overrides_exit_127() {
+        let stderr = r#"OCI runtime exec failed: exec failed: unable to start container process: chdir to cwd ("/app") set in config.json failed: no such file or directory"#;
+        let guidance = shell_command_failure_guidance(
+            Some(127),
+            "",
+            stderr,
+            "which google-chrome || which chromium",
+        );
+        let joined = guidance.join("\n");
+        assert!(
+            joined.contains("configured working directory is missing"),
+            "OCI chdir must own recovery: {joined}"
+        );
+        assert!(
+            !joined.contains("Command not found"),
+            "must not mislabel Docker chdir as missing binary: {joined}"
+        );
+        assert!(
+            !joined.contains("installed on the system"),
+            "must not push package-install recovery: {joined}"
         );
     }
 
