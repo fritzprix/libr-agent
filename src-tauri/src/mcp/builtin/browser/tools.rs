@@ -201,15 +201,15 @@ pub fn get_page_content_tool() -> MCPTool {
         title: Some("Get Page Content".to_string()),
         description: "Get content from the active browser session page as markdown.
 
-This is the normal next step after `browser__navigateToUrl`.
+This is the normal next step after `browser__navigateToUrl` or `browser__createSession`.
 - No `page` arg: extract fresh content from the current page.
-- With `page`: read a specific page number from the most recently extracted cache.
+- With `page`: read a cached page. If the cache is empty, the first call extracts automatically (so `{ \"page\": 1 }` works as a first read).
 
 Pagination is cache-based, not scroll-based.
 If the response says `[Page 1/N]`, continue with `browser__getPageContent({ \"page\": 2 })`.
 
 ⚠️ Navigation (browser__navigateToUrl, navigateBack, navigateForward) clears the content cache.
-Call `browser__getPageContent({})` again after any navigation."
+Call `browser__getPageContent({})` (or `{ \"page\": 1 }`) again after any navigation."
             .to_string(),
         input_schema: object_prop(
             vec![

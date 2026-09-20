@@ -1,8 +1,7 @@
 use crate::browser_sidecar::BrowserAutomationClient;
 use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_param_error, not_found_error, ErrorCategory, ErrorGuidance, SuccessHint,
-    ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::services::InteractiveBrowserServer;
@@ -14,13 +13,65 @@ use tauri::{AppHandle, Manager};
 use tokio::task;
 use uuid::Uuid;
 
-/// Smart routing: if `page` arg is provided, reads from cache; otherwise extracts fresh content.
+/// Whether a `page` read should extract first because the content cache is empty.
+///
+/// Agents often call `getPageContent({ "page": 1 })` as the first content read.
+/// Routing that straight to the cache produced `Extracted content '<sessionId>' not
+/// found` and forced recreate-session loops (Harbor harness cycle 2026-09-20-c18).
+pub(crate) fn should_extract_before_cached_page_read(
+    has_page_arg: bool,
+    has_active_session: bool,
+    cache_has_content: bool,
+) -> bool {
+    has_page_arg && has_active_session && !cache_has_content
+}
+
+/// Smart routing for `getPageContent`.
+///
+/// - No `page`: extract fresh content from the live page.
+/// - With `page` and cache present: read that cached page.
+/// - With `page` and empty cache: extract first, then return page 1 from the
+///   extract response (or read `page` > 1 from the newly filled cache).
 pub async fn smart_content(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
-    if args.get("page").is_some() {
-        read_web_content(server, args).await
-    } else {
-        extract_web_content(server, args).await
+    let has_page_arg = args.get("page").is_some();
+    if !has_page_arg {
+        return extract_web_content(server, args).await;
     }
+
+    let session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
+    };
+
+    let cache_has_content = session_id
+        .as_ref()
+        .is_some_and(|id| server.content_store.has_content(id));
+
+    if should_extract_before_cached_page_read(
+        has_page_arg,
+        session_id.is_some(),
+        cache_has_content,
+    ) {
+        let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1);
+        let mut extract_args = args.clone();
+        if let Some(obj) = extract_args.as_object_mut() {
+            obj.remove("page");
+        }
+        let extract_result = extract_web_content(server, extract_args).await?;
+        if extract_result.indicates_error() {
+            return Ok(extract_result);
+        }
+        // Extract already returns page-1 content; skip a redundant cache round-trip.
+        if page <= 1 {
+            return Ok(extract_result);
+        }
+        // Cache is populated; fall through to read page 2+.
+    }
+
+    read_web_content(server, args).await
 }
 
 pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
@@ -293,13 +344,20 @@ pub async fn read_web_content(server: &BrowserServer, args: Value) -> Result<MCP
         Option::None => return Ok(missing_param_error("page", ToolGroup::Browser)),
     };
 
-    // Check if content exists
+    // Check if content exists (smart_content normally extracts on cache miss first).
     if !server.content_store.has_content(&browser_session_id) {
-        return Ok(not_found_error(
-            "Extracted content",
-            &browser_session_id,
+        return Ok(guided_error(
+            ErrorCategory::ResourceNotFound,
+            "No extracted page content in cache for this browser session",
             ToolGroup::Browser,
-        ));
+        )
+        .guidance(vec![
+            "Call browser__getPageContent({}) without a page argument to extract fresh content"
+                .to_string(),
+            "After extraction, use browser__getPageContent({ \"page\": N }) to read additional cached pages"
+                .to_string(),
+        ])
+        .to_mcp_result());
     }
 
     // Get the requested page
@@ -817,6 +875,22 @@ pub(crate) async fn save_downloaded_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn page_read_extracts_when_cache_empty_and_session_active() {
+        assert!(should_extract_before_cached_page_read(
+            true, true, false
+        ));
+        assert!(!should_extract_before_cached_page_read(
+            true, true, true
+        ));
+        assert!(!should_extract_before_cached_page_read(
+            false, true, false
+        ));
+        assert!(!should_extract_before_cached_page_read(
+            true, false, false
+        ));
+    }
 
     #[tokio::test]
     async fn test_fetch_download_workspace_isolation() {
