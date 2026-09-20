@@ -220,6 +220,60 @@ describe('useChatSubmit', () => {
     expect(mockState.onClearSession).toHaveBeenCalledTimes(1);
   });
 
+  it('executes /reload command without calling onClearSession', async () => {
+    let resolveInvoke:
+      | ((value: { success: boolean; message: string }) => void)
+      | undefined;
+    mockState.safeInvoke.mockImplementation(
+      () =>
+        new Promise<{ success: boolean; message: string }>((resolve) => {
+          resolveInvoke = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() =>
+      useChatSubmit({
+        session: { id: 'session-1' },
+        submit: mockState.submit,
+        pendingFiles: [],
+        commitPendingFiles: mockState.commitPendingFiles,
+        clearPendingFiles: mockState.clearPendingFiles,
+        refetchSessionFiles: mockState.refetchSessionFiles,
+        hasPersistedMessages: true,
+        onClearSession: mockState.onClearSession,
+      }),
+    );
+
+    act(() => {
+      result.current.setInput('/reload');
+    });
+
+    let submitPromise: Promise<void> | undefined;
+    act(() => {
+      submitPromise = result.current.handleSubmit();
+    });
+
+    expect(mockState.onClearSession).not.toHaveBeenCalled();
+    expect(mockState.safeInvoke).toHaveBeenCalledWith('agent_execute_command', {
+      sessionId: 'session-1',
+      commandText: '/reload',
+    });
+
+    await act(async () => {
+      resolveInvoke?.({
+        success: true,
+        message:
+          'Session tools and workspace context reloaded. Conversation history kept.',
+      });
+      await submitPromise;
+    });
+
+    expect(mockState.toastSuccess).toHaveBeenCalledWith(
+      'Session tools and workspace context reloaded. Conversation history kept.',
+    );
+    expect(mockState.onClearSession).not.toHaveBeenCalled();
+  });
+
   it('ignores nested submit while a command invoke is in flight', async () => {
     let resolveInvoke:
       | ((value: { success: boolean; message: string }) => void)
