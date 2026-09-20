@@ -1,152 +1,100 @@
 ---
-title: Built-in MCP Tools Reference
+title: Built-in Tools Guide
 ---
 
-# Built-in MCP Tools Reference
+# Built-in Tools Guide
 
-> LibrAgent includes a unified set of **high-performance Rust-native Built-in MCP Servers**, enabling code editing, file manipulation, web browsing, task planning, media processing, and background automation without needing external MCP server setup.
+LibrAgent comes with an out-of-the-box set of native **Built-in Tools**, enabling agents to inspect files, edit code, browse the web, capture screenshots, and execute terminal commands immediately without requiring external tool setups.
 
-All built-in tools follow a consistent `{server}__{tool}` naming convention.
-
----
-
-## 📌 Core Built-ins vs Optional Built-ins
-
-LibrAgent built-in tools are categorized into **Core tools (enabled by default on all sessions)** and **Optional tools (configurable per assistant)**.
-
-### 1️⃣ Core Built-ins (Enabled by Default)
-
-Essential tools automatically available for basic agent operations and UI interactions:
-
-- **`workspace__*`**: File reading/writing/line-range editing, directory listing, terminal command execution
-- **`ui__*`**: Interactive UI component rendering and result reporting (`presentInteractive`, `reportResult`)
-- **`agent__*`**: Autonomous sub-agent spawning and multi-agent orchestration
-- **`skills__*`**: Skill execution and context loading
-- **`playbook__*`**: Automation playbook listing, execution, and saving
-- **`attachments__*`**: Session file attachment management and search
-- **`scheduled_task__*`**: Background timers and recurring Cron task management
-- **`scratchpad__*`**: Reasoning steps log and scratchpad calculation notes
-- **`tool__*`**: Tool discovery and system tool management
-
-### 2️⃣ Optional Built-ins (Configurable in Assistant Settings)
-
-Domain-specific tools that can be enabled or disabled under **Assistants → Edit → Tools**:
-
-- **`media__*`**: Image/visual, audio analysis, and live desktop screen capture (`seeContent`, `listenContent`, `captureScreen`)
-- **`desktop__*`**: Desktop OS mouse & keyboard control, GUI automation (`computerControl`)
-- **`browser__*`**: Headless web browsing, DOM clicks, form typing, screenshot capture
-- **`planning__*`**: Multi-step plan creation (`createGoal`), progress tracking, failure reflection (`reflect`)
-- **`knowledge__*`**: Semantic memory storage and persistent knowledge retrieval
-- **`setup-wizard__*`**: Python/Node/uv environment diagnostics and setup wizard
-- **`history__*`**: Previous session history lookup
+When you send a request, the agent autonomously selects and invokes the most appropriate tools to complete your task.
 
 ---
 
-## 🛠️ Built-in Tools Detailed Reference
+## 🛡️ Safety & Execution Approval Policies
 
-### 1. Workspace (`workspace__*`)
+Tool execution remains strictly under user supervision:
 
-| Tool Name                               | Description                                       | Key Parameters                                    |
-| :-------------------------------------- | :------------------------------------------------ | :------------------------------------------------ |
-| `workspace__readFile`                   | Read file content with line slicing               | `path`, `offset`, `size`                          |
-| `workspace__writeFile`                  | Create, overwrite, or append file                 | `path`, `mode`, `content`                         |
-| `workspace__strReplace`                 | Exact string replacement in an existing file      | `path`, `old_string`, `new_string`, `replace_all` |
-| `workspace__listDirectory`              | List directory contents                           | `path`, `limit`                                   |
-| `workspace__runShell` / `runPowerShell` | Execute shell command (supports background async) | `command`, `timeout`                              |
-
-### 2. Media (`media__*`) 🎨 _(Optional)_
-
-| Tool Name              | Description                                                          | Key Parameters                                     |
-| :--------------------- | :------------------------------------------------------------------- | :------------------------------------------------- |
-| `media__seeContent`    | Inspect and analyze image/visual media                               | `url`                                              |
-| `media__listenContent` | Parse and analyze audio media                                        | `url`                                              |
-| `media__captureScreen` | Capture live desktop screen or specific region ⚠️ *(approval required)* | `display_index`, `x`, `y`, `width`, `height`       |
-
-### 3. Desktop (`desktop__*`) 🖱️ _(Optional)_
-
-Computer Use tool enabling direct OS-level simulation of mouse and keyboard inputs to interact with desktop GUI applications on Windows, macOS, and Linux (X11).
-
-| Tool Name                  | Description                                                                              | Key Parameters                                                                                                   |
-| :------------------------- | :--------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------- |
-| `desktop__computerControl` | Mouse clicks, movement, drag, text typing, key shortcuts, scrolling ⚠️ *(approval required)* | `action`, `x`, `y`, `start_x`, `start_y`, `button`, `text`, `key`, `modifiers`, `scroll_amount`, `axis`          |
-
-**Supported Actions (`action`):**
-- `click` / `double_click` / `right_click` / `middle_click`: Click mouse button at target coordinates `(x, y)` or current cursor position
-- `move`: Move cursor to absolute screen coordinates `(x, y)`
-- `mouse_down` / `mouse_up`: Press and hold / release mouse button
-- `drag`: Drag mouse with left button held down (optional `start_x`, `start_y`)
-- `type`: Type text string (`text`)
-- `key`: Press key or key combination (`key`: "Return", "Escape", "Ctrl+c", "Alt+F4", etc.)
-- `scroll`: Scroll wheel vertically or horizontally (`scroll_amount`: positive=down/right, negative=up/left, `axis`: "vertical" / "horizontal")
-- `cursor_position`: Query current mouse coordinates `(x, y)`
+| Tool Category                 | Safety Policy                     | Key Operations                                                                              |
+| ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Read-Only Tools**           | Automatic execution               | Reading files, viewing web pages, searching session history                                 |
+| **System Modification Tools** | **Approval Dialog** (Normal mode) | Running shell commands (`runShell`), creating or modifying files                            |
+| **Desktop Control Tools**     | **Explicit Approval Required**    | Taking desktop screenshots (`captureScreen`), simulating mouse/keyboard (`computerControl`) |
 
 > [!TIP]
-> First call `media__captureScreen` with a `display_index`, then call `desktop__computerControl` with the **same** `display_index` and the **raw image-pixel** `(x, y)` from that screenshot (0,0 = top-left of the image). Pass `width_scale`/`height_scale` from the capture response when listed. Do not divide by DPI/`scale_factor` or manually add monitor offsets — LibrAgent converts image coordinates to absolute OS input coordinates.
-
-### 4. Interactive UI (`ui__*`)
-
-| Tool Name                | Description                                                                 |
-| :----------------------- | :-------------------------------------------------------------------------- |
-| `ui__presentInteractive` | Render interactive UI components (selection buttons, forms, cards)          |
-| `ui__reportResult`       | Deliver final task results and attached deliverable files (terminal signal) |
-
-### 5. Browser (`browser__*`) _(Optional)_
-
-| Tool Name                   | Description                 |
-| :-------------------------- | :-------------------------- |
-| `browser__createSession`    | Start the browser session   |
-| `browser__closeSession`     | Close the browser session   |
-| `browser__navigateToUrl`    | Navigate to target web URL  |
-| `browser__getCurrentUrl`    | Get the current page URL    |
-| `browser__getPageTitle`     | Get the current page title  |
-| `browser__getPageContent`   | Extract page content        |
-| `browser__fetchUrl`         | Fetch URL without a session |
-| `browser__clickElement`     | Click DOM element           |
-| `browser__inputText`        | Type text into web input    |
-| `browser__scrollPage`       | Scroll web page view        |
-| `browser__listInteractable` | Extract clickable elements  |
-| `browser__takeScreenshot`   | Capture the page as a PNG   |
-| `browser__evaluateJS`       | Execute custom JS snippet   |
-
-`browser__takeScreenshot` accepts an optional `fullPage` boolean. It captures the
-current viewport by default; set `fullPage` to `true` to capture the entire page
-within the 64-million-pixel and 8 MiB PNG limits.
-
-### 6. Planning & Reflection (`planning__*`) _(Optional)_
-
-| Tool Name                   | Description                                     |
-| :-------------------------- | :---------------------------------------------- |
-| `planning__createGoal`      | Establish multi-step goals for complex tasks    |
-| `planning__updateGoal`      | Update step progress and goal status            |
-| `planning__clearGoal`       | Clear active goal                               |
-| `planning__addTodo`         | Manage granular todo items                      |
-| `planning__updateTodo`      | Update todo item status                         |
-| `planning__clearSession`    | Clear session planning data                     |
-| `planning__getCurrentState` | Fetch current planning and goal state           |
-| `planning__reflect`         | Generate structured reflection on tool failures |
-
-### 7. Attachments & Scheduled Tasks (`attachments__*` / `scheduled_task__*`)
-
-| Tool Name                             | Description                                      |
-| :------------------------------------ | :----------------------------------------------- |
-| `attachments__readAttachment`         | Read session attachment contents                 |
-| `attachments__searchAttachments`      | Search through uploaded attachments              |
-| `scheduled_task__createScheduledTask` | Create one-shot timer or recurring Cron schedule |
-| `scheduled_task__listScheduledTasks`  | List all active scheduled tasks                  |
-| `scheduled_task__getScheduledTask`    | Get details of a specific scheduled task         |
-| `scheduled_task__updateScheduledTask` | Update scheduled task parameters                 |
-| `scheduled_task__toggleScheduledTask` | Toggle scheduled task active status              |
-| `scheduled_task__deleteScheduledTask` | Delete a scheduled task                          |
+> For unattended background runs (e.g., Scheduled Tasks), you can switch the execution mode to **YOLO** or **Unsafe** to auto-approve standard tool executions without blocking on confirmation popups.
 
 ---
 
-## 🧩 How to Add More Tools
+## 🛠️ Core Tool Capabilities
 
-When specialized capabilities beyond built-in tools are required (e.g. GitHub PR management, Slack messaging, ComfyUI image generation, arXiv paper search):
+### 1. Workspace & Files (`workspace`)
 
-1. **One-Click Presets (Recommended Extensions)**:
-   - Go to **Extensions → Tools → Recommended Extensions** to add Brave Search, Exa, GitHub, Slack, arXiv, etc. (See [Extensions Guide](extensions.md)).
-2. **Add Custom MCP Server**:
-   - Register local `npx`/`uvx` processes or remote HTTP SSE servers. (See [Custom MCP Guide](custom-mcp.md)).
-3. **Add Skills**:
-   - Install domain-specific workflow instructions as Skills. (See [Skills Guide](skills.md)).
+Agents inspect and edit files directly within your configured project directory.
+
+- **Reading & Searching**: Understands codebase structure and text documents.
+- **Precise Line Edits**: Makes surgical replacements without overwriting entire files.
+- **Terminal Execution**: Runs builds, test suites, or package managers and captures output.
+
+### 2. Web Browsing (`browser`)
+
+Interacts with the web through an isolated browser process.
+
+- **Web Navigation**: Reads online documentation, technical articles, and live feeds.
+- **Visual Verification**: Captures screenshots of rendered web pages.
+
+### 3. Media & Desktop Interaction (`media`, `desktop`)
+
+Handles visual analysis and operating system interactions.
+
+- **Screen Capture**: Inspects error windows or UI layouts visually.
+- **Mouse & Keyboard Control**: Simulates clicks, typing, and shortcuts for GUI workflows. _(Always requires manual approval)_
+
+### 4. Planning & Scheduling (`planning`, `scheduled_task`)
+
+Organizes complex goals into structured sub-tasks.
+
+- **Multi-step Goals**: Breaks down large instructions into a structured Todo list and reports progress.
+- **Scheduled Automations**: Registers recurring background tasks according to Cron expressions.
+
+---
+
+## ⚙️ Optimizing Tools per Assistant
+
+Enabling every tool in all sessions increases the context tokens the LLM must consume to read tool definitions.
+
+1. Navigate to **Assistants** in the sidebar.
+2. Select **Edit → Tools** on any assistant profile.
+3. Keep only relevant tools active (e.g., enable `workspace` for coding assistants, `browser` for research assistants).
+
+---
+
+## 📖 Technical Reference: Tool Identifiers (`{server}__{tool}`)
+
+For power users and prompt engineering, below is the primary built-in tools inventory:
+
+| Server               | Tool Identifier                       | Description                                 | Default Status               |
+| -------------------- | ------------------------------------- | ------------------------------------------- | ---------------------------- |
+| **`workspace`**      | `workspace__readFile`                 | Slice and read file contents                | Core (Default)               |
+|                      | `workspace__writeFile`                | Create or overwrite files                   | Core (Default)               |
+|                      | `workspace__strReplace`               | Exact string replacement in file            | Core (Default)               |
+|                      | `workspace__listDirectory`            | List files and directories                  | Core (Default)               |
+|                      | `workspace__runShell`                 | Execute shell command (async supported)     | Core (Default)               |
+| **`browser`**        | `browser__navigateToUrl`              | Navigate to URL and wait for load           | Optional                     |
+|                      | `browser__takeScreenshot`             | Capture viewport or full page screenshot    | Optional                     |
+|                      | `browser__getPageContent`             | Extract webpage text & DOM structure        | Optional                     |
+|                      | `browser__clickElement`               | Click DOM element                           | Optional                     |
+| **`desktop`**        | `desktop__computerControl`            | Mouse clicks, movement, and keyboard typing | Optional (Approval required) |
+| **`media`**          | `media__captureScreen`                | Capture desktop display or area             | Optional (Approval required) |
+|                      | `media__seeContent`                   | Analyze image visual content                | Optional                     |
+| **`planning`**       | `planning__createGoal`                | Create multi-step goals & todos             | Optional                     |
+|                      | `planning__updateGoal`                | Update goal & step progress                 | Optional                     |
+| **`scheduled_task`** | `scheduled_task__createScheduledTask` | Register recurring background Cron task     | Core (Default)               |
+|                      | `scheduled_task__listScheduledTasks`  | List registered scheduled tasks             | Core (Default)               |
+
+---
+
+## 🧩 Need Additional Tools?
+
+If you require integration with third-party services (GitHub, Slack, remote databases):
+
+- Visit the [Extensions Guide](extensions.md) to add verified MCP presets with one click or register custom MCP servers.

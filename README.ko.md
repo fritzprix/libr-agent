@@ -65,13 +65,19 @@ _단일 에이전트에서 조정된 군집까지 — 재귀적 위임, MCP 도�
 - Workspace + Shell 연결
 - 코드를 클라우드 VM으로 보내지 않고 에이전트가 읽고, 수정하고, 테스트하고, 반복하게 만들기
 
-### 3. 리서치를 반복 가능한 워크플로우로 바꾸기
+### 3. 원클릭 워크플로우 레시피 배포하기
+
+- Chat 홈 화면이나 Scheduled Tasks에서 **Morning Briefing** 레시피 워크스루를 실행
+- Hacker News + Yahoo Finance MCP 프리셋을 설치하고, 전용 어시스턴트를 생성하며, 매일 아침 9시 실행 일정을 자동 구성
+- 매일 아침 시장 지표와 기술 트렌드를 합성 보고서로 전달하는 전자동 무인 YOLO 자동화
+
+### 4. 리서치를 반복 가능한 워크플로우로 바꾸기
 
 - Browser + Knowledge 추가
 - _"이 경쟁사 블로그 5개를 추적해서 매일 아침 요약해"_ 라고 요청
-- 일회성 작업을 예약 파이프라인으로 전환
+- 예약 작업(Scheduled Tasks)으로 일회성 프롬프트를 자동화 파이프라인으로 전환
 
-### 4. 한 명의 도우미에서 진짜 팀으로 가기
+### 5. 한 명의 도우미에서 진짜 팀으로 가기
 
 - `teamwork`로 공유 워크스페이스 scaffold
 - `delegate`로 작업 분할
@@ -110,12 +116,13 @@ MCP(Model Context Protocol)는 LibrAgent 확장성 모델의 기반이 되는 �
 
 대부분의 AI 도구는 데모에서는 인상적이지만 프로덕션에서는 취약합니다. LibrAgent 는 장시간 실제 작업을 위해 집요하게 엔지니어링되었습니다:
 
-| 서브스트레이트 | 기능                                                                                  |
-| -------------- | ------------------------------------------------------------------------------------- |
-| **Workspace**  | 라인 정밀 편집, 멀티 파일 작업, 통합 검색, `@file`/`@skill`/`@playbook` 컨텍스트 주입 |
-| **Shell**      | 고립 실행 AND 지속적 셸 — 비동기 프로세스 모니터링(`poll`, `read output`, `list`)     |
-| **Browser**    | Playwright와 유사한 상호작용 모델을 갖춘 헤드리스 브라우저 자동화와 캐시 일관성 보장  |
-| **Knowledge**  | 엔티티/관계 추출(v2), BM25 전체 텍스트 검색과 함께 그래프 기반 지식 관리              |
+| 서브스트레이트 | 기능                                                                                     |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| **Workspace**  | 라인 정밀 편집, 멀티 파일 작업, 통합 검색, `@file`/`@skill`/`@playbook` 컨텍스트 주입    |
+| **Shell**      | 고립 실행 AND 지속적 셸 — 비동기 프로세스 모니터링(`poll`, `read output`, `list`)        |
+| **Browser**    | 격리된 `--browser-sidecar` 프로세스를 통한 Playwright 기반 웹 자동화 및 캐시 일관성 보장 |
+| **Knowledge**  | 엔티티/관계 추출(v2), BM25 전체 텍스트 검색과 함께 그래프 기반 지식 관리                 |
+| **Export**     | 깔끔한 Markdown 보고서 및 벤치마크 평가용 ATIF v1.7 궤적 내보내기 (노이즈 자동 정제)     |
 
 **신뢰성 엔지니어링 포함**: Context compaction, loop prevention, circuit breaker, stale-response guard 가 시간 단위 세션에서도 에이전트를 생산적으로 유지합니다.
 
@@ -152,7 +159,7 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 - **개발자 워크플로**: `git-workflow`, `bench`
 - **워크스페이스 온보딩**: `agent-init`
 - **조율 및 어시스턴트**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
-- **외부 연동**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
+- **외부 연동**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`
 - **스킬 및 워크플로우 저작**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **특수 작업**: `computer-diagnosis`
 
@@ -205,6 +212,7 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.9.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_x64-setup.exe) · [`LibrAgent_0.9.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.9.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.9.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_amd64.AppImage) · [`LibrAgent_0.9.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_amd64.deb) · [`LibrAgent-0.9.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent-0.9.12-1.x86_64.rpm)
