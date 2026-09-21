@@ -50,11 +50,8 @@ pub async fn smart_content(server: &BrowserServer, args: Value) -> Result<MCPRes
         .as_ref()
         .is_some_and(|id| server.content_store.has_content(id));
 
-    if should_extract_before_cached_page_read(
-        has_page_arg,
-        session_id.is_some(),
-        cache_has_content,
-    ) {
+    if should_extract_before_cached_page_read(has_page_arg, session_id.is_some(), cache_has_content)
+    {
         let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1);
         let mut extract_args = args.clone();
         if let Some(obj) = extract_args.as_object_mut() {
@@ -878,18 +875,10 @@ mod tests {
 
     #[test]
     fn page_read_extracts_when_cache_empty_and_session_active() {
-        assert!(should_extract_before_cached_page_read(
-            true, true, false
-        ));
-        assert!(!should_extract_before_cached_page_read(
-            true, true, true
-        ));
-        assert!(!should_extract_before_cached_page_read(
-            false, true, false
-        ));
-        assert!(!should_extract_before_cached_page_read(
-            true, false, false
-        ));
+        assert!(should_extract_before_cached_page_read(true, true, false));
+        assert!(!should_extract_before_cached_page_read(true, true, true));
+        assert!(!should_extract_before_cached_page_read(false, true, false));
+        assert!(!should_extract_before_cached_page_read(true, false, false));
     }
 
     #[tokio::test]
