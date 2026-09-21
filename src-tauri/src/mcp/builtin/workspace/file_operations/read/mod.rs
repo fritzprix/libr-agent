@@ -25,7 +25,7 @@ use args::{parse_offset_parameter, parse_show_line_anchors, parse_size_parameter
 use chunk::{
     format_read_chunk_summary, read_file_lines_range, read_file_visible_content_limit_bytes,
 };
-use range::{is_empty_file_out_of_range_error, parse_offset_exceeds_error};
+use range::{is_binary_file_error, is_empty_file_out_of_range_error, parse_offset_exceeds_error};
 
 impl WorkspaceServer {
     pub async fn handle_read_file(
@@ -347,6 +347,15 @@ impl WorkspaceServer {
                                     total_lines
                                 ),
                                 "Omit offset/size to read the entire file".to_string(),
+                            ])
+                            .to_mcp_result(),
+                    )
+                } else if is_binary_file_error(&e) {
+                    Ok(
+                        guided_error(ErrorCategory::OperationFailed, &e, ToolGroup::Workspace)
+                            .guidance(vec![
+                                "Use workspace__runShell with `strings` or `grep -a` to inspect binary content".to_string(),
+                                "Use inspection tools (e.g. file, xxd, od) or write a Python script to parse binary data".to_string(),
                             ])
                             .to_mcp_result(),
                     )

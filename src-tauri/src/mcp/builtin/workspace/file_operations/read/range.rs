@@ -1,9 +1,15 @@
 //! Line-range resolution for workspace__readFile.
 
-use super::types::EMPTY_FILE_OUT_OF_RANGE_PREFIX;
+use super::types::{BINARY_FILE_ERROR_PHRASE, EMPTY_FILE_OUT_OF_RANGE_PREFIX};
 
 pub(super) fn is_empty_file_out_of_range_error(message: &str) -> bool {
     message.starts_with(EMPTY_FILE_OUT_OF_RANGE_PREFIX)
+}
+
+pub(super) fn is_binary_file_error(message: &str) -> bool {
+    message
+        .to_ascii_lowercase()
+        .contains(BINARY_FILE_ERROR_PHRASE)
 }
 
 pub(super) fn parse_offset_exceeds_error(message: &str) -> Option<(usize, usize)> {
@@ -86,5 +92,33 @@ pub(super) fn resolve_range(
             }
             None => (1, usize::MAX),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_binary_file_error() {
+        // Embedded null bytes path (decode_file_bytes_to_lines)
+        assert!(is_binary_file_error(
+            "Failed to read file: content appears to be binary (embedded null bytes)"
+        ));
+        assert!(is_binary_file_error(
+            "Failed to read file: content appears to be binary (embedded null bytes). Use a specialized tool or shell commands for binary files."
+        ));
+
+        // Invalid UTF-8 / InvalidData path
+        assert!(is_binary_file_error(
+            "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files."
+        ));
+
+        // False positives prevention: path or error message containing "binary"
+        assert!(!is_binary_file_error(
+            "Failed to read file: /usr/local/binary/test.txt: No such file or directory"
+        ));
+        assert!(!is_binary_file_error("No such file or directory"));
+        assert!(!is_binary_file_error("Permission denied"));
     }
 }
