@@ -64,7 +64,7 @@ fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
 
 ## Rust Test Architecture — CRITICAL
 
-CI runs **`cargo test --tests`**, NOT `cargo test --lib`. This means:
+CI / `pnpm rust:test` runs **integration tests under `src-tauri/tests/`**, NOT `cargo test --lib`. This means:
 
 - `#[cfg(test)]` blocks inside `src/` **are never executed in CI**
 - Only tests in the `tests/` directory (integration tests) run in CI
@@ -72,12 +72,25 @@ CI runs **`cargo test --tests`**, NOT `cargo test --lib`. This means:
 
 **Rule: All Rust tests MUST be written as integration tests in `src-tauri/tests/`.**
 
+### Resource limits (32GB machines still OOM)
+
+Each `tests/*.rs` file is a **separate Cargo test binary** (~600MB+ with Tauri).  
+`cargo test --tests` links many of them in one build graph and will thrash or freeze a 32GB system.
+
+- **Full suite:** `pnpm rust:test` → `scripts/run-rust-tests-sequential.cjs` (one `--test` target at a time, `CARGO_BUILD_JOBS=1`).
+- **Iterate:** `pnpm rust:test --test <name>`.
+- **Never** run bare `cargo test` / `cargo test --tests` locally.
+- `scripts/run-rust-command.cjs test` **without** `--test <name>` auto-delegates to the sequential runner (refuses multi-target link).
+- Prefer adding modules under `tests/integration/` (single `integration_tests` binary on Linux/macOS) instead of new root-level `tests/foo.rs` crates.
+- Root-level crates remain for Windows-safe coverage; `integration_tests` is `#![cfg(not(windows))]`.
+- Optional: `pnpm rust:test:consolidate` merges root crates into `integration/` (merge-safe; does not replace Windows strategy).
+
 ```
 src-tauri/
 └── tests/
-    ├── seaorm_migration_verification.rs   ← template: in-memory SQLite + Migrator
-    ├── mcp_server_repository_tests.rs     ← repository + cache invalidation
-    └── mcp_utils_tests.rs                 ← serialization helpers
+    ├── integration_tests.rs   ← consolidated suite (Linux/macOS)
+    ├── integration/           ← modules for that suite
+    └── text_encoding_tests.rs ← example root-level Windows-safe target
 ```
 
 ### Integration Test Boilerplate

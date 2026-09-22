@@ -25,25 +25,19 @@ function getCpuCount() {
 }
 
 function getRecommendedBuildJobs() {
+  // Match .cargo/config.toml [build] jobs = 2 hard cap intent for check/clippy/build.
   const cpuCount = Math.max(1, getCpuCount());
   const totalMemGiB = os.totalmem() / 1024 ** 3;
-  const cpuLimitedJobs = clamp(cpuCount - 1, 1, 8);
-  const memoryLimitedJobs = clamp(Math.floor(totalMemGiB / 3), 1, 8);
+  const cpuLimitedJobs = clamp(cpuCount - 1, 1, 2);
+  const memoryLimitedJobs = clamp(Math.floor(totalMemGiB / 8), 1, 2);
 
   return Math.min(cpuLimitedJobs, memoryLimitedJobs);
 }
 
 function getRecommendedTestBuildJobs() {
-  const cpuCount = Math.max(1, getCpuCount());
-  const totalMemGiB = os.totalmem() / 1024 ** 3;
-  const cpuLimitedJobs = clamp(
-    cpuCount <= 2 ? 1 : cpuCount <= 4 ? cpuCount - 1 : Math.floor(cpuCount / 2),
-    1,
-    8,
-  );
-  const memoryLimitedJobs = clamp(Math.floor(totalMemGiB / 4), 1, 8);
-
-  return Math.min(cpuLimitedJobs, memoryLimitedJobs);
+  // Integration binaries are ~600MB+ (Tauri). Concurrent rustc/link jobs thrash
+  // a 32GB machine alongside the desktop IDE. Always serialize to 1.
+  return 1;
 }
 
 function getDefaultBuildJobs(args) {
@@ -83,6 +77,41 @@ function commandExists(command) {
 
 const env = { ...process.env };
 const isCargoTest = cargoArgs[0] === 'test';
+
+// Broad `cargo test` / `cargo test --tests` without a single --test/--lib/…
+// target links every tests/*.rs binary (~600MB+) in one graph → OOM on 32GB.
+// Delegate to the sequential runner (never bare --tests in one cargo invocation).
+if (
+  isCargoTest &&
+  !hasFlag(cargoArgs, ['--test', '--bin', '--example', '--lib', '--doc'])
+) {
+  const sequential = path.join(__dirname, 'run-rust-tests-sequential.cjs');
+  const forwarded = cargoArgs.slice(1).filter((arg) => arg !== '--tests');
+  console.error(
+    '[run-rust-command] Refusing multi-target cargo test link; ' +
+      'delegating to run-rust-tests-sequential.cjs (one binary at a time).',
+  );
+  const result = spawnSync(process.execPath, [sequential, ...forwarded], {
+    cwd: path.join(__dirname, '..'),
+    env,
+    stdio: 'inherit',
+    shell: process.platform === 'win32' ? true : undefined,
+  });
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
+}
+
+// If a specific test target is specified, strip the broad `--tests` flag so
+// Cargo compiles only that single binary instead of all 40+ integration tests.
+if (isCargoTest && hasFlag(cargoArgs, ['--test', '--bin', '--example'])) {
+  const testsIdx = cargoArgs.indexOf('--tests');
+  if (testsIdx !== -1) {
+    cargoArgs.splice(testsIdx, 1);
+  }
+}
 
 if (!env.CARGO_BUILD_JOBS && !hasFlag(cargoArgs, ['-j', '--jobs'])) {
   env.CARGO_BUILD_JOBS = String(getDefaultBuildJobs(cargoArgs));
@@ -150,7 +179,7 @@ const { stdio, logFd } = resolveStdio();
 if (isCargoTest && stdio === 'inherit') {
   const jobs = env.CARGO_BUILD_JOBS ?? 'default';
   console.error(
-    `[run-rust-command] cargo test (jobs=${jobs}, test-threads=1, ci-test profile)`,
+    `[run-rust-command] cargo test (jobs=${jobs}, test-threads=1)`,
   );
 }
 

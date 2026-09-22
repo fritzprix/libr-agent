@@ -127,7 +127,8 @@ pub fn extract_skill_alias_relative_path(path_str: &str) -> Option<(&'static str
 }
 
 /// Collect the alias roots visible to the current session so workspace file
-/// validation can resolve read-only skill aliases back to concrete directories.
+/// validation can resolve read/list-only skill aliases back to concrete directories.
+/// Writers must use concrete paths (e.g. `.libragent/skills/`), not these aliases.
 pub fn collect_skill_alias_roots(
     system_dir: PathBuf,
     user_dir: PathBuf,

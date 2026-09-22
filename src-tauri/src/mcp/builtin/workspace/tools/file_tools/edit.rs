@@ -10,7 +10,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork scaffold files without changing workspaceOverride."),
+            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork scaffold files without changing workspaceOverride. Skill aliases (@system-skills, @user-skills, @assistant-skills, @workspace-skills) are read/list-only — edit under .libragent/skills/ or user_skills/, not through those aliases."),
         ),
     );
 
@@ -388,7 +388,7 @@ fn edit_file_path_prop() -> JSONSchema {
     string_prop(
         Some(1),
         Some(1000),
-        Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork files without changing workspaceOverride."),
+        Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork files without changing workspaceOverride. Skill aliases are read/list-only — edit .libragent/skills/ or user_skills/ paths instead."),
     )
 }
 

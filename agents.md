@@ -34,7 +34,7 @@ This workspace contains both application code (React/TypeScript frontend + Rust/
 - **Language**: TypeScript 5.6 (frontend), Rust 2021 edition (backend)
 - **Framework**: React 18.3 + Vite 6.x (frontend), Tauri 2.x (desktop framework)
 - **Build System**: Vite (frontend), Cargo (backend)
-- **Test Framework**: Vitest (frontend), cargo test --tests (Rust integration tests in `src-tauri/tests/`)
+- **Test Framework**: Vitest (frontend), `pnpm rust:test` (Rust — sequential per-target link via `run-rust-tests-sequential.cjs`; use `--test <name>` for a single target)
 
 ### Environment Setup
 
@@ -49,20 +49,28 @@ See [README.md](README.md) for detailed setup instructions.
 
 ### Development Scripts & Workflow
 
-| Command                  | Purpose                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `pnpm dev`               | Start Vite dev server (frontend only)                                              |
-| `pnpm tauri dev`         | Start full Tauri desktop app with hot reload                                       |
-| `pnpm build`             | Build frontend for production                                                      |
-| `pnpm tauri build`       | Create production desktop app bundle                                               |
-| `pnpm lint`              | Run ESLint on TypeScript/React code                                                |
-| `pnpm format`            | Format code with Prettier                                                          |
-| `pnpm rust:fmt`          | Check Rust formatting with rustfmt                                                 |
-| `pnpm rust:clippy`       | Run Rust linter (clippy)                                                           |
-| `pnpm dead-code`         | Find unused code with unimported                                                   |
-| `pnpm refactor:validate` | **Complete validation pipeline** (lint, format, Rust validation, build, dead-code) |
+| Command                              | Purpose                                                                            |
+| ------------------------------------ | ---------------------------------------------------------------------------------- |
+| `pnpm dev`                           | Start Vite dev server (frontend only)                                              |
+| `pnpm tauri dev`                     | Start full Tauri desktop app with hot reload                                       |
+| `pnpm build`                         | Build frontend for production                                                      |
+| `pnpm tauri build`                   | Create production desktop app bundle                                               |
+| `pnpm lint`                          | Run ESLint on TypeScript/React code                                                |
+| `pnpm format`                        | Format code with Prettier                                                          |
+| `pnpm rust:fmt`                      | Format Rust code with rustfmt                                                      |
+| `pnpm rust:fmt:check`                | Check Rust formatting without modifying files                                      |
+| `pnpm rust:check`                    | Fast type/syntax check on Rust code                                                |
+| `pnpm rust:clippy`                   | Run Rust linter (clippy)                                                           |
+| `pnpm rust:test`                     | Full Rust integration suite — **one test binary linked at a time** (OOM-safe)      |
+| `pnpm rust:test --test <target>`     | Single Rust integration target (faster while iterating)                            |
+| `pnpm dead-code`                     | Find unused code with unimported                                                   |
+| `pnpm refactor:validate`             | **Complete validation pipeline** (lint, format, Rust validation, build, dead-code) |
 
-**Workflow Recommendation:** Run focused, lightweight unit tests or lint for affected files during development. `pnpm refactor:validate` is resource-heavy and must ONLY be executed when explicitly requested by the user or as a final check before a PR.
+> [!CAUTION]
+> **🚫 Raw `cargo test` / `cargo test --tests` 직접 실행 절대 금지**:
+> `src-tauri/tests/*.rs` 각각이 ~600MB+ Tauri 바이너리로 링크됩니다. bare `cargo test --tests`는 여러 타깃을 한 그래프에서 링크해 32GB 머신도 OOM/프리즈합니다.
+> 반드시 `pnpm rust:…` 를 쓰십시오. 전체 스위트는 `pnpm rust:test`(순차 격리)이고, 평소엔 `pnpm rust:test --test <target>` 로 좁히십시오.
+> `pnpm rust:check` / `clippy` / `fmt` 도 raw `cargo` 대신 pnpm 래퍼를 사용하십시오.
 
 ### Key Architecture Patterns
 
@@ -183,7 +191,10 @@ src-tauri/src/
 ### Testing
 
 - Frontend: Vitest for unit/component tests (`pnpm test:run`)
-- Backend: **Integration tests only** in `src-tauri/tests/` (CI runs `cargo test --tests`, NOT `cargo test --lib`)
+- Backend: **Integration tests only** in `src-tauri/tests/`
+  - CI / full suite: `pnpm rust:test` → `run-rust-tests-sequential.cjs` (one `--test` binary at a time; never bare `cargo test --tests`)
+  - Iterate: `pnpm rust:test --test <target>`
+  - Prefer new modules under `tests/integration/` (Linux/macOS `integration_tests`). Root-level `tests/*.rs` remain for Windows-safe coverage (`integration_tests` is `#![cfg(not(windows))]`)
 - Rust `#[cfg(test)]` blocks in `src/` are never executed in CI
 - Test Tauri commands with mock data
 - Verify cross-platform compatibility

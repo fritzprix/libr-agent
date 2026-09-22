@@ -44,10 +44,13 @@ Use this checklist when inspecting local uncommitted code changes to ensure high
 - [ ] **Re-render Optimization**: In React components, are expensive calculations, hooks dependencies, and event handlers optimized?
 - [ ] **Resource Cleanup**: Are process handles, network sockets, timers, or event listeners cleaned up appropriately?
 - [ ] **Database & I/O Efficiency**: Are redundant database calls or excessive file system reads minimized?
+- [ ] **Rust test binaries**: Did the change add a new root-level `src-tauri/tests/*.rs` crate without need? Prefer `tests/integration/` modules (Linux/macOS). Never review/validate with raw `cargo test --tests`.
 
 ---
 
 ## 6. Testing & Project Health
 
-- [ ] **Validation Commands**: Do relevant lint, formatting, type check, or build commands pass (e.g., `pnpm lint`, `pnpm build`, `cargo clippy`, `cargo test`)?
-- [ ] **Test Coverage**: Are new features or modified edge cases covered by unit/integration tests where applicable?
+- [ ] **Frontend**: `pnpm lint` / `pnpm test:run` only when user asked for validation
+- [ ] **Rust format/check/clippy**: `pnpm rust:…` wrappers only — **never** raw `cargo …`; light gates OK if useful during review
+- [ ] **Rust tests**: run only when user asked — root target `--test <name>` or `pnpm rust:test --test integration_tests -- <filter>` for `tests/integration/`; full suite only via `pnpm rust:test` (sequential). **Forbidden**: `cargo test`, `cargo test --tests`
+- [ ] **Test Coverage**: Are new features or modified edge cases covered by integration tests under `src-tauri/tests/` (not `#[cfg(test)]` in lib — CI does not run those)?
