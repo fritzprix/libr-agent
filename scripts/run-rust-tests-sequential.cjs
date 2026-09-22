@@ -21,14 +21,11 @@ const TESTS_DIR = path.join(ROOT, 'src-tauri', 'tests');
 const RUNNER = path.join(__dirname, 'run-rust-command.cjs');
 
 function hasFlag(args, flagNames) {
-  return args.some((arg, index) => {
+  return args.some((arg) => {
     if (flagNames.includes(arg)) {
       return true;
     }
-    return flagNames.some(
-      (flag) =>
-        arg.startsWith(`${flag}=`) || (arg === flag && index < args.length - 1),
-    );
+    return flagNames.some((flag) => arg.startsWith(`${flag}=`));
   });
 }
 

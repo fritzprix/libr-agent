@@ -79,7 +79,9 @@ pnpm rust:check:all
 
 # Run tests — full suite is sequential (OOM-safe); prefer --test while iterating
 pnpm rust:test
-pnpm rust:test --test workspace_skill_access_regression_tests
+pnpm rust:test --test text_encoding_tests
+# Modules under tests/integration/ live in the integration_tests binary:
+pnpm rust:test --test integration_tests -- workspace_skill_access_regression_tests
 
 # Run tests (edit-file-only build; anchor/editFile regression)
 pnpm rust:test:edit-file

@@ -50,7 +50,7 @@ Use this checklist when inspecting local uncommitted code changes to ensure high
 
 ## 6. Testing & Project Health
 
-- [ ] **Frontend**: `pnpm lint` / `pnpm test:run` as appropriate
-- [ ] **Rust format/check/clippy**: `pnpm rust:fmt:check`, `pnpm rust:check`, `pnpm rust:clippy` only — **never** raw `cargo …`
-- [ ] **Rust tests**: `pnpm rust:test --test <target>` for touched targets; full suite only via `pnpm rust:test` (sequential). **Forbidden**: `cargo test`, `cargo test --tests`
+- [ ] **Frontend**: `pnpm lint` / `pnpm test:run` only when user asked for validation
+- [ ] **Rust format/check/clippy**: `pnpm rust:…` wrappers only — **never** raw `cargo …`; light gates OK if useful during review
+- [ ] **Rust tests**: run only when user asked — root target `--test <name>` or `pnpm rust:test --test integration_tests -- <filter>` for `tests/integration/`; full suite only via `pnpm rust:test` (sequential). **Forbidden**: `cargo test`, `cargo test --tests`
 - [ ] **Test Coverage**: Are new features or modified edge cases covered by integration tests under `src-tauri/tests/` (not `#[cfg(test)]` in lib — CI does not run those)?
