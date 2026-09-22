@@ -2,6 +2,19 @@ use super::WorkspaceServer;
 use crate::SecureFileManager;
 use std::path::PathBuf;
 
+/// Marker substring for skill-alias write rejection (recovery guidance + tests).
+pub const SKILL_ALIAS_WRITE_REJECTED_MARKER: &str = "Skill aliases are read-only";
+
+fn skill_alias_write_rejected_error(alias_prefix: &str) -> String {
+    format!(
+        "{SKILL_ALIAS_WRITE_REJECTED_MARKER}: `{alias_prefix}` is a managed skill reference \
+         for read/list only. Writing through skill aliases creates a literal `@…` directory \
+         under the workspace that skill discovery does not scan. \
+         Write workspace skills to `.libragent/skills/{{name}}/SKILL.md`, or deploy with \
+         skill-deployer into `.libragent/skills/` / `user_skills/` (never `system_skills/`)."
+    )
+}
+
 impl WorkspaceServer {
     pub async fn validate_read_path_with_skill_access(
         &self,
@@ -87,6 +100,15 @@ impl WorkspaceServer {
                 .get_security_validator()
                 .validate_path_for_write(teamwork_relative_path)
                 .map_err(|e| format!("Security error: {e}"));
+        }
+
+        // Skill aliases (@workspace-skills, @user-skills, …) are read/list-only.
+        // Resolving them for write would blur deploy paths; treating them as
+        // workspace-relative paths creates a literal `@…` directory (regression).
+        if let Some((alias_prefix, _)) =
+            crate::services::skill_service::extract_skill_alias_relative_path(path_str)
+        {
+            return Err(skill_alias_write_rejected_error(alias_prefix));
         }
 
         let mapped_path = self
@@ -193,6 +215,12 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
             "Use workspace__runShell for this container path (ls/cat to inspect; mkdir -p + redirect or cp to write).".to_string(),
             "Do not retry as a workspace-relative path — that targets a different location under the workdir.".to_string(),
         ]
+    } else if error.contains(SKILL_ALIAS_WRITE_REJECTED_MARKER) {
+        vec![
+            "Write the skill to `.libragent/skills/<skill-name>/SKILL.md` (workspace) or use skill-deployer for `user_skills/` / `.libragent/skills/`.".to_string(),
+            "Do not write through @workspace-skills / @user-skills / @assistant-skills / @system-skills — those aliases are read/list only.".to_string(),
+            "After writing under `.libragent/skills/`, verify with workspace__readFile on the matching @workspace-skills/... alias.".to_string(),
+        ]
     } else {
         fallback
     }
@@ -200,7 +228,11 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
 
 #[cfg(test)]
 mod guidance_tests {
-    use super::path_validation_failure_guidance;
+    use super::{
+        path_validation_failure_guidance, skill_alias_write_rejected_error,
+        SKILL_ALIAS_WRITE_REJECTED_MARKER,
+    };
+    use crate::services::skill_service::WORKSPACE_SKILLS_ALIAS_PREFIX;
     use crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER;
 
     #[test]
@@ -216,6 +248,21 @@ mod guidance_tests {
         assert!(guidance
             .iter()
             .all(|line| !line.contains("workspace__listDirectory")));
+    }
+
+    #[test]
+    fn skill_alias_write_guidance_points_at_libragent_skills() {
+        let err = skill_alias_write_rejected_error(WORKSPACE_SKILLS_ALIAS_PREFIX);
+        assert!(err.contains(SKILL_ALIAS_WRITE_REJECTED_MARKER));
+        let guidance = path_validation_failure_guidance(
+            &err,
+            vec!["Use workspace__listDirectory to see available paths".to_string()],
+        );
+        assert!(guidance
+            .iter()
+            .any(|line| line.contains(".libragent/skills")));
+        assert!(guidance.iter().any(|line| line.contains("read/list only")));
+        assert!(guidance.iter().all(|line| !line.contains("listDirectory")));
     }
 
     #[test]
