@@ -2,6 +2,62 @@ use super::AgentSessionManager;
 use crate::agent::state::PendingApprovalData;
 use std::collections::HashMap;
 
+/// Re-emit pending tool-approval (and channel-permission) events after resume
+/// so the frontend can rehydrate approval UI for an already-active session.
+pub(crate) async fn reemit_pending_approvals_on_resume(
+    manager: &AgentSessionManager,
+    session_id: &str,
+) {
+    let pending_events = {
+        let mut evs = Vec::new();
+        let active = manager.active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            let approvals = session.pending_approvals.read().await;
+            for (tool_call_id, data) in approvals.iter() {
+                evs.push(
+                    crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
+                        session_id: session_id.to_string(),
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: data.tool_name.clone(),
+                        arguments: data.arguments.clone(),
+                        approval_kind: data.approval_kind,
+                        request_id: data.request_id.clone(),
+                        description: data.description.clone(),
+                        input_preview: data.input_preview.clone(),
+                    },
+                );
+                if let Some(request_id) = &data.request_id {
+                    evs.push(crate::agent::events::AgentEvent::ChannelPermissionRequest {
+                        session_id: session_id.to_string(),
+                        request_id: request_id.clone(),
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: data.tool_name.clone(),
+                        approval_kind: data.approval_kind,
+                        description: data.description.clone().unwrap_or_else(|| {
+                            crate::agent::tool_approvals::build_channel_permission_description(
+                                &data.tool_name,
+                                &data.arguments,
+                            )
+                        }),
+                        input_preview: data.input_preview.clone().unwrap_or_else(|| {
+                            crate::agent::tool_approvals::build_channel_permission_input_preview(
+                                &data.arguments,
+                            )
+                        }),
+                    });
+                }
+            }
+        }
+        evs
+    };
+
+    for event in pending_events {
+        if let Err(e) = crate::agent::tauri_events::emit_agent_event(&manager.app_handle, event) {
+            log::error!("Failed to re-emit pending approval event on resume: {}", e);
+        }
+    }
+}
+
 fn complete_resolved_approval(
     manager: &AgentSessionManager,
     session_id: &str,

@@ -9,26 +9,21 @@ use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
-    compact_context_repository::CompactContextRepository, message_repository::MessageRepository,
-    planning_repository::PlanningRepository, CompactContextRecord, SessionListCursor,
-    SessionListPage, SessionMetadata, SessionRepository,
+    CompactContextRecord, SessionListCursor, SessionListPage, SessionMetadata, SessionRepository,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-#[path = "session_manager/approvals.rs"]
 mod approvals;
-#[path = "session_manager/channel.rs"]
 mod channel;
-#[path = "session_manager/compact/mod.rs"]
 mod compact;
-#[path = "session_manager/execution_mode.rs"]
 pub mod execution_mode;
-#[path = "session_manager/message_injection.rs"]
 mod message_injection;
+mod reload;
+mod reset;
 
 pub use channel::format_channel_payload_for_test;
 pub use compact::build_compaction_hard_fallback_summary_for_testing;
@@ -40,13 +35,15 @@ pub use compact::should_retry_budget_related_blocking_compaction;
 pub use compact::validate_compact_summary_for_testing;
 pub use compact::CompactContextView;
 pub use compact::CompactSummaryClampResult;
-/// Manages agent sessions and their workflows
+
+/// Manages agent sessions and their workflows.
 ///
-/// This struct acts as a facade, delegating actual logic to specialized modules:
-/// - `lifecycle`: Session creation, recovery, and state management
-/// - `workflow`: Task execution flow (start, stop, pause, resume)
-/// - `llm`: LLM interaction and response handling
-/// - `tools`: Tool execution and result handling
+/// Public facade for session runtime. Domain logic lives in focused modules:
+/// - `crate::agent::lifecycle` — create, resume, recover, delete, status
+/// - `crate::agent::workflow` / `llm` / `tools` — execution pipeline
+/// - `session_manager::{approvals,channel,compact,execution_mode,message_injection,reload,reset}`
+///
+/// Workspace path resolution stays in `crate::session` (e.g. `resolve_session_workspace_dir`).
 #[derive(Clone)]
 pub struct AgentSessionManager {
     active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -219,54 +216,7 @@ impl AgentSessionManager {
         )
         .await?;
 
-        let pending_events = {
-            let mut evs = Vec::new();
-            let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                let approvals = session.pending_approvals.read().await;
-                for (tool_call_id, data) in approvals.iter() {
-                    evs.push(
-                        crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
-                            session_id: session_id.to_string(),
-                            tool_call_id: tool_call_id.clone(),
-                            tool_name: data.tool_name.clone(),
-                            arguments: data.arguments.clone(),
-                            approval_kind: data.approval_kind,
-                            request_id: data.request_id.clone(),
-                            description: data.description.clone(),
-                            input_preview: data.input_preview.clone(),
-                        },
-                    );
-                    if let Some(request_id) = &data.request_id {
-                        evs.push(crate::agent::events::AgentEvent::ChannelPermissionRequest {
-                            session_id: session_id.to_string(),
-                            request_id: request_id.clone(),
-                            tool_call_id: tool_call_id.clone(),
-                            tool_name: data.tool_name.clone(),
-                            approval_kind: data.approval_kind,
-                            description: data.description.clone().unwrap_or_else(|| {
-                                crate::agent::tool_approvals::build_channel_permission_description(
-                                    &data.tool_name,
-                                    &data.arguments,
-                                )
-                            }),
-                            input_preview: data.input_preview.clone().unwrap_or_else(|| {
-                                crate::agent::tool_approvals::build_channel_permission_input_preview(
-                                    &data.arguments,
-                                )
-                            }),
-                        });
-                    }
-                }
-            }
-            evs
-        };
-
-        for event in pending_events {
-            if let Err(e) = crate::agent::tauri_events::emit_agent_event(&self.app_handle, event) {
-                log::error!("Failed to re-emit pending approval event on resume: {}", e);
-            }
-        }
+        approvals::reemit_pending_approvals_on_resume(self, session_id).await;
 
         Ok(result)
     }
@@ -775,137 +725,7 @@ impl AgentSessionManager {
     }
 
     pub async fn reset_session(&self, session_id: &str) -> Result<(), String> {
-        // `/clear` must return quickly with Idle + empty history/pending queue.
-        //
-        // Observed failure mode (session x9b7rtc… 08:12):
-        // 1. Clear awaited browser dispose (often 5s+ timeout) BEFORE wiping
-        //    messages / emitting ResourceUpdated.
-        // 2. FE kept showing history and `agent_execute_command` stayed pending,
-        //    so the user issued another `/clear` (nested clear).
-        // 3. Meanwhile a new inject could reach Busy; the late clear then wiped
-        //    expected_response without re-settling Idle → zombie Busy → later
-        //    submits sat in pending forever.
-        //
-        // Fix: settle transcript/status first, emit clear, return; browser
-        // teardown is best-effort and must not gate the command.
-        async fn settle_idle(
-            manager: &AgentSessionManager,
-            session_id: &str,
-            is_active: bool,
-        ) -> Result<(), String> {
-            if is_active {
-                crate::agent::lifecycle::update_session_status(
-                    &manager.session_repo,
-                    &manager.active_sessions,
-                    &manager.app_handle,
-                    session_id,
-                    crate::repositories::SessionStatus::Idle,
-                )
-                .await
-            } else {
-                manager
-                    .session_repo
-                    .update_status(session_id, crate::repositories::SessionStatus::Idle)
-                    .await
-                    .map_err(|e| format!("Failed to update session status in DB: {}", e))
-            }
-        }
-
-        // 0. Cancel workflow if running
-        {
-            let sessions = self.active_sessions.read().await;
-            if let Some(session) = sessions.get(session_id) {
-                session.cancellation_token.cancel();
-            }
-        }
-
-        // 0b. Transition to Idle early (release active permit / UI feedback)
-        let is_active = {
-            let sessions = self.active_sessions.read().await;
-            sessions.contains_key(session_id)
-        };
-        settle_idle(self, session_id, is_active).await?;
-
-        // 1. Delete messages from DB
-        let repo = crate::state::get_message_repository();
-        repo.delete_by_session(session_id)
-            .await
-            .map_err(|e| format!("Failed to delete messages from DB: {}", e))?;
-
-        // 2. Clear planning data (goal, todo, scratchpad)
-        let planning_repo = crate::state::get_planning_repository();
-        planning_repo
-            .clear_session(session_id)
-            .await
-            .map_err(|e| format!("Failed to clear planning data during reset: {}", e))?;
-
-        // 3. Delete compact context
-        let compact_repo = crate::state::get_compact_context_repository();
-        if let Err(e) = compact_repo.delete_by_session_id(session_id).await {
-            log::warn!("Failed to clear compact context during reset: {}", e);
-        }
-
-        // 4. Clear in-memory active session cache
-        {
-            let mut sessions = self.active_sessions.write().await;
-            if let Some(session) = sessions.get_mut(session_id) {
-                session.clear().await;
-            }
-        }
-
-        // 5. Drop durable + in-memory pending waiters (clear is a hard reset)
-        if let Err(e) = crate::agent::pending_queue::discard_all_pending_messages(
-            &self.active_sessions,
-            Some(&self.app_handle),
-            session_id,
-        )
-        .await
-        {
-            log::warn!(
-                "Failed to discard pending messages during reset for {}: {}",
-                session_id,
-                e
-            );
-        }
-
-        // 6. Re-cancel + force Idle again — closes mid-clear Busy race window
-        {
-            let sessions = self.active_sessions.read().await;
-            if let Some(session) = sessions.get(session_id) {
-                session.cancellation_token.cancel();
-            }
-        }
-        let is_active = {
-            let sessions = self.active_sessions.read().await;
-            sessions.contains_key(session_id)
-        };
-        settle_idle(self, session_id, is_active).await?;
-
-        // 7. Notify frontend that history is gone (drives UI clear)
-        crate::agent::tauri_events::emit_resource_updated(
-            "session",
-            "clear",
-            Some(session_id.to_string()),
-        );
-
-        // 8. Browser dispose can hang for seconds — never block `/clear` on it
-        let app_handle = self.app_handle.clone();
-        let browser_session_id = session_id.to_string();
-        tauri::async_runtime::spawn(async move {
-            let browser_server =
-                app_handle.try_state::<crate::services::InteractiveBrowserServer>();
-            if let Some(browser_svc) = browser_server {
-                if let Err(e) = browser_svc
-                    .inner()
-                    .close_agent_browser_sessions(&browser_session_id)
-                    .await
-                {
-                    log::warn!("Failed to close browser session during reset: {}", e);
-                }
-            }
-        });
-
-        Ok(())
+        reset::reset_session(self, session_id).await
     }
 
     /// Reload session tools, skills, and instructions context without wiping conversation history.
@@ -914,59 +734,7 @@ impl AgentSessionManager {
     /// invalidates the in-memory prompt cache, and emits a session update event for frontend
     /// skills and tools revalidation.
     pub async fn reload_session(&self, session_id: &str) -> Result<(), String> {
-        use crate::repositories::SessionStatus;
-
-        // 1. Status guard: reject busy, queued, provisioning, or in-flight transitions/compaction
-        let (status, is_transitioning, compaction_in_flight) = {
-            let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                let trans = session.status_transition.read().await;
-                let transitioning = matches!(
-                    trans.as_ref(),
-                    Some(crate::agent::state::SessionStatusTransition::ToStatus(
-                        SessionStatus::Busy | SessionStatus::Queued
-                    ))
-                );
-                let compacting = session.compaction.snapshot().await.is_in_flight();
-                (session.metadata.status.clone(), transitioning, compacting)
-            } else {
-                let meta = self
-                    .session_repo
-                    .get_session(session_id)
-                    .await
-                    .map_err(|e| format!("Failed to load session {}: {}", session_id, e))?
-                    .ok_or_else(|| format!("Session not found: {}", session_id))?;
-                (meta.status, false, false)
-            }
-        };
-
-        validate_session_reloadable(&status, is_transitioning, compaction_in_flight)?;
-
-        // 2. Invalidate active session stable prompt cache so the next LLM turn rebuilds it
-        {
-            let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                *session.cached_stable_prompt.write().await = None;
-            }
-        }
-
-        // 3. Force MCP proxy recreate to pick up changed bindings or tool schemas
-        self.proxy_manager.destroy_proxy(session_id).await;
-        self.proxy_manager
-            .ensure_configured_proxy(session_id, Some(self.app_handle.clone()))
-            .await?;
-
-        // 4. Invalidate skills scan cache so disk changes are picked up on revalidation
-        crate::services::skill_service::invalidate_skill_scan_cache();
-
-        // 5. Emit session resource update to trigger skills / tool discovery revalidation on frontend
-        crate::agent::tauri_events::emit_resource_updated(
-            "session",
-            "update",
-            Some(session_id.to_string()),
-        );
-
-        Ok(())
+        reload::reload_session(self, session_id).await
     }
 
     /// Trigger a non-resuming manual compaction pass for an already-active session.
@@ -986,47 +754,5 @@ impl AgentSessionManager {
         timeout: Duration,
     ) -> Result<(), String> {
         compact::wait_for_compaction_to_settle(&self.active_sessions, session_id, timeout).await
-    }
-}
-
-pub(crate) fn validate_session_reloadable(
-    status: &crate::repositories::SessionStatus,
-    is_transitioning: bool,
-    is_compacting: bool,
-) -> Result<(), String> {
-    use crate::repositories::SessionStatus;
-
-    if is_transitioning || is_compacting {
-        return Err(
-            "Cannot reload session while an execution or compaction is in progress.".to_string(),
-        );
-    }
-
-    match status {
-        SessionStatus::Busy | SessionStatus::Queued | SessionStatus::Provisioning => Err(format!(
-            "Cannot reload session while it is {}.",
-            status.as_str()
-        )),
-        SessionStatus::Idle | SessionStatus::Paused | SessionStatus::Error => Ok(()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::repositories::SessionStatus;
-
-    #[test]
-    fn test_validate_session_reloadable_status_guards() {
-        assert!(validate_session_reloadable(&SessionStatus::Idle, false, false).is_ok());
-        assert!(validate_session_reloadable(&SessionStatus::Paused, false, false).is_ok());
-        assert!(validate_session_reloadable(&SessionStatus::Error, false, false).is_ok());
-
-        assert!(validate_session_reloadable(&SessionStatus::Busy, false, false).is_err());
-        assert!(validate_session_reloadable(&SessionStatus::Queued, false, false).is_err());
-        assert!(validate_session_reloadable(&SessionStatus::Provisioning, false, false).is_err());
-
-        assert!(validate_session_reloadable(&SessionStatus::Idle, true, false).is_err());
-        assert!(validate_session_reloadable(&SessionStatus::Idle, false, true).is_err());
     }
 }
