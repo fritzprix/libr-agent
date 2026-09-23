@@ -161,7 +161,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 - **document and workspace content**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
 - **developer workflow**: `git-workflow`, `bench`
 - **workspace onboarding**: `agent-init`
-- **coordination and assistants**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **coordination and assistants**: `consensus-delegation`, `session-schedule`, `context-recall`, `recruit`, `boost`
 - **external integrations**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`
 - **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **specialized operations**: `computer-diagnosis`
