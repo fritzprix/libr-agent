@@ -25,6 +25,10 @@ const MIN_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(60);
 const BOOTSTRAP_LAUNCH_BUFFER: Duration = Duration::from_secs(30);
 const SIDECAR_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SIDECAR_GRACEFUL_SHUTDOWN_WAIT: Duration = Duration::from_secs(2);
+/// Cap how long reset/timeout paths may block on `Child::wait` after SIGKILL.
+/// Unbounded waits here stranded sequential tool batches for the full Harbor agent
+/// window (createSession timeout → hang in reset → sibling tools never run).
+const SIDECAR_FORCE_KILL_WAIT: Duration = Duration::from_secs(5);
 
 struct SidecarProcess {
     child: Arc<Mutex<Child>>,
@@ -411,13 +415,25 @@ fn derive_bootstrap_timeout(request_timeout: Duration) -> Duration {
 }
 
 async fn force_kill_sidecar_tree(pid: u32, child: &mut Child) {
+    // Prefer the OS tree kill (process group + PPID walk) so Chromium helpers that
+    // left the sidecar process group still die. Then nudge tokio's Child handle.
     match tokio::task::spawn_blocking(move || force_kill_process_tree(pid)).await {
         Ok(Ok(())) => debug!("Browser sidecar process tree killed (pid {pid})"),
         Ok(Err(error)) => warn!("Failed to kill browser sidecar process tree {pid}: {error}"),
         Err(error) => warn!("Failed to join browser sidecar tree-kill task: {error}"),
     }
+    if let Err(error) = child.start_kill() {
+        debug!("tokio Child::start_kill after tree kill (pid {pid}): {error}");
+    }
     let _ = child.try_wait();
-    let _ = child.wait().await;
+    match tokio::time::timeout(SIDECAR_FORCE_KILL_WAIT, child.wait()).await {
+        Ok(Ok(status)) => debug!("Browser sidecar exited after force-kill with {status}"),
+        Ok(Err(error)) => warn!("Failed waiting for browser sidecar after force-kill: {error}"),
+        Err(_) => warn!(
+            "Browser sidecar pid {pid} did not reap within {:?} after force-kill; abandoning wait so tool dispatch can resume",
+            SIDECAR_FORCE_KILL_WAIT
+        ),
+    }
 }
 
 async fn clear_process_if_matches(state: &BrowserAutomationClientState, child: &Arc<Mutex<Child>>) {
@@ -574,5 +590,33 @@ fn fail_all_pending_with_exclusions(
         if let Some((_, sender)) = state.pending.remove(&pending_id) {
             let _ = sender.send(Err(error.clone()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn force_kill_wait_is_short_enough_to_unblock_tool_batches() {
+        // Harbor media web trials often use a ~600s agent budget. Reset after a
+        // createSession bootstrap timeout must not consume that whole window.
+        assert!(
+            SIDECAR_FORCE_KILL_WAIT <= Duration::from_secs(5),
+            "force-kill wait must stay far below Harbor agent timeouts"
+        );
+        assert!(
+            SIDECAR_FORCE_KILL_WAIT >= SIDECAR_GRACEFUL_SHUTDOWN_WAIT,
+            "force-kill wait should be at least the graceful shutdown budget"
+        );
+    }
+
+    #[test]
+    fn default_bootstrap_timeout_is_sixty_seconds() {
+        // Default action timeout 30s + launch buffer 30s => 60s createSession floor.
+        // Sidecar-side launch/CDP/page budgets must fail closed into a response so
+        // this client wait (plus a short force-kill reap) can return to tool dispatch.
+        let bootstrap = derive_bootstrap_timeout(Duration::from_secs(30));
+        assert_eq!(bootstrap, Duration::from_secs(60));
     }
 }
