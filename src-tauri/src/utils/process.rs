@@ -120,9 +120,7 @@ fn collect_descendant_pids(root: u32) -> Vec<u32> {
 
 #[cfg(unix)]
 fn signal_kill(pid_or_group: &str) -> io::Result<std::process::ExitStatus> {
-    Command::new("kill")
-        .args(["-KILL", pid_or_group])
-        .status()
+    Command::new("kill").args(["-KILL", pid_or_group]).status()
 }
 
 /// Kill a process and its descendants when the process is its own group leader.

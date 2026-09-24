@@ -68,10 +68,7 @@ pub(crate) async fn attach_auto_dismiss_js_dialogs(
     let handle = tokio::spawn(async move {
         while let Some(event) = events.next().await {
             let dialog_type = format!("{:?}", event.r#type).to_lowercase();
-            let text = format!(
-                "[auto-dismissed {dialog_type} dialog] {}",
-                event.message
-            );
+            let text = format!("[auto-dismissed {dialog_type} dialog] {}", event.message);
             warn!(
                 "Auto-dismissing JS dialog ({dialog_type}) on {}: {}",
                 event.url, event.message

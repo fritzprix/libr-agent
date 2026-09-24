@@ -203,7 +203,9 @@ impl BrowserSidecarServer {
         {
             Ok(Ok(context_id)) => context_id,
             Ok(Err(error)) => {
-                return Err(format!("Failed to create isolated browser context: {error}"));
+                return Err(format!(
+                    "Failed to create isolated browser context: {error}"
+                ));
             }
             Err(_) => {
                 return Err(format!(
