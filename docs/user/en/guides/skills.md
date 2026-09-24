@@ -29,11 +29,12 @@ Manage local skills folder in sidebar **Extensions → Skills**.
 
 ## Examples
 
-| Skill           | Use                            |
-| --------------- | ------------------------------ |
-| `setup-wizard`  | Runtime / environment guidance |
-| `docx` / `pptx` | Document workflows             |
-| Domain skills   | Your team procedures           |
+| Skill            | Use                                                                 |
+| ---------------- | ------------------------------------------------------------------- |
+| `setup-wizard`   | Runtime / environment guidance                                      |
+| `docx` / `pptx`  | Document workflows                                                  |
+| `context-recall` | Recover pre-compaction history from epoch transcripts               |
+| Domain skills    | Your team procedures                                                |
 
 ---
 
