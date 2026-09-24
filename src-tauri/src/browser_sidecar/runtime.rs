@@ -13,6 +13,9 @@ use uuid::Uuid;
 
 const SESSION_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const BROWSER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+/// Bound Chromium cold-start so a stuck `Browser::launch` cannot outlive the
+/// parent client's createSession bootstrap timeout without a sidecar error.
+const BROWSER_LAUNCH_TIMEOUT: Duration = Duration::from_secs(45);
 
 fn emit_sidecar_diagnostic(message: impl AsRef<str>) {
     eprintln!("{}", message.as_ref());
@@ -169,20 +172,33 @@ async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
             return Err(format!("Failed to build browser config: {error}"));
         }
     };
-    let (browser, mut handler) = match Browser::launch(config).await {
-        Ok(browser) => browser,
-        Err(error) => {
-            emit_sidecar_diagnostic(format!(
-                "Chromium automation launch failed in {} mode: {}",
-                if visible { "visible" } else { "headless" },
-                error
-            ));
-            cleanup_browser_runtime_profile_dir(&user_data_dir).await;
-            return Err(format!(
-                "Failed to launch Chromium automation session: {error}"
-            ));
-        }
-    };
+    let (browser, mut handler) =
+        match tokio::time::timeout(BROWSER_LAUNCH_TIMEOUT, Browser::launch(config)).await {
+            Ok(Ok(browser)) => browser,
+            Ok(Err(error)) => {
+                emit_sidecar_diagnostic(format!(
+                    "Chromium automation launch failed in {} mode: {}",
+                    if visible { "visible" } else { "headless" },
+                    error
+                ));
+                cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+                return Err(format!(
+                    "Failed to launch Chromium automation session: {error}"
+                ));
+            }
+            Err(_) => {
+                emit_sidecar_diagnostic(format!(
+                    "Chromium automation launch timed out after {:?} in {} mode",
+                    BROWSER_LAUNCH_TIMEOUT,
+                    if visible { "visible" } else { "headless" }
+                ));
+                cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+                return Err(format!(
+                    "Chromium automation launch timed out after {}s",
+                    BROWSER_LAUNCH_TIMEOUT.as_secs()
+                ));
+            }
+        };
     let handler_task = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(error) = event {

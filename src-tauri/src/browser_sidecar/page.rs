@@ -1,17 +1,23 @@
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chromiumoxide::cdp::browser_protocol::emulation::{
     ClearDeviceMetricsOverrideParams, SetDeviceMetricsOverrideParams,
 };
-use chromiumoxide::cdp::browser_protocol::page::{CaptureScreenshotFormat, Viewport};
+use chromiumoxide::cdp::browser_protocol::page::{
+    CaptureScreenshotFormat, EventJavascriptDialogOpening, HandleJavaScriptDialogParams, Viewport,
+};
 use chromiumoxide::page::ScreenshotParams;
 use chromiumoxide::Page;
+use futures::StreamExt;
 use log::warn;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::RwLock;
 
-use super::contracts::{HistoryNavigationStatus, PageClassification, PageState};
+use super::contracts::{ConsoleEntry, HistoryNavigationStatus, PageClassification, PageState};
 
 const HISTORY_NAVIGATION_TIMEOUT: Duration = Duration::from_secs(4);
 const HISTORY_NAVIGATION_POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -42,6 +48,60 @@ enum HistoryDirection {
 pub(crate) async fn snapshot_page_state(page: &Page) -> Result<PageState, String> {
     let snapshot = snapshot_navigation_state(page).await?;
     Ok(page_state_from_snapshot(snapshot))
+}
+
+/// Auto-accept JS `alert`/`confirm`/`prompt`/`beforeunload` dialogs.
+///
+/// Chromium stalls page execution (and CDP waits like `Page.goto`) when a JS dialog is
+/// open and no handler has called `Page.handleJavaScriptDialog`. Attach this **before**
+/// any navigation that may open dialogs.
+pub(crate) async fn attach_auto_dismiss_js_dialogs(
+    page: Arc<Page>,
+    console_logs: Arc<RwLock<HashMap<String, Vec<ConsoleEntry>>>>,
+    session_id: String,
+) -> Result<tokio::task::AbortHandle, String> {
+    let mut events = page
+        .event_listener::<EventJavascriptDialogOpening>()
+        .await
+        .map_err(|e| format!("Failed to subscribe to javascriptDialogOpening: {e}"))?;
+
+    let handle = tokio::spawn(async move {
+        while let Some(event) = events.next().await {
+            let dialog_type = format!("{:?}", event.r#type).to_lowercase();
+            let text = format!("[auto-dismissed {dialog_type} dialog] {}", event.message);
+            warn!(
+                "Auto-dismissing JS dialog ({dialog_type}) on {}: {}",
+                event.url, event.message
+            );
+
+            {
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs_f64())
+                    .unwrap_or(0.0);
+                let mut logs = console_logs.write().await;
+                let entries = logs.entry(session_id.clone()).or_insert_with(Vec::new);
+                entries.push(ConsoleEntry {
+                    level: String::from("dialog"),
+                    text,
+                    timestamp,
+                });
+                if entries.len() > 1000 {
+                    entries.remove(0);
+                }
+            }
+
+            let mut params = HandleJavaScriptDialogParams::new(true);
+            if let Some(default_prompt) = event.default_prompt.clone() {
+                params.prompt_text = Some(default_prompt);
+            }
+            if let Err(error) = page.execute(params).await {
+                warn!("Failed to handle JS dialog ({dialog_type}): {error}");
+            }
+        }
+    });
+
+    Ok(handle.abort_handle())
 }
 
 /// Navigate and bound the load wait so ad-heavy / never-idle pages cannot hang forever.
