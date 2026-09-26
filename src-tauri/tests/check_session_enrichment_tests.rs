@@ -253,7 +253,7 @@ fn check_session_workspace_relation_shared_and_isolated() {
     );
     let isolated_text = format_check_session_context_text(&isolated).expect("context");
     assert!(isolated_text.contains(
-        "workspace: /isolated/child-ws (ISOLATED — different from caller; use absolute path or Result text)"
+        "workspace: /isolated/child-ws (ISOLATED — different from caller; parent cannot readFile this path — use Result text or agent__messageToSession)"
     ));
 
     let mut map = serde_json::Map::new();

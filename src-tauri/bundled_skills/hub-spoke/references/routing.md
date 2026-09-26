@@ -12,26 +12,30 @@ Worker sessions (Spokes) must never communicate with each other directly. All me
    - Instead, the Hub extracts the core specs and artifact file paths, presenting a clean summary to Spoke B.
 
 3. **Bridge Routing**
-   - When Spoke A finishes, the Hub catches the event, collects the output files, and triggers Spoke B with `agent__messageToSession` containing instructions like: "Spoke A has completed its task. Please read `/workspace/output_A.json` and proceed."
+   - When Spoke A finishes, the Hub catches the event and triggers Spoke B with `agent__messageToSession`.
+   - **SHARED** workspace (same Hub root / `workspaceOverride`): Hub may pass relative paths (e.g. "Spoke A finished — read `output_A.json` and proceed").
+   - **ISOLATED** spokes: Hub cannot `workspace__readFile` a child Metadata path, and Spoke B cannot read Spoke A's private path either — Hub must bridge **Result text** (or ask A via `messageToSession` for the needed excerpt) into B's instructions.
    - Before starting a new spoke for later work, inspect the live child inventory and reuse an Idle spoke with the same `assistantId` when its workspace is compatible. Use `reset=true` for a genuinely fresh assignment; otherwise preserve the existing conversation.
 
 ---
 
 ## 📋 Routing Scenario
 
-A translation workflow coordinated by the Hub:
+A translation workflow coordinated by the Hub (assumes SHARED workspace / `workspaceOverride` so spokes share the Hub root):
 
 ```
 [Hub] "Decompose README.md translation and glossary document compilation."
   │
   ├─► [Spoke A (Translator)] Spawn: "Translate README.md to Korean."
-  │     └─► Response: "Finished. Output at /workspace/README.ko.md"
+  │     └─► Response: "Finished. Output at README.ko.md"  (Result text + relative path)
   │
-  ├─► [Filter] Hub extracts key vocabulary from A's translation.
+  ├─► [Filter] Hub extracts key vocabulary from A's Result (or SHARED path).
   │
   └─► [Spoke B (QA Doc Writer)] Spawn: "Audit README.ko.md using vocabulary list."
-        └─► Response: "Guide completed. Output at /workspace/GUIDE.ko.md"
+        └─► Response: "Guide completed. Output at GUIDE.ko.md"
 ```
+
+For **ISOLATED** spokes, replace path handoffs with Hub-bridged Result excerpts in `messageToSession` — do not tell B to read A's absolute Metadata workspace path.
 
 ---
 

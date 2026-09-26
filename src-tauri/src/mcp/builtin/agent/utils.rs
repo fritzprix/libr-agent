@@ -168,12 +168,11 @@ fn extract_report_result_body_from_summary(summary: &str) -> Option<String> {
     }
 }
 
-/// Newest `ui__reportResult` deliverable body, if any (messages are newest-first).
+/// Newest `ui__reportResult` deliverable body and its index, if any.
 ///
-/// Parent `checkSession` / blocking `messageToSession` must prefer this over
-/// earlier assistant chatter when a child finished via reportResult.
-pub fn latest_report_result_body(messages: &[Value]) -> Option<String> {
-    for message in messages {
+/// Messages are newest-first: index `0` is the newest message.
+fn latest_report_result_at(messages: &[Value]) -> Option<(usize, String)> {
+    for (idx, message) in messages.iter().enumerate() {
         let role = message.get("role").and_then(|v| v.as_str()).unwrap_or("");
         if role != "tool" {
             continue;
@@ -205,20 +204,53 @@ pub fn latest_report_result_body(messages: &[Value]) -> Option<String> {
                 continue;
             };
             if let Some(body) = extract_report_result_body_from_summary(text) {
-                return Some(body);
+                return Some((idx, body));
             }
             let trimmed = text.trim();
             if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
+                return Some((idx, trimmed.to_string()));
             }
         }
     }
     None
 }
 
+/// Newest `ui__reportResult` deliverable body, if any (messages are newest-first).
+///
+/// Prefer this over earlier assistant chatter when a child finished via
+/// reportResult — unless a newer follow-up user turn produced assistant text
+/// (see [`latest_session_output`]).
+pub fn latest_report_result_body(messages: &[Value]) -> Option<String> {
+    latest_report_result_at(messages).map(|(_, body)| body)
+}
+
+fn message_role_is(message: &Value, role: &str) -> bool {
+    message.get("role").and_then(|v| v.as_str()) == Some(role)
+}
+
+/// Prefer `ui__reportResult` over earlier assistant narration, but let a
+/// subsequent user→assistant follow-up override a stale report deliverable.
+///
+/// Messages are newest-first. A one-sentence confirmation after reportResult
+/// (no new user turn) must not shadow the deliverable body. When a follow-up
+/// user turn exists, only assistant text *after* that user message counts —
+/// otherwise the pre-follow-up confirmation would win as soon as the parent
+/// asks again, before the child has answered.
 pub fn latest_session_output(messages: &[Value]) -> String {
-    // Explicit UI final deliverable wins over earlier assistant narration.
-    if let Some(report_body) = latest_report_result_body(messages) {
+    if let Some((report_idx, report_body)) = latest_report_result_at(messages) {
+        // Newer than reportResult: indices 0..report_idx.
+        let newer = &messages[..report_idx];
+        // Oldest follow-up user in `newer` (nearest to the report). Valid
+        // replies are strictly newer → lower indices → `&newer[..user_idx]`.
+        if let Some(user_idx) = newer.iter().rposition(|m| message_role_is(m, "user")) {
+            if let Some((_, follow_up_text)) =
+                latest_assistant_message_text(&newer[..user_idx], None)
+            {
+                if follow_up_text != "[assistant message has no text content]" {
+                    return follow_up_text;
+                }
+            }
+        }
         return report_body;
     }
 
@@ -883,6 +915,163 @@ mod tests {
         assert_eq!(
             latest_session_output(&messages),
             "Deliverable without wrapper markers: approve-with-caveats"
+        );
+    }
+
+    fn report_result_tool(id: &str, body: &str) -> Value {
+        json!({
+            "id": id,
+            "role": "tool",
+            "content": [
+                {
+                    "type": "text",
+                    "text": format!(
+                        "Final result reported (status=success).\nTitle: Result\nResult:\n{body}\n\nSTOP: Do not call any more tools."
+                    )
+                },
+                {
+                    "type": "resource",
+                    "resource": {
+                        "uri": format!("ui://result/{id}"),
+                        "mimeType": "text/html",
+                        "text": "<html></html>"
+                    },
+                    "serviceInfo": {
+                        "serverName": "ui",
+                        "toolName": "reportResult",
+                        "backendType": "BuiltInRust"
+                    }
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn latest_session_output_follow_up_assistant_overrides_stale_report_result() {
+        // Parent messageToSession after reportResult: newer assistant text must win.
+        // Newest-first: follow-up answer → user → confirmation → reportResult → call.
+        let messages = vec![
+            assistant_json(
+                "asst-follow-up",
+                "Here is the complete report:\n\n# Deep Research Report",
+            ),
+            json!({
+                "id": "user-follow-up",
+                "role": "user",
+                "content": "Please output the full contents of the report."
+            }),
+            assistant_json("asst-confirm", "Done. The task outcome is delivered."),
+            report_result_tool(
+                "tool-report-stale",
+                "Brief summary of outputs/rlcd_deep_dive.md",
+            ),
+            json!({
+                "id": "asst-report-call",
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [{"id": "call-report", "function": {"name": "ui__reportResult"}}]
+            }),
+            assistant_json("asst-progress", "Still drafting the report…"),
+        ];
+
+        assert_eq!(
+            latest_session_output(&messages),
+            "Here is the complete report:\n\n# Deep Research Report"
+        );
+    }
+
+    #[test]
+    fn latest_session_output_confirmation_without_user_does_not_override_report_result() {
+        // One-sentence confirmation after reportResult (no new user turn) must not
+        // shadow the deliverable — that was the original prefer-reportResult fix.
+        let messages = vec![
+            assistant_json("asst-confirm", "Done. The task outcome is delivered."),
+            report_result_tool(
+                "tool-report",
+                "## Verdict: approve-with-caveats\n## Confidence: high",
+            ),
+            json!({
+                "id": "asst-report-call",
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [{"id": "call-report", "function": {"name": "ui__reportResult"}}]
+            }),
+        ];
+
+        assert_eq!(
+            latest_session_output(&messages),
+            "## Verdict: approve-with-caveats\n## Confidence: high"
+        );
+    }
+
+    #[test]
+    fn latest_session_output_follow_up_without_assistant_text_keeps_report_result() {
+        // Follow-up requested but child is still tool-calling — keep report until text arrives.
+        let messages = vec![
+            json!({
+                "id": "asst-reading",
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [{"id": "call-read", "function": {"name": "workspace__readFile"}}]
+            }),
+            json!({
+                "id": "user-follow-up",
+                "role": "user",
+                "content": "Please output the full contents."
+            }),
+            report_result_tool("tool-report", "Brief summary only"),
+        ];
+
+        assert_eq!(latest_session_output(&messages), "Brief summary only");
+    }
+
+    #[test]
+    fn latest_session_output_follow_up_with_confirmation_still_keeps_report_result_until_answered()
+    {
+        // Realistic sequence: reportResult → short confirmation → parent follow-up
+        // → child still tool-calling. Must not return the pre-follow-up confirmation.
+        let messages = vec![
+            json!({
+                "id": "asst-reading",
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [{"id": "call-read", "function": {"name": "workspace__readFile"}}]
+            }),
+            json!({
+                "id": "user-follow-up",
+                "role": "user",
+                "content": "Please output the full contents."
+            }),
+            assistant_json("asst-confirm", "Done. Result delivered."),
+            report_result_tool("tool-report", "Brief summary only"),
+        ];
+
+        assert_eq!(latest_session_output(&messages), "Brief summary only");
+    }
+
+    #[test]
+    fn latest_session_output_newer_report_result_wins_over_prior_follow_up() {
+        // A second reportResult after a follow-up must become the new authoritative output.
+        let messages = vec![
+            report_result_tool("tool-report-2", "Updated deliverable after revision"),
+            json!({
+                "id": "asst-report-call-2",
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [{"id": "call-report-2", "function": {"name": "ui__reportResult"}}]
+            }),
+            assistant_json("asst-follow-up", "Here is the complete report (now stale)"),
+            json!({
+                "id": "user-follow-up",
+                "role": "user",
+                "content": "Please revise and report again."
+            }),
+            report_result_tool("tool-report-1", "Original brief summary"),
+        ];
+
+        assert_eq!(
+            latest_session_output(&messages),
+            "Updated deliverable after revision"
         );
     }
 }
