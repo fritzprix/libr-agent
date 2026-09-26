@@ -14,6 +14,10 @@ fn see_tool() -> MCPTool {
 
 **Supported formats:** JPEG, PNG, GIF, WebP, BMP, SVG
 
+**Best Practices:**
+- Images consume substantial multimodal tokens and context window budget.
+- For video frame analysis, motion tracking, or scanning large collections of visual assets, do NOT inspect frames sequentially with `seeContent`. Use scripting or shell tools (e.g., Python OpenCV, PIL, ffmpeg scene detection, pixel diffing) to filter and extract metrics or timestamps programmatically first, then call `seeContent` only on the key frames or final verification samples.
+
 **Notes:**
 - Maximum file size: 20 MB.
 - Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/image.png`)."#
