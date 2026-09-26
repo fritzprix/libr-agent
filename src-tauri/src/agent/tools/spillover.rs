@@ -197,13 +197,12 @@ Do not call `readFile({{\"path\": \"{}\"}})` on the saved file without `offset` 
             notice.push_str(&format!(
                 "\nLines 1-{} are already shown above — do not restart at offset 1.\n\
 To read remaining lines ({} to {}), call `readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": 200}})`.\n\
-Then keep incrementing offset by size until you reach line {}.",
+Tip: If the output is large or you only need specific information, prefer using `workspace__grepFiles` for pattern search, shell tools (e.g. grep, tail, awk, python) for data filtering, or reading targeted slices instead of sequentially paginating through the full file.",
                 preview_line_count,
                 next_start_line,
                 total_line_count,
                 relative_path,
-                next_start_line,
-                total_line_count
+                next_start_line
             ));
         }
         PreviewTruncateKind::LineBoundary if preview_line_count > 0 => {
@@ -221,8 +220,8 @@ Then keep incrementing offset by size until you reach line {}.",
             // region are unreliable. Have the agent re-read from line 1.
             notice.push_str(&format!(
                 "\nThe inline preview above is a raw byte cut (not line-aligned). \
- Read the saved file from the start in chunks: `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})` \
- and increment offset by size each time (file has {} lines / {} bytes).",
+ Read the saved file from the start in chunks if needed: `readFile({{\"path\": \"{}\", \"offset\": 1, \"size\": 200}})` \
+ (file has {} lines / {} bytes). Prefer using `workspace__grepFiles` or shell tools to search/filter specific parts.",
                 relative_path, total_line_count, original_size_bytes
             ));
         }
@@ -391,6 +390,10 @@ mod tests {
                 "readFile({\"path\": \".libragent/tool-results/call_text-1.txt\", \"offset\": 1"
             ),
             "remaining-lines path must not lead with offset 1: {notice}"
+        );
+        assert!(
+            notice.contains("workspace__grepFiles"),
+            "notice should recommend workspace__grepFiles for pattern search: {notice}"
         );
     }
 }
