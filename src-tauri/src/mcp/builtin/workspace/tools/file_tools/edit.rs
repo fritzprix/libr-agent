@@ -357,7 +357,7 @@ pub fn create_str_replace_tool() -> MCPTool {
         title: Some("Replace Text in File".to_string()),
         description: "Perform exact string replacement in an existing file.
 
-PREREQUISITE: Use workspace__readFile first and copy the exact text CURRENTLY in the file into old_string. Matching is literal — whitespace, indentation, and line endings must match. After any successful edit, re-read before the next strReplace if you need a new match; never reuse a previous old_string/new_string pair as the next old_string.
+PREREQUISITE: Use workspace__readFile first and copy the exact text CURRENTLY in the file into old_string. Matching is literal — whitespace, indentation, and line endings must match. You can call workspace__strReplace multiple times in a single turn for distinct, non-overlapping replacements across the file. Only re-read before subsequent edits if an edit depends on the newly modified text.
 
 - Single replacement (default): old_string must match exactly once unless replace_all=true.
 - replace_all=true: every occurrence of old_string is replaced.
