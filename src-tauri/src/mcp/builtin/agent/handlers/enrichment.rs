@@ -110,7 +110,7 @@ pub fn format_workspace_metadata_line(
             format!("workspace: {} (SHARED with caller)", workspace_path)
         }
         Some(WorkspaceRelation::Isolated) => format!(
-            "workspace: {} (ISOLATED — different from caller; use absolute path or Result text)",
+            "workspace: {} (ISOLATED — different from caller; parent cannot readFile this path — use Result text or agent__messageToSession)",
             workspace_path
         ),
         None => format!("workspace: {}", workspace_path),
