@@ -106,9 +106,8 @@ pub fn load_status(base_data_dir: &Path) -> PluginStatus {
 
     match std::fs::read_to_string(&manifest_path)
         .map_err(|e| e.to_string())
-        .and_then(|raw| {
-            serde_json::from_str::<PluginManifest>(&raw).map_err(|e| e.to_string())
-        }) {
+        .and_then(|raw| serde_json::from_str::<PluginManifest>(&raw).map_err(|e| e.to_string()))
+    {
         Ok(manifest) if manifest.interface_version == INTERFACE_VERSION => PluginStatus {
             installed: true,
             path,
@@ -142,7 +141,9 @@ fn validate_deploy_relative_path(relative: &str) -> Result<PathBuf, String> {
         return Err("deploy file path is empty".to_string());
     }
     if trimmed.ends_with('/') {
-        return Err(format!("deploy path must be a file, not a directory: {trimmed}"));
+        return Err(format!(
+            "deploy path must be a file, not a directory: {trimmed}"
+        ));
     }
     if trimmed.starts_with('/') || trimmed.contains(':') {
         return Err(format!("deploy path must be relative: {trimmed}"));
@@ -166,13 +167,7 @@ fn validate_deploy_relative_path(relative: &str) -> Result<PathBuf, String> {
     }
     let allowed = matches!(
         trimmed.as_str(),
-        "manifest.json"
-            | "run"
-            | "run.exe"
-            | "run.cmd"
-            | "run.bat"
-            | "run.py"
-            | "README.md"
+        "manifest.json" | "run" | "run.exe" | "run.cmd" | "run.bat" | "run.py" | "README.md"
     ) || (trimmed.starts_with("fixtures/")
         && trimmed.len() > "fixtures/".len()
         && !trimmed[("fixtures/".len())..].contains('/'));
@@ -185,11 +180,7 @@ fn validate_deploy_relative_path(relative: &str) -> Result<PathBuf, String> {
 }
 
 fn is_windows_reserved_device_name(name: &str) -> bool {
-    let stem = name
-        .split('.')
-        .next()
-        .unwrap_or(name)
-        .to_ascii_uppercase();
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
     matches!(
         stem.as_str(),
         "CON"
@@ -346,8 +337,7 @@ pub fn deploy_files(base_data_dir: &Path, files: &[DeployFile]) -> Result<Plugin
                     .map_err(|e| format!("stat run: {e}"))?
                     .permissions();
                 perms.set_mode(0o755);
-                std::fs::set_permissions(&target, perms)
-                    .map_err(|e| format!("chmod run: {e}"))?;
+                std::fs::set_permissions(&target, perms).map_err(|e| format!("chmod run: {e}"))?;
             }
         }
     }
@@ -385,7 +375,12 @@ async fn materialize_input_path(
     plugin_root: &Path,
     request: &RunRequest,
 ) -> Result<MaterializedInput, String> {
-    if let Some(path) = request.path.as_ref().map(|p| p.trim()).filter(|p| !p.is_empty()) {
+    if let Some(path) = request
+        .path
+        .as_ref()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+    {
         let path = if path.starts_with("file:") {
             let url = url::Url::parse(path).map_err(|e| format!("invalid file URL: {e}"))?;
             url.to_file_path()
@@ -463,10 +458,7 @@ fn mime_extension(mime: &str) -> &'static str {
     }
 }
 
-pub async fn run_plugin(
-    base_data_dir: &Path,
-    request: RunRequest,
-) -> Result<RunResponse, String> {
+pub async fn run_plugin(base_data_dir: &Path, request: RunRequest) -> Result<RunResponse, String> {
     let status = load_status(base_data_dir);
     if !status.installed {
         return Ok(RunResponse {
@@ -574,15 +566,12 @@ pub async fn run_plugin(
             .map_err(|e| format!("plugin output read failed: {e}"))?;
             Ok::<_, String>((stdout_buf, stderr_buf))
         };
-        let (buffers, exit_status) = tokio::try_join!(
-            read_both,
-            async {
-                child
-                    .wait()
-                    .await
-                    .map_err(|e| format!("plugin wait failed: {e}"))
-            }
-        )?;
+        let (buffers, exit_status) = tokio::try_join!(read_both, async {
+            child
+                .wait()
+                .await
+                .map_err(|e| format!("plugin wait failed: {e}"))
+        })?;
         Ok::<_, String>((exit_status, buffers.0, buffers.1))
     })
     .await
@@ -619,7 +608,13 @@ pub async fn run_plugin(
         }
     }
 
-    if parsed.ok && parsed.text.as_ref().map(|t| t.trim().is_empty()).unwrap_or(true) {
+    if parsed.ok
+        && parsed
+            .text
+            .as_ref()
+            .map(|t| t.trim().is_empty())
+            .unwrap_or(true)
+    {
         parsed.ok = false;
         parsed.error = Some("empty_text".to_string());
         parsed.message = Some("plugin returned ok without text".to_string());

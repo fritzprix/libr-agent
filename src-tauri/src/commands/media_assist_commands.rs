@@ -8,8 +8,8 @@
 //! reports not installed and run is rejected — matching MCP tool policy (no host
 //! plugin ACE from container sessions).
 
-use crate::media_assist::{self, PluginStatus, RunRequest, RunResponse};
 use crate::mcp::builtin::workspace::utils::is_session_docker_isolated;
+use crate::media_assist::{self, PluginStatus, RunRequest, RunResponse};
 use crate::session::get_session_manager;
 
 fn base_data_dir() -> Result<std::path::PathBuf, String> {

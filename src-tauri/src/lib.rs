@@ -82,6 +82,7 @@ use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
     list_mcp_server_presets, update_mcp_server_config,
 };
+use commands::media_assist_commands::{media_assist_plugin_status, media_assist_run_plugin};
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_messages_before,
     messages_get_page, messages_search, messages_upsert, messages_upsert_many,
@@ -122,7 +123,6 @@ use commands::workspace_commands::{
     probe_runtime_binaries, read_local_file_as_base64, read_workspace_file_content, restart_app,
     set_workspace_override, start_docker_desktop, submit_interactive_shell_input,
 };
-use commands::media_assist_commands::{media_assist_plugin_status, media_assist_run_plugin};
 
 // Re-export state management functions
 pub use state::{

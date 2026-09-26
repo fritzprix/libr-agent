@@ -596,7 +596,9 @@ pub async fn handle_assist_plugin_status(
 ) -> Result<MCPResult, String> {
     if let Some(blocked) = host_plugin_blocked_for_session(session_id).await {
         return Ok(MCPResult {
-            content: Some(vec![MCPContent::Text { text: blocked.clone() }]),
+            content: Some(vec![MCPContent::Text {
+                text: blocked.clone(),
+            }]),
             structured_content: Some(serde_json::json!({
                 "installed": false,
                 "hostExecutionAllowed": false,
@@ -654,22 +656,22 @@ pub async fn handle_deploy_assist_plugin(
     let Some(files_val) = args.get("files") else {
         return Ok(missing_param_error("files", ToolGroup::Media));
     };
-    let files: Vec<crate::media_assist::DeployFile> = match serde_json::from_value(files_val.clone())
-    {
-        Ok(files) => files,
-        Err(error) => {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!("invalid files: {error}"),
-                ToolGroup::Media,
-            )
-            .with_guidance(vec![
-                "files must be an array of { path, content, base64? } objects.".to_string(),
-                "Include at least manifest.json and run (or run.cmd on Windows).".to_string(),
-            ])
-            .to_mcp_result());
-        }
-    };
+    let files: Vec<crate::media_assist::DeployFile> =
+        match serde_json::from_value(files_val.clone()) {
+            Ok(files) => files,
+            Err(error) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("invalid files: {error}"),
+                    ToolGroup::Media,
+                )
+                .with_guidance(vec![
+                    "files must be an array of { path, content, base64? } objects.".to_string(),
+                    "Include at least manifest.json and run (or run.cmd on Windows).".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
     match crate::media_assist::deploy_files(base_data_dir, &files) {
         Ok(status) => {
             let json = serde_json::to_value(&status).map_err(|e| e.to_string())?;
