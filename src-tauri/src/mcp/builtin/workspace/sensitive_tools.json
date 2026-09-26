@@ -18,5 +18,8 @@
         "scheduled_task__deleteScheduledTask",
         "media__captureScreen",
         "desktop__computerControl"
+    ],
+    "requires_hard_approval": [
+        "media__deployAssistPlugin"
     ]
 }

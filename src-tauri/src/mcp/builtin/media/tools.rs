@@ -3,14 +3,21 @@ use crate::mcp::MCPTool;
 
 /// Returns all tools provided by the Media server.
 pub fn all_tools() -> Vec<MCPTool> {
-    vec![see_tool(), listen_tool(), capture_screen_tool()]
+    vec![
+        see_tool(),
+        listen_tool(),
+        capture_screen_tool(),
+        assist_plugin_status_tool(),
+        deploy_assist_plugin_tool(),
+    ]
 }
 
 fn see_tool() -> MCPTool {
     MCPTool {
         name: "seeContent".to_string(),
         title: Some("See Content".to_string()),
-        description: r#"Fetch an image and include it in the conversation so you can visually analyse it.
+        description: format!(
+            r#"Fetch an image and include it in the conversation so you can visually analyse it.
 
 **Supported formats:** JPEG, PNG, GIF, WebP, BMP, SVG
 
@@ -21,9 +28,11 @@ fn see_tool() -> MCPTool {
 - If ffmpeg/python are missing, do NOT spend the session installing packages. Sample a few frames or extract audio instead, then use `seeContent` / `media__listenContent`. For speech-in-video: extract audio to wav/mp3 and call `listenContent`.
 
 **Notes:**
+- Hard session limit: at most {limit} successful `seeContent` loads; further calls return an error directing you to sample or use `listenContent` on extracted audio.
 - Maximum file size: 20 MB.
-- Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/image.png`)."#
-            .to_string(),
+- Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/image.png`)."#,
+            limit = super::handlers::MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
+        ),
         input_schema: object_prop(
             vec![(
                 "url".to_string(),
@@ -135,6 +144,73 @@ fn capture_screen_tool() -> MCPTool {
                 ),
             ],
             vec![],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+        libragent_wait: None,
+    }
+}
+
+fn assist_plugin_status_tool() -> MCPTool {
+    MCPTool {
+        name: "assistPluginStatus".to_string(),
+        title: Some("Media Assist Plugin Status".to_string()),
+        description: r#"Check whether a host MediaAssist plugin is installed under app local storage.
+
+Used after multimodal LLM rejection (HTTP 400). When installed, LibrAgent can convert audio/image/video to text automatically. When missing, load @skill:libragent-plugin to implement, verify, and deploy."#
+            .to_string(),
+        input_schema: object_prop(vec![], vec![], None),
+        output_schema: None,
+        annotations: None,
+        libragent_wait: None,
+    }
+}
+
+fn deploy_assist_plugin_tool() -> MCPTool {
+    MCPTool {
+        name: "deployAssistPlugin".to_string(),
+        title: Some("Deploy Media Assist Plugin".to_string()),
+        description: r#"Deploy a verified MediaAssist plugin into host app local storage (`harness-plugins/media-assist/v1`).
+
+Writes only relative files: `manifest.json`, `run` (or `run.exe`/`run.cmd`/`run.bat` on Windows), optional `run.py` helper, `README.md` / `fixtures/<file>`. Runs on the host under Host isolation. Prefer @skill:libragent-plugin for implement → verify → deploy.
+
+Requires hard user approval (sensitive tool; not bypassed by YOLO): installs an executable that LibrAgent may later spawn on multimodal 400 recovery. Blocked under Docker/Harbor session isolation — in those sessions convert media inside the container with CLI tools (ffmpeg/OCR) instead of deploying a host plugin.
+
+`files` items: `{ "path": "manifest.json"|"run"|..., "content": "...", "base64"?: false }`."#
+            .to_string(),
+        input_schema: object_prop(
+            vec![(
+                "files".to_string(),
+                array_schema(
+                    object_prop(
+                        vec![
+                            (
+                                "path".to_string(),
+                                string_prop_required(
+                                    "Relative path: manifest.json, run, run.exe/run.cmd/run.bat (Windows), run.py, README.md, or fixtures/<file>",
+                                ),
+                            ),
+                            (
+                                "content".to_string(),
+                                string_prop_required(
+                                    "File text, or base64 when base64=true",
+                                ),
+                            ),
+                            (
+                                "base64".to_string(),
+                                boolean_prop(Some(
+                                    "When true, content is base64-encoded bytes (default false).",
+                                )),
+                            ),
+                        ],
+                        vec!["path".to_string(), "content".to_string()],
+                        None,
+                    ),
+                    Some("Plugin files to install on the host."),
+                ),
+            )],
+            vec!["files".to_string()],
             None,
         ),
         output_schema: None,
