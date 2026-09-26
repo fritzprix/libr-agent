@@ -15,8 +15,10 @@ fn see_tool() -> MCPTool {
 **Supported formats:** JPEG, PNG, GIF, WebP, BMP, SVG
 
 **Best Practices:**
-- Images consume substantial multimodal tokens and context window budget.
-- For video frame analysis, motion tracking, or scanning large collections of visual assets, do NOT inspect frames sequentially with `seeContent`. Use scripting or shell tools (e.g., Python OpenCV, PIL, ffmpeg scene detection, pixel diffing) to filter and extract metrics or timestamps programmatically first, then call `seeContent` only on the key frames or final verification samples.
+- Prefer `seeContent` for reading text or details in individual images (screenshots, photos, diagrams, scanned pages).
+- Images consume substantial multimodal tokens — avoid calling `seeContent` on every frame of a long video or every file in a large set.
+- When many frames/files must be scanned and scripting tools are already available (e.g. ffmpeg, python3), filter or sample programmatically first, then call `seeContent` only on key frames or final verification samples.
+- If ffmpeg/python are missing, do NOT spend the session installing packages. Sample a few frames or extract audio instead, then use `seeContent` / `media__listenContent`. For speech-in-video: extract audio to wav/mp3 and call `listenContent`.
 
 **Notes:**
 - Maximum file size: 20 MB.
@@ -44,9 +46,10 @@ fn listen_tool() -> MCPTool {
         title: Some("Listen Content".to_string()),
         description: r#"Fetch an audio file and include it in the conversation so you can analyse the audio.
 
-**Supported formats:** MP3, WAV, OGG, AAC, FLAC, WEBM
+**Supported formats:** MP3, WAV, OGG, AAC, FLAC, WEBM, M4A
 
 **Notes:**
+- Audio only — not video containers (MP4/MKV/MOV). For speech-in-video, extract an audio track first (e.g. ffmpeg to wav/mp3), then call `listenContent` on that file.
 - Maximum file size: 20 MB.
 - Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/clip.mp3`)."#
             .to_string(),

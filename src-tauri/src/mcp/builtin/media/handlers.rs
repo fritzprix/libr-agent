@@ -80,6 +80,39 @@ pub fn resolve_audio_mime(url: &str, content_type_header: Option<&str>) -> Optio
     ext_from_url_path(url).and_then(|ext| audio_mime_from_ext(&ext).map(|s| s.to_string()))
 }
 
+/// True when the path/URL extension looks like a video container (not audio).
+///
+/// Used to tailor `listenContent` recovery — `webm` is omitted because it is a
+/// supported audio extension for this tool.
+pub fn looks_like_video_path(url: &str) -> bool {
+    matches!(
+        ext_from_url_path(url).as_deref(),
+        Some("mp4" | "mkv" | "mov" | "avi" | "m4v" | "mpeg" | "mpg" | "wmv")
+    )
+}
+
+fn listen_content_recovery(url: &str) -> Vec<String> {
+    if looks_like_video_path(url) {
+        vec![
+            "This path looks like a video container; listenContent accepts audio only."
+                .to_string(),
+            "If ffmpeg is available: extract audio (e.g. `ffmpeg -y -i <video> -vn -acodec pcm_s16le /app/audio.wav`), then call media__listenContent on that wav/mp3."
+                .to_string(),
+            "If ffmpeg is missing, do not apt-install for long stretches — sample a few keyframes and use media__seeContent on those images instead."
+                .to_string(),
+            "Prefer media__listenContent / media__seeContent over installing OCR/ASR stacks when the goal is transcription or on-screen text."
+                .to_string(),
+        ]
+    } else {
+        vec![
+            "Provide a URL/path to a supported audio format (MP3, WAV, OGG, AAC, FLAC, WEBM, M4A)."
+                .to_string(),
+            "If the source is video, extract an audio track first, then retry listenContent on the extracted file."
+                .to_string(),
+        ]
+    }
+}
+
 // ── Source resolution ─────────────────────────────────────────────────────────
 
 /// Describes where the content bytes come from.
@@ -425,10 +458,11 @@ pub async fn handle_listen_content(
                 format!(
                     "Could not determine audio MIME type for '{url_str}'. \
                      Ensure the URL/path points to a supported audio format \
-                     (MP3, WAV, OGG, AAC, FLAC, WEBM)."
+                     (MP3, WAV, OGG, AAC, FLAC, WEBM, M4A)."
                 ),
                 ToolGroup::Media,
             )
+            .with_guidance(listen_content_recovery(&url_str))
             .to_mcp_result());
         }
     };
@@ -439,6 +473,7 @@ pub async fn handle_listen_content(
             format!("URL does not point to an audio file (detected MIME type: {mime_type})."),
             ToolGroup::Media,
         )
+        .with_guidance(listen_content_recovery(&url_str))
         .to_mcp_result());
     }
 
@@ -850,5 +885,23 @@ mod tests {
             media_local_path_error_category(&err),
             ErrorCategory::PermissionDenied
         );
+    }
+
+    #[test]
+    fn looks_like_video_path_detects_common_containers() {
+        assert!(looks_like_video_path("/app/video.mp4"));
+        assert!(looks_like_video_path("clip.MKV?x=1"));
+        assert!(!looks_like_video_path("/app/audio.wav"));
+        assert!(!looks_like_video_path("/app/clip.webm")); // audio-capable for listenContent
+    }
+
+    #[test]
+    fn listen_content_recovery_for_video_mentions_extract_not_apt() {
+        let tips = listen_content_recovery("/app/video.mp4");
+        let joined = tips.join("\n");
+        assert!(joined.contains("ffmpeg"));
+        assert!(joined.contains("listenContent"));
+        assert!(joined.contains("seeContent"));
+        assert!(joined.to_lowercase().contains("do not apt-install"));
     }
 }
