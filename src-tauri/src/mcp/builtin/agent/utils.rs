@@ -961,7 +961,10 @@ mod tests {
                 "content": "Please output the full contents of the report."
             }),
             assistant_json("asst-confirm", "Done. The task outcome is delivered."),
-            report_result_tool("tool-report-stale", "Brief summary of outputs/rlcd_deep_dive.md"),
+            report_result_tool(
+                "tool-report-stale",
+                "Brief summary of outputs/rlcd_deep_dive.md",
+            ),
             json!({
                 "id": "asst-report-call",
                 "role": "assistant",
