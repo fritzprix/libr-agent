@@ -10,6 +10,7 @@ pub mod log_commands;
 pub mod markdown_pdf;
 pub mod mcp_commands;
 pub mod mcp_server_config_commands;
+pub mod media_assist_commands;
 pub mod messages_commands;
 pub mod migration_commands;
 pub mod playbook_commands;

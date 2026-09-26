@@ -7,6 +7,7 @@ use crate::mcp::MCPTool;
 use crate::session::SessionManager;
 use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 pub const NAME: &str = "media";
@@ -24,6 +25,8 @@ pub const NAME: &str = "media";
 pub struct MediaServer {
     session_id: String,
     session_manager: Arc<SessionManager>,
+    /// Successful `seeContent` loads reserved for this session instance.
+    see_content_successes: AtomicUsize,
 }
 
 impl MediaServer {
@@ -32,6 +35,7 @@ impl MediaServer {
         Self {
             session_id,
             session_manager,
+            see_content_successes: AtomicUsize::new(0),
         }
     }
 
@@ -44,7 +48,7 @@ impl MediaServer {
     pub fn metadata_static() -> BuiltinServerMetadata {
         BuiltinServerMetadata {
             display_name: "Media".to_string(),
-            description: "Fetch images/audio and capture desktop screen into the agent context"
+            description: "Fetch images/audio, capture screen, and manage MediaAssist host plugins"
                 .to_string(),
             icon: None,
         }
@@ -85,11 +89,34 @@ impl BuiltinMCPServer for MediaServer {
         );
 
         match tool_name {
-            "seeContent" => handlers::handle_see_content(args, workspace_dir, session_id).await,
+            "seeContent" => {
+                handlers::handle_see_content(
+                    args,
+                    workspace_dir,
+                    session_id,
+                    &self.see_content_successes,
+                )
+                .await
+            }
             "listenContent" => {
                 handlers::handle_listen_content(args, workspace_dir, session_id).await
             }
             "captureScreen" => handlers::handle_capture_screen(args).await,
+            "assistPluginStatus" => {
+                handlers::handle_assist_plugin_status(
+                    self.session_manager.get_base_data_dir(),
+                    &session_id,
+                )
+                .await
+            }
+            "deployAssistPlugin" => {
+                handlers::handle_deploy_assist_plugin(
+                    args,
+                    self.session_manager.get_base_data_dir(),
+                    &session_id,
+                )
+                .await
+            }
             _ => Err(format!("Unknown tool: {tool_name}")),
         }
     }

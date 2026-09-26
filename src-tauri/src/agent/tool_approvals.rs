@@ -15,6 +15,9 @@ static TOOL_APPROVALS_CONFIG: OnceCell<ToolApprovalsConfig> = OnceCell::const_ne
 pub struct ToolApprovalsConfig {
     #[serde(default)]
     pub requires_approval: Vec<String>,
+    /// Tools that still require human confirmation in YOLO mode (not in unsafe).
+    #[serde(default)]
+    pub requires_hard_approval: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,12 +76,19 @@ pub fn pending_approval_is_auto_approvable_in_yolo(approval_kind: PendingApprova
 pub async fn is_approval_required(tool_name: &str) -> bool {
     let config = get_tool_approvals_config().await;
     requires_approval_by_config(config, tool_name)
+        || requires_hard_approval_by_config(config, tool_name)
+}
+
+pub async fn is_hard_approval_required(tool_name: &str) -> bool {
+    let config = get_tool_approvals_config().await;
+    requires_hard_approval_by_config(config, tool_name)
 }
 
 pub async fn evaluate_tool_execution_policy(
     tool_name: &str,
     args: &serde_json::Value,
 ) -> ToolExecutionPolicyDecision {
+    let requires_hard_approval = is_hard_approval_required(tool_name).await;
     let requires_approval = is_approval_required(tool_name).await;
 
     if is_shell_tool_name(tool_name) {
@@ -122,6 +132,14 @@ pub async fn evaluate_tool_execution_policy(
                 message: decision.reason,
             }),
         };
+    }
+
+    if requires_hard_approval {
+        let arguments = args.to_string();
+        return ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
+            description: build_channel_permission_description(tool_name, &arguments),
+            input_preview: build_channel_permission_input_preview(&arguments),
+        });
     }
 
     if requires_approval {
@@ -177,7 +195,15 @@ async fn load_tool_approvals_config_uncached() -> ToolApprovalsConfig {
 }
 
 fn requires_approval_by_config(config: &ToolApprovalsConfig, tool_name: &str) -> bool {
-    for pattern in &config.requires_approval {
+    pattern_list_matches(&config.requires_approval, tool_name)
+}
+
+fn requires_hard_approval_by_config(config: &ToolApprovalsConfig, tool_name: &str) -> bool {
+    pattern_list_matches(&config.requires_hard_approval, tool_name)
+}
+
+fn pattern_list_matches(patterns: &[String], tool_name: &str) -> bool {
+    for pattern in patterns {
         if pattern.ends_with('*') {
             let prefix = &pattern[..pattern.len() - 1];
             if tool_name.starts_with(prefix) {
@@ -187,7 +213,6 @@ fn requires_approval_by_config(config: &ToolApprovalsConfig, tool_name: &str) ->
             return true;
         }
     }
-    // Default false if no match
     false
 }
 
@@ -279,6 +304,12 @@ mod tests {
         assert!(config
             .requires_approval
             .contains(&"scheduled_task__deleteScheduledTask".to_string()));
+        assert!(config
+            .requires_hard_approval
+            .contains(&"media__deployAssistPlugin".to_string()));
+        assert!(!config
+            .requires_approval
+            .contains(&"media__deployAssistPlugin".to_string()));
     }
 
     #[tokio::test]
@@ -333,6 +364,7 @@ mod tests {
                 "workspace__writeFile".to_string(),
                 "filesystem__*".to_string(),
             ],
+            requires_hard_approval: vec![],
         };
 
         // Exact match

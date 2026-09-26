@@ -13,6 +13,7 @@ pub mod execution_mode;
 pub mod lifecycle; // New lifecycle module
 mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
+pub mod media_assist;
 pub mod models;
 pub mod repositories; // Make public for integration tests
 pub mod scheduled; // Cron-backed scheduled task background worker (public for integration tests)
@@ -81,6 +82,7 @@ use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
     list_mcp_server_presets, update_mcp_server_config,
 };
+use commands::media_assist_commands::{media_assist_plugin_status, media_assist_run_plugin};
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_messages_before,
     messages_get_page, messages_search, messages_upsert, messages_upsert_many,
@@ -208,6 +210,8 @@ pub fn run() {
                 get_app_data_dir,
                 get_app_logs_dir,
                 get_update_install_capability,
+                media_assist_plugin_status,
+                media_assist_run_plugin,
                 backup_current_log,
                 clear_current_log,
                 list_log_files,

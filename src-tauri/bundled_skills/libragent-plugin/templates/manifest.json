@@ -1,0 +1,6 @@
+{
+  "interfaceVersion": 1,
+  "name": "example-media-assist",
+  "timeoutMs": 120000,
+  "modalities": ["audio", "image", "video"]
+}

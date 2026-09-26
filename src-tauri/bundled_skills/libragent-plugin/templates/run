@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Stub MediaAssist run — replace with real ASR/OCR/VLM. Reads stdin JSON, writes stdout JSON."""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    try:
+        req = json.load(sys.stdin)
+    except json.JSONDecodeError as exc:
+        json.dump(
+            {"ok": False, "error": "invalid_json", "message": str(exc)},
+            sys.stdout,
+        )
+        return 0
+
+    modality = str(req.get("modality", "")).lower()
+    path = req.get("path")
+    max_chars = int(req.get("maxOutputChars") or 8000)
+
+    if not path or not Path(path).is_file():
+        json.dump(
+            {
+                "ok": False,
+                "error": "missing_path",
+                "message": f"media path missing or not a file: {path!r}",
+                "modality": modality,
+            },
+            sys.stdout,
+        )
+        return 0
+
+    # Stub: prove the harness pipe works. Replace this branch with real conversion.
+    text = (
+        f"[stub] modality={modality} path={path}. "
+        "Replace templates/run with a real local ASR/OCR/VLM implementation."
+    )[:max_chars]
+    json.dump(
+        {"ok": True, "modality": modality, "text": text, "notes": "stub"},
+        sys.stdout,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
