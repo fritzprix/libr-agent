@@ -151,7 +151,7 @@ Et ce n'est que la couche opérateur. LibrAgent fournit également des compéten
 - **Documents et contenu workspace** : `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
 - **Workflow développeur** : `git-workflow`, `bench`
 - **Onboarding workspace** : `agent-init`
-- **Coordination et assistants** : `consensus-delegation`, `session-schedule`, `context-recall`, `recruit`, `boost`
+- **Coordination et assistants** : `consensus-delegation`, `loop`, `call-me-back`, `context-recall`, `recruit`, `boost`
 - **Intégrations externes** : `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
 - **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **Opérations spécialisées** : `computer-diagnosis`

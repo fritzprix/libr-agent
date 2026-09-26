@@ -126,9 +126,9 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 `delegate`, `teamwork`, `org`, `org-restructure`, `divide-conquer`, `hub-spoke`, `pipeline`, `consensus-delegation`, `gatekeeper`, `pair-programming`, `recruit`, `boost`
 
-### 일정
+### 일정 · 웨이크
 
-`schedule`, `session-schedule`
+`schedule`, `loop`, `call-me-back`
 
 ### 세션 · 컨텍스트
 

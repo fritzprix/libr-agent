@@ -6,7 +6,7 @@ description: |
   ("show my schedule", "book a meeting tomorrow at 3pm", "what's on my calendar this week").
   MVP supports Google Calendar API (OAuth2). On first use, guide Google Cloud OAuth setup,
   collect client_secret via hidden shell prompt, run setup.py --oauth, and store tokens in
-  ~/.libragent/calendar_config.json. Not for LibrAgent agent cron automation (schedule / session-schedule).
+  ~/.libragent/calendar_config.json. Not for LibrAgent agent cron automation (schedule / loop) or completion waits (call-me-back).
   Triggers on: "일정 보여줘", "캘린더 확인", "미팅 예약", "show my calendar", "schedule a meeting".
 ---
 
@@ -20,7 +20,8 @@ This is an **end-user daily work** skill (like `email-integration`, `telegram-cl
 
 | Skill | Use for |
 | --- | --- |
-| **schedule** / **session-schedule** | Wake an assistant on a cron (automation harness) |
+| **schedule** / **loop** | Wake an assistant on a clock/cron (automation harness) |
+| **call-me-back** | Resume this session on process/kanban/webhook completion |
 | **email-integration** | Mail read/send (separate OAuth; IMAP, not Gmail API) |
 | **recruit** / **boost** | Create or strengthen assistant configurations |
 

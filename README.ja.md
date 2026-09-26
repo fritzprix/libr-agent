@@ -151,7 +151,7 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 - **ドキュメントとワークスペースコンテンツ**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`data-viz`
 - **開発者ワークフロー**：`git-workflow`, `bench`
 - **ワークスペースオンボーディング**：`agent-init`
-- **調整とアシスタント**：`consensus-delegation`、`session-schedule`、`context-recall`、`recruit`、`boost`
+- **調整とアシスタント**：`consensus-delegation`、`loop`、`call-me-back`、`context-recall`、`recruit`、`boost`
 - **外部連携**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
 - **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`tool-creator`、`fine-tune`
 - **特殊操作**：`computer-diagnosis`
