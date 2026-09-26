@@ -14,7 +14,7 @@
 After `agent__checkSession`, read Metadata `workspace:`:
 
 - `SHARED with caller` — relative paths in the shared root are safe
-- `ISOLATED` — use absolute paths from Metadata or rely on Result text
+- `ISOLATED` — parent cannot `workspace__readFile` this path; rely on Result text or `agent__messageToSession`
 
 ## Org children
 
