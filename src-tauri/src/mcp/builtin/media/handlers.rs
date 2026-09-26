@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use url::Url;
 
 use crate::mcp::builtin::error_guidance::{
@@ -12,6 +13,73 @@ use xcap::Monitor;
 
 /// Maximum allowed download size (20 MB).
 const MAX_BYTES: usize = 20 * 1024 * 1024;
+
+/// Hard cap on successful `seeContent` image loads per media-server session.
+///
+/// Soft tool-description advice alone does not stop all-frame multimodal dumps;
+/// the handler enforces this bound and returns guided recovery.
+pub const MAX_SEE_CONTENT_SUCCESSES_PER_SESSION: usize = 8;
+
+/// RAII reservation for one `seeContent` success slot.
+///
+/// Drop releases the slot unless [`SeeContentSlot::commit`] was called (load
+/// succeeded and multimodal content will be returned).
+struct SeeContentSlot<'a> {
+    counter: &'a AtomicUsize,
+    committed: bool,
+}
+
+impl<'a> SeeContentSlot<'a> {
+    fn try_reserve(counter: &'a AtomicUsize) -> Result<Self, usize> {
+        let prev = counter.fetch_add(1, Ordering::SeqCst);
+        if prev >= MAX_SEE_CONTENT_SUCCESSES_PER_SESSION {
+            counter.fetch_sub(1, Ordering::SeqCst);
+            return Err(MAX_SEE_CONTENT_SUCCESSES_PER_SESSION);
+        }
+        Ok(Self {
+            counter,
+            committed: false,
+        })
+    }
+
+    fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for SeeContentSlot<'_> {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.counter.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+}
+
+fn see_content_cap_recovery() -> Vec<String> {
+    vec![
+        format!(
+            "This session already used the maximum of {MAX_SEE_CONTENT_SUCCESSES_PER_SESSION} successful seeContent loads."
+        ),
+        "Do not dump every video frame or large image set into context — sample a few key frames only."
+            .to_string(),
+        "For speech-in-video: extract audio (wav/mp3) and call media__listenContent on that file instead of more seeContent."
+            .to_string(),
+        "If scripting tools (ffmpeg/python) are available, filter or OCR offline, then use seeContent only for final verification samples."
+            .to_string(),
+    ]
+}
+
+fn see_content_cap_exceeded_result() -> MCPResult {
+    guided_error(
+        ErrorCategory::InvalidState,
+        format!(
+            "seeContent session limit reached ({MAX_SEE_CONTENT_SUCCESSES_PER_SESSION} successful image loads). Further seeContent calls are blocked for this session."
+        ),
+        ToolGroup::Media,
+    )
+    .with_guidance(see_content_cap_recovery())
+    .to_mcp_result()
+}
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
@@ -321,10 +389,16 @@ pub async fn handle_see_content(
     args: Value,
     workspace_dir: std::path::PathBuf,
     session_id: String,
+    see_content_successes: &AtomicUsize,
 ) -> Result<MCPResult, String> {
     let url_str = match args.get("url").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
         _ => return Ok(missing_param_error("url", ToolGroup::Media)),
+    };
+
+    let slot = match SeeContentSlot::try_reserve(see_content_successes) {
+        Ok(slot) => slot,
+        Err(_) => return Ok(see_content_cap_exceeded_result()),
     };
 
     let (bytes, content_type_header) = {
@@ -387,11 +461,20 @@ pub async fn handle_see_content(
 
     let data = general_purpose::STANDARD.encode(&bytes);
     let size_kb = bytes.len() / 1024;
+    let remaining = MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
+        .saturating_sub(see_content_successes.load(Ordering::SeqCst));
+
+    slot.commit();
 
     Ok(MCPResult {
         content: Some(vec![
             MCPContent::Text {
-                text: format!("✓ Image loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
+                text: format!(
+                    "✓ Image loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}\n\n\
+                     seeContent session budget: {remaining} successful load(s) remaining \
+                     (max {MAX_SEE_CONTENT_SUCCESSES_PER_SESSION}). Sample sparsely; \
+                     for speech-in-video prefer media__listenContent on extracted audio."
+                ),
             },
             MCPContent::Image {
                 data: Some(data),
@@ -494,6 +577,125 @@ pub async fn handle_listen_content(
         structured_content: None,
         is_error: Some(false),
     })
+}
+
+// ── Handler: assistPluginStatus / deployAssistPlugin ─────────────────────────
+
+async fn host_plugin_blocked_for_session(session_id: &str) -> Option<String> {
+    if crate::mcp::builtin::workspace::utils::is_session_docker_isolated(session_id).await {
+        return Some(
+            "MediaAssist host plugins are disabled for Docker/Harbor sessions to prevent container breakout. Use Host isolation, or convert media inside the container with ffmpeg/CLI tools.".to_string(),
+        );
+    }
+    None
+}
+
+pub async fn handle_assist_plugin_status(
+    base_data_dir: &std::path::Path,
+    session_id: &str,
+) -> Result<MCPResult, String> {
+    if let Some(blocked) = host_plugin_blocked_for_session(session_id).await {
+        return Ok(MCPResult {
+            content: Some(vec![MCPContent::Text { text: blocked.clone() }]),
+            structured_content: Some(serde_json::json!({
+                "installed": false,
+                "hostExecutionAllowed": false,
+                "error": "docker_isolation_blocked",
+                "message": blocked,
+            })),
+            is_error: Some(false),
+        });
+    }
+
+    let status = crate::media_assist::load_status(base_data_dir);
+    let json = serde_json::to_value(&status).map_err(|e| e.to_string())?;
+    let text = if status.installed {
+        format!(
+            "✓ MediaAssist plugin installed at {}\nmodalities={:?}\ntimeoutMs={}",
+            status.path, status.modalities, status.timeout_ms
+        )
+    } else {
+        let mut text = format!(
+            "MediaAssist plugin not installed at {}.\nLoad @skill:libragent-plugin to implement, verify, and media__deployAssistPlugin.",
+            status.path
+        );
+        if let Some(error) = status.error.as_ref().filter(|e| !e.is_empty()) {
+            text.push_str(&format!("\nDiagnostic: {error}"));
+        }
+        text
+    };
+    Ok(MCPResult {
+        content: Some(vec![MCPContent::Text { text }]),
+        structured_content: Some(json),
+        is_error: Some(false),
+    })
+}
+
+pub async fn handle_deploy_assist_plugin(
+    args: Value,
+    base_data_dir: &std::path::Path,
+    session_id: &str,
+) -> Result<MCPResult, String> {
+    if let Some(blocked) = host_plugin_blocked_for_session(session_id).await {
+        return Ok(guided_error(
+            ErrorCategory::PermissionDenied,
+            blocked,
+            ToolGroup::Media,
+        )
+        .with_guidance(vec![
+            "MediaAssist plugins run on the host and are blocked under Docker/Harbor isolation."
+                .to_string(),
+            "Switch the session to Host isolation to deploy, or keep conversion inside the container."
+                .to_string(),
+        ])
+        .to_mcp_result());
+    }
+
+    let Some(files_val) = args.get("files") else {
+        return Ok(missing_param_error("files", ToolGroup::Media));
+    };
+    let files: Vec<crate::media_assist::DeployFile> = match serde_json::from_value(files_val.clone())
+    {
+        Ok(files) => files,
+        Err(error) => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("invalid files: {error}"),
+                ToolGroup::Media,
+            )
+            .with_guidance(vec![
+                "files must be an array of { path, content, base64? } objects.".to_string(),
+                "Include at least manifest.json and run (or run.cmd on Windows).".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
+    match crate::media_assist::deploy_files(base_data_dir, &files) {
+        Ok(status) => {
+            let json = serde_json::to_value(&status).map_err(|e| e.to_string())?;
+            Ok(MCPResult {
+                content: Some(vec![MCPContent::Text {
+                    text: format!(
+                        "✓ MediaAssist plugin deployed to {}\nmodalities={:?}",
+                        status.path, status.modalities
+                    ),
+                }]),
+                structured_content: Some(json),
+                is_error: Some(false),
+            })
+        }
+        Err(error) => Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            error,
+            ToolGroup::Media,
+        )
+        .with_guidance(vec![
+            "Include both manifest.json (interfaceVersion=1) and an executable run script.".to_string(),
+            "Allowed paths: manifest.json, run (or run.exe/run.cmd/run.bat on Windows), README.md, fixtures/* only.".to_string(),
+            "Follow @skill:libragent-plugin verify before deploy. Deploy requires hard user approval (not YOLO-bypassable).".to_string(),
+        ])
+        .to_mcp_result()),
+    }
 }
 
 // ── Handler: captureScreen ───────────────────────────────────────────────────
@@ -903,5 +1105,60 @@ mod tests {
         assert!(joined.contains("listenContent"));
         assert!(joined.contains("seeContent"));
         assert!(joined.to_lowercase().contains("do not apt-install"));
+    }
+
+    #[test]
+    fn see_content_slot_allows_up_to_max_then_rejects() {
+        let counter = AtomicUsize::new(0);
+        let mut committed = Vec::new();
+        for _ in 0..MAX_SEE_CONTENT_SUCCESSES_PER_SESSION {
+            let slot = SeeContentSlot::try_reserve(&counter).expect("slot available");
+            slot.commit();
+            committed.push(());
+        }
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
+        );
+        assert!(SeeContentSlot::try_reserve(&counter).is_err());
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
+        );
+        let _ = committed;
+    }
+
+    #[test]
+    fn see_content_slot_releases_on_drop_without_commit() {
+        let counter = AtomicUsize::new(0);
+        {
+            let _slot = SeeContentSlot::try_reserve(&counter).expect("slot available");
+            assert_eq!(counter.load(Ordering::SeqCst), 1);
+        }
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+        let slot = SeeContentSlot::try_reserve(&counter).expect("slot available again");
+        slot.commit();
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn see_content_cap_recovery_mentions_listen_and_sample() {
+        let joined = see_content_cap_recovery().join("\n");
+        assert!(joined.contains(&MAX_SEE_CONTENT_SUCCESSES_PER_SESSION.to_string()));
+        assert!(joined.contains("listenContent"));
+        assert!(joined.to_lowercase().contains("sample"));
+    }
+
+    #[test]
+    fn see_tool_description_mentions_hard_session_limit() {
+        let tools = super::super::tools::all_tools();
+        let see = tools
+            .iter()
+            .find(|t| t.name == "seeContent")
+            .expect("seeContent tool");
+        assert!(see
+            .description
+            .contains(&MAX_SEE_CONTENT_SUCCESSES_PER_SESSION.to_string()));
+        assert!(see.description.contains("Hard session limit"));
     }
 }

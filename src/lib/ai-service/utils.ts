@@ -17,4 +17,11 @@ export {
   processMessageContent,
   processMultiModalContent,
 } from './utils/content';
+export {
+  buildMediaAssistPlaceholder,
+  messagesHaveMultimodalParts,
+  prepareMessagesForMediaAssistRetry,
+  shouldAttemptMediaAssistFallback,
+  stripMultimodalFromMessages,
+} from './media-assist-fallback';
 export { ensureSchemaTypeField } from './utils/schema';

@@ -13,6 +13,7 @@ pub mod execution_mode;
 pub mod lifecycle; // New lifecycle module
 mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
+pub mod media_assist;
 pub mod models;
 pub mod repositories; // Make public for integration tests
 pub mod scheduled; // Cron-backed scheduled task background worker (public for integration tests)
@@ -121,6 +122,7 @@ use commands::workspace_commands::{
     probe_runtime_binaries, read_local_file_as_base64, read_workspace_file_content, restart_app,
     set_workspace_override, start_docker_desktop, submit_interactive_shell_input,
 };
+use commands::media_assist_commands::{media_assist_plugin_status, media_assist_run_plugin};
 
 // Re-export state management functions
 pub use state::{
@@ -208,6 +210,8 @@ pub fn run() {
                 get_app_data_dir,
                 get_app_logs_dir,
                 get_update_install_capability,
+                media_assist_plugin_status,
+                media_assist_run_plugin,
                 backup_current_log,
                 clear_current_log,
                 list_log_files,

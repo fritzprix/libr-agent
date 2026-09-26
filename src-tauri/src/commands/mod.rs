@@ -8,6 +8,7 @@ pub mod file_commands;
 pub mod knowledge_commands;
 pub mod log_commands;
 pub mod markdown_pdf;
+pub mod media_assist_commands;
 pub mod mcp_commands;
 pub mod mcp_server_config_commands;
 pub mod messages_commands;
