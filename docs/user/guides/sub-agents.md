@@ -97,7 +97,7 @@ title: 서브 에이전트 · 오케스트레이션
 
 흐름 요약: `teamwork`로 스캐폴드 → `org`로 조직 생성·멤버 스폰 → 사이드바 **Org**에서 루트 재개 → 구조 변경은 `org-restructure`.
 
-- **Org** ≠ 예약 자동화(`schedule`) ≠ 세션 안 리마인더(`session-schedule`)
+- **Org** ≠ 예약 자동화(`schedule`) ≠ 세션 안 시계 리마인더(`loop`) ≠ 완료 신호 재개(`call-me-back`)
 - 일반 부모–자식 위임만으로는 **Org** 목록에 안 뜹니다
 
 ```

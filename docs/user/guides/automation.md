@@ -41,7 +41,8 @@ Settings의 **Scheduled Task Minimum Interval**이 켜져 있으면 너무 짧�
 | 수단                            | 언제                              |
 | ------------------------------- | --------------------------------- |
 | **Scheduled Tasks** (이 페이지) | 앱 전역·반복·cron형 백그라운드    |
-| **`@skill:session-schedule`**   | **지금 세션 안** 리마인더/지연    |
+| **`@skill:loop`**               | **지금 세션 안** 시계 기반 루프/리마인더/지연 |
+| **`@skill:call-me-back`**       | 프로세스·칸반·웹훅 **완료 신호**로 세션 재개 |
 | **`@skill:schedule`**           | 스케줄 운영 절차(에이전트용 스킬) |
 | **Org / teamwork**              | 명시적 팀 계보 — 사이드바 **Org** |
 | **delegate / divide-conquer**   | 당장 자식 세션 위임               |
