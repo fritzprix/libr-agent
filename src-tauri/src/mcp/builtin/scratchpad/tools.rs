@@ -25,10 +25,7 @@ fn add_tool() -> MCPTool {
                 "If at the limit, update or clear existing notes first.",
                 "Keep entries concise; use title and tags for scanability.",
             ],
-            &[
-                "Find note IDs with scratchpad__listNote.",
-                "Update in place with scratchpad__updateNote instead of duplicating.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -82,10 +79,7 @@ fn update_tool() -> MCPTool {
                 "Identify the note ID to update.",
                 "Replace content (and optionally title) with the latest information.",
             ],
-            &[
-                "Read full content with scratchpad__readNote if needed.",
-                "Clear obsolete notes with scratchpad__clearNote.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -126,10 +120,7 @@ fn list_tool() -> MCPTool {
                 "Use pagination when many notes exist.",
                 "Filter by tags when looking for a category of notes.",
             ],
-            &[
-                "Read full content with scratchpad__readNote using returned IDs.",
-                "Update notes with scratchpad__updateNote.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -166,10 +157,7 @@ fn read_tool() -> MCPTool {
                 "Pass one or more IDs in the ids array.",
                 "Use when previews from listNote are insufficient.",
             ],
-            &[
-                "Update content with scratchpad__updateNote.",
-                "Remove stale notes with scratchpad__clearNote.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -199,10 +187,7 @@ fn clear_tool() -> MCPTool {
                 "Confirm the information is no longer needed.",
                 "Remove by ID — other notes remain.",
             ],
-            &[
-                "Add fresh notes with scratchpad__addNote when under the 10-item limit.",
-                "List remaining notes with scratchpad__listNote.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -229,10 +214,7 @@ fn think_tool() -> MCPTool {
                 "Write a concise reasoning summary in thought: the decision and next step only. Never dump full context, file contents, or long debate loops — a bloated thought wastes your output-token budget and can truncate the tool call.",
                 "Optionally specify nextAction for what you will do immediately after.",
             ],
-            &[
-                "Execute the planned action with appropriate domain tools.",
-                "Capture durable findings for this session with scratchpad__addNote (not a cross-session handoff).",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![

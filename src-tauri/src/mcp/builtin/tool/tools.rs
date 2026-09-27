@@ -197,10 +197,7 @@ pub fn update_server_tool() -> MCPTool {
                 "Pass transport with the correct type and required fields for that transport.",
                 "Optionally change description; omit fields you want to leave unchanged.",
             ],
-            &[
-                "Confirm the update with tool__verifyServer.",
-                "Refresh agent tool lists if assistants reference this server.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -242,10 +239,7 @@ pub fn delete_server_tool() -> MCPTool {
                 "Identify the server slug from tool__listServers.",
                 "Remove the configuration — this cannot be undone.",
             ],
-            &[
-                "Remove the server ID from agent configs via agent__updateAgent if needed.",
-                "Register a replacement with tool__registerServer if required.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -273,10 +267,7 @@ pub fn verify_server_tool() -> MCPTool {
                 "Pass the server slug name.",
                 "Wait for connectivity check and tool cache refresh.",
             ],
-            &[
-                "Check session-callable tools with tool__listServers({\"availability\":\"session\"}).",
-                "Fix transport settings with tool__updateServer if verification fails.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(

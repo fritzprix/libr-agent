@@ -1,10 +1,20 @@
 /**
- * Media-assist fallback for multimodal rejection (HTTP 400 / invalid_request).
+ * Media-assist fallback for multimodal capability rejection.
  *
  * When a completion fails after the request included image/audio/video parts:
  * 1. Try host MediaAssist plugin (app_data_dir) to convert media → text
  * 2. Else strip media and inject @skill:libragent-plugin placeholder
  * Then allow exactly one streamChat retry.
+ *
+ * Triggers on classic client rejects (400 / 415 / 422 / invalid_request) and on
+ * 5xx responses that clearly mislabel unsupported media as a server error
+ * (e.g. `audio input is not supported` / missing `mmproj`). Bare 429 / opaque
+ * 5xx are never treated as media-assist.
+ *
+ * After a successful strip/convert for a provider+model route, remember that
+ * decision in process memory (not in stored messages). Later streamChat calls
+ * for the same route pre-strip outbound payloads only. Changing provider or
+ * model clears the memory — capability can differ even for the same names later.
  *
  * @see https://github.com/fritzprix/libr-agent/issues/1926
  */
@@ -24,11 +34,64 @@ const MEDIA_TYPES = new Set(['image', 'audio', 'video']);
 const MULTIMODAL_ERROR_HINT =
   /\b(audio|image|video|modality|modalities|input_audio|multimodal|unsupported\s+(?:media|content|modality)|invalid.*(?:image|audio|video)|does not support\s+(?:audio|image|video|media|modalit\w*))\b/i;
 
+/**
+ * Stricter than {@link MULTIMODAL_ERROR_HINT}: used for HTTP 5xx so opaque
+ * server failures that merely mention "audio"/"image" do not trigger strip.
+ */
+const MULTIMODAL_CAPABILITY_REJECT_HINT =
+  /\b(?:audio|image|video|input_audio)\s+input\s+is\s+not\s+supported\b|\bdoes\s+not\s+support\s+(?:audio|image|video|media|modalit\w*)\b|\bunsupported\s+(?:media|content|modality|audio|image|video)\b|\bmmproj\b|\bmodalit(?:y|ies)\s+(?:are\s+)?(?:not\s+supported|unsupported)\b/i;
+
 export type StrippedModalities = {
   image: boolean;
   audio: boolean;
   video: boolean;
 };
+
+/**
+ * Process-local: last provider+model route that required multimodal strip.
+ * Messages in the store stay pristine; only outbound request assembly strips.
+ */
+let rememberedStripRouteKey: string | null = null;
+
+/** Stable key for the active LLM route (provider + model). */
+export function mediaAssistCapabilityRouteKey(
+  provider: string,
+  model: string,
+): string {
+  return `${provider.trim()}\0${model.trim()}`;
+}
+
+/** Remember that this provider+model rejected multimodal input (strip on send). */
+export function rememberMediaAssistStripForRoute(
+  provider: string,
+  model: string,
+): void {
+  rememberedStripRouteKey = mediaAssistCapabilityRouteKey(provider, model);
+}
+
+/**
+ * True when outbound messages for this route should be stripped before send.
+ * If provider/model differs from the remembered route, memory is cleared.
+ */
+export function shouldStripMultimodalForRoute(
+  provider: string,
+  model: string,
+): boolean {
+  if (rememberedStripRouteKey === null) {
+    return false;
+  }
+  const key = mediaAssistCapabilityRouteKey(provider, model);
+  if (key !== rememberedStripRouteKey) {
+    rememberedStripRouteKey = null;
+    return false;
+  }
+  return true;
+}
+
+/** Clears route strip memory (tests / explicit reset). */
+export function clearMediaAssistStripRouteMemory(): void {
+  rememberedStripRouteKey = null;
+}
 
 export function isMultimodalContentPart(
   part: MCPContent | null | undefined,
@@ -82,8 +145,8 @@ export function buildMediaAssistPlaceholder(
   const kindList = kinds.length > 0 ? kinds.join('/') : 'media';
 
   return [
-    `[media-assist] Multimodal ${kindList} was stripped because this model/runtime rejected it (likely HTTP 400 after media content).`,
-    'Continue the task with external commands or sparse samples if needed (e.g. ffmpeg keyframes, OCR CLI). Do not spend the session apt/pip-installing ASR/OCR stacks.',
+    `[media-assist] Multimodal ${kindList} was stripped because this model/runtime rejected it (capability reject after media content; may arrive as HTTP 400 or mislabeled 5xx).`,
+    'Continue the task with external commands or sparse samples if needed (e.g. ffmpeg keyframes, OCR CLI, media__seeContent on a few frames). Do not spend the session apt/pip-installing ASR/OCR stacks.',
     `For a durable fix on this machine: load @skill:${MEDIA_ASSIST_SKILL_NAME}, implement a MediaAssist plugin (audio|image|video → text), run its verify script, then deploy to the harness plugin path. Once deployed, LibrAgent will auto-convert media on future modality failures.`,
   ].join('\n');
 }
@@ -169,26 +232,38 @@ function readHttpStatus(error: unknown): number | undefined {
   return undefined;
 }
 
-function isRateLimitOrServerFailure(error: unknown, blob: string): boolean {
+function isRateLimit(error: unknown, blob: string): boolean {
   const status = readHttpStatus(error);
-  if (status === 429 || (typeof status === 'number' && status >= 500)) {
+  if (status === 429) {
     return true;
   }
-  return /\b(429|5\d{2}|rate\s*limit|quota\s*exceeded)\b/i.test(blob);
+  return /\b(429|rate\s*limit|quota\s*exceeded)\b/i.test(blob);
+}
+
+function isServerFailureStatus(error: unknown, blob: string): boolean {
+  const status = readHttpStatus(error);
+  if (typeof status === 'number' && status >= 500) {
+    return true;
+  }
+  // Status-less errors: only treat clear 5xx tokens as server failures.
+  return /\b5\d{2}\b/.test(blob);
 }
 
 /**
  * True when we should strip/convert media and retry once.
  * Requires multimodal parts anywhere in the request history (not only the latest
- * user/tool turn) and a 400-class rejection (400 / 415 / 422 / invalid_request)
- * with either 415 or a multimodal error hint.
+ * user/tool turn) and either:
+ * - a 400-class rejection (400 / 415 / 422 / invalid_request) with 415 or a
+ *   multimodal error hint, or
+ * - a 5xx that explicitly signals unsupported media/capability (mislabeled
+ *   capability errors some runtimes return as server_error).
  *
  * History-wide scanning matters because a prior streamChat may have stripped
  * media only in the ephemeral retry slice; the next turn reloads unstripped
  * history from the store, and a recent-turn-only scan would stop at the
  * intervening assistant message.
  *
- * Context-limit / 429 / 5xx are never treated as media-assist.
+ * Context-limit / 429 / opaque 5xx are never treated as media-assist.
  */
 export function shouldAttemptMediaAssistFallback(
   error: unknown,
@@ -203,9 +278,13 @@ export function shouldAttemptMediaAssistFallback(
     return false;
   }
 
-  // Reject rate-limit / server failures for both AIServiceError and generic Errors.
-  if (isRateLimitOrServerFailure(error, blob)) {
+  if (isRateLimit(error, blob)) {
     return false;
+  }
+
+  // Capability rejects sometimes arrive as HTTP 500 server_error.
+  if (isServerFailureStatus(error, blob)) {
+    return MULTIMODAL_CAPABILITY_REJECT_HINT.test(blob);
   }
 
   if (!(error instanceof AIServiceError)) {

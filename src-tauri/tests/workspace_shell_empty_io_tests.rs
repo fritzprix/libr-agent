@@ -46,3 +46,18 @@ fn pipeline_failure_stderr_warning_is_generated() {
     assert!(w.contains("pipefail"));
     assert!(w.contains("pipeline"));
 }
+
+#[test]
+fn pipeline_failure_stdout_redirect_warning_is_generated() {
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::code_execution::validation::exit_zero_pipeline_failure_warning;
+
+    let warning = exit_zero_pipeline_failure_warning(
+        "ffmpeg -i video.mp4 -vn -acodec pcm_s16le audio.wav 2>&1 | tail -5",
+        "bash: line 1: ffmpeg: command not found",
+        "",
+    );
+    assert!(warning.is_some());
+    let w = warning.unwrap();
+    assert!(w.contains("pipefail"));
+    assert!(w.contains("pipeline"));
+}

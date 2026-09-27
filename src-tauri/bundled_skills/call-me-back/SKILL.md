@@ -2,13 +2,13 @@
 name: call-me-back
 description: >-
   Resume this agent session on a completion signal instead of clock polling.
-  Use when running long builds/tests/training in the background, waiting for
-  process exit, ticket/job status, webhooks, file watchers, or external hooks —
-  "call me back when done", "끝나면 깨워줘", "백그라운드로 돌리고 끝나면
-  알려줘", "완료되면 콜백", "webhook으로 깨워줘",
-  "run in background with hook". NEVER for pure time reminders or cron
-  ("5분 뒤", "매일 9시") — use loop (session) or schedule (global).
-  "me" means this agent session, not a phone call.
+  Use when wiring external hooks/--exec/webhooks that must POST into this
+  session (wake URL is already in Agent Runtime Identity), or waiting for
+  process exit, ticket/job status, file watchers — "call me back when done",
+  "끝나면 깨워줘", "subscribe --exec", "register hook", "완료되면 콜백",
+  "webhook으로 깨워줘", "run in background with hook". NEVER for pure time
+  reminders or cron ("5분 뒤", "매일 9시") — use loop (session) or schedule
+  (global). "me" means this agent session, not a phone call.
 ---
 
 # Call Me Back (event-driven resume)
@@ -70,12 +70,12 @@ recipes to this skill — read that system's own hook docs, then wire its payloa
 
 **Harness wake (SSOT):**
 
-- `POST http://127.0.0.1:<http_server_port>/api/sessions/<THIS_SESSION_ID>/messages`
-  with JSON `{"content":"<event summary>"}` (optional `"source":"api"`).
-- Or channel-style: `POST …/api/sessions/<THIS_SESSION_ID>/channel`
-  with `serverName` + `content` (+ optional `meta`).
-- Port = LibrAgent Settings HTTP server (default **3030**). Session id = current
-  session from Agent Runtime Identity / session-context (exact storage id).
+Agent Runtime Identity already injects the concrete wake URL for **this** session
+(`External wake (this session): POST http://127.0.0.1:<port>/api/sessions/<id>/messages`).
+Copy that URL — do not invent a path or leave `--exec` as `echo` / file-append only.
+
+- Body: JSON `{"content":"<event summary>"}` (optional `"source":"api"`).
+- Channel-style alternative: `POST …/channel` with `serverName` + `content` (+ optional `meta`).
 
 Map the external event (env, stdin JSON, query, body) **into** that `content` / `meta`.
 The external side only needs to run something that performs this inject.
@@ -90,7 +90,8 @@ Do not assume work done only inside the external callback will appear in this ch
 
 #### Anti-patterns
 
-- External callback that only logs or mutates the external system — **no session inject**
+- External callback that only logs, `echo`s, or appends a file — **no session inject**
+- Registering `--exec` / a webhook without the Runtime Identity wake `POST`
 - “Callback runs outside this process so it cannot reach this chat” — **false**; inject is the reach
 - Blocking long-poll / foreground watchers when a non-blocking register-callback API exists
 - Faking completion with `scheduled_task__scheduleCallback` / `loop` delays

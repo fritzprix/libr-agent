@@ -5,7 +5,7 @@
 Stable prefix is built in `build_stable_prefix` roughly as:
 
 1. Raw assistant `systemPrompt` (if non-empty)
-2. `## Agent Runtime Identity` (name, id, session; sub-agent parent/depth when set)
+2. `## Agent Runtime Identity` (name, id, session, **external wake POST URL** for this session; sub-agent parent/depth when set)
 3. Short `## Session Context` note about optional `<session-context>`
 4. `## Persona Template (<filename>)` from SOUL candidates
 5. `## Workspace Instructions (<filename>)` from agents.md candidates

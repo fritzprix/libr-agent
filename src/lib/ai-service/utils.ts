@@ -19,9 +19,13 @@ export {
 } from './utils/content';
 export {
   buildMediaAssistPlaceholder,
+  clearMediaAssistStripRouteMemory,
+  mediaAssistCapabilityRouteKey,
   messagesHaveMultimodalParts,
   prepareMessagesForMediaAssistRetry,
+  rememberMediaAssistStripForRoute,
   shouldAttemptMediaAssistFallback,
+  shouldStripMultimodalForRoute,
   stripMultimodalFromMessages,
 } from './media-assist-fallback';
 export { ensureSchemaTypeField } from './utils/schema';
