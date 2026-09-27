@@ -79,12 +79,20 @@ fn is_stale_workspace_override(path: &str) -> bool {
     !Path::new(path).is_dir()
 }
 
+/// Apply a scheduled task's workspace override onto a session.
+///
+/// When `workspace_override` is `Some` and the path is stale, clear both the
+/// session override and the task field. When it is `None`, behavior depends on
+/// `clear_when_absent`:
+/// - `true` (task-owned sessions): cancel any session override so config matches
+/// - `false` (SESSION callbacks): leave the pinned user session's override alone
 pub async fn sync_task_workspace_override(
     repo: &dyn ScheduledTaskRepository,
     task_id: &str,
     task_name: &str,
     session_id: &str,
     workspace_override: Option<&str>,
+    clear_when_absent: bool,
 ) -> Result<(), String> {
     if let Some(path) = workspace_override {
         if is_stale_workspace_override(path) {
@@ -114,8 +122,10 @@ pub async fn sync_task_workspace_override(
         } else {
             WorkspaceService::set_override(session_id, path.to_string()).await
         }
-    } else {
+    } else if clear_when_absent {
         WorkspaceService::cancel_override(session_id).await
+    } else {
+        Ok(())
     }
 }
 
@@ -308,6 +318,7 @@ async fn execute_global_task(
         &task.name,
         &session_id,
         task.workspace_override.as_deref(),
+        true, // task-owned session: match task workspace config
     )
     .await?;
 
@@ -403,6 +414,7 @@ async fn execute_session_callback(
         &task.name,
         session_id,
         task.workspace_override.as_deref(),
+        false, // pinned user session: never wipe its override when task has none
     )
     .await?;
 

@@ -23,7 +23,7 @@ pub async fn resume_session(
     session_id: &str,
 ) -> Result<SessionMetadata, String> {
     // Get session metadata from database using injected repository
-    let mut session = session_repo
+    let session = session_repo
         .get_session(session_id)
         .await
         .map_err(|e| format!("Failed to get session: {}", e))?
@@ -45,16 +45,13 @@ pub async fn resume_session(
                 }
             }
         } else {
+            // Keep the preference — transient path unavailability must not wipe it.
             log::warn!(
-                "Persisted workspace override '{}' for session {} no longer exists or is not a directory; \
-                 clearing it and falling back to default workspace.",
+                "Persisted workspace override '{}' for session {} is unavailable or not a directory; \
+                 keeping the preference and falling back to the default workspace until it returns.",
                 workspace_override,
                 session_id
             );
-            let _ = session_repo
-                .update_workspace_override(session_id, None)
-                .await;
-            session.workspace_override = None;
         }
     }
 

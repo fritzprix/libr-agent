@@ -38,16 +38,14 @@ pub async fn hydrate_persisted_workspace_override(
         return Ok(Some(path));
     }
 
+    // Keep the persisted preference. Transient unavailability (sleeping disks,
+    // network mounts, brief FS hiccups) must not wipe the user's override.
     log::warn!(
-        "Persisted workspace override '{}' for session {} no longer exists or is not a directory; \
-         clearing it and falling back to default workspace.",
+        "Persisted workspace override '{}' for session {} is unavailable or not a directory; \
+         keeping the preference and falling back to the default workspace until it returns.",
         workspace_override,
         session_id
     );
-    let _ = session_repo
-        .update_workspace_override(session_id, None)
-        .await;
-    let _ = session_manager.remove_workspace_override(session_id).await;
     Ok(None)
 }
 
