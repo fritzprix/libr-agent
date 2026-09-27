@@ -89,6 +89,7 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
         &task.name,
         session_id,
         task.workspace_override.as_deref(),
+        true,
     )
     .await
     .expect("stale override should be cleared instead of failing");
@@ -100,4 +101,65 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
         .expect("task should still exist");
 
     assert_eq!(updated.workspace_override, None);
+}
+
+#[tokio::test]
+async fn sync_task_workspace_override_preserves_session_override_when_absent_and_not_clearing() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(session_repo.clone());
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db);
+
+    let session_id = "session-callback-keep-override";
+    let override_str = "/tmp/user-workspace-keep-override".to_string();
+
+    let mut session = make_session(session_id);
+    session.workspace_override = Some(override_str.clone());
+    session_repo
+        .upsert_session(&session)
+        .await
+        .expect("session should be persisted");
+
+    let task = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Session ping".to_string(),
+            task_category: TASK_CATEGORY_GLOBAL.to_string(),
+            cron_expression: Some("0 9 * * *".to_string()),
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            message: "Ping".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: Some(session_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: None,
+        },
+        &ScheduledTaskGovernanceSettings::default(),
+    )
+    .await
+    .expect("scheduled task should be created");
+
+    sync_task_workspace_override(
+        &scheduled_repo,
+        &task.id,
+        &task.name,
+        session_id,
+        None,
+        false,
+    )
+    .await
+    .expect("absent override with clear_when_absent=false must be a no-op");
+
+    let persisted = session_repo
+        .get_session(session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should still exist");
+    assert_eq!(
+        persisted.workspace_override.as_deref(),
+        Some(override_str.as_str()),
+        "SESSION callback sync must not wipe a pinned session workspace override"
+    );
 }
