@@ -1,3 +1,28 @@
+## [0.9.13] - 2026-09-28
+
+### 🚀 Features & UI
+
+- **History server-side search**: Session History search runs on the server with cursor pagination, bookmark/status filters, and child loading so large libraries stay responsive.
+- **`/reload` slash command**: Refresh workspace tools and skills mid-session without wiping chat history.
+- **MediaAssist multimodal recovery**: When the model rejects multimodal payloads (e.g. audio/video not supported), LibrAgent strips media for retry and remembers the preference per provider+model route.
+- **Media see / listen guidance**: Clearer role boundaries and follow-ups for `seeContent` / `listenContent`, including video audio paths without apt-install loops.
+- **Bundled skills**: `context-recall` for pre-compaction history; `session-schedule` renamed to `loop`; new `call-me-back` for completion-signal wake; hardened credential CLIs and `ig-cli`.
+- **External wake docs**: Product-agnostic HTTP session inject / call-me-back guidance for automation.
+
+### 🐛 Fixes & Hardening
+
+- **Workspace override persistence**: Transient path unavailability no longer clears a session’s workspace override; SESSION scheduled callbacks no longer wipe pinned session overrides when the task omits `workspaceOverride`.
+- **Stale `reportResult` shadowing**: Follow-up assistant replies are no longer hidden by an older deliverable card.
+- **Reasoning-budget burn**: Abort streams early when the model burns the reasoning budget and surface recovery toasts.
+- **Browser sidecar**: Auto-dismiss JS dialogs and bound hang paths; extract page content when the cache is empty.
+- **Skill-alias writes**: Reject writes through `@*-skills` aliases to avoid orphan directories; prefer `.libragent/skills/` or `skill-deployer`.
+- **Tool-spec / Related Actions**: Omit Related Actions next-steps across builtin tools to reduce prefill bloat; refine spillover guidance against file pagination loops.
+- **i18n**: Full key parity across all 8 locales.
+
+### 🔧 Internal
+
+- Modularize `session_manager` facade and Knowledge canvas; sequentialize `pnpm rust:test` to avoid OOM; dependency bumps (markdown2pdf, ammonia, pdf-extract, tauri-plugin-http, xcap).
+
 ## [0.9.12] - 2026-09-19
 
 > **Release note:** `v0.9.11` could not be published. An empty immutable GitHub Release permanently reserved that tag name, so this patch ships the same intended changes as `v0.9.12`.

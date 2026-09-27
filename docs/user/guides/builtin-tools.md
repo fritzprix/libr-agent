@@ -85,7 +85,8 @@ LibrAgent는 별도의 외부 도구 설치 없이도 코딩, 파일 조작, 웹
 |                      | `browser__clickElement`               | 웹페이지 요소 클릭                      | Optional (선택)      |
 | **`desktop`**        | `desktop__computerControl`            | 마우스 클릭/이동, 키보드 타이핑 OS 제어 | Optional (승인 필요) |
 | **`media`**          | `media__captureScreen`                | 데스크톱 모니터 전체/영역 캡처          | Optional (승인 필요) |
-|                      | `media__seeContent`                   | 이미지 분석                             | Optional (선택)      |
+|                      | `media__seeContent`                   | 이미지·영상 **시각** 분석               | Optional (선택)      |
+|                      | `media__listenContent`                | 오디오·영상 **청각** 분석               | Optional (선택)      |
 | **`planning`**       | `planning__createGoal`                | 다단계 목표 수립 및 Todo 관리           | Optional (선택)      |
 |                      | `planning__updateGoal`                | 목표 진행 상태 갱신                     | Optional (선택)      |
 | **`scheduled_task`** | `scheduled_task__createScheduledTask` | 백그라운드 Cron 예약 작업 등록          | Core (기본)          |

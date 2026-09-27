@@ -56,6 +56,7 @@ Settings의 **Scheduled Task Minimum Interval**이 켜져 있으면 너무 짧�
 - 메시지에 목표·산출물 형식을 구체적으로 적으세요.
 - MCP가 필요하면 먼저 [Extensions](extensions.md)에 설치하고, 고른 **Assistant**의 Tools에서 허용하세요.
 - 실패 시 **History**에서 해당 실행 세션을 열어 로그를 확인합니다.
+- 작업에 **Workspace** override를 두면 해당 폴더에서 실행됩니다. **SESSION** 콜백은 태스크에 override가 비어 있어도, 핀된 채팅 세션의 자체 workspace override를 지우지 않습니다.
 
 ---
 

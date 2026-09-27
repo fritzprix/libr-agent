@@ -85,7 +85,8 @@ For power users and prompt engineering, below is the primary built-in tools inve
 |                      | `browser__clickElement`               | Click DOM element                           | Optional                     |
 | **`desktop`**        | `desktop__computerControl`            | Mouse clicks, movement, and keyboard typing | Optional (Approval required) |
 | **`media`**          | `media__captureScreen`                | Capture desktop display or area             | Optional (Approval required) |
-|                      | `media__seeContent`                   | Analyze image visual content                | Optional                     |
+|                      | `media__seeContent`                   | Analyze **visual** image/video content      | Optional                     |
+|                      | `media__listenContent`                | Analyze **audio**/video soundtrack          | Optional                     |
 | **`planning`**       | `planning__createGoal`                | Create multi-step goals & todos             | Optional                     |
 |                      | `planning__updateGoal`                | Update goal & step progress                 | Optional                     |
 | **`scheduled_task`** | `scheduled_task__createScheduledTask` | Register recurring background Cron task     | Core (Default)               |

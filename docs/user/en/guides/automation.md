@@ -27,11 +27,22 @@ Create a task: choose assistant / playbook, schedule (cron or interval), and ena
 
 ---
 
+## Other automation (not this page)
+
+| Mechanism              | When                                                              |
+| ---------------------- | ----------------------------------------------------------------- |
+| **Scheduled Tasks**    | App-wide / recurring / cron background runs                       |
+| **`@skill:loop`**      | **In this session** clock-based loops / reminders / delays        |
+| **`@skill:call-me-back`** | Resume on process / kanban / webhook **completion signals**    |
+| **`@skill:schedule`**  | Agent-facing schedule operating procedures                        |
+| **Org / teamwork**     | Explicit team lineage — sidebar **Org**                           |
+
 ## Tips
 
 - Prefer low-risk tools for unattended runs.
 - Confirm API keys and network before enabling.
 - Check History after the first few runs.
+- Optional **workspace override** on a task targets a folder; SESSION callbacks do not clear a pinned chat session’s own override when the task leaves that field empty.
 
 Failures often look like normal session errors — see [Troubleshooting](troubleshooting.md).
 
