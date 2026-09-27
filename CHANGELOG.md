@@ -1,3 +1,9 @@
+## [0.9.16] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage on Ubuntu 22.04**: Linux release and nightly bundles are built on Ubuntu 22.04 so the AppImage links against glibc 2.35. AppImageHub tests on Ubuntu 22.04; the Ubuntu 24.04 build required `GLIBC_2.39` and exited before it could show a window. The `.DirIcon` relative symlink from v0.9.14 remains in this build.
+
 ## [0.9.15] - 2026-09-28
 
 ### 🐛 Fixes & Hardening
