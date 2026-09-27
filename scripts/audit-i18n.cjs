@@ -63,7 +63,10 @@ function runAudit() {
 
     const missing = [...refKeys].filter((k) => !keys.has(k));
     const extra = [...keys].filter((k) => !refKeys.has(k));
-    const coverage = ((keys.size - extra.length) / refKeys.size * 100).toFixed(1);
+    const coverage = (
+      ((keys.size - extra.length) / refKeys.size) *
+      100
+    ).toFixed(1);
 
     // Check variable parity
     const varMismatches = [];
@@ -100,9 +103,15 @@ function runAudit() {
     if (missing.length > 0 || extra.length > 0 || varMismatches.length > 0) {
       hasErrors = true;
       console.error(`\n❌ Error: Locale '${locale}' has parity drift!`);
-      if (missing.length > 0) console.error(`  Missing (${missing.length}):`, missing.slice(0, 10));
-      if (extra.length > 0) console.error(`  Extra (${extra.length}):`, extra.slice(0, 10));
-      if (varMismatches.length > 0) console.error(`  Var mismatches (${varMismatches.length}):`, varMismatches.slice(0, 5));
+      if (missing.length > 0)
+        console.error(`  Missing (${missing.length}):`, missing.slice(0, 10));
+      if (extra.length > 0)
+        console.error(`  Extra (${extra.length}):`, extra.slice(0, 10));
+      if (varMismatches.length > 0)
+        console.error(
+          `  Var mismatches (${varMismatches.length}):`,
+          varMismatches.slice(0, 5),
+        );
     }
   }
 
@@ -110,7 +119,9 @@ function runAudit() {
     process.exit(1);
   }
 
-  console.log('\n✓ All 8 locales are in 100.0% key and variable parity with zero drift.');
+  console.log(
+    '\n✓ All 8 locales are in 100.0% key and variable parity with zero drift.',
+  );
   process.exit(0);
 }
 

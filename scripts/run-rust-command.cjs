@@ -178,9 +178,7 @@ const { stdio, logFd } = resolveStdio();
 
 if (isCargoTest && stdio === 'inherit') {
   const jobs = env.CARGO_BUILD_JOBS ?? 'default';
-  console.error(
-    `[run-rust-command] cargo test (jobs=${jobs}, test-threads=1)`,
-  );
+  console.error(`[run-rust-command] cargo test (jobs=${jobs}, test-threads=1)`);
 }
 
 const result = spawnSync(command, spawnArgs, {

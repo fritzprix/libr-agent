@@ -1315,6 +1315,11 @@
       "lineCount": "{{count}} linhas",
       "requestedPath": "Caminho solicitado: {{path}}"
     },
+    "recovery": {
+      "reasoningBudgetRetry": "O raciocínio demorou demais. Tentando novamente com um turno novo…",
+      "thinkingLoopRetry": "Loop de pensamento detectado. Tentando novamente com um turno novo…",
+      "textLoopRetry": "Loop de texto repetido detectado. Tentando novamente com um turno novo…"
+    },
     "statusBar": {
       "retryError": "Falha ao tentar novamente a mensagem",
       "resumeError": "Falha ao retomar a sessão",

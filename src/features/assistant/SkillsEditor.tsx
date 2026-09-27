@@ -112,7 +112,9 @@ export default function SkillsEditor() {
             <div className="absolute inset-0 z-50 bg-background/80 flex items-center justify-center rounded-lg border-2 border-dashed border-primary">
               <div className="flex flex-col items-center">
                 <Upload className="h-10 w-10 text-primary mb-2" />
-                <p className="text-lg font-medium">{t('settings.skills.dropHere')}</p>
+                <p className="text-lg font-medium">
+                  {t('settings.skills.dropHere')}
+                </p>
               </div>
             </div>
           )}
@@ -206,7 +208,9 @@ export default function SkillsEditor() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('settings.skills.resetTitle')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t('settings.skills.resetTitle')}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t('settings.skills.resetConfirm')}
             </AlertDialogDescription>

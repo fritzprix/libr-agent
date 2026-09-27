@@ -1315,6 +1315,11 @@
       "lineCount": "{{count}} lines",
       "requestedPath": "Requested: {{path}}"
     },
+    "recovery": {
+      "reasoningBudgetRetry": "Reasoning ran too long. Retrying with a fresh turn…",
+      "thinkingLoopRetry": "Detected a thinking loop. Retrying with a fresh turn…",
+      "textLoopRetry": "Detected a repeated-text loop. Retrying with a fresh turn…"
+    },
     "statusBar": {
       "retryError": "Failed to retry message",
       "resumeError": "Failed to resume session",

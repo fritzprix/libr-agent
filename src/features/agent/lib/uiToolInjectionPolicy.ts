@@ -11,9 +11,7 @@
  * Add a tool here when the UI already performed the work and the model should
  * not be asked to react (e.g. workspace file import).
  */
-export const UI_TOOL_HISTORY_ONLY = [
-  'workspace__importFiles',
-] as const;
+export const UI_TOOL_HISTORY_ONLY = ['workspace__importFiles'] as const;
 
 export type UiToolHistoryOnlyName = (typeof UI_TOOL_HISTORY_ONLY)[number];
 

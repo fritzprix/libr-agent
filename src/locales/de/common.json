@@ -1315,6 +1315,11 @@
       "lineCount": "{{count}} Zeilen",
       "requestedPath": "Angeforderter Pfad: {{path}}"
     },
+    "recovery": {
+      "reasoningBudgetRetry": "Das Reasoning dauerte zu lange. Neuer Versuch mit einem frischen Turn…",
+      "thinkingLoopRetry": "Denkschleife erkannt. Neuer Versuch mit einem frischen Turn…",
+      "textLoopRetry": "Wiederholte-Text-Schleife erkannt. Neuer Versuch mit einem frischen Turn…"
+    },
     "statusBar": {
       "retryError": "Fehler beim erneuten Senden der Nachricht",
       "resumeError": "Sitzung konnte nicht fortgesetzt werden",

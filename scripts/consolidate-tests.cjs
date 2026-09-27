@@ -25,7 +25,9 @@ function readExistingModules(modRsPath) {
   }
   const content = fs.readFileSync(modRsPath, 'utf8');
   const modules = new Set();
-  for (const match of content.matchAll(/^\s*pub\s+mod\s+([A-Za-z0-9_]+)\s*;/gm)) {
+  for (const match of content.matchAll(
+    /^\s*pub\s+mod\s+([A-Za-z0-9_]+)\s*;/gm,
+  )) {
     modules.add(match[1]);
   }
   return modules;
@@ -59,7 +61,10 @@ mod integration;
     return;
   }
   const current = fs.readFileSync(integrationTestsRsPath, 'utf8');
-  if (!current.includes('#!\[cfg(not(windows))\]') && !current.includes('#![cfg(not(windows))]')) {
+  if (
+    !current.includes('#!\[cfg(not(windows))\]') &&
+    !current.includes('#![cfg(not(windows))]')
+  ) {
     console.warn(
       'WARNING: integration_tests.rs is missing #![cfg(not(windows))] — not overwriting. Fix manually.',
     );
@@ -99,7 +104,9 @@ function main() {
     .filter((file) => fs.statSync(path.join(TESTS_DIR, file)).isFile())
     .filter((file) => file !== 'common.rs' && file !== 'integration_tests.rs');
 
-  console.log(`Found ${rustTestFiles.length} root-level Rust test files to consolidate.`);
+  console.log(
+    `Found ${rustTestFiles.length} root-level Rust test files to consolidate.`,
+  );
 
   let moved = 0;
   for (const file of rustTestFiles) {

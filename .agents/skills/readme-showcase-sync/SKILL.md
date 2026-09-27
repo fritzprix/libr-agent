@@ -14,6 +14,7 @@ Audit the codebase against user-facing showcase surfaces—primarily the **Main 
 When new features (e.g., Solution Recipes, Scheduled Tasks, Browser Sidecar, Session Export, Bundled Skills like `ig-cli`) are implemented, internal documentation (`docs/user/guides/`) is often created, but the **front door** of the project—the Root `README.md` and the user-facing project website landing page—lags behind.
 
 This skill automates:
+
 1. Detecting features implemented in code but omitted from `README.md` and `docs/user/index.md`.
 2. Planning concise, high-impact showcase updates.
 3. Synchronizing main English & Korean READMEs and VitePress landing pages.
@@ -31,6 +32,7 @@ python3 .agents/skills/readme-showcase-sync/scripts/audit_showcase.py . --output
 ```
 
 The script reports:
+
 - Features missing in Main `README.md`
 - Features missing in Korean `README.ko.md`
 - Features missing in Project Website Landing (`docs/user/index.md` / `en/index.md`)
@@ -39,6 +41,7 @@ The script reports:
 ### Step 2 — Review & Select High-Impact Additions
 
 Filter the audit results by user value:
+
 - **P0 Highlights**: Core user-facing workflows (e.g., `recipes`, `scheduled-tasks`, `browser-sidecar`, `session-export`, `ig-cli`).
 - **P1 Capabilities**: System/governance features (e.g., `session-isolation`, `soul-lounge`, `compact-planning`).
 - **P2 Minor/Dev tools**: Can remain in dedicated guides rather than cluttering the front landing.
@@ -77,12 +80,12 @@ pnpm prettier --check "README.md" "README.ko.md" "docs/user/index.md" "website/.
 pnpm docs:build
 ```
 
-*(Note: Never run full repository heavy pipelines like `pnpm refactor:validate` unless explicitly requested by the user.)*
+_(Note: Never run full repository heavy pipelines like `pnpm refactor:validate` unless explicitly requested by the user.)_
 
 ---
 
 ## 📋 Guidelines
 
-- **Concise & Scannable (KISS)**: The front door must not become an unreadable wall of text. Focus on what the user can *do* with the feature.
+- **Concise & Scannable (KISS)**: The front door must not become an unreadable wall of text. Focus on what the user can _do_ with the feature.
 - **Language Parity**: Whenever `README.md` is updated, ensure `README.ko.md` is synchronized.
 - **Link Accuracy**: Every showcase feature must link directly to its deep guide in `docs/user/guides/`.

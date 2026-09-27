@@ -18,6 +18,7 @@ python3 .agents/skills/doc-auditor/scripts/audit.py . --output .libragent/tmp/do
 ```
 
 The script discovers:
+
 - Frontend features (`src/features/*/`)
 - Frontend lib modules (`src/lib/*/` and `*.ts`)
 - Backend modules (`src-tauri/src/*/` and `*.rs`)
@@ -27,6 +28,7 @@ The script discovers:
 ### Step 2 — Review the gap report
 
 Read `.libragent/tmp/doc-audit.json` and review discovered gaps:
+
 - **P0 gaps (Must fix)**: User-facing features/services with zero documentation (e.g., `scheduled-tasks`, `history`, `browser-sidecar`, `session-export`)
 - **P1 gaps (Should fix)**: Features with internal/architecture specs but missing user guides (e.g., `knowledge`, `session-isolation`)
 - **P2 gaps (Nice to have)**: Schema, validator, execution mode, or system protocol modules needing implementation docs (e.g., `db-schema-validator`, `execution-mode`)
@@ -36,12 +38,12 @@ Read `.libragent/tmp/doc-audit.json` and review discovered gaps:
 
 Use this priority framework:
 
-| Priority | Criteria | Example |
-|----------|----------|---------|
-| **P0 — Must fix** | User-facing feature with zero docs | `scheduled-tasks/`, `history/`, `browser_sidecar/`, `session_export/` |
-| **P1 — Should fix** | Documented internally/arch but missing user guide | `knowledge/`, `session_isolation/` |
-| **P2 — Nice to have** | System/spec modules needing architecture docs | `db_schema_validator`, `execution_mode` |
-| **P3 — Low impact** | Internal helpers, test code, generated files | `utils/`, `performance/`, `mime-utils` |
+| Priority              | Criteria                                          | Example                                                               |
+| --------------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
+| **P0 — Must fix**     | User-facing feature with zero docs                | `scheduled-tasks/`, `history/`, `browser_sidecar/`, `session_export/` |
+| **P1 — Should fix**   | Documented internally/arch but missing user guide | `knowledge/`, `session_isolation/`                                    |
+| **P2 — Nice to have** | System/spec modules needing architecture docs     | `db_schema_validator`, `execution_mode`                               |
+| **P3 — Low impact**   | Internal helpers, test code, generated files      | `utils/`, `performance/`, `mime-utils`                                |
 
 ### Step 4 — Propose plan and obtain user approval
 
@@ -54,11 +56,13 @@ Use this priority framework:
 > 3. Ask the user for confirmation before writing protected files.
 
 **Target locations for new docs:**
+
 - User guides → `docs/user/guides/<feature>.md`
 - Architecture & technical specs → `docs/architecture/<topic>.md`
 - API reference → `docs/api/<module>.md`
 
 **Target locations for index updates:**
+
 - `docs/README.md` — add links to new guides/specs
 - `docs/user/README.md` — add to the user docs index
 - `README.md` — add feature descriptions and scenario references

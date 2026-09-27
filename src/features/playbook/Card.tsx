@@ -117,11 +117,7 @@ export function PlaybookCard({
       : t('playbook.card.startPinned');
 
   const startButton = (
-    <Button
-      size="sm"
-      className="gap-2 w-full max-w-32"
-      onClick={handleStart}
-    >
+    <Button size="sm" className="gap-2 w-full max-w-32" onClick={handleStart}>
       {pinnedSessionId ? (
         <Pin className="h-3.5 w-3.5" />
       ) : (

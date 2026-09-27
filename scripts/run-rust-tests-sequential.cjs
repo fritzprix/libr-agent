@@ -68,7 +68,9 @@ function main() {
   const passthrough = process.argv.slice(2).filter((arg) => arg !== '--tests');
 
   // Single-target / explicit selection: do not fan out.
-  if (hasFlag(passthrough, ['--test', '--bin', '--example', '--lib', '--doc'])) {
+  if (
+    hasFlag(passthrough, ['--test', '--bin', '--example', '--lib', '--doc'])
+  ) {
     process.exit(runCargoTest(passthrough));
   }
 
@@ -94,7 +96,9 @@ function main() {
     const status = runCargoTest(['--test', target, ...passthrough]);
     if (status !== 0) {
       failed.push(target);
-      console.error(`[rust-test-sequential] FAILED: ${target} (exit ${status})`);
+      console.error(
+        `[rust-test-sequential] FAILED: ${target} (exit ${status})`,
+      );
       console.error(
         `[rust-test-sequential] Stopping after first failure. Passed ${i}/${targets.length} before fail.`,
       );

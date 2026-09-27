@@ -198,12 +198,7 @@ export default function History() {
         );
       });
     },
-    [
-      ensureChildrenLoaded,
-      ensureSearchChildrenLoaded,
-      isServerSearchActive,
-      t,
-    ],
+    [ensureChildrenLoaded, ensureSearchChildrenLoaded, isServerSearchActive, t],
   );
 
   return (

@@ -2,8 +2,11 @@ import {
   handleLLMError,
   handleLLMResponse,
 } from '@/lib/backend/agent-commands';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 import { messageToRustMessage, type Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
@@ -48,6 +51,37 @@ export function __resetLLMListenerStartupLogStateForTests() {
   startupLifecycleLogKeys.clear();
 }
 
+function notifyRecoveryCancel(reason: string, t: TFunction): void {
+  switch (reason) {
+    case 'reasoning-budget-exceeded':
+      toast.message(
+        t(
+          'agent.recovery.reasoningBudgetRetry',
+          'Reasoning ran too long. Retrying with a fresh turn…',
+        ),
+      );
+      break;
+    case 'repeated-thinking-loop':
+      toast.message(
+        t(
+          'agent.recovery.thinkingLoopRetry',
+          'Detected a thinking loop. Retrying with a fresh turn…',
+        ),
+      );
+      break;
+    case 'repeated-text-loop':
+      toast.message(
+        t(
+          'agent.recovery.textLoopRetry',
+          'Detected a repeated-text loop. Retrying with a fresh turn…',
+        ),
+      );
+      break;
+    default:
+      break;
+  }
+}
+
 interface UseLLMListenerProps {
   settingsRef: React.MutableRefObject<Settings>;
   executeCompletionRequest: (
@@ -85,6 +119,10 @@ export function useLLMListener({
   setCompactedRangeForSession,
   setAwaitingCompactForSession,
 }: UseLLMListenerProps) {
+  const { t } = useTranslation('common');
+  const tRef = useRef(t);
+  tRef.current = t;
+
   useEffect(() => {
     logStartupLifecycleOnce(
       'completion-initializing',
@@ -384,6 +422,7 @@ export function useLLMListener({
             responseMessageId,
             reason,
           });
+          notifyRecoveryCancel(reason, tRef.current);
           cancelCompletionRequest(sessionId, responseMessageId);
         },
       );

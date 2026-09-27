@@ -49,22 +49,22 @@ See [README.md](README.md) for detailed setup instructions.
 
 ### Development Scripts & Workflow
 
-| Command                              | Purpose                                                                            |
-| ------------------------------------ | ---------------------------------------------------------------------------------- |
-| `pnpm dev`                           | Start Vite dev server (frontend only)                                              |
-| `pnpm tauri dev`                     | Start full Tauri desktop app with hot reload                                       |
-| `pnpm build`                         | Build frontend for production                                                      |
-| `pnpm tauri build`                   | Create production desktop app bundle                                               |
-| `pnpm lint`                          | Run ESLint on TypeScript/React code                                                |
-| `pnpm format`                        | Format code with Prettier                                                          |
-| `pnpm rust:fmt`                      | Format Rust code with rustfmt                                                      |
-| `pnpm rust:fmt:check`                | Check Rust formatting without modifying files                                      |
-| `pnpm rust:check`                    | Fast type/syntax check on Rust code                                                |
-| `pnpm rust:clippy`                   | Run Rust linter (clippy)                                                           |
-| `pnpm rust:test`                     | Full Rust integration suite — **one test binary linked at a time** (OOM-safe)      |
-| `pnpm rust:test --test <target>`     | Single Rust integration target (faster while iterating)                            |
-| `pnpm dead-code`                     | Find unused code with unimported                                                   |
-| `pnpm refactor:validate`             | **Complete validation pipeline** (lint, format, Rust validation, build, dead-code) |
+| Command                          | Purpose                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm dev`                       | Start Vite dev server (frontend only)                                              |
+| `pnpm tauri dev`                 | Start full Tauri desktop app with hot reload                                       |
+| `pnpm build`                     | Build frontend for production                                                      |
+| `pnpm tauri build`               | Create production desktop app bundle                                               |
+| `pnpm lint`                      | Run ESLint on TypeScript/React code                                                |
+| `pnpm format`                    | Format code with Prettier                                                          |
+| `pnpm rust:fmt`                  | Format Rust code with rustfmt                                                      |
+| `pnpm rust:fmt:check`            | Check Rust formatting without modifying files                                      |
+| `pnpm rust:check`                | Fast type/syntax check on Rust code                                                |
+| `pnpm rust:clippy`               | Run Rust linter (clippy)                                                           |
+| `pnpm rust:test`                 | Full Rust integration suite — **one test binary linked at a time** (OOM-safe)      |
+| `pnpm rust:test --test <target>` | Single Rust integration target (faster while iterating)                            |
+| `pnpm dead-code`                 | Find unused code with unimported                                                   |
+| `pnpm refactor:validate`         | **Complete validation pipeline** (lint, format, Rust validation, build, dead-code) |
 
 > [!CAUTION]
 > **🚫 Raw `cargo test` / `cargo test --tests` 직접 실행 절대 금지**:

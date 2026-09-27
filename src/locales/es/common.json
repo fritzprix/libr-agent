@@ -1315,6 +1315,11 @@
       "lineCount": "{{count}} líneas",
       "requestedPath": "Ruta solicitada: {{path}}"
     },
+    "recovery": {
+      "reasoningBudgetRetry": "El razonamiento duró demasiado. Reintentando con un turno nuevo…",
+      "thinkingLoopRetry": "Se detectó un bucle de pensamiento. Reintentando con un turno nuevo…",
+      "textLoopRetry": "Se detectó un bucle de texto repetido. Reintentando con un turno nuevo…"
+    },
     "statusBar": {
       "retryError": "Error al reintentar el mensaje",
       "resumeError": "Error al reanudar la sesión",

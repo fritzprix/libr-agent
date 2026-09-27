@@ -15,24 +15,24 @@ LibrAgent `src-tauri/tests/*.rs` files are **separate Cargo test binaries** (~60
 
 ### NEVER (any time)
 
-| Forbidden | Why |
-| --- | --- |
-| `cargo test` | Multi-target link graph → OOM |
-| `cargo test --tests` | Same, worse |
-| `cargo test --all` / bare `cargo test` in `src-tauri/` | Same |
-| `cargo clippy` / `cargo build` / `cargo check` raw | Use pnpm wrappers (jobs/nice caps) |
+| Forbidden                                                                                                       | Why                                               |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `cargo test`                                                                                                    | Multi-target link graph → OOM                     |
+| `cargo test --tests`                                                                                            | Same, worse                                       |
+| `cargo test --all` / bare `cargo test` in `src-tauri/`                                                          | Same                                              |
+| `cargo clippy` / `cargo build` / `cargo check` raw                                                              | Use pnpm wrappers (jobs/nice caps)                |
 | Assuming “full suite needs `--test` only” and skipping `pnpm rust:test` when the user asked for full validation | Full suite is safe **only** via sequential runner |
 
 ### When to run what
 
 Default **code review / local-change audit** is **diff-based static analysis**. Do **not** start heavy tests or builds unless the user explicitly asks (e.g. “테스트 돌려봐”, “run tests”, commit/PR readiness with tests). That matches `.agents/AGENTS.md` / `GEMINI.md`.
 
-| Command | When allowed |
-| --- | --- |
-| `pnpm rust:fmt:check` / `pnpm rust:check` | Optional light gates during review if useful |
-| `pnpm rust:clippy` | Only when user asked for lint/validation of Rust |
-| `pnpm rust:test --test <target>` | When user asked to test; use while iterating |
-| `pnpm rust:test` | When user asked for full / functional verification — sequential, OOM-safe. **Not** the default for a plain “review local changes” |
+| Command                                   | When allowed                                                                                                                      |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm rust:fmt:check` / `pnpm rust:check` | Optional light gates during review if useful                                                                                      |
+| `pnpm rust:clippy`                        | Only when user asked for lint/validation of Rust                                                                                  |
+| `pnpm rust:test --test <target>`          | When user asked to test; use while iterating                                                                                      |
+| `pnpm rust:test`                          | When user asked for full / functional verification — sequential, OOM-safe. **Not** the default for a plain “review local changes” |
 
 If the user **did** ask for tests: prefer touched `--test <target>` first; use full `pnpm rust:test` when they want the whole suite. Fmt/check alone is **not** a functional audit in that case.
 

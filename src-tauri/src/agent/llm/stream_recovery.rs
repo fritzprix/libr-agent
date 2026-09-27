@@ -365,7 +365,7 @@ async fn handle_non_productive_completion(
                     assistant_message_id,
                 } => (
                     format!(
-                        "The model returned only thinking content in session '{}' and exceeded the automatic recovery limit. Workflow stopped because no usable assistant output was produced.",
+                        "Stopped: the model returned only internal reasoning with no answer or tool call (session '{}'). Automatic recovery was exhausted. Click Retry to try again.",
                         session_name
                     ),
                     "THINKING_ONLY_COMPLETION",
@@ -384,7 +384,7 @@ async fn handle_non_productive_completion(
                     estimated_thinking_tokens,
                 } => (
                     format!(
-                        "The model exceeded the reasoning budget in session '{}' and already used the automatic recovery retry. Workflow stopped to prevent unbounded thinking.",
+                        "Stopped: reasoning used the full output budget twice without an answer or tool call (session '{}'). This prevents a hang. Click Retry to try again.",
                         session_name
                     ),
                     "REASONING_BUDGET_EXCEEDED",

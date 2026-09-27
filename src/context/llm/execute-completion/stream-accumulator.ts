@@ -113,6 +113,11 @@ export class StreamAccumulator {
   private reasoningBudgetIssueReported = false;
   private readonly reasoningBudgetThreshold?: number;
 
+  /** True after a reasoning/output-budget abort was reported for this stream. */
+  public didExceedReasoningBudget(): boolean {
+    return this.reasoningBudgetIssueReported;
+  }
+
   private sessionId: string;
   private responseMessageId: string;
   private settingsRef: React.MutableRefObject<Settings>;
@@ -197,8 +202,8 @@ export class StreamAccumulator {
   }
 
   /**
-   * End-of-stream / usage gate: catch denser tokenization than chars/4 after
-   * the provider reports completion_tokens.
+   * End-of-stream / usage gate: catch denser tokenization than the mid-stream
+   * char estimate after the provider reports completion_tokens.
    */
   public finalizeOutputBudgetCheck(): boolean {
     return this.tryReportReasoningBudgetExceeded();
@@ -231,6 +236,8 @@ export class StreamAccumulator {
   public processChunk(rawChunk: unknown): {
     hasToolCallUpdate: boolean;
     shouldFlushToolCallImmediately: boolean;
+    /** Caller must abort the HTTP stream immediately; do not wait for Rust cancel. */
+    shouldAbortStream: boolean;
   } {
     if (this.firstChunkTime === undefined) {
       this.firstChunkTime = performance.now();
@@ -503,6 +510,7 @@ export class StreamAccumulator {
     return {
       hasToolCallUpdate,
       shouldFlushToolCallImmediately,
+      shouldAbortStream: this.reasoningBudgetIssueReported,
     };
   }
 

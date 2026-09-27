@@ -107,9 +107,7 @@ export function serializeDefaultTargetSessionForBackend(
   }
   return {
     mode: 'self',
-    ...(target.sessionId?.trim()
-      ? { sessionId: target.sessionId.trim() }
-      : {}),
+    ...(target.sessionId?.trim() ? { sessionId: target.sessionId.trim() } : {}),
   };
 }
 

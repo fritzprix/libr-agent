@@ -115,7 +115,10 @@ export function useSessionHistorySearch({
   onBrowseLoadMore,
   refreshToken = 0,
 }: UseSessionHistorySearchArgs): UseSessionHistorySearchResult {
-  const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
+  const debouncedSearchQuery = useDebouncedValue(
+    searchQuery,
+    SEARCH_DEBOUNCE_MS,
+  );
   const trimmedInput = searchQuery.trim();
   const trimmedDebounced = debouncedSearchQuery.trim();
   const isDebouncing = trimmedInput !== trimmedDebounced;
@@ -188,7 +191,10 @@ export function useSessionHistorySearch({
 
         const normalized = normalizeSessionListResponse(response);
         const assistantsById = new Map(
-          (await listAssistants()).map((assistant) => [assistant.id, assistant]),
+          (await listAssistants()).map((assistant) => [
+            assistant.id,
+            assistant,
+          ]),
         );
         if (generation !== requestGenerationRef.current) {
           return;
@@ -253,7 +259,10 @@ export function useSessionHistorySearch({
       let assistantsById = assistantsByIdRef.current;
       if (assistantsById.size === 0) {
         assistantsById = new Map(
-          (await listAssistants()).map((assistant) => [assistant.id, assistant]),
+          (await listAssistants()).map((assistant) => [
+            assistant.id,
+            assistant,
+          ]),
         );
         if (generation !== requestGenerationRef.current) {
           return;

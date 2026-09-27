@@ -1305,6 +1305,11 @@
       "lineCount": "{{count}}줄",
       "requestedPath": "요청 경로: {{path}}"
     },
+    "recovery": {
+      "reasoningBudgetRetry": "추론이 너무 길어졌습니다. 새 턴으로 다시 시도합니다…",
+      "thinkingLoopRetry": "사고 루프가 감지되었습니다. 새 턴으로 다시 시도합니다…",
+      "textLoopRetry": "반복 텍스트 루프가 감지되었습니다. 새 턴으로 다시 시도합니다…"
+    },
     "statusBar": {
       "retryError": "메시지 재시도에 실패했습니다",
       "resumeError": "세션 재개에 실패했습니다",

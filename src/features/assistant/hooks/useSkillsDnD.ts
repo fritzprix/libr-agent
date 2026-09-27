@@ -36,7 +36,9 @@ export function useSkillsDnD(
 
             try {
               await importAssistantSkills(draftId, filePath);
-              toast.success(t('settings.skills.importSuccess'), { id: toastId });
+              toast.success(t('settings.skills.importSuccess'), {
+                id: toastId,
+              });
               fetchSkills();
             } catch (error) {
               logger.error('Failed to import skills:', error);

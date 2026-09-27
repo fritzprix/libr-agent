@@ -1315,6 +1315,11 @@
       "lineCount": "{{count}} 行",
       "requestedPath": "请求路径: {{path}}"
     },
+    "recovery": {
+      "reasoningBudgetRetry": "推理时间过长。正在以新回合重试…",
+      "thinkingLoopRetry": "检测到思考循环。正在以新回合重试…",
+      "textLoopRetry": "检测到重复文本循环。正在以新回合重试…"
+    },
     "statusBar": {
       "retryError": "重试消息失败",
       "resumeError": "恢复会话失败",

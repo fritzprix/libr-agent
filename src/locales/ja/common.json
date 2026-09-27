@@ -1315,6 +1315,11 @@
       "lineCount": "{{count}} 行",
       "requestedPath": "要求パス: {{path}}"
     },
+    "recovery": {
+      "reasoningBudgetRetry": "推論が長すぎました。新しいターンで再試行します…",
+      "thinkingLoopRetry": "思考ループを検出しました。新しいターンで再試行します…",
+      "textLoopRetry": "繰り返しテキストのループを検出しました。新しいターンで再試行します…"
+    },
     "statusBar": {
       "retryError": "メッセージの再試行に失敗しました",
       "resumeError": "セッションの再開に失敗しました",
