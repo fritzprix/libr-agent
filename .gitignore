@@ -52,6 +52,9 @@ target
 # Local machine-specific Cargo config (e.g. memory/codegen tuning for low-RAM machines)
 src-tauri/.cargo/
 
+# Microsoft ONNX Runtime shared library staged by scripts/prepare-tauri-build.cjs
+src-tauri/onnxruntime-linux/
+
 # Additional ignores added on review (caches, local env, coverage, editor/runtime artifacts)
 
 # dotenv files (local/specific env files)
