@@ -1,8 +1,15 @@
+## [0.9.15] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **Tauri JS/Rust version alignment**: Pin `@tauri-apps/api` and plugin packages to the same major/minor as the Rust crates so `tauri-cli` 2.12 release builds no longer abort on version mismatch.
+
 ## [0.9.14] - 2026-09-28
 
 ### 🐛 Fixes & Hardening
 
 - **AppImage `.DirIcon`**: Bump `@tauri-apps/cli` to 2.12.0 so Linux AppImages ship relative `.DirIcon` / `.desktop` symlinks (fixes AppImageHub catalog lint and AppManager install failures).
+> **Note:** `v0.9.14` release CI failed on the JS/Rust mismatch above; use **v0.9.15** for installable artifacts.
 
 ## [0.9.13] - 2026-09-28
 
