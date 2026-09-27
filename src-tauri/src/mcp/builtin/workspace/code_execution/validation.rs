@@ -514,28 +514,40 @@ pub fn has_shell_pipeline(command: &str) -> bool {
     false
 }
 
-/// Warning appended when a command returns exit code 0 but stderr contains explicit failure markers.
+/// Warning appended when a pipeline returns exit code 0 but output shows failure markers.
 ///
-/// This catches cases where an upstream command in a pipeline failed (e.g. `xxd missing | head`),
-/// but the overall pipeline exit code is 0 because the shell returns the exit status of the
-/// rightmost command by default.
-pub fn exit_zero_stderr_warning(command: &str, stderr: &str) -> Option<&'static str> {
-    if stderr.trim().is_empty() || !has_shell_pipeline(command) {
+/// Upstream commands often fail while the pipeline exit code stays 0 (rightmost command
+/// wins). Agents commonly use `cmd 2>&1 | tail`, which moves failure text onto stdout, so
+/// both streams are scanned.
+pub fn exit_zero_pipeline_failure_warning(
+    command: &str,
+    stdout: &str,
+    stderr: &str,
+) -> Option<&'static str> {
+    if !has_shell_pipeline(command) {
+        return None;
+    }
+    if stdout.trim().is_empty() && stderr.trim().is_empty() {
         return None;
     }
 
-    let stderr_lower = stderr.to_lowercase();
-    let has_failure_marker = stderr_lower.contains("no such file")
-        || stderr_lower.contains("command not found")
-        || stderr_lower.contains("error:")
-        || stderr_lower.contains("cannot open")
-        || stderr_lower.contains("permission denied");
+    let combined = format!("{stdout}\n{stderr}").to_lowercase();
+    let has_failure_marker = combined.contains("no such file")
+        || combined.contains("command not found")
+        || combined.contains("error:")
+        || combined.contains("cannot open")
+        || combined.contains("permission denied");
 
     if has_failure_marker {
-        Some("⚠️ Note: Stderr reports errors despite exit code 0. In a shell pipeline, exit code 0 reflects the last command; an upstream command may have failed. Consider `set -o pipefail` or running commands separately.")
+        Some("⚠️ Note: Output reports errors despite exit code 0. In a shell pipeline, exit code 0 reflects the last command; an upstream command may have failed. Consider `set -o pipefail` or running commands separately.")
     } else {
         None
     }
+}
+
+/// Backward-compatible wrapper: stderr-only scan (stdout empty).
+pub fn exit_zero_stderr_warning(command: &str, stderr: &str) -> Option<&'static str> {
+    exit_zero_pipeline_failure_warning(command, "", stderr)
 }
 
 #[cfg(test)]
@@ -876,6 +888,39 @@ index 111..222 100644
         assert!(exit_zero_stderr_warning(
             "python script.py",
             "FileNotFoundError: [Errno 2] No such file or directory: 'foo'"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn test_exit_zero_pipeline_failure_warning_scans_stdout_after_redirect() {
+        // Harbor/agent pattern: failure merged into stdout via 2>&1 | tail
+        let warning = exit_zero_pipeline_failure_warning(
+            "ffmpeg -i video.mp4 -vn audio.wav 2>&1 | tail -5",
+            "bash: line 1: ffmpeg: command not found",
+            "",
+        );
+        assert!(warning.is_some());
+        assert!(warning.unwrap().contains("pipefail"));
+
+        // stdout clean, stderr has marker (legacy path)
+        assert!(exit_zero_pipeline_failure_warning(
+            "xxd missing | head -50",
+            "",
+            "xxd: missing: No such file or directory",
+        )
+        .is_some());
+
+        // No markers
+        assert!(
+            exit_zero_pipeline_failure_warning("cat file.txt | head -5", "hello\n", "",).is_none()
+        );
+
+        // Non-pipeline: ignore markers on stdout
+        assert!(exit_zero_pipeline_failure_warning(
+            "ffmpeg -i video.mp4",
+            "bash: line 1: ffmpeg: command not found",
+            "",
         )
         .is_none());
     }

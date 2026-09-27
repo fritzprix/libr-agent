@@ -62,7 +62,7 @@ impl BuiltinMCPServer for MediaServer {
     }
 
     fn description(&self) -> &str {
-        "Fetch images/audio from URLs or workspace files, or capture live desktop screen into the agent context"
+        "Visual analysis (seeContent), speech/audio analysis (listenContent), or live screen capture into the agent context"
     }
 
     fn tools(&self) -> Vec<MCPTool> {

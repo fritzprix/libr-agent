@@ -130,10 +130,7 @@ pub fn create_playbook_tool() -> MCPTool {
                 "List workflow steps with toolName and purpose for each action.",
                 "Set defaultTargetSession to { mode: 'pin' } when creating a 'session playbook' (세션 플레이북) or when the user wants to pin this session's workflow (sessionId is optional; caller session is pinned automatically).",
             ],
-            &[
-                "Select the playbook with playbook__selectPlaybook.",
-                "List playbooks with playbook__listPlaybooks.",
-            ],
+            &[],
         ),
         object_prop(
             vec![
@@ -181,10 +178,7 @@ pub fn select_playbook_tool() -> MCPTool {
             "Select and prepare a playbook for execution.",
             &["Playbook ID from playbook__listPlaybooks or playbook__getPlaybook."],
             &["Pass the playbook id to load it into the active workflow context."],
-            &[
-                "Review steps with playbook__getPlaybook.",
-                "Update the playbook with playbook__updatePlaybook if steps need changes.",
-            ],
+            &[],
         ),
         object_prop(
             vec![("id".to_string(), string_prop_required("Playbook ID"))],
@@ -206,10 +200,7 @@ pub fn list_playbooks_tool() -> MCPTool {
                 "Use page and pageSize for pagination.",
                 "Sort by created_at or assistant; bookmarkFirst prioritizes bookmarked items.",
             ],
-            &[
-                "Open details with playbook__getPlaybook.",
-                "Select for use with playbook__selectPlaybook.",
-            ],
+            &[],
         ),
         object_prop(
             vec![
@@ -267,10 +258,7 @@ pub fn get_playbook_page_tool() -> MCPTool {
             "Navigate the playbook UI listing with pagination.",
             &[],
             &["Set page and pageSize to browse the playbook catalog."],
-            &[
-                "Load a playbook with playbook__getPlaybook.",
-                "Select a playbook with playbook__selectPlaybook.",
-            ],
+            &[],
         ),
         object_prop(
             vec![
@@ -306,7 +294,7 @@ pub fn delete_playbook_tool() -> MCPTool {
             "Permanently delete a playbook by ID.",
             &["Playbook ID from playbook__listPlaybooks or playbook__getPlaybook."],
             &["Confirm the playbook is no longer needed before deleting."],
-            &["List remaining playbooks with playbook__listPlaybooks."],
+            &[],
         ),
         object_prop(
             vec![("id".to_string(), string_prop_required("Playbook ID"))],
@@ -325,10 +313,7 @@ pub fn get_playbook_tool() -> MCPTool {
             "Get full playbook details including workflow steps and success criteria.",
             &["Playbook ID from playbook__listPlaybooks."],
             &["Pass the playbook id."],
-            &[
-                "Select for execution with playbook__selectPlaybook.",
-                "Edit with playbook__updatePlaybook.",
-            ],
+            &[],
         ),
         object_prop(
             vec![("id".to_string(), string_prop_required("Playbook ID"))],
@@ -351,10 +336,7 @@ pub fn update_playbook_tool() -> MCPTool {
                 "Omit fields to leave them unchanged.",
                 "Set defaultTargetSession to { mode: 'pin', sessionId } to pin Start, or null to clear.",
             ],
-            &[
-                "Verify changes with playbook__getPlaybook.",
-                "Re-select with playbook__selectPlaybook if actively running.",
-            ],
+            &[],
         ),
         object_prop(
             vec![

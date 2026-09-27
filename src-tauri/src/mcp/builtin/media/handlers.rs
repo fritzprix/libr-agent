@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use url::Url;
 
 use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_param_error, ErrorCategory, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
 use image::ImageFormat;
@@ -157,6 +157,18 @@ pub fn looks_like_video_path(url: &str) -> bool {
         ext_from_url_path(url).as_deref(),
         Some("mp4" | "mkv" | "mov" | "avi" | "m4v" | "mpeg" | "mpg" | "wmv")
     )
+}
+
+/// Post-load guidance after a successful `listenContent`.
+///
+/// Soft load-ack alone led agents to treat the tool as done and stop; push
+/// analysis / sparse visual sample / verify-before-stop without task clues.
+fn listen_content_success_follow_ups() -> Vec<String> {
+    vec![
+        "Audio is attached in this tool result — analyze speech/content from it now; the load acknowledgment alone is not the task answer.".to_string(),
+        "If on-screen text also matters, sample a few frames with media__seeContent (session budget applies); do not dump every frame.".to_string(),
+        "Persist required workspace outputs and verify them before stopping.".to_string(),
+    ]
 }
 
 fn listen_content_recovery(url: &str) -> Vec<String> {
@@ -563,20 +575,23 @@ pub async fn handle_listen_content(
     let data = general_purpose::STANDARD.encode(&bytes);
     let size_kb = bytes.len() / 1024;
 
-    Ok(MCPResult {
-        content: Some(vec![
-            MCPContent::Text {
-                text: format!("✓ Audio loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
-            },
-            MCPContent::Audio {
-                data: Some(data),
-                uri: None,
-                mime_type,
-            },
-        ]),
-        structured_content: None,
-        is_error: Some(false),
-    })
+    let mut result = SuccessHint::new(
+        format!("Audio loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
+        listen_content_success_follow_ups(),
+    )
+    .to_mcp_result();
+
+    // SuccessHint → MCPResult::success always sets content; keep attach resilient.
+    result
+        .content
+        .get_or_insert_with(Vec::new)
+        .push(MCPContent::Audio {
+            data: Some(data),
+            uri: None,
+            mime_type,
+        });
+
+    Ok(result)
 }
 
 // ── Handler: assistPluginStatus / deployAssistPlugin ─────────────────────────
@@ -1110,6 +1125,60 @@ mod tests {
     }
 
     #[test]
+    fn listen_content_success_follow_ups_push_continue_after_load() {
+        let joined = listen_content_success_follow_ups().join("\n");
+        assert!(joined.to_lowercase().contains("attached"));
+        assert!(joined.to_lowercase().contains("not the task answer"));
+        assert!(joined.contains("seeContent"));
+        assert!(joined.to_lowercase().contains("before stopping"));
+
+        let text = SuccessHint::new(
+            "Audio loaded (1 KB, audio/wav)\n\nSource: /app/a.wav",
+            listen_content_success_follow_ups(),
+        )
+        .to_mcp_result();
+        let body = match text.content.as_ref().and_then(|c| c.first()) {
+            Some(MCPContent::Text { text }) => text.clone(),
+            _ => panic!("expected text content"),
+        };
+        assert!(body.starts_with("✓ Audio loaded"));
+        assert!(body.contains("💡 Suggested Follow-ups:"));
+        assert!(body.contains("seeContent"));
+    }
+
+    #[test]
+    fn listen_success_mcp_result_keeps_text_and_audio_parts() {
+        let mut result = SuccessHint::new(
+            "Audio loaded (1 KB, audio/wav)\n\nSource: /app/a.wav",
+            listen_content_success_follow_ups(),
+        )
+        .to_mcp_result();
+        assert!(
+            result.content.is_some(),
+            "SuccessHint::to_mcp_result must populate content"
+        );
+        result
+            .content
+            .get_or_insert_with(Vec::new)
+            .push(MCPContent::Audio {
+                data: Some("YQ==".to_string()),
+                uri: None,
+                mime_type: "audio/wav".to_string(),
+            });
+        let content = result.content.as_ref().expect("content");
+        assert_eq!(content.len(), 2);
+        assert!(matches!(&content[0], MCPContent::Text { text } if text.starts_with('✓')));
+        assert!(matches!(
+            &content[1],
+            MCPContent::Audio {
+                mime_type,
+                data: Some(_),
+                ..
+            } if mime_type == "audio/wav"
+        ));
+    }
+
+    #[test]
     fn see_content_slot_allows_up_to_max_then_rejects() {
         let counter = AtomicUsize::new(0);
         let mut committed = Vec::new();
@@ -1162,5 +1231,27 @@ mod tests {
             .description
             .contains(&MAX_SEE_CONTENT_SUCCESSES_PER_SESSION.to_string()));
         assert!(see.description.contains("Hard session limit"));
+    }
+
+    #[test]
+    fn media_tool_descriptions_state_audio_vs_visual_role_boundary() {
+        let tools = super::super::tools::all_tools();
+        let see = tools
+            .iter()
+            .find(|t| t.name == "seeContent")
+            .expect("seeContent tool");
+        let listen = tools
+            .iter()
+            .find(|t| t.name == "listenContent")
+            .expect("listenContent tool");
+        assert!(see.description.contains("When to use:"));
+        assert!(see.description.contains("listenContent"));
+        assert!(see.description.to_lowercase().contains("not invent"));
+        assert!(listen.description.contains("When to use:"));
+        assert!(listen.description.contains("seeContent"));
+        assert!(listen
+            .description
+            .to_lowercase()
+            .contains("prefer this over inventing"));
     }
 }

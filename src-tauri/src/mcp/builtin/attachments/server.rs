@@ -109,10 +109,7 @@ impl AttachmentsServer {
                         "Use pagination parameters when many attachments exist.",
                         "Review filenames and metadata before reading content.",
                     ],
-                    &[
-                        "Read file content with attachments__readAttachment.",
-                        "Search attachment text with attachments__searchAttachments.",
-                    ],
+                    &[],
                 ),
                 input_schema: schemas::tool_list_content_schema(),
                 output_schema: Option::None,
@@ -129,10 +126,7 @@ impl AttachmentsServer {
                         "Pass the attachment content ID.",
                         "Use line range filters for large files.",
                     ],
-                    &[
-                        "Search across attachments with attachments__searchAttachments.",
-                        "Cross-reference paths in scratchpad__addNote if needed later.",
-                    ],
+                    &[],
                 ),
                 input_schema: schemas::tool_read_content_schema(),
                 output_schema: Option::None,
@@ -149,10 +143,7 @@ impl AttachmentsServer {
                         "Provide a search query string.",
                         "Tune topN and threshold in options when needed.",
                     ],
-                    &[
-                        "Read matching files with attachments__readAttachment.",
-                        "List all attachments with attachments__listAttachments.",
-                    ],
+                    &[],
                 ),
                 input_schema: serde_json::from_value(serde_json::json!({
                     "type": "object",

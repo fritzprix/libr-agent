@@ -19,13 +19,16 @@ fn see_tool() -> MCPTool {
         description: format!(
             r#"Fetch an image and include it in the conversation so you can visually analyse it.
 
+**When to use:** on-screen or visual content — screenshots, photos, diagrams, scanned pages, sparse video keyframes for text/UI that is visible in the image.
+
+**When not to use:** speech, dialogue, soundtrack, or other audio understanding — use `listenContent` on an audio file (extract audio from video first if needed). Do not invent frame-OCR or custom ASR/OCR pipelines as a substitute for `listenContent` when audio is available or extractable.
+
 **Supported formats:** JPEG, PNG, GIF, WebP, BMP, SVG
 
 **Best Practices:**
-- Prefer `seeContent` for reading text or details in individual images (screenshots, photos, diagrams, scanned pages).
 - Images consume substantial multimodal tokens — avoid calling `seeContent` on every frame of a long video or every file in a large set.
-- When many frames/files must be scanned and scripting tools are already available (e.g. ffmpeg, python3), filter or sample programmatically first, then call `seeContent` only on key frames or final verification samples.
-- If ffmpeg/python are missing, do NOT spend the session installing packages. Sample a few frames or extract audio instead, then use `seeContent` / `media__listenContent`. For speech-in-video: extract audio to wav/mp3 and call `listenContent`.
+- When many frames/files must be scanned and scripting tools are already available, filter or sample first, then call `seeContent` only on key frames or final verification samples.
+- Do not spend the session installing OCR/ASR stacks when `seeContent` / `listenContent` can answer.
 
 **Notes:**
 - Hard session limit: at most {limit} successful `seeContent` loads; further calls return an error directing you to sample or use `listenContent` on extracted audio.
@@ -55,11 +58,16 @@ fn listen_tool() -> MCPTool {
         title: Some("Listen Content".to_string()),
         description: r#"Fetch an audio file and include it in the conversation so you can analyse the audio.
 
+**When to use:** speech, dialogue, soundtrack, transcription, or any audio understanding from a supported audio file. Prefer this over inventing offline ASR/OCR scripts when the goal is hearing what was said.
+
+**When not to use:**
+- Video containers (MP4/MKV/MOV) — extract an audio track to a supported format first, then call this tool on that file.
+- On-screen / visual text in images — use `seeContent` instead.
+
 **Supported formats:** MP3, WAV, OGG, AAC, FLAC, WEBM, M4A
 
 **Notes:**
-- Audio only — not video containers (MP4/MKV/MOV). For speech-in-video, extract an audio track first (e.g. ffmpeg to wav/mp3), then call `listenContent` on that file.
-- Maximum file size: 20 MB.
+- Audio only — not video containers. Maximum file size: 20 MB.
 - Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/clip.mp3`)."#
             .to_string(),
         input_schema: object_prop(

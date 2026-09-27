@@ -18,7 +18,7 @@ Load only the reference you need. Do not paste this whole skill into every turn.
 ## Prompt layers (stable prefix order)
 
 1. **Assistant `systemPrompt`** — shallow identity from the assistant config (bundled seed is one line).
-2. **`## Agent Runtime Identity`** — name, agent id, session id (and sub-agent parent when applicable). Already injected; do not restate.
+2. **`## Agent Runtime Identity`** — name, agent id, session id, external wake POST URL (and sub-agent parent when applicable). Already injected; do not restate.
 3. **`## Session Context`** — note that live `<session-context>` may appear.
 4. **`## Persona Template`** — first non-empty of `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, `soul.md` in the **effective workspace**.
 5. **`## Workspace Instructions`** — first non-empty of `agents.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`.
@@ -55,12 +55,14 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 
 ## External wake (hooks / webhooks)
 
-Outside processes resume a session only by HTTP inject (not by printing to their own stdout):
+Outside processes resume a session only by HTTP inject (not by printing to their own stdout).
 
-- `POST /api/sessions/<session_id>/messages` — body `{"content":"…"}` (user message; Idle → run, Busy → queue)
-- `POST /api/sessions/<session_id>/channel` — channel-shaped notification (`serverName`, `content`, optional `meta`)
-- Base: `http://127.0.0.1:<http_server_port>` (Settings; default **3030**)
-- `<session_id>` = this session’s exact storage id from Agent Runtime Identity
+**Already in every turn:** `## Agent Runtime Identity` includes
+`External wake (this session): POST http://127.0.0.1:<port>/api/sessions/<id>/messages`
+with this session’s real port + id. Agents must wire hooks/`--exec`/webhooks to that URL
+(body `{"content":"…"}`). Echo-only or file-append stubs do **not** wake the session.
+
+Also available: `POST …/channel` (`serverName` + `content`, optional `meta`).
 
 For event-driven resume vs clock polling, use **`call-me-back`**. Do not list per-app hook CLIs here.
 

@@ -25,8 +25,11 @@ import {
   extractMediaContent as extractMediaParts,
   processMessageContent as stringifyMessageContent,
   processMultiModalContent as buildMultiModalContent,
+  messagesHaveMultimodalParts,
   prepareMessagesForMediaAssistRetry,
+  rememberMediaAssistStripForRoute,
   shouldAttemptMediaAssistFallback,
+  shouldStripMultimodalForRoute,
 } from '@/lib/ai-service/utils';
 import {
   validateApiKey as validateServiceApiKey,
@@ -367,7 +370,25 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
       thinkingEffort: options.config?.thinkingEffort,
     });
 
+    // Stored messages stay intact. If this provider+model already rejected
+    // multimodal input, strip only the outbound copy before the first send.
     let activeMessages = messages;
+    if (
+      shouldStripMultimodalForRoute(provider, model) &&
+      messagesHaveMultimodalParts(messages)
+    ) {
+      const prepared = await prepareMessagesForMediaAssistRetry(messages);
+      activeMessages = prepared.messages;
+      this.logger.info(
+        `[${provider}] streamChat media-assist pre-strip for remembered route; ${
+          prepared.usedPlugin
+            ? 'converted multimodal via host plugin'
+            : 'stripped multimodal parts'
+        }`,
+        { model, usedPlugin: prepared.usedPlugin },
+      );
+    }
+
     let mediaAssistRetried = false;
     let hasYielded = false;
 
@@ -418,6 +439,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
           const prepared =
             await prepareMessagesForMediaAssistRetry(activeMessages);
           activeMessages = prepared.messages;
+          rememberMediaAssistStripForRoute(provider, model);
           this.logger.warn(
             `[${provider}] streamChat media-assist fallback: ${
               prepared.usedPlugin

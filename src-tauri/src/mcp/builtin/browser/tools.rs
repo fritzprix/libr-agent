@@ -15,10 +15,7 @@ pub fn create_session_tool() -> MCPTool {
                 "If a session already exists, browser__createSession closes it and starts a fresh one.",
                 "If url is omitted, the session opens https://www.google.com.",
             ],
-            &[
-                "Navigate with browser__navigateToUrl.",
-                "Read page content with browser__getPageContent.",
-            ],
+            &[],
         )
         .to_string(),
         input_schema: object_prop(
@@ -86,10 +83,7 @@ pub fn navigate_back_tool() -> MCPTool {
             "Navigate back in browser history to the previous page.",
             &["Active browser session from browser__createSession."],
             &["Requires prior navigation history in the active session."],
-            &[
-                "Extract content with browser__getPageContent.",
-                "Inspect elements with browser__listInteractable.",
-            ],
+            &[],
         ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
@@ -107,10 +101,7 @@ pub fn navigate_forward_tool() -> MCPTool {
             "Navigate forward in browser history to the next page.",
             &["Active browser session from browser__createSession."],
             &["Requires having navigated back previously."],
-            &[
-                "Extract content with browser__getPageContent.",
-                "Inspect elements with browser__listInteractable.",
-            ],
+            &[],
         ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
@@ -128,10 +119,7 @@ pub fn get_current_url_tool() -> MCPTool {
             "Get the current URL of the active browser page.",
             &["Active browser session from browser__createSession."],
             &[],
-            &[
-                "Extract page content with browser__getPageContent.",
-                "Navigate elsewhere with browser__navigateToUrl.",
-            ],
+            &[],
         ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
@@ -149,10 +137,7 @@ pub fn get_page_title_tool() -> MCPTool {
             "Get the title of the current active browser page.",
             &["Active browser session from browser__createSession."],
             &[],
-            &[
-                "Read page content with browser__getPageContent.",
-                "Verify navigation succeeded after browser__navigateToUrl.",
-            ],
+            &[],
         ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
@@ -173,10 +158,7 @@ pub fn take_screenshot_tool() -> MCPTool {
                 "By default, capture the current viewport.",
                 "Set fullPage to true to capture the entire page when it is within the 64-million-pixel and 8 MiB PNG limits.",
             ],
-            &[
-                "Use browser__getPageContent for text extraction.",
-                "Use browser__scrollPage before a viewport capture when you need a specific visible region.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -251,10 +233,7 @@ pub fn click_element_tool() -> MCPTool {
                 "Call browser__listInteractable or browser__getPageContent before this tool to extract a real selector from the current page.",
                 "Pass the selector exactly as extracted. Do not guess selectors.",
             ],
-            &[
-                "Use browser__getPageContent to verify the page state after the click.",
-                "Use browser__listInteractable again if the page revealed new elements.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -282,10 +261,7 @@ pub fn input_text_tool() -> MCPTool {
                 "Call browser__listInteractable or browser__getPageContent before this tool to extract a valid selector.",
                 "Use a selector that targets an input or textarea element.",
             ],
-            &[
-                "Use browser__getPageContent to confirm the form state if the page reflects the input.",
-                "Use browser__clickElement if the next step is submitting or revealing related controls.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -316,10 +292,7 @@ pub fn scroll_page_tool() -> MCPTool {
                 "Use this to reveal off-screen or lazy-loaded elements in the live page.",
                 "Do not use scrolling to advance cached browser__getPageContent pages. When content extraction returns [Page 1/N], read the next cached page with browser__getPageContent instead.",
             ],
-            &[
-                "Use browser__listInteractable after scrolling to inspect newly visible elements.",
-                "Use browser__getPageContent after scrolling if the page loaded more text content.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -426,10 +399,7 @@ pub fn fetch_tool() -> MCPTool {
                 "HTML or text responses are returned as markdown in the tool result.",
                 "Non-HTML responses require savePath so the file can be downloaded into the workspace.",
             ],
-            &[
-                "Process the returned markdown directly when you only need page content.",
-                "Use workspace tools on the saved file when savePath downloaded a non-HTML resource.",
-            ],
+            &[],
         ),
         input_schema: object_schema(props, vec!["url".to_string()]),
         output_schema: None,
@@ -476,10 +446,7 @@ pub fn evaluate_js_tool() -> MCPTool {
                 "Use this for page inspection, debugging, or controlled DOM manipulation in the current page.",
                 "Return plain values when possible. For complex objects, serialize them in the script with JSON.stringify(...).",
             ],
-            &[
-                "Use browser__getConsoleLogs to inspect page-side errors after script execution.",
-                "Use browser__getPageContent to verify page state after DOM changes.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -507,10 +474,7 @@ pub fn get_console_logs_tool() -> MCPTool {
                 "Use this after navigation, form submission, or browser__evaluateJS when you need runtime logs from the page.",
                 "Adjust maxEntries when you need a broader or narrower log window.",
             ],
-            &[
-                "Use browser__evaluateJS to inspect page state related to the logged messages.",
-                "Use browser__getPageContent when you need the rendered page context alongside the logs.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(

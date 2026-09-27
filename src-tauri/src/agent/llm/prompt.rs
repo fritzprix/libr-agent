@@ -313,14 +313,18 @@ fn build_stable_prefix(
         } else {
             crate::utils::session_id::display_session_id(session_id)
         };
+        let http_port = crate::server::active_http_port();
         let mut identity = format!(
             "\n\n## Agent Runtime Identity\n\
             - Agent Name: {}\n\
             - Agent ID (Config ID): {}\n\
             - Session ID: {}\n\
-            - Note: Agent ID / Config ID is your configuration template ID (for agent__spawnSession). Session ID is your running instance ID (for agent__messageToSession / agent__checkSession).",
+            - External wake (this session): POST http://127.0.0.1:{}/api/sessions/{}/messages body {{\"content\":\"…\"}} — wire hooks/webhooks/--exec here (not echo-only stubs). Skill: call-me-back.\n\
+            - Note: Agent ID / Config ID is your configuration template ID (for agent__spawnSession). Session ID is your running instance ID (for agent__messageToSession / agent__checkSession / external wake).",
             agent_config.name.trim(),
             agent_id,
+            display_session,
+            http_port,
             display_session
         );
 
@@ -493,6 +497,8 @@ mod tests {
 
         // Assert 1: Agent Identity
         assert!(prompt.contains("You are a test assistant."));
+        assert!(prompt.contains("External wake (this session): POST http://127.0.0.1:"));
+        assert!(prompt.contains("/api/sessions/(unknown-session)/messages"));
 
         // Assert 2: Persona Template
         assert!(prompt.contains("## Persona Template (.github/SOUL.md)"));
@@ -530,12 +536,22 @@ mod tests {
             - Agent ID (Config ID): (unknown)\n\
             - Session ID: (unknown-session)"
         ));
+        assert!(prompt.contains("External wake (this session): POST http://127.0.0.1:"));
+        assert!(prompt.contains("/api/sessions/(unknown-session)/messages"));
         assert!(prompt.contains("## Session Context"));
         assert!(prompt.contains("<session-context>"));
         assert!(!prompt.contains("passive environment reference only"));
         assert!(!prompt.contains("## Session Context Handling"));
         assert!(!prompt.contains("## Workspace Instructions"));
         assert!(!prompt.contains("## Available Tools & Current State"));
+    }
+
+    #[test]
+    fn test_active_http_port_prefers_in_process_bound_port() {
+        crate::server::set_active_http_port(34567);
+        assert_eq!(crate::server::active_http_port(), 34567);
+        // Reset so other tests keep the default fallback behavior.
+        crate::server::set_active_http_port(0);
     }
 
     #[test]

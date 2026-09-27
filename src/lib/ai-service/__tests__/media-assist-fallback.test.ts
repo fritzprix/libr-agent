@@ -3,10 +3,14 @@ import type { Message } from '@/models/chat';
 import { AIServiceError, AIServiceProvider } from '../types';
 import {
   buildMediaAssistPlaceholder,
+  clearMediaAssistStripRouteMemory,
   localMediaPathForPlugin,
+  mediaAssistCapabilityRouteKey,
   messagesHaveMultimodalParts,
   prepareMessagesForMediaAssistRetry,
+  rememberMediaAssistStripForRoute,
   shouldAttemptMediaAssistFallback,
+  shouldStripMultimodalForRoute,
   stripMultimodalFromMessages,
 } from '../media-assist-fallback';
 
@@ -34,6 +38,23 @@ function userWithAudio(): Message {
 }
 
 describe('media-assist-fallback', () => {
+  beforeEach(() => {
+    clearMediaAssistStripRouteMemory();
+  });
+
+  it('remembers strip only for the active provider+model route', () => {
+    expect(shouldStripMultimodalForRoute('openai', 'model-a')).toBe(false);
+    rememberMediaAssistStripForRoute('openai', 'model-a');
+    expect(shouldStripMultimodalForRoute('openai', 'model-a')).toBe(true);
+    // Same route key shape
+    expect(mediaAssistCapabilityRouteKey('openai', 'model-a')).toContain(
+      'model-a',
+    );
+    // Provider/model change clears memory (no durable persistence)
+    expect(shouldStripMultimodalForRoute('openai', 'model-b')).toBe(false);
+    expect(shouldStripMultimodalForRoute('openai', 'model-a')).toBe(false);
+  });
+
   it('detects multimodal parts in messages', () => {
     expect(messagesHaveMultimodalParts([userWithAudio()])).toBe(true);
     expect(
@@ -176,7 +197,7 @@ describe('media-assist-fallback', () => {
     ).toBe(true);
   });
 
-  it('does not attempt fallback on generic Error with 429/5xx text', () => {
+  it('does not attempt fallback on generic Error with 429/opaque 5xx text', () => {
     expect(
       shouldAttemptMediaAssistFallback(
         new Error('429 Rate limit: too many audio requests'),
@@ -191,7 +212,7 @@ describe('media-assist-fallback', () => {
     ).toBe(false);
   });
 
-  it('does not attempt fallback on generic Error with statusCode 500', () => {
+  it('does not attempt fallback on generic Error with opaque statusCode 500', () => {
     const err = Object.assign(new Error('failed to process video'), {
       statusCode: 500,
     });
@@ -200,13 +221,40 @@ describe('media-assist-fallback', () => {
     );
   });
 
-  it('does not attempt fallback on 429/500 even with multimodal hints', () => {
+  it('attempts fallback on 500 when error is an explicit media capability reject', () => {
+    const capability500 = new AIServiceError(
+      'audio input is not supported - hint: if this is unexpected, you may need to provide the mmproj',
+      AIServiceProvider.OpenAI,
+      500,
+      undefined,
+      {
+        kind: 'server',
+        rawPayload: {
+          code: 500,
+          message:
+            'audio input is not supported - hint: if this is unexpected, you may need to provide the mmproj',
+          type: 'server_error',
+        },
+      },
+    );
+    expect(
+      shouldAttemptMediaAssistFallback(capability500, [userWithAudio()]),
+    ).toBe(true);
+    expect(
+      shouldAttemptMediaAssistFallback(
+        new Error('500 audio input is not supported (mmproj)'),
+        [userWithAudio()],
+      ),
+    ).toBe(true);
+  });
+
+  it('does not attempt fallback on 429 or opaque 500 even with media words', () => {
     const rateLimit = new AIServiceError(
       'Rate limit: too many image requests',
       AIServiceProvider.OpenAI,
       429,
     );
-    const serverError = new AIServiceError(
+    const opaqueServerError = new AIServiceError(
       'Internal error while processing audio',
       AIServiceProvider.OpenAI,
       500,
@@ -215,7 +263,7 @@ describe('media-assist-fallback', () => {
       false,
     );
     expect(
-      shouldAttemptMediaAssistFallback(serverError, [userWithAudio()]),
+      shouldAttemptMediaAssistFallback(opaqueServerError, [userWithAudio()]),
     ).toBe(false);
   });
 

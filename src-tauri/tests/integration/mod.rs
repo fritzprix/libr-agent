@@ -112,6 +112,7 @@ pub mod tool_contract_tests;
 pub mod tool_discovery_guidance_tests;
 pub mod tool_list_tools_tests;
 pub mod tool_loop_fence_tests;
+pub mod tool_related_actions_omit_tests;
 pub mod tool_result_spillover_tests;
 pub mod tool_schema_property_order_tests;
 pub mod ui_interaction_template_tests;
