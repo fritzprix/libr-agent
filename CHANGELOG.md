@@ -1,3 +1,9 @@
+## [0.9.14] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage `.DirIcon`**: Bump `@tauri-apps/cli` to 2.12.0 so Linux AppImages ship relative `.DirIcon` / `.desktop` symlinks (fixes AppImageHub catalog lint and AppManager install failures).
+
 ## [0.9.13] - 2026-09-28
 
 ### 🚀 Features & UI
