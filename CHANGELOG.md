@@ -1,8 +1,15 @@
+## [0.9.17] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage on Ubuntu 22.04**: The Linux build installs PipeWire 1.0 from the Jammy upstream PPA. Stock Ubuntu 22.04 PipeWire 0.3.48 cannot compile `pipewire-rs` 0.10, which stopped the v0.9.16 AppImage. Those PPA libraries depend on glibc 2.34, so the AppImage still launches on AppImageHub's Ubuntu 22.04 runner, and `.DirIcon` stays a relative symlink.
+
 ## [0.9.16] - 2026-09-28
 
 ### 🐛 Fixes & Hardening
 
 - **AppImage on Ubuntu 22.04**: Linux release and nightly bundles are built on Ubuntu 22.04 so the AppImage links against glibc 2.35. AppImageHub tests on Ubuntu 22.04; the Ubuntu 24.04 build required `GLIBC_2.39` and exited before it could show a window. The `.DirIcon` relative symlink from v0.9.14 remains in this build.
+> **Note:** `v0.9.16` Linux CI failed against Ubuntu 22.04's PipeWire 0.3.48. Use **v0.9.17** for the AppImage.
 
 ## [0.9.15] - 2026-09-28
 
