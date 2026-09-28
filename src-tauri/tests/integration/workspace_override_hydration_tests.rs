@@ -313,7 +313,11 @@ async fn hydrate_expands_tilde_persisted_workspace_override() {
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let session_root = temp_dir.path().join("session-root");
     // Literal `~/...` trap under the default workspace tree must not win.
-    let trap_dir = session_root.join("workspaces").join(session_id).join("~").join(&unique);
+    let trap_dir = session_root
+        .join("workspaces")
+        .join(session_id)
+        .join("~")
+        .join(&unique);
     tokio::fs::create_dir_all(&trap_dir)
         .await
         .expect("literal tilde trap dir should be created");
@@ -385,8 +389,7 @@ async fn set_override_expands_tilde_and_ignores_cwd_literal_tilde_trap() {
         .expect("session should be persisted");
 
     tauri_mcp_agent_lib::services::workspace_service::WorkspaceService::set_override(
-        session_id,
-        tilde_path,
+        session_id, tilde_path,
     )
     .await
     .expect("set_override should expand ~/ and succeed");

@@ -124,7 +124,10 @@ mod tests {
         assert_eq!(expand_home_pseudo("$HOME/a"), home.join("a"));
         assert_eq!(expand_home_pseudo("${HOME}/a"), home.join("a"));
         assert_eq!(expand_home_pseudo("~backup"), PathBuf::from("~backup"));
-        assert_eq!(expand_home_pseudo("src/main.rs"), PathBuf::from("src/main.rs"));
+        assert_eq!(
+            expand_home_pseudo("src/main.rs"),
+            PathBuf::from("src/main.rs")
+        );
         assert!(is_home_pseudo_path("~/docs"));
         assert!(!is_home_pseudo_path("~docs"));
         assert!(!is_home_pseudo_path("./~/docs"));
