@@ -378,7 +378,7 @@ export const AgentSessionToolCard: React.FC<AgentSessionToolCardProps> = ({
               'Recent activity',
             )}
           </div>
-          <ul className="max-h-32 space-y-1 overflow-y-auto rounded border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+          <ul className="max-h-32 space-y-1 overflow-y-auto no-scrollbar rounded border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
             {recentSummaries.map((summary, index) => (
               <li key={index} className="truncate">
                 · {summary}

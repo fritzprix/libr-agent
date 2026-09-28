@@ -446,7 +446,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   );
 
   const inputClassName = cn(
-    'flex-1 resize-none transition-colors bg-transparent outline-none border-none py-3 px-2 text-sm leading-relaxed max-h-32 min-h-[44px] overflow-y-auto',
+    'flex-1 resize-none transition-colors bg-transparent outline-none border-none py-3 px-2 text-sm leading-relaxed max-h-32 min-h-[44px] overflow-y-auto no-scrollbar',
   );
 
   const hasAttachedFiles = attachedFiles.length > 0;

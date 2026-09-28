@@ -139,7 +139,7 @@ const SettingsPage: FC = function SettingsPage() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
+        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pr-2 pb-4">
           <Tabs
             value={activeTab}
             onValueChange={handleTabChange}

@@ -439,7 +439,7 @@ export const WorkspaceFilePreviewSheet = ({
 
               {/* Image Viewer */}
               {isImage && (
-                <div className="flex flex-1 flex-col items-center justify-center overflow-auto p-4 bg-[linear-gradient(45deg,#80808015_25%,transparent_25%),linear-gradient(-45deg,#80808015_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#80808015_75%),linear-gradient(-45deg,transparent_75%,#80808015_75%)] bg-[size:16px_16px]">
+                <div className="flex flex-1 flex-col items-center justify-center overflow-auto agent-chat-scrollbar p-4 bg-[linear-gradient(45deg,#80808015_25%,transparent_25%),linear-gradient(-45deg,#80808015_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#80808015_75%),linear-gradient(-45deg,transparent_75%,#80808015_75%)] bg-[size:16px_16px]">
                   <img
                     src={`data:${content.mimeType};base64,${content.content}`}
                     alt={activeFile.name}
@@ -481,7 +481,7 @@ export const WorkspaceFilePreviewSheet = ({
                       tabIndex={0}
                       role="region"
                       aria-label={t('agent.workspace.sourceMode', 'Source')}
-                      className="h-full overflow-auto p-4 focus:outline-none"
+                      className="h-full overflow-auto agent-chat-scrollbar p-4 focus:outline-none"
                     >
                       <pre className="font-mono text-xs leading-relaxed">
                         <CodeBlock className="language-html" isDark={isDark}>
@@ -502,7 +502,7 @@ export const WorkspaceFilePreviewSheet = ({
                     'agent.workspace.markdownPreview',
                     'Markdown preview',
                   )}
-                  className="flex-1 overflow-auto p-6 prose dark:prose-invert max-w-none text-xs leading-relaxed focus:outline-none"
+                  className="flex-1 overflow-auto agent-chat-scrollbar p-6 prose dark:prose-invert max-w-none text-xs leading-relaxed focus:outline-none"
                 >
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -540,7 +540,7 @@ export const WorkspaceFilePreviewSheet = ({
                   tabIndex={0}
                   role="region"
                   aria-label={t('agent.workspace.fileContent', 'File content')}
-                  className="flex-1 overflow-auto p-4 focus:outline-none"
+                  className="flex-1 overflow-auto agent-chat-scrollbar p-4 focus:outline-none"
                 >
                   {isLargeCodeFile ? (
                     <div>

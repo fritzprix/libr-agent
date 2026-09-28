@@ -347,7 +347,7 @@ function ScheduledTaskForm({
     : null;
   return (
     <>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar overflow-x-hidden">
         <div className="grid gap-2 py-2">
           {/* Task name */}
           <div className="grid gap-1.5">
@@ -519,7 +519,7 @@ function ScheduledTaskForm({
               assistantId={effectiveAssistantId}
               workspacePath={workspaceOverride}
               rows={5}
-              className="field-sizing-fixed min-h-[120px] max-h-[300px] overflow-y-auto"
+              className="field-sizing-fixed min-h-[120px] max-h-[300px] overflow-y-auto no-scrollbar"
             />
           </div>
 

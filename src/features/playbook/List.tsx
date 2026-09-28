@@ -165,7 +165,7 @@ export default function PlaybookList() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
+        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pr-2 pb-4">
           {loading && originalPlaybooksLength === 0 ? (
             <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
               <Loader2 className="h-10 w-10 animate-spin mb-4" />

@@ -163,7 +163,7 @@ export function ScheduledTasksPage() {
             <Skeleton className="h-9 w-24" />
           </div>
           <div
-            className="min-h-0 flex-1 overflow-y-auto pr-2 pb-4"
+            className="min-h-0 flex-1 overflow-y-auto no-scrollbar pr-2 pb-4"
             aria-hidden="true"
           >
             <Skeleton className="h-24 w-full rounded-lg" />
@@ -193,7 +193,7 @@ export function ScheduledTasksPage() {
           </Button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pr-2 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar pr-2 pb-4">
           <ScheduledTasksContent
             enabledTaskCount={enabledTaskCount}
             formatNextRun={formatNextRun}

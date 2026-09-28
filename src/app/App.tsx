@@ -134,7 +134,7 @@ function App() {
                               <SessionNotificationsBell />
                               <ThemeToggle />
                             </AppHeader>
-                            <div className="flex-1 w-full min-h-0 overflow-y-auto">
+                            <div className="flex-1 w-full min-h-0 overflow-y-auto no-scrollbar">
                               <Suspense
                                 fallback={
                                   <div className="flex items-center justify-center h-full">

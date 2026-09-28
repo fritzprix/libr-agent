@@ -94,7 +94,7 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
       <div
         id={contentId}
         className={cn(
-          'max-h-96 overflow-auto bg-background p-4',
+          'max-h-96 overflow-auto agent-chat-scrollbar bg-background p-4',
           !isExpanded && 'hidden',
         )}
       >

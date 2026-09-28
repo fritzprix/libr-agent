@@ -56,7 +56,7 @@ export const UnifiedDiffView: React.FC<UnifiedDiffViewProps> = ({
           )}
         </p>
       ) : null}
-      <div className="max-h-80 overflow-auto rounded border bg-muted/30">
+      <div className="max-h-80 overflow-auto agent-chat-scrollbar rounded border bg-muted/30">
         <pre className="min-w-max p-2 font-mono text-xs leading-5">
           {lines.map((line, index) => {
             const kind = classifyDiffLine(line);
