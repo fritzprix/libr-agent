@@ -287,3 +287,180 @@ async fn hydrate_keeps_persisted_override_when_path_temporarily_unavailable() {
         "unavailable path must not wipe persisted workspace override"
     );
 }
+
+#[tokio::test]
+async fn hydrate_expands_tilde_persisted_workspace_override() {
+    let _guard = test_guard().await;
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+
+    let unique = unique_home_subdir("hydrate");
+    let real_dir = home.join(&unique);
+    tokio::fs::create_dir_all(&real_dir)
+        .await
+        .expect("home override dir should be created");
+    let _cleanup = RemoveDirAll(real_dir.clone());
+
+    let db = test_db().await;
+    let repo = SqliteSessionRepository::new(db);
+    let session_id = "tilde-hydrate-session";
+    let tilde_override = format!("~/{unique}");
+    repo.upsert_session(&make_session(session_id, Some(tilde_override)))
+        .await
+        .expect("session should be persisted");
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let session_root = temp_dir.path().join("session-root");
+    // Literal `~/...` trap under the default workspace tree must not win.
+    let trap_dir = session_root.join("workspaces").join(session_id).join("~").join(&unique);
+    tokio::fs::create_dir_all(&trap_dir)
+        .await
+        .expect("literal tilde trap dir should be created");
+
+    let session_manager = SessionManager::new_with_base_dir(session_root).unwrap();
+    let hydrated = hydrate_persisted_workspace_override(&repo, &session_manager, session_id)
+        .await
+        .expect("hydrate should expand tilde and succeed");
+
+    assert_eq!(
+        hydrated.as_deref(),
+        Some(real_dir.as_path()),
+        "hydrate must expand ~/ to the real home directory"
+    );
+    assert_eq!(
+        session_manager
+            .get_session_info(session_id)
+            .expect("session info should exist")
+            .workspace_override
+            .as_deref(),
+        Some(real_dir.as_path())
+    );
+    assert_ne!(
+        hydrated.as_deref(),
+        Some(trap_dir.as_path()),
+        "hydrate must not use a literal '~' directory under the session workspace"
+    );
+}
+
+#[tokio::test]
+async fn set_override_expands_tilde_and_ignores_cwd_literal_tilde_trap() {
+    let _guard = test_guard().await;
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+
+    let unique = unique_home_subdir("set_override");
+    let real_dir = home.join(&unique);
+    tokio::fs::create_dir_all(&real_dir)
+        .await
+        .expect("home override dir should be created");
+    tokio::fs::write(real_dir.join("REAL"), b"real")
+        .await
+        .expect("real marker should be written");
+    let _cleanup = RemoveDirAll(real_dir.clone());
+
+    // CWD-relative trap: PathBuf::from("~/...") would resolve here without expansion.
+    let trap_root = tempfile::tempdir().expect("trap root should be created");
+    let trap_dir = trap_root.path().join("~").join(&unique);
+    tokio::fs::create_dir_all(&trap_dir)
+        .await
+        .expect("literal tilde trap dir should be created");
+    tokio::fs::write(trap_dir.join("TRAP"), b"trap")
+        .await
+        .expect("trap marker should be written");
+
+    let _cwd_guard = CurrentDirGuard::change_to(trap_root.path()).expect("cwd should change");
+    let tilde_path = format!("~/{unique}");
+    assert!(
+        std::path::PathBuf::from(&tilde_path).exists(),
+        "precondition: unexpanded ~/ path must exist via the cwd trap"
+    );
+
+    let db = test_db().await;
+    let repo = SqliteSessionRepository::new(db);
+    let session_id = "tilde-set-override-session";
+    repo.upsert_session(&make_session(session_id, None))
+        .await
+        .expect("session should be persisted");
+
+    tauri_mcp_agent_lib::services::workspace_service::WorkspaceService::set_override(
+        session_id,
+        tilde_path,
+    )
+    .await
+    .expect("set_override should expand ~/ and succeed");
+
+    let persisted = repo
+        .get_session(session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should exist");
+    let override_str = persisted
+        .workspace_override
+        .expect("workspace override should be persisted");
+
+    assert_eq!(
+        std::path::PathBuf::from(&override_str),
+        real_dir,
+        "DB must store the expanded absolute home path, not '~/...'"
+    );
+    assert!(
+        !override_str.starts_with("~/"),
+        "DB must not persist a tilde-prefixed override path: {override_str}"
+    );
+    assert_ne!(
+        std::path::PathBuf::from(&override_str),
+        trap_dir,
+        "set_override must ignore the cwd-relative literal '~' trap"
+    );
+
+    let session_manager =
+        tauri_mcp_agent_lib::session::get_session_manager().expect("session manager");
+    assert_eq!(
+        session_manager
+            .get_session_info(session_id)
+            .expect("session info should exist")
+            .workspace_override
+            .as_deref(),
+        Some(real_dir.as_path())
+    );
+
+    tauri_mcp_agent_lib::services::workspace_service::WorkspaceService::cancel_override(session_id)
+        .await
+        .expect("override cleanup should succeed");
+}
+
+fn unique_home_subdir(label: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("libragent_tilde_{label}_{}_{nanos}", std::process::id())
+}
+
+struct RemoveDirAll(std::path::PathBuf);
+
+impl Drop for RemoveDirAll {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+struct CurrentDirGuard {
+    previous: std::path::PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn change_to(path: &std::path::Path) -> std::io::Result<Self> {
+        let previous = std::env::current_dir()?;
+        std::env::set_current_dir(path)?;
+        Ok(Self { previous })
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.previous);
+    }
+}

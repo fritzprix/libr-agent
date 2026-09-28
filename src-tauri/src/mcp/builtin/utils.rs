@@ -298,11 +298,19 @@ impl SecurityValidator {
 /// Normalize user-provided path string before security and traversal checks.
 ///
 /// Handles:
+/// - Home shortcuts (`~`, `~/...`, `$HOME/...`, `${HOME}/...`) → absolute home path
 /// - `file://` URLs via proper URL→path conversion (preserves Unix absolute paths)
 /// - Leading slashes/backslashes before Windows drive letters (e.g. `/C:/path`, `\C:\path`)
 /// - MSYS2/Git Bash POSIX-style paths on Windows only (e.g. `/c/Users/path` → `c:/Users/path`)
 pub fn normalize_user_path(user_path: &str) -> String {
     let s = user_path.trim();
+
+    // Expand home shortcuts before joining under workspace base_dir. Without this,
+    // `~/foo` is treated as a relative path and creates a literal `~` directory.
+    if crate::utils::security::is_home_pseudo_path(s) {
+        let expanded = crate::utils::security::expand_home_pseudo(s);
+        return normalize_os_path_string(&expanded.to_string_lossy().replace('\\', "/"));
+    }
 
     // Prefer proper file URL parsing so Unix `file:///home/...` keeps its leading `/`
     // and Windows `file:///C:/...` / `file://localhost/C:/...` resolve correctly.

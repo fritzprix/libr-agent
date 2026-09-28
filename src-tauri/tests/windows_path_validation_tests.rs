@@ -11,6 +11,69 @@ fn test_normalize_user_path_relative_unchanged() {
         normalize_user_path("./subdir/file.txt"),
         "./subdir/file.txt"
     );
+    // Bare `~name` (no slash) is not a home shortcut.
+    assert_eq!(normalize_user_path("~backup"), "~backup");
+}
+
+#[test]
+fn test_normalize_user_path_expands_home_shortcuts() {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let home = home.to_string_lossy().replace('\\', "/");
+
+    assert_eq!(normalize_user_path("~"), home);
+    assert_eq!(
+        normalize_user_path("~/my_works/project/docs/PLANNING.md"),
+        format!("{home}/my_works/project/docs/PLANNING.md")
+    );
+    assert_eq!(
+        normalize_user_path("$HOME/my_works/project"),
+        format!("{home}/my_works/project")
+    );
+    assert_eq!(
+        normalize_user_path("${HOME}/my_works/project"),
+        format!("{home}/my_works/project")
+    );
+}
+
+#[test]
+fn test_scoped_validator_rejects_tilde_outside_workspace() {
+    let temp_dir = tempdir().expect("temp dir");
+    let validator = SecurityValidator::new_scoped_with_base_dir(temp_dir.path().to_path_buf());
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    // Ensure the expanded path is outside this temp workspace.
+    if home.starts_with(temp_dir.path()) {
+        return;
+    }
+
+    let result = validator.validate_path_for_write("~/outside_workspace_file.txt");
+    assert!(
+        result.is_err(),
+        "tilde path outside workspace must be rejected (not create literal '~' dir); got {result:?}"
+    );
+
+    // Relative join under workspace must never produce workspace/~/...
+    let literal_tilde = temp_dir.path().join("~").join("outside_workspace_file.txt");
+    assert!(
+        !literal_tilde.exists(),
+        "must not create a literal '~' directory under the workspace"
+    );
+}
+
+#[test]
+fn test_scoped_validator_allows_tilde_when_workspace_is_home() {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let validator = SecurityValidator::new_scoped_with_base_dir(home.clone());
+    let expected = home.join("libragent_tilde_path_test.txt");
+    let resolved = validator
+        .validate_path_for_write("~/libragent_tilde_path_test.txt")
+        .expect("tilde under home workspace should resolve");
+    assert_eq!(resolved, expected);
 }
 
 #[test]

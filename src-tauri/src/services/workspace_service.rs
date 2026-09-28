@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+use crate::utils::security::expand_home_pseudo;
+
 /// Represents a file or directory item in the workspace for display in the frontend.
 #[derive(serde::Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -237,7 +239,8 @@ impl WorkspaceService {
 
     /// Sets the workspace override for a session.
     pub async fn set_override(session_id: &str, override_path: String) -> Result<(), String> {
-        let override_path = PathBuf::from(&override_path);
+        // Expand ~ to home dir before any path validation (fixes literal ~/ storage bug).
+        let override_path = expand_home_pseudo(&override_path);
 
         if !override_path.exists() {
             return Err(format!("Path does not exist: {}", override_path.display()));
@@ -402,6 +405,11 @@ impl WorkspaceService {
         session_id: &str,
         file_path: &str,
     ) -> Result<PathBuf, String> {
+        // Expand ~ / $HOME so they never join as a literal `~` directory under workspace.
+        let expanded_path = expand_home_pseudo(file_path);
+        let file_path = expanded_path.to_string_lossy();
+        let file_path = file_path.as_ref();
+
         // 1. Teamwork alias resolution (@teamwork/..., .libragent/teamwork/...)
         if let Some(teamwork_rel) = crate::session::extract_teamwork_alias_relative_path(file_path)
         {
