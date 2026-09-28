@@ -150,6 +150,25 @@ pub fn run_with_sqlite_sync(db_url: String) {
     lifecycle::run_with_sqlite_sync(db_url);
 }
 
+/// Disable WebView browser-reload shortcuts (F5 / Ctrl+R / Ctrl+Shift+R).
+///
+/// On Windows WebView2, F5 is handled as a browser accelerator before page JS
+/// can `preventDefault`, so we also turn off accelerator keys via the plugin's
+/// platform options.
+fn prevent_browser_reload_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    let builder =
+        tauri_plugin_prevent_default::Builder::new().with_flags(Flags::RELOAD);
+
+    #[cfg(windows)]
+    let builder = builder.platform(
+        tauri_plugin_prevent_default::PlatformOptions::new().browser_accelerator_keys(false),
+    );
+
+    builder.build()
+}
+
 /// Configures and runs the main Tauri application.
 ///
 /// This function is the entry point for the application GUI. It sets up:
@@ -185,6 +204,7 @@ pub fn run() {
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(prevent_browser_reload_plugin())
             .invoke_handler(tauri::generate_handler![
                 greet,
                 restart_app,
