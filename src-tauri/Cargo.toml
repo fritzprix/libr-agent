@@ -48,6 +48,9 @@ log = "0.4.30"
 fern = "0.7"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
+# Block WebView browser shortcuts (F5 / Ctrl+R reload). platform-windows disables
+# WebView2 accelerator keys so F5 cannot bypass JS preventDefault on Windows.
+tauri-plugin-prevent-default = { version = "5", features = ["platform-windows"] }
 path-clean = "1.0"
 tempfile = "3.27"
 thiserror = "2.0"
