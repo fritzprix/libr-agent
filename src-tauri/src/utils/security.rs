@@ -1,6 +1,53 @@
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+/// Expand leading home shortcuts to an absolute path.
+///
+/// Recognizes `~`, `~/...`, `~\...`, `$HOME`, `$HOME/...`, `${HOME}`, and `${HOME}/...`.
+/// Other inputs are returned unchanged. This prevents file tools from treating `~` as a
+/// literal relative directory name under the workspace root.
+pub fn expand_home_pseudo(path: &str) -> PathBuf {
+    let path = path.trim();
+    if path.is_empty() {
+        return PathBuf::new();
+    }
+
+    let Some(home) = dirs::home_dir() else {
+        return PathBuf::from(path);
+    };
+
+    if path == "~" || path == "$HOME" || path == "${HOME}" {
+        return home;
+    }
+
+    if let Some(rest) = path
+        .strip_prefix("~/")
+        .or_else(|| path.strip_prefix("~\\"))
+        .or_else(|| path.strip_prefix("$HOME/"))
+        .or_else(|| path.strip_prefix("$HOME\\"))
+        .or_else(|| path.strip_prefix("${HOME}/"))
+        .or_else(|| path.strip_prefix("${HOME}\\"))
+    {
+        return home.join(rest);
+    }
+
+    PathBuf::from(path)
+}
+
+/// True when `path` uses a leading home shortcut that [`expand_home_pseudo`] understands.
+pub fn is_home_pseudo_path(path: &str) -> bool {
+    let path = path.trim();
+    path == "~"
+        || path.starts_with("~/")
+        || path.starts_with("~\\")
+        || path == "$HOME"
+        || path.starts_with("$HOME/")
+        || path.starts_with("$HOME\\")
+        || path == "${HOME}"
+        || path.starts_with("${HOME}/")
+        || path.starts_with("${HOME}\\")
+}
+
 /// Resolves a relative path within a base directory, ensuring it stays within the base.
 ///
 /// This function performs the following steps:
@@ -66,6 +113,25 @@ mod tests {
     use super::*;
     use std::fs::File;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_expand_home_pseudo_shortcuts() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        assert_eq!(expand_home_pseudo("~"), home);
+        assert_eq!(expand_home_pseudo("~/a/b"), home.join("a/b"));
+        assert_eq!(expand_home_pseudo("$HOME/a"), home.join("a"));
+        assert_eq!(expand_home_pseudo("${HOME}/a"), home.join("a"));
+        assert_eq!(expand_home_pseudo("~backup"), PathBuf::from("~backup"));
+        assert_eq!(
+            expand_home_pseudo("src/main.rs"),
+            PathBuf::from("src/main.rs")
+        );
+        assert!(is_home_pseudo_path("~/docs"));
+        assert!(!is_home_pseudo_path("~docs"));
+        assert!(!is_home_pseudo_path("./~/docs"));
+    }
 
     #[tokio::test]
     async fn test_resolve_secure_path_valid() {
