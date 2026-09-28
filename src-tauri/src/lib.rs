@@ -158,8 +158,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
 fn prevent_browser_reload_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     use tauri_plugin_prevent_default::Flags;
 
-    let builder =
-        tauri_plugin_prevent_default::Builder::new().with_flags(Flags::RELOAD);
+    let builder = tauri_plugin_prevent_default::Builder::new().with_flags(Flags::RELOAD);
 
     #[cfg(windows)]
     let builder = builder.platform(
