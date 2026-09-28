@@ -47,6 +47,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\" --ignore-path .prettierignore",
     "format:check:all": "prettier --check .",
     "tauri": "tauri",
+    "tauri:build:appimage-ort": "node scripts/run-tauri-build-appimage-ort.cjs",
     "tauri:mcp": "LIBRAGENT_MCP_ENABLE=1 tauri dev",
     "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit",
     "dead-code": "unimported",

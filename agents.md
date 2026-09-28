@@ -55,6 +55,7 @@ See [README.md](README.md) for detailed setup instructions.
 | `pnpm tauri dev`                 | Start full Tauri desktop app with hot reload                                       |
 | `pnpm build`                     | Build frontend for production                                                      |
 | `pnpm tauri build`               | Create production desktop app bundle                                               |
+| `pnpm tauri:build:appimage-ort`  | Linux AppImageHub build (shared ORT / glibc 2.35; used by release CI)              |
 | `pnpm lint`                      | Run ESLint on TypeScript/React code                                                |
 | `pnpm format`                    | Format code with Prettier                                                          |
 | `pnpm rust:fmt`                  | Format Rust code with rustfmt                                                      |
