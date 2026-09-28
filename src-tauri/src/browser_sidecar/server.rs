@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine;
 use chromiumoxide::cdp::browser_protocol::target::{
@@ -16,13 +17,16 @@ use super::contracts::{
     SessionIdParams, SidecarRequest, SidecarResponse, TakeScreenshotParams,
 };
 use super::page::{
-    capture_screenshot, goto_with_load_timeout, navigate_back, navigate_forward,
-    serialize_evaluation_result, snapshot_page_state,
+    attach_auto_dismiss_js_dialogs, capture_screenshot, goto_with_load_timeout, navigate_back,
+    navigate_forward, serialize_evaluation_result, snapshot_page_state,
 };
 use super::runtime::{
     cleanup_failed_context_launch, cleanup_session_resources, shutdown_runtime,
     BrowserRuntimeManager, SidecarSession,
 };
+
+/// Bound CDP context/target creation so a stuck Chromium call cannot silence createSession.
+const SESSION_TARGET_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub fn run_sidecar_mode() -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -36,6 +40,7 @@ struct BrowserSidecarServer {
     runtime: BrowserRuntimeManager,
     sessions: Mutex<HashMap<String, SidecarSession>>,
     console_listeners: Mutex<HashMap<String, tokio::task::AbortHandle>>,
+    dialog_listeners: Mutex<HashMap<String, tokio::task::AbortHandle>>,
 }
 
 impl BrowserSidecarServer {
@@ -44,6 +49,39 @@ impl BrowserSidecarServer {
             runtime: BrowserRuntimeManager::new(),
             sessions: Mutex::new(HashMap::new()),
             console_listeners: Mutex::new(HashMap::new()),
+            dialog_listeners: Mutex::new(HashMap::new()),
+        }
+    }
+
+    async fn abort_session_listeners(&self, session_id: &str) {
+        {
+            let mut listeners = self.console_listeners.lock().await;
+            if let Some(handle) = listeners.remove(session_id) {
+                handle.abort();
+            }
+        }
+        {
+            let mut listeners = self.dialog_listeners.lock().await;
+            if let Some(handle) = listeners.remove(session_id) {
+                handle.abort();
+            }
+        }
+    }
+
+    async fn abort_all_listeners(&self) {
+        {
+            let mut listeners = self.console_listeners.lock().await;
+            for handle in listeners.values() {
+                handle.abort();
+            }
+            listeners.clear();
+        }
+        {
+            let mut listeners = self.dialog_listeners.lock().await;
+            for handle in listeners.values() {
+                handle.abort();
+            }
+            listeners.clear();
         }
     }
 
@@ -153,40 +191,88 @@ impl BrowserSidecarServer {
         let runtime = self.runtime.ensure_runtime(params.visible).await?;
         self.close_existing_session_if_present(&params.session_id)
             .await?;
-        let context_id = runtime
-            .browser
-            .lock()
-            .await
-            .create_browser_context(CreateBrowserContextParams::default())
-            .await
-            .map_err(|e| format!("Failed to create isolated browser context: {e}"))?;
+        let context_id = match tokio::time::timeout(SESSION_TARGET_TIMEOUT, async {
+            runtime
+                .browser
+                .lock()
+                .await
+                .create_browser_context(CreateBrowserContextParams::default())
+                .await
+        })
+        .await
+        {
+            Ok(Ok(context_id)) => context_id,
+            Ok(Err(error)) => {
+                return Err(format!(
+                    "Failed to create isolated browser context: {error}"
+                ));
+            }
+            Err(_) => {
+                return Err(format!(
+                    "Timed out creating isolated browser context after {}s",
+                    SESSION_TARGET_TIMEOUT.as_secs()
+                ));
+            }
+        };
 
         // Open about:blank first so createTarget does not block on a never-idle URL.
         // Navigation is bounded separately via goto_with_load_timeout.
-        let page = match runtime
-            .browser
-            .lock()
-            .await
-            .new_page(
-                CreateTargetParams::builder()
-                    .url("about:blank")
-                    .browser_context_id(context_id.clone())
-                    .build()
-                    .map_err(|e| format!("Failed to build browser target params: {e}"))?,
-            )
-            .await
+        let page = match tokio::time::timeout(SESSION_TARGET_TIMEOUT, async {
+            runtime
+                .browser
+                .lock()
+                .await
+                .new_page(
+                    CreateTargetParams::builder()
+                        .url("about:blank")
+                        .browser_context_id(context_id.clone())
+                        .build()
+                        .map_err(|e| format!("Failed to build browser target params: {e}"))?,
+                )
+                .await
+                .map_err(|error| format!("Failed to open page '{}': {error}", params.url))
+        })
+        .await
         {
-            Ok(page) => page,
-            Err(error) => {
+            Ok(Ok(page)) => page,
+            Ok(Err(error)) => {
                 cleanup_failed_context_launch(runtime.browser.clone(), context_id.clone()).await;
-                return Err(format!("Failed to open page '{}': {error}", params.url));
+                return Err(error);
+            }
+            Err(_) => {
+                cleanup_failed_context_launch(runtime.browser.clone(), context_id.clone()).await;
+                return Err(format!(
+                    "Timed out opening browser page after {}s",
+                    SESSION_TARGET_TIMEOUT.as_secs()
+                ));
             }
         };
         let page = Arc::new(page);
 
+        // Abort existing page listeners before attaching new ones.
+        self.abort_session_listeners(&params.session_id).await;
+
+        // Must attach before goto: alert/confirm during load stalls CDP until handled.
+        match attach_auto_dismiss_js_dialogs(
+            page.clone(),
+            runtime.console_logs.clone(),
+            params.session_id.clone(),
+        )
+        .await
+        {
+            Ok(handle) => {
+                let mut listeners = self.dialog_listeners.lock().await;
+                listeners.insert(params.session_id.clone(), handle);
+            }
+            Err(error) => {
+                warn!("Failed to attach JS dialog auto-dismiss listener: {error}");
+            }
+        }
+
         let navigated_state = match goto_with_load_timeout(page.as_ref(), &params.url).await {
             Ok(state) => state,
             Err(error) => {
+                self.abort_session_listeners(&params.session_id).await;
                 let _ = page.as_ref().clone().close().await;
                 cleanup_failed_context_launch(runtime.browser.clone(), context_id.clone()).await;
                 return Err(error);
@@ -197,14 +283,6 @@ impl BrowserSidecarServer {
         use futures::StreamExt;
         if let Err(e) = page.enable_runtime().await {
             warn!("Failed to enable runtime domain for console event listener: {e}");
-        }
-
-        // Abort existing console listener task if any
-        {
-            let mut listeners = self.console_listeners.lock().await;
-            if let Some(handle) = listeners.remove(&params.session_id) {
-                handle.abort();
-            }
         }
 
         let console_logs = runtime.console_logs.clone();
@@ -266,6 +344,7 @@ impl BrowserSidecarServer {
         let mut state = match snapshot_page_state(&page).await {
             Ok(state) => state,
             Err(error) => {
+                self.abort_session_listeners(&params.session_id).await;
                 let _ = page.as_ref().clone().close().await;
                 cleanup_failed_context_launch(runtime.browser.clone(), context_id.clone()).await;
                 return Err(error);
@@ -302,13 +381,7 @@ impl BrowserSidecarServer {
             logs.remove(&params.session_id);
         }
 
-        // Clean up console listener task
-        {
-            let mut listeners = self.console_listeners.lock().await;
-            if let Some(handle) = listeners.remove(&params.session_id) {
-                handle.abort();
-            }
-        }
+        self.abort_session_listeners(&params.session_id).await;
 
         let cleanup_res =
             cleanup_session_resources(runtime.browser.clone(), session, &params.session_id).await;
@@ -320,14 +393,7 @@ impl BrowserSidecarServer {
         };
         if is_empty {
             if let Some(runtime) = self.runtime.take_runtime().await {
-                // Abort all active console listener tasks
-                {
-                    let mut listeners = self.console_listeners.lock().await;
-                    for handle in listeners.values() {
-                        handle.abort();
-                    }
-                    listeners.clear();
-                }
+                self.abort_all_listeners().await;
                 shutdown_runtime(runtime).await;
             }
         }
@@ -419,13 +485,7 @@ impl BrowserSidecarServer {
             logs.remove(session_id);
         }
 
-        // Clean up console listener task
-        {
-            let mut listeners = self.console_listeners.lock().await;
-            if let Some(handle) = listeners.remove(session_id) {
-                handle.abort();
-            }
-        }
+        self.abort_session_listeners(session_id).await;
 
         cleanup_session_resources(runtime.browser.clone(), session, session_id).await
     }
@@ -476,14 +536,8 @@ impl BrowserSidecarServer {
                 logs.clear();
             }
 
-            // Abort all active console listener tasks
-            {
-                let mut listeners = self.console_listeners.lock().await;
-                for handle in listeners.values() {
-                    handle.abort();
-                }
-                listeners.clear();
-            }
+            // Abort all active page listener tasks
+            self.abort_all_listeners().await;
 
             for (session_id, session) in sessions {
                 if let Err(error) =

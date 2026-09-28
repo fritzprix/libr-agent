@@ -111,20 +111,16 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                         );
                     }
                 }
-                Some(db_override)
             } else {
+                // Keep the DB preference — do not clear on transient path unavailability.
                 log::warn!(
-                        "Persisted workspace override '{}' for session {} no longer exists or is not a directory; \
-                         clearing it and falling back to default workspace.",
-                        db_override,
-                        session_id
-                    );
-                // Best-effort clear — ignore errors since the session is still usable
-                let _ = session_repo
-                    .update_workspace_override(&session_id, None)
-                    .await;
-                None
+                    "Persisted workspace override '{}' for session {} is unavailable or not a directory; \
+                     keeping the preference and falling back to the default workspace until it returns.",
+                    db_override,
+                    session_id
+                );
             }
+            Some(db_override)
         } else {
             None
         }

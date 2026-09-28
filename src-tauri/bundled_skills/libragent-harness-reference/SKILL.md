@@ -7,7 +7,8 @@ description: >
   inherit (or do not inherit) workspace/instructions/skills, which instruction files load,
   or what belongs in assistant systemPrompt vs workspace agents.md vs skills.
   Triggers: harness, system prompt layers, agents.md vs SOUL, session workspace,
-  sub-agent isolation, tool naming, bootstrap workspace guidelines.
+  sub-agent isolation, tool naming, bootstrap workspace guidelines,
+  external inject, wake session, HTTP /api/sessions messages.
 ---
 
 # LibrAgent Harness Reference
@@ -17,7 +18,7 @@ Load only the reference you need. Do not paste this whole skill into every turn.
 ## Prompt layers (stable prefix order)
 
 1. **Assistant `systemPrompt`** — shallow identity from the assistant config (bundled seed is one line).
-2. **`## Agent Runtime Identity`** — name, agent id, session id (and sub-agent parent when applicable). Already injected; do not restate.
+2. **`## Agent Runtime Identity`** — name, agent id, session id, external wake POST URL (and sub-agent parent when applicable). Already injected; do not restate.
 3. **`## Session Context`** — note that live `<session-context>` may appear.
 4. **`## Persona Template`** — first non-empty of `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, `soul.md` in the **effective workspace**.
 5. **`## Workspace Instructions`** — first non-empty of `agents.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`.
@@ -51,6 +52,19 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 - Child sessions do **not** inherit parent workspace, `agents.md`/`SOUL.md`, or workspace-local skills unless you use org inheritance / `workspaceOverride` / explicit handoff. See `references/session-isolation.md`.
 - `scratchpad__*` is session-private; parents do not read child scratchpads. Deliver results in the child's **final text**.
 - Bundled assistant `prompt.md` updates apply only to **new** DB seeds; existing assistants keep their stored `systemPrompt` until edited or reset.
+
+## External wake (hooks / webhooks)
+
+Outside processes resume a session only by HTTP inject (not by printing to their own stdout).
+
+**Already in every turn:** `## Agent Runtime Identity` includes
+`External wake (this session): POST http://127.0.0.1:<port>/api/sessions/<id>/messages`
+with this session’s real port + id. Agents must wire hooks/`--exec`/webhooks to that URL
+(body `{"content":"…"}`). Echo-only or file-append stubs do **not** wake the session.
+
+Also available: `POST …/channel` (`serverName` + `content`, optional `meta`).
+
+For event-driven resume vs clock polling, use **`call-me-back`**. Do not list per-app hook CLIs here.
 
 ## References
 

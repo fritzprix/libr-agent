@@ -66,7 +66,7 @@ If the work depends on any of those, delegation is usually the wrong move unless
 
 When the child finishes, require deliverables in its **final text response**. Parent recovery uses that text (`agent__checkSession` / `waitForResult`), not scratchpad IDs — child scratchpad notes are invisible to the parent.
 
-After `agent__checkSession`, read the Metadata `workspace:` line: `SHARED with caller` means relative paths in the parent root are safe; `ISOLATED` means use the absolute path from Metadata or rely on Result text — do not assume sibling sessions share a workspace.
+After `agent__checkSession`, read the Metadata `workspace:` line: `SHARED with caller` means relative paths in the parent root are safe; `ISOLATED` means the parent cannot `workspace__readFile` that path — rely on Result text or `agent__messageToSession`, and do not assume sibling sessions share a workspace.
 
 ## 2. Choose the Child's Effective Context
 
@@ -83,7 +83,8 @@ If the parent is running inside a task-force workspace, check `.libragent/teamwo
 
 - If `executionSubstrate.mode` is `"org"`, reuse an existing Idle org child with the matching assistant ID and compatible workspace via `agent__messageToSession` when possible; otherwise prefer `agent__spawnSession(...)` so the new child joins the org and inherits the parent effective workspace by default. Switch to `org` for org-specific operating rules.
 - If `executionSubstrate.mode` is `"scheduled"`, the wake-up is likely a global scheduled task. Follow `schedule` for scheduled-task operating rules instead of ad-hoc delegation.
-- If the user wants a future reminder inside the current session, use `session-schedule` instead of delegation.
+- If the user wants a future clock reminder inside the current session, use `loop` instead of delegation.
+- If the user wants to resume when a process, ticket, or webhook completes, use `call-me-back` instead of delegation.
 - Treat the app-local teamwork artifact directory as the orchestration/constitution storage. If the child also needs to edit code in a repo, keep the session workspace semantics separate from the teamwork artifact path.
 
 Important limitations:

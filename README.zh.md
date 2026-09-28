@@ -151,7 +151,7 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 - **文档与工作区内容**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`data-viz`
 - **开发者工作流**：`git-workflow`, `bench`
 - **工作区入门**：`agent-init`
-- **协调与助手**：`consensus-delegation`、`session-schedule`、`recruit`、`boost`
+- **协调与助手**：`consensus-delegation`、`loop`、`call-me-back`、`context-recall`、`recruit`、`boost`
 - **外部集成**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
 - **技能与流程编写**：`skill-creator`、`skill-deployer`、`playbook-creator`、`tool-creator`、`fine-tune`
 - **特殊操作**：`computer-diagnosis`
@@ -205,10 +205,10 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows：** [`LibrAgent_0.9.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_x64-setup.exe) · [`LibrAgent_0.9.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_x64_en-US.msi)
-- **macOS（Apple Silicon）：** [`LibrAgent_0.9.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_aarch64.dmg)
-- **Linux：** [`LibrAgent_0.9.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_amd64.AppImage) · [`LibrAgent_0.9.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_amd64.deb) · [`LibrAgent-0.9.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent-0.9.12-1.x86_64.rpm)
-- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.12)
+- **Windows：** [`LibrAgent_0.9.19_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_x64-setup.exe) · [`LibrAgent_0.9.19_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.9.19_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.9.19_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_amd64.AppImage) · [`LibrAgent_0.9.19_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_amd64.deb) · [`LibrAgent-0.9.19-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent-0.9.19-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.19)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **开发者设置：**

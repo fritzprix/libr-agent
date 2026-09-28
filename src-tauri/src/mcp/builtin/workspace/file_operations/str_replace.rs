@@ -1,3 +1,4 @@
+use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
 use super::utils::{format_file_diff, format_string_diff};
 use crate::mcp::builtin::error_guidance::{
@@ -286,6 +287,13 @@ impl WorkspaceServer {
                     format!("Path validation failed: {error}"),
                     ToolGroup::Workspace,
                 )
+                .guidance(path_validation_failure_guidance(
+                    &error,
+                    vec![
+                        "Verify the target path is not a protected location".to_string(),
+                        "Use workspace__listDirectory to see available paths".to_string(),
+                    ],
+                ))
                 .to_mcp_result());
             }
         };

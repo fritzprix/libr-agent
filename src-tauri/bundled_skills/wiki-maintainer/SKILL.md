@@ -61,7 +61,8 @@ Templates: [wiki-layout.md](references/wiki-layout.md),
 | Facts / preferences into the knowledge graph | **knowledge-distiller** |
 | Propose a concrete `SKILL.md` patch | **skill-proposer** |
 | Repo doc wiki (`[[slug]]`, catalog.json) | **repo-wiki** |
-| One-shot delay inside this chat only | **session-schedule** |
+| One-shot clock delay inside this chat only | **loop** |
+| Wait for process/ticket/webhook completion | **call-me-back** |
 | Create/update the recurring wake | **schedule** (see autonomous-loop) |
 
 ## Workflow

@@ -112,7 +112,15 @@ interface AgentSessionListActionsContextValue {
   /**
    * Toggle the bookmark flag on a session
    */
-  toggleBookmark: (sessionId: string) => Promise<void>;
+  /**
+   * Toggle the bookmark flag on a session (optimistic update).
+   * Pass `currentBookmarked` when the session may not be in the browse list
+   * (e.g. visible only via server search results).
+   */
+  toggleBookmark: (
+    sessionId: string,
+    currentBookmarked?: boolean,
+  ) => Promise<void>;
 
   /**
    * Update the user-visible title on a session.
@@ -632,13 +640,13 @@ export function AgentSessionListProvider({
    * Toggle the bookmark flag on a session (optimistic update)
    */
   const toggleBookmark = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, currentBookmarked?: boolean) => {
       const session =
         sessionsRef.current.find((candidate) => candidate.id === sessionId) ??
         notificationSessionsRef.current.find(
           (candidate) => candidate.id === sessionId,
         );
-      const previousValue = session?.isBookmarked ?? false;
+      const previousValue = currentBookmarked ?? session?.isBookmarked ?? false;
       const newValue = !previousValue;
 
       mutateSessions(

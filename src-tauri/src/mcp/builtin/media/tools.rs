@@ -3,26 +3,44 @@ use crate::mcp::MCPTool;
 
 /// Returns all tools provided by the Media server.
 pub fn all_tools() -> Vec<MCPTool> {
-    vec![see_tool(), listen_tool(), capture_screen_tool()]
+    vec![
+        see_tool(),
+        listen_tool(),
+        capture_screen_tool(),
+        assist_plugin_status_tool(),
+        deploy_assist_plugin_tool(),
+    ]
 }
 
 fn see_tool() -> MCPTool {
     MCPTool {
         name: "seeContent".to_string(),
         title: Some("See Content".to_string()),
-        description: r#"Fetch an image and include it in the conversation so you can visually analyse it.
+        description: format!(
+            r#"Fetch an image and include it in the conversation so you can visually analyse it.
+
+**When to use:** on-screen or visual content — screenshots, photos, diagrams, scanned pages, sparse video keyframes for text/UI that is visible in the image.
+
+**When not to use:** speech, dialogue, soundtrack, or other audio understanding — use `listenContent` on an audio file (extract audio from video first if needed). Do not invent frame-OCR or custom ASR/OCR pipelines as a substitute for `listenContent` when audio is available or extractable.
 
 **Supported formats:** JPEG, PNG, GIF, WebP, BMP, SVG
 
+**Best Practices:**
+- Images consume substantial multimodal tokens — avoid calling `seeContent` on every frame of a long video or every file in a large set.
+- When many frames/files must be scanned and scripting tools are already available, filter or sample first, then call `seeContent` only on key frames or final verification samples.
+- Do not spend the session installing OCR/ASR stacks when `seeContent` / `listenContent` can answer.
+
 **Notes:**
+- Hard session limit: at most {limit} successful `seeContent` loads; further calls return an error directing you to sample or use `listenContent` on extracted audio.
 - Maximum file size: 20 MB.
-- Local paths must be inside the session workspace."#
-            .to_string(),
+- Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/image.png`)."#,
+            limit = super::handlers::MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
+        ),
         input_schema: object_prop(
             vec![(
                 "url".to_string(),
                 string_prop_required(
-                    "URL or workspace-relative path of the image to fetch (e.g. https://example.com/photo.jpg or screenshots/capture.png).",
+                    "URL or local image path (https://…, workspace-relative, or Docker workdir absolute like /app/photo.jpg).",
                 ),
             )],
             vec!["url".to_string()],
@@ -40,17 +58,23 @@ fn listen_tool() -> MCPTool {
         title: Some("Listen Content".to_string()),
         description: r#"Fetch an audio file and include it in the conversation so you can analyse the audio.
 
-**Supported formats:** MP3, WAV, OGG, AAC, FLAC, WEBM
+**When to use:** speech, dialogue, soundtrack, transcription, or any audio understanding from a supported audio file. Prefer this over inventing offline ASR/OCR scripts when the goal is hearing what was said.
+
+**When not to use:**
+- Video containers (MP4/MKV/MOV) — extract an audio track to a supported format first, then call this tool on that file.
+- On-screen / visual text in images — use `seeContent` instead.
+
+**Supported formats:** MP3, WAV, OGG, AAC, FLAC, WEBM, M4A
 
 **Notes:**
-- Maximum file size: 20 MB.
-- Local paths must be inside the session workspace."#
+- Audio only — not video containers. Maximum file size: 20 MB.
+- Local paths must be inside the session workspace (relative, or Docker workdir absolute e.g. `/app/clip.mp3`)."#
             .to_string(),
         input_schema: object_prop(
             vec![(
                 "url".to_string(),
                 string_prop_required(
-                    "URL or workspace-relative path of the audio file to fetch (e.g. https://example.com/clip.mp3 or recordings/audio.wav).",
+                    "URL or local audio path (https://…, workspace-relative, or Docker workdir absolute like /app/clip.mp3).",
                 ),
             )],
             vec!["url".to_string()],
@@ -128,6 +152,73 @@ fn capture_screen_tool() -> MCPTool {
                 ),
             ],
             vec![],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+        libragent_wait: None,
+    }
+}
+
+fn assist_plugin_status_tool() -> MCPTool {
+    MCPTool {
+        name: "assistPluginStatus".to_string(),
+        title: Some("Media Assist Plugin Status".to_string()),
+        description: r#"Check whether a host MediaAssist plugin is installed under app local storage.
+
+Used after multimodal LLM rejection (HTTP 400). When installed, LibrAgent can convert audio/image/video to text automatically. When missing, load @skill:libragent-plugin to implement, verify, and deploy."#
+            .to_string(),
+        input_schema: object_prop(vec![], vec![], None),
+        output_schema: None,
+        annotations: None,
+        libragent_wait: None,
+    }
+}
+
+fn deploy_assist_plugin_tool() -> MCPTool {
+    MCPTool {
+        name: "deployAssistPlugin".to_string(),
+        title: Some("Deploy Media Assist Plugin".to_string()),
+        description: r#"Deploy a verified MediaAssist plugin into host app local storage (`harness-plugins/media-assist/v1`).
+
+Writes only relative files: `manifest.json`, `run` (or `run.exe`/`run.cmd`/`run.bat` on Windows), optional `run.py` helper, `README.md` / `fixtures/<file>`. Runs on the host under Host isolation. Prefer @skill:libragent-plugin for implement → verify → deploy.
+
+Requires hard user approval (sensitive tool; not bypassed by YOLO): installs an executable that LibrAgent may later spawn on multimodal 400 recovery. Blocked under Docker/Harbor session isolation — in those sessions convert media inside the container with CLI tools (ffmpeg/OCR) instead of deploying a host plugin.
+
+`files` items: `{ "path": "manifest.json"|"run"|..., "content": "...", "base64"?: false }`."#
+            .to_string(),
+        input_schema: object_prop(
+            vec![(
+                "files".to_string(),
+                array_schema(
+                    object_prop(
+                        vec![
+                            (
+                                "path".to_string(),
+                                string_prop_required(
+                                    "Relative path: manifest.json, run, run.exe/run.cmd/run.bat (Windows), run.py, README.md, or fixtures/<file>",
+                                ),
+                            ),
+                            (
+                                "content".to_string(),
+                                string_prop_required(
+                                    "File text, or base64 when base64=true",
+                                ),
+                            ),
+                            (
+                                "base64".to_string(),
+                                boolean_prop(Some(
+                                    "When true, content is base64-encoded bytes (default false).",
+                                )),
+                            ),
+                        ],
+                        vec!["path".to_string(), "content".to_string()],
+                        None,
+                    ),
+                    Some("Plugin files to install on the host."),
+                ),
+            )],
+            vec!["files".to_string()],
             None,
         ),
         output_schema: None,

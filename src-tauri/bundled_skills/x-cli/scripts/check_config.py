@@ -11,11 +11,21 @@ Prints a JSON status object to stdout.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
 CONFIG_PATH = Path.home() / ".libragent" / "x_config.json"
 COOKIES_PATH = Path.home() / ".libragent" / "x_cookies.json"
+
+
+def harden_private_file(path: Path) -> None:
+    """Restrict credential files to owner read/write only (best-effort)."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
 
 def main() -> int:
     if not CONFIG_PATH.exists() or not COOKIES_PATH.exists():
@@ -74,6 +84,9 @@ def main() -> int:
             )
         )
         return 2
+
+    harden_private_file(CONFIG_PATH)
+    harden_private_file(COOKIES_PATH)
 
     print(
         json.dumps(

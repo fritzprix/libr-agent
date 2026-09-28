@@ -1,9 +1,6 @@
 import { createId } from '@paralleldrive/cuid2';
 
-import {
-  createToolMessagePair,
-  createUserMessage,
-} from '@/lib/chat-utils';
+import { createToolMessagePair, createUserMessage } from '@/lib/chat-utils';
 import type { MCPContent } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 

@@ -127,7 +127,7 @@ describe('useAssistantSkills', () => {
     });
 
     expect(copyGlobalToAssistant).toHaveBeenCalledWith('assistant-1', 'skill-1');
-    expect(toast.success).toHaveBeenCalledWith('skills.overrideSuccess');
+    expect(toast.success).toHaveBeenCalledWith('settings.skills.overrideSuccess');
     expect(getAggregatedSkills).toHaveBeenCalledTimes(2);
   });
 
@@ -144,7 +144,7 @@ describe('useAssistantSkills', () => {
     });
 
     expect(deleteAssistantSkill).toHaveBeenCalledWith('assistant-1', 'skill-1');
-    expect(toast.success).toHaveBeenCalledWith('skills.revertSuccess');
+    expect(toast.success).toHaveBeenCalledWith('settings.skills.revertSuccess');
   });
 
   it('handles reset', async () => {
@@ -160,7 +160,7 @@ describe('useAssistantSkills', () => {
     });
 
     expect(resetAssistantSkills).toHaveBeenCalledWith('assistant-1');
-    expect(toast.success).toHaveBeenCalledWith('skills.resetSuccess');
+    expect(toast.success).toHaveBeenCalledWith('settings.skills.resetSuccess');
     expect(onSuccess).toHaveBeenCalled();
   });
 });

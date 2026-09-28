@@ -6,6 +6,7 @@ All comments are written in English.
 """
 
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -47,21 +48,56 @@ CONFIG_DIR = Path.home() / ".libragent"
 CONFIG_PATH = CONFIG_DIR / "telegram_config.json"
 SESSION_NAME = "telegram_session"
 CLIENT_SESSION_PATH = CONFIG_DIR / SESSION_NAME
+OP_TIMEOUT_SEC = 60.0
+DISCONNECT_TIMEOUT_SEC = 10.0
+
+
+def run_op(client: TelegramClient, coro, *, timeout: float = OP_TIMEOUT_SEC):
+    """Run a Telethon coroutine with a hard timeout."""
+    try:
+        return client.loop.run_until_complete(asyncio.wait_for(coro, timeout=timeout))
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(f"Telegram operation timed out after {int(timeout)}s") from exc
 
 
 def disconnect_client(client: TelegramClient) -> None:
-    """Disconnect a Telethon client, supporting sync and async disconnect()."""
-    disconnect = client.disconnect()
-    if disconnect is not None:
-        client.loop.run_until_complete(disconnect)
+    """Disconnect a Telethon client; never raise from cleanup paths."""
+    try:
+        disconnect = client.disconnect()
+        if disconnect is not None:
+            client.loop.run_until_complete(
+                asyncio.wait_for(disconnect, timeout=DISCONNECT_TIMEOUT_SEC)
+            )
+    except Exception:
+        pass
+
+
+def session_file_paths() -> tuple[Path, Path]:
+    """Return Telethon session SQLite path and optional journal path."""
+    return (
+        Path(str(CLIENT_SESSION_PATH) + ".session"),
+        Path(str(CLIENT_SESSION_PATH) + ".session-journal"),
+    )
+
+
+def harden_private_file(path: Path) -> None:
+    """Restrict credential files to owner read/write only (best-effort)."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def harden_session_files() -> None:
+    """Apply 0o600 to Telethon session artifacts if they exist."""
+    for path in session_file_paths():
+        if path.exists():
+            harden_private_file(path)
 
 
 def remove_session_files() -> None:
     """Delete Telethon session files so auth can restart cleanly."""
-    for path in (
-        Path(str(CLIENT_SESSION_PATH) + ".session"),
-        Path(str(CLIENT_SESSION_PATH) + ".session-journal"),
-    ):
+    for path in session_file_paths():
         try:
             if path.exists():
                 path.unlink()
@@ -72,13 +108,14 @@ def remove_session_files() -> None:
 def create_connected_client(api_id: int, api_hash: str) -> TelegramClient:
     """Create a Telethon client and connect to Telegram."""
     client = TelegramClient(str(CLIENT_SESSION_PATH), api_id, api_hash)
-    client.loop.run_until_complete(client.connect())
+    run_op(client, client.connect())
+    harden_session_files()
     return client
 
 
 def send_verification_code(client: TelegramClient, phone: str):
     """Request Telegram to send a login verification code."""
-    return client.loop.run_until_complete(client.send_code_request(phone))
+    return run_op(client, client.send_code_request(phone))
 
 
 def send_code_with_auth_restart(client: TelegramClient, api_id: int, api_hash: str, phone: str):
@@ -111,10 +148,8 @@ def save_config(api_id: int, api_hash: str, phone: str, phone_code_hash: str = "
         config_data["phone_code_hash"] = phone_code_hash
 
     CONFIG_PATH.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
-    try:
-        os.chmod(CONFIG_PATH, 0o600)
-    except OSError:
-        pass
+    harden_private_file(CONFIG_PATH)
+    harden_session_files()
 
 
 def sanitize_secret(value: str) -> str:
@@ -291,15 +326,17 @@ def action_sign_in(args: argparse.Namespace) -> int:
 
     client = TelegramClient(str(CLIENT_SESSION_PATH), int(api_id), api_hash)
     try:
-        client.loop.run_until_complete(client.connect())
+        run_op(client, client.connect())
+        harden_session_files()
 
-        if client.loop.run_until_complete(client.is_user_authorized()):
+        if run_op(client, client.is_user_authorized()):
             print(json.dumps({"status": "ok", "message": "Already authorized."}))
             return 0
 
         if password:
             try:
-                client.loop.run_until_complete(client.sign_in(password=password))
+                run_op(client, client.sign_in(password=password))
+                harden_session_files()
                 print(json.dumps({"status": "ok", "message": "Successfully authenticated with 2FA password."}))
                 return 0
             except PasswordHashInvalidError:
@@ -318,12 +355,14 @@ def action_sign_in(args: argparse.Namespace) -> int:
                 return 1
 
             try:
-                client.loop.run_until_complete(
+                run_op(client, 
                     client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
                 )
+                harden_session_files()
                 print(json.dumps({"status": "ok", "message": "Successfully authenticated and session saved."}))
                 return 0
             except SessionPasswordNeededError:
+                harden_session_files()
                 print(
                     json.dumps({
                         "status": "password_needed",

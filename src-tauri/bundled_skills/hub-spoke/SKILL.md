@@ -32,7 +32,7 @@ The Hub-and-Spoke pattern designates a central Coordinator session (Hub) to mana
    - When sharing a workspace across parallel spokes, use unique filenames or per-spoke subdirectories to avoid collisions.
    - If inter-spoke coordination is needed, the Hub routes messages. See [routing.md](references/routing.md).
 4. **Monitoring**: The Hub polls Spoke statuses via `agent__checkSession` and reads the Metadata `workspace` line (`SHARED` vs `ISOLATED`) before assuming files exist in the Hub root.
-5. **Synthesis**: The Hub merges all finished spoke artifacts (from Result text and/or absolute paths from Metadata) and runs integration checks.
+5. **Synthesis**: The Hub merges all finished spoke artifacts from Result text (and `agent__messageToSession` follow-ups when needed). For `ISOLATED` spokes, do not attempt parent `workspace__readFile` on the child Metadata path — ask the spoke for contents or require the deliverable in Result text. For `SHARED` spokes, relative paths in the Hub root are safe.
 
 ## 🛠️ MCP Tools Guide
 

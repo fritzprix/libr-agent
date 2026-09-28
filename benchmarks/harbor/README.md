@@ -18,12 +18,17 @@ Harbor’s existing Compose `main` container:
     1. task `[environment].workdir` when set
     2. else container image `WORKDIR` (`docker inspect`)
     3. else live `docker exec … pwd`
-    4. else last-resort `/app` (legacy TB convention; logged as a warning)
+    4. else common existing roots (`/workspace`, `/home/agent`, `/osworld`, …)
+    5. else `/app` only when that directory exists (legacy TB); never attach to a
+       missing `/app` (OSWorld QEMU hosts often advertise WORKDIR=/app without
+       creating it)
+  - Each candidate is checked with `docker exec test -d` before use.
+  - Host `download_dir` pulls are skipped when the workdir is missing or is a
+    bare root (`/`, `/tmp`).
 - Shell and file tools run **inside** that container (`docker exec -w …` /
   `docker cp`). Absolute paths under that workdir are valid.
 - LibrAgent does **not** create a second container and does **not** destroy
   Harbor’s container on session end.
-- Host download/upload sync of the workdir is **skipped** on the attach path.
 
 If the main container ID cannot be resolved (non-Docker Harbor providers such as
 Modal/E2B, or missing Compose labels), the adapter **falls back** to the older
@@ -96,8 +101,10 @@ source session creation uses when no per-session model is set. Override with
 LibrAgent still runs the assistant's tools/API keys from the selected assistant;
 `-m` is for Harbor reporting / Hub upload metadata (model_info + token rows).
 
-Note: Harbor Index scoring may require judge API keys via `--verifier-env` /
-`--ve` (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) for LLM-judge tasks.
+Note: Harbor Index **HLE** tasks may require judge API keys via `--verifier-env` /
+`--ve` (e.g. `JUDGE_MODELS`, `OPENAI_API_KEY`). LibrAgent’s curated
+`fritzprix/libragent-media-desktop-10@v1.2` **excludes** HLE — all ten tasks use
+deterministic pytest / exact-string verifiers.
 
 ## Running any Harbor Hub dataset
 

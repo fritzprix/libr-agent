@@ -14,10 +14,7 @@ pub fn record_knowledge_tool() -> MCPTool {
                 "Start with content plus optional tags and source for most recordings.",
                 "Supply entities and relationships explicitly when you know the graph; set auto_extract=true only to fill gaps heuristically.",
             ],
-            &[
-                "Verify retrieval with knowledge__searchKnowledge.",
-                "Explore graph links with knowledge__exploreContext.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -129,10 +126,7 @@ pub fn search_knowledge_tool() -> MCPTool {
                 "Choose mode: keyword (FTS), semantic (embeddings), or hybrid (default).",
                 "Use returned chunk IDs for follow-up reads or pruning.",
             ],
-            &[
-                "Explore entity graphs with knowledge__exploreContext.",
-                "Remove stale entries with knowledge__pruneKnowledge using returned IDs.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -179,10 +173,7 @@ pub fn explore_context_tool() -> MCPTool {
                 "Provide the central entity_name (e.g., 'LibrAgent').",
                 "Set depth (1–3 hops) based on how broad the exploration should be.",
             ],
-            &[
-                "Read linked chunks via knowledge__searchKnowledge with entity-specific terms.",
-                "Record new findings with knowledge__recordKnowledge.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -223,10 +214,7 @@ pub fn prune_knowledge_tool() -> MCPTool {
                 "Collect chunk IDs to remove.",
                 "Set action='delete' and pass target_ids array.",
             ],
-            &[
-                "Confirm removal with knowledge__searchKnowledge.",
-                "Record corrected knowledge with knowledge__recordKnowledge if needed.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![

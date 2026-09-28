@@ -28,10 +28,7 @@ fn create_goal_tool() -> MCPTool {
                 "Set one clear goal before adding todos.",
                 "Describe the desired outcome, not individual steps.",
             ],
-            &[
-                "Break the goal into todos with planning__addTodo.",
-                "Review progress with planning__getCurrentState.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -60,10 +57,7 @@ fn update_goal_tool() -> MCPTool {
                 "Confirm the goal still matches the user's intent.",
                 "Replace the goal text with a clearer outcome statement.",
             ],
-            &[
-                "Align todos with planning__updateTodo if steps changed.",
-                "Inspect full state with planning__getCurrentState.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -90,10 +84,7 @@ fn clear_goal_tool() -> MCPTool {
                 "Confirm the goal is finished or abandoned.",
                 "Clear only the goal; todos remain unless you clear them separately.",
             ],
-            &[
-                "Start a new objective with planning__createGoal.",
-                "Reset everything with planning__clearSession if needed.",
-            ],
+            &[],
         ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
@@ -113,10 +104,7 @@ fn add_todo_tool() -> MCPTool {
                 "Ensure a goal exists or is implied before adding todos.",
                 "Write one actionable step per todo (flat list only — no subtasks).",
             ],
-            &[
-                "Mark progress with planning__updateTodo (action='done').",
-                "Review the list with planning__getCurrentState.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -191,10 +179,7 @@ fn clear_session_tool() -> MCPTool {
                 "Confirm the user wants to discard the current plan.",
                 "This removes both goal and todos in one call.",
             ],
-            &[
-                "Set a new goal with planning__createGoal.",
-                "Add fresh todos with planning__addTodo.",
-            ],
+            &[],
         ),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
@@ -214,10 +199,7 @@ fn get_current_state_tool() -> MCPTool {
                 "Call when you need todo IDs before planning__updateTodo or planning__readNote-style lookups.",
                 "Use include_checked=false to hide completed todos.",
             ],
-            &[
-                "Update todos with planning__updateTodo using returned IDs.",
-                "Adjust the goal with planning__updateGoal if drifted.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -253,10 +235,7 @@ fn reflect_tool() -> MCPTool {
                 "Capture what you learned in reflection.",
                 "Define one concrete nextAction you will execute immediately.",
             ],
-            &[
-                "Add nextAction as a todo with planning__addTodo.",
-                "Execute the corrective action before starting unrelated work.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![

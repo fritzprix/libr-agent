@@ -29,11 +29,15 @@ Manage local skills folder in sidebar **Extensions → Skills**.
 
 ## Examples
 
-| Skill           | Use                            |
-| --------------- | ------------------------------ |
-| `setup-wizard`  | Runtime / environment guidance |
-| `docx` / `pptx` | Document workflows             |
-| Domain skills   | Your team procedures           |
+| Skill            | Use                                                             |
+| ---------------- | --------------------------------------------------------------- |
+| `setup-wizard`   | Runtime / environment guidance                                  |
+| `docx` / `pptx`  | Document workflows                                              |
+| `context-recall` | Recover pre-compaction history from epoch transcripts           |
+| `loop`           | In-session clock reminders / delayed loops (not global cron)    |
+| `call-me-back`   | Resume a session on an external completion signal (HTTP inject) |
+| `ig-cli`         | Instagram CLI workflows (credentials via skill setup)           |
+| Domain skills    | Your team procedures                                            |
 
 ---
 

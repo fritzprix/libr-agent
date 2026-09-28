@@ -10,7 +10,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork scaffold files without changing workspaceOverride."),
+            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork scaffold files without changing workspaceOverride. Skill aliases (@system-skills, @user-skills, @assistant-skills, @workspace-skills) are read/list-only — edit under .libragent/skills/ or user_skills/, not through those aliases."),
         ),
     );
 
@@ -357,7 +357,7 @@ pub fn create_str_replace_tool() -> MCPTool {
         title: Some("Replace Text in File".to_string()),
         description: "Perform exact string replacement in an existing file.
 
-PREREQUISITE: Use workspace__readFile first and copy the exact text CURRENTLY in the file into old_string. Matching is literal — whitespace, indentation, and line endings must match. After any successful edit, re-read before the next strReplace if you need a new match; never reuse a previous old_string/new_string pair as the next old_string.
+PREREQUISITE: Use workspace__readFile first and copy the exact text CURRENTLY in the file into old_string. Matching is literal — whitespace, indentation, and line endings must match. You can call workspace__strReplace multiple times in a single turn for distinct, non-overlapping replacements across the file. Only re-read before subsequent edits if an edit depends on the newly modified text.
 
 - Single replacement (default): old_string must match exactly once unless replace_all=true.
 - replace_all=true: every occurrence of old_string is replaced.
@@ -388,7 +388,7 @@ fn edit_file_path_prop() -> JSONSchema {
     string_prop(
         Some(1),
         Some(1000),
-        Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork files without changing workspaceOverride."),
+        Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to edit teamwork files without changing workspaceOverride. Skill aliases are read/list-only — edit .libragent/skills/ or user_skills/ paths instead."),
     )
 }
 

@@ -1,3 +1,68 @@
+## [0.9.19] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage on Ubuntu 22.04**: RPM files for ONNX Runtime now use `/usr/lib64/...`. The v0.9.18 release compiled and built the deb, then stopped before the AppImage because the RPM builder requires destination paths that start with `/`.
+
+## [0.9.18] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage on Ubuntu 22.04**: Linux bundles link Microsoft's ONNX Runtime 1.28 shared library (glibc 2.27) instead of pyke's static build, which needs glibc 2.38 and stopped the v0.9.17 AppImage. The library is included in the AppImage, deb, and rpm packages. PipeWire 1.0 from the Jammy PPA and the relative `.DirIcon` stay in place.
+> **Note:** `v0.9.18` compiled on Ubuntu 22.04 and built the deb, then the RPM packager rejected paths that did not start with `/`. Use **v0.9.19** for the AppImage.
+
+## [0.9.17] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage on Ubuntu 22.04**: The Linux build installs PipeWire 1.0 from the Jammy upstream PPA. Stock Ubuntu 22.04 PipeWire 0.3.48 cannot compile `pipewire-rs` 0.10, which stopped the v0.9.16 AppImage. Those PPA libraries depend on glibc 2.34, so the AppImage still launches on AppImageHub's Ubuntu 22.04 runner, and `.DirIcon` stays a relative symlink.
+> **Note:** `v0.9.17` Linux CI still failed: pyke's static ONNX Runtime needs glibc 2.38. Use **v0.9.19** for the AppImage.
+
+## [0.9.16] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage on Ubuntu 22.04**: Linux release and nightly bundles are built on Ubuntu 22.04 so the AppImage links against glibc 2.35. AppImageHub tests on Ubuntu 22.04; the Ubuntu 24.04 build required `GLIBC_2.39` and exited before it could show a window. The `.DirIcon` relative symlink from v0.9.14 remains in this build.
+> **Note:** `v0.9.16` Linux CI failed against Ubuntu 22.04's PipeWire 0.3.48. Use **v0.9.19** for the AppImage.
+
+## [0.9.15] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **Tauri JS/Rust version alignment**: Pin `@tauri-apps/api` and plugin packages to the same major/minor as the Rust crates so `tauri-cli` 2.12 release builds no longer abort on version mismatch.
+
+## [0.9.14] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage `.DirIcon`**: Bump `@tauri-apps/cli` to 2.12.0 so Linux AppImages ship relative `.DirIcon` / `.desktop` symlinks (fixes AppImageHub catalog lint and AppManager install failures).
+> **Note:** `v0.9.14` release CI failed on the JS/Rust mismatch above; use **v0.9.15** for installable artifacts.
+
+## [0.9.13] - 2026-09-28
+
+### 🚀 Features & UI
+
+- **History server-side search**: Session History search runs on the server with cursor pagination, bookmark/status filters, and child loading so large libraries stay responsive.
+- **`/reload` slash command**: Refresh workspace tools and skills mid-session without wiping chat history.
+- **MediaAssist multimodal recovery**: When the model rejects multimodal payloads (e.g. audio/video not supported), LibrAgent strips media for retry and remembers the preference per provider+model route.
+- **Media see / listen guidance**: Clearer role boundaries and follow-ups for `seeContent` / `listenContent`, including video audio paths without apt-install loops.
+- **Bundled skills**: `context-recall` for pre-compaction history; `session-schedule` renamed to `loop`; new `call-me-back` for completion-signal wake; hardened credential CLIs and `ig-cli`.
+- **External wake docs**: Product-agnostic HTTP session inject / call-me-back guidance for automation.
+
+### 🐛 Fixes & Hardening
+
+- **Workspace override persistence**: Transient path unavailability no longer clears a session’s workspace override; SESSION scheduled callbacks no longer wipe pinned session overrides when the task omits `workspaceOverride`.
+- **Stale `reportResult` shadowing**: Follow-up assistant replies are no longer hidden by an older deliverable card.
+- **Reasoning-budget burn**: Abort streams early when the model burns the reasoning budget and surface recovery toasts.
+- **Browser sidecar**: Auto-dismiss JS dialogs and bound hang paths; extract page content when the cache is empty.
+- **Skill-alias writes**: Reject writes through `@*-skills` aliases to avoid orphan directories; prefer `.libragent/skills/` or `skill-deployer`.
+- **Tool-spec / Related Actions**: Omit Related Actions next-steps across builtin tools to reduce prefill bloat; refine spillover guidance against file pagination loops.
+- **i18n**: Full key parity across all 8 locales.
+
+### 🔧 Internal
+
+- Modularize `session_manager` facade and Knowledge canvas; sequentialize `pnpm rust:test` to avoid OOM; dependency bumps (markdown2pdf, ammonia, pdf-extract, tauri-plugin-http, xcap).
+
 ## [0.9.12] - 2026-09-19
 
 > **Release note:** `v0.9.11` could not be published. An empty immutable GitHub Release permanently reserved that tag name, so this patch ships the same intended changes as `v0.9.12`.

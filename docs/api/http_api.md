@@ -24,13 +24,13 @@ LibrAgent uses standard HTTP status codes to indicate the success or failure of 
 
 ### Common Status Codes
 
-| Code  | Description                                                                                                                                                                          |
-| :---- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `200` | **Success**: The request was handled successfully.                                                                                                                                   |
-| `201` | **Created**: The resource (e.g., Session) was successfully created.                                                                                                                  |
+| Code  | Description                                                                                           |
+| :---- | :---------------------------------------------------------------------------------------------------- |
+| `200` | **Success**: The request was handled successfully.                                                    |
+| `201` | **Created**: The resource (e.g., Session) was successfully created.                                   |
 | `400` | **Bad Request**: The request body is malformed or contains invalid values (e.g., non-absolute paths). |
-| `404` | **Not Found**: The requested resource (Assistant, Session) does not exist.                                                                                                           |
-| `500` | **Internal Error**: An unexpected server-side error occurred (e.g., DB failure, config corruption).                                                                                  |
+| `404` | **Not Found**: The requested resource (Assistant, Session) does not exist.                            |
+| `500` | **Internal Error**: An unexpected server-side error occurred (e.g., DB failure, config corruption).   |
 
 ---
 
@@ -42,10 +42,10 @@ HTTP session APIs use one session id string for responses. Requests accept the
 exact storage id, and as a **read-only** legacy fallback also accept a bare
 last-10 suffix or optional `session-{suffix}` when it uniquely matches.
 
-| Direction                | Form                                                                 |
-| ------------------------ | -------------------------------------------------------------------- |
-| **Responses**            | Exact storage id (new sessions: 10 lowercase hex, e.g. `a1b2c3d4e5`) |
-| **Requests** (`:id`, …)  | Exact id first; unique legacy short / `session-{…}` fallback         |
+| Direction               | Form                                                                 |
+| ----------------------- | -------------------------------------------------------------------- |
+| **Responses**           | Exact storage id (new sessions: 10 lowercase hex, e.g. `a1b2c3d4e5`) |
+| **Requests** (`:id`, …) | Exact id first; unique legacy short / `session-{…}` fallback         |
 
 ---
 

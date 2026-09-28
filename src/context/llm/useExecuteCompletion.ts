@@ -207,8 +207,23 @@ export function useExecuteCompletion({
             abortController.signal,
           );
 
-          const { hasToolCallUpdate, shouldFlushToolCallImmediately } =
-            accumulator.processChunk(rawChunk);
+          const {
+            hasToolCallUpdate,
+            shouldFlushToolCallImmediately,
+            shouldAbortStream,
+          } = accumulator.processChunk(rawChunk);
+
+          if (shouldAbortStream) {
+            // Stop the provider stream immediately. Rust owns CancelAndRetry /
+            // CancelAndFail after reportLLMStreamingIssue; do not wait for the
+            // cancel IPC round-trip (that race burned ~20 minutes on Harbor).
+            tracker.terminatedRequestsRef.current.set(
+              tracker.getRequestKey(sessionId, responseMessageId),
+              'aborted',
+            );
+            abortController.abort();
+            break;
+          }
 
           const nowMs = performance.now();
           const lastUpdateMs =
@@ -250,9 +265,21 @@ export function useExecuteCompletion({
         }
 
         // Catch content-only max-output burn when usage arrives on the last chunk
-        // or chars/4 underestimated denser provider tokenization.
+        // or the mid-stream char estimate underestimated denser tokenization.
         accumulator.finalizeOutputBudgetCheck();
 
+        if (accumulator.didExceedReasoningBudget()) {
+          // Budget recovery owns the turn — never forward thinking-only content
+          // to Rust as a normal completion (causes stray/admission races).
+          tracker.terminatedRequestsRef.current.set(
+            tracker.getRequestKey(sessionId, responseMessageId),
+            'aborted',
+          );
+          if (!abortController.signal.aborted) {
+            abortController.abort();
+          }
+          throw new Error('Request aborted');
+        }
         // Always flush final streaming state after loop ends
         tracker.lastStreamingUpdateRef.current.delete(sessionId);
         const streamingToolCalls = accumulator.getStreamingToolCalls();

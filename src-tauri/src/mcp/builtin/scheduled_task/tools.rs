@@ -40,9 +40,7 @@ fn schedule_callback_tool() -> MCPTool {
                 execution_mode_workflow_steps()[0],
                 execution_mode_workflow_steps()[1],
             ],
-            &[
-                "List session callbacks via scheduled_task__listScheduledTasks if applicable.",
-            ],
+            &[],
         )
             .to_string(),
         input_schema: object_prop(
@@ -109,10 +107,7 @@ fn create_scheduled_task_tool() -> MCPTool {
                 execution_mode_workflow_steps()[1],
                 "The system returns a task ID for follow-up management.",
             ],
-            &[
-                "Inspect with scheduled_task__getScheduledTask.",
-                "Pause with scheduled_task__toggleScheduledTask.",
-            ],
+            &[],
         )
         .to_string(),
         input_schema: object_prop(
@@ -199,12 +194,9 @@ fn list_scheduled_tasks_tool() -> MCPTool {
                 "Apply assistant or enabled filters when needed.",
                 "Paginate if many tasks exist.",
             ],
-            &[
-                "Read details with scheduled_task__getScheduledTask.",
-                "Update with scheduled_task__updateScheduledTask or toggle with scheduled_task__toggleScheduledTask.",
-            ],
+            &[],
         )
-            .to_string(),
+        .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -237,10 +229,7 @@ fn get_scheduled_task_tool() -> MCPTool {
             "Read one scheduled task in detail including message, schedule, and pinned session state.",
             &["Task ID from scheduled_task__createScheduledTask or scheduled_task__listScheduledTasks."],
             &["Pass the exact task ID."],
-            &[
-                "Update fields with scheduled_task__updateScheduledTask.",
-                "Delete with scheduled_task__deleteScheduledTask when no longer needed.",
-            ],
+            &[],
         )
             .to_string(),
         input_schema: object_prop(
@@ -269,10 +258,7 @@ fn update_scheduled_task_tool() -> MCPTool {
                 "Confirm schedule impact before saving cron changes.",
                 execution_mode_workflow_steps()[0],
             ],
-            &[
-                "Verify with scheduled_task__getScheduledTask.",
-                "Pause safely with scheduled_task__toggleScheduledTask.",
-            ],
+            &[],
         )
             .to_string(),
         input_schema: object_prop(
@@ -366,10 +352,7 @@ fn toggle_scheduled_task_tool() -> MCPTool {
                 "Pass the task ID and enabled flag.",
                 "Use for safe pause/resume without editing the schedule.",
             ],
-            &[
-                "Confirm state with scheduled_task__getScheduledTask.",
-                "Permanently remove with scheduled_task__deleteScheduledTask if obsolete.",
-            ],
+            &[],
         )
         .to_string(),
         input_schema: object_prop(
@@ -403,7 +386,7 @@ fn delete_scheduled_task_tool() -> MCPTool {
                 "Confirm the schedule with scheduled_task__getScheduledTask if unsure.",
                 "Deletion cannot be undone.",
             ],
-            &["Verify removal with scheduled_task__listScheduledTasks."],
+            &[],
         )
         .to_string(),
         input_schema: object_prop(

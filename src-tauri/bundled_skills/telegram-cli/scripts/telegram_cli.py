@@ -24,7 +24,9 @@ All I/O uses UTF-8 encoding.
 """
 
 import argparse
+import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, TextIO
@@ -74,6 +76,16 @@ except ImportError:
 # ─── Config ───────────────────────────────────────────────────────────
 
 CONFIG_PATH = Path.home() / ".libragent" / "telegram_config.json"
+OP_TIMEOUT_SEC = 60.0
+DISCONNECT_TIMEOUT_SEC = 10.0
+
+
+def run_op(client: "TelegramClient", coro, *, timeout: float = OP_TIMEOUT_SEC):
+    """Run a Telethon coroutine with a hard timeout."""
+    try:
+        return client.loop.run_until_complete(asyncio.wait_for(coro, timeout=timeout))
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(f"Telegram operation timed out after {int(timeout)}s") from exc
 
 
 def emit_result(payload: dict[str, Any], args: argparse.Namespace) -> None:
@@ -133,6 +145,18 @@ def get_session_path(config: dict) -> Path:
     return Path.home() / ".libragent" / session_name
 
 
+def harden_session_files(session_base: Path) -> None:
+    """Restrict Telethon session artifacts to owner read/write (best-effort)."""
+    for suffix in (".session", ".session-journal"):
+        path = Path(str(session_base) + suffix)
+        if not path.exists():
+            continue
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+
+
 # ─── Client Factory ──────────────────────────────────────────────────
 
 def create_client(config: dict) -> TelegramClient:
@@ -146,16 +170,22 @@ def create_client(config: dict) -> TelegramClient:
 
 
 def disconnect_client(client: TelegramClient) -> None:
-    """Disconnect a Telethon client, supporting sync and async disconnect()."""
-    disconnect = client.disconnect()
-    if disconnect is not None:
-        client.loop.run_until_complete(disconnect)
+    """Disconnect a Telethon client; never raise from cleanup paths."""
+    try:
+        disconnect = client.disconnect()
+        if disconnect is not None:
+            client.loop.run_until_complete(
+                asyncio.wait_for(disconnect, timeout=DISCONNECT_TIMEOUT_SEC)
+            )
+    except Exception:
+        pass
 
 
-def ensure_authorized(client: TelegramClient) -> bool:
+def ensure_authorized(client: TelegramClient, config: dict) -> bool:
     """Return True when the client session is authorized."""
-    client.loop.run_until_complete(client.connect())
-    return client.loop.run_until_complete(client.is_user_authorized())
+    run_op(client, client.connect())
+    harden_session_files(get_session_path(config))
+    return run_op(client, client.is_user_authorized())
 
 
 def require_chat_arg(args: argparse.Namespace, action: str) -> bool:
@@ -201,7 +231,7 @@ def resolve_chat(client: TelegramClient, chat_identifier: str) -> Any | None:
         "내게쓰기",
     ):
         try:
-            me_user = client.loop.run_until_complete(client.get_me())
+            me_user = run_op(client, client.get_me())
             if me_user:
                 return me_user
         except Exception:
@@ -212,7 +242,7 @@ def resolve_chat(client: TelegramClient, chat_identifier: str) -> Any | None:
     try:
         numeric_id = int(raw)
         try:
-            entity = client.loop.run_until_complete(client.get_entity(numeric_id))
+            entity = run_op(client, client.get_entity(numeric_id))
             if entity:
                 return entity
         except (ValueError, TypeError, RPCError):
@@ -221,7 +251,7 @@ def resolve_chat(client: TelegramClient, chat_identifier: str) -> Any | None:
         pass
 
     try:
-        return client.loop.run_until_complete(client.get_entity(raw))
+        return run_op(client, client.get_entity(raw))
     except (ValueError, TypeError, RPCError):
         return None
     except Exception:
@@ -388,7 +418,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
 
     client = create_client(config)
     try:
-        if not ensure_authorized(client):
+        if not ensure_authorized(client, config):
             emit_error({"status": "error", "message": "Not authorized. Run setup first."})
             return 1
 
@@ -402,7 +432,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
             if not file_path.exists():
                 emit_error({"status": "error", "message": f"File not found: {args.file}"})
                 return 3
-            result = client.loop.run_until_complete(
+            result = run_op(client, 
                 client.send_file(peer, str(file_path), caption=message)
             )
             output = {
@@ -415,7 +445,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
                 "file_sent": True,
             }
         else:
-            result = client.loop.run_until_complete(
+            result = run_op(client, 
                 client.send_message(peer, message)
             )
             output = {
@@ -449,7 +479,7 @@ def action_get_messages(args: argparse.Namespace, config: dict) -> int:
 
     client = create_client(config)
     try:
-        if not ensure_authorized(client):
+        if not ensure_authorized(client, config):
             emit_error({"status": "error", "message": "Not authorized. Run setup first."})
             return 1
 
@@ -460,7 +490,7 @@ def action_get_messages(args: argparse.Namespace, config: dict) -> int:
 
         limit = min(args.limit, 100)
         offset_id = resolve_offset_id(args)
-        messages = client.loop.run_until_complete(
+        messages = run_op(client, 
             collect_messages(
                 client,
                 peer,
@@ -502,11 +532,11 @@ def action_list_chats(args: argparse.Namespace, config: dict) -> int:
     """List all chats."""
     client = create_client(config)
     try:
-        if not ensure_authorized(client):
+        if not ensure_authorized(client, config):
             emit_error({"status": "error", "message": "Not authorized. Run setup first."})
             return 1
 
-        dialogs = client.loop.run_until_complete(client.get_dialogs())
+        dialogs = run_op(client, client.get_dialogs())
         chats = [format_chat(d.entity) for d in dialogs]
 
         emit_result(
@@ -550,7 +580,7 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
 
     client = create_client(config)
     try:
-        if not ensure_authorized(client):
+        if not ensure_authorized(client, config):
             emit_error({"status": "error", "message": "Not authorized. Run setup first."})
             return 1
 
@@ -561,7 +591,7 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
             emit_error({"status": "error", "message": f"Chat not found: {args.chat}"})
             return 2
 
-        messages = client.loop.run_until_complete(
+        messages = run_op(client, 
             collect_messages(
                 client,
                 peer,
@@ -613,7 +643,7 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
 
     client = create_client(config)
     try:
-        if not ensure_authorized(client):
+        if not ensure_authorized(client, config):
             emit_error({"status": "error", "message": "Not authorized. Run setup first."})
             return 1
 
@@ -622,7 +652,7 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
             emit_error({"status": "error", "message": f"Chat not found: {args.chat}"})
             return 2
 
-        res = client.loop.run_until_complete(
+        res = run_op(client, 
             client.get_messages(peer, ids=args.message_id)
         )
         if not res:
@@ -656,7 +686,7 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
             file_name = f"photo_{msg.id}.jpg"
 
         out_path = dest / file_name
-        client.loop.run_until_complete(
+        run_op(client, 
             client.download_media(msg, file=str(out_path))
         )
 
@@ -694,7 +724,7 @@ def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
 
     client = create_client(config)
     try:
-        if not ensure_authorized(client):
+        if not ensure_authorized(client, config):
             emit_error({"status": "error", "message": "Not authorized. Run setup first."})
             return 1
 
@@ -705,7 +735,7 @@ def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
 
         chat_info = format_chat(peer)
 
-        recent = client.loop.run_until_complete(
+        recent = run_op(client, 
             client.get_messages(peer, limit=1)
         )
         if recent:

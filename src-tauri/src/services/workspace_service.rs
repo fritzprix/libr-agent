@@ -203,6 +203,23 @@ impl WorkspaceService {
 
     /// Gets the current workspace override for a session.
     pub async fn get_override(session_id: &str) -> Result<Option<String>, String> {
+        // Prefer the persisted preference so UI stays consistent when the path is
+        // temporarily unavailable (hydrate no longer clears the DB on blips).
+        if let Some(session_repo) = crate::state::try_get_session_repository() {
+            if let Ok(Some(session)) = session_repo.get_session(session_id).await {
+                if let Some(persisted) = session.workspace_override.clone() {
+                    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+                    let _ = crate::session::hydrate_persisted_workspace_override(
+                        session_repo,
+                        session_manager,
+                        session_id,
+                    )
+                    .await;
+                    return Ok(Some(persisted));
+                }
+            }
+        }
+
         let session_manager = get_session_manager().map_err(|e| e.to_string())?;
         crate::session::hydrate_persisted_workspace_override_from_global(
             session_manager,

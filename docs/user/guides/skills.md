@@ -126,9 +126,13 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 `delegate`, `teamwork`, `org`, `org-restructure`, `divide-conquer`, `hub-spoke`, `pipeline`, `consensus-delegation`, `gatekeeper`, `pair-programming`, `recruit`, `boost`
 
-### 일정
+### 일정 · 웨이크
 
-`schedule`, `session-schedule`
+`schedule`, `loop`, `call-me-back`
+
+### 세션 · 컨텍스트
+
+`context-recall` — 컴팩션 이전 transcript(`.libragent/pre_compaction_epoch_{N}.md`)에서 대화·결정 복구
 
 ### 조사·문서
 
@@ -136,7 +140,7 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 ### 개발·연동·제작
 
-`git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
+`git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
 
 ### 자주 하는 조합
 
@@ -147,6 +151,7 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 | MCP 커스텀/가져오기         | [커스텀 MCP](custom-mcp.md) · `@skill:tool-installer` |
 | 내 절차를 스킬로            | `skill-creator` → `skill-deployer`                    |
 | 자식 세션·팀 오케스트레이션 | [서브 에이전트 가이드](sub-agents.md)                 |
+| 컴팩션 이전 대화 복구       | `@skill:context-recall`                               |
 | 어시스턴트 설정             | [Assistants](assistants.md)                           |
 | 반복 실행                   | [Playbooks](playbooks.md) · [자동화](automation.md)   |
 

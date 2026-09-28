@@ -1,3 +1,4 @@
+use super::super::super::workspace_server::path_validation_failure_guidance;
 use super::super::super::WorkspaceServer;
 use super::super::utils::{
     compute_line_hash, format_hashline, format_prefix_hash, initial_prefix_hash_state,
@@ -336,10 +337,13 @@ pub(super) async fn prepare_file_edit_batch(
                 format!("Path validation failed for '{}': {}", path_str, error),
                 ToolGroup::Workspace,
             )
-            .guidance(vec![
-                "Use a normal file path without '..' traversal segments".to_string(),
-                "Use workspace__listDirectory to inspect valid target paths".to_string(),
-            ])
+            .guidance(path_validation_failure_guidance(
+                &error,
+                vec![
+                    "Use a normal file path without '..' traversal segments".to_string(),
+                    "Use workspace__listDirectory to inspect valid target paths".to_string(),
+                ],
+            ))
             .to_mcp_result());
         }
     };

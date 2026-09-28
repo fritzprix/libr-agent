@@ -66,6 +66,23 @@ describe('useInputToken', () => {
     expect(result.current.commandResults).toHaveLength(1);
   });
 
+  it('should identify /reload command when typing /reload', () => {
+    const { result } = renderHook(() => useInputToken([], []));
+
+    act(() => {
+      result.current.onInputChange('/reload', 7);
+    });
+
+    expect(result.current.stage).toEqual({
+      kind: 'typing-command',
+      query: 'reload',
+      anchorIndex: 0,
+    });
+    expect(result.current.commandResults).toHaveLength(1);
+    expect(result.current.commandResults[0].id).toBe('/reload');
+    expect(result.current.commandResults[0].label).toBe('/reload');
+  });
+
   it('should not identify a command when / is preceded by a non-whitespace character', () => {
     const { result } = renderHook(() => useInputToken([], []));
 

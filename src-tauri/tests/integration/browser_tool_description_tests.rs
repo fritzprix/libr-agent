@@ -65,6 +65,10 @@ fn get_page_content_description_marks_read_after_navigation_workflow() {
         description.contains("This is the normal next step after `browser__navigateToUrl`"),
         "getPageContent should be described as the immediate follow-up to navigation"
     );
+    assert!(
+        description.contains("If the cache is empty, the first call extracts automatically"),
+        "getPageContent should document empty-cache extract fallback for page:1"
+    );
 }
 
 #[test]

@@ -564,3 +564,154 @@ async fn read_file_allows_path_variant_aliases_across_scopes() {
         }
     }
 }
+
+#[tokio::test]
+async fn write_file_rejects_skill_aliases_and_does_not_create_literal_at_dir() {
+    let _guard = test_guard().await;
+    let repo = session_repo().await;
+    let base_data_dir = global_base_data_dir();
+    let session_id = "workspace-write-reject-skill-aliases";
+    let assistant_id = "assistant-skill-write-reject";
+    repo.upsert_session(&make_session(session_id, assistant_id))
+        .await
+        .expect("upsert session");
+
+    let server = build_workspace_server(&base_data_dir, session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let skill_name = "regression-alias-write";
+    let alias_path = format!("{WORKSPACE_SKILLS_ALIAS_PREFIX}/{skill_name}/SKILL.md");
+    let literal_alias_dir = workspace_dir.join(WORKSPACE_SKILLS_ALIAS_PREFIX);
+
+    let result = server
+        .handle_write_file(
+            json!({
+                "path": alias_path,
+                "content": "---\nname: regression-alias-write\ndescription: should fail\n---\n# no\n",
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("writeFile should return MCP result");
+
+    assert_eq!(
+        result.is_error,
+        Some(true),
+        "write through @workspace-skills must fail: {}",
+        extract_text_content(&result)
+    );
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Skill aliases are read-only") || text.contains("read/list"),
+        "error should explain read-only alias contract: {text}"
+    );
+    assert!(
+        text.contains(".libragent/skills"),
+        "guidance should point at .libragent/skills: {text}"
+    );
+    assert!(
+        !literal_alias_dir.exists(),
+        "must not create literal workspace/@workspace-skills directory"
+    );
+}
+
+#[tokio::test]
+async fn write_file_to_libragent_skills_is_readable_via_workspace_alias() {
+    let _guard = test_guard().await;
+    let repo = session_repo().await;
+    let base_data_dir = global_base_data_dir();
+    let session_id = "workspace-write-libragent-then-alias-read";
+    let assistant_id = "assistant-skill-write-ok";
+    repo.upsert_session(&make_session(session_id, assistant_id))
+        .await
+        .expect("upsert session");
+
+    let server = build_workspace_server(&base_data_dir, session_id);
+    let skill_name = "regression-deployed-skill";
+    let token = "DEPLOYED_VIA_LIBRAGENT_SKILLS";
+    let concrete_path = format!(".libragent/skills/{skill_name}/SKILL.md");
+    let alias_path = format!("{WORKSPACE_SKILLS_ALIAS_PREFIX}/{skill_name}/SKILL.md");
+    let content =
+        format!("---\nname: {skill_name}\ndescription: {token}\n---\n# {skill_name}\n{token}\n");
+
+    let write_result = server
+        .handle_write_file(
+            json!({
+                "path": concrete_path,
+                "content": content,
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("writeFile should return MCP result");
+    assert_success(&write_result, "concrete .libragent/skills write");
+
+    invalidate_skill_scan_cache();
+
+    let read_result = server
+        .handle_read_file(json!({ "path": alias_path }), Some(session_id.to_string()))
+        .await
+        .expect("readFile should return MCP result");
+    assert_success(&read_result, "alias read after concrete write");
+    let text = extract_text_content(&read_result);
+    assert!(
+        text.contains(token),
+        "alias read must see skill written under .libragent/skills: {text}"
+    );
+
+    let list_result = server
+        .handle_list_directory(
+            json!({ "path": WORKSPACE_SKILLS_ALIAS_PREFIX }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("listDirectory should return MCP result");
+    assert_success(&list_result, "alias list after concrete write");
+    let list_text = extract_text_content(&list_result);
+    assert!(
+        list_text.contains(skill_name),
+        "@workspace-skills listing must include deployed skill: {list_text}"
+    );
+}
+
+#[tokio::test]
+async fn write_file_rejects_all_managed_skill_alias_prefixes() {
+    let _guard = test_guard().await;
+    let repo = session_repo().await;
+    let base_data_dir = global_base_data_dir();
+    let session_id = "workspace-write-reject-all-skill-aliases";
+    let assistant_id = "assistant-skill-write-reject-all";
+    repo.upsert_session(&make_session(session_id, assistant_id))
+        .await
+        .expect("upsert session");
+
+    let server = build_workspace_server(&base_data_dir, session_id);
+    let aliases = [
+        format!("{SYSTEM_SKILLS_ALIAS_PREFIX}/blocked/SKILL.md"),
+        format!("{USER_SKILLS_ALIAS_PREFIX}/blocked/SKILL.md"),
+        format!("{ASSISTANT_SKILLS_ALIAS_PREFIX}/blocked/SKILL.md"),
+        format!("{WORKSPACE_SKILLS_ALIAS_PREFIX}/blocked/SKILL.md"),
+        "@skills/workspace/blocked/SKILL.md".to_string(),
+    ];
+
+    for alias in aliases {
+        let result = server
+            .handle_write_file(
+                json!({
+                    "path": alias,
+                    "content": "---\nname: blocked\ndescription: no\n---\n",
+                    "mode": "create",
+                }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("writeFile should return MCP result");
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "write through {alias} must fail: {}",
+            extract_text_content(&result)
+        );
+    }
+}

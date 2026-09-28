@@ -32,3 +32,4 @@ pub(super) const READ_FILE_BASE_HEADROOM_BYTES: usize = 1024;
 pub(super) const READ_FILE_ANCHOR_HEADROOM_BYTES: usize = 2 * 1024;
 pub(super) const READ_FILE_MIN_VISIBLE_CONTENT_BYTES: usize = 1024;
 pub(super) const EMPTY_FILE_OUT_OF_RANGE_PREFIX: &str = "File is empty (0 lines);";
+pub(super) const BINARY_FILE_ERROR_PHRASE: &str = "appears to be binary";

@@ -25,6 +25,11 @@ import {
   extractMediaContent as extractMediaParts,
   processMessageContent as stringifyMessageContent,
   processMultiModalContent as buildMultiModalContent,
+  messagesHaveMultimodalParts,
+  prepareMessagesForMediaAssistRetry,
+  rememberMediaAssistStripForRoute,
+  shouldAttemptMediaAssistFallback,
+  shouldStripMultimodalForRoute,
 } from '@/lib/ai-service/utils';
 import {
   validateApiKey as validateServiceApiKey,
@@ -365,38 +370,90 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
       thinkingEffort: options.config?.thinkingEffort,
     });
 
+    // Stored messages stay intact. If this provider+model already rejected
+    // multimodal input, strip only the outbound copy before the first send.
+    let activeMessages = messages;
+    if (
+      shouldStripMultimodalForRoute(provider, model) &&
+      messagesHaveMultimodalParts(messages)
+    ) {
+      const prepared = await prepareMessagesForMediaAssistRetry(messages);
+      activeMessages = prepared.messages;
+      this.logger.info(
+        `[${provider}] streamChat media-assist pre-strip for remembered route; ${
+          prepared.usedPlugin
+            ? 'converted multimodal via host plugin'
+            : 'stripped multimodal parts'
+        }`,
+        { model, usedPlugin: prepared.usedPlugin },
+      );
+    }
+
+    let mediaAssistRetried = false;
+    let hasYielded = false;
+
     // Accumulate the full response for logging
     let accumulatedResponse = '';
 
-    try {
-      const start = Date.now();
-      const generator = this.doStreamChat(messages, options);
+    for (;;) {
+      try {
+        const start = Date.now();
+        const generator = this.doStreamChat(activeMessages, options);
+        accumulatedResponse = '';
 
-      for await (const chunk of generator) {
-        // Attempt to extract content for valid JSON chunks
-        try {
-          const parsed = JSON.parse(chunk);
-          if (parsed.content) accumulatedResponse += parsed.content;
-          // You might also want to track tool calls or thinking, but content is primary for "result"
-        } catch {
-          // If not JSON, just append raw (though it should be JSON)
-          if (accumulatedResponse.length < 5000) {
-            accumulatedResponse += chunk;
+        for await (const chunk of generator) {
+          // Attempt to extract content for valid JSON chunks
+          try {
+            const parsed = JSON.parse(chunk);
+            if (parsed.content) accumulatedResponse += parsed.content;
+            // You might also want to track tool calls or thinking, but content is primary for "result"
+          } catch {
+            // If not JSON, just append raw (though it should be JSON)
+            if (accumulatedResponse.length < 5000) {
+              accumulatedResponse += chunk;
+            }
           }
+          hasYielded = true;
+          yield chunk;
         }
-        yield chunk;
-      }
 
-      const duration = Date.now() - start;
-      this.logger.info(`[${provider}] streamChat CALL END`, {
-        model,
-        durationMs: duration,
-        responseLength: accumulatedResponse.length,
-        responsePreview: accumulatedResponse.slice(0, 200),
-      });
-    } catch (error) {
-      this.logger.error(`[${provider}] streamChat CALL ERROR`, error);
-      throw error;
+        const duration = Date.now() - start;
+        this.logger.info(`[${provider}] streamChat CALL END`, {
+          model,
+          durationMs: duration,
+          responseLength: accumulatedResponse.length,
+          responsePreview: accumulatedResponse.slice(0, 200),
+          mediaAssistRetried,
+        });
+        return;
+      } catch (error) {
+        if (options.signal?.aborted) {
+          throw error;
+        }
+        if (
+          !mediaAssistRetried &&
+          !hasYielded &&
+          shouldAttemptMediaAssistFallback(error, activeMessages)
+        ) {
+          mediaAssistRetried = true;
+          const prepared =
+            await prepareMessagesForMediaAssistRetry(activeMessages);
+          activeMessages = prepared.messages;
+          rememberMediaAssistStripForRoute(provider, model);
+          this.logger.warn(
+            `[${provider}] streamChat media-assist fallback: ${
+              prepared.usedPlugin
+                ? 'converted multimodal via host plugin'
+                : 'stripped multimodal parts'
+            }; retrying once`,
+            { model, error, usedPlugin: prepared.usedPlugin },
+          );
+          continue;
+        }
+
+        this.logger.error(`[${provider}] streamChat CALL ERROR`, error);
+        throw error;
+      }
     }
   }
 

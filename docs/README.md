@@ -10,7 +10,7 @@ End-user guides (no development environment required):
 
 - **[User docs index](./user/README.md)**
   - Getting started: [5-min](./user/getting-started/5-minute-tutorial.md) · [first agent](./user/getting-started/first-agent.md) · [models](./user/getting-started/connecting-models.md)
-  - Guides: [Assistants](./user/guides/assistants.md) · [Playbooks](./user/guides/playbooks.md) · [Automation](./user/guides/automation.md) · [Sessions](./user/guides/sessions.md) · [Skills](./user/guides/skills.md) · [Sub-agents](./user/guides/sub-agents.md) · [Extensions](./user/guides/extensions.md) · [Custom MCP](./user/guides/custom-mcp.md) · [Troubleshooting](./user/guides/troubleshooting.md)
+  - Guides: [Assistants](./user/guides/assistants.md) · [Playbooks](./user/guides/playbooks.md) · [Solution Recipes](./user/guides/recipes.md) · [Automation](./user/guides/automation.md) · [Scheduled Tasks](./user/guides/scheduled-tasks.md) · [Sessions](./user/guides/sessions.md) · [Session Export](./user/guides/session-export.md) · [Browser Sidecar](./user/guides/browser-sidecar.md) · [Skills](./user/guides/skills.md) · [Sub-agents](./user/guides/sub-agents.md) · [Extensions](./user/guides/extensions.md) · [Custom MCP](./user/guides/custom-mcp.md) · [Navigation Guide](./user/guides/navigation-guide.md) · [Troubleshooting](./user/guides/troubleshooting.md)
   - [FAQ](./user/faq/common-questions.md) · [Error codes](./user/faq/error-codes.md)
 
 Published site (GitHub Pages): https://fritzprix.github.io/libr-agent/ — enable **Settings → Pages → Source: GitHub Actions** if 404. See [`website/README.md`](../website/README.md).

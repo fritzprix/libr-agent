@@ -34,10 +34,7 @@ fn create_tool() -> MCPTool {
                 "Set systemPrompt and tool access lists as needed.",
                 "Model selection and sampling defaults are controlled by the provider — not here.",
             ],
-            &[
-                "Discover configs with agent__listAgents(type='configs').",
-                "Spawn sessions with agent__spawnSession(configId=...) using the returned ID.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -67,10 +64,7 @@ fn list_tool() -> MCPTool {
                 "Set type='configs' for assistant definitions or type='sessions' for delegated sessions.",
                 "Use query to filter configs by name or description.",
             ],
-            &[
-                "Spawn with agent__spawnSession(configId=...) after type='configs', or poll with agent__checkSession after type='sessions'.",
-                "Update configs with agent__updateAgent.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -128,10 +122,7 @@ fn update_tool() -> MCPTool {
                 "Model selection and sampling defaults are controlled elsewhere — not via this tool.",
                 "You cannot update the assistant configuration your current session is already running as.",
             ],
-            &[
-                "Verify the template with agent__listAgents(verbose=true).",
-                "Spawn a new session with agent__spawnSession(configId=...) to run with the updated tool access.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -199,10 +190,7 @@ fn spawn_session_tool() -> MCPTool {
                 "Org children inherit org workspace by default unless workspaceOverride is set.",
                 "Set waitForResult=true to block until the child finishes (optional timeout, default 3600s).",
             ],
-            &[
-                "Poll or wait with agent__checkSession.",
-                "Send follow-ups or assign new work with agent__messageToSession.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -244,10 +232,7 @@ fn create_org_tool() -> MCPTool {
                 "Provide a human-readable org name.",
                 "If teamwork scaffold artifacts are missing, follow the tool result guidance.",
             ],
-            &[
-                "Prepare artifacts with agent__prepareTeamworkWorkspace if needed.",
-                "Spawn org members with agent__spawnSession(configId=...).",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -274,10 +259,7 @@ fn get_org_tool() -> MCPTool {
                 "Omit orgId to use the caller session's org.",
                 "Pass orgId when inspecting a specific org.",
             ],
-            &[
-                "Check member status with agent__checkSession.",
-                "Message members with agent__messageToSession.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -311,10 +293,7 @@ fn message_to_session_tool() -> MCPTool {
                 "Set reset=true only when the previous conversation and runtime state should be discarded. This clears messages, planning/compaction state, and pending messages, but does not clean workspace files (defaults to false).",
                 "Messages sent to a busy session may be queued until its current work finishes.",
             ],
-            &[
-                "Check outcome with agent__checkSession(wait=true).",
-                "Stop stuck sessions with agent__stopSession.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -371,13 +350,10 @@ fn check_session_tool() -> MCPTool {
             &[
                 "Call with wait=false for a snapshot or wait=true to block until terminal state.",
                 "After the status line (before Result), a fenced Metadata block adds identity/routing only (assistant, workspace) — not the child's answer. Session title/name is omitted.",
-                "workspace is tagged SHARED with caller or ISOLATED (different from caller). Isolated child files are not in the caller root — use the absolute path or Result text.",
+                "workspace is tagged SHARED with caller or ISOLATED (different from caller). Isolated child files cannot be read by caller via workspace__readFile — rely on Result text or agent__messageToSession.",
                 "Paused or error sessions need recovery via agent__messageToSession.",
             ],
-            &[
-                "Recover paused sessions with agent__messageToSession.",
-                "Terminate unnecessary sessions with agent__stopSession.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -419,10 +395,7 @@ fn stop_session_tool() -> MCPTool {
                 "Use ONLY when there is a confirmed critical error, infinite loop, or the delegation is explicitly no longer needed.",
                 "No-op if the session is already non-running.",
             ],
-            &[
-                "Check session status and messages first with agent__checkSession.",
-                "Delete session data with agent__deleteSession if permanent removal is needed.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![(
@@ -449,10 +422,7 @@ fn compact_session_context_tool() -> MCPTool {
                 "Pass the child sessionId.",
                 "Wait for compaction to finish (configurable timeout).",
             ],
-            &[
-                "Send more work with agent__messageToSession after compaction.",
-                "Verify status with agent__checkSession.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -490,10 +460,7 @@ fn delete_session_tool() -> MCPTool {
                 "Confirm the session is no longer needed.",
                 "Pass the descendant sessionId.",
             ],
-            &[
-                "Stop running sessions first with agent__stopSession if needed.",
-                "Verify org membership with agent__getOrg after deletion.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![

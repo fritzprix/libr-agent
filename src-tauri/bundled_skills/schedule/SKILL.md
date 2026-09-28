@@ -1,6 +1,6 @@
 ---
 name: schedule
-description: Create and manage app-wide global scheduled tasks in LibrAgent (cron-based). Use when automation must outlive the current session, run recurring background cron jobs independently of any session, or coordinate multi-agent scheduled workflows. NEVER use for in-session reminders, 'remind me', 'follow up', or temporary delays (use session-schedule instead).
+description: Create and manage app-wide global scheduled tasks in LibrAgent (cron-based). Use when automation must outlive the current session, run recurring background cron jobs independently of any session, or coordinate multi-agent scheduled workflows. NEVER use for in-session time reminders (use loop), or for process/kanban/webhook completion waits (use call-me-back).
 ---
 
 # Schedule
@@ -9,45 +9,47 @@ Global scheduled tasks wake an assistant on a cron cadence without requiring the
 
 ## Priority & UX Policy
 
-When a user in an active chat session asks to schedule a reminder, follow-up, or future task, their natural expectation is that it will happen **within the context of their current conversation**.
+When a user in an active chat session asks to schedule a **time-based** reminder or future check, their natural expectation is that it will happen **within the context of their current conversation**.
 
 Therefore:
-- **`session-schedule` is the PRIMARY DEFAULT** for session-originated scheduling requests.
-- **`schedule` is strictly for GLOBAL / BACKGROUND automation** that must run independently of the current session.
+- **`loop` is the PRIMARY DEFAULT** for session-originated **clock** requests.
+- **`call-me-back`** for process exit, kanban/ticket done, webhooks, or watchers (not cron).
+- **`schedule` is strictly for GLOBAL / BACKGROUND cron** that must run independently of the current session.
 - **If intent is ambiguous** (e.g., "매일 9시에 요약해줘" with no global/permanent wording):
-  1. **Proceed with `session-schedule` immediately** (do not ask first).
+  1. **Proceed with `loop` immediately** (do not ask first).
   2. **Ask only when** the request looks like always-on automation that should survive this chat (recurring wall-clock work with no tie to this conversation's task/context), and a wrong choice would strand the user. Then explain once and confirm:
-     - **Session Schedule (default)**: stays in this chat; dies if the session is deleted.
+     - **Loop (default)**: stays in this chat; dies if the session is deleted.
      - **Global Scheduled Task**: app-wide cron; survives closing/deleting this session; no session history.
 
 ## When NOT to use this
 
 Do NOT use `schedule` (`createScheduledTask`) for:
-- "remind me in 5 minutes" / "10분 뒤에 알려줘" → use `session-schedule` (`scheduleCallback`)
-- "let me know about this later" / "나중에 알려줘" → use `session-schedule`
-- "follow up on this task" / "작업 끝나고 알려줘" → use `session-schedule`
-- "tomorrow at 9" / "내일 9시에 알려줘" when continuing this chat → use `session-schedule`
-- Any relative delay or timer (seconds, minutes, hours, or days) → use `session-schedule`
-- Any reminder where the user expects the response/action in the current chat → use `session-schedule`
+- "remind me in 5 minutes" / "10분 뒤에 알려줘" → use `loop` (`scheduleCallback`)
+- "let me know about this later" / "나중에 알려줘" → use `loop`
+- "tomorrow at 9" / "내일 9시에 알려줘" when continuing this chat → use `loop`
+- Any relative delay or timer (seconds, minutes, hours, or days) → use `loop`
+- Any clock reminder where the user expects the response in the current chat → use `loop`
+- "작업 끝나고 알려줘" / build·test·ticket completion → use `call-me-back`
 
 ## Routing decision
 
 ```text
-Should the run stay bound to the current session?
-  Yes                  -> session-schedule (scheduled_task__scheduleCallback) [DEFAULT]
-  Unclear / Ambiguous  -> session-schedule immediately [DEFAULT]
-                          ask only if always-on / session-surviving intent is plausible
-  No (Explicit global) -> schedule (scheduled_task__createScheduledTask)
+Is the wake driven by a completion event (process / kanban / webhook / watcher)?
+  Yes -> call-me-back
+  No  -> Should the run stay bound to the current session?
+           Yes / Unclear -> loop (scheduled_task__scheduleCallback) [DEFAULT]
+           Explicit global -> schedule (scheduled_task__createScheduledTask)
 ```
 
-Recurring vs one-shot is **not** the primary split. Global tasks require cron. Session-bound one-shots and session-bound recurring callbacks use `session-schedule`.
+Recurring vs one-shot is **not** the primary split for time-based work. Global tasks require cron. Session-bound clock wakes use `loop`; event completion uses `call-me-back`.
 
 ## Workflow
 
 ### 1. Confirm global scheduling is appropriate
 
 - Use global tasks ONLY for cron-based wake-ups, background recurrence, heartbeat loops, or assistant-level automation that must survive session destruction.
-- If the user asked for a reminder, follow-up, or delay inside this chat, STOP and switch to `session-schedule`.
+- If the user asked for a time reminder or delay inside this chat, STOP and switch to `loop`.
+- If the user asked to wake on process/ticket/webhook completion, STOP and switch to `call-me-back`.
 - Do not require teamwork scaffolding for a standalone global task.
 - If the user wants org-visible lineage or org-root resume behavior, stop and use `org`.
 
@@ -92,6 +94,7 @@ If the user only wants one global cron job with no multi-agent constitution, ski
 
 ## Guardrails
 
-- Do not use global scheduled tasks for simple in-session delays or reminders; use `session-schedule`.
+- Do not use global scheduled tasks for simple in-session delays or reminders; use `loop`.
+- Do not use global cron to wait for a single process or ticket completion; use `call-me-back`.
 - Use `workspaceOverride` only when the scheduled run must target a specific existing workspace.
 - Backend minimum-interval policy still applies. Do not assume unlimited frequency.

@@ -5,6 +5,7 @@ import {
   estimateThinkingTokens,
   providerSupportsReasoningBudgetCap,
   reasoningBudgetThresholdTokens,
+  REASONING_BUDGET_CHARS_PER_TOKEN,
   REASONING_BUDGET_MAX_TOKENS_RATIO,
 } from '../reasoning-budget';
 
@@ -16,9 +17,11 @@ describe('reasoning-budget', () => {
     expect(reasoningBudgetThresholdTokens(0)).toBe(1);
   });
 
-  it('estimates thinking tokens conservatively from character length', () => {
+  it('estimates thinking tokens with the denser mid-stream chars/token divisor', () => {
+    expect(REASONING_BUDGET_CHARS_PER_TOKEN).toBe(3);
     expect(estimateThinkingTokens('')).toBe(0);
-    expect(estimateThinkingTokens('abcd')).toBe(1);
+    expect(estimateThinkingTokens('abc')).toBe(1);
+    expect(estimateThinkingTokens('abcd')).toBe(2);
     expect(estimateThinkingTokens('abcde')).toBe(2);
   });
 
@@ -30,10 +33,10 @@ describe('reasoning-budget', () => {
     expect(estimateNonToolOutputTokens(dump, dump.slice(0, 10))).toBe(
       estimateThinkingTokens(dump),
     );
-    expect(estimateNonToolOutputTokens('abcd', 'efgh')).toBe(2);
+    expect(estimateNonToolOutputTokens('abcd', 'efgh')).toBe(4);
   });
 
-  it('prefers provider completion_tokens when denser than chars/4', () => {
+  it('prefers provider completion_tokens when denser than the char estimate', () => {
     expect(
       estimateOutputBudgetTokens({
         thinkingText: '',
@@ -47,7 +50,7 @@ describe('reasoning-budget', () => {
         contentText: '',
         completionTokens: 10,
       }),
-    ).toBe(100);
+    ).toBe(Math.ceil(400 / REASONING_BUDGET_CHARS_PER_TOKEN));
   });
 
   it('enables the cap only for builtin and custom OpenAI providers', () => {

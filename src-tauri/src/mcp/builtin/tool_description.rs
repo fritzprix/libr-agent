@@ -2,6 +2,11 @@
 
 /// Format a tool description using the standard template:
 /// summary, optional prerequisites, critical workflow, and next steps.
+///
+/// `next_steps` (Related Actions) must stay **rare and high-signal** — omit by
+/// default. Keep only non-obvious cross-tool / cross-server contracts (e.g.
+/// completion forks, session-enablement gotchas). Generic “then call sibling
+/// tool X” coaching belongs in error/success hints, not every tool prefill.
 pub fn tool_description(
     summary: &str,
     prerequisites: &[&str],
@@ -46,6 +51,10 @@ mod tests {
     fn omits_empty_sections() {
         let desc = tool_description("Do the thing.", &[], &[], &[]);
         assert_eq!(desc, "Do the thing.");
+        assert!(
+            !desc.contains("Related Actions"),
+            "empty next_steps must omit Related Actions entirely"
+        );
     }
 
     #[test]

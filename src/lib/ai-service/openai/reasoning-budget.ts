@@ -4,15 +4,23 @@ import { isCustomOpenAIProviderId } from '@/lib/ai-service/custom-providers';
 export const REASONING_BUDGET_MAX_TOKENS_RATIO = 0.9;
 
 /**
- * Approximate tokens from streamed text.
- * Character/4 is only used as a client-side retry threshold, not as a
- * prompt-steering signal. Prefer provider `completion_tokens` when available.
+ * Conservative chars→token divisor for mid-stream abort only.
+ * OpenAI-compatible hosts often emit denser tokenization than chars/4
+ * (~2.8–3.2 chars/token observed on long thinking dumps). Using 3 trips
+ * abort before the provider silently burns the full maxTokens wall-clock.
+ * Prefer provider `completion_tokens` when available (end-of-stream).
+ */
+export const REASONING_BUDGET_CHARS_PER_TOKEN = 3;
+
+/**
+ * Approximate tokens from streamed text for abort/retry thresholds.
+ * Not a prompt-steering signal. Prefer provider `completion_tokens` when set.
  */
 export function estimateThinkingTokens(text: string): number {
   if (!text) {
     return 0;
   }
-  return Math.ceil(text.length / 4);
+  return Math.ceil(text.length / REASONING_BUDGET_CHARS_PER_TOKEN);
 }
 
 /**
@@ -48,7 +56,7 @@ export function estimateNonToolOutputTokens(
 
 /**
  * Combined signal for abort: char estimate and/or provider completion usage.
- * Usage catches hosts whose tokenization is denser than chars/4.
+ * Usage catches hosts whose tokenization is denser than the char estimate.
  */
 export function estimateOutputBudgetTokens(args: {
   thinkingText: string;

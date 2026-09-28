@@ -318,13 +318,7 @@ function AgentChatInner() {
       },
       { replace: true },
     );
-  }, [
-    executePlaybookSelection,
-    playbookId,
-    sessionId,
-    setSearchParams,
-    t,
-  ]);
+  }, [executePlaybookSelection, playbookId, sessionId, setSearchParams, t]);
 
   const playbookLaunchLabel =
     playbookLaunchPhase === 'starting'

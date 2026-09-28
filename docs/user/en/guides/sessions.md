@@ -11,9 +11,14 @@ title: Sessions
 ## Find & Switch Sessions
 
 - Recent list on **Chat** / sidebar
-- Full list: **History**
+- Full list: **History** (server-side search with cursor pagination, bookmark/status filters)
 
 Recently active sessions are retained warm in memory, making switching between sessions instant without reload latency.
+
+### Workspace override & `/reload`
+
+- A session **workspace override** (custom working folder) is kept even if the path is briefly unavailable; it applies again when the directory returns.
+- Type **`/reload`** in chat to refresh workspace tools and skills without wiping history.
 
 ---
 

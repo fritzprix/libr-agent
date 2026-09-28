@@ -3,6 +3,7 @@ use crate::agent::ExecutionMode;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Clear,
+    Reload,
     Permission { mode: ExecutionMode },
 }
 
@@ -21,6 +22,7 @@ impl Command {
 
         match parts[0] {
             "/clear" => Some(Command::Clear),
+            "/reload" => Some(Command::Reload),
             "/permission" => {
                 if parts.len() < 2 {
                     return None;
@@ -45,6 +47,7 @@ impl Command {
     pub fn display_name(&self) -> String {
         match self {
             Command::Clear => "/clear".to_string(),
+            Command::Reload => "/reload".to_string(),
             Command::Permission { mode } => match mode {
                 ExecutionMode::Yolo => "/permission yolo".to_string(),
                 ExecutionMode::Unsafe => "/permission unsafe".to_string(),
@@ -57,6 +60,9 @@ impl Command {
         match self {
             Command::Clear => {
                 "Reset session (clear messages cache and database history)".to_string()
+            }
+            Command::Reload => {
+                "Reload session tools and workspace context without clearing history".to_string()
             }
             Command::Permission { mode } => match mode {
                 ExecutionMode::Yolo => {
@@ -81,6 +87,17 @@ mod tests {
     fn test_parse_clear() {
         assert_eq!(Command::parse("/clear"), Some(Command::Clear));
         assert_eq!(Command::parse("  /clear   "), Some(Command::Clear));
+    }
+
+    #[test]
+    fn test_parse_reload() {
+        assert_eq!(Command::parse("/reload"), Some(Command::Reload));
+        assert_eq!(Command::parse("  /reload   "), Some(Command::Reload));
+        assert_eq!(Command::Reload.display_name(), "/reload");
+        assert_eq!(
+            Command::Reload.description(),
+            "Reload session tools and workspace context without clearing history"
+        );
     }
 
     #[test]

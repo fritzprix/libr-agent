@@ -453,7 +453,9 @@ impl WorkspaceServer {
                 let mut text_message =
                     format_command_io_message(&header, "Output", &stdout, "Stderr", &stderr);
 
-                if let Some(warning) = validation::exit_zero_stderr_warning(command, &stderr) {
+                if let Some(warning) =
+                    validation::exit_zero_pipeline_failure_warning(command, &stdout, &stderr)
+                {
                     text_message.push_str("\n\n");
                     text_message.push_str(warning);
                 }

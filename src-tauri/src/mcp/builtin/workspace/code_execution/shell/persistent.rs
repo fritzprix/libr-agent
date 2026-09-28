@@ -153,7 +153,9 @@ impl WorkspaceServer {
                         &stderr,
                     );
                     if let Some(warning) =
-                        super::super::validation::exit_zero_stderr_warning(command, &stderr)
+                        super::super::validation::exit_zero_pipeline_failure_warning(
+                            command, &stdout, &stderr,
+                        )
                     {
                         io_message.push_str("\n\n");
                         io_message.push_str(warning);

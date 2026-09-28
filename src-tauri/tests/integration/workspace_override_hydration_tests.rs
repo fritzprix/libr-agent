@@ -249,3 +249,41 @@ async fn global_hydration_repairs_poisoned_entry_without_reading_workspace_first
         override_dir
     );
 }
+
+#[tokio::test]
+async fn hydrate_keeps_persisted_override_when_path_temporarily_unavailable() {
+    let _guard = test_guard().await;
+    let db = test_db().await;
+    let repo = SqliteSessionRepository::new(db);
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let missing_override = temp_dir.path().join("missing-override-dir");
+    let missing_override_str = missing_override.to_string_lossy().to_string();
+
+    let session_id = "unavailable-override-session";
+    repo.upsert_session(&make_session(
+        session_id,
+        Some(missing_override_str.clone()),
+    ))
+    .await
+    .expect("session should be persisted");
+
+    let session_manager =
+        SessionManager::new_with_base_dir(temp_dir.path().join("session-root")).unwrap();
+
+    let hydrated = hydrate_persisted_workspace_override(&repo, &session_manager, session_id)
+        .await
+        .expect("hydrate should succeed without clearing");
+
+    assert_eq!(hydrated, None);
+
+    let persisted = repo
+        .get_session(session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should still exist");
+    assert_eq!(
+        persisted.workspace_override.as_deref(),
+        Some(missing_override_str.as_str()),
+        "unavailable path must not wipe persisted workspace override"
+    );
+}

@@ -62,6 +62,11 @@ interface SessionHistoryPanelProps {
   isLoadingMoreSessions: boolean;
   activeStatusFilter: 'all' | SessionStatus;
   searchQuery: string;
+  /**
+   * Text used for in-memory filtering. Defaults to `searchQuery`.
+   * Pass `''` when the session list is already server-filtered.
+   */
+  clientSearchQuery?: string;
   onActiveStatusFilterChange: (value: 'all' | SessionStatus) => void;
   onSearchQueryChange: (value: string) => void;
   onRefresh: () => void;
@@ -90,6 +95,7 @@ export function SessionHistoryPanel({
   isLoadingMoreSessions,
   activeStatusFilter,
   searchQuery,
+  clientSearchQuery,
   onActiveStatusFilterChange,
   onSearchQueryChange,
   onRefresh,
@@ -165,17 +171,20 @@ export function SessionHistoryPanel({
       'Start a conversation to create your first session',
     );
 
+  const textFilterQuery =
+    clientSearchQuery !== undefined ? clientSearchQuery : searchQuery;
   const deferredSessions = useDeferredValue(sessions);
-  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const deferredSearchQuery = useDeferredValue(textFilterQuery);
   const knownDirectChildCountByParentId = useKnownDirectChildCounts(
     sessions,
     hasMoreSessions,
   );
   const isPending =
-    searchQuery !== deferredSearchQuery || sessions !== deferredSessions;
+    textFilterQuery !== deferredSearchQuery || sessions !== deferredSessions;
 
   const filtersActive =
     activeStatusFilter !== 'all' ||
+    searchQuery.trim().length > 0 ||
     deferredSearchQuery.trim().length > 0 ||
     showBookmarkedOnly;
 

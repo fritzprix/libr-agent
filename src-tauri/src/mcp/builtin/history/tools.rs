@@ -65,10 +65,7 @@ fn export_dataset_tool() -> MCPTool {
                 "Set outputPath to an absolute local file path.",
                 "Tune filters when exporting noisy data: minTurns/maxTurns, excludeErrors, excludeShort, minTokens.",
             ],
-            &[
-                "Verify the exported file on disk.",
-                "Inspect source sessions with history__readSession if quality issues appear.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -112,10 +109,7 @@ fn list_tool() -> MCPTool {
                 "Apply agentId, date range, or status filters as needed.",
                 "Paginate with page and pageSize for large histories.",
             ],
-            &[
-                "Read session details with history__readSession using returned session IDs.",
-                "Search message content with history__searchHistory.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -171,10 +165,7 @@ fn read_session_tool() -> MCPTool {
                 "Pass the exact sessionId.",
                 "Paginate messages with page and pageSize.",
             ],
-            &[
-                "Read full message bodies with history__readMessage.",
-                "Export sessions with history__exportDataset.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -211,10 +202,7 @@ fn read_message_tool() -> MCPTool {
                 "Pass the exact messageId.",
                 "Use offsetChars and maxChars to paginate long bodies.",
             ],
-            &[
-                "Return to session context with history__readSession.",
-                "Continue searching with history__searchHistory.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![
@@ -260,10 +248,7 @@ fn search_tool() -> MCPTool {
                 "Provide a search query string.",
                 "Narrow with agentId, sessionId, date range, or role filters.",
             ],
-            &[
-                "Read full messages with history__readMessage using returned message IDs.",
-                "Open parent sessions with history__readSession.",
-            ],
+            &[],
         ),
         input_schema: object_prop(
             vec![

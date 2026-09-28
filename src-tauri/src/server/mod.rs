@@ -3,9 +3,43 @@ pub mod mcp_handler;
 pub mod routes;
 
 use log::info;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 
 use crate::agent::AgentSessionManager;
+
+/// Process-wide bound HTTP port (`0` = not set yet).
+static ACTIVE_HTTP_PORT: AtomicU16 = AtomicU16::new(0);
+
+/// Record the port the HTTP server actually bound (may differ from Settings request).
+pub fn set_active_http_port(port: u16) {
+    ACTIVE_HTTP_PORT.store(port, Ordering::Relaxed);
+}
+
+/// Active LibrAgent HTTP port for external inject / wake URLs.
+///
+/// Prefers the in-process bound port, then `~/.libragent/http_port`, else **3030**.
+pub fn active_http_port() -> u16 {
+    let bound = ACTIVE_HTTP_PORT.load(Ordering::Relaxed);
+    if bound != 0 {
+        return bound;
+    }
+    read_persisted_http_port().unwrap_or(3030)
+}
+
+fn read_persisted_http_port() -> Option<u16> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    let raw = std::fs::read_to_string(
+        std::path::PathBuf::from(home)
+            .join(".libragent")
+            .join("http_port"),
+    )
+    .ok()?;
+    let port: u16 = raw.trim().parse().ok()?;
+    (port > 0).then_some(port)
+}
 
 /// Initialize and start the HTTP server.
 /// If the requested port is in use, automatically fallback to subsequent available ports.
@@ -56,6 +90,8 @@ pub async fn init(
     drop(listener);
 
     info!("Starting HTTP server on {}:{}", bind_addr, bound_port);
+
+    set_active_http_port(bound_port);
 
     // Persist active HTTP port to ~/.libragent/http_port for external scripts/tools
     if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {

@@ -809,6 +809,45 @@ async fn media_capture_screen_is_configured_in_sensitive_tools() {
 }
 
 #[tokio::test]
+async fn media_deploy_assist_plugin_is_configured_in_sensitive_tools() {
+    let default_config_str = include_str!("../../src/mcp/builtin/workspace/sensitive_tools.json");
+    let config: serde_json::Value = serde_json::from_str(default_config_str).expect("valid json");
+    let hard = config
+        .get("requires_hard_approval")
+        .and_then(|v| v.as_array())
+        .expect("requires_hard_approval array");
+
+    assert!(
+        hard.iter()
+            .any(|v| v.as_str() == Some("media__deployAssistPlugin")),
+        "media__deployAssistPlugin must be listed in requires_hard_approval"
+    );
+
+    assert!(
+        tauri_mcp_agent_lib::agent::tool_approvals::is_hard_approval_required(
+            "media__deployAssistPlugin"
+        )
+        .await,
+        "runtime approval policy must require hard approval for media__deployAssistPlugin"
+    );
+
+    let decision = tauri_mcp_agent_lib::agent::tool_approvals::evaluate_tool_execution_policy(
+        "media__deployAssistPlugin",
+        &serde_json::json!({ "files": [] }),
+    )
+    .await;
+    assert!(
+        matches!(
+            decision,
+            tauri_mcp_agent_lib::agent::tool_approvals::ToolExecutionPolicyDecision::RequireHardApproval(
+                _
+            )
+        ),
+        "deployAssistPlugin must be RequireHardApproval (YOLO-safe), got {decision:?}"
+    );
+}
+
+#[tokio::test]
 async fn media_capture_screen_rejects_incomplete_region_args() {
     use std::sync::Arc;
     use tauri_mcp_agent_lib::mcp::builtin::media::MediaServer;

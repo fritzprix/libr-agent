@@ -41,11 +41,11 @@ export function useAssistantSkills() {
     setLoadingSkills((prev) => ({ ...prev, [skillName]: true }));
     try {
       await copyGlobalToAssistant(draft.id, skillName);
-      toast.success(t('skills.overrideSuccess'));
+      toast.success(t('settings.skills.overrideSuccess'));
       await fetchSkills();
     } catch (error) {
       logger.error('Failed to override skill:', error);
-      toast.error(t('skills.overrideFailed'));
+      toast.error(t('settings.skills.overrideFailed'));
     } finally {
       setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
     }
@@ -56,11 +56,11 @@ export function useAssistantSkills() {
     setLoadingSkills((prev) => ({ ...prev, [skillName]: true }));
     try {
       await deleteAssistantSkill(draft.id, skillName);
-      toast.success(t('skills.revertSuccess'));
+      toast.success(t('settings.skills.revertSuccess'));
       await fetchSkills();
     } catch (error) {
       logger.error('Failed to revert skill:', error);
-      toast.error(t('skills.revertFailed'));
+      toast.error(t('settings.skills.revertFailed'));
     } finally {
       setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
     }
@@ -90,12 +90,12 @@ export function useAssistantSkills() {
     setIsResetting(true);
     try {
       await resetAssistantSkills(draft.id);
-      toast.success(t('skills.resetSuccess'));
+      toast.success(t('settings.skills.resetSuccess'));
       await fetchSkills();
       onSuccess?.();
     } catch (error) {
       logger.error('Failed to reset skills:', error);
-      toast.error(t('skills.resetFailed'));
+      toast.error(t('settings.skills.resetFailed'));
     } finally {
       setIsResetting(false);
     }

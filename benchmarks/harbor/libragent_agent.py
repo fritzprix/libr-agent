@@ -7,6 +7,10 @@ LibrAgent's Docker session to Harbor's existing main container. Workdir is taken
 from task config when set; otherwise from the container image WORKDIR (often
 `/workspace` for Harbor Index / BixBench, `/app` for classic Terminal-Bench).
 
+Resolved workdirs are verified with ``docker exec test -d`` when a container id
+is available. Image WORKDIR metadata alone is not trusted — OSWorld QEMU host
+images may advertise ``/app`` even though that path does not exist.
+
 Non-Docker Harbor backends fall back to the legacy host-workspace sync path.
 """
 
@@ -941,6 +945,17 @@ def sanitize_docker_compose_project_name(name: str) -> str:
     return sanitized[:63]
 
 
+# Candidate roots when task/image/pwd workdirs are missing or do not exist.
+# Prefer task-like roots before ``/`` (OSWorld QEMU hosts often lack ``/app``).
+_WORKDIR_EXISTENCE_FALLBACKS: tuple[str, ...] = (
+    "/workspace",
+    "/home/agent",
+    "/osworld",
+    "/tmp",
+    "/",
+)
+
+
 def docker_inspect_workdir(container_id: str) -> str | None:
     """Read the container's configured WorkingDir (image WORKDIR), if any."""
     try:
@@ -1000,6 +1015,49 @@ def docker_exec_pwd(container_id: str) -> str | None:
     return workdir
 
 
+def docker_path_is_dir(container_id: str, path: str) -> bool:
+    """Return True when ``path`` is an existing directory inside the container."""
+    if not path:
+        return False
+    try:
+        result = subprocess.run(
+            ["docker", "exec", container_id, "test", "-d", path],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(
+            f"[LibrAgent] Warning: docker exec test -d failed for "
+            f"{container_id!r} path={path!r}: {exc}"
+        )
+        return False
+    return result.returncode == 0
+
+
+def _accept_existing_workdir(
+    container_id: str | None,
+    candidate: str,
+    *,
+    source: str,
+) -> str | None:
+    """Return ``candidate`` when usable; skip missing dirs when container is known."""
+    if not candidate:
+        return None
+    if container_id is None:
+        print(f"[LibrAgent] Using {source} container workdir: {candidate}")
+        return candidate
+    if docker_path_is_dir(container_id, candidate):
+        print(f"[LibrAgent] Using {source} container workdir: {candidate}")
+        return candidate
+    print(
+        f"[LibrAgent] Warning: {source} workdir {candidate!r} does not exist in "
+        f"container {container_id}; trying next candidate"
+    )
+    return None
+
+
 def resolve_container_workdir(
     environment: BaseEnvironment,
     container_id: str | None = None,
@@ -1008,37 +1066,60 @@ def resolve_container_workdir(
 
     Workdir is **per-task / per-image**, never a single hardcoded benchmark path.
 
-    Priority:
+    Priority (each candidate must exist in the container when ``container_id``
+    is set):
     1. Harbor task ``[environment].workdir`` when the task sets it explicitly
     2. Docker image WORKDIR of the attached Harbor main container
     3. Live ``docker exec … pwd`` (container process cwd)
-    4. Last-resort ``/app`` with a warning (legacy Terminal-Bench convention only)
+    4. Common existing roots (``/workspace``, ``/home/agent``, ``/osworld``, …)
+    5. Last-resort ``/app`` only when that directory exists (or no container id)
     """
+    candidates: list[tuple[str, str]] = []
+
     if hasattr(environment, "task_env_config") and environment.task_env_config:
         configured = getattr(environment.task_env_config, "workdir", None)
         if configured:
-            workdir = str(configured)
-            print(f"[LibrAgent] Using task-configured container workdir: {workdir}")
-            return workdir
+            candidates.append(("task-configured", str(configured)))
 
     if container_id:
         inspected = docker_inspect_workdir(container_id)
         if inspected:
-            print(
-                f"[LibrAgent] Using container image WORKDIR for attach: {inspected}"
-            )
-            return inspected
-
+            candidates.append(("image WORKDIR", inspected))
         live_pwd = docker_exec_pwd(container_id)
         if live_pwd:
-            print(f"[LibrAgent] Using live container pwd for attach: {live_pwd}")
-            return live_pwd
+            candidates.append(("live pwd", live_pwd))
+        for fallback in _WORKDIR_EXISTENCE_FALLBACKS:
+            candidates.append(("existence fallback", fallback))
+
+    seen: set[str] = set()
+    for source, candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        accepted = _accept_existing_workdir(container_id, candidate, source=source)
+        if accepted is not None:
+            return accepted
+
+    if container_id is None:
+        print(
+            "[LibrAgent] Warning: no task workdir found without container id; "
+            "falling back to /app (may be wrong for this task)"
+        )
+        return "/app"
+
+    # Prefer a real directory over advertising a fictional /app (OSWorld hosts).
+    if docker_path_is_dir(container_id, "/app"):
+        print(
+            "[LibrAgent] Warning: no task/image/pwd workdir resolved; "
+            "using existing /app"
+        )
+        return "/app"
 
     print(
-        "[LibrAgent] Warning: no task workdir / image WORKDIR / live pwd found; "
-        "falling back to /app (may be wrong for this task)"
+        "[LibrAgent] Warning: no usable container workdir found "
+        f"(including /app missing in {container_id}); using / as attach root"
     )
-    return "/app"
+    return "/"
 
 
 def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None:
@@ -1289,20 +1370,13 @@ class LibrAgentHarborAdapter(BaseAgent):
                 f"[{self.name()}] Harbor container id not resolved; falling back to "
                 f"host workspace sync ({local_workspace_str})."
             )
-            print(
-                f"[{self.name()}] Pulling initial container files from "
-                f"{container_workdir} to {local_workspace_str}..."
+            await self._download_container_workdir(
+                environment,
+                container_id=attach_container_id,
+                container_workdir=container_workdir,
+                target_dir=local_workspace_str,
+                label="initial",
             )
-            try:
-                await environment.download_dir(
-                    source_dir=container_workdir,
-                    target_dir=local_workspace_str,
-                )
-                print(f"[{self.name()}] Successfully pulled initial files.")
-            except Exception as e:
-                print(
-                    f"[{self.name()}] Warning: failed to pull initial container files: {e}"
-                )
 
         raw_context_task_id = getattr(context, "task_id", None)
         context_task_id = (
@@ -1373,15 +1447,15 @@ class LibrAgentHarborAdapter(BaseAgent):
                         if host_workspace:
                             host_workspace_path = Path(host_workspace)
                             os.makedirs(host_workspace_path, exist_ok=True)
-                            print(
-                                f"[{self.name()}] Pulling initial container files from "
-                                f"{container_workdir} to host staging workspace ({host_workspace})..."
+                            await self._download_container_workdir(
+                                environment,
+                                container_id=attach_container_id,
+                                container_workdir=container_workdir,
+                                target_dir=str(
+                                    host_workspace_path.resolve().absolute()
+                                ),
+                                label="initial staging",
                             )
-                            await environment.download_dir(
-                                source_dir=container_workdir,
-                                target_dir=str(host_workspace_path.resolve().absolute()),
-                            )
-                            print(f"[{self.name()}] Successfully pulled initial files to host staging workspace.")
                 except Exception as e:
                     print(
                         f"[{self.name()}] Warning: failed to pull initial container files to host staging: {e}"
@@ -1552,20 +1626,13 @@ class LibrAgentHarborAdapter(BaseAgent):
                 local_workspace = self._resolve_local_workspace(environment, context)
                 local_workspace_str = str(local_workspace.resolve().absolute())
                 os.makedirs(local_workspace_str, exist_ok=True)
-                print(
-                    f"[{self.name()}] Pulling final container files from "
-                    f"{container_workdir} to local workspace ({local_workspace_str})..."
+                await self._download_container_workdir(
+                    environment,
+                    container_id=attach_container_id,
+                    container_workdir=container_workdir,
+                    target_dir=local_workspace_str,
+                    label="final",
                 )
-                try:
-                    await environment.download_dir(
-                        source_dir=container_workdir,
-                        target_dir=local_workspace_str,
-                    )
-                    print(f"[{self.name()}] Successfully pulled final files to local workspace.")
-                except Exception as e:
-                    print(
-                        f"[{self.name()}] Warning: failed to pull final container files: {e}"
-                    )
 
             messages_res = await client.get(
                 f"{self.api_url}/sessions/{session_id}/messages",
@@ -1968,6 +2035,48 @@ class LibrAgentHarborAdapter(BaseAgent):
 
         task_id = getattr(context, "task_id", None) or "benchmark"
         return Path(os.getcwd()) / f"harbor-workspace-{task_id}"
+
+    async def _download_container_workdir(
+        self,
+        environment: BaseEnvironment,
+        *,
+        container_id: str | None,
+        container_workdir: str,
+        target_dir: str,
+        label: str,
+    ) -> None:
+        """Pull container workdir to host when the path is a real, syncable directory."""
+        if container_workdir in {"/", "/tmp"}:
+            print(
+                f"[{self.name()}] Skipping {label} container file pull: "
+                f"workdir {container_workdir!r} is not a task workspace root."
+            )
+            return
+        if container_id is not None and not docker_path_is_dir(
+            container_id, container_workdir
+        ):
+            print(
+                f"[{self.name()}] Skipping {label} container file pull: "
+                f"{container_workdir!r} does not exist in container {container_id}."
+            )
+            return
+        print(
+            f"[{self.name()}] Pulling {label} container files from "
+            f"{container_workdir} to {target_dir}..."
+        )
+        try:
+            await environment.download_dir(
+                source_dir=container_workdir,
+                target_dir=target_dir,
+            )
+            print(
+                f"[{self.name()}] Successfully pulled {label} files "
+                f"from {container_workdir}."
+            )
+        except Exception as e:
+            print(
+                f"[{self.name()}] Warning: failed to pull {label} container files: {e}"
+            )
 
     async def _upload_workspace(
         self,

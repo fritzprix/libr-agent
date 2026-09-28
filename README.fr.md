@@ -151,7 +151,7 @@ Et ce n'est que la couche opérateur. LibrAgent fournit également des compéten
 - **Documents et contenu workspace** : `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
 - **Workflow développeur** : `git-workflow`, `bench`
 - **Onboarding workspace** : `agent-init`
-- **Coordination et assistants** : `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **Coordination et assistants** : `consensus-delegation`, `loop`, `call-me-back`, `context-recall`, `recruit`, `boost`
 - **Intégrations externes** : `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
 - **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **Opérations spécialisées** : `computer-diagnosis`
@@ -205,10 +205,10 @@ _Important : `bootstrap` est une capacité intégrée souvent utilisée avec ces
 Téléchargez le dernier installateur pour votre plateforme depuis la **[page des Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows :** [`LibrAgent_0.9.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_x64-setup.exe) · [`LibrAgent_0.9.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_x64_en-US.msi)
-- **macOS (Apple Silicon) :** [`LibrAgent_0.9.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_aarch64.dmg)
-- **Linux :** [`LibrAgent_0.9.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_amd64.AppImage) · [`LibrAgent_0.9.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent_0.9.12_amd64.deb) · [`LibrAgent-0.9.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.12/LibrAgent-0.9.12-1.x86_64.rpm)
-- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.12)
+- **Windows :** [`LibrAgent_0.9.19_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_x64-setup.exe) · [`LibrAgent_0.9.19_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_x64_en-US.msi)
+- **macOS (Apple Silicon) :** [`LibrAgent_0.9.19_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_aarch64.dmg)
+- **Linux :** [`LibrAgent_0.9.19_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_amd64.AppImage) · [`LibrAgent_0.9.19_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_amd64.deb) · [`LibrAgent-0.9.19-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent-0.9.19-1.x86_64.rpm)
+- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.19)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Configuration développeur :**

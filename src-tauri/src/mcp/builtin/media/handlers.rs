@@ -1,10 +1,11 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use url::Url;
 
 use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_param_error, ErrorCategory, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
 use image::ImageFormat;
@@ -12,6 +13,73 @@ use xcap::Monitor;
 
 /// Maximum allowed download size (20 MB).
 const MAX_BYTES: usize = 20 * 1024 * 1024;
+
+/// Hard cap on successful `seeContent` image loads per media-server session.
+///
+/// Soft tool-description advice alone does not stop all-frame multimodal dumps;
+/// the handler enforces this bound and returns guided recovery.
+pub const MAX_SEE_CONTENT_SUCCESSES_PER_SESSION: usize = 8;
+
+/// RAII reservation for one `seeContent` success slot.
+///
+/// Drop releases the slot unless [`SeeContentSlot::commit`] was called (load
+/// succeeded and multimodal content will be returned).
+struct SeeContentSlot<'a> {
+    counter: &'a AtomicUsize,
+    committed: bool,
+}
+
+impl<'a> SeeContentSlot<'a> {
+    fn try_reserve(counter: &'a AtomicUsize) -> Result<Self, usize> {
+        let prev = counter.fetch_add(1, Ordering::SeqCst);
+        if prev >= MAX_SEE_CONTENT_SUCCESSES_PER_SESSION {
+            counter.fetch_sub(1, Ordering::SeqCst);
+            return Err(MAX_SEE_CONTENT_SUCCESSES_PER_SESSION);
+        }
+        Ok(Self {
+            counter,
+            committed: false,
+        })
+    }
+
+    fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for SeeContentSlot<'_> {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.counter.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+}
+
+fn see_content_cap_recovery() -> Vec<String> {
+    vec![
+        format!(
+            "This session already used the maximum of {MAX_SEE_CONTENT_SUCCESSES_PER_SESSION} successful seeContent loads."
+        ),
+        "Do not dump every video frame or large image set into context — sample a few key frames only."
+            .to_string(),
+        "For speech-in-video: extract audio (wav/mp3) and call media__listenContent on that file instead of more seeContent."
+            .to_string(),
+        "If scripting tools (ffmpeg/python) are available, filter or OCR offline, then use seeContent only for final verification samples."
+            .to_string(),
+    ]
+}
+
+fn see_content_cap_exceeded_result() -> MCPResult {
+    guided_error(
+        ErrorCategory::InvalidState,
+        format!(
+            "seeContent session limit reached ({MAX_SEE_CONTENT_SUCCESSES_PER_SESSION} successful image loads). Further seeContent calls are blocked for this session."
+        ),
+        ToolGroup::Media,
+    )
+    .with_guidance(see_content_cap_recovery())
+    .to_mcp_result()
+}
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
@@ -78,6 +146,51 @@ pub fn resolve_audio_mime(url: &str, content_type_header: Option<&str>) -> Optio
         }
     }
     ext_from_url_path(url).and_then(|ext| audio_mime_from_ext(&ext).map(|s| s.to_string()))
+}
+
+/// True when the path/URL extension looks like a video container (not audio).
+///
+/// Used to tailor `listenContent` recovery — `webm` is omitted because it is a
+/// supported audio extension for this tool.
+pub fn looks_like_video_path(url: &str) -> bool {
+    matches!(
+        ext_from_url_path(url).as_deref(),
+        Some("mp4" | "mkv" | "mov" | "avi" | "m4v" | "mpeg" | "mpg" | "wmv")
+    )
+}
+
+/// Post-load guidance after a successful `listenContent`.
+///
+/// Soft load-ack alone led agents to treat the tool as done and stop; push
+/// analysis / sparse visual sample / verify-before-stop without task clues.
+fn listen_content_success_follow_ups() -> Vec<String> {
+    vec![
+        "Audio is attached in this tool result — analyze speech/content from it now; the load acknowledgment alone is not the task answer.".to_string(),
+        "If on-screen text also matters, sample a few frames with media__seeContent (session budget applies); do not dump every frame.".to_string(),
+        "Persist required workspace outputs and verify them before stopping.".to_string(),
+    ]
+}
+
+fn listen_content_recovery(url: &str) -> Vec<String> {
+    if looks_like_video_path(url) {
+        vec![
+            "This path looks like a video container; listenContent accepts audio only."
+                .to_string(),
+            "If ffmpeg is available: extract audio (e.g. `ffmpeg -y -i <video> -vn -acodec pcm_s16le /app/audio.wav`), then call media__listenContent on that wav/mp3."
+                .to_string(),
+            "If ffmpeg is missing, do not apt-install for long stretches — sample a few keyframes and use media__seeContent on those images instead."
+                .to_string(),
+            "Prefer media__listenContent / media__seeContent over installing OCR/ASR stacks when the goal is transcription or on-screen text."
+                .to_string(),
+        ]
+    } else {
+        vec![
+            "Provide a URL/path to a supported audio format (MP3, WAV, OGG, AAC, FLAC, WEBM, M4A)."
+                .to_string(),
+            "If the source is video, extract an audio track first, then retry listenContent on the extracted file."
+                .to_string(),
+        ]
+    }
 }
 
 // ── Source resolution ─────────────────────────────────────────────────────────
@@ -185,6 +298,41 @@ pub async fn read_local_bytes(path: &Path) -> Result<Vec<u8>, String> {
 
 // ── Handler: seeContent ───────────────────────────────────────────────────────
 
+/// Resolve a local path against the session workspace.
+///
+/// Relative paths join `workspace_dir`. Absolute Docker workdir paths (e.g. `/app/…`)
+/// are remapped to the host workspace when the session is Docker-isolated.
+async fn resolve_media_local_path(
+    path: &Path,
+    workspace_dir: &Path,
+    session_id: &str,
+) -> Result<std::path::PathBuf, String> {
+    let path_str = path.to_string_lossy();
+    if let Some(mapped) =
+        crate::session_isolation::map_docker_container_file_tool_path(session_id, &path_str).await?
+    {
+        return Ok(mapped);
+    }
+    Ok(resolve_local_path(path, workspace_dir))
+}
+
+/// Resolve, (for attach mode) sync, and workspace-bound a local media file path.
+async fn prepare_local_media_path(
+    path: &Path,
+    workspace_dir: &Path,
+    session_id: &str,
+) -> Result<std::path::PathBuf, String> {
+    let resolved = resolve_media_local_path(path, workspace_dir, session_id).await?;
+    // Pull before canonicalize so attach-mode files that exist only in the
+    // container become visible on the host staging workspace.
+    if let Some(session) = crate::services::container_attach_fs::load_session(session_id).await? {
+        crate::services::container_attach_fs::pull_container_file_to_host(&session, &resolved)
+            .await?;
+    }
+    ensure_within_workspace(&resolved, workspace_dir)?;
+    Ok(resolved)
+}
+
 /// Resolve a local path against the session workspace when it is relative.
 fn resolve_local_path(path: &Path, workspace_dir: &Path) -> std::path::PathBuf {
     if path.is_absolute() {
@@ -213,14 +361,56 @@ fn ensure_within_workspace(path: &Path, workspace_dir: &Path) -> Result<(), Stri
     }
 }
 
+fn media_local_path_error_category(error: &str) -> ErrorCategory {
+    if error.contains(crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER)
+        || error.contains("outside the session workspace")
+    {
+        ErrorCategory::PermissionDenied
+    } else if error.contains("Cannot resolve path") || error.contains("Failed to read file") {
+        ErrorCategory::ResourceNotFound
+    } else {
+        ErrorCategory::OperationFailed
+    }
+}
+
+/// Map/sync a workspace-local media path and read its bytes.
+async fn read_workspace_media_bytes(
+    raw_path: &Path,
+    workspace_dir: &Path,
+    session_id: &str,
+) -> Result<Vec<u8>, MCPResult> {
+    let resolved = match prepare_local_media_path(raw_path, workspace_dir, session_id).await {
+        Ok(path) => path,
+        Err(e) => {
+            return Err(
+                guided_error(media_local_path_error_category(&e), e, ToolGroup::Media)
+                    .to_mcp_result(),
+            );
+        }
+    };
+    match read_local_bytes(&resolved).await {
+        Ok(data) => Ok(data),
+        Err(e) => {
+            Err(guided_error(ErrorCategory::ResourceNotFound, e, ToolGroup::Media).to_mcp_result())
+        }
+    }
+}
+
 /// Handle the `seeContent` tool.
 pub async fn handle_see_content(
     args: Value,
     workspace_dir: std::path::PathBuf,
+    session_id: String,
+    see_content_successes: &AtomicUsize,
 ) -> Result<MCPResult, String> {
     let url_str = match args.get("url").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
         _ => return Ok(missing_param_error("url", ToolGroup::Media)),
+    };
+
+    let slot = match SeeContentSlot::try_reserve(see_content_successes) {
+        Ok(slot) => slot,
+        Err(_) => return Ok(see_content_cap_exceeded_result()),
     };
 
     let (bytes, content_type_header) = {
@@ -248,23 +438,9 @@ pub async fn handle_see_content(
                 }
             },
             ContentSource::LocalFile(raw_path) => {
-                let resolved = resolve_local_path(&raw_path, &workspace_dir);
-                if let Err(e) = ensure_within_workspace(&resolved, &workspace_dir) {
-                    return Ok(
-                        guided_error(ErrorCategory::PermissionDenied, e, ToolGroup::Media)
-                            .to_mcp_result(),
-                    );
-                }
-                match read_local_bytes(&resolved).await {
+                match read_workspace_media_bytes(&raw_path, &workspace_dir, &session_id).await {
                     Ok(data) => (data, None),
-                    Err(e) => {
-                        return Ok(guided_error(
-                            ErrorCategory::ResourceNotFound,
-                            e,
-                            ToolGroup::Media,
-                        )
-                        .to_mcp_result())
-                    }
+                    Err(result) => return Ok(result),
                 }
             }
         }
@@ -297,11 +473,20 @@ pub async fn handle_see_content(
 
     let data = general_purpose::STANDARD.encode(&bytes);
     let size_kb = bytes.len() / 1024;
+    let remaining = MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
+        .saturating_sub(see_content_successes.load(Ordering::SeqCst));
+
+    slot.commit();
 
     Ok(MCPResult {
         content: Some(vec![
             MCPContent::Text {
-                text: format!("✓ Image loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
+                text: format!(
+                    "✓ Image loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}\n\n\
+                     seeContent session budget: {remaining} successful load(s) remaining \
+                     (max {MAX_SEE_CONTENT_SUCCESSES_PER_SESSION}). Sample sparsely; \
+                     for speech-in-video prefer media__listenContent on extracted audio."
+                ),
             },
             MCPContent::Image {
                 data: Some(data),
@@ -320,6 +505,7 @@ pub async fn handle_see_content(
 pub async fn handle_listen_content(
     args: Value,
     workspace_dir: std::path::PathBuf,
+    session_id: String,
 ) -> Result<MCPResult, String> {
     let url_str = match args.get("url").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
@@ -351,23 +537,9 @@ pub async fn handle_listen_content(
                 }
             },
             ContentSource::LocalFile(raw_path) => {
-                let resolved = resolve_local_path(&raw_path, &workspace_dir);
-                if let Err(e) = ensure_within_workspace(&resolved, &workspace_dir) {
-                    return Ok(
-                        guided_error(ErrorCategory::PermissionDenied, e, ToolGroup::Media)
-                            .to_mcp_result(),
-                    );
-                }
-                match read_local_bytes(&resolved).await {
+                match read_workspace_media_bytes(&raw_path, &workspace_dir, &session_id).await {
                     Ok(data) => (data, None),
-                    Err(e) => {
-                        return Ok(guided_error(
-                            ErrorCategory::ResourceNotFound,
-                            e,
-                            ToolGroup::Media,
-                        )
-                        .to_mcp_result())
-                    }
+                    Err(result) => return Ok(result),
                 }
             }
         }
@@ -381,10 +553,11 @@ pub async fn handle_listen_content(
                 format!(
                     "Could not determine audio MIME type for '{url_str}'. \
                      Ensure the URL/path points to a supported audio format \
-                     (MP3, WAV, OGG, AAC, FLAC, WEBM)."
+                     (MP3, WAV, OGG, AAC, FLAC, WEBM, M4A)."
                 ),
                 ToolGroup::Media,
             )
+            .with_guidance(listen_content_recovery(&url_str))
             .to_mcp_result());
         }
     };
@@ -395,26 +568,151 @@ pub async fn handle_listen_content(
             format!("URL does not point to an audio file (detected MIME type: {mime_type})."),
             ToolGroup::Media,
         )
+        .with_guidance(listen_content_recovery(&url_str))
         .to_mcp_result());
     }
 
     let data = general_purpose::STANDARD.encode(&bytes);
     let size_kb = bytes.len() / 1024;
 
+    let mut result = SuccessHint::new(
+        format!("Audio loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
+        listen_content_success_follow_ups(),
+    )
+    .to_mcp_result();
+
+    // SuccessHint → MCPResult::success always sets content; keep attach resilient.
+    result
+        .content
+        .get_or_insert_with(Vec::new)
+        .push(MCPContent::Audio {
+            data: Some(data),
+            uri: None,
+            mime_type,
+        });
+
+    Ok(result)
+}
+
+// ── Handler: assistPluginStatus / deployAssistPlugin ─────────────────────────
+
+async fn host_plugin_blocked_for_session(session_id: &str) -> Option<String> {
+    if crate::mcp::builtin::workspace::utils::is_session_docker_isolated(session_id).await {
+        return Some(
+            "MediaAssist host plugins are disabled for Docker/Harbor sessions to prevent container breakout. Use Host isolation, or convert media inside the container with ffmpeg/CLI tools.".to_string(),
+        );
+    }
+    None
+}
+
+pub async fn handle_assist_plugin_status(
+    base_data_dir: &std::path::Path,
+    session_id: &str,
+) -> Result<MCPResult, String> {
+    if let Some(blocked) = host_plugin_blocked_for_session(session_id).await {
+        return Ok(MCPResult {
+            content: Some(vec![MCPContent::Text {
+                text: blocked.clone(),
+            }]),
+            structured_content: Some(serde_json::json!({
+                "installed": false,
+                "hostExecutionAllowed": false,
+                "error": "docker_isolation_blocked",
+                "message": blocked,
+            })),
+            is_error: Some(false),
+        });
+    }
+
+    let status = crate::media_assist::load_status(base_data_dir);
+    let json = serde_json::to_value(&status).map_err(|e| e.to_string())?;
+    let text = if status.installed {
+        format!(
+            "✓ MediaAssist plugin installed at {}\nmodalities={:?}\ntimeoutMs={}",
+            status.path, status.modalities, status.timeout_ms
+        )
+    } else {
+        let mut text = format!(
+            "MediaAssist plugin not installed at {}.\nLoad @skill:libragent-plugin to implement, verify, and media__deployAssistPlugin.",
+            status.path
+        );
+        if let Some(error) = status.error.as_ref().filter(|e| !e.is_empty()) {
+            text.push_str(&format!("\nDiagnostic: {error}"));
+        }
+        text
+    };
     Ok(MCPResult {
-        content: Some(vec![
-            MCPContent::Text {
-                text: format!("✓ Audio loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
-            },
-            MCPContent::Audio {
-                data: Some(data),
-                uri: None,
-                mime_type,
-            },
-        ]),
-        structured_content: None,
+        content: Some(vec![MCPContent::Text { text }]),
+        structured_content: Some(json),
         is_error: Some(false),
     })
+}
+
+pub async fn handle_deploy_assist_plugin(
+    args: Value,
+    base_data_dir: &std::path::Path,
+    session_id: &str,
+) -> Result<MCPResult, String> {
+    if let Some(blocked) = host_plugin_blocked_for_session(session_id).await {
+        return Ok(guided_error(
+            ErrorCategory::PermissionDenied,
+            blocked,
+            ToolGroup::Media,
+        )
+        .with_guidance(vec![
+            "MediaAssist plugins run on the host and are blocked under Docker/Harbor isolation."
+                .to_string(),
+            "Switch the session to Host isolation to deploy, or keep conversion inside the container."
+                .to_string(),
+        ])
+        .to_mcp_result());
+    }
+
+    let Some(files_val) = args.get("files") else {
+        return Ok(missing_param_error("files", ToolGroup::Media));
+    };
+    let files: Vec<crate::media_assist::DeployFile> =
+        match serde_json::from_value(files_val.clone()) {
+            Ok(files) => files,
+            Err(error) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("invalid files: {error}"),
+                    ToolGroup::Media,
+                )
+                .with_guidance(vec![
+                    "files must be an array of { path, content, base64? } objects.".to_string(),
+                    "Include at least manifest.json and run (or run.cmd on Windows).".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
+    match crate::media_assist::deploy_files(base_data_dir, &files) {
+        Ok(status) => {
+            let json = serde_json::to_value(&status).map_err(|e| e.to_string())?;
+            Ok(MCPResult {
+                content: Some(vec![MCPContent::Text {
+                    text: format!(
+                        "✓ MediaAssist plugin deployed to {}\nmodalities={:?}",
+                        status.path, status.modalities
+                    ),
+                }]),
+                structured_content: Some(json),
+                is_error: Some(false),
+            })
+        }
+        Err(error) => Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            error,
+            ToolGroup::Media,
+        )
+        .with_guidance(vec![
+            "Include both manifest.json (interfaceVersion=1) and an executable run script.".to_string(),
+            "Allowed paths: manifest.json, run (or run.exe/run.cmd/run.bat on Windows), README.md, fixtures/* only.".to_string(),
+            "Follow @skill:libragent-plugin verify before deploy. Deploy requires hard user approval (not YOLO-bypassable).".to_string(),
+        ])
+        .to_mcp_result()),
+    }
 }
 
 // ── Handler: captureScreen ───────────────────────────────────────────────────
@@ -769,5 +1067,191 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
         Err((category, err_msg)) => Ok(guided_error(category, err_msg, ToolGroup::Media)
             .with_guidance(screen_capture_guidance())
             .to_mcp_result()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session_isolation::PathMappingLayer;
+    use std::path::PathBuf;
+
+    #[test]
+    fn relative_local_path_joins_workspace() {
+        let workspace = PathBuf::from("/tmp/ws");
+        let resolved = resolve_local_path(Path::new("image.gif"), &workspace);
+        assert_eq!(resolved, workspace.join("image.gif"));
+    }
+
+    #[test]
+    fn docker_workdir_absolute_maps_like_workspace_tools() {
+        let host = PathBuf::from("/tmp/staging");
+        let mapper = PathMappingLayer::with_container_root(host.clone(), "/app");
+        assert_eq!(
+            mapper.container_to_host("/app/image.gif"),
+            Some(host.join("image.gif"))
+        );
+        assert_eq!(mapper.container_to_host("/logs/artifacts/x"), None);
+    }
+
+    #[test]
+    fn outside_workdir_error_is_permission_denied() {
+        let err = format!(
+            "Docker container path '/logs/x' is outside /app. Shell commands may access it, but {} /app paths to the host workspace.",
+            crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER
+        );
+        assert_eq!(
+            media_local_path_error_category(&err),
+            ErrorCategory::PermissionDenied
+        );
+    }
+
+    #[test]
+    fn looks_like_video_path_detects_common_containers() {
+        assert!(looks_like_video_path("/app/video.mp4"));
+        assert!(looks_like_video_path("clip.MKV?x=1"));
+        assert!(!looks_like_video_path("/app/audio.wav"));
+        assert!(!looks_like_video_path("/app/clip.webm")); // audio-capable for listenContent
+    }
+
+    #[test]
+    fn listen_content_recovery_for_video_mentions_extract_not_apt() {
+        let tips = listen_content_recovery("/app/video.mp4");
+        let joined = tips.join("\n");
+        assert!(joined.contains("ffmpeg"));
+        assert!(joined.contains("listenContent"));
+        assert!(joined.contains("seeContent"));
+        assert!(joined.to_lowercase().contains("do not apt-install"));
+    }
+
+    #[test]
+    fn listen_content_success_follow_ups_push_continue_after_load() {
+        let joined = listen_content_success_follow_ups().join("\n");
+        assert!(joined.to_lowercase().contains("attached"));
+        assert!(joined.to_lowercase().contains("not the task answer"));
+        assert!(joined.contains("seeContent"));
+        assert!(joined.to_lowercase().contains("before stopping"));
+
+        let text = SuccessHint::new(
+            "Audio loaded (1 KB, audio/wav)\n\nSource: /app/a.wav",
+            listen_content_success_follow_ups(),
+        )
+        .to_mcp_result();
+        let body = match text.content.as_ref().and_then(|c| c.first()) {
+            Some(MCPContent::Text { text }) => text.clone(),
+            _ => panic!("expected text content"),
+        };
+        assert!(body.starts_with("✓ Audio loaded"));
+        assert!(body.contains("💡 Suggested Follow-ups:"));
+        assert!(body.contains("seeContent"));
+    }
+
+    #[test]
+    fn listen_success_mcp_result_keeps_text_and_audio_parts() {
+        let mut result = SuccessHint::new(
+            "Audio loaded (1 KB, audio/wav)\n\nSource: /app/a.wav",
+            listen_content_success_follow_ups(),
+        )
+        .to_mcp_result();
+        assert!(
+            result.content.is_some(),
+            "SuccessHint::to_mcp_result must populate content"
+        );
+        result
+            .content
+            .get_or_insert_with(Vec::new)
+            .push(MCPContent::Audio {
+                data: Some("YQ==".to_string()),
+                uri: None,
+                mime_type: "audio/wav".to_string(),
+            });
+        let content = result.content.as_ref().expect("content");
+        assert_eq!(content.len(), 2);
+        assert!(matches!(&content[0], MCPContent::Text { text } if text.starts_with('✓')));
+        assert!(matches!(
+            &content[1],
+            MCPContent::Audio {
+                mime_type,
+                data: Some(_),
+                ..
+            } if mime_type == "audio/wav"
+        ));
+    }
+
+    #[test]
+    fn see_content_slot_allows_up_to_max_then_rejects() {
+        let counter = AtomicUsize::new(0);
+        let mut committed = Vec::new();
+        for _ in 0..MAX_SEE_CONTENT_SUCCESSES_PER_SESSION {
+            let slot = SeeContentSlot::try_reserve(&counter).expect("slot available");
+            slot.commit();
+            committed.push(());
+        }
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
+        );
+        assert!(SeeContentSlot::try_reserve(&counter).is_err());
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
+        );
+        let _ = committed;
+    }
+
+    #[test]
+    fn see_content_slot_releases_on_drop_without_commit() {
+        let counter = AtomicUsize::new(0);
+        {
+            let _slot = SeeContentSlot::try_reserve(&counter).expect("slot available");
+            assert_eq!(counter.load(Ordering::SeqCst), 1);
+        }
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+        let slot = SeeContentSlot::try_reserve(&counter).expect("slot available again");
+        slot.commit();
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn see_content_cap_recovery_mentions_listen_and_sample() {
+        let joined = see_content_cap_recovery().join("\n");
+        assert!(joined.contains(&MAX_SEE_CONTENT_SUCCESSES_PER_SESSION.to_string()));
+        assert!(joined.contains("listenContent"));
+        assert!(joined.to_lowercase().contains("sample"));
+    }
+
+    #[test]
+    fn see_tool_description_mentions_hard_session_limit() {
+        let tools = super::super::tools::all_tools();
+        let see = tools
+            .iter()
+            .find(|t| t.name == "seeContent")
+            .expect("seeContent tool");
+        assert!(see
+            .description
+            .contains(&MAX_SEE_CONTENT_SUCCESSES_PER_SESSION.to_string()));
+        assert!(see.description.contains("Hard session limit"));
+    }
+
+    #[test]
+    fn media_tool_descriptions_state_audio_vs_visual_role_boundary() {
+        let tools = super::super::tools::all_tools();
+        let see = tools
+            .iter()
+            .find(|t| t.name == "seeContent")
+            .expect("seeContent tool");
+        let listen = tools
+            .iter()
+            .find(|t| t.name == "listenContent")
+            .expect("listenContent tool");
+        assert!(see.description.contains("When to use:"));
+        assert!(see.description.contains("listenContent"));
+        assert!(see.description.to_lowercase().contains("not invent"));
+        assert!(listen.description.contains("When to use:"));
+        assert!(listen.description.contains("seeContent"));
+        assert!(listen
+            .description
+            .to_lowercase()
+            .contains("prefer this over inventing"));
     }
 }

@@ -97,7 +97,7 @@ Different from one-off delegation. Use when you need **team artifacts** and **Or
 
 Flow: `teamwork` scaffold → `org` create/spawn → resume from sidebar **Org** → change structure with `org-restructure`.
 
-- **Org** ≠ scheduled automation (`schedule`) ≠ in-session reminders (`session-schedule`)
+- **Org** ≠ scheduled automation (`schedule`) ≠ in-session clock reminders (`loop`) ≠ completion-signal resume (`call-me-back`)
 - Plain parent–child delegation alone does **not** show under **Org**
 
 ```

@@ -127,3 +127,19 @@ fn email_setup_strips_leading_utf8_bom() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn ig_cli_setup_strips_leading_utf8_bom() {
+    let script = bundled_skill_script("ig-cli", "setup.py");
+    let output = python_cmd()
+        .arg("-c")
+        .arg(load_sanitize_secret(&script))
+        .output()
+        .expect("python available");
+    assert!(
+        output.status.success(),
+        "sanitize_secret self-test failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

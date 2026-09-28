@@ -3,6 +3,7 @@ mod files;
 mod helpers;
 
 use super::super::edit_mode::LINE_ANCHORS_ENABLED;
+use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
@@ -243,10 +244,13 @@ impl WorkspaceServer {
                     format!("Path validation failed: {e}"),
                     ToolGroup::Workspace,
                 )
-                .guidance(vec![
-                    "Verify the file path is within allowed directories".to_string(),
-                    "Use workspace__listDirectory to see available files".to_string(),
-                ])
+                .guidance(path_validation_failure_guidance(
+                    &e,
+                    vec![
+                        "Verify the file path is within allowed directories".to_string(),
+                        "Use workspace__listDirectory to see available files".to_string(),
+                    ],
+                ))
                 .to_mcp_result());
             }
         };
