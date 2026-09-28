@@ -184,7 +184,7 @@ function MCPServersTab() {
           />
 
           <div
-            className={`border rounded-lg divide-y max-h-96 overflow-y-auto transition-opacity duration-200 ${isPending ? 'opacity-50' : 'opacity-100'}`}
+            className={`border rounded-lg divide-y max-h-96 overflow-y-auto no-scrollbar transition-opacity duration-200 ${isPending ? 'opacity-50' : 'opacity-100'}`}
             aria-busy={isPending}
           >
             {isPending && (
@@ -280,7 +280,7 @@ function AssistantDialog({
             Configure assistant settings, system prompt, and available tools
           </DialogDescription>
         </DialogHeader>
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto no-scrollbar min-h-0">
           {props.open ? <AssistantEditor initialTab={initialTab} /> : null}
         </div>
         <div className="flex-shrink-0 flex justify-end gap-2 px-6 py-4 border-t bg-muted/20">

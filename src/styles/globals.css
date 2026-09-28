@@ -432,4 +432,16 @@
     background: color-mix(in oklab, var(--foreground) 30%, transparent);
     background-clip: padding-box;
   }
+
+  /* Hide scrollbar completely but keep scroll functionality.
+   * TODO: Consider a project-wide default (e.g. base * { scrollbar-width: none })
+   * with .agent-chat-scrollbar as the opt-in for long content. Until then,
+   * apply .no-scrollbar or .agent-chat-scrollbar explicitly on overflow containers. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }

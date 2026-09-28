@@ -108,7 +108,7 @@ export function InputTokenDropdown({
     <ul
       role="listbox"
       aria-label="Input token suggestions"
-      className="absolute bottom-full left-0 mb-1 z-50 w-80 max-h-60 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md text-sm"
+      className="absolute bottom-full left-0 mb-1 z-50 w-80 max-h-60 overflow-y-auto no-scrollbar rounded-md border border-border bg-popover text-popover-foreground shadow-md text-sm"
     >
       {mode.kind === 'commands'
         ? mode.items.map((cmd, i) => (

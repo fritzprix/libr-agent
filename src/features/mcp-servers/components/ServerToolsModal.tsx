@@ -75,7 +75,7 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
         )}
 
         {!isLoading && !error && (
-          <div className="overflow-y-auto flex-1 min-h-0 pr-1">
+          <div className="overflow-y-auto no-scrollbar flex-1 min-h-0 pr-1">
             {tools.length === 0 ? (
               <p className="text-center py-8 text-muted-foreground text-sm">
                 {t('mcpServer.toolsModal.noTools')}

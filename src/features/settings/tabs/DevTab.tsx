@@ -301,7 +301,7 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
               {result.error}
             </pre>
           ) : (
-            <pre className="max-h-60 overflow-auto whitespace-pre-wrap">
+            <pre className="max-h-60 overflow-auto no-scrollbar whitespace-pre-wrap">
               {result.output}
             </pre>
           )}

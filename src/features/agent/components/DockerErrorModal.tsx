@@ -154,7 +154,7 @@ export function DockerErrorModal({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-md max-h-[85vh] overflow-x-hidden overflow-y-auto border-border bg-background shadow-2xl">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-md max-h-[85vh] overflow-x-hidden overflow-y-auto no-scrollbar border-border bg-background shadow-2xl">
         <DialogHeader className="items-center gap-3 text-center sm:text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-500 animate-pulse">
             <AlertTriangle className="h-6 w-6" />
@@ -219,7 +219,7 @@ export function DockerErrorModal({
                 />
               </button>
               {showDetails ? (
-                <pre className="mt-2 max-h-40 w-full min-w-0 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/60 p-2 font-mono text-[10px] text-muted-foreground leading-relaxed">
+                <pre className="mt-2 max-h-40 w-full min-w-0 overflow-auto agent-chat-scrollbar whitespace-pre-wrap break-all rounded bg-muted/60 p-2 font-mono text-[10px] text-muted-foreground leading-relaxed">
                   {errorDetails}
                 </pre>
               ) : null}

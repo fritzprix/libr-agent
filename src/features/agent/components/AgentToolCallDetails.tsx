@@ -67,7 +67,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
           <div className="text-xs font-medium text-muted-foreground mb-2">
             {t('agent.toolDetails.parameters', 'Parameters')}
           </div>
-          <div className="bg-muted/50 rounded p-2 w-full max-w-full min-w-0 max-h-96 overflow-y-auto">
+          <div className="bg-muted/50 rounded p-2 w-full max-w-full min-w-0 max-h-96 overflow-y-auto no-scrollbar">
             <pre className="text-xs font-mono w-full whitespace-pre-wrap break-all">
               {JSON.stringify(params, null, 2)}
             </pre>
@@ -87,7 +87,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
             <div
               className={cn(
                 'bg-destructive/10 border border-destructive/20 rounded p-3',
-                !containsUIResource && 'max-h-96 overflow-y-auto',
+                !containsUIResource && 'max-h-96 overflow-y-auto no-scrollbar',
               )}
             >
               <div className="flex items-start gap-2">
@@ -107,7 +107,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
                 'bg-background rounded border p-2',
                 !containsUIResource &&
                   !showStructuredResult &&
-                  'max-h-96 overflow-y-auto',
+                  'max-h-96 overflow-y-auto no-scrollbar',
               )}
             >
               {showStructuredResult ? (

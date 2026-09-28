@@ -61,7 +61,7 @@ export const TerminalOutputBlock: React.FC<TerminalOutputBlockProps> = ({
           <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
             {t('agent.toolStructured.stdout', 'stdout')}
           </div>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-zinc-100">
+          <pre className="max-h-64 overflow-auto agent-chat-scrollbar whitespace-pre-wrap break-all font-mono text-xs text-zinc-100">
             {data.stdout}
           </pre>
         </div>
@@ -72,7 +72,7 @@ export const TerminalOutputBlock: React.FC<TerminalOutputBlockProps> = ({
           <div className="mb-1 text-[10px] uppercase tracking-wide text-red-400/80">
             {t('agent.toolStructured.stderr', 'stderr')}
           </div>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-red-200">
+          <pre className="max-h-48 overflow-auto agent-chat-scrollbar whitespace-pre-wrap break-all font-mono text-xs text-red-200">
             {data.stderr}
           </pre>
         </div>

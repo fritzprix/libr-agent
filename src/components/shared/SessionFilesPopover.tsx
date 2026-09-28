@@ -184,7 +184,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
               {t('sessionFiles.noFiles', 'No saved files.')}
             </div>
           ) : (
-            <div className="max-h-64 overflow-y-auto">
+            <div className="max-h-64 overflow-y-auto no-scrollbar">
               {currentSessionFiles.map((file) => (
                 <DropdownMenuItem
                   key={
@@ -301,7 +301,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
                 </div>
               </div>
             ) : (
-              <div className="h-full overflow-auto rounded border bg-muted p-3">
+              <div className="h-full overflow-auto no-scrollbar rounded border bg-muted p-3">
                 <pre className="whitespace-pre-wrap font-mono text-xs">
                   {fileContent}
                 </pre>

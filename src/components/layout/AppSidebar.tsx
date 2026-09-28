@@ -371,7 +371,7 @@ export default function AppSidebar() {
             <SidebarGroupLabel className="mb-2 shrink-0 text-sm font-semibold uppercase tracking-wide">
               {t('sidebar.recentSessions')}
             </SidebarGroupLabel>
-            <div className="min-h-0 flex-1 overflow-y-auto terminal-scrollbar">
+            <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
               {/*
                 rootRef must be a descendant of the overflow container —
                 useInfiniteScroll's findScrollParent starts at parentElement.
