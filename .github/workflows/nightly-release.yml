@@ -55,7 +55,7 @@ jobs:
           # pyke's static ONNX Runtime needs glibc 2.38; this shared build does not.
           echo "ORT_LIB_PATH=${GITHUB_WORKSPACE}/src-tauri/onnxruntime-linux/lib" >> "$GITHUB_ENV"
           echo "ORT_PREFER_DYNAMIC_LINK=1" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/src-tauri/onnxruntime-linux/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/src-tauri/onnxruntime-linux/lib" >> "$GITHUB_ENV"
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable

@@ -1,22 +1,29 @@
+## [0.9.19] - 2026-09-28
+
+### 🐛 Fixes & Hardening
+
+- **AppImage on Ubuntu 22.04**: RPM files for ONNX Runtime now use `/usr/lib64/...`. The v0.9.18 release compiled and built the deb, then stopped before the AppImage because the RPM builder requires destination paths that start with `/`.
+
 ## [0.9.18] - 2026-09-28
 
 ### 🐛 Fixes & Hardening
 
 - **AppImage on Ubuntu 22.04**: Linux bundles link Microsoft's ONNX Runtime 1.28 shared library (glibc 2.27) instead of pyke's static build, which needs glibc 2.38 and stopped the v0.9.17 AppImage. The library is included in the AppImage, deb, and rpm packages. PipeWire 1.0 from the Jammy PPA and the relative `.DirIcon` stay in place.
+> **Note:** `v0.9.18` compiled on Ubuntu 22.04 and built the deb, then the RPM packager rejected paths that did not start with `/`. Use **v0.9.19** for the AppImage.
 
 ## [0.9.17] - 2026-09-28
 
 ### 🐛 Fixes & Hardening
 
 - **AppImage on Ubuntu 22.04**: The Linux build installs PipeWire 1.0 from the Jammy upstream PPA. Stock Ubuntu 22.04 PipeWire 0.3.48 cannot compile `pipewire-rs` 0.10, which stopped the v0.9.16 AppImage. Those PPA libraries depend on glibc 2.34, so the AppImage still launches on AppImageHub's Ubuntu 22.04 runner, and `.DirIcon` stays a relative symlink.
-> **Note:** `v0.9.17` Linux CI still failed: pyke's static ONNX Runtime needs glibc 2.38. Use **v0.9.18** for the AppImage.
+> **Note:** `v0.9.17` Linux CI still failed: pyke's static ONNX Runtime needs glibc 2.38. Use **v0.9.19** for the AppImage.
 
 ## [0.9.16] - 2026-09-28
 
 ### 🐛 Fixes & Hardening
 
 - **AppImage on Ubuntu 22.04**: Linux release and nightly bundles are built on Ubuntu 22.04 so the AppImage links against glibc 2.35. AppImageHub tests on Ubuntu 22.04; the Ubuntu 24.04 build required `GLIBC_2.39` and exited before it could show a window. The `.DirIcon` relative symlink from v0.9.14 remains in this build.
-> **Note:** `v0.9.16` Linux CI failed against Ubuntu 22.04's PipeWire 0.3.48. Use **v0.9.18** for the AppImage.
+> **Note:** `v0.9.16` Linux CI failed against Ubuntu 22.04's PipeWire 0.3.48. Use **v0.9.19** for the AppImage.
 
 ## [0.9.15] - 2026-09-28
 

@@ -94,8 +94,8 @@
       },
       "rpm": {
         "files": {
-          "usr/lib64/libonnxruntime.so.1": "onnxruntime-linux/lib/libonnxruntime.so.1",
-          "usr/lib64/libonnxruntime_providers_shared.so": "onnxruntime-linux/lib/libonnxruntime_providers_shared.so"
+          "/usr/lib64/libonnxruntime.so.1": "onnxruntime-linux/lib/libonnxruntime.so.1",
+          "/usr/lib64/libonnxruntime_providers_shared.so": "onnxruntime-linux/lib/libonnxruntime_providers_shared.so"
         }
       }
     },
