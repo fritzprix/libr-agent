@@ -4576,7 +4576,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libragent"
-version = "0.9.10"
+version = "0.9.12"
 dependencies = [
  "aes-gcm",
  "agent-response-guards",
@@ -4909,9 +4909,9 @@ checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "markdown2pdf"
-version = "1.6.0"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53382b6850cb77082bcf42629b0388a76447ff0b280f4fe71fcaf012715f1abb"
+checksum = "8388ca6fe67e3f791505f132ad24f5c2dbc94c3f4c2764f9c1c8c1f7c838f098"
 dependencies = [
  "clap",
  "hyphenation",
