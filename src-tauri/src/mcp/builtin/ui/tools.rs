@@ -122,7 +122,7 @@ pub fn report_result_tool() -> MCPTool {
                 (
                     "format".to_string(),
                     enum_prop(
-                        vec!["html", "markdown", "auto"],
+                        vec!["markdown", "auto"],
                         "auto",
                         Some("Result format. 'auto' defaults to Markdown"),
                     ),

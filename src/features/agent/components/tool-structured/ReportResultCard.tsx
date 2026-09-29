@@ -1,10 +1,12 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Check,
   CheckCircle2,
   AlertTriangle,
   XCircle,
   Package,
   ClipboardCheck,
+  Copy,
   ShieldCheck,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +19,7 @@ import {
   openWorkspaceFileWithDefaultApp,
 } from '@/lib/backend';
 import { getLogger } from '@/lib/logger';
+import { Button } from '@/components/ui/button';
 import { useOptionalAgentFilePreview } from '@/context/AgentFilePreviewContext';
 import { useOptionalAgentSessionState } from '@/context/AgentSessionContext';
 import type { ReportResultData } from './types';
@@ -29,6 +32,7 @@ import { canOpenInAppPreview } from '../workspace-panel/filePreview';
 import { cn } from '@/lib/utils';
 
 const logger = getLogger('ReportResultCard');
+const COPY_FEEDBACK_MS = 2000;
 
 export interface ReportResultCardProps {
   data: ReportResultData;
@@ -43,6 +47,17 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
   const sessionContext = useOptionalAgentSessionState();
   const filePreview = useOptionalAgentFilePreview();
   const activeSessionId = propSessionId || sessionContext?.session?.id;
+  const copyingRef = useRef(false);
+  const copiedResetTimeoutRef = useRef<number | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (copiedResetTimeoutRef.current !== null) {
+        window.clearTimeout(copiedResetTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const statusConfig = (() => {
     switch (data.status) {
@@ -163,6 +178,35 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
     [handleResultLinkClick],
   );
 
+  const handleCopyResult = useCallback(async () => {
+    if (!data.result || copyingRef.current) return;
+    copyingRef.current = true;
+    try {
+      await navigator.clipboard.writeText(data.result);
+      setCopied(true);
+      toast.success(
+        t('agent.toolStructured.resultCopied', 'Result copied'),
+      );
+      if (copiedResetTimeoutRef.current !== null) {
+        window.clearTimeout(copiedResetTimeoutRef.current);
+      }
+      copiedResetTimeoutRef.current = window.setTimeout(() => {
+        copiedResetTimeoutRef.current = null;
+        setCopied(false);
+      }, COPY_FEEDBACK_MS);
+    } catch (error) {
+      logger.error('Failed to copy reportResult body', error);
+      toast.error(
+        t('agent.toolStructured.copyResultError', 'Failed to copy result'),
+      );
+    } finally {
+      copyingRef.current = false;
+    }
+  }, [data.result, t]);
+
+  const showCriteriaProofGrid = Boolean(data.criteria || data.proof);
+  const showTwoColumnCriteriaProof = Boolean(data.criteria && data.proof);
+
   return (
     <div
       data-testid="tool-structured-report-result"
@@ -190,8 +234,14 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
       </div>
 
       {/* Acceptance Criteria & Verification Proof (optional) */}
-      {data.criteria || data.proof ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+      {showCriteriaProofGrid ? (
+        <div
+          data-testid="report-result-criteria-proof-grid"
+          className={cn(
+            'grid grid-cols-1 gap-3 text-xs',
+            showTwoColumnCriteriaProof && 'md:grid-cols-2',
+          )}
+        >
           {data.criteria ? (
             <div className="rounded-md border border-border/70 bg-muted/40 p-2.5 space-y-1.5">
               <div className="flex items-center gap-1.5 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">
@@ -203,8 +253,16 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
                   )}
                 </span>
               </div>
-              <div className="text-foreground/90 whitespace-pre-wrap leading-relaxed font-sans text-xs">
-                {data.criteria}
+              <div
+                data-testid="report-result-criteria"
+                className="prose dark:prose-invert max-w-none text-xs leading-relaxed text-foreground/90"
+              >
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={markdownComponents}
+                >
+                  {data.criteria}
+                </ReactMarkdown>
               </div>
             </div>
           ) : null}
@@ -220,8 +278,16 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
                   )}
                 </span>
               </div>
-              <div className="text-foreground/90 whitespace-pre-wrap leading-relaxed font-sans text-xs">
-                {data.proof}
+              <div
+                data-testid="report-result-proof"
+                className="prose dark:prose-invert max-w-none text-xs leading-relaxed text-foreground/90"
+              >
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={markdownComponents}
+                >
+                  {data.proof}
+                </ReactMarkdown>
               </div>
             </div>
           ) : null}
@@ -240,6 +306,30 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
           >
             {data.result}
           </ReactMarkdown>
+        </div>
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              void handleCopyResult();
+            }}
+            disabled={!data.result}
+            data-testid="report-result-copy-button"
+            aria-label={t(
+              'agent.toolStructured.copyResultAria',
+              'Copy result',
+            )}
+          >
+            {copied ? (
+              <Check className="mr-1 h-3.5 w-3.5" />
+            ) : (
+              <Copy className="mr-1 h-3.5 w-3.5" />
+            )}
+            {t('agent.toolStructured.copyResult', 'Copy')}
+          </Button>
         </div>
       </div>
 
