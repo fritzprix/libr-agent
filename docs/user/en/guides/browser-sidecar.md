@@ -14,7 +14,7 @@ Complex web pages or in-page script crashes will never compromise your desktop w
 
 - **Isolated Sandbox Execution**: Browser automation operates in an isolated background process separate from the main LibrAgent desktop app. Heavy memory consumption or browser crashes cannot freeze or crash your main application.
 - **Privacy Protection**: Uses a dedicated, clean browser profile completely isolated from your personal browser cookies, history, and login sessions by default.
-- **Optional imported profile**: Settings → System → Browser can import Default profiles from Chrome / Edge / Brave / Chromium / Vivaldi / Firefox on Windows, macOS, and Linux (explicit one-click import only). Chromium-family browsers copy User Data (cookies/logins); Firefox exports cookies for injection into Chromium automation. Agents may request it with `browser__createSession({ use_profile: true })`, which always requires explicit user confirmation (not bypassed by YOLO).
+- **Optional saved browser logins**: Settings → System → **Saved browser logins**. Close Chrome/Edge/Brave/Firefox completely (including the tray icon near the clock), then tap **Import from my browsers**. LibrAgent copies signed-in sessions into its own folder; your real browsers are unchanged. Agents may request them with `browser__createSession({ use_profile: true })`, which always asks for your confirmation (not bypassed by YOLO). (Internally this is stored as an imported browser profile — the Settings UI says “logins” on purpose.)
 
 ---
 

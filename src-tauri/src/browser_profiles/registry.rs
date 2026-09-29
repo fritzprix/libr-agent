@@ -258,6 +258,16 @@ pub fn remove_imported_profile(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Mark an imported profile as the one agents use with `use_profile: true`.
+pub fn set_default_imported_profile(name: &str) -> Result<(), String> {
+    let mut registry = load_registry()?;
+    if !registry.profiles.contains_key(name) {
+        return Err(format!("Imported browser profile '{name}' was not found."));
+    }
+    registry.default_profile = Some(name.to_string());
+    save_registry(&registry)
+}
+
 pub fn upsert_imported_profile(
     registry: &mut BrowserProfileRegistry,
     name: String,

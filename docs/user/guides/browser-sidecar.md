@@ -14,7 +14,7 @@ LibrAgent는 에이전트가 웹사이트를 탐색하고, 필요한 정보를 �
 
 - **독립된 샌드박스 실행**: 브라우저 자동화는 LibrAgent 데스크톱 앱 본체와 분리된 독립 프로세스에서 안전하게 실행됩니다. 웹페이지가 충돌하거나 과도한 메모리를 사용해도 앱 본체는 안전합니다.
 - **개인정보 완벽 보호**: 기본적으로 사용자의 개인 브라우저(쿠키, 로그인 세션, 방문 기록)와 완전히 분리된 깨끗한 전용 프로필을 사용합니다.
-- **선택적 프로필 가져오기**: 설정 → 시스템 → Browser에서 Chrome / Edge / Brave / Chromium / Vivaldi / Firefox 등 설치된 브라우저의 Default 프로필을 앱 로컬 저장소로 **원클릭으로만** 가져올 수 있습니다 (Windows / macOS / Linux). Chromium 계열은 User Data(쿠키·로그인)를 복사하고, Firefox는 쿠키만 가져와 Chromium 자동화 세션에 주입합니다. 에이전트가 `browser__createSession({ use_profile: true })`로 요청하면 YOLO에서도 생략되지 않는 명시적 사용자 확인이 필요합니다.
+- **선택적 저장된 브라우저 로그인**: 설정 → 시스템 → **저장된 브라우저 로그인**. Chrome/Edge/Brave/Firefox를 창과 트레이 아이콘까지 완전히 종료한 뒤 **내 브라우저에서 가져오기**를 누릅니다. LibrAgent 전용 폴더로만 복사하며 실제 브라우저는 바뀌지 않습니다. 에이전트가 `browser__createSession({ use_profile: true })`로 요청하면 YOLO에서도 생략되지 않는 명시적 확인이 필요합니다. (코드/레지스트리에서는 browser profile로 저장하지만, 설정 UI는 사용자에게 “로그인”이라고 표기합니다.)
 
 ---
 

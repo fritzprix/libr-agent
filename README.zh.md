@@ -1,4 +1,4 @@
-# 🤖 LibrAgent
+﻿# 🤖 LibrAgent
 
 > **一款本地优先的 AI 代理桌面应用：能调用真实工具、并行工作，而且控制权在你手里。**
 > _连接任意 LLM，接入任意 MCP 服务器，让代理读取文件、运行 Shell、浏览网页，并把自动化真正做完。_
@@ -13,7 +13,7 @@ LibrAgent 是一个基于 Tauri + Rust + React 构建的**本地优先代理工�
 
 你可以连接云模型，也可以连接像 Ollama 这样的本地运行时；导入你已经在用的 MCP 服务器；然后把代码检查、文件编辑、命令执行、网页浏览、知识沉淀和子任务委派交给代理，而不必把整套工作流交给别人的云端 VM。
 
-**从这里开始：**[下载最新版本](https://github.com/fritzprix/libr-agent/releases/latest) · [跳转到 5 分钟入门](#5-分钟入门路径) · [查看真实场景](#-真实使用场景)
+**从这里开始：**[下载最新版本](https://github.com/fritzprix/libr-agent/releases/latest) · [跳转到 5 分钟入门](#5-分钟入门路径) · [查看现实世界场景](#现实世界场景)
 
 ---
 
@@ -43,11 +43,17 @@ LibrAgent 想做的是人们真正想要的那个中间点：
 
 ---
 
-## 🎬 平台演示
+## 🎬 执行故事
 
-![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
+**LibrAgent 不是聊天应用，而是代理的执行环境。**
 
-_从单个代理到协调群集——递归委派、MCP 工具和持久工作空间在一个统一的底层架构中。_
+**一次会话。一个目标。在你机器上留下一份可保存的交付物。**
+
+1. 连接模型（API Key 或 [Ollama](https://ollama.com)）
+2. 用 **Workspace** 指向真实项目目录
+3. 让代理 **阅读、运行，并留下你能保留的文件** — 而不是停在对话框里的建议
+
+[下载最新版本](https://github.com/fritzprix/libr-agent/releases/latest) · [5 分钟入门](#5-分钟入门路径) · [Hero Demo Spec](docs/contributing/hero-demo-spec.md)
 
 ---
 
@@ -71,11 +77,7 @@ _从单个代理到协调群集——递归委派、MCP 工具和持久工作空
 - 直接问：_“跟踪这 5 个竞品博客，并每天早上给我总结”_
 - 把一次性任务变成定时管线
 
-### 4. 从一个助手扩展成一个真正的团队
-
-- 用 `teamwork` 搭建共享工作空间
-- 用 `delegate` 拆分工作
-- 用 `org` 或 `schedule` 将重复协作正式化
+> 多代理协作（`delegate` / `teamwork` / `org`）放在**第一个交付物跑通之后**，见下文「群集→团队→组织」。
 
 ---
 
@@ -85,10 +87,10 @@ _从单个代理到协调群集——递归委派、MCP 工具和持久工作空
 
 LibrAgent 将安全作为首要架构关注点：
 
-- **会话隔离**：每个代理会话都有自己的专用 `MCPServiceProxy` 实例——零跨会话数据泄漏
-- **内置 SecurityValidator**：在系统级别阻止路径遍历攻击和命令注入
+- **会话隔离**：每个代理会话拥有独立的工具运行时——跨会话零泄漏
+- **路径与命令防护**：在系统边界阻止路径遍历和命令注入
 - **无需云底层架构**：核心执行都在本地完成，外部连接也主要限于你选择使用的云端 LLM 提供商和远程 MCP/HTTP 服务，此外生产构建还可能检查新版本更新
-- **完全离线支持**：与 [Ollama](https://ollama.ai) 配对实现完全气隙隔离的代理堆栈
+- **完全离线支持**：与 [Ollama](https://ollama.com) 配对实现完全气隙隔离的代理堆栈
 
 #### 保留在本地 vs 离开你的机器
 
@@ -194,6 +196,7 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 
 ## 📖 文档和指南
 
+- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)**：60 秒产品叙事与 EN/KO/ZH 字幕表。
 - **[导航指南](docs/guides/navigation-guide.md)**：Command & Control 中心——`/assistants`(角色定义) 和 `/playbooks`(工作流程蓝图)。
 - **[架构指南](docs/architecture/agent-workflow-architecture.md)**：会话隔离、编排引擎和 Rust 驱动的 Think-Act-Observe 循环。
 - **[内置工具指南](docs/guides/builtin_tool_bp.md)**：工具设计标准和 MCP 响应模式。
@@ -226,7 +229,8 @@ pnpm tauri dev
 
 - 云端：粘贴 OpenAI / Anthropic / Gemini / Groq API 密钥
 - 本地：`ollama pull qwen3:14b` 然后在 Settings 中选择 Ollama
-  **第 2 步——添加 MCP 工具**（Extensions 侧边栏）
+
+**第 2 步——添加 MCP 工具**（Extensions 侧边栏）
 
 - 浏览预设目录并点击 Install，或
 - 告诉代理：*"Install @modelcontextprotocol/server-everything"*→ `tool-installer` 自动注册
@@ -234,7 +238,7 @@ pnpm tauri dev
 
 **第 3 步——创建你的第一个代理**
 
-- *"为竞争情报创建研究者代理"*→ 通过 Assistants 设置或 `agent__createAgent` 创建
+- *"为竞争情报创建研究者代理"*→ 通过 Assistants 设置创建
 - *"用我的当前工具构建研究团队"*→ `teamwork` 搭建角色和共享工作空间
 - *"运行并行研究子任务"*→ `delegate` 生成并监控子会话
 

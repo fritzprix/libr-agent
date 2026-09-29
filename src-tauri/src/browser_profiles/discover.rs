@@ -303,6 +303,19 @@ pub fn browser_default_priority(browser_id: &str) -> u8 {
     }
 }
 
+/// End-user label for a browser id (matches process detection labels).
+pub fn friendly_browser_label(browser_id: &str) -> &'static str {
+    match browser_id {
+        "chrome" | "chrome_beta" | "chrome_canary" => "Chrome",
+        "edge" | "edge_beta" | "edge_dev" => "Edge",
+        "brave" => "Brave",
+        "chromium" => "Chromium",
+        "vivaldi" => "Vivaldi",
+        "firefox" => "Firefox",
+        _ => "Browser",
+    }
+}
+
 fn scan_chromium_user_data_root(
     user_data_root: &Path,
     browser_id: &str,

@@ -17,10 +17,31 @@ export interface BrowserProfileInfo {
   isDefault: boolean;
 }
 
+/** Installed browser Default profile available to import (no filesystem paths). */
+export interface DiscoverableBrowserProfile {
+  name: string;
+  label: string;
+  browserId: string;
+  browserLabel: string;
+}
+
 export interface BrowserProfileImportReport {
   imported: string[];
   skipped: string[];
   warnings: string[];
+  /** Friendly browser names still open among import targets (e.g. Chrome, Edge). */
+  runningBrowsers?: string[];
+}
+
+export interface BrowserProfileImportReadiness {
+  ready: boolean;
+  runningBrowsers: string[];
+}
+
+export interface QuitBrowsersForImportReport {
+  attempted: string[];
+  stillRunning: string[];
+  ready: boolean;
 }
 
 /**
@@ -75,9 +96,70 @@ export async function listBrowserProfiles(): Promise<BrowserProfileInfo[]> {
   return safeInvoke<BrowserProfileInfo[]>('list_browser_profiles');
 }
 
-/** One-click import of installed browser profiles into app-local storage. */
-export async function importBrowserProfiles(): Promise<BrowserProfileImportReport> {
-  return safeInvoke<BrowserProfileImportReport>('import_browser_profiles');
+/** Lists installed browser Default profiles available to import. */
+export async function listDiscoverableBrowserProfiles(): Promise<
+  DiscoverableBrowserProfile[]
+> {
+  return safeInvoke<DiscoverableBrowserProfile[]>(
+    'list_discoverable_browser_profiles',
+  );
+}
+
+/**
+ * Whether cookie import can succeed for the selected profiles
+ * (or all installed Defaults when omitted).
+ */
+export async function checkBrowserProfileImportReady(
+  profileNames?: string[],
+): Promise<BrowserProfileImportReadiness> {
+  return safeInvoke<BrowserProfileImportReadiness>(
+    'check_browser_profile_import_ready',
+    {
+      profileNames:
+        profileNames && profileNames.length > 0 ? profileNames : null,
+    },
+  );
+}
+
+/**
+ * Quit locking browsers after explicit user consent.
+ * When `profileNames` is set, only quit browsers needed for those profiles.
+ * Only allowlisted browser processes are targeted (never WebView2).
+ */
+export async function quitBrowsersForProfileImport(
+  userConfirmed: boolean,
+  profileNames?: string[],
+): Promise<QuitBrowsersForImportReport> {
+  return safeInvoke<QuitBrowsersForImportReport>(
+    'quit_browsers_for_profile_import',
+    {
+      userConfirmed,
+      profileNames:
+        profileNames && profileNames.length > 0 ? profileNames : null,
+    },
+  );
+}
+
+/**
+ * Import selected browser profiles into app-local storage.
+ * When `profileNames` is omitted, all discoverable Default profiles are tried.
+ * `preferredDefault` marks that slug as the agent `use_profile` primary when imported.
+ */
+export async function importBrowserProfiles(options?: {
+  profileNames?: string[];
+  preferredDefault?: string;
+}): Promise<BrowserProfileImportReport> {
+  const profileNames = options?.profileNames;
+  return safeInvoke<BrowserProfileImportReport>('import_browser_profiles', {
+    profileNames:
+      profileNames && profileNames.length > 0 ? profileNames : null,
+    preferredDefault: options?.preferredDefault ?? null,
+  });
+}
+
+/** Choose which imported profile agents use with `use_profile: true`. */
+export async function setDefaultBrowserProfile(name: string): Promise<void> {
+  return safeInvoke<void>('set_default_browser_profile', { name });
 }
 
 /** Remove an imported browser profile and delete its app-local copy. */

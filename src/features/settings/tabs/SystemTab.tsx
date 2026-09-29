@@ -106,7 +106,10 @@ function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
 
       <div className="border-t pt-6">
         <h3 className="mb-4 text-lg font-medium text-foreground">
-          {t('settings.system.browserProfiles.sectionTitle', 'Browser')}
+          {t(
+            'settings.system.browserProfiles.sectionTitle',
+            'Saved browser logins',
+          )}
         </h3>
         <BrowserProfilesSettingsSection />
       </div>
