@@ -61,6 +61,13 @@ export {
   closeBrowserSession,
   listBrowserSessions,
   navigateToUrl,
+  listBrowserProfiles,
+  importBrowserProfiles,
+  removeBrowserProfile,
+} from './browser';
+export type {
+  BrowserProfileInfo,
+  BrowserProfileImportReport,
 } from './browser';
 
 // File operations

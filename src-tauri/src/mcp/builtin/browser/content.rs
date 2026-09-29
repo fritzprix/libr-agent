@@ -790,7 +790,13 @@ async fn fetch_url_via_headless(
     let fetch_session_id = format!("fetch-{}", Uuid::new_v4().simple());
 
     let create_state = match fetch_client
-        .create_session(&fetch_session_id, url, Some("Fetch Tool Session"), false)
+        .create_session(
+            &fetch_session_id,
+            url,
+            Some("Fetch Tool Session"),
+            false,
+            false,
+        )
         .await
     {
         Ok(state) => state,

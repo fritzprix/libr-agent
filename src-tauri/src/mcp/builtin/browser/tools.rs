@@ -14,19 +14,29 @@ pub fn create_session_tool() -> MCPTool {
                 "Call browser__createSession before other browser tools if no active session exists.",
                 "If a session already exists, browser__createSession closes it and starts a fresh one.",
                 "If url is omitted, the session opens https://www.google.com.",
+                "Set use_profile=true only when the user needs their imported browser cookies/logins; this requires explicit user confirmation and an imported profile from Settings.",
+                "Never invent or request filesystem profile paths — use_profile is a boolean only.",
             ],
             &[],
         )
         .to_string(),
         input_schema: object_prop(
-            vec![(
-                "url".to_string(),
-                string_prop(
-                    None,
-                    None,
-                    Some("Initial URL to open in the new active session."),
+            vec![
+                (
+                    "url".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Initial URL to open in the new active session."),
+                    ),
                 ),
-            )],
+                (
+                    "use_profile".to_string(),
+                    boolean_prop(Some(
+                        "When true, use the user's imported LibrAgent browser profile (cookies/logins from Chrome/Edge/Brave/Firefox import). Requires prior Settings import and explicit user confirmation. Default false = clean isolated profile.",
+                    )),
+                ),
+            ],
             vec![],
             None,
         ),

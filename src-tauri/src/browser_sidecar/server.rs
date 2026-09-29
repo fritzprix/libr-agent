@@ -1,8 +1,13 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
+use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
+use chromiumoxide::cdp::browser_protocol::network::{
+    CookieParam, CookieSameSite, SetCookiesParams, TimeSinceEpoch,
+};
 use chromiumoxide::cdp::browser_protocol::target::{
     CreateBrowserContextParams, CreateTargetParams,
 };
@@ -41,12 +46,27 @@ struct BrowserSidecarServer {
     sessions: Mutex<HashMap<String, SidecarSession>>,
     console_listeners: Mutex<HashMap<String, tokio::task::AbortHandle>>,
     dialog_listeners: Mutex<HashMap<String, tokio::task::AbortHandle>>,
+    /// Counts createSession calls between entry and session insert / early return.
+    /// Prevents profile-mode recycle from racing with another create that has not
+    /// registered a session yet.
+    creates_in_flight: AtomicUsize,
+}
+
+struct CreateSessionInFlightGuard<'a> {
+    counter: &'a AtomicUsize,
+}
+
+impl Drop for CreateSessionInFlightGuard<'_> {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl BrowserSidecarServer {
     fn new() -> Self {
         Self {
             runtime: BrowserRuntimeManager::new(),
+            creates_in_flight: AtomicUsize::new(0),
             sessions: Mutex::new(HashMap::new()),
             console_listeners: Mutex::new(HashMap::new()),
             dialog_listeners: Mutex::new(HashMap::new()),
@@ -188,44 +208,96 @@ impl BrowserSidecarServer {
         let params: CreateSessionParams = serde_json::from_value(params)
             .map_err(|e| format!("Invalid createSession params: {e}"))?;
 
-        let runtime = self.runtime.ensure_runtime(params.visible).await?;
+        self.creates_in_flight.fetch_add(1, Ordering::SeqCst);
+        let _in_flight = CreateSessionInFlightGuard {
+            counter: &self.creates_in_flight,
+        };
+
+        // Close this session id first so a profile-mode switch can recycle safely
+        // when no other sessions remain.
         self.close_existing_session_if_present(&params.session_id)
             .await?;
-        let context_id = match tokio::time::timeout(SESSION_TARGET_TIMEOUT, async {
-            runtime
-                .browser
-                .lock()
-                .await
-                .create_browser_context(CreateBrowserContextParams::default())
-                .await
-        })
-        .await
-        {
-            Ok(Ok(context_id)) => context_id,
-            Ok(Err(error)) => {
-                return Err(format!(
-                    "Failed to create isolated browser context: {error}"
-                ));
+
+        let imported_user_data_dir = if params.use_profile {
+            // Resolve inside the sidecar only — never accept paths from the wire protocol.
+            Some(crate::browser_profiles::resolve_default_imported_user_data_dir()?)
+        } else {
+            None
+        };
+        let use_imported_profile = imported_user_data_dir.is_some();
+
+        if let Some(current) = self.runtime.current_runtime().await {
+            if (!current.ephemeral) != use_imported_profile {
+                let has_other_sessions = {
+                    let sessions = self.sessions.lock().await;
+                    !sessions.is_empty()
+                };
+                // >1 means another createSession is mid-flight and has not inserted yet.
+                let other_creates_in_flight =
+                    self.creates_in_flight.load(Ordering::SeqCst) > 1;
+                if has_other_sessions || other_creates_in_flight {
+                    return Err(
+                        "Cannot switch browser profile mode while other browser sessions are active. Close them first.".to_string(),
+                    );
+                }
+                warn!(
+                    "Recycling browser runtime to switch profile mode (requested_imported={use_imported_profile})"
+                );
+                if let Some(old) = self.runtime.take_runtime().await {
+                    shutdown_runtime(old).await;
+                }
             }
-            Err(_) => {
-                return Err(format!(
-                    "Timed out creating isolated browser context after {}s",
-                    SESSION_TARGET_TIMEOUT.as_secs()
-                ));
-            }
+        }
+
+        let runtime = self
+            .runtime
+            .ensure_runtime(params.visible, imported_user_data_dir)
+            .await?;
+
+        // Imported profiles must use the default CDP context so cookies/logins
+        // from User Data/Default are visible. Ephemeral sessions stay isolated.
+        let context_id: Option<BrowserContextId> = if use_imported_profile {
+            None
+        } else {
+            let context_id = match tokio::time::timeout(SESSION_TARGET_TIMEOUT, async {
+                runtime
+                    .browser
+                    .lock()
+                    .await
+                    .create_browser_context(CreateBrowserContextParams::default())
+                    .await
+            })
+            .await
+            {
+                Ok(Ok(context_id)) => context_id,
+                Ok(Err(error)) => {
+                    return Err(format!(
+                        "Failed to create isolated browser context: {error}"
+                    ));
+                }
+                Err(_) => {
+                    return Err(format!(
+                        "Timed out creating isolated browser context after {}s",
+                        SESSION_TARGET_TIMEOUT.as_secs()
+                    ));
+                }
+            };
+            Some(context_id)
         };
 
         // Open about:blank first so createTarget does not block on a never-idle URL.
         // Navigation is bounded separately via goto_with_load_timeout.
         let page = match tokio::time::timeout(SESSION_TARGET_TIMEOUT, async {
+            let mut builder = CreateTargetParams::builder().url("about:blank");
+            if let Some(ref context_id) = context_id {
+                builder = builder.browser_context_id(context_id.clone());
+            }
             runtime
                 .browser
                 .lock()
                 .await
                 .new_page(
-                    CreateTargetParams::builder()
-                        .url("about:blank")
-                        .browser_context_id(context_id.clone())
+                    builder
                         .build()
                         .map_err(|e| format!("Failed to build browser target params: {e}"))?,
                 )
@@ -266,6 +338,20 @@ impl BrowserSidecarServer {
             }
             Err(error) => {
                 warn!("Failed to attach JS dialog auto-dismiss listener: {error}");
+            }
+        }
+
+        // Firefox imports store cookies as JSON for CDP injection (Chromium cannot load
+        // Firefox User Data). Inject before navigation so the first request is authenticated.
+        // Failure is hard: an empty session would look "logged in" but have no cookies.
+        if use_imported_profile {
+            if let Err(error) =
+                inject_imported_cookies_if_present(page.as_ref(), &runtime.user_data_dir).await
+            {
+                self.abort_session_listeners(&params.session_id).await;
+                let _ = page.as_ref().clone().close().await;
+                cleanup_failed_context_launch(runtime.browser.clone(), context_id.clone()).await;
+                return Err(error);
             }
         }
 
@@ -558,4 +644,75 @@ impl BrowserSidecarServer {
 fn extract_request_id_from_line(line: &str) -> Option<String> {
     let value = serde_json::from_str::<Value>(line).ok()?;
     value.get("id")?.as_str().map(ToString::to_string)
+}
+
+/// Inject cookies exported from Firefox (or other non-Chromium sources) via CDP.
+/// Uses `Network.setCookies` directly so it works while the page is still on about:blank.
+///
+/// Returns `Ok(())` when no inject file is present (Chromium User Data imports).
+/// Returns `Err` when an inject file exists but cookies cannot be applied — callers must
+/// abort the session rather than continuing without auth state.
+async fn inject_imported_cookies_if_present(
+    page: &chromiumoxide::Page,
+    user_data_dir: &std::path::Path,
+) -> Result<(), String> {
+    let Some(cookies) = crate::browser_profiles::read_inject_cookies_file(user_data_dir)? else {
+        return Ok(());
+    };
+    if cookies.is_empty() {
+        return Err(
+            "Imported Firefox cookie file is empty. Re-import the Firefox profile from Settings."
+                .to_string(),
+        );
+    }
+
+    let mut params = Vec::with_capacity(cookies.len());
+    for cookie in cookies {
+        let mut secure = cookie.secure;
+        let same_site = match cookie.same_site.as_deref() {
+            Some("Strict") => Some(CookieSameSite::Strict),
+            Some("Lax") => Some(CookieSameSite::Lax),
+            Some("None") => {
+                // Chromium requires Secure for SameSite=None.
+                secure = true;
+                Some(CookieSameSite::None)
+            }
+            _ => None,
+        };
+        let url = if secure && cookie.url.starts_with("http://") {
+            cookie.url.replacen("http://", "https://", 1)
+        } else {
+            cookie.url.clone()
+        };
+        params.push(CookieParam {
+            name: cookie.name,
+            value: cookie.value,
+            url: Some(url),
+            domain: Some(cookie.domain),
+            path: Some(cookie.path),
+            secure: Some(secure),
+            http_only: Some(cookie.http_only),
+            same_site,
+            expires: cookie.expires.map(TimeSinceEpoch::new),
+            priority: None,
+            same_party: None,
+            source_scheme: None,
+            source_port: None,
+            partition_key: None,
+        });
+    }
+
+    // Network.setCookies via Page::execute (generic CDP Command — not Runtime.evaluate).
+    // Same path chromiumoxide's Page::set_cookies uses internally.
+    const BATCH: usize = 100;
+    for chunk in params.chunks(BATCH) {
+        page.execute(SetCookiesParams::new(chunk.to_vec()))
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to inject imported Firefox cookies into the browser session: {e}. Re-import from Settings after closing Firefox."
+                )
+            })?;
+    }
+    Ok(())
 }

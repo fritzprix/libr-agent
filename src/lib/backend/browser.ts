@@ -8,6 +8,21 @@ import type { BrowserSession } from './types';
 // so logging and error handling remain consistent across the app.
 // ========================================
 
+export interface BrowserProfileInfo {
+  name: string;
+  label: string;
+  sourceLabel: string;
+  sourceBrowser: string;
+  importedAt: string;
+  isDefault: boolean;
+}
+
+export interface BrowserProfileImportReport {
+  imported: string[];
+  skipped: string[];
+  warnings: string[];
+}
+
 /**
  * Creates a new browser session controlled by the backend.
  * @param params The parameters for the new session, including the initial URL.
@@ -53,4 +68,19 @@ export async function navigateToUrl(
   url: string,
 ): Promise<string> {
   return safeInvoke<string>('navigate_to_url', { sessionId, url });
+}
+
+/** Lists imported browser profiles (names/labels only — no filesystem paths). */
+export async function listBrowserProfiles(): Promise<BrowserProfileInfo[]> {
+  return safeInvoke<BrowserProfileInfo[]>('list_browser_profiles');
+}
+
+/** One-click import of installed browser profiles into app-local storage. */
+export async function importBrowserProfiles(): Promise<BrowserProfileImportReport> {
+  return safeInvoke<BrowserProfileImportReport>('import_browser_profiles');
+}
+
+/** Remove an imported browser profile and delete its app-local copy. */
+export async function removeBrowserProfile(name: string): Promise<void> {
+  return safeInvoke<void>('remove_browser_profile', { name });
 }

@@ -27,6 +27,8 @@ pub(crate) struct SharedBrowserRuntime {
     pub(crate) handler_abort: tokio::task::AbortHandle,
     pub(crate) headed: bool,
     pub(crate) user_data_dir: PathBuf,
+    /// When true, `user_data_dir` is disposable and may be deleted on shutdown.
+    pub(crate) ephemeral: bool,
     pub(crate) console_logs: Arc<
         tokio::sync::RwLock<std::collections::HashMap<String, Vec<super::contracts::ConsoleEntry>>>,
     >,
@@ -39,12 +41,18 @@ pub(crate) struct BrowserRuntimeManager {
 
 enum RuntimeState {
     Uninitialized,
-    Starting { visible: bool, notify: Arc<Notify> },
+    Starting {
+        visible: bool,
+        use_imported_profile: bool,
+        notify: Arc<Notify>,
+    },
     Ready(SharedBrowserRuntime),
 }
 
 pub(crate) struct SidecarSession {
-    pub(crate) context_id: BrowserContextId,
+    /// Isolated CDP context for clean ephemeral sessions. `None` when using the
+    /// imported Default profile so cookies/logins from User Data are shared.
+    pub(crate) context_id: Option<BrowserContextId>,
     pub(crate) page: Arc<chromiumoxide::Page>,
 }
 
@@ -58,23 +66,50 @@ impl BrowserRuntimeManager {
     pub(crate) async fn ensure_runtime(
         &self,
         visible: bool,
+        imported_user_data_dir: Option<PathBuf>,
     ) -> Result<SharedBrowserRuntime, String> {
+        let use_imported_profile = imported_user_data_dir.is_some();
         loop {
             let maybe_notify = {
                 let mut state = self.state.lock().await;
-                match &*state {
+                enum ReadyDecision {
+                    Use(SharedBrowserRuntime),
+                    Reject(String),
+                }
+
+                let ready_decision = match &*state {
                     RuntimeState::Ready(runtime) => {
                         if runtime.headed != visible {
-                            return Err(format!(
+                            Some(ReadyDecision::Reject(format!(
                 "Browser runtime is already running in {} mode, but this session requested {} mode",
                 if runtime.headed { "visible" } else { "headless" },
                 if visible { "visible" } else { "headless" }
-              ));
+              )))
+                        } else if (!runtime.ephemeral) != use_imported_profile {
+                            Some(ReadyDecision::Reject(
+                                "Browser runtime is already running with a different profile mode. Close active browser sessions before switching between clean and imported profiles.".to_string(),
+                            ))
+                        } else {
+                            Some(ReadyDecision::Use(runtime.clone()))
                         }
-                        return Ok(runtime.clone());
+                    }
+                    _ => None,
+                };
+
+                if let Some(decision) = ready_decision {
+                    match decision {
+                        ReadyDecision::Use(runtime) => return Ok(runtime),
+                        ReadyDecision::Reject(error) => return Err(error),
+                    }
+                }
+
+                match &*state {
+                    RuntimeState::Ready(_) => {
+                        return Err("Browser runtime ready-state race".to_string());
                     }
                     RuntimeState::Starting {
                         visible: current_visible,
+                        use_imported_profile: current_imported,
                         notify,
                     } => {
                         if *current_visible != visible {
@@ -84,12 +119,19 @@ impl BrowserRuntimeManager {
                 if visible { "visible" } else { "headless" }
               ));
                         }
+                        if *current_imported != use_imported_profile {
+                            return Err(
+                                "Browser runtime is already starting with a different profile mode"
+                                    .to_string(),
+                            );
+                        }
                         Some(notify.clone())
                     }
                     RuntimeState::Uninitialized => {
                         let notify = Arc::new(Notify::new());
                         *state = RuntimeState::Starting {
                             visible,
+                            use_imported_profile,
                             notify: notify.clone(),
                         };
                         None
@@ -102,7 +144,7 @@ impl BrowserRuntimeManager {
                 continue;
             }
 
-            let launch_result = launch_runtime(visible).await;
+            let launch_result = launch_runtime(visible, imported_user_data_dir.clone()).await;
             let mut state = self.state.lock().await;
             let notify = match std::mem::replace(&mut *state, RuntimeState::Uninitialized) {
                 RuntimeState::Starting { notify, .. } => notify,
@@ -150,14 +192,30 @@ impl BrowserRuntimeManager {
     }
 }
 
-async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
+async fn launch_runtime(
+    visible: bool,
+    imported_user_data_dir: Option<PathBuf>,
+) -> Result<SharedBrowserRuntime, String> {
     let executable = resolve_browser_executable().await?;
-    let user_data_dir = create_browser_runtime_profile_dir().await?;
+    let ephemeral = imported_user_data_dir.is_none();
+    let user_data_dir = if let Some(path) = imported_user_data_dir {
+        let path = crate::browser_profiles::ensure_under_profiles_storage(&path)?;
+        if !path.is_dir() {
+            return Err(
+                "Imported browser profile directory is missing. Re-import from Settings."
+                    .to_string(),
+            );
+        }
+        path
+    } else {
+        create_browser_runtime_profile_dir().await?
+    };
     emit_sidecar_diagnostic(format!(
-        "Launching Chromium automation runtime in {} mode with executable: {} (profile: {})",
+        "Launching Chromium automation runtime in {} mode with executable: {} (profile: {}, ephemeral={})",
         if visible { "visible" } else { "headless" },
         executable.display(),
-        user_data_dir.display()
+        user_data_dir.display(),
+        ephemeral
     ));
     let mut builder = BrowserConfig::builder()
         .chrome_executable(executable)
@@ -168,7 +226,9 @@ async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
     let config = match builder.build() {
         Ok(config) => config,
         Err(error) => {
-            cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+            if ephemeral {
+                cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+            }
             return Err(format!("Failed to build browser config: {error}"));
         }
     };
@@ -181,7 +241,9 @@ async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
                     if visible { "visible" } else { "headless" },
                     error
                 ));
-                cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+                if ephemeral {
+                    cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+                }
                 return Err(format!(
                     "Failed to launch Chromium automation session: {error}"
                 ));
@@ -192,7 +254,9 @@ async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
                     BROWSER_LAUNCH_TIMEOUT,
                     if visible { "visible" } else { "headless" }
                 ));
-                cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+                if ephemeral {
+                    cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+                }
                 return Err(format!(
                     "Chromium automation launch timed out after {}s",
                     BROWSER_LAUNCH_TIMEOUT.as_secs()
@@ -213,6 +277,7 @@ async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
         handler_abort: handler_task.abort_handle(),
         headed: visible,
         user_data_dir,
+        ephemeral,
         console_logs: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
     })
 }
@@ -332,8 +397,11 @@ pub(crate) async fn cleanup_browser_runtime_profile_dir(user_data_dir: &Path) {
 
 pub(crate) async fn cleanup_failed_context_launch(
     browser: Arc<Mutex<Browser>>,
-    context_id: BrowserContextId,
+    context_id: Option<BrowserContextId>,
 ) {
+    let Some(context_id) = context_id else {
+        return;
+    };
     if let Err(error) = browser
         .lock()
         .await
@@ -372,24 +440,26 @@ pub(crate) async fn cleanup_session_resources(
         }
     }
 
-    let context_close = tokio::time::timeout(SESSION_CLEANUP_TIMEOUT, async {
-        browser
-            .lock()
-            .await
-            .dispose_browser_context(session.context_id)
-            .await
-    })
-    .await;
-    match context_close {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => cleanup_errors.push(format!(
-            "Failed to dispose browser context for session {}: {}",
-            session_id, error
-        )),
-        Err(_) => cleanup_errors.push(format!(
-            "Timed out after {:?} while disposing browser context for session {}",
-            SESSION_CLEANUP_TIMEOUT, session_id
-        )),
+    if let Some(context_id) = session.context_id {
+        let context_close = tokio::time::timeout(SESSION_CLEANUP_TIMEOUT, async {
+            browser
+                .lock()
+                .await
+                .dispose_browser_context(context_id)
+                .await
+        })
+        .await;
+        match context_close {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => cleanup_errors.push(format!(
+                "Failed to dispose browser context for session {}: {}",
+                session_id, error
+            )),
+            Err(_) => cleanup_errors.push(format!(
+                "Timed out after {:?} while disposing browser context for session {}",
+                SESSION_CLEANUP_TIMEOUT, session_id
+            )),
+        }
     }
 
     if cleanup_errors.is_empty() {
@@ -440,5 +510,12 @@ pub(crate) async fn shutdown_runtime(runtime: SharedBrowserRuntime) {
     }
 
     runtime.handler_abort.abort();
-    cleanup_browser_runtime_profile_dir(&runtime.user_data_dir).await;
+    if runtime.ephemeral {
+        cleanup_browser_runtime_profile_dir(&runtime.user_data_dir).await;
+    } else {
+        debug!(
+            "Preserving imported browser profile directory: {}",
+            runtime.user_data_dir.display()
+        );
+    }
 }
