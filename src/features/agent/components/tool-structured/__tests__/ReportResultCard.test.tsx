@@ -189,4 +189,104 @@ describe('ReportResultCard', () => {
       expect(openExternalUrlMock).toHaveBeenCalledWith('https://example.com/docs');
     });
   });
+
+  it('renders criteria and proof as markdown', () => {
+    render(
+      <ReportResultCard
+        data={{
+          ...sampleData,
+          criteria: '- **pass** unit tests',
+          proof: 'Ran `cargo test`',
+          deliverables: [],
+        }}
+      />,
+    );
+
+    const criteria = screen.getByTestId('report-result-criteria');
+    expect(criteria.querySelector('strong')).toHaveTextContent('pass');
+    expect(criteria.querySelector('li')).toBeInTheDocument();
+
+    const proof = screen.getByTestId('report-result-proof');
+    expect(proof.querySelector('code')).toHaveTextContent('cargo test');
+  });
+
+  it('uses a single-column criteria/proof grid when only one field is present', () => {
+    render(
+      <ReportResultCard
+        data={{
+          ...sampleData,
+          proof: undefined,
+          deliverables: [],
+        }}
+      />,
+    );
+
+    const grid = screen.getByTestId('report-result-criteria-proof-grid');
+    expect(grid.className).toContain('grid-cols-1');
+    expect(grid.className).not.toContain('md:grid-cols-2');
+  });
+
+  it('uses a two-column criteria/proof grid when both fields are present', () => {
+    render(<ReportResultCard data={{ ...sampleData, deliverables: [] }} />);
+
+    const grid = screen.getByTestId('report-result-criteria-proof-grid');
+    expect(grid.className).toContain('md:grid-cols-2');
+  });
+
+  it('copies the raw result body to the clipboard', async () => {
+    const { toast } = await import('sonner');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(
+      <ReportResultCard
+        data={{ ...sampleData, deliverables: [] }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('report-result-copy-button'));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(sampleData.result);
+    });
+    expect(toast.success).toHaveBeenCalled();
+  });
+
+  it('toasts an error when clipboard copy fails', async () => {
+    const { toast } = await import('sonner');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new Error('denied')),
+      },
+    });
+
+    render(
+      <ReportResultCard
+        data={{ ...sampleData, deliverables: [] }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('report-result-copy-button'));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalled();
+    });
+  });
+
+  it('shows a not-found tooltip with explanation for missing deliverables', () => {
+    render(<ReportResultCard data={sampleData} sessionId="session-test-123" />);
+
+    const badge = screen.getByTestId('deliverable-not-found');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute(
+      'title',
+      expect.stringMatching(/could not be found in the workspace/i),
+    );
+  });
 });

@@ -16,6 +16,11 @@ import { toast } from 'sonner';
 import { openPathWithDefaultApp, downloadWorkspaceFile } from '@/lib/backend';
 import { getLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useOptionalAgentFilePreview } from '@/context/AgentFilePreviewContext';
 import { useOptionalAgentSessionState } from '@/context/AgentSessionContext';
 import type { DeliverableItem } from './types';
@@ -180,10 +185,27 @@ export const DeliverableFileActions: React.FC<DeliverableFileActionsProps> = ({
               </span>
             ) : null}
             {!item.exists ? (
-              <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
-                <AlertTriangle className="h-3 w-3" />
-                {t('agent.toolStructured.fileNotFound', 'Not found')}
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    data-testid="deliverable-not-found"
+                    title={t(
+                      'agent.toolStructured.fileNotFoundHint',
+                      'This file was expected but could not be found in the workspace. The agent may have written to a different location, or the workspace may have changed since the report was generated.',
+                    )}
+                    className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive"
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                    {t('agent.toolStructured.fileNotFound', 'Not found')}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-balance">
+                  {t(
+                    'agent.toolStructured.fileNotFoundHint',
+                    'This file was expected but could not be found in the workspace. The agent may have written to a different location, or the workspace may have changed since the report was generated.',
+                  )}
+                </TooltipContent>
+              </Tooltip>
             ) : null}
           </div>
           <p className="font-mono text-[11px] text-muted-foreground break-all mt-0.5">
