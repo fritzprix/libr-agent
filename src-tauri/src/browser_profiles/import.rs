@@ -575,12 +575,12 @@ fn detect_running_browser_names() -> Vec<&'static str> {
 
     #[cfg(windows)]
     {
-        return windows_browser_names_from_tasklist(&blob);
+        windows_browser_names_from_tasklist(&blob)
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        return unix_browser_names_from_ps(&blob);
+        unix_browser_names_from_ps(&blob)
     }
 
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -594,7 +594,8 @@ fn detect_running_browser_names() -> Vec<&'static str> {
 /// Important: never substring-match `msedge` — `msedgewebview2.exe` (WebView2) is common on
 /// Windows (including Tauri apps) and does **not** lock Chrome/Edge profile Cookies.
 ///
-/// Kept available on all targets so unit tests can cover the WebView2 false-positive case.
+/// Compiled on Windows and under `cfg(test)` so unit tests cover the WebView2 false-positive case.
+#[cfg(any(windows, test))]
 fn windows_browser_names_from_tasklist(blob: &str) -> Vec<&'static str> {
     let lower = blob.to_ascii_lowercase();
     let mut names = Vec::new();
@@ -638,11 +639,27 @@ fn unix_browser_names_from_ps(blob: &str) -> Vec<&'static str> {
     }
 
     // Linux Google Chrome often appears as a bare `chrome` process (not chromium).
-    if !names.iter().any(|n| *n == "Chrome" || *n == "Chromium") && lower.contains("chrome") {
+    // Match exact process basename only — never substring-match (avoids chromedriver).
+    if !names.iter().any(|n| *n == "Chrome" || *n == "Chromium")
+        && unix_blob_has_exact_basename(&lower, "chrome")
+    {
         names.push("Chrome");
     }
 
     names
+}
+
+/// True when any process line's executable basename equals `basename` (case already lowered).
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn unix_blob_has_exact_basename(blob_lower: &str, basename: &str) -> bool {
+    blob_lower.lines().any(|line| {
+        let exe = line.split_whitespace().next().unwrap_or("").trim();
+        if exe.is_empty() {
+            return false;
+        }
+        let base = exe.rsplit('/').next().unwrap_or(exe);
+        base == basename
+    })
 }
 
 /// Quit allowlisted browser processes for the friendly labels in `browsers`.
@@ -760,9 +777,10 @@ fn linux_process_names(browsers: &[String]) -> Vec<&'static str> {
     let mut out = Vec::new();
     for name in browsers {
         // Exact basenames for `pkill -x` only (never `-f` cmdline match).
-        // Prefer packaged names; omit bare "chrome" so we never target chromedriver/etc.
+        // Include bare `chrome` — Google Chrome often uses that process name on Linux.
+        // `pkill -x chrome` does not match `chromedriver` (different basename).
         let names: &[&str] = match name.as_str() {
-            "Chrome" => &["google-chrome", "google-chrome-stable"],
+            "Chrome" => &["google-chrome", "google-chrome-stable", "chrome"],
             "Edge" => &["microsoft-edge", "microsoft-edge-stable", "msedge"],
             "Brave" => &["brave-browser", "brave"],
             "Chromium" => &["chromium", "chromium-browser"],
@@ -866,6 +884,33 @@ mod tests {
 "#;
         let names = windows_browser_names_from_tasklist(mixed);
         assert_eq!(names, vec!["Chrome", "Edge"]);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn unix_detects_bare_chrome_basename_but_not_chromedriver() {
+        let bare = "/opt/google/chrome/chrome --type=renderer\n";
+        assert_eq!(unix_browser_names_from_ps(bare), vec!["Chrome"]);
+
+        let driver = "/usr/bin/chromedriver --port=9515\n";
+        assert!(
+            unix_browser_names_from_ps(driver).is_empty(),
+            "chromedriver must not be treated as Chrome"
+        );
+
+        let chromium = "/usr/lib/chromium/chromium --type=zygote\n";
+        assert_eq!(unix_browser_names_from_ps(chromium), vec!["Chromium"]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_chrome_quit_targets_include_bare_chrome() {
+        let names = linux_process_names(&["Chrome".to_string()]);
+        assert!(
+            names.contains(&"chrome"),
+            "quit path must pkill bare chrome when detection reports Chrome: {names:?}"
+        );
+        assert!(names.contains(&"google-chrome") || names.contains(&"google-chrome-stable"));
     }
 
     #[test]

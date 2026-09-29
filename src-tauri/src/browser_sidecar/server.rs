@@ -227,7 +227,7 @@ impl BrowserSidecarServer {
         let use_imported_profile = imported_user_data_dir.is_some();
 
         if let Some(current) = self.runtime.current_runtime().await {
-            if (!current.ephemeral) != use_imported_profile {
+            if current.ephemeral == use_imported_profile {
                 let has_other_sessions = {
                     let sessions = self.sessions.lock().await;
                     !sessions.is_empty()

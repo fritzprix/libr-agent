@@ -29,9 +29,9 @@ pub async fn list_browser_profiles() -> Result<Vec<BrowserProfileInfo>, String> 
 #[tauri::command]
 pub async fn list_discoverable_browser_profiles()
 -> Result<Vec<DiscoverableBrowserProfile>, String> {
-    Ok(tokio::task::spawn_blocking(list_discoverable_browser_profiles_impl)
+    tokio::task::spawn_blocking(list_discoverable_browser_profiles_impl)
         .await
-        .map_err(|e| format!("Discoverable browser list failed: {e}"))?)
+        .map_err(|e| format!("Discoverable browser list failed: {e}"))
 }
 
 /// Check whether cookie import can succeed for the selected profiles (or all if omitted).

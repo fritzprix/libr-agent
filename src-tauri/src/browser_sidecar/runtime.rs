@@ -85,7 +85,7 @@ impl BrowserRuntimeManager {
                 if runtime.headed { "visible" } else { "headless" },
                 if visible { "visible" } else { "headless" }
               )))
-                        } else if (!runtime.ephemeral) != use_imported_profile {
+                        } else if runtime.ephemeral == use_imported_profile {
                             Some(ReadyDecision::Reject(
                                 "Browser runtime is already running with a different profile mode. Close active browser sessions before switching between clean and imported profiles.".to_string(),
                             ))
