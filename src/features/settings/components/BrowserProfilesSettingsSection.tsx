@@ -125,36 +125,40 @@ export function BrowserProfilesSettingsSection() {
     } catch (error) {
       logger.error('Failed to check browser import readiness', error);
       setRunningBrowsers([]);
-      return true;
+      return false;
     } finally {
       setCheckingReady(false);
     }
   }, [selectedNames]);
 
   const toggleSelected = (name: string, checked: boolean) => {
-    setSelectedNames((prev) => {
-      if (checked) {
-        return prev.includes(name) ? prev : [...prev, name];
-      }
-      return prev.filter((n) => n !== name);
-    });
-    if (checked) {
+    setSelectedNames((prevSelected) => {
+      const nextSelected = checked
+        ? prevSelected.includes(name)
+          ? prevSelected
+          : [...prevSelected, name]
+        : prevSelected.filter((n) => n !== name);
+
       // Prefer the newly checked browser when nothing is preferred yet,
-      // or when the previous preferred was unchecked.
-      setPreferredDefault((prev) => {
-        if (prev === null || prev === name) {
-          return name;
+      // or when the previous preferred is no longer in the selection.
+      setPreferredDefault((prevPreferred) => {
+        if (checked) {
+          if (prevPreferred === null || prevPreferred === name) {
+            return name;
+          }
+          if (!nextSelected.includes(prevPreferred)) {
+            return name;
+          }
+          return prevPreferred;
         }
-        if (!selectedNames.includes(prev)) {
-          return name;
+        if (prevPreferred === name) {
+          return nextSelected[0] ?? null;
         }
-        return prev;
+        return prevPreferred;
       });
-    }
-    if (!checked && preferredDefault === name) {
-      const remaining = selectedNames.filter((n) => n !== name);
-      setPreferredDefault(remaining[0] ?? null);
-    }
+
+      return nextSelected;
+    });
   };
 
   const runImport = async () => {
