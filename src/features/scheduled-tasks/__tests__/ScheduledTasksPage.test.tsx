@@ -98,6 +98,21 @@ vi.mock('@/features/scheduled-tasks/components/ScheduledTaskModal', () => ({
     ) : null,
 }));
 
+// Keep page-level wiring covered without racing React.lazy + recipes barrel on Windows CI.
+vi.mock('@/features/recipes', () => ({
+  MorningBriefingWalkthroughDialog: ({
+    open,
+  }: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open ? (
+      <div role="dialog" data-testid="morning-briefing-walkthrough-dialog">
+        recipes.morningBriefing.modalTitle
+      </div>
+    ) : null,
+}));
+
 vi.mock('@/context/AssistantContext', () => ({
   useAssistantContext: () => ({
     assistants: [{ id: 'ast-1', name: 'Test Assistant' }],
@@ -294,12 +309,8 @@ test('ScheduledTasksPage renders open walkthrough button and opens dialog when c
 
   fireEvent.click(walkthroughButton);
 
-  await waitFor(() => {
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /recipes\.morningBriefing\.modalTitle|모닝 테크 & 금융 브리핑 세팅/,
-      ),
-    ).toBeInTheDocument();
-  });
+  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  expect(
+    screen.getByText('recipes.morningBriefing.modalTitle'),
+  ).toBeInTheDocument();
 });
