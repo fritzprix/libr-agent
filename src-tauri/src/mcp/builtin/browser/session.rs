@@ -70,6 +70,10 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     let service = server.get_browser_service()?;
     let url_param = args.get("url").and_then(|v| v.as_str());
     let url = url_param.unwrap_or("https://www.google.com");
+    let use_profile = args
+        .get("use_profile")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     // Check if a session already exists. If so, close it to ensure a fresh session.
     // This allows "resetting" the session if it gets into a bad state.
@@ -101,6 +105,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             url,
             Some(&format!("Agent {}", server.agent_session_id)),
             true,
+            use_profile,
         )
         .await
     {

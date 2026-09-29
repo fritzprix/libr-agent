@@ -4,6 +4,7 @@ use tauri::Manager;
 use crate::services::InteractiveBrowserServer;
 
 pub mod agent; // pub for integration tests (cancel_logic.rs)
+pub mod browser_profiles;
 pub mod browser_sidecar;
 pub mod commands; // Make public for integration tests
 mod config;
@@ -56,6 +57,11 @@ use commands::assistant_crud_commands::{
 };
 use commands::attachments_commands::delete_attachments;
 use commands::browser_commands::*;
+use commands::browser_profile_commands::{
+    check_browser_profile_import_ready, import_browser_profiles, list_browser_profiles,
+    list_discoverable_browser_profiles, open_browser_profile_for_signin,
+    quit_browsers_for_profile_import, remove_browser_profile, set_default_browser_profile,
+};
 use commands::dataset_commands::export_dataset;
 use commands::download_commands::{
     download_binary_file, download_media_file, download_text_file, download_text_pdf,
@@ -275,6 +281,14 @@ pub fn run() {
                 execute_script,
                 navigate_back,
                 navigate_forward,
+                list_browser_profiles,
+                list_discoverable_browser_profiles,
+                check_browser_profile_import_ready,
+                quit_browsers_for_profile_import,
+                import_browser_profiles,
+                set_default_browser_profile,
+                remove_browser_profile,
+                open_browser_profile_for_signin,
                 // OAuth 2.1 Authentication commands
                 has_oauth_token,
                 get_oauth_token,

@@ -61,6 +61,21 @@ export {
   closeBrowserSession,
   listBrowserSessions,
   navigateToUrl,
+  listBrowserProfiles,
+  listDiscoverableBrowserProfiles,
+  checkBrowserProfileImportReady,
+  quitBrowsersForProfileImport,
+  importBrowserProfiles,
+  setDefaultBrowserProfile,
+  removeBrowserProfile,
+  openBrowserProfileForSignIn,
+} from './browser';
+export type {
+  BrowserProfileInfo,
+  DiscoverableBrowserProfile,
+  BrowserProfileImportReport,
+  BrowserProfileImportReadiness,
+  QuitBrowsersForImportReport,
 } from './browser';
 
 // File operations

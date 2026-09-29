@@ -1,4 +1,4 @@
-# 🤖 LibrAgent
+﻿# 🤖 LibrAgent
 
 > **Uma app de desktop local-first para agentes de IA que usam ferramentas reais, trabalham em paralelo e ficam sob o teu controlo.**
 > _Liga qualquer LLM, adiciona qualquer servidor MCP e deixa os agentes ler ficheiros, executar shells, navegar na web e concluir automatizações a sério._
@@ -13,7 +13,7 @@ LibrAgent é um **workspace de agentes local-first** construído com Tauri + Rus
 
 Podes ligar modelos cloud ou runtimes locais como Ollama, importar servidores MCP das ferramentas que já usas e depois deixar os agentes inspecionar código, editar ficheiros, executar comandos, navegar na web, capturar conhecimento e delegar subtarefas — sem mandar o teu workflow inteiro para a VM cloud de outra pessoa.
 
-**Começa aqui:** [Descarregar a release mais recente](https://github.com/fritzprix/libr-agent/releases/latest) · [Ir para o percurso de integração de 5 minutos](#o-percurso-de-integração-de-5-minutos) · [Ver cenários reais](#-cenários-reais)
+**Começa aqui:** [Descarregar a release mais recente](https://github.com/fritzprix/libr-agent/releases/latest) · [Ir para o percurso de integração de 5 minutos](#o-percurso-de-integração-de-5-minutos) · [Ver cenários do mundo real](#cenários-do-mundo-real)
 
 ---
 
@@ -43,11 +43,17 @@ O LibrAgent aponta ao meio-termo que as pessoas realmente querem:
 
 ---
 
-## 🎬 A plataforma em ação
+## 🎬 História de execução
 
-![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
+**O LibrAgent não é uma app de chat. É um ambiente de execução para agentes.**
 
-_De um único agente a um enxame coordenado — delegação recursiva, ferramentas MCP e espaço de trabalho persistente num substrato unificado._
+**Uma sessão. Um objetivo. Um entregável que fica na tua máquina.**
+
+1. Liga um modelo (API key ou [Ollama](https://ollama.com))
+2. Aponta o **Workspace** para uma pasta de projeto real
+3. Pede ao agente para **ler, executar e deixar um ficheiro que guardas** — não uma sugestão presa num balão
+
+[Descarregar a release mais recente](https://github.com/fritzprix/libr-agent/releases/latest) · [Percurso de 5 minutos](#o-percurso-de-integração-de-5-minutos) · [Hero Demo Spec](docs/contributing/hero-demo-spec.md)
 
 ---
 
@@ -71,11 +77,7 @@ _De um único agente a um enxame coordenado — delegação recursiva, ferrament
 - Pede: _"Segue estes 5 blogs de concorrentes e resume-me isto todas as manhãs"_
 - Converte uma tarefa pontual numa pipeline agendada
 
-### 4. Passar de um assistente para uma equipa a sério
-
-- Scaffoldea um workspace partilhado com `teamwork`
-- Divide o trabalho com `delegate`
-- Formaliza colaboração recorrente com `org` ou `schedule`
+> Colaboração multi-agente (`delegate` / `teamwork` / `org`) vem **depois do primeiro entregável** — ver « Enxame → Equipa → Organização » abaixo.
 
 ---
 
@@ -85,10 +87,10 @@ _De um único agente a um enxame coordenado — delegação recursiva, ferrament
 
 O LibrAgent trata a segurança como uma preocupação arquitetónica de primeira classe:
 
-- **Isolamento de sessão**: Cada sessão de agente recebe a sua própria instância dedicada `MCPServiceProxy` — zero fugas de dados entre sessões
-- **SecurityValidator integrado**: Ataques de traversal de caminhos e injeção de comandos bloqueados ao nível do sistema
+- **Isolamento de sessão**: cada sessão de agente tem o seu próprio runtime de ferramentas — sem fugas entre sessões
+- **Proteção de caminhos e comandos**: traversal e injeção bloqueados na fronteira do sistema
 - **Nenhum substrato cloud necessário**: A execução principal acontece localmente; as ligações externas ficam sobretudo limitadas aos fornecedores LLM cloud e aos serviços remotos MCP/HTTP que escolhas usar, além das verificações de atualização em builds de produção
-- **Suporte offline completo**: Combina com [Ollama](https://ollama.ai) para um stack de agentes completamente isolado
+- **Suporte offline completo**: Combina com [Ollama](https://ollama.com) para um stack de agentes completamente isolado
 
 #### O que fica local vs o que sai da tua máquina
 
@@ -194,6 +196,7 @@ _Importante: `bootstrap` é uma capacidade integrada frequentemente usada com es
 
 ## 📖 Documentação e guias
 
+- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)**: história de produto de 60s e legendas EN/KO/ZH.
 - **[Guia de navegação](docs/guides/navigation-guide.md)**: O hub Command & Control — `/assistants` (Definições de papéis) e `/playbooks` (Blueprints de workflow).
 - **[Guia de arquitetura](docs/architecture/agent-workflow-architecture.md)**: Isolamento de sessão, motor de orquestração e o ciclo Think-Act-Observe orientado por Rust.
 - **[Guia de ferramentas integradas](docs/guides/builtin_tool_bp.md)**: Padrões de design de ferramentas e padrões de resposta MCP.
@@ -226,7 +229,8 @@ pnpm tauri dev
 
 - Nuvem: cola uma chave de API OpenAI / Anthropic / Gemini / Groq
 - Local: `ollama pull qwen3:14b` e depois seleciona Ollama nas Settings
-  **Passo 2 — Adiciona ferramentas MCP** (barra lateral Extensions)
+
+**Passo 2 — Adiciona ferramentas MCP** (barra lateral Extensions)
 
 - Navega no catálogo de presets e clica em Instalar, ou
 - Diz a um agente: _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` regista-o automaticamente
@@ -234,7 +238,7 @@ pnpm tauri dev
 
 **Passo 3 — Cria o teu primeiro agente**
 
-- _"Cria um agente investigador para inteligência competitiva"_ → cria via Assistants ou `agent__createAgent`
+- _"Cria um agente investigador para inteligência competitiva"_ → cria via Assistants
 - _"Constrói uma equipa de investigação com as minhas ferramentas atuais"_ → `teamwork` scaffold papéis e workspace partilhado
 - _"Executa subtarefas de investigação em paralelo"_ → `delegate` inicia e monitoriza sessões filhas
 

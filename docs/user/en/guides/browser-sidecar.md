@@ -13,7 +13,8 @@ LibrAgent empowers agents to browse the web, search and extract live information
 Complex web pages or in-page script crashes will never compromise your desktop workspace:
 
 - **Isolated Sandbox Execution**: Browser automation operates in an isolated background process separate from the main LibrAgent desktop app. Heavy memory consumption or browser crashes cannot freeze or crash your main application.
-- **Privacy Protection**: Uses a dedicated, clean browser profile completely isolated from your personal browser cookies, history, and login sessions.
+- **Privacy Protection**: Uses a dedicated, clean browser profile completely isolated from your personal browser cookies, history, and login sessions by default.
+- **Optional saved browser logins**: Settings → System → **Saved browser logins**. Import from **Chrome, Edge, or Brave** into LibrAgent’s **private copy** (your everyday browser is unchanged — agents do not attach to it). Import may reuse some sessions; for **Google**, if login fails or you see “browser may not be secure”, tap **Open to sign in**, log in once in LibrAgent’s Chrome window, then close it. Agents request that copy with `browser__createSession({ use_profile: true })` (always confirmed; not bypassed by YOLO). Firefox is not supported.
 
 ---
 
