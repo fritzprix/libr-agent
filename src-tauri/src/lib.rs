@@ -59,8 +59,8 @@ use commands::attachments_commands::delete_attachments;
 use commands::browser_commands::*;
 use commands::browser_profile_commands::{
     check_browser_profile_import_ready, import_browser_profiles, list_browser_profiles,
-    list_discoverable_browser_profiles, quit_browsers_for_profile_import,
-    remove_browser_profile, set_default_browser_profile,
+    list_discoverable_browser_profiles, open_browser_profile_for_signin,
+    quit_browsers_for_profile_import, remove_browser_profile, set_default_browser_profile,
 };
 use commands::dataset_commands::export_dataset;
 use commands::download_commands::{
@@ -288,6 +288,7 @@ pub fn run() {
                 import_browser_profiles,
                 set_default_browser_profile,
                 remove_browser_profile,
+                open_browser_profile_for_signin,
                 // OAuth 2.1 Authentication commands
                 has_oauth_token,
                 get_oauth_token,

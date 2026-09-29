@@ -14,8 +14,11 @@ pub fn create_session_tool() -> MCPTool {
                 "Call browser__createSession before other browser tools if no active session exists.",
                 "If a session already exists, browser__createSession closes it and starts a fresh one.",
                 "If url is omitted, the session opens https://www.google.com.",
-                "Set use_profile=true only when the user needs their imported browser cookies/logins; this requires explicit user confirmation and an imported profile from Settings.",
+                "Set use_profile=true only when the user needs their LibrAgent saved browser logins (Chrome/Edge/Brave copy in Settings); requires explicit user confirmation. Prefer Open to sign in for Google.",
                 "Never invent or request filesystem profile paths — use_profile is a boolean only.",
+                "If Google shows 'browser may not be secure', tell the user to use Settings → Saved browser logins → Open to sign in (manual login in real Chrome), then retry use_profile.",
+                "Saved logins are an app-local Chromium copy — not the user's everyday browser window. Firefox is not supported for use_profile.",
+                "If createSession fails with a profile-mode switch error, retry once; leftover sessions from another chat are recycled automatically on retry.",
             ],
             &[],
         )
@@ -33,7 +36,7 @@ pub fn create_session_tool() -> MCPTool {
                 (
                     "use_profile".to_string(),
                     boolean_prop(Some(
-                        "When true, use the user's imported LibrAgent browser profile (cookies/logins from Chrome/Edge/Brave/Firefox import). Requires prior Settings import and explicit user confirmation. Default false = clean isolated profile.",
+                        "When true, use the user's LibrAgent Chromium saved-login copy (Settings import; Open to sign in for Google if needed). Requires explicit confirmation. Default false = clean isolated profile.",
                     )),
                 ),
             ],

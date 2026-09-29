@@ -1,8 +1,8 @@
 use crate::browser_profiles::{
-    delete_imported_browser_profile,
-    import_browser_profiles as import_browser_profiles_impl,
+    delete_imported_browser_profile, import_browser_profiles as import_browser_profiles_impl,
     list_discoverable_browser_profiles as list_discoverable_browser_profiles_impl,
     list_imported_profiles, list_running_browsers_for_import, list_running_browsers_for_profiles,
+    open_imported_profile_for_signin as open_imported_profile_for_signin_impl,
     quit_browsers_for_profile_import as quit_browsers_for_profile_import_impl,
     set_default_browser_profile as set_default_browser_profile_impl, BrowserProfileInfo,
     DiscoverableBrowserProfile, ImportReport, QuitBrowsersReport,
@@ -13,7 +13,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserProfileImportReadiness {
-    /// True when no targeted Chromium/Firefox processes that lock cookies were detected.
+    /// True when no targeted Chromium-family processes that lock cookies were detected.
     pub ready: bool,
     /// Friendly names such as "Chrome", "Edge" — scoped to the selected profiles when provided.
     pub running_browsers: Vec<String>,
@@ -27,8 +27,8 @@ pub async fn list_browser_profiles() -> Result<Vec<BrowserProfileInfo>, String> 
 
 /// Lists installed browser Default profiles available to import (no filesystem paths).
 #[tauri::command]
-pub async fn list_discoverable_browser_profiles()
--> Result<Vec<DiscoverableBrowserProfile>, String> {
+pub async fn list_discoverable_browser_profiles() -> Result<Vec<DiscoverableBrowserProfile>, String>
+{
     tokio::task::spawn_blocking(list_discoverable_browser_profiles_impl)
         .await
         .map_err(|e| format!("Discoverable browser list failed: {e}"))
@@ -107,4 +107,14 @@ pub async fn remove_browser_profile(name: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || delete_imported_browser_profile(&name_for_task))
         .await
         .map_err(|e| format!("Browser profile remove task failed: {e}"))?
+}
+
+/// Open the imported Chromium profile in system Chrome for manual Google/site sign-in (no CDP).
+#[tauri::command]
+pub async fn open_browser_profile_for_signin(name: String) -> Result<(), String> {
+    info!("Command: open_browser_profile_for_signin name={name}");
+    let name_for_task = name.clone();
+    tokio::task::spawn_blocking(move || open_imported_profile_for_signin_impl(&name_for_task))
+        .await
+        .map_err(|e| format!("Open browser profile for sign-in task failed: {e}"))?
 }

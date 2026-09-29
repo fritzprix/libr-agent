@@ -20,6 +20,7 @@ import {
   quitBrowsersForProfileImport,
   removeBrowserProfile,
   setDefaultBrowserProfile,
+  openBrowserProfileForSignIn,
   type BrowserProfileInfo,
   type DiscoverableBrowserProfile,
 } from '@/lib/backend/browser';
@@ -55,6 +56,7 @@ export function BrowserProfilesSettingsSection() {
   const [quitting, setQuitting] = useState(false);
   const [settingDefault, setSettingDefault] = useState<string | null>(null);
   const [removingName, setRemovingName] = useState<string | null>(null);
+  const [signingInName, setSigningInName] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<DialogMode>('closed');
   const [runningBrowsers, setRunningBrowsers] = useState<string[]>([]);
   const [profilePendingRemoval, setProfilePendingRemoval] = useState<{
@@ -217,7 +219,7 @@ export function BrowserProfilesSettingsSection() {
         setStatusMessage(
           t(
             'settings.system.browserProfiles.importNoneFound',
-            'No supported browser profiles were found on this computer. Install Chrome, Edge, Brave, or Firefox and sign in there first.',
+            'No supported browser profiles were found. Install Chrome, Edge, or Brave and sign in there first.',
           ),
         );
         return;
@@ -378,12 +380,41 @@ export function BrowserProfilesSettingsSection() {
     }
   };
 
+  const handleOpenForSignIn = async (name: string) => {
+    setSigningInName(name);
+    setStatusMessage(null);
+    try {
+      await openBrowserProfileForSignIn(name);
+      setStatusTone('ok');
+      setStatusMessage(
+        t(
+          'settings.system.browserProfiles.signInOpened',
+          'Chrome opened for this LibrAgent login. Sign in to Google (and any other sites) in that window, then close it. Agents can reuse those logins after you approve.',
+        ),
+      );
+    } catch (error) {
+      logger.error('Failed to open browser profile for sign-in', error);
+      setStatusTone('error');
+      const message =
+        error instanceof Error
+          ? error.message
+          : t(
+              'settings.system.browserProfiles.signInError',
+              'Could not open Chrome for sign-in. Install Google Chrome or Microsoft Edge and try again.',
+            );
+      setStatusMessage(message);
+    } finally {
+      setSigningInName(null);
+    }
+  };
+
   const busy =
     importing ||
     removingName !== null ||
     checkingReady ||
     quitting ||
-    settingDefault !== null;
+    settingDefault !== null ||
+    signingInName !== null;
 
   const selectedBrowserLabels = selectedProfiles.map((p) => p.browserLabel);
   const confirmBrowserList =
@@ -400,7 +431,7 @@ export function BrowserProfilesSettingsSection() {
         <p className="text-xs text-muted-foreground leading-relaxed">
           {t(
             'settings.system.browserProfiles.description',
-            'Copy your signed-in sessions from Chrome, Edge, Brave, or Firefox into LibrAgent so the agent can use sites you already use — only after you approve each time.',
+            'Copies Chrome/Edge/Brave into a LibrAgent-only profile (not your everyday browser). Import may reuse some sessions; for Google, use Open to sign in if needed. Agents use this copy only after you approve.',
           )}
         </p>
       </div>
@@ -576,6 +607,26 @@ export function BrowserProfilesSettingsSection() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                {profile.importKind !== 'firefox_cookies' ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={busy}
+                    onClick={() => void handleOpenForSignIn(profile.name)}
+                  >
+                    {signingInName === profile.name
+                      ? t(
+                          'settings.system.browserProfiles.signingIn',
+                          'Opening…',
+                        )
+                      : t(
+                          'settings.system.browserProfiles.openToSignIn',
+                          'Open to sign in',
+                        )}
+                  </Button>
+                ) : null}
                 {!profile.isDefault ? (
                   <Button
                     type="button"

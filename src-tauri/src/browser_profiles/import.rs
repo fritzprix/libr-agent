@@ -8,10 +8,9 @@ use super::discover::{
     browser_default_priority, discover_browser_profiles, friendly_browser_label,
     DiscoveredBrowserProfile, ProfileEngine,
 };
-use super::firefox::export_firefox_cookies_to_profile;
 use super::registry::{
     imported_profile_user_data_dir, load_registry, remove_imported_profile, save_registry,
-    set_default_imported_profile, upsert_imported_profile, ImportedProfile, ImportKind,
+    set_default_imported_profile, upsert_imported_profile, ImportKind, ImportedProfile,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -148,9 +147,7 @@ pub fn quit_browsers_for_profile_import(
 
     // Resolve wanted labels once from slugs — no filesystem discovery on each poll.
     let wanted_labels: Option<Vec<String>> = match &profile_names {
-        Some(names) if !names.is_empty() => {
-            Some(friendly_labels_for_profile_names(names, &[]))
-        }
+        Some(names) if !names.is_empty() => Some(friendly_labels_for_profile_names(names, &[])),
         _ => None,
     };
 
@@ -195,10 +192,10 @@ pub fn quit_browsers_for_profile_import(
     })
 }
 
-/// One-click / Settings import: copy Default profiles from each installed browser.
+/// One-click / Settings import: copy Default profiles from Chromium-family browsers
+/// (Chrome / Edge / Brave / …) into LibrAgent app-local storage.
 ///
-/// - Chromium family (Chrome/Edge/Brave/…): full User Data copy (cookies + Local State).
-/// - Firefox: cookie export for CDP injection (automation remains Chromium-based).
+/// Firefox is not supported (see issue #1952 non-goals).
 ///
 /// `profile_names`: when set, only those discoverable slugs are imported (e.g. `edge_default`).
 /// `preferred_default`: registry key to mark as the agent `use_profile` default when imported.
@@ -229,10 +226,7 @@ pub fn import_browser_profiles(
         return Ok(ImportReport {
             imported: vec![],
             skipped: vec![],
-            warnings: vec![
-                "No matching Chrome/Edge/Brave/Chromium/Firefox Default profiles were found."
-                    .to_string(),
-            ],
+            warnings: vec!["No matching Chrome/Edge/Brave Default profiles were found.".to_string()],
             running_browsers: list_running_browsers_for_labels(&wanted_labels),
         });
     }
@@ -338,10 +332,10 @@ fn import_one_profile(
             let (dest, warnings) = import_chromium_profile_atomically(profile)?;
             Ok((dest, ImportKind::ChromiumUserData, warnings))
         }
-        ProfileEngine::FirefoxCookies => {
-            let (dest, warnings) = import_firefox_profile_atomically(profile)?;
-            Ok((dest, ImportKind::FirefoxCookies, warnings))
-        }
+        ProfileEngine::FirefoxCookies => Err(
+            "Firefox import is not supported. Import Chrome, Edge, or Brave instead (Settings → Saved browser logins)."
+                .to_string(),
+        ),
     }
 }
 
@@ -350,11 +344,8 @@ fn import_chromium_profile_atomically(
     profile: &DiscoveredBrowserProfile,
 ) -> Result<(PathBuf, Vec<String>), String> {
     let dest_user_data = imported_profile_user_data_dir(&profile.name)?;
-    let staging_user_data = dest_user_data.with_file_name(format!(
-        "{}.staging-{}",
-        profile.name,
-        std::process::id()
-    ));
+    let staging_user_data =
+        dest_user_data.with_file_name(format!("{}.staging-{}", profile.name, std::process::id()));
     let backup_user_data = dest_user_data.with_file_name(format!("{}.bak", profile.name));
 
     cleanup_dir_if_exists(&staging_user_data)?;
@@ -366,7 +357,10 @@ fn import_chromium_profile_atomically(
     let staging_default = staging_user_data.join("Default");
     let copy_result = (|| {
         let mut warnings = copy_profile_directory(&profile.profile_dir, &staging_default)?;
-        warnings.extend(copy_local_state(&profile.user_data_root, &staging_user_data)?);
+        warnings.extend(copy_local_state(
+            &profile.user_data_root,
+            &staging_user_data,
+        )?);
         validate_imported_auth_material(
             &profile.profile_dir,
             &profile.user_data_root,
@@ -384,34 +378,6 @@ fn import_chromium_profile_atomically(
     };
 
     finalize_atomic_replace(&dest_user_data, &staging_user_data, &backup_user_data)?;
-    Ok((dest_user_data, warnings))
-}
-
-fn import_firefox_profile_atomically(
-    profile: &DiscoveredBrowserProfile,
-) -> Result<(PathBuf, Vec<String>), String> {
-    let dest_user_data = imported_profile_user_data_dir(&profile.name)?;
-    let staging_user_data = dest_user_data.with_file_name(format!(
-        "{}.staging-{}",
-        profile.name,
-        std::process::id()
-    ));
-    let backup_user_data = dest_user_data.with_file_name(format!("{}.bak", profile.name));
-
-    cleanup_dir_if_exists(&staging_user_data)?;
-    cleanup_dir_if_exists(&backup_user_data)?;
-
-    let (_, mut warnings) =
-        export_firefox_cookies_to_profile(&profile.profile_dir, &staging_user_data).inspect_err(
-            |_| {
-                let _ = std::fs::remove_dir_all(&staging_user_data);
-            },
-        )?;
-
-    finalize_atomic_replace(&dest_user_data, &staging_user_data, &backup_user_data)?;
-    warnings.push(
-        "Firefox cookies will be injected into Chromium when use_profile=true.".to_string(),
-    );
     Ok((dest_user_data, warnings))
 }
 
@@ -442,8 +408,12 @@ fn finalize_atomic_replace(
 
 fn cleanup_dir_if_exists(path: &Path) -> Result<(), String> {
     if path.exists() {
-        std::fs::remove_dir_all(path)
-            .map_err(|e| format!("Failed to clear temporary directory {}: {e}", path.display()))?;
+        std::fs::remove_dir_all(path).map_err(|e| {
+            format!(
+                "Failed to clear temporary directory {}: {e}",
+                path.display()
+            )
+        })?;
     }
     Ok(())
 }
@@ -500,8 +470,7 @@ fn validate_imported_auth_material(
         ));
     }
 
-    if (source_had_auth || source_had_local_state)
-        && !dest_user_data.join("Local State").is_file()
+    if (source_had_auth || source_had_local_state) && !dest_user_data.join("Local State").is_file()
     {
         let lock_hint = running_chromium_browser_lock_hint().unwrap_or_else(|| {
             "Your browser is still open or finishing in the background.".to_string()
@@ -520,10 +489,7 @@ fn running_chromium_browser_lock_hint() -> Option<String> {
     if running.is_empty() {
         return None;
     }
-    Some(format!(
-        "Still open: {}.",
-        running.join(", ")
-    ))
+    Some(format!("Still open: {}.", running.join(", ")))
 }
 
 /// Snapshot of running process names/args for browser lock detection.
@@ -705,7 +671,9 @@ fn quit_allowlisted_browser_processes(browsers: &[String]) {
         }
         std::thread::sleep(std::time::Duration::from_millis(800));
         for app in macos_app_names(browsers) {
-            let _ = std::process::Command::new("killall").args(["-9", app]).output();
+            let _ = std::process::Command::new("killall")
+                .args(["-9", app])
+                .output();
         }
     }
 
@@ -915,10 +883,8 @@ mod tests {
 
     #[test]
     fn copies_profile_tree_and_local_state_atomically() {
-        let tmp = std::env::temp_dir().join(format!(
-            "libragent_profile_atomic_{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("libragent_profile_atomic_{}", std::process::id()));
         let source_root = tmp.join("User Data");
         let source_default = source_root.join("Default");
         let dest_root = tmp.join("chrome_default");
@@ -961,7 +927,11 @@ mod tests {
         fs::write(source_default.join("Network").join("Cookies"), b"data").unwrap();
         fs::write(source_root.join("Local State"), b"{}").unwrap();
         fs::create_dir_all(dest.join("Default").join("Network")).unwrap();
-        fs::write(dest.join("Default").join("Network").join("Cookies"), b"data").unwrap();
+        fs::write(
+            dest.join("Default").join("Network").join("Cookies"),
+            b"data",
+        )
+        .unwrap();
 
         assert!(validate_imported_auth_material(&source_default, &source_root, &dest).is_err());
 

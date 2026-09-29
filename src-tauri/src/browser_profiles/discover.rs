@@ -5,27 +5,30 @@ use std::path::{Path, PathBuf};
 pub enum ProfileEngine {
     /// Full Chromium User Data tree (`--user-data-dir`).
     ChromiumUserData,
-    /// Firefox cookies exported for CDP injection into a Chromium session.
+    /// Legacy Firefox cookie inject — no longer discovered or newly imported.
     FirefoxCookies,
 }
 
 /// A browser profile detected on the host (source paths only; never shown to agents).
 #[derive(Debug, Clone)]
 pub struct DiscoveredBrowserProfile {
-    /// Stable slug used as registry key (`chrome_default`, `edge_default`, `firefox_default`, …).
+    /// Stable slug used as registry key (`chrome_default`, `edge_default`, …).
     pub name: String,
-    /// Human-readable label (`Chrome Default`, `Firefox Default`, …).
+    /// Human-readable label (`Chrome Default`, `Edge Default`, …).
     pub label: String,
-    /// Stable browser id (`chrome`, `edge`, `brave`, `firefox`, …).
+    /// Stable browser id (`chrome`, `edge`, `brave`, …).
     pub browser_id: String,
     pub engine: ProfileEngine,
-    /// Absolute path to the profile directory (Chromium `…/Default`, Firefox profile folder).
+    /// Absolute path to the Chromium profile directory (e.g. `…/Default`).
     pub profile_dir: PathBuf,
-    /// Chromium User Data root, or Firefox profile root (same as `profile_dir` for Firefox).
+    /// Chromium User Data root (`--user-data-dir`).
     pub user_data_root: PathBuf,
 }
 
-/// Discover installed browser Default profiles for this OS (Chromium family + Firefox).
+/// Discover installed Chromium-family Default profiles (Chrome / Edge / Brave / …).
+///
+/// Firefox is intentionally unsupported: automation runs Chromium, and cookie-only
+/// inject cannot reliably preserve Google sessions.
 pub fn discover_chrome_profiles() -> Vec<DiscoveredBrowserProfile> {
     discover_browser_profiles()
 }
@@ -42,7 +45,6 @@ pub fn discover_browser_profiles() -> Vec<DiscoveredBrowserProfile> {
             candidate.display_name,
         ));
     }
-    profiles.extend(discover_firefox_profiles());
 
     // Prefer earlier candidates (native before Snap/Flatpak) when the same slug appears twice.
     let mut seen = std::collections::HashSet::new();
@@ -141,12 +143,7 @@ fn chromium_user_data_candidates() -> Vec<ChromiumRootCandidate> {
                     "Chrome Canary",
                     support.join("Google/Chrome Canary"),
                 );
-                push_chromium(
-                    &mut roots,
-                    "edge",
-                    "Edge",
-                    support.join("Microsoft Edge"),
-                );
+                push_chromium(&mut roots, "edge", "Edge", support.join("Microsoft Edge"));
                 push_chromium(
                     &mut roots,
                     "edge_beta",
@@ -165,29 +162,14 @@ fn chromium_user_data_candidates() -> Vec<ChromiumRootCandidate> {
                     "Brave",
                     support.join("BraveSoftware/Brave-Browser"),
                 );
-                push_chromium(
-                    &mut roots,
-                    "chromium",
-                    "Chromium",
-                    support.join("Chromium"),
-                );
-                push_chromium(
-                    &mut roots,
-                    "vivaldi",
-                    "Vivaldi",
-                    support.join("Vivaldi"),
-                );
+                push_chromium(&mut roots, "chromium", "Chromium", support.join("Chromium"));
+                push_chromium(&mut roots, "vivaldi", "Vivaldi", support.join("Vivaldi"));
             }
         }
         "linux" => {
             if let Some(home) = dirs::home_dir() {
                 let config = home.join(".config");
-                push_chromium(
-                    &mut roots,
-                    "chrome",
-                    "Chrome",
-                    config.join("google-chrome"),
-                );
+                push_chromium(&mut roots, "chrome", "Chrome", config.join("google-chrome"));
                 push_chromium(
                     &mut roots,
                     "chrome_beta",
@@ -200,18 +182,8 @@ fn chromium_user_data_candidates() -> Vec<ChromiumRootCandidate> {
                     "Chrome Unstable",
                     config.join("google-chrome-unstable"),
                 );
-                push_chromium(
-                    &mut roots,
-                    "chromium",
-                    "Chromium",
-                    config.join("chromium"),
-                );
-                push_chromium(
-                    &mut roots,
-                    "edge",
-                    "Edge",
-                    config.join("microsoft-edge"),
-                );
+                push_chromium(&mut roots, "chromium", "Chromium", config.join("chromium"));
+                push_chromium(&mut roots, "edge", "Edge", config.join("microsoft-edge"));
                 push_chromium(
                     &mut roots,
                     "edge_beta",
@@ -230,12 +202,7 @@ fn chromium_user_data_candidates() -> Vec<ChromiumRootCandidate> {
                     "Brave",
                     config.join("BraveSoftware/Brave-Browser"),
                 );
-                push_chromium(
-                    &mut roots,
-                    "vivaldi",
-                    "Vivaldi",
-                    config.join("vivaldi"),
-                );
+                push_chromium(&mut roots, "vivaldi", "Vivaldi", config.join("vivaldi"));
                 // Snap / Flatpak common locations
                 push_chromium(
                     &mut roots,
@@ -298,6 +265,7 @@ pub fn browser_default_priority(browser_id: &str) -> u8 {
         "vivaldi" => 4,
         "chrome_beta" | "edge_beta" => 5,
         "chrome_canary" | "edge_dev" => 6,
+        // Legacy registry entries only — Firefox is no longer imported.
         "firefox" => 20,
         _ => 15,
     }
@@ -390,133 +358,6 @@ fn looks_like_chrome_profile(profile_dir: &Path) -> bool {
         || profile_dir.join("Network").is_dir()
 }
 
-fn firefox_profile_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    match std::env::consts::OS {
-        "windows" => {
-            if let Ok(appdata) = std::env::var("APPDATA") {
-                roots.push(PathBuf::from(appdata).join(r"Mozilla\Firefox"));
-            }
-        }
-        "macos" => {
-            if let Some(home) = dirs::home_dir() {
-                roots.push(home.join("Library/Application Support/Firefox"));
-            }
-        }
-        "linux" => {
-            if let Some(home) = dirs::home_dir() {
-                roots.push(home.join(".mozilla/firefox"));
-                roots.push(home.join("snap/firefox/common/.mozilla/firefox"));
-                roots.push(home.join(".var/app/org.mozilla.firefox/.mozilla/firefox"));
-            }
-        }
-        _ => {}
-    }
-    roots
-}
-
-fn discover_firefox_profiles() -> Vec<DiscoveredBrowserProfile> {
-    let mut profiles = Vec::new();
-    for root in firefox_profile_roots() {
-        let ini = root.join("profiles.ini");
-        if !ini.is_file() {
-            continue;
-        }
-        let Ok(contents) = std::fs::read_to_string(&ini) else {
-            continue;
-        };
-        if let Some(profile_dir) = parse_firefox_default_profile_dir(&root, &contents) {
-            if !looks_like_firefox_profile(&profile_dir) {
-                continue;
-            }
-            // One Firefox default per machine is enough for Settings one-click import.
-            profiles.push(DiscoveredBrowserProfile {
-                name: "firefox_default".to_string(),
-                label: "Firefox Default".to_string(),
-                browser_id: "firefox".to_string(),
-                engine: ProfileEngine::FirefoxCookies,
-                profile_dir: profile_dir.clone(),
-                user_data_root: profile_dir,
-            });
-            break;
-        }
-    }
-    profiles
-}
-
-fn looks_like_firefox_profile(profile_dir: &Path) -> bool {
-    profile_dir.join("cookies.sqlite").is_file() || profile_dir.join("prefs.js").is_file()
-}
-
-/// Parse `profiles.ini` and resolve the default profile directory.
-fn parse_firefox_default_profile_dir(firefox_root: &Path, ini: &str) -> Option<PathBuf> {
-    let mut sections: Vec<FirefoxIniSection> = Vec::new();
-    let mut current: Option<FirefoxIniSection> = None;
-
-    for raw_line in ini.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
-            continue;
-        }
-        if line.starts_with('[') && line.ends_with(']') {
-            if let Some(section) = current.take() {
-                sections.push(section);
-            }
-            current = Some(FirefoxIniSection {
-                name: line[1..line.len() - 1].to_string(),
-                path: None,
-                is_relative: true,
-                is_default: false,
-            });
-            continue;
-        }
-        let Some(section) = current.as_mut() else {
-            continue;
-        };
-        if let Some((key, value)) = line.split_once('=') {
-            match key.trim() {
-                "Path" => section.path = Some(value.trim().to_string()),
-                "IsRelative" => section.is_relative = value.trim() != "0",
-                "Default" => section.is_default = value.trim() == "1",
-                _ => {}
-            }
-        }
-    }
-    if let Some(section) = current {
-        sections.push(section);
-    }
-
-    let profile_sections: Vec<_> = sections
-        .into_iter()
-        .filter(|s| s.name.starts_with("Profile") && s.path.is_some())
-        .collect();
-
-    let chosen = profile_sections
-        .iter()
-        .find(|s| s.is_default)
-        .or_else(|| profile_sections.first())?;
-
-    let path = chosen.path.as_ref()?;
-    let resolved = if chosen.is_relative {
-        firefox_root.join(path)
-    } else {
-        PathBuf::from(path)
-    };
-    if resolved.is_dir() {
-        Some(resolved)
-    } else {
-        None
-    }
-}
-
-#[derive(Debug)]
-struct FirefoxIniSection {
-    name: String,
-    path: Option<String>,
-    is_relative: bool,
-    is_default: bool,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,24 +394,9 @@ mod tests {
     }
 
     #[test]
-    fn firefox_priority_is_below_chromium_family() {
-        assert!(browser_default_priority("chrome") < browser_default_priority("firefox"));
-        assert!(browser_default_priority("brave") < browser_default_priority("firefox"));
-    }
-
-    #[test]
-    fn parses_firefox_profiles_ini_default() {
-        let tmp = std::env::temp_dir().join(format!(
-            "libragent_ff_ini_{}",
-            std::process::id()
-        ));
-        let profile = tmp.join("abcd.default-release");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&profile).unwrap();
-        let ini_path_contents =
-            "[Profile0]\nName=default-release\nIsRelative=1\nPath=abcd.default-release\nDefault=1\n";
-        let resolved = parse_firefox_default_profile_dir(&tmp, ini_path_contents).unwrap();
-        assert_eq!(resolved, profile);
-        let _ = std::fs::remove_dir_all(&tmp);
+    fn chrome_priority_beats_other_chromium_family() {
+        assert!(browser_default_priority("chrome") < browser_default_priority("edge"));
+        assert!(browser_default_priority("edge") < browser_default_priority("brave"));
+        assert!(browser_default_priority("brave") < browser_default_priority("chromium"));
     }
 }

@@ -57,6 +57,9 @@ pub struct BrowserProfileInfo {
     pub source_browser: String,
     pub imported_at: DateTime<Utc>,
     pub is_default: bool,
+    /// How this profile was imported — Chromium User Data vs Firefox cookie inject.
+    #[serde(default)]
+    pub import_kind: ImportKind,
 }
 
 pub fn profiles_storage_root() -> Result<PathBuf, String> {
@@ -85,8 +88,7 @@ pub fn load_registry() -> Result<BrowserProfileRegistry, String> {
     }
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read browser profile registry: {e}"))?;
-    serde_json::from_str(&raw)
-        .map_err(|e| format!("Failed to parse browser profile registry: {e}"))
+    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse browser profile registry: {e}"))
 }
 
 pub fn save_registry(registry: &BrowserProfileRegistry) -> Result<(), String> {
@@ -97,8 +99,7 @@ pub fn save_registry(registry: &BrowserProfileRegistry) -> Result<(), String> {
     }
     let raw = serde_json::to_string_pretty(registry)
         .map_err(|e| format!("Failed to serialize browser profile registry: {e}"))?;
-    std::fs::write(&path, raw)
-        .map_err(|e| format!("Failed to write browser profile registry: {e}"))
+    std::fs::write(&path, raw).map_err(|e| format!("Failed to write browser profile registry: {e}"))
 }
 
 pub fn has_any_imported_profile() -> Result<bool, String> {
@@ -122,15 +123,18 @@ pub fn list_imported_profiles() -> Result<Vec<BrowserProfileInfo>, String> {
             source_browser: profile.source_browser.clone(),
             imported_at: profile.imported_at,
             is_default: default_name.as_ref() == Some(name),
+            import_kind: profile.import_kind,
         })
         .collect())
 }
 
-/// Pick the best remaining profile using the same priority as import (Chrome > Edge > …).
+/// Pick the best remaining Chromium profile (Chrome > Edge > Brave > …).
+/// Legacy Firefox cookie imports are skipped so they cannot become the agent default.
 fn preferred_profile_name(registry: &BrowserProfileRegistry) -> Option<String> {
     registry
         .profiles
         .iter()
+        .filter(|(_, profile)| profile.import_kind != ImportKind::FirefoxCookies)
         .min_by_key(|(name, profile)| {
             (
                 browser_default_priority(&profile.source_browser),
@@ -200,14 +204,34 @@ fn normalize_path_components(path: &Path) -> PathBuf {
 /// Resolve the app-local User Data directory for the default imported profile.
 pub fn resolve_default_imported_user_data_dir() -> Result<PathBuf, String> {
     let registry = load_registry()?;
-    let name = registry
-        .default_profile
-        .clone()
-        .or_else(|| preferred_profile_name(&registry))
-        .ok_or_else(|| {
-            "No imported browser profile found. Import a browser profile from Settings first."
-                .to_string()
-        })?;
+    let name = {
+        let candidate = registry
+            .default_profile
+            .clone()
+            .or_else(|| preferred_profile_name(&registry));
+        match candidate {
+            Some(name) => {
+                let is_firefox = registry
+                    .profiles
+                    .get(&name)
+                    .is_some_and(|p| p.import_kind == ImportKind::FirefoxCookies);
+                if is_firefox {
+                    preferred_profile_name(&registry).ok_or_else(|| {
+                        "Firefox cookie imports are not supported for agent sessions. Import Chrome, Edge, or Brave from Settings → Saved browser logins, then try again."
+                            .to_string()
+                    })?
+                } else {
+                    name
+                }
+            }
+            None => {
+                return Err(
+                    "No imported browser profile found. Import Chrome, Edge, or Brave from Settings first."
+                        .to_string(),
+                );
+            }
+        }
+    };
 
     let profile = registry.profiles.get(&name).ok_or_else(|| {
         format!("Default browser profile '{name}' is missing from the registry. Re-import from Settings.")
@@ -225,9 +249,7 @@ pub fn resolve_default_imported_user_data_dir() -> Result<PathBuf, String> {
 }
 
 pub fn imported_profile_user_data_dir(profile_name: &str) -> Result<PathBuf, String> {
-    if profile_name.is_empty()
-        || profile_name.contains(['/', '\\'])
-        || profile_name.contains("..")
+    if profile_name.is_empty() || profile_name.contains(['/', '\\']) || profile_name.contains("..")
     {
         return Err("Invalid browser profile name.".to_string());
     }
@@ -261,8 +283,14 @@ pub fn remove_imported_profile(name: &str) -> Result<(), String> {
 /// Mark an imported profile as the one agents use with `use_profile: true`.
 pub fn set_default_imported_profile(name: &str) -> Result<(), String> {
     let mut registry = load_registry()?;
-    if !registry.profiles.contains_key(name) {
+    let Some(profile) = registry.profiles.get(name) else {
         return Err(format!("Imported browser profile '{name}' was not found."));
+    };
+    if profile.import_kind == ImportKind::FirefoxCookies {
+        return Err(
+            "Firefox cookie imports cannot be the primary saved login. Import Chrome, Edge, or Brave and set that as primary."
+                .to_string(),
+        );
     }
     registry.default_profile = Some(name.to_string());
     save_registry(&registry)

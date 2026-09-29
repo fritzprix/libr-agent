@@ -68,6 +68,7 @@ export {
   importBrowserProfiles,
   setDefaultBrowserProfile,
   removeBrowserProfile,
+  openBrowserProfileForSignIn,
 } from './browser';
 export type {
   BrowserProfileInfo,

@@ -126,13 +126,7 @@ impl InteractiveBrowserServer {
         );
         let create_result = self
             .client
-            .create_session(
-                &session_id,
-                &validated_url,
-                title,
-                visible,
-                use_profile,
-            )
+            .create_session(&session_id, &validated_url, title, visible, use_profile)
             .await;
 
         match create_result {

@@ -15,6 +15,8 @@ export interface BrowserProfileInfo {
   sourceBrowser: string;
   importedAt: string;
   isDefault: boolean;
+  /** chromium_user_data | firefox_cookies */
+  importKind?: 'chromium_user_data' | 'firefox_cookies';
 }
 
 /** Installed browser Default profile available to import (no filesystem paths). */
@@ -165,4 +167,12 @@ export async function setDefaultBrowserProfile(name: string): Promise<void> {
 /** Remove an imported browser profile and delete its app-local copy. */
 export async function removeBrowserProfile(name: string): Promise<void> {
   return safeInvoke<void>('remove_browser_profile', { name });
+}
+
+/**
+ * Open the imported Chromium profile in system Chrome for manual sign-in.
+ * No CDP — required for Google account login.
+ */
+export async function openBrowserProfileForSignIn(name: string): Promise<void> {
+  return safeInvoke<void>('open_browser_profile_for_signin', { name });
 }

@@ -227,22 +227,30 @@ impl BrowserSidecarServer {
         let use_imported_profile = imported_user_data_dir.is_some();
 
         if let Some(current) = self.runtime.current_runtime().await {
+            // ephemeral=true ↔ clean profile; use_imported_profile=true ↔ saved login.
+            // Equality means the requested mode differs from the running runtime.
             if current.ephemeral == use_imported_profile {
-                let has_other_sessions = {
-                    let sessions = self.sessions.lock().await;
-                    !sessions.is_empty()
-                };
-                // >1 means another createSession is mid-flight and has not inserted yet.
-                let other_creates_in_flight =
-                    self.creates_in_flight.load(Ordering::SeqCst) > 1;
-                if has_other_sessions || other_creates_in_flight {
+                // Another createSession mid-flight (not yet inserted into sessions) is a real race.
+                let other_creates_in_flight = self.creates_in_flight.load(Ordering::SeqCst) > 1;
+                if other_creates_in_flight {
                     return Err(
-                        "Cannot switch browser profile mode while other browser sessions are active. Close them first.".to_string(),
+                        "Cannot switch browser profile mode while another createSession is in progress. Retry after it finishes.".to_string(),
                     );
                 }
-                warn!(
-                    "Recycling browser runtime to switch profile mode (requested_imported={use_imported_profile})"
-                );
+
+                // Stale sessions from a previous agent chat leave the runtime in imported/clean
+                // mode with no session the current agent can closeSession. Drain them so
+                // ephemeral ↔ imported mode switches are not stuck forever.
+                let drained = self.drain_all_sessions_for_runtime_recycle().await;
+                if drained > 0 {
+                    warn!(
+                        "Recycled {drained} leftover browser session(s) before profile-mode switch (requested_imported={use_imported_profile}); other chats sharing this sidecar lose those sessions"
+                    );
+                } else {
+                    warn!(
+                        "Recycling browser runtime to switch profile mode (requested_imported={use_imported_profile})"
+                    );
+                }
                 if let Some(old) = self.runtime.take_runtime().await {
                     shutdown_runtime(old).await;
                 }
@@ -341,9 +349,8 @@ impl BrowserSidecarServer {
             }
         }
 
-        // Firefox imports store cookies as JSON for CDP injection (Chromium cannot load
-        // Firefox User Data). Inject before navigation so the first request is authenticated.
-        // Failure is hard: an empty session would look "logged in" but have no cookies.
+        // Firefox imports (legacy): inject cookies into Chromium; Chromium User Data
+        // imports have no inject file and skip this step.
         if use_imported_profile {
             if let Err(error) =
                 inject_imported_cookies_if_present(page.as_ref(), &runtime.user_data_dir).await
@@ -576,6 +583,49 @@ impl BrowserSidecarServer {
         cleanup_session_resources(runtime.browser.clone(), session, session_id).await
     }
 
+    /// Remove every tracked session so the shared runtime can be shut down for a profile-mode switch.
+    ///
+    /// This is intentionally aggressive: the sidecar runtime is shared across agent chats, so a
+    /// leftover session from a previous chat (or a crashed client) can leave `sessions` non-empty
+    /// while the *current* agent sees "no active session" from `browser__closeSession`. Without
+    /// draining, createSession then fails forever with "Cannot switch browser profile mode…".
+    ///
+    /// Only called when an actual mode switch is required (`ephemeral` vs imported). Concurrent
+    /// createSession races are still rejected via `creates_in_flight > 1`.
+    async fn drain_all_sessions_for_runtime_recycle(&self) -> usize {
+        let drained = {
+            let mut sessions = self.sessions.lock().await;
+            std::mem::take(&mut *sessions)
+        };
+        let count = drained.len();
+        if count == 0 {
+            return 0;
+        }
+
+        if let Some(runtime) = self.runtime.current_runtime().await {
+            {
+                let mut logs = runtime.console_logs.write().await;
+                for session_id in drained.keys() {
+                    logs.remove(session_id);
+                }
+            }
+            self.abort_all_listeners().await;
+            for (session_id, session) in drained {
+                if let Err(error) =
+                    cleanup_session_resources(runtime.browser.clone(), session, &session_id).await
+                {
+                    warn!(
+                        "Failed to close leftover browser session {session_id} during profile-mode switch: {error}"
+                    );
+                }
+            }
+        } else {
+            self.abort_all_listeners().await;
+        }
+
+        count
+    }
+
     async fn get_session_page(&self, session_id: &str) -> Result<Arc<chromiumoxide::Page>, String> {
         let sessions = self.sessions.lock().await;
         sessions
@@ -646,12 +696,14 @@ fn extract_request_id_from_line(line: &str) -> Option<String> {
     value.get("id")?.as_str().map(ToString::to_string)
 }
 
-/// Inject cookies exported from Firefox (or other non-Chromium sources) via CDP.
+/// Apply a legacy cookie-inject JSON file via CDP (older Firefox imports only).
 /// Uses `Network.setCookies` directly so it works while the page is still on about:blank.
 ///
-/// Returns `Ok(())` when no inject file is present (Chromium User Data imports).
+/// Returns `Ok(())` when no inject file is present (normal Chromium User Data imports).
 /// Returns `Err` when an inject file exists but cookies cannot be applied — callers must
 /// abort the session rather than continuing without auth state.
+///
+/// New Firefox import is disabled; if this path fails, import Chrome/Edge/Brave from Settings.
 async fn inject_imported_cookies_if_present(
     page: &chromiumoxide::Page,
     user_data_dir: &std::path::Path,
@@ -661,7 +713,7 @@ async fn inject_imported_cookies_if_present(
     };
     if cookies.is_empty() {
         return Err(
-            "Imported Firefox cookie file is empty. Re-import the Firefox profile from Settings."
+            "Legacy cookie-inject file is empty. Remove that saved login and import Chrome, Edge, or Brave from Settings."
                 .to_string(),
         );
     }
@@ -710,7 +762,7 @@ async fn inject_imported_cookies_if_present(
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to inject imported Firefox cookies into the browser session: {e}. Re-import from Settings after closing Firefox."
+                    "Failed to apply legacy cookie-inject file: {e}. Remove that saved login and import Chrome, Edge, or Brave from Settings."
                 )
             })?;
     }
