@@ -296,10 +296,18 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
 
       {/* Result Markdown Content */}
       <div className="space-y-1.5 pt-1">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            {t('agent.toolStructured.resultSummary', 'Outcome')}
-          </div>
+        <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          {t('agent.toolStructured.resultSummary', 'Outcome')}
+        </div>
+        <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed rounded-md bg-muted/20 border border-border/50 p-3.5">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}
+          >
+            {data.result}
+          </ReactMarkdown>
+        </div>
+        <div className="flex justify-end">
           <Button
             type="button"
             variant="ghost"
@@ -316,19 +324,12 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
             )}
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5" />
+              <Check className="mr-1 h-3.5 w-3.5" />
             ) : (
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="mr-1 h-3.5 w-3.5" />
             )}
+            {t('agent.toolStructured.copyResult', 'Copy')}
           </Button>
-        </div>
-        <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed rounded-md bg-muted/20 border border-border/50 p-3.5">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={markdownComponents}
-          >
-            {data.result}
-          </ReactMarkdown>
         </div>
       </div>
 
