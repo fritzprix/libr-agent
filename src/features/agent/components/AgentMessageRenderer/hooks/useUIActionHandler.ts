@@ -14,8 +14,10 @@ import { isWorkflowCancelledError } from '@/context/llm/types';
 import {
   exportMarkdownDocumentWithNotify,
   markdownExportBaseName,
+  markdownExportLabelsFromT,
 } from '@/features/agent/lib/markdown-document-export';
 import { useTranslation } from 'react-i18next';
+
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -74,6 +76,15 @@ export function useUIActionHandler(
               toolName === 'tauri:exportMarkdownPdf'
             ) {
               const content = readStringParam(params, 'content') ?? '';
+              if (!content.trim()) {
+                const { toast } = await import('sonner');
+                toast.error(t('agent.bubble.actionBar.copyEmpty'));
+                return {
+                  status: 'tauri-processed',
+                  message: `UI export skipped (empty): ${toolName}`,
+                };
+              }
+
               const fileBaseName = markdownExportBaseName(
                 readStringParam(params, 'fileBaseName') ??
                   readStringParam(params, 'fileName'),
@@ -87,19 +98,7 @@ export function useUIActionHandler(
                 kind,
                 fileBaseName,
                 isDark,
-                labels: {
-                  markdownSuccess: t(
-                    'agent.bubble.actionBar.exportMarkdownSuccess',
-                  ),
-                  pdfSuccess: t('agent.bubble.actionBar.exportPdfSuccess'),
-                  openFile: t('agent.bubble.actionBar.exportOpenFile'),
-                  openFileError: t(
-                    'agent.bubble.actionBar.exportOpenFileError',
-                  ),
-                  cancelled: t('agent.bubble.actionBar.exportCancelled'),
-                  markdownError: t('agent.bubble.actionBar.exportError'),
-                  pdfError: t('agent.bubble.actionBar.exportPdfError'),
-                },
+                labels: markdownExportLabelsFromT(t),
               });
 
               return {

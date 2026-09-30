@@ -10,6 +10,7 @@ const {
   handleUserToolCallMock,
   openExternalUrlMock,
   exportMarkdownDocumentWithNotifyMock,
+  toastErrorMock,
   loggerInfoMock,
   loggerWarnMock,
   loggerErrorMock,
@@ -20,6 +21,7 @@ const {
   handleUserToolCallMock: vi.fn(),
   openExternalUrlMock: vi.fn(),
   exportMarkdownDocumentWithNotifyMock: vi.fn(),
+  toastErrorMock: vi.fn(),
   loggerInfoMock: vi.fn(),
   loggerWarnMock: vi.fn(),
   loggerErrorMock: vi.fn(),
@@ -66,6 +68,14 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('sonner', () => ({
+  toast: {
+    error: toastErrorMock,
+    info: vi.fn(),
+    success: vi.fn(),
+  },
+}));
+
 vi.mock('@/features/agent/lib/markdown-document-export', async (importOriginal) => {
   const actual =
     await importOriginal<
@@ -98,6 +108,7 @@ describe('useUIActionHandler', () => {
     openExternalUrlMock.mockReset();
     exportMarkdownDocumentWithNotifyMock.mockReset();
     exportMarkdownDocumentWithNotifyMock.mockResolvedValue(undefined);
+    toastErrorMock.mockReset();
     loggerInfoMock.mockReset();
     loggerWarnMock.mockReset();
     loggerErrorMock.mockReset();
@@ -169,6 +180,36 @@ describe('useUIActionHandler', () => {
       }),
     );
     expect(executeUiTauriActionMock).not.toHaveBeenCalled();
+  });
+
+  it('skips empty markdown export without calling the helper', async () => {
+    const contentRef = {
+      current: [] as MCPContent[],
+    };
+
+    const { result } = renderHook(() => useUIActionHandler(contentRef));
+
+    const action: UIActionResult = {
+      type: 'tool',
+      payload: {
+        toolName: 'tauri:exportMarkdownFile',
+        params: {
+          content: '   ',
+          fileBaseName: 'empty',
+        },
+      },
+    };
+
+    await expect(result.current(action)).resolves.toEqual({
+      status: 'tauri-processed',
+      message: 'UI export skipped (empty): tauri:exportMarkdownFile',
+    });
+
+    expect(exportMarkdownDocumentWithNotifyMock).not.toHaveBeenCalled();
+    expect(executeUiTauriActionMock).not.toHaveBeenCalled();
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      'agent.bubble.actionBar.copyEmpty',
+    );
   });
 
   it('routes tauri tool actions through the backend command path', async () => {

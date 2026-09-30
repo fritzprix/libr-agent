@@ -27,12 +27,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useClipboard } from '@/hooks/useClipboard';
 import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
-import { downloadTextFile, downloadTextPdf } from '@/lib/backend';
 import { getLogger } from '@/lib/logger';
-import {
-  DOWNLOAD_CANCELLED,
-  notifyFileDownloadSuccess,
-} from '@/lib/notify-file-download';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
@@ -41,7 +36,10 @@ import {
   serializeMessageForClipboard,
   serializeMessageForDownload,
 } from '@/features/agent/lib/message-serialization';
-import { prepareMarkdownForPdfExport } from '@/features/agent/lib/pdf-export-preprocess';
+import {
+  exportMarkdownDocumentWithNotify,
+  markdownExportLabelsFromT,
+} from '@/features/agent/lib/markdown-document-export';
 
 const logger = getLogger('MessageActionBar');
 
@@ -187,6 +185,11 @@ function MessageActionBarImpl({
     [displayContent, message],
   );
 
+  const exportFileBaseName = useCallback(() => {
+    // Keep message.<ext> naming; shared helper appends the extension.
+    return buildMessageExportFilename(message, 'md').replace(/\.md$/i, '');
+  }, [message]);
+
   const handleExportMarkdown = useCallback(async () => {
     if (isBusy) {
       return;
@@ -198,27 +201,19 @@ function MessageActionBarImpl({
         toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
-      const result = await downloadTextFile({
-        fileName: buildMessageExportFilename(message, 'md'),
+      await exportMarkdownDocumentWithNotify({
         content,
+        kind: 'markdown',
+        fileBaseName: exportFileBaseName(),
+        isDark,
+        labels: markdownExportLabelsFromT(t),
       });
-      if (result === DOWNLOAD_CANCELLED) {
-        toast.info(t('agent.bubble.actionBar.exportCancelled'));
-        return;
-      }
-      notifyFileDownloadSuccess({
-        title: t('agent.bubble.actionBar.exportMarkdownSuccess'),
-        filePath: result,
-        openLabel: t('agent.bubble.actionBar.exportOpenFile'),
-        openErrorLabel: t('agent.bubble.actionBar.exportOpenFileError'),
-      });
-    } catch (error) {
-      logger.error('Failed to export markdown', error);
-      toast.error(t('agent.bubble.actionBar.exportError'));
+    } catch {
+      // Toast already shown in shared helper.
     } finally {
       setBusyAction(null);
     }
-  }, [exportMarkdownContent, isBusy, message, t]);
+  }, [exportFileBaseName, exportMarkdownContent, isBusy, isDark, t]);
 
   const handleExportPdf = useCallback(async () => {
     if (isBusy) {
@@ -226,38 +221,24 @@ function MessageActionBarImpl({
     }
     setBusyAction('pdf');
     try {
-      const raw = exportMarkdownContent();
-      if (!raw.trim()) {
+      const content = exportMarkdownContent();
+      if (!content.trim()) {
         toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
-      const { content, embeddedImages } = await prepareMarkdownForPdfExport(
-        raw,
-        { isDark },
-      );
-      const result = await downloadTextPdf({
-        fileName: buildMessageExportFilename(message, 'pdf'),
+      await exportMarkdownDocumentWithNotify({
         content,
-        embeddedImages:
-          embeddedImages.length > 0 ? embeddedImages : undefined,
+        kind: 'pdf',
+        fileBaseName: exportFileBaseName(),
+        isDark,
+        labels: markdownExportLabelsFromT(t),
       });
-      if (result === DOWNLOAD_CANCELLED) {
-        toast.info(t('agent.bubble.actionBar.exportCancelled'));
-        return;
-      }
-      notifyFileDownloadSuccess({
-        title: t('agent.bubble.actionBar.exportPdfSuccess'),
-        filePath: result,
-        openLabel: t('agent.bubble.actionBar.exportOpenFile'),
-        openErrorLabel: t('agent.bubble.actionBar.exportOpenFileError'),
-      });
-    } catch (error) {
-      logger.error('Failed to export PDF', error);
-      toast.error(t('agent.bubble.actionBar.exportPdfError'));
+    } catch {
+      // Toast already shown in shared helper.
     } finally {
       setBusyAction(null);
     }
-  }, [exportMarkdownContent, isBusy, isDark, message, t]);
+  }, [exportFileBaseName, exportMarkdownContent, isBusy, isDark, t]);
 
   return (
     <div

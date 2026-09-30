@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import {
   exportMarkdownDocumentWithNotify,
   markdownExportBaseName,
+  markdownExportLabelsFromT,
   type MarkdownExportKind,
 } from '@/features/agent/lib/markdown-document-export';
 
@@ -116,17 +117,7 @@ export const MarkdownCopyExportBar = memo(function MarkdownCopyExportBar({
           kind,
           fileBaseName: baseName,
           isDark,
-          labels: {
-            markdownSuccess: t(
-              'agent.bubble.actionBar.exportMarkdownSuccess',
-            ),
-            pdfSuccess: t('agent.bubble.actionBar.exportPdfSuccess'),
-            openFile: t('agent.bubble.actionBar.exportOpenFile'),
-            openFileError: t('agent.bubble.actionBar.exportOpenFileError'),
-            cancelled: t('agent.bubble.actionBar.exportCancelled'),
-            markdownError: t('agent.bubble.actionBar.exportError'),
-            pdfError: t('agent.bubble.actionBar.exportPdfError'),
-          },
+          labels: markdownExportLabelsFromT(t),
         });
       } catch {
         // Toast already shown in helper.

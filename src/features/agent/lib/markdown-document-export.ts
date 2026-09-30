@@ -127,3 +127,18 @@ export function composeReportResultMarkdown(data: {
   }
   return parts.join('\n').trimEnd() + '\n';
 }
+
+/** i18n labels shared by MessageActionBar / ReportResult / presentInteractive. */
+export function markdownExportLabelsFromT(
+  t: (key: string) => string,
+): MarkdownExportLabels {
+  return {
+    markdownSuccess: t('agent.bubble.actionBar.exportMarkdownSuccess'),
+    pdfSuccess: t('agent.bubble.actionBar.exportPdfSuccess'),
+    openFile: t('agent.bubble.actionBar.exportOpenFile'),
+    openFileError: t('agent.bubble.actionBar.exportOpenFileError'),
+    cancelled: t('agent.bubble.actionBar.exportCancelled'),
+    markdownError: t('agent.bubble.actionBar.exportError'),
+    pdfError: t('agent.bubble.actionBar.exportPdfError'),
+  };
+}
