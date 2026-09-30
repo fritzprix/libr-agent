@@ -23,8 +23,14 @@ export interface MarkdownExportLabels {
 }
 
 function sanitizeFileBase(name: string): string {
-  const trimmed = name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
-  return trimmed.slice(0, 80) || 'export';
+  const cleaned = Array.from(name.trim(), (ch) => {
+    const code = ch.charCodeAt(0);
+    if (code <= 0x1f || '<>:"/\\|?*'.includes(ch)) {
+      return '_';
+    }
+    return ch;
+  }).join('');
+  return cleaned.slice(0, 80) || 'export';
 }
 
 /** Build a download basename without extension. */
