@@ -180,10 +180,10 @@ LibrAgent는 사람들이 실제로 원하는 중간 지점을 노립니다:
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.20_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_x64-setup.exe) · [`LibrAgent_0.9.20_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.20_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.20_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_amd64.AppImage) · [`LibrAgent_0.9.20_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_amd64.deb) · [`LibrAgent-0.9.20-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent-0.9.20-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.20)
+- **Windows:** [`LibrAgent_0.9.21_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64-setup.exe) · [`LibrAgent_0.9.21_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.21_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.21_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.AppImage) · [`LibrAgent_0.9.21_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.deb) · [`LibrAgent-0.9.21-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent-0.9.21-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.21)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5분 온보딩 경로

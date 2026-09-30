@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.9.20",
+  "version": "0.9.21",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
@@ -101,11 +101,6 @@
     "xbench:harbor": "node scripts/run-harbor-bench.cjs --agent hermes --preset harbor-index --n-tasks 1",
     "xbench:harbor:all": "node scripts/run-harbor-bench.cjs --agent hermes --preset harbor-index",
     "bench:hermes:registry": "node scripts/run-harbor-bench.cjs --agent hermes --preset dataset"
-  },
-  "pnpm": {
-    "overrides": {
-      "punycode": "^2.3.1"
-    }
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.64.0",
