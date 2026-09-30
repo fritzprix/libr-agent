@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { Highlight, themes } from 'prism-react-renderer';
 import { cn } from '@/lib/utils';
+import { MermaidBlock } from './MermaidBlock';
 
 // Extract CodeBlock component to allow injecting isDark prop
 // Memoized to prevent expensive syntax highlighting re-runs during text streaming
@@ -42,6 +43,11 @@ export const CodeBlock = memo(
 
     // Block code with syntax highlighting
     const code = String(children).replace(/\n$/, '');
+
+    // Mermaid diagrams: route away from prism (component-level; no remark plugin)
+    if (language === 'mermaid') {
+      return <MermaidBlock code={code} isDark={Boolean(isDark)} />;
+    }
 
     return (
       <Highlight
