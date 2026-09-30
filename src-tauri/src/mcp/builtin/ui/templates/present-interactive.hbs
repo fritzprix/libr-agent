@@ -209,10 +209,40 @@
       }
       .md .katex { font-size: 1.05em; color: inherit; font-style: normal; }
       .md .katex-display { margin: 0.4em 0; }
+      .md .mermaid-diagram {
+        overflow-x: auto;
+        margin: 12px 0;
+        padding: 16px;
+        background: var(--muted, #f3f4f6);
+        border-radius: 8px;
+        border: 1px solid var(--border, #e5e7eb);
+        min-height: 4rem;
+      }
+      .md .mermaid-diagram svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+      .md .mermaid-pending {
+        color: var(--muted-foreground, #6b7280);
+        font-size: 13px;
+      }
+      .md .mermaid-error {
+        color: #b91c1c;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .md .mermaid-error-source {
+        margin: 0;
+        padding: 8px;
+        font-size: 12px;
+        overflow-x: auto;
+        background: color-mix(in oklab, var(--foreground, #000) 6%, transparent);
+        border-radius: 6px;
+        white-space: pre;
+      }
     </style>
     {{#if isMarkdown}}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.27/dist/katex.min.css" crossorigin="anonymous" />
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.27/dist/katex.min.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js" crossorigin="anonymous"></script>
     {{/if}}
   </head>
   <body>
@@ -361,8 +391,17 @@
                       var fenceBody = fence.text.replace(/^```[^\n]*\n?/, '').replace(/\n?```$/, '');
                       var fenceInfo = (fence.text.match(/^```([^\n]*)/) || [])[1] || '';
                       fenceInfo = fenceInfo.trim();
-                      html += '<pre><code' + (fenceInfo ? ' class="language-' + escape(fenceInfo) + '"' : '') + '>' +
-                               escape(fenceBody) + '</code></pre>\n';
+                      var fenceLang = (fenceInfo.split(/\s+/)[0] || '').toLowerCase();
+                      if (fenceLang === 'mermaid') {
+                        // Chat MermaidBlock parity: diagram container + source for lazy render.
+                        html += '<div class="mermaid-diagram" data-mermaid="true">' +
+                          '<pre class="mermaid-source" hidden>' + escape(fenceBody) + '</pre>' +
+                          '<div class="mermaid-pending">Rendering diagram…</div>' +
+                          '</div>\n';
+                      } else {
+                        html += '<pre><code' + (fenceInfo ? ' class="language-' + escape(fenceInfo) + '"' : '') + '>' +
+                                 escape(fenceBody) + '</code></pre>\n';
+                      }
                     }
                     i++; continue;
                   }
@@ -464,6 +503,74 @@
                 });
               }
 
+              function isDarkTheme() {
+                try {
+                  var scheme = getComputedStyle(document.documentElement).colorScheme;
+                  if (scheme === 'dark') return true;
+                  if (scheme === 'light') return false;
+                } catch (e) { /* ignore */ }
+                return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+              }
+
+              var mermaidThemeApplied = null;
+              var mermaidQueue = Promise.resolve();
+
+              function renderMermaid(root) {
+                if (typeof mermaid === 'undefined' || !root) return;
+                var nodes = root.querySelectorAll('.mermaid-diagram[data-mermaid="true"]:not([data-mermaid-rendered])');
+                if (!nodes.length) return;
+
+                var theme = isDarkTheme() ? 'dark' : 'default';
+                if (mermaidThemeApplied !== theme) {
+                  mermaid.initialize({
+                    startOnLoad: false,
+                    securityLevel: 'strict',
+                    theme: theme
+                  });
+                  mermaidThemeApplied = theme;
+                }
+
+                Array.prototype.forEach.call(nodes, function (el) {
+                  var sourceEl = el.querySelector('.mermaid-source');
+                  var code = sourceEl ? String(sourceEl.textContent || '').trim() : '';
+                  if (!code) {
+                    el.setAttribute('data-mermaid-rendered', 'true');
+                    return;
+                  }
+
+                  var run = function () {
+                    var id = 'mmd-pi-' + Math.random().toString(36).slice(2, 10);
+                    return mermaid.render(id, code).then(function (result) {
+                      el.innerHTML = result.svg;
+                      el.setAttribute('data-mermaid-rendered', 'true');
+                      if (typeof scheduleResizeReport === 'function') {
+                        scheduleResizeReport();
+                      }
+                    }).catch(function () {
+                      el.innerHTML =
+                        '<div class="mermaid-error">Failed to render Mermaid diagram</div>' +
+                        '<pre class="mermaid-error-source">' + escape(code) + '</pre>';
+                      el.setAttribute('data-mermaid-rendered', 'error');
+                      if (typeof scheduleResizeReport === 'function') {
+                        scheduleResizeReport();
+                      }
+                    }).finally(function () {
+                      // mermaid.render mounts temp SVG nodes on document.body
+                      var temp = document.getElementById(id);
+                      if (temp && temp.parentNode) temp.parentNode.removeChild(temp);
+                      var d = document.getElementById('d' + id);
+                      if (d && d.parentNode) d.parentNode.removeChild(d);
+                      var iEl = document.getElementById('i' + id);
+                      if (iEl && iEl.parentNode) iEl.parentNode.removeChild(iEl);
+                    });
+                  };
+
+                  // Keep queue head alive after rejections (chat loader parity).
+                  var next = mermaidQueue.then(run, run);
+                  mermaidQueue = next.then(function () {}, function () {});
+                });
+              }
+
               var mdRoot = document.getElementById('md-root');
               mdRoot.innerHTML = parseMarkdown(raw);
 
@@ -472,6 +579,10 @@
                 if (typeof scheduleResizeReport === 'function') {
                   scheduleResizeReport();
                 }
+              }
+
+              function applyMermaidWhenReady() {
+                renderMermaid(mdRoot);
               }
 
               if (typeof katex !== 'undefined') {
@@ -485,6 +596,21 @@
                     applyKatexWhenReady();
                   } else if (katexWait > 100) {
                     clearInterval(katexPoll);
+                  }
+                }, 50);
+              }
+
+              if (typeof mermaid !== 'undefined') {
+                applyMermaidWhenReady();
+              } else {
+                var mermaidWait = 0;
+                var mermaidPoll = setInterval(function () {
+                  mermaidWait += 1;
+                  if (typeof mermaid !== 'undefined') {
+                    clearInterval(mermaidPoll);
+                    applyMermaidWhenReady();
+                  } else if (mermaidWait > 100) {
+                    clearInterval(mermaidPoll);
                   }
                 }, 50);
               }

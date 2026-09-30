@@ -552,3 +552,59 @@ async fn present_interactive_markdown_math_loads_katex_and_preserves_latex() {
         "source markdown JSON must preserve inequality < inside inline math"
     );
 }
+
+#[tokio::test]
+async fn present_interactive_markdown_mermaid_loads_cdn_and_routes_fences() {
+    let server = UiServer::new();
+
+    let result = server
+        .call_tool(
+            "presentInteractive",
+            json!({
+                "title": "Flow",
+                "format": "markdown",
+                "content": "Intro\n\n```mermaid\nflowchart TD\n  A-->B\n```\n\nDone"
+            }),
+            None,
+        )
+        .await
+        .expect("presentInteractive with mermaid should render");
+
+    assert_eq!(result.is_error, Some(false));
+
+    let content = result
+        .content
+        .expect("presentInteractive should return content");
+    let resource = content
+        .iter()
+        .find_map(|item| match item {
+            MCPContent::Resource { resource, .. } => Some(resource),
+            _ => None,
+        })
+        .expect("presentInteractive should return HTML resource");
+    let html = resource["text"]
+        .as_str()
+        .expect("HTML resource should include inline text");
+
+    assert!(
+        html.contains("cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"),
+        "markdown results must load the Mermaid renderer script"
+    );
+    assert!(
+        html.contains("class=\"mermaid-diagram\"") && html.contains("data-mermaid=\"true\""),
+        "```mermaid fences must route to mermaid diagram containers, not plain code blocks"
+    );
+    assert!(
+        html.contains("mermaid.render") && html.contains("securityLevel: 'strict'"),
+        "template must call mermaid.render with strict security"
+    );
+    assert!(
+        html.contains("isDarkTheme") && html.contains("theme: theme"),
+        "mermaid theme must follow host color-scheme / dark preference"
+    );
+    // Parser emits escaped source into .mermaid-source; raw fence must still be in JSON payload.
+    assert!(
+        html.contains("flowchart TD") && html.contains("A-->B"),
+        "mermaid source must be preserved for client-side render"
+    );
+}
