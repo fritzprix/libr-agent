@@ -36,10 +36,16 @@ import {
   serializeMessageForClipboard,
   serializeMessageForDownload,
 } from '@/features/agent/lib/message-serialization';
+import { resolveMessageDocument } from '@/features/agent/lib/message-document';
 import {
   exportMarkdownDocumentWithNotify,
   markdownExportLabelsFromT,
 } from '@/features/agent/lib/markdown-document-export';
+import { downloadTextFile } from '@/lib/backend';
+import {
+  DOWNLOAD_CANCELLED,
+  notifyFileDownloadSuccess,
+} from '@/lib/notify-file-download';
 
 const logger = getLogger('MessageActionBar');
 
@@ -148,6 +154,15 @@ function MessageActionBarImpl({
     [displayContent, message, toolResultsMap],
   );
 
+  const uiDocument = useMemo(
+    () =>
+      resolveMessageDocument(message, {
+        displayContent,
+        toolResultsMap,
+      }),
+    [displayContent, message, toolResultsMap],
+  );
+
   const handleCopy = useCallback(
     async (mode: CopyMode) => {
       if (isBusy) {
@@ -155,7 +170,12 @@ function MessageActionBarImpl({
       }
       setBusyAction(mode);
       try {
-        const content = serialize(mode);
+        // UI tool surfaces: primary (full) copy should grab the document body,
+        // not the wrapper transcript — matches presentInteractive / reportResult.
+        const content =
+          mode === 'full' && uiDocument
+            ? uiDocument.content
+            : serialize(mode);
         if (!content.trim() || content === '[]') {
           toast.error(t('agent.bubble.actionBar.copyEmpty'));
           return;
@@ -174,21 +194,25 @@ function MessageActionBarImpl({
         setBusyAction(null);
       }
     },
-    [copyToClipboard, isBusy, serialize, t],
+    [copyToClipboard, isBusy, serialize, t, uiDocument],
   );
 
   const exportMarkdownContent = useCallback(
     () =>
       serializeMessageForDownload(message, {
         displayContent,
+        toolResultsMap,
       }),
-    [displayContent, message],
+    [displayContent, message, toolResultsMap],
   );
 
   const exportFileBaseName = useCallback(() => {
+    if (uiDocument?.fileBaseName) {
+      return uiDocument.fileBaseName;
+    }
     // Keep message.<ext> naming; shared helper appends the extension.
     return buildMessageExportFilename(message, 'md').replace(/\.md$/i, '');
-  }, [message]);
+  }, [message, uiDocument]);
 
   const handleExportMarkdown = useCallback(async () => {
     if (isBusy) {
@@ -201,6 +225,23 @@ function MessageActionBarImpl({
         toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
+      if (uiDocument?.exportKind === 'html') {
+        const result = await downloadTextFile({
+          fileName: `${exportFileBaseName()}.html`,
+          content,
+        });
+        if (result === DOWNLOAD_CANCELLED) {
+          toast.info(t('agent.bubble.actionBar.exportCancelled'));
+          return;
+        }
+        notifyFileDownloadSuccess({
+          title: t('agent.bubble.actionBar.exportMarkdownSuccess'),
+          filePath: result,
+          openLabel: t('agent.bubble.actionBar.exportOpenFile'),
+          openErrorLabel: t('agent.bubble.actionBar.exportOpenFileError'),
+        });
+        return;
+      }
       await exportMarkdownDocumentWithNotify({
         content,
         kind: 'markdown',
@@ -209,14 +250,25 @@ function MessageActionBarImpl({
         labels: markdownExportLabelsFromT(t),
       });
     } catch {
-      // Toast already shown in shared helper.
+      // Toast already shown in shared helper / notify path.
     } finally {
       setBusyAction(null);
     }
-  }, [exportFileBaseName, exportMarkdownContent, isBusy, isDark, t]);
+  }, [
+    exportFileBaseName,
+    exportMarkdownContent,
+    isBusy,
+    isDark,
+    t,
+    uiDocument?.exportKind,
+  ]);
 
   const handleExportPdf = useCallback(async () => {
     if (isBusy) {
+      return;
+    }
+    if (uiDocument?.exportKind === 'html') {
+      toast.error(t('agent.bubble.actionBar.exportPdfError'));
       return;
     }
     setBusyAction('pdf');
@@ -238,7 +290,14 @@ function MessageActionBarImpl({
     } finally {
       setBusyAction(null);
     }
-  }, [exportFileBaseName, exportMarkdownContent, isBusy, isDark, t]);
+  }, [
+    exportFileBaseName,
+    exportMarkdownContent,
+    isBusy,
+    isDark,
+    t,
+    uiDocument?.exportKind,
+  ]);
 
   return (
     <div
@@ -325,16 +384,20 @@ function MessageActionBarImpl({
             }}
           >
             <FileDown className="h-4 w-4" />
-            {t('agent.bubble.actionBar.exportMarkdown')}
+            {uiDocument?.exportKind === 'html'
+              ? t('agent.bubble.actionBar.exportHtml', 'Export as HTML')
+              : t('agent.bubble.actionBar.exportMarkdown')}
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              void handleExportPdf();
-            }}
-          >
-            <Printer className="h-4 w-4" />
-            {t('agent.bubble.actionBar.exportPdf')}
-          </DropdownMenuItem>
+          {uiDocument?.exportKind === 'html' ? null : (
+            <DropdownMenuItem
+              onSelect={() => {
+                void handleExportPdf();
+              }}
+            >
+              <Printer className="h-4 w-4" />
+              {t('agent.bubble.actionBar.exportPdf')}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

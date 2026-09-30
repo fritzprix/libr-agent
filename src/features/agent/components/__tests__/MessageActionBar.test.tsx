@@ -208,4 +208,40 @@ describe('MessageActionBar', () => {
       });
     });
   });
+
+  it('primary copy prefers reportResult document over wrapper transcript', async () => {
+    mockCopyToClipboard.mockResolvedValue(undefined);
+
+    render(
+      <MessageActionBar
+        message={createMessage({
+          role: 'tool',
+          content: [{ type: 'text', text: 'Final result reported STOP' }],
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'success',
+              title: 'Ship',
+              result: 'ok',
+              deliverables: [],
+            },
+          },
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyFullAria',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockCopyToClipboard).toHaveBeenCalled();
+    });
+    const copied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
+    expect(copied).toContain('# Ship');
+    expect(copied).toContain('ok');
+    expect(copied).not.toContain('STOP');
+  });
 });

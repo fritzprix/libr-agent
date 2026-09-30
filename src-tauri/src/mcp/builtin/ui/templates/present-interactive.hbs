@@ -39,71 +39,6 @@
         box-shadow: 0 1px 3px color-mix(in oklab, var(--foreground, #000000) 12%, transparent);
         border: 1px solid var(--border, #e5e7eb);
       }
-      .action-buttons {
-        position: absolute;
-        top: 16px;
-        right: 16px;
-        display: flex;
-        gap: 8px;
-        z-index: 10;
-      }
-      .icon-btn {
-        background: var(--muted, #f9fafb);
-        color: var(--muted-foreground, #4b5563);
-        border: 1px solid var(--border, #e5e7eb);
-        border-radius: 6px;
-        padding: 6px;
-        cursor: pointer;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .icon-btn:hover {
-        background: var(--accent, #e5e7eb);
-        color: var(--accent-foreground, #111827);
-      }
-      .icon-btn svg {
-        width: 16px;
-        height: 16px;
-      }
-      .export-menu {
-        position: relative;
-      }
-      .export-dropdown {
-        position: absolute;
-        top: calc(100% + 4px);
-        right: 0;
-        min-width: 10.5rem;
-        background: var(--card, #ffffff);
-        color: var(--card-foreground, #111827);
-        border: 1px solid var(--border, #e5e7eb);
-        border-radius: 8px;
-        box-shadow: 0 8px 20px color-mix(in oklab, var(--foreground, #000) 16%, transparent);
-        padding: 4px;
-        z-index: 20;
-      }
-      .export-dropdown[hidden] {
-        display: none;
-      }
-      .export-dropdown button {
-        display: flex;
-        width: 100%;
-        align-items: center;
-        gap: 8px;
-        border: 0;
-        background: transparent;
-        color: inherit;
-        font: inherit;
-        font-size: 13px;
-        text-align: left;
-        padding: 8px 10px;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      .export-dropdown button:hover {
-        background: var(--muted, #f3f4f6);
-      }
       .content-title {
         font-size: 18px;
         font-weight: 700;
@@ -111,7 +46,6 @@
         margin: 0 0 16px 0;
         padding-bottom: 12px;
         border-bottom: 1px solid var(--border, #e5e7eb);
-        padding-right: 80px;
       }
       
       /* Interaction Section */
@@ -285,25 +219,6 @@
   <body>
     <div class="container">
       <div class='content-wrapper'>
-        <div class="action-buttons">
-          <button type="button" id="copy-btn" class="icon-btn" title="Copy to clipboard">
-            <svg id="icon-copy" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-            <svg id="icon-check" style="display: none; color: #10b981;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          </button>
-          <div class="export-menu">
-            <button type="button" id="export-btn" class="icon-btn" title="Export" aria-haspopup="menu" aria-expanded="false">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-            </button>
-            <div id="export-menu" class="export-dropdown" role="menu" hidden>
-              {{#if isMarkdown}}
-              <button type="button" data-export="markdown" role="menuitem">Export as Markdown</button>
-              <button type="button" data-export="pdf" role="menuitem">Export as PDF</button>
-              {{else}}
-              <button type="button" data-export="html" role="menuitem">Export as HTML</button>
-              {{/if}}
-            </div>
-          </div>
-        </div>
         {{#if title}}
           <div class='content-title' id="content-title">{{title}}</div>
         {{else}}
@@ -798,141 +713,6 @@
       }
       {{/if}}
 
-      // Actions logic
-      function showCheck(btn) {
-        btn.querySelector('#icon-copy').style.display = 'none';
-        btn.querySelector('#icon-check').style.display = 'block';
-        setTimeout(function() { 
-          btn.querySelector('#icon-copy').style.display = 'block';
-          btn.querySelector('#icon-check').style.display = 'none';
-        }, 2000);
-      }
-
-      function fallbackCopy(text, btn) {
-        var textArea = document.createElement("textarea");
-        textArea.value = text;
-        textArea.style.position = "fixed";
-        textArea.style.top = "0";
-        textArea.style.left = "0";
-        textArea.style.opacity = "0";
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        try {
-          if(document.execCommand('copy')) {
-            showCheck(btn);
-          }
-        } catch (err) {}
-        document.body.removeChild(textArea);
-      }
-
-      function encodeUtf8Base64(text) {
-        var bytes = new TextEncoder().encode(text);
-        var binary = '';
-        for (var i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary);
-      }
-
-      document.getElementById('copy-btn').addEventListener('click', function(e) {
-        e.preventDefault();
-        var btn = this;
-        try {
-          var raw = JSON.parse(document.getElementById('raw-data').textContent || '""');
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(raw)
-              .then(function() { showCheck(btn); })
-              .catch(function() { fallbackCopy(raw, btn); });
-          } else {
-            fallbackCopy(raw, btn);
-          }
-        } catch(e) {}
-      });
-
-      (function setupExportMenu() {
-        var exportBtn = document.getElementById('export-btn');
-        var exportMenu = document.getElementById('export-menu');
-        if (!exportBtn || !exportMenu) return;
-
-        function closeMenu() {
-          exportMenu.hidden = true;
-          exportBtn.setAttribute('aria-expanded', 'false');
-        }
-
-        function openMenu() {
-          exportMenu.hidden = false;
-          exportBtn.setAttribute('aria-expanded', 'true');
-        }
-
-        exportBtn.addEventListener('click', function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (exportMenu.hidden) openMenu();
-          else closeMenu();
-        });
-
-        document.addEventListener('click', function () {
-          closeMenu();
-        });
-
-        exportMenu.addEventListener('click', function (e) {
-          e.stopPropagation();
-        });
-
-        function readRawContent() {
-          return JSON.parse(document.getElementById('raw-data').textContent || '""');
-        }
-
-        function readFileBaseName() {
-          var titleEl = document.getElementById('content-title');
-          var title = titleEl && !titleEl.hidden ? (titleEl.textContent || '').trim() : '';
-          return title || 'export';
-        }
-
-        exportMenu.querySelectorAll('[data-export]').forEach(function (item) {
-          item.addEventListener('click', function (e) {
-            e.preventDefault();
-            closeMenu();
-            try {
-              var raw = readRawContent();
-              var kind = item.getAttribute('data-export');
-              var fileBaseName = readFileBaseName();
-
-              if (kind === 'html') {
-                var encoded = encodeUtf8Base64(raw);
-                window.parent.postMessage({
-                  type: 'tool',
-                  payload: {
-                    toolName: 'tauri:downloadMediaFile',
-                    params: {
-                      dataBase64: encoded,
-                      fileName: fileBaseName + '.html',
-                      mimeType: 'text/html;charset=utf-8'
-                    }
-                  }
-                }, '*');
-                return;
-              }
-
-              window.parent.postMessage({
-                type: 'tool',
-                payload: {
-                  toolName: kind === 'pdf'
-                    ? 'tauri:exportMarkdownPdf'
-                    : 'tauri:exportMarkdownFile',
-                  params: {
-                    content: raw,
-                    fileBaseName: fileBaseName
-                  }
-                }
-              }, '*');
-            } catch (err) {
-              console.error('Failed to export content', err);
-            }
-          });
-        });
-      })();
     </script>
   </body>
 </html>

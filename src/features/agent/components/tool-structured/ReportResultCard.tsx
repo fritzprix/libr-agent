@@ -25,8 +25,6 @@ import {
   REHYPE_PLUGINS,
   STATIC_MARKDOWN_COMPONENTS,
 } from '@/features/agent/components/AgentMessageRenderer/config/markdown';
-import { MarkdownCopyExportBar } from '@/features/agent/components/shared/MarkdownCopyExportBar';
-import { composeReportResultMarkdown } from '@/features/agent/lib/markdown-document-export';
 import type { ReportResultData } from './types';
 import { DeliverableFileActions } from './DeliverableFileActions';
 import {
@@ -90,17 +88,6 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
       : data.status === 'blocked'
         ? t('agent.toolStructured.blockedTitle', 'Blocked')
         : t('agent.toolStructured.resultTitle', 'Final result'));
-
-  const exportMarkdown = useMemo(
-    () =>
-      composeReportResultMarkdown({
-        title: data.title,
-        criteria: data.criteria,
-        proof: data.proof,
-        result: data.result,
-      }),
-    [data.criteria, data.proof, data.result, data.title],
-  );
 
   const handleResultLinkClick = useCallback(
     async (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
@@ -307,12 +294,6 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
             {data.result}
           </ReactMarkdown>
         </div>
-        <MarkdownCopyExportBar
-          content={exportMarkdown}
-          fileBaseName={data.title || displayTitle}
-          allowPdf
-          align="end"
-        />
       </div>
 
       {/* Deliverables Section */}

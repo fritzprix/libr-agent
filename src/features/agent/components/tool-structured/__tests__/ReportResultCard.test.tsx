@@ -288,14 +288,7 @@ describe('ReportResultCard', () => {
     expect(grid.className).toContain('md:grid-cols-2');
   });
 
-  it('copies the composed markdown document', async () => {
-    const { toast } = await import('sonner');
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    });
-
+  it('does not render inline copy/export (MessageActionBar owns that)', () => {
     render(
       <ReportResultCard
         data={{ ...sampleData, deliverables: [] }}
@@ -303,52 +296,10 @@ describe('ReportResultCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('markdown-copy-button'));
-
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalled();
-    });
-    const copied = String(writeText.mock.calls[0]?.[0] ?? '');
-    expect(copied).toContain('# Deployment Complete');
-    expect(copied).toContain('## Outcome');
-    expect(copied).toContain(sampleData.result);
-    expect(toast.success).toHaveBeenCalled();
-  });
-
-  it('toasts an error when clipboard copy fails', async () => {
-    const { toast } = await import('sonner');
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: {
-        writeText: vi.fn().mockRejectedValue(new Error('denied')),
-      },
-    });
-
-    render(
-      <ReportResultCard
-        data={{ ...sampleData, deliverables: [] }}
-        sessionId="session-test-123"
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId('markdown-copy-button'));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalled();
-    });
-  });
-
-  it('exposes export markdown and PDF actions', () => {
-    render(
-      <ReportResultCard
-        data={{ ...sampleData, deliverables: [] }}
-        sessionId="session-test-123"
-      />,
-    );
-
-    expect(screen.getByTestId('markdown-export-trigger')).toBeInTheDocument();
-    expect(screen.getByTestId('markdown-export-md')).toBeInTheDocument();
-    expect(screen.getByTestId('markdown-export-pdf')).toBeInTheDocument();
+    expect(screen.queryByTestId('markdown-copy-button')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('markdown-export-trigger'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows a not-found tooltip with explanation for missing deliverables', () => {

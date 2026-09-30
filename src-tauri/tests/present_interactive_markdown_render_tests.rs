@@ -59,11 +59,11 @@ async fn present_interactive_markdown_loads_katex_and_mermaid() {
         "client must invoke katex.render and mermaid.render"
     );
     assert!(
-        html.contains("tauri:exportMarkdownFile") && html.contains("tauri:exportMarkdownPdf"),
-        "markdown export must use frontend preprocess tools (parity with reportResult)"
+        html.contains("id='raw-data'") || html.contains("id=\"raw-data\""),
+        "raw markdown must remain embeddable for MessageActionBar copy/export"
     );
     assert!(
-        html.contains("data-export=\"markdown\"") && html.contains("data-export=\"pdf\""),
-        "export menu must offer Markdown and PDF"
+        !html.contains("id=\"copy-btn\"") && !html.contains("tauri:exportMarkdownFile"),
+        "copy/export chrome moved to MessageActionBar (not iframe)"
     );
 }

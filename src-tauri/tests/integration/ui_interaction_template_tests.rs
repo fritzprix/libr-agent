@@ -608,11 +608,11 @@ async fn present_interactive_markdown_mermaid_loads_cdn_and_routes_fences() {
         "mermaid source must be preserved for client-side render"
     );
     assert!(
-        html.contains("tauri:exportMarkdownFile") && html.contains("tauri:exportMarkdownPdf"),
-        "markdown export must use frontend preprocess tools (parity with reportResult)"
+        html.contains("id='raw-data'") || html.contains("id=\"raw-data\""),
+        "raw markdown must remain embeddable for MessageActionBar copy/export"
     );
     assert!(
-        html.contains("Export as Markdown") && html.contains("Export as PDF"),
-        "export menu labels must stay consistent with reportResult / MessageActionBar"
+        !html.contains("id=\"copy-btn\"") && !html.contains("Export as Markdown"),
+        "copy/export chrome moved to MessageActionBar (not iframe)"
     );
 }
