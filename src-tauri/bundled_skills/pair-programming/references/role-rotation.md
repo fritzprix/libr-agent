@@ -9,7 +9,7 @@ Guidelines for turn execution and role-swapping in the Pair Programming workflow
    - **Focus:** Implementation logic, translating Navigator's guidelines into code.
    
 * **Navigator**
-   - **Allowed Actions:** Read-only actions (`view_file`, `list_dir`, `grep_search`).
+   - **Allowed Actions:** Read-only actions (`workspace__readFile`, `workspace__listDirectory`, `workspace__grepFiles`).
    - **Focus:** Architectural patterns, edge cases, error detection, and task list navigation.
 
 ---
