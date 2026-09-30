@@ -26,3 +26,5 @@ For tasks with branching logic, guide Claude through decision points:
 2. Creation workflow: [steps]
 3. Editing workflow: [steps]
 ```
+
+When the work is **edit / rename / merge / delete** of a whole skill (not just body text), run [modification-checklist.md](modification-checklist.md) before commit.
