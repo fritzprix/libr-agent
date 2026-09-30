@@ -1,6 +1,8 @@
 //! Markdown → PDF export via markdown2pdf (github theme + Unicode fonts).
 
-use tauri_mcp_agent_lib::commands::markdown_pdf::build_markdown_pdf;
+use tauri_mcp_agent_lib::commands::markdown_pdf::{
+    build_markdown_pdf, build_markdown_pdf_with_embeds, PdfEmbeddedImage,
+};
 
 #[test]
 fn build_markdown_pdf_renders_github_themed_pdf() {
@@ -28,4 +30,34 @@ fn build_markdown_pdf_handles_hangul_and_emoji() {
     let bytes = build_markdown_pdf(md).expect("unicode pdf");
     assert!(bytes.starts_with(b"%PDF-"));
     assert!(bytes.len() > 200);
+}
+
+#[test]
+fn build_markdown_pdf_typesets_latex_math() {
+    let plain = "## Answer\n\nPlain prose only.\n";
+    let with_math = "## Answer\n\nEnergy $E=mc^2$ and:\n\n$$\nx = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\n$$\n";
+    let plain_bytes = build_markdown_pdf(plain).expect("plain");
+    let math_bytes = build_markdown_pdf(with_math).expect("math");
+    assert!(math_bytes.starts_with(b"%PDF-"));
+    assert!(
+        math_bytes.len() > plain_bytes.len(),
+        "math PDF should be larger than plain (got {} vs {})",
+        math_bytes.len(),
+        plain_bytes.len()
+    );
+}
+
+#[test]
+fn build_markdown_pdf_embeds_png_from_marker() {
+    const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    let md = "## Chart\n\n![diagram](libragent-pdf-embed:0)\n";
+    let bytes = build_markdown_pdf_with_embeds(
+        md,
+        &[PdfEmbeddedImage {
+            data_base64: PNG_1X1.to_string(),
+        }],
+    )
+    .expect("embed pdf");
+    assert!(bytes.starts_with(b"%PDF-"));
+    assert!(bytes.len() > 300);
 }

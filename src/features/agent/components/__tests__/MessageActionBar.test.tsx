@@ -38,6 +38,13 @@ vi.mock('@/features/agent/lib/message-serialization', () => ({
     `export.${extension}`,
 }));
 
+vi.mock('@/features/agent/lib/pdf-export-preprocess', () => ({
+  prepareMarkdownForPdfExport: async (markdown: string) => ({
+    content: markdown,
+    embeddedImages: [],
+  }),
+}));
+
 vi.mock('@/lib/backend', () => ({
   downloadTextFile: (...args: unknown[]) => mockDownloadTextFile(...args),
   downloadTextPdf: (...args: unknown[]) => mockDownloadTextPdf(...args),

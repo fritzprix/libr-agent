@@ -40,6 +40,7 @@ import {
   serializeMessageForClipboard,
   serializeMessageForDownload,
 } from '@/features/agent/lib/message-serialization';
+import { prepareMarkdownForPdfExport } from '@/features/agent/lib/pdf-export-preprocess';
 
 const logger = getLogger('MessageActionBar');
 
@@ -223,14 +224,18 @@ function MessageActionBarImpl({
     }
     setBusyAction('pdf');
     try {
-      const content = exportMarkdownContent();
-      if (!content.trim()) {
+      const raw = exportMarkdownContent();
+      if (!raw.trim()) {
         toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
+      const { content, embeddedImages } =
+        await prepareMarkdownForPdfExport(raw);
       const result = await downloadTextPdf({
         fileName: buildMessageExportFilename(message, 'pdf'),
         content,
+        embeddedImages:
+          embeddedImages.length > 0 ? embeddedImages : undefined,
       });
       if (result === DOWNLOAD_CANCELLED) {
         toast.info(t('agent.bubble.actionBar.exportCancelled'));
