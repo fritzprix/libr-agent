@@ -1,3 +1,22 @@
+## [0.9.21] - 2026-10-01
+
+### 🚀 Features & UI
+
+- **Mermaid & LaTeX in chat**: `` ```mermaid `` diagrams and `$` / `$$` math render in chat, `reportResult`, and `presentInteractive` (markdown). Message Copy / Export PDF use the same document path so PDFs keep diagrams and equations.
+- **`visualize` skill**: One bundled skill for Mermaid/LaTeX in chat/UI plus Chart.js charts from CSV/Excel/JSON (replaces the old `data-viz` split).
+- **`browser-session-assist`**: Guides saved-login (`use_profile`) browser sessions; `email-integration` falls back to webmail when IMAP fails.
+
+### 🐛 Fixes & Hardening
+
+- **Compaction toast**: Drop the stuck Sonner loading toast; in-flight compact progress stays in the chat status bar only.
+- **Bundled skills**: Fix broken refs and tool names; prune obsolete `.github/skills` duplicates.
+
+### 🔧 Internal
+
+- Prompt: briefly restate user intent before starting tool work.
+- CI: mock walkthrough dialog on Windows; drop unused browser singleton pid parser.
+- Tooling: bump pnpm to 12.8.1.
+
 ## [0.9.20] - 2026-09-30
 
 ### 🚀 Features & UI
