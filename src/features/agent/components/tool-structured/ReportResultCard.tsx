@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import {
   openExternalUrl,
@@ -22,6 +21,13 @@ import { getLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { useOptionalAgentFilePreview } from '@/context/AgentFilePreviewContext';
 import { useOptionalAgentSessionState } from '@/context/AgentSessionContext';
+import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
+import { CodeBlock } from '@/features/agent/components/AgentMessageRenderer/components/CodeBlock';
+import {
+  REMARK_PLUGINS,
+  REHYPE_PLUGINS,
+  STATIC_MARKDOWN_COMPONENTS,
+} from '@/features/agent/components/AgentMessageRenderer/config/markdown';
 import type { ReportResultData } from './types';
 import { DeliverableFileActions } from './DeliverableFileActions';
 import {
@@ -44,6 +50,7 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
   sessionId: propSessionId,
 }) => {
   const { t } = useTranslation('common');
+  const isDark = useIsDarkMode();
   const sessionContext = useOptionalAgentSessionState();
   const filePreview = useOptionalAgentFilePreview();
   const activeSessionId = propSessionId || sessionContext?.session?.id;
@@ -157,6 +164,24 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
 
   const markdownComponents = useMemo(
     () => ({
+      ...STATIC_MARKDOWN_COMPONENTS,
+      // Same Mermaid + Prism path as AgentMessageRenderer / chat bubbles.
+      code: ({
+        children,
+        className,
+        node: _node,
+        ...props
+      }: React.ComponentPropsWithoutRef<'code'> & {
+        inline?: boolean;
+        node?: unknown;
+      }) => {
+        void _node;
+        return (
+          <CodeBlock isDark={isDark} className={className} {...props}>
+            {children}
+          </CodeBlock>
+        );
+      },
       a: ({
         href,
         children,
@@ -175,7 +200,7 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
         </a>
       ),
     }),
-    [handleResultLinkClick],
+    [handleResultLinkClick, isDark],
   );
 
   const handleCopyResult = useCallback(async () => {
@@ -258,7 +283,8 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
                 className="prose dark:prose-invert max-w-none text-xs leading-relaxed text-foreground/90"
               >
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={REMARK_PLUGINS}
+                  rehypePlugins={REHYPE_PLUGINS}
                   components={markdownComponents}
                 >
                   {data.criteria}
@@ -283,7 +309,8 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
                 className="prose dark:prose-invert max-w-none text-xs leading-relaxed text-foreground/90"
               >
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={REMARK_PLUGINS}
+                  rehypePlugins={REHYPE_PLUGINS}
                   components={markdownComponents}
                 >
                   {data.proof}
@@ -301,7 +328,8 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
         </div>
         <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed rounded-md bg-muted/20 border border-border/50 p-3.5">
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={REMARK_PLUGINS}
+            rehypePlugins={REHYPE_PLUGINS}
             components={markdownComponents}
           >
             {data.result}

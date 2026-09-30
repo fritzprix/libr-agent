@@ -39,6 +39,17 @@ vi.mock('@/context/AgentSessionContext', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-is-dark-mode', () => ({
+  useIsDarkMode: () => false,
+}));
+
+vi.mock('@/lib/mermaid/loader', () => ({
+  renderMermaidSvg: vi.fn(async () =>
+    '<svg xmlns="http://www.w3.org/2000/svg" data-testid="mermaid-svg" width="10" height="10"></svg>',
+  ),
+  resetMermaidLoaderForTests: vi.fn(),
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
@@ -288,5 +299,41 @@ describe('ReportResultCard', () => {
       'title',
       expect.stringMatching(/could not be found in the workspace/i),
     );
+  });
+
+  it('renders Mermaid fences via MermaidBlock like chat messages', async () => {
+    render(
+      <ReportResultCard
+        data={{
+          ...sampleData,
+          criteria: undefined,
+          proof: undefined,
+          deliverables: [],
+          result: ['```mermaid', 'flowchart TD', '  A-->B', '```'].join('\n'),
+        }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    expect(
+      await screen.findByTestId('mermaid-diagram', {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders LaTeX math via KaTeX like chat messages', () => {
+    const { container } = render(
+      <ReportResultCard
+        data={{
+          ...sampleData,
+          criteria: undefined,
+          proof: undefined,
+          deliverables: [],
+          result: 'Energy is $E=mc^2$.',
+        }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    expect(container.querySelector('.katex')).toBeTruthy();
   });
 });

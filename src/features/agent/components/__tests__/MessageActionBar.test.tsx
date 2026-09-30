@@ -22,6 +22,10 @@ vi.mock('@/hooks/useClipboard', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-is-dark-mode', () => ({
+  useIsDarkMode: () => false,
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),

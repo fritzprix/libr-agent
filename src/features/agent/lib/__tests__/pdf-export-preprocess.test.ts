@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PDF_EMBED_MARKER_PREFIX,
+  normalizeSvgForRaster,
   prepareMarkdownForPdfExport,
 } from '../pdf-export-preprocess';
 
@@ -46,8 +47,9 @@ describe('prepareMarkdownForPdfExport', () => {
       rasterizeSvg: mockRasterizeSvg,
     });
 
+    // Trailing fence newline stripped to match CodeBlock before loader.trim().
     expect(mockRenderMermaidSvg).toHaveBeenCalledWith(
-      'flowchart LR\n  A --> B\n',
+      'flowchart LR\n  A --> B',
       false,
     );
     expect(mockRasterizeSvg).toHaveBeenCalledOnce();
@@ -61,6 +63,18 @@ describe('prepareMarkdownForPdfExport', () => {
     expect(result.content).toContain('Done');
   });
 
+  it('passes isDark through to renderMermaidSvg for chat theme parity', async () => {
+    const md = '```mermaid\nflowchart TD\nA-->B\n```\n';
+    await prepareMarkdownForPdfExport(md, {
+      isDark: true,
+      rasterizeSvg: mockRasterizeSvg,
+    });
+    expect(mockRenderMermaidSvg).toHaveBeenCalledWith(
+      'flowchart TD\nA-->B',
+      true,
+    );
+  });
+
   it('keeps the source fence when mermaid render fails', async () => {
     mockRenderMermaidSvg.mockRejectedValueOnce(new Error('parse failed'));
     const md = '```mermaid\nbad\n```\n';
@@ -72,5 +86,18 @@ describe('prepareMarkdownForPdfExport', () => {
     expect(result.embeddedImages).toEqual([]);
     expect(result.content).toBe(md);
     expect(mockRasterizeSvg).not.toHaveBeenCalled();
+  });
+});
+
+describe('normalizeSvgForRaster', () => {
+  it('replaces percent width/height with viewBox pixel size', () => {
+    const input =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 240 120"><rect width="10" height="10"/></svg>';
+    const result = normalizeSvgForRaster(input);
+    expect(result.width).toBe(240);
+    expect(result.height).toBe(120);
+    expect(result.svg).toContain('width="240"');
+    expect(result.svg).toContain('height="120"');
+    expect(result.svg).not.toContain('width="100%"');
   });
 });

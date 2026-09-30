@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useClipboard } from '@/hooks/useClipboard';
+import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
 import { downloadTextFile, downloadTextPdf } from '@/lib/backend';
 import { getLogger } from '@/lib/logger';
 import {
@@ -121,6 +122,7 @@ function MessageActionBarImpl({
 }: MessageActionBarProps) {
   const { t } = useTranslation();
   const { copyToClipboard } = useClipboard();
+  const isDark = useIsDarkMode();
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [lastCopiedMode, setLastCopiedMode] = useState<CopyMode | null>(null);
 
@@ -229,8 +231,10 @@ function MessageActionBarImpl({
         toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
-      const { content, embeddedImages } =
-        await prepareMarkdownForPdfExport(raw);
+      const { content, embeddedImages } = await prepareMarkdownForPdfExport(
+        raw,
+        { isDark },
+      );
       const result = await downloadTextPdf({
         fileName: buildMessageExportFilename(message, 'pdf'),
         content,
@@ -253,7 +257,7 @@ function MessageActionBarImpl({
     } finally {
       setBusyAction(null);
     }
-  }, [exportMarkdownContent, isBusy, message, t]);
+  }, [exportMarkdownContent, isBusy, isDark, message, t]);
 
   return (
     <div
