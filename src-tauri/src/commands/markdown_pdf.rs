@@ -337,7 +337,8 @@ mod tests {
     #[test]
     fn build_markdown_pdf_typesets_inline_and_display_math() {
         let plain = "## Answer\n\nNo formulas here.\n";
-        let with_math = "## Answer\n\nInline $E=mc^2$ and display:\n\n$$\n\\frac{a}{b}+\\sqrt{x}\n$$\n";
+        let with_math =
+            "## Answer\n\nInline $E=mc^2$ and display:\n\n$$\n\\frac{a}{b}+\\sqrt{x}\n$$\n";
         let plain_bytes = build_markdown_pdf(plain).expect("plain pdf");
         let math_bytes = build_markdown_pdf(with_math).expect("math pdf");
         assert!(math_bytes.starts_with(b"%PDF-"));

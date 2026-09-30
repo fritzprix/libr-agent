@@ -35,7 +35,8 @@ fn build_markdown_pdf_handles_hangul_and_emoji() {
 #[test]
 fn build_markdown_pdf_typesets_latex_math() {
     let plain = "## Answer\n\nPlain prose only.\n";
-    let with_math = "## Answer\n\nEnergy $E=mc^2$ and:\n\n$$\nx = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\n$$\n";
+    let with_math =
+        "## Answer\n\nEnergy $E=mc^2$ and:\n\n$$\nx = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\n$$\n";
     let plain_bytes = build_markdown_pdf(plain).expect("plain");
     let math_bytes = build_markdown_pdf(with_math).expect("math");
     assert!(math_bytes.starts_with(b"%PDF-"));
