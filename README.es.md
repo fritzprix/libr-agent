@@ -150,7 +150,7 @@ Las habilidades más importantes para el primer día:
 Y eso es solo la capa de operador. LibrAgent también incluye habilidades de dominio para:
 
 - **Conocimiento e investigación**: `deep-research`, `knowledge-distiller`
-- **Documentos y contenido del workspace**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Documentos y contenido del workspace**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `visualize`
 - **Flujo de trabajo para desarrolladores**: `git-workflow`, `bench`
 - **Onboarding del workspace**: `agent-init`
 - **Coordinación y asistentes**: `consensus-delegation`, `loop`, `call-me-back`, `context-recall`, `recruit`, `boost`

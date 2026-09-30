@@ -150,7 +150,7 @@ Die wichtigsten Skills für den ersten Tag:
 Das ist nur die Operatorschicht. LibrAgent bietet auch Domain-Skills für:
 
 - **Wissen & Recherche**: `deep-research`, `knowledge-distiller`
-- **Dokumente & Workspace-Inhalte**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Dokumente & Workspace-Inhalte**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `visualize`
 - **Entwickler-Workflow**: `git-workflow`, `bench`
 - **Workspace-Onboarding**: `agent-init`
 - **Koordination & Assistenten**: `consensus-delegation`, `loop`, `call-me-back`, `context-recall`, `recruit`, `boost`

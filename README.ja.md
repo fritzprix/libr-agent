@@ -150,7 +150,7 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 これはオペレーターレイヤーだけです。LibrAgentはドメインスキルも提供します：
 
 - **知識と研究**：`deep-research`、`knowledge-distiller`
-- **ドキュメントとワークスペースコンテンツ**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`data-viz`
+- **ドキュメントとワークスペースコンテンツ**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`visualize`
 - **開発者ワークフロー**：`git-workflow`, `bench`
 - **ワークスペースオンボーディング**：`agent-init`
 - **調整とアシスタント**：`consensus-delegation`、`loop`、`call-me-back`、`context-recall`、`recruit`、`boost`

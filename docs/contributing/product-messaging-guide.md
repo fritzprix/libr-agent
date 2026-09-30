@@ -130,7 +130,7 @@ The introduction becomes convincing when it answers a simple question: **What do
 - `boost`
 - `calendar-mgmt`
 - `git-workflow`
-- `data-viz`
+- `visualize`
 
 ### 4. Turn tools into agent capability
 

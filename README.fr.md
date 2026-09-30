@@ -150,7 +150,7 @@ Les compétences les plus importantes pour le premier jour :
 Et ce n'est que la couche opérateur. LibrAgent fournit également des compétences de domaine pour :
 
 - **Connaissance et recherche** : `deep-research`, `knowledge-distiller`
-- **Documents et contenu workspace** : `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Documents et contenu workspace** : `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `visualize`
 - **Workflow développeur** : `git-workflow`, `bench`
 - **Onboarding workspace** : `agent-init`
 - **Coordination et assistants** : `consensus-delegation`, `loop`, `call-me-back`, `context-recall`, `recruit`, `boost`
