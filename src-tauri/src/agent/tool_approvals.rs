@@ -144,13 +144,13 @@ pub async fn evaluate_tool_execution_policy(
             }
             Ok(false) => {
                 return ToolExecutionPolicyDecision::Block(BlockedToolExecution {
-                    message: "No imported browser profile is available. Import one from Settings → System → Browser, then retry with use_profile=true.".to_string(),
+                    message: "No imported browser profile is available. Import one from Settings → System → Saved browser logins, then retry with use_profile=true.".to_string(),
                 });
             }
             Err(error) => {
                 return ToolExecutionPolicyDecision::Block(BlockedToolExecution {
                     message: format!(
-                        "Unable to verify imported browser profiles ({error}). Import a profile from Settings → System → Browser first."
+                        "Unable to verify imported browser profiles ({error}). Import a profile from Settings → System → Saved browser logins first."
                     ),
                 });
             }
