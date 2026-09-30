@@ -2,10 +2,24 @@
 //!
 //! Uses the bundled `github` theme plus platform fonts so Hangul / emoji
 //! render instead of tofu boxes (Helvetica alone cannot cover them).
+//!
+//! Optional PNG embeds use placeholders `libragent-pdf-embed:N` (filled by
+//! the frontend Mermaid preprocess) so diagrams land as images without
+//! changing the github-theme pipeline.
 
+use base64::{engine::general_purpose, Engine as _};
 use markdown2pdf::config::ConfigSource;
 use markdown2pdf::fonts::{FontConfig, FontSource};
+use serde::Deserialize;
 use std::path::PathBuf;
+
+/// PNG (or other `image`-crate-decodable) payload referenced from Markdown
+/// via `libragent-pdf-embed:{index}`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfEmbeddedImage {
+    pub data_base64: String,
+}
 
 /// Convert Markdown content to PDF bytes using the github theme + Unicode fonts.
 pub fn build_markdown_pdf(markdown: &str) -> Result<Vec<u8>, String> {
@@ -16,6 +30,44 @@ pub fn build_markdown_pdf(markdown: &str) -> Result<Vec<u8>, String> {
         Some(&font_config),
     )
     .map_err(|e| format!("markdown2pdf failed: {e}"))
+}
+
+/// Like [`build_markdown_pdf`], but materializes `embedded_images` into a
+/// temp directory and rewrites `libragent-pdf-embed:N` markers to absolute
+/// file paths before rendering. Temp files live until the PDF is built.
+pub fn build_markdown_pdf_with_embeds(
+    markdown: &str,
+    embedded_images: &[PdfEmbeddedImage],
+) -> Result<Vec<u8>, String> {
+    if embedded_images.is_empty() {
+        return build_markdown_pdf(markdown);
+    }
+
+    let temp_dir = tempfile::tempdir().map_err(|e| format!("temp dir for PDF embeds: {e}"))?;
+    let mut rewritten = markdown.to_string();
+
+    for (index, image) in embedded_images.iter().enumerate() {
+        let bytes = general_purpose::STANDARD
+            .decode(image.data_base64.trim())
+            .map_err(|e| format!("invalid PDF embed base64 at index {index}: {e}"))?;
+        if bytes.is_empty() {
+            return Err(format!("empty PDF embed at index {index}"));
+        }
+
+        let file_path = temp_dir.path().join(format!("embed-{index}.png"));
+        std::fs::write(&file_path, &bytes)
+            .map_err(|e| format!("failed to write PDF embed {index}: {e}"))?;
+
+        // Forward slashes keep markdown image URLs portable on Windows.
+        let path_for_md = file_path.to_string_lossy().replace('\\', "/");
+        let marker = format!("libragent-pdf-embed:{index}");
+        rewritten = rewritten.replace(&marker, &path_for_md);
+    }
+
+    let pdf = build_markdown_pdf(&rewritten)?;
+    // Keep temp_dir alive until after render (images are read during parse).
+    drop(temp_dir);
+    Ok(pdf)
 }
 
 fn build_unicode_font_config() -> FontConfig {
@@ -252,7 +304,10 @@ fn fallback_font_names() -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{body_font_candidates, build_markdown_pdf, first_existing_font};
+    use super::{
+        body_font_candidates, build_markdown_pdf, build_markdown_pdf_with_embeds,
+        first_existing_font, PdfEmbeddedImage,
+    };
 
     #[test]
     fn build_markdown_pdf_creates_pdf_header() {
@@ -277,5 +332,43 @@ mod tests {
                 bytes.len()
             );
         }
+    }
+
+    #[test]
+    fn build_markdown_pdf_typesets_inline_and_display_math() {
+        let plain = "## Answer\n\nNo formulas here.\n";
+        let with_math = "## Answer\n\nInline $E=mc^2$ and display:\n\n$$\n\\frac{a}{b}+\\sqrt{x}\n$$\n";
+        let plain_bytes = build_markdown_pdf(plain).expect("plain pdf");
+        let math_bytes = build_markdown_pdf(with_math).expect("math pdf");
+        assert!(math_bytes.starts_with(b"%PDF-"));
+        // TeX outlines add content streams beyond plain text of similar length.
+        assert!(
+            math_bytes.len() > plain_bytes.len(),
+            "expected math PDF ({}) larger than plain ({})",
+            math_bytes.len(),
+            plain_bytes.len()
+        );
+    }
+
+    #[test]
+    fn build_markdown_pdf_with_embeds_inlines_png() {
+        // 1x1 PNG (red pixel)
+        const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+        let md = "## Diagram\n\n![Mermaid](libragent-pdf-embed:0)\n";
+        let plain = build_markdown_pdf("## Diagram\n\nplaceholder\n").expect("plain");
+        let with_img = build_markdown_pdf_with_embeds(
+            md,
+            &[PdfEmbeddedImage {
+                data_base64: PNG_1X1.to_string(),
+            }],
+        )
+        .expect("embed pdf");
+        assert!(with_img.starts_with(b"%PDF-"));
+        assert!(
+            with_img.len() > plain.len(),
+            "expected embedded image PDF ({}) larger than plain ({})",
+            with_img.len(),
+            plain.len()
+        );
     }
 }

@@ -250,16 +250,11 @@ mermaid.initialize({
 
 ---
 
-## 10. 후속 작업 (본 PR / MVP와 분리)
-
-아래는 **채팅 Mermaid 렌더링과 별도 티켓**으로 분류한다. 이번 변경 범위에 포함하지 않는다.
-
-### 메시지 Action bar → PDF 고급 렌더링 (LaTeX / Mermaid)
+## 10. 후속 작업 — PDF 고급 렌더링 (#1966)
 
 | 항목 | 내용 |
 |------|------|
-| **현상** | PDF 추출은 메시지를 MD 문자열로 직렬화한 뒤 Rust `markdown2pdf`만 사용. 채팅의 KaTeX / Mermaid와 무관 → 수식·다이어그램이 원문/코드로만 나감 |
-| **목표** | Action bar PDF에서도 채팅과 동등한(또는 근접한) LaTeX·Mermaid 시각화 |
-| **후보 방향** | (A) PDF 전 프론트에서 Mermaid/LaTeX → 이미지 치환 후 기존 `markdown2pdf` 유지 · (B) 채팅과 동일 HTML 렌더 → print/PDF · (C) Rust 파이프라인에 엔진 추가 (비권장, 이중 유지) |
-| **의존** | 채팅 Mermaid MVP 안정화 이후 착수 권장 |
-| **비고** | MD 파일 내보내기는 소스 보존이 맞으므로 고급 렌더는 PDF(또는 HTML 인쇄)에만 해당 |
+| **이슈** | [#1966](https://github.com/fritzprix/libr-agent/issues/1966) |
+| **Mermaid** | **(A)** 프론트 `prepareMarkdownForPdfExport` → SVG→PNG → `libragent-pdf-embed:N` + `download_text_pdf(embeddedImages)` → temp PNG → `markdown2pdf` |
+| **LaTeX** | 프론트 치환 없음. `markdown2pdf` 내장 TeX (`$…$` / `$$…$$`) 활용 |
+| **비고** | `.md` 내보내기는 소스 보존. 채팅 Mermaid MVP(#1964) 의존 |
