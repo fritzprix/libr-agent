@@ -146,6 +146,8 @@ pub fn chrome_profile_appears_in_use(user_data_dir: &Path) -> bool {
     }
 }
 
+// Unix SingletonLock is a `hostname-pid` symlink. Windows treats any live lock as
+// in-use, so this parser is only needed for the Unix path and unit tests.
 #[cfg(any(unix, test))]
 fn parse_chrome_singleton_pid(target: impl AsRef<std::ffi::OsStr>) -> Option<u32> {
     let raw = target.as_ref().to_string_lossy();
