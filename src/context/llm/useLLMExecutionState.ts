@@ -16,7 +16,7 @@ export function useLLMExecutionState() {
   const [awaitingCompactMap, setAwaitingCompactMap] = useState<
     ReadonlyMap<string, boolean>
   >(new Map());
-  // Sessions that may still show a `duration: Infinity` compact loading toast.
+  // Sessions that may still have a compact outcome toast (success/error).
   const compactToastSessionsRef = useRef(new Set<string>());
 
   const setCompacting = useCallback((sessionId: string, value: boolean) => {
@@ -67,7 +67,7 @@ export function useLLMExecutionState() {
   );
 
   const clearSessionState = useCallback((sessionId: string) => {
-    // Delete/reset never emit SUCCEEDED/FAILED; dismiss the immortal loading toast.
+    // Delete/reset never emit SUCCEEDED/FAILED; dismiss any lingering compact toast.
     toast.dismiss(compactSessionToastId(sessionId));
     compactToastSessionsRef.current.delete(sessionId);
     setCompactingMap((prev) => {

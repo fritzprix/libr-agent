@@ -224,13 +224,9 @@ export async function setupCompactStateListener({
       setCompactingFromEvent(sessionId, compacting);
       setAwaitingCompactForSession(sessionId, awaitingCompact);
 
-      if (phase === 'STARTED') {
-        toast.loading(`Compacting context…`, {
-          id: toastId,
-          description,
-          duration: Infinity,
-        });
-      } else if (phase === 'SUCCEEDED') {
+      // In-flight progress lives in AgentChatStatusBar; avoid an immortal
+      // loading toast that Sonner cannot dismiss (type=loading disables close).
+      if (phase === 'SUCCEEDED') {
         toast.success(`Context compacted`, {
           id: toastId,
           description,

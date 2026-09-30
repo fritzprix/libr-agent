@@ -140,12 +140,8 @@ function handleCompactStateEvent(payload: CompactStatePayload, toast: MockToast)
   const toastId = `compact-${payload.sessionId}`;
   const description = payload.sessionName ?? payload.sessionId.slice(0, 8);
 
+  // In-flight progress is StatusBar-only; no STARTED toast.
   if (payload.phase === 'STARTED') {
-    toast.loading('Compacting context…', {
-      id: toastId,
-      description,
-      duration: Infinity,
-    });
     return;
   }
 
@@ -195,13 +191,9 @@ const DEFAULT_PAYLOAD: CompactPayload = {
 };
 
 describe('compact state toast flow', () => {
-  it('uses compact-${sessionId} as the toast id for all phases', () => {
+  it('uses compact-${sessionId} as the toast id for outcome phases', () => {
     const toast = makeToast();
 
-    handleCompactStateEvent(
-      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, awaitingCompact: false, phase: 'STARTED' },
-      toast,
-    );
     handleCompactStateEvent(
       {
         sessionId: SESSION_ID,
@@ -220,7 +212,7 @@ describe('compact state toast flow', () => {
     expect(toast.calls.every((call) => call.id === `compact-${SESSION_ID}`)).toBe(true);
   });
 
-  it('shows loading for STARTED phase', () => {
+  it('does not show a toast for STARTED phase', () => {
     const toast = makeToast();
 
     handleCompactStateEvent(
@@ -228,15 +220,7 @@ describe('compact state toast flow', () => {
       toast,
     );
 
-    expect(toast.calls).toEqual([
-      {
-        kind: 'loading',
-        title: 'Compacting context…',
-        id: `compact-${SESSION_ID}`,
-        description: SESSION_NAME,
-        duration: Infinity,
-      },
-    ]);
+    expect(toast.calls).toEqual([]);
   });
 
   it('shows success for SUCCEEDED phase', () => {
@@ -281,14 +265,14 @@ describe('compact state toast flow', () => {
     const toast = makeToast();
 
     handleCompactStateEvent(
-      { sessionId: SESSION_ID, compacting: true, awaitingCompact: false, phase: 'STARTED' },
+      { sessionId: SESSION_ID, compacting: false, awaitingCompact: false, phase: 'SUCCEEDED' },
       toast,
     );
 
     expect(toast.calls[0].description).toBe(SESSION_ID.slice(0, 8));
   });
 
-  it('shows loading again when joining an in-flight compaction', () => {
+  it('stays silent when joining an in-flight compaction', () => {
     const toast = makeToast();
 
     handleCompactStateEvent(
@@ -300,10 +284,7 @@ describe('compact state toast flow', () => {
       toast,
     );
 
-    expect(toast.calls).toHaveLength(2);
-    expect(toast.calls[0].id).toBe(toast.calls[1].id);
-    expect(toast.calls[0].kind).toBe('loading');
-    expect(toast.calls[1].kind).toBe('loading');
+    expect(toast.calls).toHaveLength(0);
   });
 });
 
