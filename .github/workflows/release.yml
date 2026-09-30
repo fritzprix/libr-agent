@@ -45,11 +45,13 @@ jobs:
             libegl-dev \
             libgbm-dev \
             libxkbcommon-dev
-          # prepare-tauri-build.cjs stages this directory before cargo runs.
+          # prepare-tauri-build.cjs --appimage-ort stages this directory before cargo.
           # pyke's static ONNX Runtime needs glibc 2.38; this shared build does not.
+          # Pass --config via tauri-action args (see Build the app step).
           echo "ORT_LIB_PATH=${GITHUB_WORKSPACE}/src-tauri/onnxruntime-linux/lib" >> "$GITHUB_ENV"
           echo "ORT_PREFER_DYNAMIC_LINK=1" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/src-tauri/onnxruntime-linux/lib" >> "$GITHUB_ENV"
+          echo "LIBRAGENT_APPIMAGE_ORT=1" >> "$GITHUB_ENV"
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
@@ -164,6 +166,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
+          # Ubuntu 22.04: shared ORT + bundle libonnxruntime for AppImageHub (glibc 2.35).
+          args: ${{ matrix.platform == 'ubuntu-22.04' && '--config src-tauri/tauri.appimage-ort.conf.json' || '' }}
           tagName: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           releaseName: LibrAgent ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           releaseBody: |

@@ -396,7 +396,7 @@ function DraftChatInner() {
                       autoComplete="off"
                       spellCheck="false"
                       style={textareaStyle}
-                      className="flex-1 resize-none bg-transparent outline-none border-none py-3 px-2 text-sm leading-relaxed max-h-32 min-h-[44px] overflow-y-auto transition-colors"
+                      className="flex-1 resize-none bg-transparent outline-none border-none py-3 px-2 text-sm leading-relaxed max-h-32 min-h-[44px] overflow-y-auto no-scrollbar transition-colors"
                       onKeyDown={(e) => {
                         if (
                           stage.kind !== 'idle' &&

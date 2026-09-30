@@ -140,7 +140,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="text-xs opacity-50 italic whitespace-pre-wrap max-h-56 overflow-y-auto transition-[max-height] duration-200"
+          className="text-xs opacity-50 italic whitespace-pre-wrap max-h-56 overflow-y-auto no-scrollbar transition-[max-height] duration-200"
         >
           {thinking != null && thinking.length > 0
             ? thinking

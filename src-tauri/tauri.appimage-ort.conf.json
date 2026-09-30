@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "node scripts/prepare-tauri-build.cjs --appimage-ort"
+  },
+  "bundle": {
+    "linux": {
+      "appimage": {
+        "files": {
+          "/usr/lib/libonnxruntime.so.1": "onnxruntime-linux/lib/libonnxruntime.so.1",
+          "/usr/lib/libonnxruntime_providers_shared.so": "onnxruntime-linux/lib/libonnxruntime_providers_shared.so"
+        }
+      },
+      "deb": {
+        "files": {
+          "usr/lib/x86_64-linux-gnu/libonnxruntime.so.1": "onnxruntime-linux/lib/libonnxruntime.so.1",
+          "usr/lib/x86_64-linux-gnu/libonnxruntime_providers_shared.so": "onnxruntime-linux/lib/libonnxruntime_providers_shared.so"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/lib64/libonnxruntime.so.1": "onnxruntime-linux/lib/libonnxruntime.so.1",
+          "/usr/lib64/libonnxruntime_providers_shared.so": "onnxruntime-linux/lib/libonnxruntime_providers_shared.so"
+        }
+      }
+    }
+  }
+}

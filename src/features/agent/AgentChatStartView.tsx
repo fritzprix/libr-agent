@@ -338,7 +338,7 @@ export default function AgentChatStartView() {
   );
 
   return (
-    <main className="h-full w-full flex flex-col items-center overflow-y-auto bg-background/50">
+    <main className="h-full w-full flex flex-col items-center overflow-y-auto no-scrollbar bg-background/50">
       <div className="w-full max-w-5xl px-8 py-20 flex flex-col gap-16">
         {/* Hero Header */}
         <div className="text-center space-y-4 animate-in fade-in slide-in-from-top-4 duration-700">

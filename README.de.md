@@ -1,4 +1,4 @@
-# 🤖 LibrAgent
+﻿# 🤖 LibrAgent
 
 > **Eine Local-First-Desktop-App für KI-Agenten, die echte Tools nutzen, parallel arbeiten und unter deiner Kontrolle bleiben.**
 > _Verbinde beliebige LLMs, füge beliebige MCP-Server hinzu und lass Agenten Dateien lesen, Shells ausführen, im Web arbeiten und Automatisierungen wirklich zu Ende bringen._
@@ -13,7 +13,7 @@ LibrAgent ist ein **Local-First-Agenten-Workspace**, gebaut mit Tauri + Rust + R
 
 Du kannst Cloud-Modelle oder lokale Runtimes wie Ollama verbinden, MCP-Server aus Tools importieren, die du bereits nutzt, und Agenten dann Code untersuchen, Dateien bearbeiten, Befehle ausführen, im Web arbeiten, Wissen aufbauen und Teilaufgaben delegieren lassen — ohne deinen gesamten Workflow auf die Cloud-VM eines anderen auszulagern.
 
-**Starte hier:** [Neueste Release herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [Zum 5-Minuten-Onboarding springen](#der-5-minuten-onboarding-pfad) · [Praxisnahe Szenarien ansehen](#-praxisnahe-szenarien)
+**Starte hier:** [Neueste Release herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [Zum 5-Minuten-Onboarding springen](#der-5-minuten-onboarding-pfad) · [Reale Szenarien ansehen](#reale-szenarien)
 
 ---
 
@@ -43,11 +43,17 @@ LibrAgent zielt auf die Mitte, die Menschen tatsächlich wollen:
 
 ---
 
-## 🎬 Die Plattform in Aktion
+## 🎬 Ausführungsgeschichte
 
-![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
+**LibrAgent ist keine Chat-App. Es ist eine Ausführungsumgebung für Agenten.**
 
-_Von einem einzelnen Agenten zu einem koordinierten Schwarm — rekursive Delegation, MCP-Tools und persistenter Arbeitsbereich in einem einheitlichen Substrat._
+**Eine Session. Ein Ziel. Ein Deliverable, das auf deiner Maschine bleibt.**
+
+1. Modell verbinden (API-Key oder [Ollama](https://ollama.com))
+2. **Workspace** auf einen echten Projektordner zeigen
+3. Den Agenten bitten zu **lesen, auszuführen und eine Datei zu hinterlassen, die du behältst** — keine Suggestion in einer Sprechblase
+
+[Neueste Release herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [5-Minuten-Onboarding](#der-5-minuten-onboarding-pfad) · [Hero Demo Spec](docs/contributing/hero-demo-spec.md)
 
 ---
 
@@ -71,11 +77,7 @@ _Von einem einzelnen Agenten zu einem koordinierten Schwarm — rekursive Delega
 - Frage: _"Verfolge diese 5 Konkurrenz-Blogs und gib mir jeden Morgen eine Zusammenfassung"_
 - Verwandle eine Einzelaufgabe in eine geplante Pipeline
 
-### 4. Von einem Assistenten zu einem echten Team gehen
-
-- Scaffolde einen gemeinsamen Workspace mit `teamwork`
-- Teile Arbeit mit `delegate` auf
-- Formalisiere wiederkehrende Zusammenarbeit mit `org` oder `schedule`
+> Multi-Agent (`delegate` / `teamwork` / `org`) kommt **nach dem ersten Deliverable** — siehe „Schwarm → Team → Organisation“ weiter unten.
 
 ---
 
@@ -85,10 +87,10 @@ _Von einem einzelnen Agenten zu einem koordinierten Schwarm — rekursive Delega
 
 LibrAgent behandelt Sicherheit als erstklassiges architektonisches Anliegen:
 
-- **Sitzungsisolation**: Jede Agentensitzung erhält ihre eigene dedizierte `MCPServiceProxy`-Instanz — null sitzungsübergreifende Datenlecks
-- **Eingebauter SecurityValidator**: Pfadtraversal- und Befehlsinjektionsangriffe auf Systemebene blockiert
+- **Sitzungsisolation**: jede Agentensitzung hat ihre eigene Tool-Runtime — keine sitzungsübergreifenden Lecks
+- **Pfad- und Befehlsguards**: Traversal und Injection an der Systemgrenze blockiert
 - **Kein Cloud-Substrat erforderlich**: Die Kernausführung erfolgt lokal; externe Verbindungen beschränken sich im Wesentlichen auf die Cloud-LLM-Anbieter und entfernten MCP/HTTP-Dienste, die du bewusst nutzt, plus Update-Prüfungen in Produktions-Builds
-- **Vollständiger Offline-Support**: Kombiniere mit [Ollama](https://ollama.ai) für einen vollständig isolierten Agenten-Stack
+- **Vollständiger Offline-Support**: Kombiniere mit [Ollama](https://ollama.com) für einen vollständig isolierten Agenten-Stack
 
 #### Was lokal bleibt vs. was deine Maschine verlässt
 
@@ -194,6 +196,7 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 
 ## 📖 Dokumentation und Leitfäden
 
+- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)**: 60s Produktstory und EN/KO/ZH-Untertitel.
 - **[Navigationsleitfaden](docs/guides/navigation-guide.md)**: Das Command & Control-Hub — `/assistants` (Rollendefinitionen) und `/playbooks` (Workflow-Blueprints).
 - **[Architekturleitfaden](docs/architecture/agent-workflow-architecture.md)**: Sitzungsisolation, Orchestrierungs-Engine und die Rust-gesteuerte Think-Act-Observe-Schleife.
 - **[Leitfaden für eingebaute Tools](docs/guides/builtin_tool_bp.md)**: Tool-Design-Standards und MCP-Antwortmuster.
@@ -205,10 +208,10 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 Lade das neueste Installationsprogramm für deine Plattform von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.19_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_x64-setup.exe) · [`LibrAgent_0.9.19_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.19_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.19_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_amd64.AppImage) · [`LibrAgent_0.9.19_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent_0.9.19_amd64.deb) · [`LibrAgent-0.9.19-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.19/LibrAgent-0.9.19-1.x86_64.rpm)
-- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.19)
+- **Windows:** [`LibrAgent_0.9.20_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_x64-setup.exe) · [`LibrAgent_0.9.20_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.20_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.20_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_amd64.AppImage) · [`LibrAgent_0.9.20_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_amd64.deb) · [`LibrAgent-0.9.20-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent-0.9.20-1.x86_64.rpm)
+- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.20)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Entwickler-Setup:**
@@ -226,7 +229,8 @@ pnpm tauri dev
 
 - Cloud: Füge einen OpenAI / Anthropic / Gemini / Groq API-Schlüssel ein
 - Lokal: `ollama pull qwen3:14b` und dann Ollama in den Settings auswählen
-  **Schritt 2 — MCP-Tools hinzufügen** (Extensions-Seitenleiste)
+
+**Schritt 2 — MCP-Tools hinzufügen** (Extensions-Seitenleiste)
 
 - Durchsuche den Preset-Katalog und klicke auf Installieren, oder
 - Sage einem Agenten: _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` registriert es automatisch
@@ -234,7 +238,7 @@ pnpm tauri dev
 
 **Schritt 3 — Erstelle deinen ersten Agenten**
 
-- _"Erstelle einen Recherche-Agenten für Wettbewerbsintelligenz"_ → über Assistants-Einstellungen oder `agent__createAgent` erstellen
+- _"Erstelle einen Recherche-Agenten für Wettbewerbsintelligenz"_ → über Assistants-Einstellungen erstellen
 - _"Baue ein Recherche-Team mit meinen aktuellen Tools"_ → `teamwork` scaffoldet Rollen und gemeinsamen Workspace
 - _"Führe parallele Recherche-Subtasks aus"_ → `delegate` startet und überwacht Kind-Sitzungen
 

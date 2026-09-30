@@ -94,7 +94,21 @@ That means the real differentiators are:
 
 ---
 
-## 5. Onboarding story
+## 5. Hero demo (visual story)
+
+Do **not** invent a different demo story for README, releases, or Show HN.
+
+Canonical filming + acceptance criteria: **[hero-demo-spec.md](./hero-demo-spec.md)**
+
+Summary locked by that spec:
+
+- Line: *LibrAgent is not a chat app. It is an execution environment for agents.*
+- Beat: one session → real tools → a deliverable file on the user's machine
+- Out of hero scope: swarm / org / settings tours
+
+---
+
+## 6. Onboarding story
 
 The introduction becomes convincing when it answers a simple question: **What do I do first?**
 
@@ -132,7 +146,7 @@ The introduction becomes convincing when it answers a simple question: **What do
 
 ---
 
-## 6. Real usage stories
+## 7. Real usage stories
 
 ### Solo developer
 
@@ -159,7 +173,7 @@ The introduction becomes convincing when it answers a simple question: **What do
 
 ---
 
-## 7. Copy-ready lines
+## 8. Copy-ready lines
 
 ### Short introduction
 
@@ -171,28 +185,28 @@ The introduction becomes convincing when it answers a simple question: **What do
 
 ### One-line position
 
-**LibrAgent's key advantage is the harness, not just the model.**
+**LibrAgent is not a chat app. It is an execution environment for agents.**
 
 ### Onboarding call-to-action
 
-**Connect one model, add a few MCP servers, wake up your first agent with bundled skills, and then grow from delegation to swarm and org-style coordination.**
+**Connect one model, attach a real workspace, finish with a file you keep — then grow from delegation to swarm and org-style coordination when you need it.**
 
 ---
 
-## 8. Recommended narrative order
+## 9. Recommended narrative order
 
 For PRs, launch posts, and product intros, this sequence works best:
 
 1. **Define the problem:** the market has moved beyond model quality alone
 2. **Declare the identity:** LibrAgent is an agent operating environment, not just an AI app
-3. **Show the core appeal:** MCP, local-first execution, workspace, and delegation live in one product
+3. **Show the hero beat:** one session, real tools, a deliverable on the user's machine ([hero-demo-spec.md](./hero-demo-spec.md))
 4. **Frame the competitive edge:** it is not only a framework, not only a coding tool, and not a chaotic runtime
 5. **Make the journey concrete:** connect a model, add MCP, use bundled skills, create specialists, delegate, then coordinate
 6. **Close with the point:** LibrAgent is a platform for operating agents, not merely chatting with them
 
 ---
 
-## 9. Final take
+## 10. Final take
 
 Weak messaging says, "it has a lot of features."
 

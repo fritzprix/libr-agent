@@ -90,9 +90,15 @@ impl InteractiveBrowserServer {
         url: &str,
         title: Option<&str>,
         visible: bool,
+        use_profile: bool,
     ) -> Result<(String, String), String> {
         if url.trim().is_empty() {
             return Err("The 'url' parameter is required".to_string());
+        }
+
+        // Fail fast before spawning work; path stays in-process and is never sent on the wire.
+        if use_profile {
+            let _ = crate::browser_profiles::resolve_default_imported_user_data_dir()?;
         }
 
         let validated_url = validate_and_normalize_url(url)?;
@@ -115,10 +121,12 @@ impl InteractiveBrowserServer {
             sessions.insert(session_id.clone(), session);
         }
 
-        info!("Creating browser sidecar session {session_id} for URL: {validated_url}");
+        info!(
+            "Creating browser sidecar session {session_id} for URL: {validated_url} (use_profile={use_profile})"
+        );
         let create_result = self
             .client
-            .create_session(&session_id, &validated_url, title, visible)
+            .create_session(&session_id, &validated_url, title, visible, use_profile)
             .await;
 
         match create_result {

@@ -46,6 +46,10 @@ pub(crate) struct CreateSessionParams {
     pub(crate) url: String,
     pub(crate) title: Option<String>,
     pub(crate) visible: bool,
+    /// When true, sidecar resolves the imported app-local profile from the registry.
+    /// Filesystem paths must never appear on this wire (agents/traces must not see them).
+    #[serde(default)]
+    pub(crate) use_profile: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

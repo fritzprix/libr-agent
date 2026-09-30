@@ -88,7 +88,7 @@ export function AgentDraftWorkspacePreviewPanel({
           </div>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-auto p-4">
+        <div className="flex-1 space-y-4 overflow-auto no-scrollbar p-4">
           <div>
             <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-primary">
               {t(

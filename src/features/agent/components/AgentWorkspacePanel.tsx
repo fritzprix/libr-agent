@@ -609,7 +609,7 @@ export function AgentWorkspacePanel({
           </div>
         </CardHeader>
 
-        <CardContent className="flex-1 overflow-auto px-4 py-4">
+        <CardContent className="flex-1 overflow-auto no-scrollbar px-4 py-4">
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
               {error}

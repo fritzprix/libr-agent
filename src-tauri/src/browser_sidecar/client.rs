@@ -68,10 +68,11 @@ impl BrowserAutomationClient {
         url: &str,
         title: Option<&str>,
         visible: bool,
+        use_profile: bool,
     ) -> Result<PageState, String> {
         debug!(
-            "Creating browser sidecar session {} with bootstrap timeout {:?}",
-            session_id, self.state.bootstrap_timeout
+            "Creating browser sidecar session {} with bootstrap timeout {:?} (use_profile={})",
+            session_id, self.state.bootstrap_timeout, use_profile
         );
         self.request_with_timeout(
             "createSession",
@@ -80,6 +81,7 @@ impl BrowserAutomationClient {
                 url: url.to_string(),
                 title: title.map(ToString::to_string),
                 visible,
+                use_profile,
             },
             self.state.bootstrap_timeout,
         )

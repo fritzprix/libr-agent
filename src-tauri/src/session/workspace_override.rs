@@ -1,5 +1,6 @@
 use crate::repositories::session_repository::SessionRepository;
 use crate::session::SessionManager;
+use crate::utils::security::expand_home_pseudo;
 use std::path::{Path, PathBuf};
 
 /// Synchronize a persisted session workspace override from the DB into SessionManager.
@@ -24,7 +25,8 @@ pub async fn hydrate_persisted_workspace_override(
         return Ok(None);
     };
 
-    let path = PathBuf::from(&workspace_override);
+    // Expand ~ in persisted overrides — prevents literal ~/ directories being stored.
+    let path = expand_home_pseudo(&workspace_override);
     if path.is_dir() {
         session_manager
             .register_session_override(session_id, path.clone())

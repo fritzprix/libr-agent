@@ -101,7 +101,7 @@ export function SkillsListModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto min-h-0 pr-4">
+        <div className="flex-1 overflow-y-auto no-scrollbar min-h-0 pr-4">
           <div className="space-y-6 py-4">
             <section className="space-y-4">
               <div className="flex items-center gap-2">

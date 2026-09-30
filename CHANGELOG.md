@@ -1,3 +1,22 @@
+## [0.9.20] - 2026-09-30
+
+### 🚀 Features & UI
+
+- **Saved browser logins**: Import Chrome / Edge / Brave profiles into an app-local copy from Settings → System, then let agents request that session with `browser__createSession({ use_profile: true })` (hard approval; not YOLO-bypassable). Everyday browsers stay untouched; Firefox import is not supported.
+
+### 🐛 Fixes & Hardening
+
+- **`reportResult` card**: Criteria/proof render as Markdown, layout and copy UX polished, clearer empty-deliverable guidance.
+- **Home paths (`~`)**: Workspace overrides and file-tool paths expand `~/…` instead of treating the tilde as a literal folder under the session workspace.
+- **WebView reload**: Block F5 / Ctrl+R so accidental browser-style refresh does not wipe the desktop UI state.
+- **Scrollbars**: Consistent thin/hidden scrollbar styling across overflow containers; Org View double-scroll nesting fixed.
+- **Local Tauri builds**: Keep plain `pnpm tauri build` free of AppImage ONNX Runtime sudo staging (release CI still uses the AppImage ORT path).
+
+### 🔧 Internal
+
+- Split oversized media MCP handlers into focused modules (`mime` / `source` / `fetch` / tool entrypoints).
+- Dependency bumps (`tiktoken-rs`, `tauri-plugin-log`, `thiserror`); drop duplicate non-compiling workspace tilde tests.
+
 ## [0.9.19] - 2026-09-28
 
 ### 🐛 Fixes & Hardening

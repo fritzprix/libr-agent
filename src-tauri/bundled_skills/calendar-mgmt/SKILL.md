@@ -22,7 +22,7 @@ This is an **end-user daily work** skill (like `email-integration`, `telegram-cl
 | --- | --- |
 | **schedule** / **loop** | Wake an assistant on a clock/cron (automation harness) |
 | **call-me-back** | Resume this session on process/kanban/webhook completion |
-| **email-integration** | Mail read/send (separate OAuth; IMAP, not Gmail API) |
+| **email-integration** | Mail read/send (IMAP/SMTP; browser `use_profile` webmail fallback) |
 | **recruit** / **boost** | Create or strengthen assistant configurations |
 
 **CalDAV** (Nextcloud, Apple, Fastmail) is planned for a later release. MVP is **Google Calendar API only**.
