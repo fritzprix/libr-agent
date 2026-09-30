@@ -57,8 +57,6 @@ There is no `agent__detachFromOrg` tool today. To remove a session from org view
 - **Retire work:** `agent__stopSession(sessionId)` then `agent__deleteSession(sessionId)` if permanent removal is OK.
 - **Keep work, hide from org:** not supported — document the limitation and ask the user to choose stop/delete or leave the session idle.
 
-Passing `None` to `update_org_identity` exists in the backend but is not exposed as an agent tool.
-
 ## Guardrails
 
 - Do not dissolve the org, delete the org root, or archive the entire teamwork artifact directory — out of scope.
