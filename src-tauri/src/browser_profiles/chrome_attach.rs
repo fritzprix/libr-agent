@@ -146,6 +146,7 @@ pub fn chrome_profile_appears_in_use(user_data_dir: &Path) -> bool {
     }
 }
 
+#[cfg(any(unix, test))]
 fn parse_chrome_singleton_pid(target: impl AsRef<std::ffi::OsStr>) -> Option<u32> {
     let raw = target.as_ref().to_string_lossy();
     // Chrome writes "hostname-pid" (symlink target on Unix).
