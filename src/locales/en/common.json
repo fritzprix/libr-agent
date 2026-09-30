@@ -1605,17 +1605,20 @@
         "exportTooltip": "Export message",
         "exportMarkdown": "Export as Markdown",
         "exportPdf": "Export as PDF",
+        "exportHtml": "Export as HTML",
         "copySuccess": "Message copied to clipboard",
         "copyEmpty": "Nothing to copy",
         "copyDenied": "Clipboard access denied. Check your browser permissions.",
         "copyError": "Failed to copy message",
         "exportMarkdownSuccess": "Markdown file downloaded",
         "exportPdfSuccess": "PDF file downloaded",
+        "exportHtmlSuccess": "HTML file downloaded",
         "exportOpenFile": "Open",
         "exportOpenFileError": "Failed to open file",
         "exportCancelled": "Download cancelled",
         "exportError": "Failed to export message",
-        "exportPdfError": "Failed to export PDF"
+        "exportPdfError": "Failed to export PDF",
+        "exportHtmlError": "Failed to export HTML"
       }
     },
     "start": {

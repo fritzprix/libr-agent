@@ -1552,17 +1552,20 @@
         "exportTooltip": "メッセージをエクスポート",
         "exportMarkdown": "Markdown でエクスポート",
         "exportPdf": "PDF でエクスポート",
+        "exportHtml": "HTML としてエクスポート",
         "copySuccess": "メッセージをクリップボードにコピーしました",
         "copyEmpty": "コピーする内容がありません",
         "copyDenied": "クリップボードへのアクセスが拒否されました。ブラウザの権限を確認してください。",
         "copyError": "メッセージのコピーに失敗しました",
         "exportMarkdownSuccess": "Markdown ファイルをダウンロードしました",
         "exportPdfSuccess": "PDF ファイルをダウンロードしました",
+        "exportHtmlSuccess": "HTML ファイルをダウンロードしました",
         "exportOpenFile": "開く",
         "exportOpenFileError": "ファイルを開けませんでした",
         "exportCancelled": "ダウンロードがキャンセルされました",
         "exportError": "メッセージのエクスポートに失敗しました",
-        "exportPdfError": "PDF のエクスポートに失敗しました"
+        "exportPdfError": "PDF のエクスポートに失敗しました",
+        "exportHtmlError": "HTML のエクスポートに失敗しました"
       }
     },
     "start": {

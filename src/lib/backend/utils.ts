@@ -137,11 +137,16 @@ export interface DownloadTextPdfArgs {
   fileName: string;
   content: string;
   title?: string;
+  /** PNG base64 payloads for `libragent-pdf-embed:N` markers in content. */
+  embeddedImages?: Array<{ dataBase64: string }>;
 }
 
 /**
  * Renders Markdown to a PDF via markdown2pdf (github theme) and saves it
  * through the native Save File dialog.
+ *
+ * Mermaid diagrams should be preprocessed into `embeddedImages` + markers;
+ * LaTeX `$` / `$$` is typeset by markdown2pdf itself.
  */
 export async function downloadTextPdf(
   args: DownloadTextPdfArgs,

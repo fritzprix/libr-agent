@@ -39,34 +39,6 @@
         box-shadow: 0 1px 3px color-mix(in oklab, var(--foreground, #000000) 12%, transparent);
         border: 1px solid var(--border, #e5e7eb);
       }
-      .action-buttons {
-        position: absolute;
-        top: 16px;
-        right: 16px;
-        display: flex;
-        gap: 8px;
-        z-index: 10;
-      }
-      .icon-btn {
-        background: var(--muted, #f9fafb);
-        color: var(--muted-foreground, #4b5563);
-        border: 1px solid var(--border, #e5e7eb);
-        border-radius: 6px;
-        padding: 6px;
-        cursor: pointer;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .icon-btn:hover {
-        background: var(--accent, #e5e7eb);
-        color: var(--accent-foreground, #111827);
-      }
-      .icon-btn svg {
-        width: 16px;
-        height: 16px;
-      }
       .content-title {
         font-size: 18px;
         font-weight: 700;
@@ -74,7 +46,6 @@
         margin: 0 0 16px 0;
         padding-bottom: 12px;
         border-bottom: 1px solid var(--border, #e5e7eb);
-        padding-right: 80px;
       }
       
       /* Interaction Section */
@@ -209,26 +180,49 @@
       }
       .md .katex { font-size: 1.05em; color: inherit; font-style: normal; }
       .md .katex-display { margin: 0.4em 0; }
+      .md .mermaid-diagram {
+        overflow-x: auto;
+        margin: 12px 0;
+        padding: 16px;
+        background: var(--muted, #f3f4f6);
+        border-radius: 8px;
+        border: 1px solid var(--border, #e5e7eb);
+        min-height: 4rem;
+      }
+      .md .mermaid-diagram svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+      .md .mermaid-pending {
+        color: var(--muted-foreground, #6b7280);
+        font-size: 13px;
+      }
+      .md .mermaid-error {
+        color: #b91c1c;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .md .mermaid-error-source {
+        margin: 0;
+        padding: 8px;
+        font-size: 12px;
+        overflow-x: auto;
+        background: color-mix(in oklab, var(--foreground, #000) 6%, transparent);
+        border-radius: 6px;
+        white-space: pre;
+      }
     </style>
     {{#if isMarkdown}}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.27/dist/katex.min.css" crossorigin="anonymous" />
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.27/dist/katex.min.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js" crossorigin="anonymous"></script>
     {{/if}}
   </head>
   <body>
     <div class="container">
       <div class='content-wrapper'>
-        <div class="action-buttons">
-          <button type="button" id="copy-btn" class="icon-btn" title="Copy to clipboard">
-            <svg id="icon-copy" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-            <svg id="icon-check" style="display: none; color: #10b981;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          </button>
-          <button type="button" id="save-btn" class="icon-btn" title="Save to file">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-          </button>
-        </div>
         {{#if title}}
-          <div class='content-title'>{{title}}</div>
+          <div class='content-title' id="content-title">{{title}}</div>
+        {{else}}
+          <div id="content-title" hidden></div>
         {{/if}}
         
         <script id='raw-data' type='application/json'>{{{contentJson}}}</script>
@@ -361,8 +355,17 @@
                       var fenceBody = fence.text.replace(/^```[^\n]*\n?/, '').replace(/\n?```$/, '');
                       var fenceInfo = (fence.text.match(/^```([^\n]*)/) || [])[1] || '';
                       fenceInfo = fenceInfo.trim();
-                      html += '<pre><code' + (fenceInfo ? ' class="language-' + escape(fenceInfo) + '"' : '') + '>' +
-                               escape(fenceBody) + '</code></pre>\n';
+                      var fenceLang = (fenceInfo.split(/\s+/)[0] || '').toLowerCase();
+                      if (fenceLang === 'mermaid') {
+                        // Chat MermaidBlock parity: diagram container + source for lazy render.
+                        html += '<div class="mermaid-diagram" data-mermaid="true">' +
+                          '<pre class="mermaid-source" hidden>' + escape(fenceBody) + '</pre>' +
+                          '<div class="mermaid-pending">Rendering diagram…</div>' +
+                          '</div>\n';
+                      } else {
+                        html += '<pre><code' + (fenceInfo ? ' class="language-' + escape(fenceInfo) + '"' : '') + '>' +
+                                 escape(fenceBody) + '</code></pre>\n';
+                      }
                     }
                     i++; continue;
                   }
@@ -464,6 +467,74 @@
                 });
               }
 
+              function isDarkTheme() {
+                try {
+                  var scheme = getComputedStyle(document.documentElement).colorScheme;
+                  if (scheme === 'dark') return true;
+                  if (scheme === 'light') return false;
+                } catch (e) { /* ignore */ }
+                return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+              }
+
+              var mermaidThemeApplied = null;
+              var mermaidQueue = Promise.resolve();
+
+              function renderMermaid(root) {
+                if (typeof mermaid === 'undefined' || !root) return;
+                var nodes = root.querySelectorAll('.mermaid-diagram[data-mermaid="true"]:not([data-mermaid-rendered])');
+                if (!nodes.length) return;
+
+                var theme = isDarkTheme() ? 'dark' : 'default';
+                if (mermaidThemeApplied !== theme) {
+                  mermaid.initialize({
+                    startOnLoad: false,
+                    securityLevel: 'strict',
+                    theme: theme
+                  });
+                  mermaidThemeApplied = theme;
+                }
+
+                Array.prototype.forEach.call(nodes, function (el) {
+                  var sourceEl = el.querySelector('.mermaid-source');
+                  var code = sourceEl ? String(sourceEl.textContent || '').trim() : '';
+                  if (!code) {
+                    el.setAttribute('data-mermaid-rendered', 'true');
+                    return;
+                  }
+
+                  var run = function () {
+                    var id = 'mmd-pi-' + Math.random().toString(36).slice(2, 10);
+                    return mermaid.render(id, code).then(function (result) {
+                      el.innerHTML = result.svg;
+                      el.setAttribute('data-mermaid-rendered', 'true');
+                      if (typeof scheduleResizeReport === 'function') {
+                        scheduleResizeReport();
+                      }
+                    }).catch(function () {
+                      el.innerHTML =
+                        '<div class="mermaid-error">Failed to render Mermaid diagram</div>' +
+                        '<pre class="mermaid-error-source">' + escape(code) + '</pre>';
+                      el.setAttribute('data-mermaid-rendered', 'error');
+                      if (typeof scheduleResizeReport === 'function') {
+                        scheduleResizeReport();
+                      }
+                    }).finally(function () {
+                      // mermaid.render mounts temp SVG nodes on document.body
+                      var temp = document.getElementById(id);
+                      if (temp && temp.parentNode) temp.parentNode.removeChild(temp);
+                      var d = document.getElementById('d' + id);
+                      if (d && d.parentNode) d.parentNode.removeChild(d);
+                      var iEl = document.getElementById('i' + id);
+                      if (iEl && iEl.parentNode) iEl.parentNode.removeChild(iEl);
+                    });
+                  };
+
+                  // Keep queue head alive after rejections (chat loader parity).
+                  var next = mermaidQueue.then(run, run);
+                  mermaidQueue = next.then(function () {}, function () {});
+                });
+              }
+
               var mdRoot = document.getElementById('md-root');
               mdRoot.innerHTML = parseMarkdown(raw);
 
@@ -472,6 +543,10 @@
                 if (typeof scheduleResizeReport === 'function') {
                   scheduleResizeReport();
                 }
+              }
+
+              function applyMermaidWhenReady() {
+                renderMermaid(mdRoot);
               }
 
               if (typeof katex !== 'undefined') {
@@ -485,6 +560,21 @@
                     applyKatexWhenReady();
                   } else if (katexWait > 100) {
                     clearInterval(katexPoll);
+                  }
+                }, 50);
+              }
+
+              if (typeof mermaid !== 'undefined') {
+                applyMermaidWhenReady();
+              } else {
+                var mermaidWait = 0;
+                var mermaidPoll = setInterval(function () {
+                  mermaidWait += 1;
+                  if (typeof mermaid !== 'undefined') {
+                    clearInterval(mermaidPoll);
+                    applyMermaidWhenReady();
+                  } else if (mermaidWait > 100) {
+                    clearInterval(mermaidPoll);
                   }
                 }, 50);
               }
@@ -623,80 +713,6 @@
       }
       {{/if}}
 
-      // Actions logic
-      function showCheck(btn) {
-        btn.querySelector('#icon-copy').style.display = 'none';
-        btn.querySelector('#icon-check').style.display = 'block';
-        setTimeout(function() { 
-          btn.querySelector('#icon-copy').style.display = 'block';
-          btn.querySelector('#icon-check').style.display = 'none';
-        }, 2000);
-      }
-
-      function fallbackCopy(text, btn) {
-        var textArea = document.createElement("textarea");
-        textArea.value = text;
-        textArea.style.position = "fixed";
-        textArea.style.top = "0";
-        textArea.style.left = "0";
-        textArea.style.opacity = "0";
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        try {
-          if(document.execCommand('copy')) {
-            showCheck(btn);
-          }
-        } catch (err) {}
-        document.body.removeChild(textArea);
-      }
-
-      function encodeUtf8Base64(text) {
-        var bytes = new TextEncoder().encode(text);
-        var binary = '';
-        for (var i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary);
-      }
-
-      document.getElementById('copy-btn').addEventListener('click', function(e) {
-        e.preventDefault();
-        var btn = this;
-        try {
-          var raw = JSON.parse(document.getElementById('raw-data').textContent || '""');
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(raw)
-              .then(function() { showCheck(btn); })
-              .catch(function() { fallbackCopy(raw, btn); });
-          } else {
-            fallbackCopy(raw, btn);
-          }
-        } catch(e) {}
-      });
-
-      document.getElementById('save-btn').addEventListener('click', function(e) {
-        e.preventDefault();
-        try {
-          var raw = JSON.parse(document.getElementById('raw-data').textContent || '""');
-          var isMd = {{isMarkdown}};
-          var fileName = isMd ? 'export.md' : 'export.html';
-          var mimeType = isMd ? 'text/markdown;charset=utf-8' : 'text/html;charset=utf-8';
-          var encoded = encodeUtf8Base64(raw);
-
-          window.parent.postMessage({
-            type: 'tool',
-            payload: {
-              toolName: 'tauri:downloadMediaFile',
-              params: {
-                dataBase64: encoded,
-                fileName: fileName,
-                mimeType: mimeType
-              }
-            }
-          }, '*');
-        } catch(e) { console.error('Failed to save file', e); }
-      });
     </script>
   </body>
 </html>

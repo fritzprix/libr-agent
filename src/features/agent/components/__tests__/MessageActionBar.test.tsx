@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '@/models/chat';
+import type { MCPContent } from '@/lib/mcp';
 import { MessageActionBar } from '../MessageActionBar';
 
 const mockCopyToClipboard = vi.fn();
@@ -8,6 +9,7 @@ const mockSerialize = vi.fn();
 const mockSerializeForDownload = vi.fn();
 const mockDownloadTextFile = vi.fn();
 const mockDownloadTextPdf = vi.fn();
+const mockPrepareMarkdownForPdfExport = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -20,6 +22,48 @@ vi.mock('@/hooks/useClipboard', () => ({
     copied: false,
     copyToClipboard: mockCopyToClipboard,
   }),
+}));
+
+vi.mock('@/hooks/use-is-dark-mode', () => ({
+  useIsDarkMode: () => true,
+}));
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipContent: () => null,
+}));
+
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
+    <div role="menu">{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+  }: {
+    children: React.ReactNode;
+    onSelect?: (event: Event) => void;
+  }) => (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={() =>
+        onSelect?.({
+          preventDefault() {},
+          stopPropagation() {},
+        } as Event)
+      }
+    >
+      {children}
+    </button>
+  ),
 }));
 
 vi.mock('sonner', () => ({
@@ -38,10 +82,20 @@ vi.mock('@/features/agent/lib/message-serialization', () => ({
     `export.${extension}`,
 }));
 
+vi.mock('@/features/agent/lib/pdf-export-preprocess', () => ({
+  prepareMarkdownForPdfExport: (...args: unknown[]) =>
+    mockPrepareMarkdownForPdfExport(...args),
+}));
+
 vi.mock('@/lib/backend', () => ({
   downloadTextFile: (...args: unknown[]) => mockDownloadTextFile(...args),
   downloadTextPdf: (...args: unknown[]) => mockDownloadTextPdf(...args),
   openPathWithDefaultApp: vi.fn(),
+}));
+
+vi.mock('@/lib/notify-file-download', () => ({
+  DOWNLOAD_CANCELLED: 'DOWNLOAD_CANCELLED',
+  notifyFileDownloadSuccess: vi.fn(),
 }));
 
 function createMessage(overrides: Partial<Message> = {}): Message {
@@ -63,6 +117,10 @@ describe('MessageActionBar', () => {
     mockCopyToClipboard.mockResolvedValue(undefined);
     mockDownloadTextFile.mockResolvedValue('/tmp/message.md');
     mockDownloadTextPdf.mockResolvedValue('/tmp/message.pdf');
+    mockPrepareMarkdownForPdfExport.mockResolvedValue({
+      content: '## Answer\n\n- point one',
+      embeddedImages: [],
+    });
   });
 
   it('copies the full message when the primary copy button is clicked', async () => {
@@ -119,5 +177,124 @@ describe('MessageActionBar', () => {
         name: 'agent.bubble.actionBar.exportAria',
       }),
     ).toBeVisible();
+  });
+
+  it('runs PDF preprocess and forwards embeddedImages to downloadTextPdf', async () => {
+    const preprocessed = {
+      content: '![Mermaid diagram](libragent-pdf-embed:0)\n',
+      embeddedImages: [{ dataBase64: 'aaaPNG' }],
+    };
+    mockPrepareMarkdownForPdfExport.mockResolvedValueOnce(preprocessed);
+    mockSerializeForDownload.mockReturnValueOnce(
+      '```mermaid\nflowchart TD\nA-->B\n```\n',
+    );
+
+    render(<MessageActionBar message={createMessage()} />);
+
+    fireEvent.click(
+      screen.getByRole('menuitem', {
+        name: 'agent.bubble.actionBar.exportPdf',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockPrepareMarkdownForPdfExport).toHaveBeenCalledWith(
+        '```mermaid\nflowchart TD\nA-->B\n```\n',
+        { isDark: true },
+      );
+      expect(mockDownloadTextPdf).toHaveBeenCalledWith({
+        fileName: 'export.pdf',
+        content: preprocessed.content,
+        embeddedImages: preprocessed.embeddedImages,
+      });
+    });
+  });
+
+  it('primary copy prefers reportResult document over wrapper transcript', async () => {
+    mockCopyToClipboard.mockResolvedValue(undefined);
+
+    render(
+      <MessageActionBar
+        message={createMessage({
+          role: 'tool',
+          content: [{ type: 'text', text: 'Final result reported STOP' }],
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'success',
+              title: 'Ship',
+              result: 'ok',
+              deliverables: [],
+            },
+          },
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyFullAria',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockCopyToClipboard).toHaveBeenCalled();
+    });
+    const copied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
+    expect(copied).toContain('# Ship');
+    expect(copied).toContain('ok');
+    expect(copied).not.toContain('STOP');
+  });
+
+  it('exports presentInteractive HTML as .html and hides PDF', async () => {
+    mockDownloadTextFile.mockResolvedValue('/tmp/Widget.html');
+    mockSerializeForDownload.mockReturnValue('<p>Hi</p>\n');
+
+    const html = [
+      '<div id="content-title">A/B:Widget</div>',
+      '<script id="raw-data" type="application/json">"<p>Hi</p>\\n"</script>',
+    ].join('');
+
+    render(
+      <MessageActionBar
+        message={createMessage({
+          role: 'tool',
+          content: [
+            {
+              type: 'resource',
+              resource: {
+                uri: 'ui://interactive/xyz',
+                mimeType: 'text/html',
+                text: html,
+              },
+            } as MCPContent,
+          ],
+        })}
+      />,
+    );
+
+    expect(
+      screen.queryByRole('menuitem', {
+        name: 'agent.bubble.actionBar.exportPdf',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', {
+        name: 'agent.bubble.actionBar.exportHtml',
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('menuitem', {
+        name: 'agent.bubble.actionBar.exportHtml',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockDownloadTextFile).toHaveBeenCalledWith({
+        fileName: 'A_B_Widget.html',
+        content: '<p>Hi</p>\n',
+      });
+    });
   });
 });

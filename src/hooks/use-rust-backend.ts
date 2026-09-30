@@ -91,6 +91,7 @@ export interface RustBackendAPI {
     fileName: string;
     content: string;
     title?: string;
+    embeddedImages?: Array<{ dataBase64: string }>;
   }) => Promise<string>;
   exportAndDownloadZip: (
     files: string[],

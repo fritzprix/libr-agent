@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { ReactNode } from 'react';
 import '@testing-library/jest-dom/vitest';
 import { ReportResultCard } from '../ReportResultCard';
 import type { ReportResultData } from '../types';
@@ -15,6 +16,49 @@ vi.mock('@/lib/backend', () => ({
   openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),
   openWorkspaceFileWithDefaultApp: (...args: unknown[]) =>
     openWorkspaceFileWithDefaultAppMock(...args),
+  downloadTextFile: vi.fn(),
+  downloadTextPdf: vi.fn(),
+}));
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipContent: () => null,
+}));
+
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => (
+    <div role="menu">{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+    ...rest
+  }: {
+    children: ReactNode;
+    onSelect?: (event: Event) => void;
+    'data-testid'?: string;
+  }) => (
+    <button
+      type="button"
+      role="menuitem"
+      data-testid={rest['data-testid']}
+      onClick={() =>
+        onSelect?.({
+          preventDefault() {},
+          stopPropagation() {},
+        } as Event)
+      }
+    >
+      {children}
+    </button>
+  ),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -37,6 +81,17 @@ vi.mock('@/context/AgentSessionContext', () => ({
   useOptionalAgentSessionState: () => ({
     session: { id: 'session-test-123' },
   }),
+}));
+
+vi.mock('@/hooks/use-is-dark-mode', () => ({
+  useIsDarkMode: () => false,
+}));
+
+vi.mock('@/lib/mermaid/loader', () => ({
+  renderMermaidSvg: vi.fn(async () =>
+    '<svg xmlns="http://www.w3.org/2000/svg" data-testid="mermaid-svg" width="10" height="10"></svg>',
+  ),
+  resetMermaidLoaderForTests: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({
@@ -233,14 +288,7 @@ describe('ReportResultCard', () => {
     expect(grid.className).toContain('md:grid-cols-2');
   });
 
-  it('copies the raw result body to the clipboard', async () => {
-    const { toast } = await import('sonner');
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    });
-
+  it('does not render inline copy/export (MessageActionBar owns that)', () => {
     render(
       <ReportResultCard
         data={{ ...sampleData, deliverables: [] }}
@@ -248,35 +296,10 @@ describe('ReportResultCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('report-result-copy-button'));
-
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith(sampleData.result);
-    });
-    expect(toast.success).toHaveBeenCalled();
-  });
-
-  it('toasts an error when clipboard copy fails', async () => {
-    const { toast } = await import('sonner');
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: {
-        writeText: vi.fn().mockRejectedValue(new Error('denied')),
-      },
-    });
-
-    render(
-      <ReportResultCard
-        data={{ ...sampleData, deliverables: [] }}
-        sessionId="session-test-123"
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId('report-result-copy-button'));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalled();
-    });
+    expect(screen.queryByTestId('markdown-copy-button')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('markdown-export-trigger'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows a not-found tooltip with explanation for missing deliverables', () => {
@@ -288,5 +311,41 @@ describe('ReportResultCard', () => {
       'title',
       expect.stringMatching(/could not be found in the workspace/i),
     );
+  });
+
+  it('renders Mermaid fences via MermaidBlock like chat messages', async () => {
+    render(
+      <ReportResultCard
+        data={{
+          ...sampleData,
+          criteria: undefined,
+          proof: undefined,
+          deliverables: [],
+          result: ['```mermaid', 'flowchart TD', '  A-->B', '```'].join('\n'),
+        }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    expect(
+      await screen.findByTestId('mermaid-diagram', {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders LaTeX math via KaTeX like chat messages', () => {
+    const { container } = render(
+      <ReportResultCard
+        data={{
+          ...sampleData,
+          criteria: undefined,
+          proof: undefined,
+          deliverables: [],
+          result: 'Energy is $E=mc^2$.',
+        }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    expect(container.querySelector('.katex')).toBeTruthy();
   });
 });
