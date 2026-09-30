@@ -607,4 +607,12 @@ async fn present_interactive_markdown_mermaid_loads_cdn_and_routes_fences() {
         html.contains("flowchart TD") && html.contains("A-->B"),
         "mermaid source must be preserved for client-side render"
     );
+    assert!(
+        html.contains("tauri:exportMarkdownFile") && html.contains("tauri:exportMarkdownPdf"),
+        "markdown export must use frontend preprocess tools (parity with reportResult)"
+    );
+    assert!(
+        html.contains("Export as Markdown") && html.contains("Export as PDF"),
+        "export menu labels must stay consistent with reportResult / MessageActionBar"
+    );
 }

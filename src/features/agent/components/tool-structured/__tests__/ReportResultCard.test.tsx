@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { ReactNode } from 'react';
 import '@testing-library/jest-dom/vitest';
 import { ReportResultCard } from '../ReportResultCard';
 import type { ReportResultData } from '../types';
@@ -15,6 +16,49 @@ vi.mock('@/lib/backend', () => ({
   openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),
   openWorkspaceFileWithDefaultApp: (...args: unknown[]) =>
     openWorkspaceFileWithDefaultAppMock(...args),
+  downloadTextFile: vi.fn(),
+  downloadTextPdf: vi.fn(),
+}));
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipContent: () => null,
+}));
+
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => (
+    <div role="menu">{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+    ...rest
+  }: {
+    children: ReactNode;
+    onSelect?: (event: Event) => void;
+    'data-testid'?: string;
+  }) => (
+    <button
+      type="button"
+      role="menuitem"
+      data-testid={rest['data-testid']}
+      onClick={() =>
+        onSelect?.({
+          preventDefault() {},
+          stopPropagation() {},
+        } as Event)
+      }
+    >
+      {children}
+    </button>
+  ),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -244,7 +288,7 @@ describe('ReportResultCard', () => {
     expect(grid.className).toContain('md:grid-cols-2');
   });
 
-  it('copies the raw result body to the clipboard', async () => {
+  it('copies the composed markdown document', async () => {
     const { toast } = await import('sonner');
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
@@ -259,11 +303,15 @@ describe('ReportResultCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('report-result-copy-button'));
+    fireEvent.click(screen.getByTestId('markdown-copy-button'));
 
     await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith(sampleData.result);
+      expect(writeText).toHaveBeenCalled();
     });
+    const copied = String(writeText.mock.calls[0]?.[0] ?? '');
+    expect(copied).toContain('# Deployment Complete');
+    expect(copied).toContain('## Outcome');
+    expect(copied).toContain(sampleData.result);
     expect(toast.success).toHaveBeenCalled();
   });
 
@@ -283,11 +331,24 @@ describe('ReportResultCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('report-result-copy-button'));
+    fireEvent.click(screen.getByTestId('markdown-copy-button'));
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalled();
     });
+  });
+
+  it('exposes export markdown and PDF actions', () => {
+    render(
+      <ReportResultCard
+        data={{ ...sampleData, deliverables: [] }}
+        sessionId="session-test-123"
+      />,
+    );
+
+    expect(screen.getByTestId('markdown-export-trigger')).toBeInTheDocument();
+    expect(screen.getByTestId('markdown-export-md')).toBeInTheDocument();
+    expect(screen.getByTestId('markdown-export-pdf')).toBeInTheDocument();
   });
 
   it('shows a not-found tooltip with explanation for missing deliverables', () => {

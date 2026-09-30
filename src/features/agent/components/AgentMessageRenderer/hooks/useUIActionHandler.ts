@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { MCPContent } from '@/lib/mcp';
 import { extractServiceInfoFromContent } from '@/lib/mcp';
 import { useRustBackend } from '@/hooks/use-rust-backend';
+import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
 import { getLogger } from '@/lib/logger';
 import { UIActionResult } from '@mcp-ui/client';
 import { useAgentChatActions } from '@/context/AgentChatContext';
@@ -10,8 +11,21 @@ import { createSystemMessage, createUserMessage } from '@/lib/chat-utils';
 import { executeUiTauriAction, handleUserToolCall } from '@/lib/backend';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
 import { isWorkflowCancelledError } from '@/context/llm/types';
+import {
+  exportMarkdownDocumentWithNotify,
+  markdownExportBaseName,
+} from '@/features/agent/lib/markdown-document-export';
+import { useTranslation } from 'react-i18next';
 
 const logger = getLogger('AgentMessageRenderer');
+
+function readStringParam(
+  params: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = params[key];
+  return typeof value === 'string' ? value : undefined;
+}
 
 /**
  * Handle UI Action from UIResourceRenderer
@@ -29,6 +43,8 @@ export function useUIActionHandler(
   const { submit } = useAgentChatActions();
   const tauriCommands = useRustBackend();
   const { openExternalUrl } = tauriCommands;
+  const isDark = useIsDarkMode();
+  const { t } = useTranslation('common');
 
   return useCallback(
     async (result: UIActionResult) => {
@@ -49,6 +65,48 @@ export function useUIActionHandler(
               sessionId,
               result,
             });
+
+            // Frontend-owned markdown export (Mermaid/LaTeX PDF preprocess).
+            // presentInteractive posts these instead of raw downloadMediaFile
+            // so export matches ReportResultCard / MessageActionBar.
+            if (
+              toolName === 'tauri:exportMarkdownFile' ||
+              toolName === 'tauri:exportMarkdownPdf'
+            ) {
+              const content = readStringParam(params, 'content') ?? '';
+              const fileBaseName = markdownExportBaseName(
+                readStringParam(params, 'fileBaseName') ??
+                  readStringParam(params, 'fileName'),
+                'export',
+              );
+              const kind =
+                toolName === 'tauri:exportMarkdownPdf' ? 'pdf' : 'markdown';
+
+              await exportMarkdownDocumentWithNotify({
+                content,
+                kind,
+                fileBaseName,
+                isDark,
+                labels: {
+                  markdownSuccess: t(
+                    'agent.bubble.actionBar.exportMarkdownSuccess',
+                  ),
+                  pdfSuccess: t('agent.bubble.actionBar.exportPdfSuccess'),
+                  openFile: t('agent.bubble.actionBar.exportOpenFile'),
+                  openFileError: t(
+                    'agent.bubble.actionBar.exportOpenFileError',
+                  ),
+                  cancelled: t('agent.bubble.actionBar.exportCancelled'),
+                  markdownError: t('agent.bubble.actionBar.exportError'),
+                  pdfError: t('agent.bubble.actionBar.exportPdfError'),
+                },
+              });
+
+              return {
+                status: 'tauri-processed',
+                message: `UI export executed: ${toolName}`,
+              };
+            }
 
             // prefix routing: tauri: prefix means internal Tauri command
             if (toolName.startsWith('tauri:')) {
@@ -194,6 +252,14 @@ export function useUIActionHandler(
         };
       }
     },
-    [session?.id, messageSessionId, submit, openExternalUrl, contentRef],
+    [
+      session?.id,
+      messageSessionId,
+      submit,
+      openExternalUrl,
+      contentRef,
+      isDark,
+      t,
+    ],
   );
 }

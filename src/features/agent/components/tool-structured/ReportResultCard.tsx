@@ -1,12 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
-  Check,
   CheckCircle2,
   AlertTriangle,
   XCircle,
   Package,
   ClipboardCheck,
-  Copy,
   ShieldCheck,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +16,6 @@ import {
   openWorkspaceFileWithDefaultApp,
 } from '@/lib/backend';
 import { getLogger } from '@/lib/logger';
-import { Button } from '@/components/ui/button';
 import { useOptionalAgentFilePreview } from '@/context/AgentFilePreviewContext';
 import { useOptionalAgentSessionState } from '@/context/AgentSessionContext';
 import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
@@ -28,6 +25,8 @@ import {
   REHYPE_PLUGINS,
   STATIC_MARKDOWN_COMPONENTS,
 } from '@/features/agent/components/AgentMessageRenderer/config/markdown';
+import { MarkdownCopyExportBar } from '@/features/agent/components/shared/MarkdownCopyExportBar';
+import { composeReportResultMarkdown } from '@/features/agent/lib/markdown-document-export';
 import type { ReportResultData } from './types';
 import { DeliverableFileActions } from './DeliverableFileActions';
 import {
@@ -38,7 +37,6 @@ import { canOpenInAppPreview } from '../workspace-panel/filePreview';
 import { cn } from '@/lib/utils';
 
 const logger = getLogger('ReportResultCard');
-const COPY_FEEDBACK_MS = 2000;
 
 export interface ReportResultCardProps {
   data: ReportResultData;
@@ -54,17 +52,6 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
   const sessionContext = useOptionalAgentSessionState();
   const filePreview = useOptionalAgentFilePreview();
   const activeSessionId = propSessionId || sessionContext?.session?.id;
-  const copyingRef = useRef(false);
-  const copiedResetTimeoutRef = useRef<number | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    return () => {
-      if (copiedResetTimeoutRef.current !== null) {
-        window.clearTimeout(copiedResetTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const statusConfig = (() => {
     switch (data.status) {
@@ -103,6 +90,17 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
       : data.status === 'blocked'
         ? t('agent.toolStructured.blockedTitle', 'Blocked')
         : t('agent.toolStructured.resultTitle', 'Final result'));
+
+  const exportMarkdown = useMemo(
+    () =>
+      composeReportResultMarkdown({
+        title: data.title,
+        criteria: data.criteria,
+        proof: data.proof,
+        result: data.result,
+      }),
+    [data.criteria, data.proof, data.result, data.title],
+  );
 
   const handleResultLinkClick = useCallback(
     async (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
@@ -202,32 +200,6 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
     }),
     [handleResultLinkClick, isDark],
   );
-
-  const handleCopyResult = useCallback(async () => {
-    if (!data.result || copyingRef.current) return;
-    copyingRef.current = true;
-    try {
-      await navigator.clipboard.writeText(data.result);
-      setCopied(true);
-      toast.success(
-        t('agent.toolStructured.resultCopied', 'Result copied'),
-      );
-      if (copiedResetTimeoutRef.current !== null) {
-        window.clearTimeout(copiedResetTimeoutRef.current);
-      }
-      copiedResetTimeoutRef.current = window.setTimeout(() => {
-        copiedResetTimeoutRef.current = null;
-        setCopied(false);
-      }, COPY_FEEDBACK_MS);
-    } catch (error) {
-      logger.error('Failed to copy reportResult body', error);
-      toast.error(
-        t('agent.toolStructured.copyResultError', 'Failed to copy result'),
-      );
-    } finally {
-      copyingRef.current = false;
-    }
-  }, [data.result, t]);
 
   const showCriteriaProofGrid = Boolean(data.criteria || data.proof);
   const showTwoColumnCriteriaProof = Boolean(data.criteria && data.proof);
@@ -335,30 +307,12 @@ export const ReportResultCard: React.FC<ReportResultCardProps> = ({
             {data.result}
           </ReactMarkdown>
         </div>
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              void handleCopyResult();
-            }}
-            disabled={!data.result}
-            data-testid="report-result-copy-button"
-            aria-label={t(
-              'agent.toolStructured.copyResultAria',
-              'Copy result',
-            )}
-          >
-            {copied ? (
-              <Check className="mr-1 h-3.5 w-3.5" />
-            ) : (
-              <Copy className="mr-1 h-3.5 w-3.5" />
-            )}
-            {t('agent.toolStructured.copyResult', 'Copy')}
-          </Button>
-        </div>
+        <MarkdownCopyExportBar
+          content={exportMarkdown}
+          fileBaseName={data.title || displayTitle}
+          allowPdf
+          align="end"
+        />
       </div>
 
       {/* Deliverables Section */}

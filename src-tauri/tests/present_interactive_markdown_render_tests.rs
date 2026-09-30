@@ -58,4 +58,12 @@ async fn present_interactive_markdown_loads_katex_and_mermaid() {
         html.contains("katex.render") && html.contains("mermaid.render"),
         "client must invoke katex.render and mermaid.render"
     );
+    assert!(
+        html.contains("tauri:exportMarkdownFile") && html.contains("tauri:exportMarkdownPdf"),
+        "markdown export must use frontend preprocess tools (parity with reportResult)"
+    );
+    assert!(
+        html.contains("data-export=\"markdown\"") && html.contains("data-export=\"pdf\""),
+        "export menu must offer Markdown and PDF"
+    );
 }
