@@ -339,5 +339,5 @@ When verifying results, use the most lightweight and accurate verification metho
 ## References
 
 These reference markdown files are located in the skill directory's `references/` subdirectory:
-- [benchmark-templates.md](file:///home/fritzprix/my_works/libr-agent/src-tauri/bundled_skills/bench/references/benchmark-templates.md) — example benchmark definitions
-- [result-aggregation.md](file:///home/fritzprix/my_works/libr-agent/src-tauri/bundled_skills/bench/references/result-aggregation.md) — patterns for scoring and analysis
+- [benchmark-templates.md](references/benchmark-templates.md) — example benchmark definitions
+- [result-aggregation.md](references/result-aggregation.md) — patterns for scoring and analysis

@@ -40,7 +40,7 @@ There is no MCP to list profiles — probe by creating the session.
 
 | Result | Next step |
 | --- | --- |
-| Session OK | Continue with `navigateToUrl` / `listInteractable` / click / input as needed |
+| Session OK | Continue with `browser__navigateToUrl` / `browser__listInteractable` / click / input as needed |
 | Error contains `No imported browser profile` | Step 3a — guide import |
 | Error contains `already open` / close the LibrAgent Chrome window | Step 3c — close Open-to-sign-in window, then retry (do **not** treat as sign-in) |
 | Google “browser may not be secure”, logged-out, or auth wall | Step 3b — Open to sign in, then retry |
