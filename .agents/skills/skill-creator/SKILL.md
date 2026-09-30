@@ -1,6 +1,11 @@
 ---
 name: skill-creator
-description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.
+description: >
+  Guide for creating and updating effective skills. Use when creating a new skill,
+  editing/renaming/merging/deleting an existing skill, writing SKILL.md frontmatter,
+  structuring scripts/references/assets, or validating before package/deploy.
+  Triggers on: create skill, update skill, rename skill, merge skills, skill frontmatter,
+  validate skill, skill modification checklist.
 license: Complete terms in LICENSE.txt
 ---
 
@@ -284,8 +289,9 @@ When editing the (newly-generated or existing) skill, remember that the skill is
 
 Consult these helpful guides based on your skill's needs:
 
-- **Multi-step processes**: See references/workflows.md for sequential workflows and conditional logic
-- **Specific output formats or quality standards**: See references/output-patterns.md for template and example patterns
+- **Multi-step processes**: See [references/workflows.md](references/workflows.md) for sequential workflows and conditional logic
+- **Specific output formats or quality standards**: See [references/output-patterns.md](references/output-patterns.md) for template and example patterns
+- **Editing, renaming, merging, or deleting a skill**: See [references/modification-checklist.md](references/modification-checklist.md) before commit (entrypoint staging, name residue, tree choice, `.force_update`)
 
 These files contain established best practices for effective skill design.
 
@@ -353,3 +359,4 @@ After testing the skill, users may request improvements. Often this happens righ
 2. Notice struggles or inefficiencies
 3. Identify how SKILL.md or bundled resources should be updated
 4. Implement changes and test again
+5. Before commit: run [references/modification-checklist.md](references/modification-checklist.md) (especially after rename/merge)
