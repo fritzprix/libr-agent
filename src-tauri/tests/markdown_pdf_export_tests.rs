@@ -62,3 +62,20 @@ fn build_markdown_pdf_embeds_png_from_marker() {
     assert!(bytes.starts_with(b"%PDF-"));
     assert!(bytes.len() > 300);
 }
+
+#[test]
+fn build_markdown_pdf_embeds_eleven_pngs_without_marker_prefix_collision() {
+    // Regression: ascending `.replace("…:1")` corrupts `…:10` → `…/embed-1.png0`.
+    const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    let mut md = String::from("## Many charts\n\n");
+    let mut images = Vec::with_capacity(11);
+    for index in 0..11 {
+        md.push_str(&format!("![d{index}](libragent-pdf-embed:{index})\n\n"));
+        images.push(PdfEmbeddedImage {
+            data_base64: PNG_1X1.to_string(),
+        });
+    }
+    let bytes = build_markdown_pdf_with_embeds(&md, &images).expect("11 embeds");
+    assert!(bytes.starts_with(b"%PDF-"));
+    assert!(bytes.len() > 500);
+}

@@ -8,6 +8,7 @@ const mockSerialize = vi.fn();
 const mockSerializeForDownload = vi.fn();
 const mockDownloadTextFile = vi.fn();
 const mockDownloadTextPdf = vi.fn();
+const mockPrepareMarkdownForPdfExport = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -23,7 +24,45 @@ vi.mock('@/hooks/useClipboard', () => ({
 }));
 
 vi.mock('@/hooks/use-is-dark-mode', () => ({
-  useIsDarkMode: () => false,
+  useIsDarkMode: () => true,
+}));
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipContent: () => null,
+}));
+
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
+    <div role="menu">{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+  }: {
+    children: React.ReactNode;
+    onSelect?: (event: Event) => void;
+  }) => (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={() =>
+        onSelect?.({
+          preventDefault() {},
+          stopPropagation() {},
+        } as Event)
+      }
+    >
+      {children}
+    </button>
+  ),
 }));
 
 vi.mock('sonner', () => ({
@@ -43,16 +82,19 @@ vi.mock('@/features/agent/lib/message-serialization', () => ({
 }));
 
 vi.mock('@/features/agent/lib/pdf-export-preprocess', () => ({
-  prepareMarkdownForPdfExport: async (markdown: string) => ({
-    content: markdown,
-    embeddedImages: [],
-  }),
+  prepareMarkdownForPdfExport: (...args: unknown[]) =>
+    mockPrepareMarkdownForPdfExport(...args),
 }));
 
 vi.mock('@/lib/backend', () => ({
   downloadTextFile: (...args: unknown[]) => mockDownloadTextFile(...args),
   downloadTextPdf: (...args: unknown[]) => mockDownloadTextPdf(...args),
   openPathWithDefaultApp: vi.fn(),
+}));
+
+vi.mock('@/lib/notify-file-download', () => ({
+  DOWNLOAD_CANCELLED: 'DOWNLOAD_CANCELLED',
+  notifyFileDownloadSuccess: vi.fn(),
 }));
 
 function createMessage(overrides: Partial<Message> = {}): Message {
@@ -74,6 +116,10 @@ describe('MessageActionBar', () => {
     mockCopyToClipboard.mockResolvedValue(undefined);
     mockDownloadTextFile.mockResolvedValue('/tmp/message.md');
     mockDownloadTextPdf.mockResolvedValue('/tmp/message.pdf');
+    mockPrepareMarkdownForPdfExport.mockResolvedValue({
+      content: '## Answer\n\n- point one',
+      embeddedImages: [],
+    });
   });
 
   it('copies the full message when the primary copy button is clicked', async () => {
@@ -130,5 +176,36 @@ describe('MessageActionBar', () => {
         name: 'agent.bubble.actionBar.exportAria',
       }),
     ).toBeVisible();
+  });
+
+  it('runs PDF preprocess and forwards embeddedImages to downloadTextPdf', async () => {
+    const preprocessed = {
+      content: '![Mermaid diagram](libragent-pdf-embed:0)\n',
+      embeddedImages: [{ dataBase64: 'aaaPNG' }],
+    };
+    mockPrepareMarkdownForPdfExport.mockResolvedValueOnce(preprocessed);
+    mockSerializeForDownload.mockReturnValueOnce(
+      '```mermaid\nflowchart TD\nA-->B\n```\n',
+    );
+
+    render(<MessageActionBar message={createMessage()} />);
+
+    fireEvent.click(
+      screen.getByRole('menuitem', {
+        name: 'agent.bubble.actionBar.exportPdf',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockPrepareMarkdownForPdfExport).toHaveBeenCalledWith(
+        '```mermaid\nflowchart TD\nA-->B\n```\n',
+        { isDark: true },
+      );
+      expect(mockDownloadTextPdf).toHaveBeenCalledWith({
+        fileName: 'export.pdf',
+        content: preprocessed.content,
+        embeddedImages: preprocessed.embeddedImages,
+      });
+    });
   });
 });

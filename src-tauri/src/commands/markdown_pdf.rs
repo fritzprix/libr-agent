@@ -44,7 +44,7 @@ pub fn build_markdown_pdf_with_embeds(
     }
 
     let temp_dir = tempfile::tempdir().map_err(|e| format!("temp dir for PDF embeds: {e}"))?;
-    let mut rewritten = markdown.to_string();
+    let mut path_by_index: Vec<(usize, String)> = Vec::with_capacity(embedded_images.len());
 
     for (index, image) in embedded_images.iter().enumerate() {
         let bytes = general_purpose::STANDARD
@@ -60,14 +60,36 @@ pub fn build_markdown_pdf_with_embeds(
 
         // Forward slashes keep markdown image URLs portable on Windows.
         let path_for_md = file_path.to_string_lossy().replace('\\', "/");
-        let marker = format!("libragent-pdf-embed:{index}");
-        rewritten = rewritten.replace(&marker, &path_for_md);
+        path_by_index.push((index, path_for_md));
     }
 
+    let rewritten = rewrite_pdf_embed_markers(markdown, &path_by_index);
     let pdf = build_markdown_pdf(&rewritten)?;
     // Keep temp_dir alive until after render (images are read during parse).
     drop(temp_dir);
     Ok(pdf)
+}
+
+/// Replace `libragent-pdf-embed:N` with file paths.
+///
+/// Indices are applied **highest-first** so `…:1` cannot corrupt `…:10`
+/// (plain `.replace` treats the shorter marker as a prefix of the longer one).
+pub(crate) fn rewrite_pdf_embed_markers(
+    markdown: &str,
+    path_by_index: &[(usize, String)],
+) -> String {
+    let mut indices: Vec<usize> = path_by_index.iter().map(|(index, _)| *index).collect();
+    indices.sort_unstable_by(|a, b| b.cmp(a));
+
+    let mut rewritten = markdown.to_string();
+    for index in indices {
+        let Some((_, path)) = path_by_index.iter().find(|(i, _)| *i == index) else {
+            continue;
+        };
+        let marker = format!("libragent-pdf-embed:{index}");
+        rewritten = rewritten.replace(&marker, path);
+    }
+    rewritten
 }
 
 fn build_unicode_font_config() -> FontConfig {
@@ -306,7 +328,7 @@ fn fallback_font_names() -> Vec<&'static str> {
 mod tests {
     use super::{
         body_font_candidates, build_markdown_pdf, build_markdown_pdf_with_embeds,
-        first_existing_font, PdfEmbeddedImage,
+        first_existing_font, rewrite_pdf_embed_markers, PdfEmbeddedImage,
     };
 
     #[test]
@@ -371,5 +393,25 @@ mod tests {
             with_img.len(),
             plain.len()
         );
+    }
+
+    #[test]
+    fn rewrite_pdf_embed_markers_does_not_corrupt_double_digit_indices() {
+        // Ascending `.replace` would turn `:10` into `/tmp/embed-1.png0` when
+        // substituting `:1`. Highest-first must leave both paths intact.
+        let md = "![a](libragent-pdf-embed:1)\n![b](libragent-pdf-embed:10)\n![c](libragent-pdf-embed:2)\n";
+        let rewritten = rewrite_pdf_embed_markers(
+            md,
+            &[
+                (1, "/tmp/embed-1.png".to_string()),
+                (2, "/tmp/embed-2.png".to_string()),
+                (10, "/tmp/embed-10.png".to_string()),
+            ],
+        );
+        assert!(rewritten.contains("/tmp/embed-1.png"));
+        assert!(rewritten.contains("/tmp/embed-10.png"));
+        assert!(rewritten.contains("/tmp/embed-2.png"));
+        assert!(!rewritten.contains("embed-1.png0"));
+        assert!(!rewritten.contains("libragent-pdf-embed:"));
     }
 }
