@@ -21,10 +21,10 @@
     "shareable-config"
   ],
   "type": "module",
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@12.8.1",
   "engines": {
     "node": ">=20",
-    "pnpm": "9.15.9"
+    "pnpm": "12.8.1"
   },
   "scripts": {
     "dev": "node scripts/sync-builtin-services.cjs && node scripts/sync-execution-mode.cjs && vite",

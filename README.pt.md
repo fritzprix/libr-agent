@@ -150,7 +150,7 @@ As competências mais importantes para o primeiro dia:
 E isso é apenas a camada de operador. O LibrAgent também fornece competências de domínio para:
 
 - **Conhecimento e investigação**: `deep-research`, `knowledge-distiller`
-- **Documentos e conteúdo do workspace**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Documentos e conteúdo do workspace**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `visualize`
 - **Fluxo de trabalho do desenvolvedor**: `git-workflow`, `bench`
 - **Onboarding do workspace**: `agent-init`
 - **Coordenação e assistentes**: `consensus-delegation`, `loop`, `call-me-back`, `context-recall`, `recruit`, `boost`

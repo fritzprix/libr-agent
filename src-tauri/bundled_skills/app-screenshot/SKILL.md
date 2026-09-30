@@ -15,10 +15,12 @@ Capture live, pixel-exact desktop screenshots of the running LibrAgent applicati
 
 ## Usage Examples
 
+Paths are relative to this skill's Base Directory. Replace `<skill-base-dir>` with its absolute path in commands (or use `@system-skills/app-screenshot` when resolving via skill aliases).
+
 ### 1. Capture App Screenshot
 
 ```bash
-python src-tauri/bundled_skills/app-screenshot/scripts/capture_app.py docs/user/assets/screenshots/getting-started/new-session.png
+python "<skill-base-dir>/scripts/capture_app.py" docs/user/assets/screenshots/getting-started/new-session.png
 ```
 
 ### 2. Click Relative Coordinate & Capture
@@ -26,5 +28,5 @@ python src-tauri/bundled_skills/app-screenshot/scripts/capture_app.py docs/user/
 Click inside the app window at relative `(X, Y)` (e.g. `X=710, Y=410` for Assistant card) and capture result:
 
 ```bash
-python src-tauri/bundled_skills/app-screenshot/scripts/capture_app.py docs/user/assets/screenshots/getting-started/new-session.png --click 710 410
+python "<skill-base-dir>/scripts/capture_app.py" docs/user/assets/screenshots/getting-started/new-session.png --click 710 410
 ```

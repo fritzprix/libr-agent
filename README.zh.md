@@ -150,7 +150,7 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 这只是运营层。LibrAgent 还提供领域技能：
 
 - **知识和研究**：`deep-research`、`knowledge-distiller`
-- **文档与工作区内容**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`data-viz`
+- **文档与工作区内容**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`visualize`
 - **开发者工作流**：`git-workflow`, `bench`
 - **工作区入门**：`agent-init`
 - **协调与助手**：`consensus-delegation`、`loop`、`call-me-back`、`context-recall`、`recruit`、`boost`
