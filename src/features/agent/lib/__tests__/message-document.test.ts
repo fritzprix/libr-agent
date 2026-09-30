@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
+import type { MCPContent } from '@/lib/mcp';
 import {
   extractPresentInteractiveRawData,
   resolveMessageDocument,
@@ -18,6 +19,17 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     content: [],
     ...overrides,
   };
+}
+
+function presentInteractiveResource(html: string): MCPContent {
+  return {
+    type: 'resource',
+    resource: {
+      uri: 'ui://interactive/abc',
+      mimeType: 'text/html',
+      text: html,
+    },
+  } as MCPContent;
 }
 
 describe('message-document', () => {
@@ -57,16 +69,7 @@ describe('message-document', () => {
       '<div id="md-root"></div>',
     ].join('');
     const message = createMessage({
-      content: [
-        {
-          type: 'resource',
-          resource: {
-            uri: 'ui://interactive/abc',
-            mimeType: 'text/html',
-            text: html,
-          },
-        } as never,
-      ],
+      content: [presentInteractiveResource(html)],
     });
 
     const doc = resolveMessageDocument(message);

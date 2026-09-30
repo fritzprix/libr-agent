@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '@/models/chat';
+import type { MCPContent } from '@/lib/mcp';
 import { MessageActionBar } from '../MessageActionBar';
 
 const mockCopyToClipboard = vi.fn();
@@ -243,5 +244,57 @@ describe('MessageActionBar', () => {
     expect(copied).toContain('# Ship');
     expect(copied).toContain('ok');
     expect(copied).not.toContain('STOP');
+  });
+
+  it('exports presentInteractive HTML as .html and hides PDF', async () => {
+    mockDownloadTextFile.mockResolvedValue('/tmp/Widget.html');
+    mockSerializeForDownload.mockReturnValue('<p>Hi</p>\n');
+
+    const html = [
+      '<div id="content-title">A/B:Widget</div>',
+      '<script id="raw-data" type="application/json">"<p>Hi</p>\\n"</script>',
+    ].join('');
+
+    render(
+      <MessageActionBar
+        message={createMessage({
+          role: 'tool',
+          content: [
+            {
+              type: 'resource',
+              resource: {
+                uri: 'ui://interactive/xyz',
+                mimeType: 'text/html',
+                text: html,
+              },
+            } as MCPContent,
+          ],
+        })}
+      />,
+    );
+
+    expect(
+      screen.queryByRole('menuitem', {
+        name: 'agent.bubble.actionBar.exportPdf',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', {
+        name: 'agent.bubble.actionBar.exportHtml',
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('menuitem', {
+        name: 'agent.bubble.actionBar.exportHtml',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockDownloadTextFile).toHaveBeenCalledWith({
+        fileName: 'A_B_Widget.html',
+        content: '<p>Hi</p>\n',
+      });
+    });
   });
 });

@@ -78,20 +78,15 @@ describe('exportMarkdownDocument', () => {
     });
   });
 
-  it('preprocesses then writes PDF', async () => {
+  it('writes HTML via downloadTextFile with sanitized basename', async () => {
     await exportMarkdownDocument({
-      content: '```mermaid\nA-->B\n```\n',
-      kind: 'pdf',
-      fileBaseName: 'diagram',
-      isDark: true,
+      content: '<p>Hi</p>\n',
+      kind: 'html',
+      fileBaseName: 'A/B:Widget',
     });
-    expect(mockPrepare).toHaveBeenCalledWith('```mermaid\nA-->B\n```\n', {
-      isDark: true,
-    });
-    expect(mockDownloadTextPdf).toHaveBeenCalledWith({
-      fileName: 'diagram.pdf',
-      content: 'prepared',
-      embeddedImages: [{ dataBase64: 'aaa' }],
+    expect(mockDownloadTextFile).toHaveBeenCalledWith({
+      fileName: 'A_B_Widget.html',
+      content: '<p>Hi</p>\n',
     });
   });
 });

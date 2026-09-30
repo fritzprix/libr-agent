@@ -8,16 +8,18 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('markdown-document-export');
 
-export type MarkdownExportKind = 'markdown' | 'pdf';
+export type MarkdownExportKind = 'markdown' | 'pdf' | 'html';
 
 export interface MarkdownExportLabels {
   markdownSuccess: string;
   pdfSuccess: string;
+  htmlSuccess: string;
   openFile: string;
   openFileError: string;
   cancelled: string;
   markdownError: string;
   pdfError: string;
+  htmlError: string;
 }
 
 function sanitizeFileBase(name: string): string {
@@ -56,6 +58,13 @@ export async function exportMarkdownDocument(options: {
     });
   }
 
+  if (kind === 'html') {
+    return downloadTextFile({
+      fileName: `${base}.html`,
+      content,
+    });
+  }
+
   const prepared = await prepareMarkdownForPdfExport(content, { isDark });
   return downloadTextPdf({
     fileName: `${base}.pdf`,
@@ -87,7 +96,12 @@ export async function exportMarkdownDocumentWithNotify(options: {
       return;
     }
     notifyFileDownloadSuccess({
-      title: kind === 'pdf' ? labels.pdfSuccess : labels.markdownSuccess,
+      title:
+        kind === 'pdf'
+          ? labels.pdfSuccess
+          : kind === 'html'
+            ? labels.htmlSuccess
+            : labels.markdownSuccess,
       filePath: result,
       openLabel: labels.openFile,
       openErrorLabel: labels.openFileError,
@@ -95,7 +109,13 @@ export async function exportMarkdownDocumentWithNotify(options: {
   } catch (error) {
     logger.error('Markdown document export failed', { kind, error });
     const { toast } = await import('sonner');
-    toast.error(kind === 'pdf' ? labels.pdfError : labels.markdownError);
+    toast.error(
+      kind === 'pdf'
+        ? labels.pdfError
+        : kind === 'html'
+          ? labels.htmlError
+          : labels.markdownError,
+    );
     throw error;
   }
 }
@@ -135,10 +155,12 @@ export function markdownExportLabelsFromT(
   return {
     markdownSuccess: t('agent.bubble.actionBar.exportMarkdownSuccess'),
     pdfSuccess: t('agent.bubble.actionBar.exportPdfSuccess'),
+    htmlSuccess: t('agent.bubble.actionBar.exportHtmlSuccess'),
     openFile: t('agent.bubble.actionBar.exportOpenFile'),
     openFileError: t('agent.bubble.actionBar.exportOpenFileError'),
     cancelled: t('agent.bubble.actionBar.exportCancelled'),
     markdownError: t('agent.bubble.actionBar.exportError'),
     pdfError: t('agent.bubble.actionBar.exportPdfError'),
+    htmlError: t('agent.bubble.actionBar.exportHtmlError'),
   };
 }

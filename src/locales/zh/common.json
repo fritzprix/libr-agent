@@ -1552,17 +1552,20 @@
         "exportTooltip": "导出消息",
         "exportMarkdown": "导出为 Markdown",
         "exportPdf": "导出为 PDF",
+        "exportHtml": "导出为 HTML",
         "copySuccess": "消息已复制到剪贴板",
         "copyEmpty": "没有可复制的内容",
         "copyDenied": "剪贴板访问被拒绝。请检查浏览器权限。",
         "copyError": "复制消息失败",
         "exportMarkdownSuccess": "已下载 Markdown 文件",
         "exportPdfSuccess": "已下载 PDF 文件",
+        "exportHtmlSuccess": "HTML 文件已下载",
         "exportOpenFile": "打开",
         "exportOpenFileError": "无法打开文件",
         "exportCancelled": "已取消下载",
         "exportError": "导出消息失败",
-        "exportPdfError": "导出 PDF 失败"
+        "exportPdfError": "导出 PDF 失败",
+        "exportHtmlError": "导出 HTML 失败"
       }
     },
     "start": {

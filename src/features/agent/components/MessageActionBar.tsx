@@ -36,16 +36,12 @@ import {
   serializeMessageForClipboard,
   serializeMessageForDownload,
 } from '@/features/agent/lib/message-serialization';
-import { resolveMessageDocument } from '@/features/agent/lib/message-document';
 import {
   exportMarkdownDocumentWithNotify,
+  markdownExportBaseName,
   markdownExportLabelsFromT,
 } from '@/features/agent/lib/markdown-document-export';
-import { downloadTextFile } from '@/lib/backend';
-import {
-  DOWNLOAD_CANCELLED,
-  notifyFileDownloadSuccess,
-} from '@/lib/notify-file-download';
+import { resolveMessageDocument } from '@/features/agent/lib/message-document';
 
 const logger = getLogger('MessageActionBar');
 
@@ -208,10 +204,13 @@ function MessageActionBarImpl({
 
   const exportFileBaseName = useCallback(() => {
     if (uiDocument?.fileBaseName) {
-      return uiDocument.fileBaseName;
+      return markdownExportBaseName(uiDocument.fileBaseName, 'export');
     }
     // Keep message.<ext> naming; shared helper appends the extension.
-    return buildMessageExportFilename(message, 'md').replace(/\.md$/i, '');
+    return markdownExportBaseName(
+      buildMessageExportFilename(message, 'md').replace(/\.md$/i, ''),
+      'message',
+    );
   }, [message, uiDocument]);
 
   const handleExportMarkdown = useCallback(async () => {
@@ -225,32 +224,15 @@ function MessageActionBarImpl({
         toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
-      if (uiDocument?.exportKind === 'html') {
-        const result = await downloadTextFile({
-          fileName: `${exportFileBaseName()}.html`,
-          content,
-        });
-        if (result === DOWNLOAD_CANCELLED) {
-          toast.info(t('agent.bubble.actionBar.exportCancelled'));
-          return;
-        }
-        notifyFileDownloadSuccess({
-          title: t('agent.bubble.actionBar.exportMarkdownSuccess'),
-          filePath: result,
-          openLabel: t('agent.bubble.actionBar.exportOpenFile'),
-          openErrorLabel: t('agent.bubble.actionBar.exportOpenFileError'),
-        });
-        return;
-      }
       await exportMarkdownDocumentWithNotify({
         content,
-        kind: 'markdown',
+        kind: uiDocument?.exportKind === 'html' ? 'html' : 'markdown',
         fileBaseName: exportFileBaseName(),
         isDark,
         labels: markdownExportLabelsFromT(t),
       });
     } catch {
-      // Toast already shown in shared helper / notify path.
+      // Toast already shown in shared helper.
     } finally {
       setBusyAction(null);
     }
@@ -264,11 +246,8 @@ function MessageActionBarImpl({
   ]);
 
   const handleExportPdf = useCallback(async () => {
-    if (isBusy) {
-      return;
-    }
-    if (uiDocument?.exportKind === 'html') {
-      toast.error(t('agent.bubble.actionBar.exportPdfError'));
+    if (isBusy || uiDocument?.exportKind === 'html') {
+      // PDF is hidden for HTML presentInteractive; no-op if reached.
       return;
     }
     setBusyAction('pdf');
@@ -385,7 +364,7 @@ function MessageActionBarImpl({
           >
             <FileDown className="h-4 w-4" />
             {uiDocument?.exportKind === 'html'
-              ? t('agent.bubble.actionBar.exportHtml', 'Export as HTML')
+              ? t('agent.bubble.actionBar.exportHtml')
               : t('agent.bubble.actionBar.exportMarkdown')}
           </DropdownMenuItem>
           {uiDocument?.exportKind === 'html' ? null : (
