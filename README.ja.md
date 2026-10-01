@@ -12,6 +12,10 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
+![ヒーローデモ — ツールはアプリのようにインストール。モデルは自分で選ぶ。成果はファイルに残る。](./assets/hero-demo-60s.gif)
+
+[HD WebM](./assets/hero-demo-60s.webm) · _ツールはアプリのようにインストール。モデルは自分で選ぶ。成果はファイルに残る。_
+
 ---
 
 ## LibrAgent が違う理由

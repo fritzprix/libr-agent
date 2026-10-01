@@ -12,6 +12,10 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
+![Démo hero — Installez les outils comme des apps. Gardez votre modèle. Gardez le fichier.](./assets/hero-demo-60s.gif)
+
+[HD WebM](./assets/hero-demo-60s.webm) · _Installez les outils comme des apps. Gardez votre modèle. Gardez le fichier._
+
 ---
 
 ## Ce qui distingue LibrAgent

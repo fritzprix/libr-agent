@@ -135,8 +135,8 @@ Quiet presets only (`hn`, `arxiv`, `ddg-search`, …). **Never `serena`** — it
 - [ ] Extensions Install is unmistakable (not cut away mid-click)
 - [ ] Deliverable file is visibly opened or highlighted at the end
 - [ ] No org/swarm/feature laundry list in the hero clip
-- [ ] Filename for assets: `assets/hero-demo-60s.webm` (+ optional `.gif`)
-- [ ] README hero embeds the new asset above the text story (no process notes in the public README)
+- [x] Filename for assets: `assets/hero-demo-60s.webm` (+ optional `.gif`)
+- [x] README hero embeds the new asset above the text story (no process notes in the public README)
 
 ---
 

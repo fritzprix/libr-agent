@@ -12,6 +12,10 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
+![Hero 演示 — 像装应用一样安装工具。模型自选。结果落成文件。](./assets/hero-demo-60s.gif)
+
+[HD WebM](./assets/hero-demo-60s.webm) · _像装应用一样安装工具。模型自选。结果落成文件。_
+
 ---
 
 ## LibrAgent 有何不同

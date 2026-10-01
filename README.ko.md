@@ -12,6 +12,10 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
+![히어로 데모 — 툴은 앱처럼 설치하고, 모델은 내가 고르고, 결과는 파일로 남깁니다.](./assets/hero-demo-60s.gif)
+
+[HD WebM](./assets/hero-demo-60s.webm) · _툴은 앱처럼 설치하고, 모델은 내가 고르고, 결과는 파일로 남깁니다._
+
 ---
 
 ## LibrAgent가 다른 점
