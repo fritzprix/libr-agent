@@ -3,8 +3,21 @@ import { render, act } from '@testing-library/react';
 import { PhosphorDotMatrix } from '../PhosphorDotMatrix';
 import { AnalysisLoader } from '../AnalysisLoader';
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string }) => {
+      if (key === 'agent.analysisLoader.initial') {
+        return 'Preparing response...';
+      }
+      if (key.startsWith('agent.analysisLoader.')) {
+        return options?.defaultValue ?? key;
+      }
+      return options?.defaultValue ?? key;
+    },
+    i18n: { language: 'en' },
+  }),
+}));
 
-// Mock canvas getContext
 beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
     save: vi.fn(),
@@ -34,7 +47,9 @@ describe('PhosphorDotMatrix', () => {
   });
 
   it('handles size variants correctly', () => {
-    const { container } = render(<PhosphorDotMatrix size="sm" className="custom-matrix" />);
+    const { container } = render(
+      <PhosphorDotMatrix size="sm" className="custom-matrix" />,
+    );
     const canvas = container.querySelector('canvas');
     expect(canvas).toHaveClass('custom-matrix');
   });
@@ -91,7 +106,6 @@ describe('AnalysisLoader', () => {
       });
     }
 
-    // Curated witty + late alone are ~19 lines; combinatorial endless should exceed that.
     expect(seen.size).toBeGreaterThan(20);
 
     const beforeWrap = container.querySelector('span')?.textContent;

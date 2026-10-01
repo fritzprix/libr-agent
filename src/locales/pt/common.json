@@ -504,7 +504,9 @@
         "violet": "Íris Violeta (IA)",
         "ocean": "Azul Oceano (Calma)",
         "forest": "Sálvia Floresta (Foco)"
-      }
+      },
+      "showFeatureTips": "Mostrar dicas de recursos",
+      "showFeatureTipsDescription": "Mostra Novidades e cartões de dicas no hub do chat, e dicas ocasionais enquanto espera uma resposta"
     },
     "advanced": {
       "maxRetries": "Máximo de Tentativas",
@@ -1868,6 +1870,47 @@
       "scheduledTaskName": "Briefing Matinal Diário às 9:00",
       "scheduledTaskMessage": "Sintetize as 3 principais histórias do Hacker News de hoje e índices-chave (S&P 500, Nasdaq) em um relatório matinal diário.",
       "testRunPrompt": "Consulte as 3 principais histórias do Hacker News e os principais índices de ações e elabore o briefing matinal agora mesmo."
+    }
+  },
+  "spotlight": {
+    "releaseTitle": "Novidades na v{{version}}",
+    "dismissAll": "Fechar",
+    "hubLabel": "Dica",
+    "nextTip": "Próxima dica",
+    "hide": "Ocultar",
+    "waitLine": "Dica · {{title}}",
+    "waitOpenHint": "Abrir: {{detail}}",
+    "items": {
+      "browserProfile": {
+        "title": "Importar sessões do navegador",
+        "body": "Traga perfis do Chrome, Edge ou Brave para o LibrAgent para o agente navegar já autenticado. Abra Configurações → System.",
+        "cta": "Abrir System"
+      },
+      "starterTasks": {
+        "title": "Comece com modelos de tarefas agendadas",
+        "body": "Daily Standup, monitoramento de notícias e outras automações com um clique estão em Scheduled Tasks.",
+        "cta": "Abrir Scheduled Tasks"
+      },
+      "visualize": {
+        "title": "Transforme CSV/Excel em gráficos",
+        "body": "Solte uma planilha no chat e peça um gráfico — o LibrAgent pode visualizar os dados.",
+        "cta": "Iniciar chat"
+      },
+      "thinkingEffort": {
+        "title": "Ajuste o esforço de raciocínio",
+        "body": "Em Configurações → AI & Models, ajuste Thinking Effort para respostas mais rápidas ou mais profundas.",
+        "cta": "Abrir AI & Models"
+      },
+      "knowledgeGraph": {
+        "title": "Explore o grafo de conhecimento",
+        "body": "Em Knowledge, veja em rede os conceitos acumulados pelo agente.",
+        "cta": "Abrir Knowledge"
+      },
+      "themes": {
+        "title": "Experimente outro tema de cores",
+        "body": "Em Configurações → General, escolha temas como Neutral, Amber ou Ocean.",
+        "cta": "Abrir General"
+      }
     }
   }
 }

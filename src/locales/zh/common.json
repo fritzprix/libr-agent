@@ -504,7 +504,9 @@
         "violet": "鸢尾紫 (AI)",
         "ocean": "海洋蓝 (沉静)",
         "forest": "森林灰绿 (专注)"
-      }
+      },
+      "showFeatureTips": "显示功能提示",
+      "showFeatureTipsDescription": "完成设置后，在聊天主页显示“新功能”和提示卡片，并在等待回复时偶尔显示提示"
     },
     "advanced": {
       "maxRetries": "最大重试次数",
@@ -1868,6 +1870,47 @@
       "scheduledTaskName": "每日早间 9:00 简报",
       "scheduledTaskMessage": "综合今日 Hacker News 前 3 条热门故事和关键市场指数（标普 500、纳斯达克），撰写一份每日早间简报。",
       "testRunPrompt": "立即查看今日 Hacker News 前 3 条热门故事和主要股指，生成今日早间简报报告。"
+    }
+  },
+  "spotlight": {
+    "releaseTitle": "v{{version}} 新功能",
+    "dismissAll": "关闭",
+    "hubLabel": "提示",
+    "nextTip": "下一条",
+    "hide": "隐藏",
+    "waitLine": "提示 · {{title}}",
+    "waitOpenHint": "打开：{{detail}}",
+    "items": {
+      "browserProfile": {
+        "title": "可以导入浏览器登录状态",
+        "body": "将 Chrome、Edge 或 Brave 配置文件导入 LibrAgent，让智能体在已登录状态下浏览。请打开 设置 → System。",
+        "cta": "打开 System 设置"
+      },
+      "starterTasks": {
+        "title": "用定时任务模板快速开始",
+        "body": "Daily Standup、新闻监控等一键自动化模板已在 Scheduled Tasks 中准备好。",
+        "cta": "打开 Scheduled Tasks"
+      },
+      "visualize": {
+        "title": "可用 CSV / Excel 生成图表",
+        "body": "把电子表格拖到聊天里并请求图表，LibrAgent 可以帮你可视化数据。",
+        "cta": "开始聊天"
+      },
+      "thinkingEffort": {
+        "title": "可调节思考深度",
+        "body": "在 设置 → AI & Models 中调整 Thinking Effort，在速度与深度之间取舍。",
+        "cta": "打开 AI & Models 设置"
+      },
+      "knowledgeGraph": {
+        "title": "查看知识图谱",
+        "body": "在 Knowledge 中以网络图查看智能体积累的概念关系。",
+        "cta": "打开 Knowledge"
+      },
+      "themes": {
+        "title": "可以更换主题配色",
+        "body": "在 设置 → General 中切换 Neutral、Amber、Ocean 等强调色主题。",
+        "cta": "打开 General 设置"
+      }
     }
   }
 }

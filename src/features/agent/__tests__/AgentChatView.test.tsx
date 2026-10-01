@@ -199,6 +199,10 @@ vi.mock('../components/AgentChatAttachedFiles', () => ({
   AgentChatAttachedFiles: () => <div>mock-attached-files</div>,
 }));
 
+vi.mock('../components/ComposerBusyTipStrip', () => ({
+  ComposerBusyTipStrip: () => null,
+}));
+
 vi.mock('../components/AgentSidePanelShell', () => ({
   AgentSidePanelShell: () => <div>mock-side-panel-shell</div>,
 }));

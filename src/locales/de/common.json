@@ -504,7 +504,9 @@
         "violet": "Iris Violett (KI)",
         "ocean": "Ozeanblau (Ruhe)",
         "forest": "Waldsalbei (Fokus)"
-      }
+      },
+      "showFeatureTips": "Feature-Tipps anzeigen",
+      "showFeatureTipsDescription": "Zeigt „Neuigkeiten“ und Tipp-Karten im Chat-Hub sowie gelegentliche Tipps während der Antwortwartezeit"
     },
     "advanced": {
       "maxRetries": "Max. Wiederholungsversuche",
@@ -1868,6 +1870,47 @@
       "scheduledTaskName": "Tägliches 9:00 Uhr Morgen-Briefing",
       "scheduledTaskMessage": "Fasse die heutigen 3 wichtigsten Hacker News Geschichten und Schlüsselindizes (S&P 500, Nasdaq) in einem Morgen-Briefing zusammen.",
       "testRunPrompt": "Überprüfe jetzt die Top 3 Hacker News Geschichten und Indizes und erstelle das heutige Morgen-Briefing."
+    }
+  },
+  "spotlight": {
+    "releaseTitle": "Neu in v{{version}}",
+    "dismissAll": "Schließen",
+    "hubLabel": "Tipp",
+    "nextTip": "Nächster Tipp",
+    "hide": "Ausblenden",
+    "waitLine": "Tipp · {{title}}",
+    "waitOpenHint": "Öffnen: {{detail}}",
+    "items": {
+      "browserProfile": {
+        "title": "Browser-Anmeldungen importieren",
+        "body": "Importieren Sie Chrome-, Edge- oder Brave-Profile in LibrAgent, damit der Agent angemeldet browsen kann. Öffnen Sie Einstellungen → System.",
+        "cta": "System-Einstellungen öffnen"
+      },
+      "starterTasks": {
+        "title": "Mit Vorlagen für geplante Aufgaben starten",
+        "body": "Daily Standup, News-Monitoring und weitere Ein-Klick-Automationen finden Sie unter Scheduled Tasks.",
+        "cta": "Scheduled Tasks öffnen"
+      },
+      "visualize": {
+        "title": "CSV/Excel in Diagramme verwandeln",
+        "body": "Legen Sie eine Tabelle im Chat ab und bitten Sie um ein Diagramm — LibrAgent visualisiert die Daten.",
+        "cta": "Chat starten"
+      },
+      "thinkingEffort": {
+        "title": "Denkaufwand einstellen",
+        "body": "Unter Einstellungen → AI & Models steuern Sie Thinking Effort für schnellere oder tiefere Antworten.",
+        "cta": "AI & Models öffnen"
+      },
+      "knowledgeGraph": {
+        "title": "Wissensgraph erkunden",
+        "body": "Unter Knowledge sehen Sie, wie vom Agenten gelernte Konzepte vernetzt sind.",
+        "cta": "Knowledge öffnen"
+      },
+      "themes": {
+        "title": "Farbthema wechseln",
+        "body": "Unter Einstellungen → General wählen Sie Akzentthemen wie Neutral, Amber oder Ocean.",
+        "cta": "General öffnen"
+      }
     }
   }
 }
