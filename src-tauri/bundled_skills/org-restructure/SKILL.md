@@ -9,6 +9,7 @@ Tune an existing explicit org. This is evolution, not creation and not teardown.
 
 Use `org` when the org does not exist yet or you need runtime coordination (spawn, resume, getOrg).
 Use `teamwork` when the teamwork artifact directory or constitution files do not exist yet.
+Use `postmortem-improve` when the change set comes from an after-action review (postmortem → classify → then restructure/boost/recruit).
 
 ## Path conventions
 
