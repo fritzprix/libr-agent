@@ -9,7 +9,6 @@ import {
   FileDown,
   Loader2,
   Printer,
-  Type,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -46,8 +45,7 @@ import { resolveMessageDocument } from '@/features/agent/lib/message-document';
 
 const logger = getLogger('MessageActionBar');
 
-type BusyAction = 'full' | 'text' | 'tools' | 'markdown' | 'pdf' | null;
-type CopyMode = 'full' | 'text' | 'tools';
+type BusyAction = 'copy' | 'tools' | 'markdown' | 'pdf' | null;
 
 export interface MessageActionBarProps {
   message: Message;
@@ -59,22 +57,19 @@ export interface MessageActionBarProps {
 }
 
 /**
- * Bubble-local payloads: UI document wins over plain transcript text.
- * Never walks other bubbles' history.
+ * One copy payload for the bubble: UI document if present, else plain text.
+ * Same rule for reportResult / presentInteractive and normal messages.
  */
-function resolveBubbleCopyPayloads(
+function resolveBubbleCopyBody(
   uiDocument: ReturnType<typeof resolveMessageDocument>,
   message: Message,
   displayContent?: MCPContent[],
-): { fullBody: string; textBody: string } {
-  if (uiDocument) {
-    return {
-      fullBody: uiDocument.content.trim(),
-      textBody: uiDocument.textBody.trim(),
-    };
+): string {
+  const fromDocument = uiDocument?.content.trim() ?? '';
+  if (fromDocument) {
+    return fromDocument;
   }
-  const plain = serializeMessageTextOnly(message, displayContent).trim();
-  return { fullBody: plain, textBody: plain };
+  return serializeMessageTextOnly(message, displayContent).trim();
 }
 
 function IconActionButton({
@@ -144,7 +139,7 @@ function MessageActionBarImpl({
   const { copyToClipboard } = useClipboard();
   const isDark = useIsDarkMode();
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
-  const [lastCopiedMode, setLastCopiedMode] = useState<CopyMode | null>(null);
+  const [lastCopied, setLastCopied] = useState<'copy' | 'tools' | null>(null);
 
   const isBusy = busyAction !== null;
   const isUserTone = tone === 'user';
@@ -157,19 +152,6 @@ function MessageActionBarImpl({
     return content.some((item) => item.type === 'tool_call');
   }, [displayContent, message.content, message.tool_calls]);
 
-  const serialize = useCallback(
-    (mode: CopyMode) =>
-      serializeMessageForClipboard(message, {
-        mode,
-        displayContent,
-        toolResultsMap,
-        includeThinking: true,
-        includeToolCalls: true,
-        includeToolResults: true,
-      }),
-    [displayContent, message, toolResultsMap],
-  );
-
   const uiDocument = useMemo(
     () =>
       resolveMessageDocument(message, {
@@ -179,76 +161,74 @@ function MessageActionBarImpl({
     [displayContent, message, toolResultsMap],
   );
 
-  // Priority within this bubble only: UI document → plain text.
-  const { fullBody: bubbleFullBody, textBody: bubbleTextBody } = useMemo(
-    () => resolveBubbleCopyPayloads(uiDocument, message, displayContent),
+  const bubbleCopyBody = useMemo(
+    () => resolveBubbleCopyBody(uiDocument, message, displayContent),
     [displayContent, message, uiDocument],
   );
-  const canCopyBody = bubbleTextBody.length > 0;
-  const canCopyFull =
-    bubbleFullBody.length > 0 ||
-    hasToolCalls ||
-    Boolean(message.thinking?.trim());
-  const canExportBody = canCopyBody || bubbleFullBody.length > 0;
+  const canCopyBody = bubbleCopyBody.length > 0;
+  const canExportBody = canCopyBody;
 
-  const handleCopy = useCallback(
-    async (mode: CopyMode) => {
-      if (isBusy) {
-        return;
+  const handleCopyBody = useCallback(async () => {
+    if (isBusy || !canCopyBody) {
+      return;
+    }
+    setBusyAction('copy');
+    try {
+      await copyToClipboard(bubbleCopyBody);
+      setLastCopied('copy');
+      toast.success(t('agent.bubble.actionBar.copySuccess'));
+    } catch (error) {
+      logger.error('Failed to copy message', error);
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        toast.error(t('agent.bubble.actionBar.copyDenied'));
+      } else {
+        toast.error(t('agent.bubble.actionBar.copyError'));
       }
-      if (mode === 'tools' && !hasToolCalls) {
-        return;
-      }
-      if (mode === 'text' && !canCopyBody) {
-        return;
-      }
-      if (mode === 'full' && !canCopyFull) {
-        return;
-      }
+    } finally {
+      setBusyAction(null);
+    }
+  }, [bubbleCopyBody, canCopyBody, copyToClipboard, isBusy, t]);
 
-      setBusyAction(mode);
-      try {
-        // text → document textBody or plain text
-        // full → document content when present, else full transcript
-        const content =
-          mode === 'tools'
-            ? serialize('tools')
-            : mode === 'text'
-              ? bubbleTextBody
-              : uiDocument
-                ? bubbleFullBody
-                : serialize('full');
-        if (!content.trim() || content === '[]') {
-          toast.error(t('agent.bubble.actionBar.copyEmpty'));
-          return;
-        }
-        await copyToClipboard(content);
-        setLastCopiedMode(mode);
-        toast.success(t('agent.bubble.actionBar.copySuccess'));
-      } catch (error) {
-        logger.error('Failed to copy message', error);
-        if (error instanceof DOMException && error.name === 'NotAllowedError') {
-          toast.error(t('agent.bubble.actionBar.copyDenied'));
-        } else {
-          toast.error(t('agent.bubble.actionBar.copyError'));
-        }
-      } finally {
-        setBusyAction(null);
+  const handleCopyTools = useCallback(async () => {
+    if (isBusy || !hasToolCalls) {
+      return;
+    }
+    setBusyAction('tools');
+    try {
+      const content = serializeMessageForClipboard(message, {
+        mode: 'tools',
+        displayContent,
+        toolResultsMap,
+        includeThinking: true,
+        includeToolCalls: true,
+        includeToolResults: true,
+      });
+      if (!content.trim() || content === '[]') {
+        toast.error(t('agent.bubble.actionBar.copyEmpty'));
+        return;
       }
-    },
-    [
-      bubbleFullBody,
-      bubbleTextBody,
-      canCopyBody,
-      canCopyFull,
-      copyToClipboard,
-      hasToolCalls,
-      isBusy,
-      serialize,
-      t,
-      uiDocument,
-    ],
-  );
+      await copyToClipboard(content);
+      setLastCopied('tools');
+      toast.success(t('agent.bubble.actionBar.copySuccess'));
+    } catch (error) {
+      logger.error('Failed to copy tools', error);
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        toast.error(t('agent.bubble.actionBar.copyDenied'));
+      } else {
+        toast.error(t('agent.bubble.actionBar.copyError'));
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }, [
+    copyToClipboard,
+    displayContent,
+    hasToolCalls,
+    isBusy,
+    message,
+    t,
+    toolResultsMap,
+  ]);
 
   const exportMarkdownContent = useCallback(
     () =>
@@ -263,7 +243,6 @@ function MessageActionBarImpl({
     if (uiDocument?.fileBaseName) {
       return markdownExportBaseName(uiDocument.fileBaseName, 'export');
     }
-    // Keep message.<ext> naming; shared helper appends the extension.
     return markdownExportBaseName(
       buildMessageExportFilename(message, 'md').replace(/\.md$/i, ''),
       'message',
@@ -305,7 +284,6 @@ function MessageActionBarImpl({
 
   const handleExportPdf = useCallback(async () => {
     if (isBusy || !canExportBody || uiDocument?.exportKind === 'html') {
-      // PDF is hidden for HTML presentInteractive; no-op if reached.
       return;
     }
     setBusyAction('pdf');
@@ -343,18 +321,14 @@ function MessageActionBarImpl({
       data-testid="message-action-bar"
     >
       <IconActionButton
-        label={t('agent.bubble.actionBar.copyFullAria')}
-        tooltip={
-          uiDocument
-            ? t('agent.bubble.actionBar.copyFullDocumentTooltip')
-            : t('agent.bubble.actionBar.copyFullTooltip')
-        }
+        label={t('agent.bubble.actionBar.copyAria')}
+        tooltip={t('agent.bubble.actionBar.copyTooltip')}
         onClick={() => {
-          void handleCopy('full');
+          void handleCopyBody();
         }}
-        disabled={isBusy || !canCopyFull}
-        isBusy={busyAction === 'full'}
-        showCheck={lastCopiedMode === 'full' && busyAction !== 'full'}
+        disabled={isBusy || !canCopyBody}
+        isBusy={busyAction === 'copy'}
+        showCheck={lastCopied === 'copy' && busyAction !== 'copy'}
         emphasize
         isUserTone={isUserTone}
       >
@@ -362,32 +336,14 @@ function MessageActionBarImpl({
       </IconActionButton>
 
       <IconActionButton
-        label={t('agent.bubble.actionBar.copyTextAria')}
-        tooltip={
-          uiDocument
-            ? t('agent.bubble.actionBar.copyTextDocumentTooltip')
-            : t('agent.bubble.actionBar.copyTextTooltip')
-        }
-        onClick={() => {
-          void handleCopy('text');
-        }}
-        disabled={isBusy || !canCopyBody}
-        isBusy={busyAction === 'text'}
-        showCheck={lastCopiedMode === 'text' && busyAction !== 'text'}
-        isUserTone={isUserTone}
-      >
-        <Type className="h-3.5 w-3.5" />
-      </IconActionButton>
-
-      <IconActionButton
         label={t('agent.bubble.actionBar.copyToolsAria')}
         tooltip={t('agent.bubble.actionBar.copyToolsTooltip')}
         onClick={() => {
-          void handleCopy('tools');
+          void handleCopyTools();
         }}
         disabled={isBusy || !hasToolCalls}
         isBusy={busyAction === 'tools'}
-        showCheck={lastCopiedMode === 'tools' && busyAction !== 'tools'}
+        showCheck={lastCopied === 'tools' && busyAction !== 'tools'}
         isUserTone={isUserTone}
       >
         <Braces className="h-3.5 w-3.5" />

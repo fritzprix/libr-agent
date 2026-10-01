@@ -118,7 +118,7 @@ function createMessage(overrides: Partial<Message> = {}): Message {
 describe('MessageActionBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSerialize.mockReturnValue('## Assistant\n\nHello');
+    mockSerialize.mockReturnValue('[{"id":"call-1"}]');
     mockSerializeForDownload.mockReturnValue('## Answer\n\n- point one');
     mockCopyToClipboard.mockResolvedValue(undefined);
     mockDownloadTextFile.mockResolvedValue('/tmp/message.md');
@@ -129,48 +129,47 @@ describe('MessageActionBar', () => {
     });
   });
 
-  it('copies the full message when the primary copy button is clicked', async () => {
+  it('copies plain text for a normal message (not thinking/tools dump)', async () => {
     render(<MessageActionBar message={createMessage()} />);
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyFullAria',
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     );
 
     await waitFor(() => {
-      expect(mockSerialize).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'msg-1' }),
-        expect.objectContaining({ mode: 'full' }),
-      );
-      expect(mockCopyToClipboard).toHaveBeenCalledWith(
-        '## Assistant\n\nHello',
-      );
+      expect(mockCopyToClipboard).toHaveBeenCalledWith('Hello');
     });
+    expect(mockSerialize).not.toHaveBeenCalled();
   });
 
-  it('keeps the primary copy control visible without hover', () => {
-    render(<MessageActionBar message={createMessage()} />);
-
-    const copyButton = screen.getByRole('button', {
-      name: 'agent.bubble.actionBar.copyFullAria',
-    });
-
-    expect(copyButton).toBeVisible();
-    expect(copyButton.className).not.toMatch(/opacity-0/);
-  });
-
-  it('exposes icon-only flat actions with aria labels', () => {
+  it('keeps a single primary copy control (no text-only button)', () => {
     render(<MessageActionBar message={createMessage()} />);
 
     expect(
       screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyFullAria',
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     ).toBeVisible();
     expect(
-      screen.getByRole('button', {
+      screen.queryByRole('button', {
         name: 'agent.bubble.actionBar.copyTextAria',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {
+        name: 'agent.bubble.actionBar.copyFullAria',
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('exposes copy, tools, and export actions', () => {
+    render(<MessageActionBar message={createMessage()} />);
+
+    expect(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     ).toBeVisible();
     expect(
@@ -216,7 +215,7 @@ describe('MessageActionBar', () => {
     });
   });
 
-  it('primary copy prefers reportResult document over wrapper transcript', async () => {
+  it('copy prefers reportResult document over wrapper transcript', async () => {
     mockCopyToClipboard.mockResolvedValue(undefined);
 
     render(
@@ -239,7 +238,7 @@ describe('MessageActionBar', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyFullAria',
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     );
 
@@ -252,7 +251,7 @@ describe('MessageActionBar', () => {
     expect(copied).not.toContain('STOP');
   });
 
-  it('text copy uses reportResult body only; full copy uses the composed document', async () => {
+  it('copy uses bubble reportResult document, not first narration', async () => {
     mockCopyToClipboard.mockResolvedValue(undefined);
 
     const displayContent: MCPContent[] = [
@@ -306,87 +305,22 @@ describe('MessageActionBar', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyTextAria',
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     );
 
     await waitFor(() => {
       expect(mockCopyToClipboard).toHaveBeenCalled();
     });
-    const textCopied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
-    expect(textCopied.trim()).toBe('REPORT BODY');
-    expect(textCopied).not.toContain('FIRST RESPONSE');
-    expect(textCopied).not.toContain('Must ship');
+    const copied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
+    expect(copied).toContain('# Deliverable');
+    expect(copied).toContain('REPORT BODY');
+    expect(copied).toContain('Must ship');
+    expect(copied).not.toContain('FIRST RESPONSE');
     expect(mockSerialize).not.toHaveBeenCalled();
-
-    mockCopyToClipboard.mockClear();
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyFullAria',
-      }),
-    );
-    await waitFor(() => {
-      expect(mockCopyToClipboard).toHaveBeenCalled();
-    });
-    const fullCopied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
-    expect(fullCopied).toContain('# Deliverable');
-    expect(fullCopied).toContain('REPORT BODY');
-    expect(fullCopied).toContain('Must ship');
   });
 
-  it('shows document-aware tooltips when a UI document is present', () => {
-    const toolResultsMap = new Map<string, Message>([
-      [
-        'call-report',
-        createMessage({
-          id: 'tool-report',
-          role: 'tool',
-          tool_call_id: 'call-report',
-          metadata: {
-            structuredContent: {
-              type: 'reportResult',
-              status: 'success',
-              title: 'Ship',
-              result: 'ok',
-              deliverables: [],
-            },
-          },
-        }),
-      ],
-    ]);
-
-    render(
-      <MessageActionBar
-        message={createMessage({
-          tool_calls: [
-            {
-              id: 'call-report',
-              type: 'function',
-              function: { name: 'ui__reportResult', arguments: '{}' },
-            },
-          ],
-        })}
-        displayContent={[
-          {
-            type: 'tool_call',
-            id: 'call-report',
-            name: 'ui__reportResult',
-            arguments: '{}',
-          },
-        ]}
-        toolResultsMap={toolResultsMap}
-      />,
-    );
-
-    expect(
-      screen.getByText('agent.bubble.actionBar.copyFullDocumentTooltip'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('agent.bubble.actionBar.copyTextDocumentTooltip'),
-    ).toBeInTheDocument();
-  });
-
-  it('disables text copy and export when the bubble has no document or text', () => {
+  it('disables copy and export when the bubble has no document or text', () => {
     render(
       <MessageActionBar
         message={createMessage({
@@ -398,12 +332,7 @@ describe('MessageActionBar', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyTextAria',
-      }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyFullAria',
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     ).toBeDisabled();
     expect(
