@@ -100,4 +100,212 @@ describe('message-document', () => {
     expect(serializeMessageForDownload(message)).toContain('body');
     expect(serializeMessageForDownload(message)).not.toContain('STOP');
   });
+
+  it('resolves reportResult from toolResultsMap via displayContent tool_call ids', () => {
+    const assistant = createMessage({
+      id: 'asst-1',
+      content: [
+        { type: 'text', text: 'FIRST RESPONSE: I will analyze the repo...' },
+      ],
+      tool_calls: [
+        {
+          id: 'call-search',
+          type: 'function',
+          function: { name: 'workspace__runShell', arguments: '{}' },
+        },
+      ],
+    });
+
+    const displayContent: MCPContent[] = [
+      { type: 'text', text: 'FIRST RESPONSE: I will analyze the repo...' },
+      {
+        type: 'tool_call',
+        id: 'call-search',
+        name: 'workspace__runShell',
+        arguments: '{}',
+      },
+      {
+        type: 'tool_call',
+        id: 'call-report',
+        name: 'ui__reportResult',
+        arguments: '{}',
+      },
+    ];
+
+    const toolResultsMap = new Map<string, Message>([
+      [
+        'call-search',
+        createMessage({
+          id: 'tool-search',
+          role: 'tool',
+          tool_call_id: 'call-search',
+          content: [{ type: 'text', text: 'ls ok' }],
+        }),
+      ],
+      [
+        'call-report',
+        createMessage({
+          id: 'tool-report',
+          role: 'tool',
+          tool_call_id: 'call-report',
+          content: [{ type: 'text', text: 'Final result reported STOP' }],
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'success',
+              title: 'Ship',
+              result: 'REPORT BODY',
+              deliverables: [],
+            },
+          },
+        }),
+      ],
+    ]);
+
+    const doc = resolveMessageDocument(assistant, {
+      displayContent,
+      toolResultsMap,
+    });
+    expect(doc?.source).toBe('reportResult');
+    expect(doc?.content).toContain('REPORT BODY');
+    expect(doc?.content).not.toContain('FIRST RESPONSE');
+
+    expect(
+      serializeMessageForClipboard(assistant, {
+        mode: 'text',
+        displayContent,
+        toolResultsMap,
+      }),
+    ).toContain('REPORT BODY');
+    expect(
+      serializeMessageForClipboard(assistant, {
+        mode: 'text',
+        displayContent,
+        toolResultsMap,
+      }),
+    ).not.toContain('FIRST RESPONSE');
+
+    expect(
+      serializeMessageForDownload(assistant, {
+        displayContent,
+        toolResultsMap,
+      }),
+    ).toContain('REPORT BODY');
+  });
+
+  it('does not use an unrelated session reportResult outside this bubble', () => {
+    const assistant = createMessage({
+      content: [{ type: 'text', text: 'Visible narration' }],
+      tool_calls: [
+        {
+          id: 'call-local',
+          type: 'function',
+          function: { name: 'workspace__runShell', arguments: '{}' },
+        },
+      ],
+    });
+
+    const toolResultsMap = new Map<string, Message>([
+      [
+        'call-local',
+        createMessage({
+          id: 'tool-local',
+          role: 'tool',
+          tool_call_id: 'call-local',
+          content: [{ type: 'text', text: 'ok' }],
+        }),
+      ],
+      [
+        'call-other-report',
+        createMessage({
+          id: 'tool-other',
+          role: 'tool',
+          tool_call_id: 'call-other-report',
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'success',
+              title: 'Other',
+              result: 'OTHER SESSION RESULT',
+              deliverables: [],
+            },
+          },
+        }),
+      ],
+    ]);
+
+    expect(
+      resolveMessageDocument(assistant, { toolResultsMap }),
+    ).toBeNull();
+    expect(
+      serializeMessageForClipboard(assistant, {
+        mode: 'text',
+        toolResultsMap,
+      }),
+    ).toBe('Visible narration');
+  });
+
+  it('prefers the newest reportResult in the bubble when several exist', () => {
+    const assistant = createMessage({
+      content: [{ type: 'text', text: 'Working...' }],
+    });
+    const displayContent: MCPContent[] = [
+      { type: 'text', text: 'Working...' },
+      {
+        type: 'tool_call',
+        id: 'call-report-1',
+        name: 'ui__reportResult',
+        arguments: '{}',
+      },
+      {
+        type: 'tool_call',
+        id: 'call-report-2',
+        name: 'ui__reportResult',
+        arguments: '{}',
+      },
+    ];
+    const toolResultsMap = new Map<string, Message>([
+      [
+        'call-report-1',
+        createMessage({
+          id: 'tool-1',
+          role: 'tool',
+          tool_call_id: 'call-report-1',
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'partial',
+              title: 'First',
+              result: 'OLD BODY',
+              deliverables: [],
+            },
+          },
+        }),
+      ],
+      [
+        'call-report-2',
+        createMessage({
+          id: 'tool-2',
+          role: 'tool',
+          tool_call_id: 'call-report-2',
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'success',
+              title: 'Final',
+              result: 'NEW BODY',
+              deliverables: [],
+            },
+          },
+        }),
+      ],
+    ]);
+
+    const doc = resolveMessageDocument(assistant, {
+      displayContent,
+      toolResultsMap,
+    });
+    expect(doc?.content).toContain('NEW BODY');
+    expect(doc?.content).not.toContain('OLD BODY');
+  });
 });

@@ -99,7 +99,7 @@ function tryPresentInteractiveDocument(
     const isInteractive =
       uri.startsWith('ui://interactive/') ||
       toolName === 'presentInteractive' ||
-      html.includes('id=\'raw-data\'') ||
+      html.includes("id='raw-data'") ||
       html.includes('id="raw-data"');
     if (!isInteractive) {
       continue;
@@ -122,8 +122,80 @@ function tryPresentInteractiveDocument(
 }
 
 /**
+ * Tool-call ids visible on this bubble: message.tool_calls plus interleaved
+ * displayContent tool_call items (full tool-group transcript).
+ */
+function collectBubbleToolCallIds(
+  message: Message,
+  displayContent?: MCPContent[],
+): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (id: string) => {
+    if (!id || seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    ids.push(id);
+  };
+
+  for (const toolCall of message.tool_calls ?? []) {
+    push(toolCall.id);
+  }
+
+  const content = displayContent ?? message.content ?? [];
+  if (!Array.isArray(content)) {
+    return ids;
+  }
+  for (const item of content) {
+    if (item.type === 'tool_call') {
+      push(item.id);
+    }
+  }
+
+  return ids;
+}
+
+/**
+ * Resolve a tool result for a call id, including `_dupN` keys from
+ * useMessageGrouping when the model reuses call ids.
+ */
+function* iterToolResultsForCallId(
+  toolResultsMap: Map<string, Message>,
+  toolCallId: string,
+): Generator<Message> {
+  const primary = toolResultsMap.get(toolCallId);
+  if (primary) {
+    yield primary;
+  }
+
+  let seq = 1;
+  while (true) {
+    const dup = toolResultsMap.get(`${toolCallId}_dup${seq}`);
+    if (!dup) {
+      break;
+    }
+    yield dup;
+    seq += 1;
+  }
+}
+
+function tryDocumentFromToolResult(
+  toolResult: Message,
+): ResolvedMessageDocument | null {
+  return (
+    tryReportResultDocument(getToolStructuredContent(toolResult)) ??
+    tryPresentInteractiveDocument(toolResult.content ?? [])
+  );
+}
+
+/**
  * Prefer UI tool document bodies (reportResult / presentInteractive) over
  * plain message text so MessageActionBar copy/export matches what the user sees.
+ *
+ * Boundary: only this bubble's tool_calls / displayContent ids — never other
+ * bubbles in the session. Among matches in the bubble, the newest wins.
  */
 export function resolveMessageDocument(
   message: Message,
@@ -140,19 +212,27 @@ export function resolveMessageDocument(
   }
 
   if (options.toolResultsMap) {
-    for (const toolResult of options.toolResultsMap.values()) {
-      const fromResult = tryReportResultDocument(
-        getToolStructuredContent(toolResult),
-      );
-      if (fromResult) {
-        return fromResult;
+    const toolCallIds = collectBubbleToolCallIds(
+      message,
+      options.displayContent,
+    );
+    let latestInBubble: ResolvedMessageDocument | null = null;
+
+    for (const toolCallId of toolCallIds) {
+      for (const toolResult of iterToolResultsForCallId(
+        options.toolResultsMap,
+        toolCallId,
+      )) {
+        const fromResult = tryDocumentFromToolResult(toolResult);
+        if (fromResult) {
+          // Keep the last match so a later reportResult wins over earlier UI docs.
+          latestInBubble = fromResult;
+        }
       }
-      const fromResultContent = tryPresentInteractiveDocument(
-        toolResult.content ?? [],
-      );
-      if (fromResultContent) {
-        return fromResultContent;
-      }
+    }
+
+    if (latestInBubble) {
+      return latestInBubble;
     }
   }
 

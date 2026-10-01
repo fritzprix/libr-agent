@@ -35,6 +35,7 @@ import {
   buildMessageExportFilename,
   serializeMessageForClipboard,
   serializeMessageForDownload,
+  serializeMessageTextOnly,
 } from '@/features/agent/lib/message-serialization';
 import {
   exportMarkdownDocumentWithNotify,
@@ -55,6 +56,22 @@ export interface MessageActionBarProps {
   /** Visual tone for user (primary) vs assistant/secondary bubbles */
   tone?: 'user' | 'assistant';
   className?: string;
+}
+
+/**
+ * Bubble-local copy body: UI document (reportResult / presentInteractive)
+ * wins over plain text. Never walks other bubbles' history.
+ */
+function resolveBubbleCopyBody(
+  uiDocument: ReturnType<typeof resolveMessageDocument>,
+  message: Message,
+  displayContent?: MCPContent[],
+): string {
+  const fromDocument = uiDocument?.content.trim() ?? '';
+  if (fromDocument) {
+    return fromDocument;
+  }
+  return serializeMessageTextOnly(message, displayContent).trim();
 }
 
 function IconActionButton({
@@ -159,19 +176,40 @@ function MessageActionBarImpl({
     [displayContent, message, toolResultsMap],
   );
 
+  // Priority within this bubble only: UI document → plain text.
+  const bubbleCopyBody = useMemo(
+    () => resolveBubbleCopyBody(uiDocument, message, displayContent),
+    [displayContent, message, uiDocument],
+  );
+  const canCopyBody = bubbleCopyBody.length > 0;
+  const canCopyFull = canCopyBody || hasToolCalls || Boolean(message.thinking?.trim());
+  const canExportBody = canCopyBody;
+
   const handleCopy = useCallback(
     async (mode: CopyMode) => {
       if (isBusy) {
         return;
       }
+      if (mode === 'tools' && !hasToolCalls) {
+        return;
+      }
+      if (mode === 'text' && !canCopyBody) {
+        return;
+      }
+      if (mode === 'full' && !canCopyFull) {
+        return;
+      }
+
       setBusyAction(mode);
       try {
-        // UI tool surfaces: primary (full) copy should grab the document body,
-        // not the wrapper transcript — matches presentInteractive / reportResult.
+        // full/text: bubble-local document first, else text (text mode) /
+        // full transcript (full mode when no UI document).
         const content =
-          mode === 'full' && uiDocument
-            ? uiDocument.content
-            : serialize(mode);
+          mode === 'tools'
+            ? serialize('tools')
+            : mode === 'text' || uiDocument
+              ? bubbleCopyBody
+              : serialize('full');
         if (!content.trim() || content === '[]') {
           toast.error(t('agent.bubble.actionBar.copyEmpty'));
           return;
@@ -190,7 +228,17 @@ function MessageActionBarImpl({
         setBusyAction(null);
       }
     },
-    [copyToClipboard, isBusy, serialize, t, uiDocument],
+    [
+      bubbleCopyBody,
+      canCopyBody,
+      canCopyFull,
+      copyToClipboard,
+      hasToolCalls,
+      isBusy,
+      serialize,
+      t,
+      uiDocument,
+    ],
   );
 
   const exportMarkdownContent = useCallback(
@@ -214,7 +262,7 @@ function MessageActionBarImpl({
   }, [message, uiDocument]);
 
   const handleExportMarkdown = useCallback(async () => {
-    if (isBusy) {
+    if (isBusy || !canExportBody) {
       return;
     }
     setBusyAction('markdown');
@@ -237,6 +285,7 @@ function MessageActionBarImpl({
       setBusyAction(null);
     }
   }, [
+    canExportBody,
     exportFileBaseName,
     exportMarkdownContent,
     isBusy,
@@ -246,7 +295,7 @@ function MessageActionBarImpl({
   ]);
 
   const handleExportPdf = useCallback(async () => {
-    if (isBusy || uiDocument?.exportKind === 'html') {
+    if (isBusy || !canExportBody || uiDocument?.exportKind === 'html') {
       // PDF is hidden for HTML presentInteractive; no-op if reached.
       return;
     }
@@ -270,6 +319,7 @@ function MessageActionBarImpl({
       setBusyAction(null);
     }
   }, [
+    canExportBody,
     exportFileBaseName,
     exportMarkdownContent,
     isBusy,
@@ -289,7 +339,7 @@ function MessageActionBarImpl({
         onClick={() => {
           void handleCopy('full');
         }}
-        disabled={isBusy}
+        disabled={isBusy || !canCopyFull}
         isBusy={busyAction === 'full'}
         showCheck={lastCopiedMode === 'full' && busyAction !== 'full'}
         emphasize
@@ -304,7 +354,7 @@ function MessageActionBarImpl({
         onClick={() => {
           void handleCopy('text');
         }}
-        disabled={isBusy}
+        disabled={isBusy || !canCopyBody}
         isBusy={busyAction === 'text'}
         showCheck={lastCopiedMode === 'text' && busyAction !== 'text'}
         isUserTone={isUserTone}
@@ -340,7 +390,7 @@ function MessageActionBarImpl({
                     ? 'text-primary-foreground/75 hover:bg-primary-foreground/15 hover:text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
                 )}
-                disabled={isBusy}
+                disabled={isBusy || !canExportBody}
                 aria-label={t('agent.bubble.actionBar.exportAria')}
               >
                 {busyAction === 'markdown' || busyAction === 'pdf' ? (
@@ -361,6 +411,7 @@ function MessageActionBarImpl({
             onSelect={() => {
               void handleExportMarkdown();
             }}
+            disabled={!canExportBody}
           >
             <FileDown className="h-4 w-4" />
             {uiDocument?.exportKind === 'html'
@@ -372,6 +423,7 @@ function MessageActionBarImpl({
               onSelect={() => {
                 void handleExportPdf();
               }}
+              disabled={!canExportBody}
             >
               <Printer className="h-4 w-4" />
               {t('agent.bubble.actionBar.exportPdf')}

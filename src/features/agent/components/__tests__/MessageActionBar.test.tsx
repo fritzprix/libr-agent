@@ -74,13 +74,17 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('@/features/agent/lib/message-serialization', () => ({
-  serializeMessageForClipboard: (...args: unknown[]) => mockSerialize(...args),
-  serializeMessageForDownload: (...args: unknown[]) =>
-    mockSerializeForDownload(...args),
-  buildMessageExportFilename: (_message: Message, extension: string) =>
-    `export.${extension}`,
-}));
+vi.mock('@/features/agent/lib/message-serialization', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/features/agent/lib/message-serialization')
+  >('@/features/agent/lib/message-serialization');
+  return {
+    ...actual,
+    serializeMessageForClipboard: (...args: unknown[]) => mockSerialize(...args),
+    serializeMessageForDownload: (...args: unknown[]) =>
+      mockSerializeForDownload(...args),
+  };
+});
 
 vi.mock('@/features/agent/lib/pdf-export-preprocess', () => ({
   prepareMarkdownForPdfExport: (...args: unknown[]) =>
@@ -203,7 +207,7 @@ describe('MessageActionBar', () => {
         { isDark: true },
       );
       expect(mockDownloadTextPdf).toHaveBeenCalledWith({
-        fileName: 'export.pdf',
+        fileName: 'message.pdf',
         content: preprocessed.content,
         embeddedImages: preprocessed.embeddedImages,
       });
@@ -244,6 +248,98 @@ describe('MessageActionBar', () => {
     expect(copied).toContain('# Ship');
     expect(copied).toContain('ok');
     expect(copied).not.toContain('STOP');
+  });
+
+  it('text copy uses reportResult from toolResultsMap, not first assistant narration', async () => {
+    mockCopyToClipboard.mockResolvedValue(undefined);
+
+    const displayContent: MCPContent[] = [
+      { type: 'text', text: 'FIRST RESPONSE: planning...' },
+      {
+        type: 'tool_call',
+        id: 'call-report',
+        name: 'ui__reportResult',
+        arguments: '{}',
+      },
+    ];
+    const toolResultsMap = new Map<string, Message>([
+      [
+        'call-report',
+        createMessage({
+          id: 'tool-report',
+          role: 'tool',
+          tool_call_id: 'call-report',
+          content: [{ type: 'text', text: 'Final result reported STOP' }],
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'success',
+              title: 'Deliverable',
+              result: 'REPORT BODY',
+              deliverables: [],
+            },
+          },
+        }),
+      ],
+    ]);
+
+    render(
+      <MessageActionBar
+        message={createMessage({
+          content: [{ type: 'text', text: 'FIRST RESPONSE: planning...' }],
+          tool_calls: [
+            {
+              id: 'call-search',
+              type: 'function',
+              function: { name: 'workspace__runShell', arguments: '{}' },
+            },
+          ],
+        })}
+        displayContent={displayContent}
+        toolResultsMap={toolResultsMap}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyTextAria',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockCopyToClipboard).toHaveBeenCalled();
+    });
+    const copied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
+    expect(copied).toContain('REPORT BODY');
+    expect(copied).not.toContain('FIRST RESPONSE');
+    expect(mockSerialize).not.toHaveBeenCalled();
+  });
+
+  it('disables text copy and export when the bubble has no document or text', () => {
+    render(
+      <MessageActionBar
+        message={createMessage({
+          content: [],
+          thinking: undefined,
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyTextAria',
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyFullAria',
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.exportAria',
+      }),
+    ).toBeDisabled();
   });
 
   it('exports presentInteractive HTML as .html and hides PDF', async () => {
