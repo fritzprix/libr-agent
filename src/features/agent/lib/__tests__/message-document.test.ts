@@ -243,6 +243,9 @@ describe('message-document', () => {
         toolResultsMap,
       }),
     ).toBe('Visible narration');
+    expect(
+      serializeMessageForDownload(assistant, { toolResultsMap }),
+    ).toBe('Visible narration');
   });
 
   it('prefers the newest reportResult in the bubble when several exist', () => {
