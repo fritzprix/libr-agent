@@ -1,220 +1,197 @@
 ﻿# 🤖 LibrAgent
 
-> **Eine Local-First-Desktop-App für KI-Agenten, die echte Tools nutzen, parallel arbeiten und unter deiner Kontrolle bleiben.**
-> _Verbinde beliebige LLMs, füge beliebige MCP-Server hinzu und lass Agenten Dateien lesen, Shells ausführen, im Web arbeiten und Automatisierungen wirklich zu Ende bringen._
+> **Eine Agenten-Betriebsumgebung, die Sie selbst betreiben — Modell wählen, Tools per Ein-Klick, Koordinationsmuster wählen.**
+> _Kein Vendor-Harness. Keine JSON-Hausaufgaben. Arbeit endet als Dateien auf Ihrer Maschine._
 
 [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
 
+[![Version](https://img.shields.io/github/v/release/fritzprix/libr-agent)](https://github.com/fritzprix/libr-agent/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
-
-LibrAgent ist ein **Local-First-Agenten-Workspace**, gebaut mit Tauri + Rust + React. Es ist nicht bloß noch ein Chat-Interface, sondern für echten Dateizugriff, Shell-Ausführung, Browser-Automatisierung, MCP-Erweiterbarkeit und Multi-Agenten-Workflows gedacht, die stundenlang laufen können statt nach einer netten Demo auseinanderzufallen.
-
-Du kannst Cloud-Modelle oder lokale Runtimes wie Ollama verbinden, MCP-Server aus Tools importieren, die du bereits nutzt, und Agenten dann Code untersuchen, Dateien bearbeiten, Befehle ausführen, im Web arbeiten, Wissen aufbauen und Teilaufgaben delegieren lassen — ohne deinen gesamten Workflow auf die Cloud-VM eines anderen auszulagern.
-
-**Starte hier:** [Neueste Release herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [Zum 5-Minuten-Onboarding springen](#der-5-minuten-onboarding-pfad) · [Reale Szenarien ansehen](#reale-szenarien)
+[![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
 ---
 
-## Warum LibrAgent?
+## Was LibrAgent anders macht
 
-Die meisten Agenten-Produkte erzwingen immer noch einen ziemlich nervigen Kompromiss:
+Die meisten Agenten-Harnesses setzen voraus, dass Sie MCP-JSON bearbeiten, im Terminal leben und Orchestrierung im Code zusammensetzen (oder sperren Sie in den Stack eines einzelnen Vendors).
 
-- **Einfache UI, aber schwache Ausführung**
-- **Starke Automatisierung, aber kaum Produkterlebnis**
-- **Bequemes Cloud-Setup, aber schwache Privatsphäre**
-- **Flexible Frameworks, aber du baust den ganzen Stack selbst zusammen**
+LibrAgent ist ein **Desktop-Produkt** für dieselbe Aufgabe:
 
-LibrAgent zielt auf die Mitte, die Menschen tatsächlich wollen:
+| Statt… | Erhalten Sie… |
+| ------ | ------------- |
+| MCP-Configs von Hand editieren | **Extensions** — Ein-Klick-Presets (GitHub, Brave Search, Filesystem, …) und Import aus Cursor / VS Code / Claude Code / Windsurf |
+| „Wir haben Multi-Agent“ | **Benannte Koordinationsmuster** als gebündelte Skills — `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, … |
+| Modell + Tools eines Anbieters | **Ihr** LLM (API-Schlüssel oder [Ollama](https://ollama.com)) und **Ihr** MCP-Stack — MIT, local-first |
 
-- **Local-First-Kontrolle** über Dateien, Workspaces, Sitzungen und Browser-Zustand
-- **Offene Erweiterbarkeit über MCP** statt einer geschlossenen Plugin-Story
-- **Echte Ausführungskraft** über Shell, Browser, Workspace und Knowledge hinweg
-- **Eine GUI, die normale Menschen benutzen können**, ohne Power-User-Tiefe aufzugeben
-- **Einen natürlichen Weg von einem Agenten zu mehreren**, wenn ein einzelner Assistent nicht mehr reicht
-
-### Für wen LibrAgent gedacht ist
-
-- **Solo-Entwickler**, die Agenten wollen, die wirklich lokal lesen, bearbeiten, ausführen, navigieren und Kontext persistieren können
-- **Power-User und Operatoren**, die ihren eigenen Stack aus lokalen Modellen, API-Anbietern, MCP-Servern und geplanten Workflows zusammenstellen wollen
-- **Forscher und Analysten**, die Browser-Automatisierung, Wissenserfassung, wiederholbare Playbooks und Langzeitsitzungen benötigen
-- **Datenschutzbewusste Teams**, die lokale Ausführung, explizite Governance und einen Weg von einem einzelnen Agenten zu einer koordinierten Organisation wollen
+[Neueste Version herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [5-Minuten-Onboarding](#5-minuten-onboarding) · [Hero-Demo-Spezifikation](docs/contributing/hero-demo-spec.md)
 
 ---
 
-## 🎬 Ausführungsgeschichte
+## Was Sie in den ersten 10 Minuten tun können
 
-**LibrAgent ist keine Chat-App. Es ist eine Ausführungsumgebung für Agenten.**
+### 1. Ein-Klick-Tools, dann ein Deliverable
 
-**Eine Session. Ein Ziel. Ein Deliverable, das auf deiner Maschine bleibt.**
+- Öffnen Sie **Extensions** und installieren Sie ein Preset (z. B. GitHub) — kein JSON
+- Zeigen Sie **Workspace** auf einen echten Ordner
+- Fragen Sie: _"Prüfe dieses Repo auf das größte Risiko für neue Beiträger und speichere `DELIVERABLE.md`"_
 
-1. Modell verbinden (API-Key oder [Ollama](https://ollama.com))
-2. **Workspace** auf einen echten Projektordner zeigen
-3. Den Agenten bitten zu **lesen, auszuführen und eine Datei zu hinterlassen, die du behältst** — keine Suggestion in einer Sprechblase
+### 2. Ein Ein-Klick-Workflow-Rezept deployen
 
-[Neueste Release herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [5-Minuten-Onboarding](#der-5-minuten-onboarding-pfad) · [Hero Demo Spec](docs/contributing/hero-demo-spec.md)
+- Starten Sie das **Morning Briefing**-Rezept von der Chat-Startseite oder [Scheduled Tasks](docs/user/guides/scheduled-tasks.md)
+- Installiert Hacker-News- + Yahoo-Finance-Presets, konfiguriert einen Assistenten und plant einen täglichen Lauf um 9 Uhr
+- Aufwachen mit einem synthetisierten Tech- & Markt-Briefing — unbeaufsichtigt
 
----
+### 3. Ein Koordinationsmuster wählen (ohne Framework-Zusammenbau)
 
-## Was du in den ersten 10 Minuten tun kannst
+- Beschreiben Sie die Arbeitsform oder hängen Sie einen Skill per Namen an:
+  - _"@skill:pipeline — recherchieren, dann entwerfen, dann reviewen; einen finalen Bericht lassen"_
+  - _"@skill:divide-conquer — in unabhängige Teile aufteilen und Ergebnisse zusammenführen"_
+- Muster sind produktisierte Skills — kein SDK, das Sie selbst verdrahten. Siehe [Sub-agents & orchestration](docs/user/guides/sub-agents.md).
 
-### 1. Ein Repository mit echten Tools prüfen
+### 4. Modelfreiheit behalten
 
-- Verbinde ein lokales Repo mit dem Workspace-Tool
-- Füge das GitHub-MCP-Preset hinzu
-- Frage: _"Finde Sicherheitsprobleme in PR #42 und speichere den Bericht"_
-
-### 2. Einen komplett lokalen Agenten-Stack aufbauen
-
-- Führe `ollama pull qwen3:14b` aus
-- Verbinde Workspace + Shell
-- Lass einen Agenten lesen, ändern, testen und iterieren, ohne deinen Code an eine Cloud-VM zu schicken
-
-### 3. Recherche in einen wiederholbaren Workflow verwandeln
-
-- Füge Browser + Knowledge hinzu
-- Frage: _"Verfolge diese 5 Konkurrenz-Blogs und gib mir jeden Morgen eine Zusammenfassung"_
-- Verwandle eine Einzelaufgabe in eine geplante Pipeline
-
-> Multi-Agent (`delegate` / `teamwork` / `org`) kommt **nach dem ersten Deliverable** — siehe „Schwarm → Team → Organisation“ weiter unten.
+- Cloud: OpenAI- / Anthropic- / Gemini- / Groq-API-Schlüssel einfügen
+- Lokal: `ollama pull qwen3:14b` und Ollama wählen — dasselbe Harness in beiden Fällen
 
 ---
 
-## Warum es auch nach der Demo trägt
+## Drei Produktversprechen
 
-### 1. 🔐 Local-First Sicherheit — Deine Daten bleiben auf deiner Maschine
+1. **Oberfläche ohne Harness-Hausaufgaben** — GUI, Extensions Ein-Klick, Rezepte, In-App-Freigaben, `@skill:` — nicht „öffne zuerst Config und Shell“.
+2. **Orchestrierung als Produkt** — Sequential- / Hub-and-spoke- / Swarm-ähnliche Flows per Skills wählen; bei Bedarf zu `teamwork` → `org` und `schedule` wachsen — weiterhin ohne LangGraph/CrewAI selbst zu bauen.
+3. **Anbieter- & Stack-Freiheit** — jedes unterstützte LLM, MCP als Infrastruktur, Import bestehender IDE-MCP-Configs, MIT-Lizenz, lokale Workspaces und Browser-Zustand standardmäßig.
 
-LibrAgent behandelt Sicherheit als erstklassiges architektonisches Anliegen:
-
-- **Sitzungsisolation**: jede Agentensitzung hat ihre eigene Tool-Runtime — keine sitzungsübergreifenden Lecks
-- **Pfad- und Befehlsguards**: Traversal und Injection an der Systemgrenze blockiert
-- **Kein Cloud-Substrat erforderlich**: Die Kernausführung erfolgt lokal; externe Verbindungen beschränken sich im Wesentlichen auf die Cloud-LLM-Anbieter und entfernten MCP/HTTP-Dienste, die du bewusst nutzt, plus Update-Prüfungen in Produktions-Builds
-- **Vollständiger Offline-Support**: Kombiniere mit [Ollama](https://ollama.com) für einen vollständig isolierten Agenten-Stack
-
-#### Was lokal bleibt vs. was deine Maschine verlässt
-
-- **Immer lokal**: Arbeitsbereiche, lokale Dateien, gebündelte Skills, Sitzungsstatus, MCP-Server-Configs, Browser-Status und lokale Tool-Ausführung
-- **Verlässt deine Maschine wenn es nötig ist**: Anfragen an Cloud-LLM-Anbieter oder entfernte MCP/HTTP-Dienste, die du explizit konfigurierst, plus Update-Prüfungen in Produktions-Builds
-- **Vollständiger Offline-Modus**: Nutze Ollama oder eine andere lokale Runtime mit lokalen MCP-Servern für einen isolierten Workflow
-
-### 2. 🧩 Natives MCP-Ökosystem — Unendliche Erweiterbarkeit by Design
-
-MCP (Model Context Protocol) ist der offene Standard hinter dem Erweiterbarkeitsmodell von LibrAgent. LibrAgent behandelt es nicht als Feature — sondern als architektonisches Rückgrat:
-
-- **Vollständige Transport-Unterstützung**: stdio, HTTP, SSE und OAuth 2.1 — die vollständige Spezifikation
-- **12+ eingebaute Server**: Planning, Knowledge (RAG), Browser Automation, Workspace, Shell Execution, Content Store und mehr
-- **Preset-Katalog**: Installiere GitHub, Brave Search, Filesystem und andere beliebte Server mit einem Klick
-- **Pro-Sitzung isolierte Instanzen**: Jede Agentensitzung hat unabhängigen MCP-Server-Status — keine Interferenz zwischen parallelen Agenten
-- **Von überall importieren**: Migriere MCP-Configs automatisch von Cursor, VS Code, Claude Code oder Windsurf
-
-### 3. 🦾 Produktionsreifes Ausführungssubstrat
-
-Die meisten KI-Tools sind in Demos beeindruckend und in der Produktion fragil. LibrAgent ist obsessiv für echte, dauerhafte Arbeit konzipiert:
-
-| Substrat      | Fähigkeiten                                                                                                           |
-| ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Workspace** | Zeilenpräzise Bearbeitung, Multi-Datei-Operationen, einheitliche Suche, `@file`/`@skill`/`@playbook`-Kontextinjektion |
-| **Shell**     | Isolierte Ausführung UND persistente Shells — asynchrones Prozess-Monitoring (`poll`, `read output`, `list`)          |
-| **Browser**   | Headless-Browser-Automatisierung mit Playwright-ähnlichem Interaktionsmodell und Cache-Konsistenzgarantien            |
-| **Knowledge** | Graphbasiertes Wissensmanagement mit Entitäts-/Beziehungsextraktion (v2), BM25-Volltextsuche                          |
-
-**Zuverlässigkeitsingenieurwesen inklusive**: Kontextkomprimierung, Schleifenprävention, Schaltkreisunterbrecher und Schutz vor veralteten Antworten halten Agenten in stundenlangen Sitzungen produktiv.
-
-### 4. 🤝 Schwarm → Team → Organisation: Multi-Agent in jeder Größenordnung
-
-LibrAgent hat eine kohärente Multi-Agenten-Geschichte von der Solo-Ausführung bis zur expliziten Organisationskoordination:
-
-- **`delegate`**: Elternagenten erzeugen, informieren und überwachen Kindersitzungen mit expliziter Abstammungsverfolgung
-- **`teamwork`**: Baut einen vollständigen Task-Force-Arbeitsbereich (agents.md, MISSION.md, KANBAN.md) mit einem einzigen Befehl
-- **`org`**: Formalisiert Teams mit dauerhafter Organisationsidentität, Root-Sitzungswiederherstellung und sichtbarer Mitgliederhierarchie
-- **`schedule`**: CRON-basierte Automatisierung — Agenten laufen unbeaufsichtigt, nach Zeitplan, mit Arbeitsbereichsbereitstellung
-- **Concurrency Gate**: Strenge Limits für parallele Sitzungen und Shell-Prozesse zur Vermeidung von Deadlocks und unkontrollierten Kosten
-
-### 5. ⚡ Gebündelte Skills — Der schnellste Weg von einer leeren Installation zu einem betriebsbereiten Schwarm
-
-LibrAgent wird mit einer wachsenden Bibliothek **gebündelter Skills** geliefert. Das sind keine zufälligen Prompts — das sind wiederverwendbare operative Verfahren, die jeder Agent namentlich aufrufen kann.
-
-Die wichtigsten Skills für den ersten Tag:
-
-| Skill            | Was er tut                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `setup-wizard`   | Erkennt und installiert fehlende Runtimes (Python, Node.js, uv) plattformübergreifend                                     |
-| `tool-installer` | Registriert oder importiert MCP-Server aus npm/GitHub/JSON oder synchronisiert Configs aus Cursor, VS Code, Windsurf u.ä. |
-| `delegate`       | Führt durch die Eltern→Kind-Sitzungsübergabe mit explizitem Kontexttransfer und Abstammungsverfolgung                     |
-| `teamwork`       | Baut die geteilte Arbeitsbereichsverfassung für koordinierte Multi-Agenten-Arbeit                                         |
-| `org`            | Formalisiert dauerhafte Organisationsidentität und sichtbare Mitgliederhierarchie                                         |
-| `schedule`       | Erstellt und verwaltet wiederkehrende geplante Task-Gruppen für unbeaufsichtigte Automatisierung                          |
-| `soul-awakening` | Verankert einen Agenten an eine `SOUL.md`-Persona — Ton, Haltung, Identität                                               |
-
-Das ist nur die Operatorschicht. LibrAgent bietet auch Domain-Skills für:
-
-- **Wissen & Recherche**: `deep-research`, `knowledge-distiller`
-- **Dokumente & Workspace-Inhalte**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `visualize`
-- **Entwickler-Workflow**: `git-workflow`, `bench`
-- **Workspace-Onboarding**: `agent-init`
-- **Koordination & Assistenten**: `consensus-delegation`, `loop`, `call-me-back`, `context-recall`, `recruit`, `boost`
-- **Externe Integrationen**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **Skill- und Workflow-Erstellung**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
-- **Spezialisierte Operationen**: `computer-diagnosis`
-
-_Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit diesen Skills verwendet wird. Gebündelte Skills sind die wiederverwendbaren Verfahren; die eingebauten und MCP-Tools sind das zugrundeliegende Ausführungssubstrat._
+**Beste Passung:** Operatoren und Power-User, die Harness-Tiefe ohne JSON-Leben wollen; Entwickler, die einen Single-Vendor-Agent-Stack ablehnen; Forscher, die Browser + Wissen + Zeitpläne in einem Produkt brauchen.
 
 ---
 
-## 🌍 Reale Szenarien
+## Koordinationsmuster (gebündelte Skills)
 
-### Solo-Entwickler — Automatisiertes Code-Review
+Wählen Sie das Modell nach der **Form der Arbeit**, dann starten Sie es im Chat:
 
-1. Verbinde dein lokales Repository über das Workspace-Tool
-2. Installiere das GitHub MCP-Preset (ein Klick)
-3. Frage: _"Finde Sicherheitsprobleme in PR #42 und erstelle einen Markdown-Bericht"_
-4. Der Agent liest den Code, führt die Analyse durch, speichert die Ergebnisse im Knowledge-Server
+| Skill | Muster | Wann nutzen |
+| ----- | ------ | ----------- |
+| `pipeline` | Sequentielle Stufen | Ausgaben speisen den nächsten Schritt (Recherche → Entwurf → Review) |
+| `hub-spoke` | Hub-and-spoke | Ein Koordinator integriert viele Worker |
+| `divide-conquer` | Parallele Teilung | Unabhängige Teile, dann Merge |
+| `consensus-delegation` | Mehrperspektivisch | Dieselbe Frage an mehrere Spezialisten, dann abstimmen |
+| `gatekeeper` / `pair-programming` | Review-Schleifen | Strenges Review oder Zwei-Agenten-Coding |
+| `delegate` | Leichter Handoff | Eine Kind-Session, Lineage getrackt |
+| `teamwork` → `org` | Dauerhaftes Team | Geteilte Verfassung + Org UI |
+| `schedule` / `loop` / `call-me-back` | Zeit & Ereignisse | Cron, In-Session-Verzögerungen oder Fortsetzen per Prozess/Webhook |
 
-### Marketingmitarbeiter — Wettbewerbsintelligenz auf Autopilot
+Auswahlheuristiken: [framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · voller Guide: [Sub-agents](docs/user/guides/sub-agents.md).
 
-1. Konfiguriere 5 Konkurrenz-Blogs über das Browser-Tool
-2. Sage einem Agenten: _"Erstelle jeden Morgen um 7 Uhr ein geplantes Wettbewerbs-Briefing"_ — der Agent kann den `schedule`-Skill nutzen, um die wiederkehrende Task-Gruppe einzurichten
-3. Der Agent navigiert, fasst zusammen und fügt dem Knowledge Store hinzu
-4. Frage jederzeit: _"Fasse die Wettbewerbsbewegungen der letzten Woche zusammen"_
-
-### Engineering-Team — Offline-Agenten-Stack
-
-1. `ollama pull qwen3:14b` — keine API-Schlüssel, keine Cloud
-2. Verbinde Workspace + Shell-Tools mit deiner Codebasis
-3. Sensibles geistiges Eigentum verlässt die Maschine nie
-4. Agenten lesen, modifizieren, testen und committen — vollständig lokal
-
-### Power-User — Multi-Agenten-Recherche-Pipeline
-
-1. Nutze `teamwork`, um eine Recherche-Taskforce zu scaffolden (Rollen, MISSION.md, KANBAN.md)
-2. Der Orchestrator delegiert parallel über den `delegate`-Skill
-3. Ergebnisse werden zu einem einzigen strukturierten Bericht im Content Store zusammengeführt
-4. Plane den gesamten Workflow wöchentlich via `schedule`
+Weitere Day-one-Skills: `setup-wizard`, `tool-installer`, `playbook-creator` und mehr — **[Bundled Skills](docs/user/guides/skills.md)**.
 
 ---
 
-## 📖 Dokumentation und Leitfäden
+## MCP-Plattform (weiterhin power-user-fähig)
 
-- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)**: 60s Produktstory und EN/KO/ZH-Untertitel.
-- **[Navigationsleitfaden](docs/guides/navigation-guide.md)**: Das Command & Control-Hub — `/assistants` (Rollendefinitionen) und `/playbooks` (Workflow-Blueprints).
-- **[Architekturleitfaden](docs/architecture/agent-workflow-architecture.md)**: Sitzungsisolation, Orchestrierungs-Engine und die Rust-gesteuerte Think-Act-Observe-Schleife.
-- **[Leitfaden für eingebaute Tools](docs/guides/builtin_tool_bp.md)**: Tool-Design-Standards und MCP-Antwortmuster.
+- Transports: stdio, HTTP, SSE, OAuth 2.1
+- 15+ eingebaute Server (Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, …)
+- Ein-Klick-Presets + agentengestützte Installation (`tool-installer`)
+- Tool-Isolation pro Session; Pfad-/Befehls-Guards; optionale YOLO- / unsafe-Modi für Automatisierung
+
+### Ausführungssubstrat
+
+| Substrat | Fähigkeiten |
+| -------- | ----------- |
+| **Workspace** | Zeilengenaues Editieren, Multi-Datei-Ops, `@file`- / `@skill`- / `@playbook`-Kontext |
+| **Shell** | Isolierte und persistente Shells mit async Prozessüberwachung |
+| **Browser** | Isolierter Browser-Sidecar; optionale gespeicherte Login-Profile |
+| **Knowledge** | Graph-Wissen + BM25-Suche |
+| **Export** | Markdown-Berichte und ATIF-Trajectory-Exports ([session export](docs/user/guides/session-export.md)) |
+
+Lange Sessions bleiben produktiv durch Kontext-Kompression, Loop-Prävention, Circuit Breaker und Stale-Response-Guards.
 
 ---
 
-## 📦 Erste Schritte
+## Szenarien aus der Praxis
 
-Lade das neueste Installationsprogramm für deine Plattform von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
+### Operator — von leerer App zum täglichen Briefing
+
+1. **Morning Briefing**-Rezept starten (Presets + Assistent + 9-Uhr-Plan)
+2. Einmal **Run now** klicken zum Prüfen
+3. Laufen lassen — der Bericht landet ohne Terminal
+
+### Solo-Entwickler — Preset, keine Config-Dateien
+
+1. Extensions → GitHub-MCP-Preset installieren
+2. Lokales Repo über Workspace anbinden
+3. Markdown-Sicherheits-/Review-Bericht verlangen, den Sie auf Disk behalten
+
+### Power-User ohne Framework — benannte Orchestrierung
+
+1. `@skill:pipeline` (oder `hub-spoke` / `divide-conquer`) für die Arbeitsform
+2. Agenten koordinieren unter diesem Muster
+3. Ein gemergtes Deliverable im Workspace — keine Orchestrierungsbibliothek zu pflegen
+
+### Datenschutzsensibles Team — gleiches Produkt, lokales Modell
+
+1. `ollama pull qwen3:14b`
+2. Workspace + Shell bleiben auf der Maschine
+3. Später Cloud-Keys tauschen, wenn gewünscht — das Harness wechselt den Vendor nicht für Sie
+
+---
+
+## Dokumentation
+
+- **[User Guide](docs/user/README.md)** — Installation, erster Chat, Modelle, Skills ([docs site](https://fritzprix.github.io/libr-agent/))
+- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)** — kanonische Produktdemo (EN/KO/ZH-Untertitel)
+- **[Product Messaging Guide](docs/contributing/product-messaging-guide.md)** — Positionierung und Copy
+- **[Recipes](docs/user/guides/recipes.md)** · **[Scheduled Tasks](docs/user/guides/scheduled-tasks.md)** · **[Sub-agents](docs/user/guides/sub-agents.md)** · **[Skills](docs/user/guides/skills.md)**
+- **[HTTP API](docs/api/http_api.md)** — Fernsteuerung und programmatische Freigaben
+- **[Architecture](docs/architecture/agent-workflow-architecture.md)** — Session-Isolation und Think-Act-Observe
+
+---
+
+## Erste Schritte
+
+Laden Sie den neuesten Installer von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
 - **Windows:** [`LibrAgent_0.9.21_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64-setup.exe) · [`LibrAgent_0.9.21_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.9.21_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.9.21_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.AppImage) · [`LibrAgent_0.9.21_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.deb) · [`LibrAgent-0.9.21-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent-0.9.21-1.x86_64.rpm)
-- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.21)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.21)
 <!-- RELEASE_DOWNLOADS_END -->
 
-**Entwickler-Setup:**
+### 5-Minuten-Onboarding
+
+**Schritt 1 — Modell verbinden** (Settings → LLM Providers)
+
+- Cloud: OpenAI- / Anthropic- / Gemini- / Groq-API-Schlüssel einfügen
+- Lokal: `ollama pull qwen3:14b`, dann Ollama in Settings wählen
+
+**Schritt 2 — Tools ohne JSON hinzufügen**
+
+- Extensions → Preset installieren (z. B. GitHub), **oder**
+- Einem Agenten sagen: _"Importiere meine MCP-Server aus Cursor"_
+
+**Schritt 3 — Workspace anbinden und eine Datei verlangen, die Sie behalten**
+
+- Workspace auf einen echten Projektordner zeigen
+- _"Reviewe diesen Workspace und schreibe Findings nach `DELIVERABLE.md`."_
+
+**Als Nächstes — Koordination und Automatisierung**
+
+- _"@skill:pipeline — recherchieren, entwerfen, dann reviewen; ein finaler Bericht."_
+- _"Bereite einen teamwork-Workspace für dieses Repo vor."_
+- _"Richte ein tägliches Competitor-Brief um 7 Uhr ein."_ (oder Morning-Briefing-Rezept)
+
+### Erste Prompts zum Kopieren
+
+- _"Importiere meine MCP-Server aus Cursor und zeige, was hinzugefügt wurde."_
+- _"Installiere das GitHub-MCP-Preset und hänge es an einen Coding-Agenten."_
+- _"Reviewe diesen Workspace und schreibe Findings nach `DELIVERABLE.md`."_
+- _"@skill:pipeline — recherchiere dieses Thema, entwirf eine Zusammenfassung, dann review; speichere den finalen Bericht."_
+- _"Richte ein tägliches Competitor-Brief um 7 Uhr ein."_
+
+### Entwickler-Setup
 
 ```bash
 git clone https://github.com/fritzprix/libr-agent
@@ -223,75 +200,39 @@ pnpm install
 pnpm tauri dev
 ```
 
-### Der 5-Minuten-Onboarding-Pfad
-
-**Schritt 1 — Verbinde ein Modell** (Settings → LLM Providers)
-
-- Cloud: Füge einen OpenAI / Anthropic / Gemini / Groq API-Schlüssel ein
-- Lokal: `ollama pull qwen3:14b` und dann Ollama in den Settings auswählen
-
-**Schritt 2 — MCP-Tools hinzufügen** (Extensions-Seitenleiste)
-
-- Durchsuche den Preset-Katalog und klicke auf Installieren, oder
-- Sage einem Agenten: _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` registriert es automatisch
-- Nutzt du bereits Cursor oder VS Code? Sage einem beliebigen Agenten: _"Importiere meine MCP-Server aus Cursor"_ → `tool-installer` kümmert sich darum
-
-**Schritt 3 — Erstelle deinen ersten Agenten**
-
-- _"Erstelle einen Recherche-Agenten für Wettbewerbsintelligenz"_ → über Assistants-Einstellungen erstellen
-- _"Baue ein Recherche-Team mit meinen aktuellen Tools"_ → `teamwork` scaffoldet Rollen und gemeinsamen Workspace
-- _"Führe parallele Recherche-Subtasks aus"_ → `delegate` startet und überwacht Kind-Sitzungen
-
-**Schritt 4 — Parallelisiere mit `delegate`**
-
-- Bitte jeden Agenten, Teilaufgaben an Kind-Sitzungen zu delegieren
-- Der `delegate`-Skill übernimmt Kontextübergabe, Abstammungsverfolgung und Ergebniszusammenführung
-
-**Schritt 5 — Baue ein persistentes Team**
-
-- `teamwork` → baut den geteilten Arbeitsbereich mit `agents.md`, `MISSION.md`, `KANBAN.md`
-- `org` → formalisiert das Team mit dauerhafter Identität und Root-Sitzungsverwaltung
-- `schedule` → lass einen Agenten die CRON-Automatisierung für dich erstellen und verwalten, unbeaufsichtigt
-
-### Erste Prompts zum Kopieren und Einfügen
-
-- _"Importiere meine MCP-Server aus Cursor und zeige mir, was hinzugefügt wurde."_
-- _"Erstelle einen Recherche-Agenten für Wettbewerbsintelligenz mit meinen aktuellen Tools."_
-- _"Installiere das GitHub MCP-Preset und verknüpfe es mit einem Coding-Agenten."_
-- _"Delegiere Repository-Analyse an eine Kind-Sitzung und bringe mir eine Zusammenfassung."_
-- _"Bereite einen Teamwork-Arbeitsbereich für dieses Repository vor und erstelle ein Spezialistenteam, das für Org bereit ist."_
-- _"Richte ein tägliches Wettbewerbs-Briefing um 7 Uhr ein und halte alles im geteilten Teamwork-Arbeitsbereich."_
-
 ---
 
-## Wo LibrAgent besonders gut passt
+## Wo LibrAgent am besten passt
 
-| Wenn du willst...                                            | LibrAgent ist stark, weil...                                                                               |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| **eine lokale KI-Workstation**                               | Dateien, Sitzungen, Workspaces und Browser-Zustand standardmäßig auf deiner Maschine bleiben               |
-| **ein wirklich MCP-natives Desktop-Produkt**                 | du MCP-Server installieren, importieren und verwalten kannst, ohne die App als dünnen Wrapper zu behandeln |
-| **Agenten, die echte Arbeit erledigen**                      | Workspace, Shell, Browser und Knowledge für langlaufende Ausführung gebaut sind                            |
-| **Multi-Agenten-Workflows ohne erst ein Framework zu bauen** | `delegate`, `teamwork`, `org` und `schedule` bereits Teil des Produkts sind                                |
-| **eine Brücke zwischen GUI-Komfort und Power-User-Tiefe**    | du eine Desktop-Oberfläche bekommst, ohne Erweiterbarkeit oder Kontrolle zu verlieren                      |
+| Wenn Sie wollen… | LibrAgent ist stark, weil… |
+| ---------------- | -------------------------- |
+| **Harness-Tiefe ohne Harness-Hausaufgaben** | Extensions-Presets, Rezepte, `@skill:`-Muster und Freigaben — kein JSON-first-Onboarding |
+| **Orchestrierung ohne Framework-Bau** | `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork` / `org`, `schedule` kommen als Produkt |
+| **Freiheit von einem Vendor-Agent-Stack** | Bringen Sie Modell und MCP-Tools mit; MIT; standardmäßig local-first |
+| **Ein echtes Ausführungssubstrat** | Workspace, Shell, Browser, Knowledge, Playbooks und Guards für lange Sessions |
+| **Ein MCP-natives Desktop-Produkt** | Presets, Import und 15+ Builtins — kein dünner Chat-Wrapper |
 
 ---
 
 ## Designphilosophie
 
-- **Local First**: Deine Daten, Schlüssel und Agenten-"Seelen" bleiben unter deiner alleinigen Kontrolle. Kein Cloud-Substrat erforderlich.
-- **Harness über Modell**: Die Ausführungsumgebung — Tools, Sitzungsstatus, Delegation, Governance — ist wichtiger als jedes einzelne Modell. LibrAgent ist darauf ausgelegt, das Potenzial jedes Modells zu maximieren.
-- **Stabilität über Features**: Das CHANGELOG spiegelt einen obsessiven Fokus auf Runtime-Korrektheit wider — Sitzungsisolation, Komprimierung, Schleifenprävention, Schutz vor veralteten Antworten.
-- **MCP als Infrastruktur**: Kein Plugin-System. Das gesamte Tool-Ökosystem ist um MCP als primäre Interoperabilitätsschicht organisiert.
-- **Offene Standards**: MIT-Lizenz. Vollständig engagiert für MCP, Open-Source-Interoperabilität und Datensouveränität der Nutzer.
+- **Produkt statt Kit**: Das Harness ist nutzbar, ohne es zusammenzubauen.
+- **Orchestrierung als Skills**: Koordinationsmuster sind benannt, wählbar und dokumentiert — nicht in Sample-Repos vergraben.
+- **Stack-Freiheit**: Modelle und Tools sind Nutzerentscheidungen; das Produkt verlangt keinen einzelnen KI-Vendor.
+- **Local First**: Workspaces, Sessions, Skills und Browser-Zustand bleiben unter Ihrer Kontrolle. Cloud-LLM / Remote-MCP nur bei Opt-in.
+- **Harness vor Modell**: Tools, Session-State, Delegation und Governance zählen mehr als jedes einzelne Modell.
+- **Stabilität vor Features**: Isolation, Kompression, Loop-Prävention — vor dem Feature-Jagd.
+- **Offene Standards**: MIT. MCP als Interoperabilitäts-Schicht.
 
 ---
 
-## Beitragen & Lizenz
+## Mitwirken & Lizenz
 
-LibrAgent ist MIT-lizenziert und wird offen entwickelt. Beiträge sind willkommen — ob neue gebündelte Skills, MCP-Integrationen, Bug-Fixes oder architektonische Verbesserungen.
+LibrAgent steht unter MIT und wird offen gebaut. Beiträge sind willkommen — gebündelte Skills, MCP-Integrationen, Bugfixes oder Architekturverbesserungen.
 
-- 📖 [Beitragsleitfaden](CONTRIBUTING.md)
-- 🐛 [Issue-Tracker](https://github.com/fritzprix/libr-agent/issues)
-- 💬 [Diskussionen](https://github.com/fritzprix/libr-agent/discussions)
+- 📖 [Contributing Guide](CONTRIBUTING.md)
+- 🐛 [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
+- 💬 [Discussions](https://github.com/fritzprix/libr-agent/discussions)
+- 🧪 Benchmarks (Harbor / Terminal-Bench): siehe [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`, …)
 
-**Lizenz**: MIT
+**License**: MIT

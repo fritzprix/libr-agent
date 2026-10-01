@@ -1,220 +1,197 @@
 ﻿# 🤖 LibrAgent
 
-> **一款本地优先的 AI 代理桌面应用：能调用真实工具、并行工作，而且控制权在你手里。**
-> _连接任意 LLM，接入任意 MCP 服务器，让代理读取文件、运行 Shell、浏览网页，并把自动化真正做完。_
+> **你自己运行的智能体操作环境 — 选模型，一键装工具，选协调模式。**
+> _没有厂商套壳。没有 JSON 作业。成果以文件形式留在你的机器上。_
 
 [English](./README.md) | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
+[![Version](https://img.shields.io/github/v/release/fritzprix/libr-agent)](https://github.com/fritzprix/libr-agent/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
-
-LibrAgent 是一个基于 Tauri + Rust + React 构建的**本地优先代理工作空间**。它不是另一个聊天壳子，而是为真实文件访问、Shell 执行、浏览器自动化、MCP 扩展能力，以及能连续运行数小时而不是演示一轮就散架的多代理工作流而设计。
-
-你可以连接云模型，也可以连接像 Ollama 这样的本地运行时；导入你已经在用的 MCP 服务器；然后把代码检查、文件编辑、命令执行、网页浏览、知识沉淀和子任务委派交给代理，而不必把整套工作流交给别人的云端 VM。
-
-**从这里开始：**[下载最新版本](https://github.com/fritzprix/libr-agent/releases/latest) · [跳转到 5 分钟入门](#5-分钟入门路径) · [查看现实世界场景](#现实世界场景)
+[![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
 ---
 
-## 为什么选择 LibrAgent？
+## LibrAgent 有何不同
 
-大多数代理产品还在强迫你接受这种糟糕的取舍：
+多数智能体套件假定你会改 MCP JSON、泡在终端里、用代码拼编排（或把你锁进单一厂商栈）。
 
-- **界面简单，但执行力很弱**
-- **自动化很强，但产品体验粗糙**
-- **云端很方便，但隐私控制很差**
-- **框架很灵活，但整套系统都得你自己拼**
+LibrAgent 是做同一件事的 **桌面产品**：
 
-LibrAgent 想做的是人们真正想要的那个中间点：
+| 不再是… | 你得到… |
+| ------- | ------- |
+| 手改 MCP 配置 | **Extensions** — 一键预设（GitHub、Brave Search、Filesystem、…），并从 Cursor / VS Code / Claude Code / Windsurf 导入 |
+| “我们有多智能体” | 作为捆绑技能的 **具名协调模式** — `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation`、… |
+| 单一提供商的模型 + 工具 | **你的** LLM（API 密钥或 [Ollama](https://ollama.com)）和 **你的** MCP 栈 — MIT，本地优先 |
 
-- **本地优先控制**：文件、工作空间、会话和浏览器状态默认都留在本机
-- **通过 MCP 获得开放扩展性**，而不是封闭插件故事
-- **真正能干活的执行层**：Shell、浏览器、工作空间、知识工具都能联动
-- **正常人能用的 GUI**，又不牺牲高级能力
-- **从一个代理自然扩展到多个代理团队**
-
-### LibrAgent 适合谁
-
-- **独立开发者**：需要能够实际读取、编辑、运行、浏览并在本地保持上下文的代理
-- **高级用户和运营者**：希望从本地模型、API 提供商、MCP 服务器和计划工作流中构建自己堆栈的人
-- **研究者和分析师**：需要浏览器自动化、知识捕获、可重复的剧本和长时间运行的会话
-- **注重隐私的团队**：需要本地执行、明确治理和从单个代理到协调组织的路径
+[下载最新发行版](https://github.com/fritzprix/libr-agent/releases/latest) · [5 分钟上手](#5-分钟上手路径) · [Hero 演示规格](docs/contributing/hero-demo-spec.md)
 
 ---
 
-## 🎬 执行故事
+## 前 10 分钟你能做什么
 
-**LibrAgent 不是聊天应用，而是代理的执行环境。**
+### 1. 一键工具，再要一份交付物
 
-**一次会话。一个目标。在你机器上留下一份可保存的交付物。**
+- 打开 **Extensions**，安装预设（例如 GitHub）— 无需 JSON
+- 将 **Workspace** 指向真实文件夹
+- 提问：_"审查这个仓库对新贡献者的最大风险，并保存为 `DELIVERABLE.md`"_
 
-1. 连接模型（API Key 或 [Ollama](https://ollama.com)）
-2. 用 **Workspace** 指向真实项目目录
-3. 让代理 **阅读、运行，并留下你能保留的文件** — 而不是停在对话框里的建议
+### 2. 部署一键工作流配方
 
-[下载最新版本](https://github.com/fritzprix/libr-agent/releases/latest) · [5 分钟入门](#5-分钟入门路径) · [Hero Demo Spec](docs/contributing/hero-demo-spec.md)
+- 从 Chat 主页或 [Scheduled Tasks](docs/user/guides/scheduled-tasks.md) 启动 **Morning Briefing** 配方
+- 安装 Hacker News + Yahoo Finance 预设，配置助手，并安排每天上午 9 点运行
+- 醒来即可看到合成的科技与市场简报 — 无人值守
 
----
+### 3. 选择协调模式（无需拼装框架）
 
-## 前 10 分钟你就能做的事
+- 描述工作形态，或按名称附加技能：
+  - _"@skill:pipeline — 先调研，再起草，再审阅；留下一份最终报告"_
+  - _"@skill:divide-conquer — 拆成独立片段再合并结果"_
+- 模式是产品化技能 — 不是你自己接线的 SDK。参见 [Sub-agents & orchestration](docs/user/guides/sub-agents.md)。
 
-### 1. 用真实工具审查仓库
+### 4. 保持模型自由
 
-- 用 Workspace 工具连接本地仓库
-- 添加 GitHub MCP 预设
-- 直接问：_“检查 PR #42 的安全问题，并把报告保存下来”_
-
-### 2. 搭一套完全本地的代理工作栈
-
-- 运行 `ollama pull qwen3:14b`
-- 连接 Workspace + Shell
-- 让代理在不把代码发到云端 VM 的前提下读取、修改、测试并持续迭代
-
-### 3. 把研究工作变成可重复流程
-
-- 添加 Browser + Knowledge
-- 直接问：_“跟踪这 5 个竞品博客，并每天早上给我总结”_
-- 把一次性任务变成定时管线
-
-> 多代理协作（`delegate` / `teamwork` / `org`）放在**第一个交付物跑通之后**，见下文「群集→团队→组织」。
+- 云端：粘贴 OpenAI / Anthropic / Gemini / Groq API 密钥
+- 本地：`ollama pull qwen3:14b` 并选择 Ollama — 同一套 harness
 
 ---
 
-## 为什么它不是只会演示的玩具
+## 三项产品承诺
 
-### 1. 🔐 本地优先安全——数据留在你的机器上
+1. **不写套件作业就能上手** — GUI、Extensions 一键、配方、应用内审批、`@skill:` — 不是“先打开配置再开 shell”。
+2. **编排即产品** — 通过技能选择 Sequential / Hub-and-spoke / Swarm 风格流程；需要持久团队或 cron 时再进入 `teamwork` → `org` 与 `schedule` — 仍无需自行拼装 LangGraph/CrewAI。
+3. **提供商与栈自由** — 任意受支持的 LLM、MCP 作为基础设施、导入现有 IDE MCP 配置、MIT 许可、默认本地工作区与浏览器状态。
 
-LibrAgent 将安全作为首要架构关注点：
-
-- **会话隔离**：每个代理会话拥有独立的工具运行时——跨会话零泄漏
-- **路径与命令防护**：在系统边界阻止路径遍历和命令注入
-- **无需云底层架构**：核心执行都在本地完成，外部连接也主要限于你选择使用的云端 LLM 提供商和远程 MCP/HTTP 服务，此外生产构建还可能检查新版本更新
-- **完全离线支持**：与 [Ollama](https://ollama.com) 配对实现完全气隙隔离的代理堆栈
-
-#### 保留在本地 vs 离开你的机器
-
-- **始终本地**：工作空间、本地文件、捆绑技能、会话状态、MCP 服务器配置、浏览器状态和本地工具执行
-- **在需要时才离开**：对你明确配置的云端 LLM 提供商或远程 MCP/HTTP 服务的请求，以及生产环境中检查新版本的更新请求
-- **完全离线模式**：使用 Ollama 或其他本地运行时加上本地 MCP 服务器实现气隙隔离工作流
-
-### 2. 🧩 MCP 原生生态系统——设计即无限可扩展
-
-MCP（模型上下文协议）是 LibrAgent 可扩展性模型背后的开放标准。LibrAgent 将其视为架构骨干而非功能：
-
-- **完整传输支持**：stdio、HTTP、SSE 和 OAuth 2.1——完整规范
-- **12+ 内置服务器**：Planning、Knowledge(RAG)、Browser Automation、Workspace、Shell Execution、Content Store 等
-- **预设目录**：一键安装 GitHub、Brave Search、Filesystem 等流行服务器
-- **会话隔离实例**：每个代理会话拥有独立的 MCP 服务器状态——并行代理间无干扰
-- **从任何地方导入**：自动从 Cursor、VS Code、Claude Code 或 Windsurf 迁移 MCP 配置
-
-### 3. 🦾 生产级执行底层架构
-
-大多数 AI 工具在演示中令人印象深刻，在生产中却很脆弱。LibrAgent 为长时间运行的实际工作而精心设计：
-
-| 底层架构      | 功能                                                                        |
-| ------------- | --------------------------------------------------------------------------- |
-| **Workspace** | 行级精确编辑、多文件操作、统一搜索、`@file`/`@skill`/`@playbook` 上下文注入 |
-| **Shell**     | 隔离执行 AND 持久 Shell——异步进程监控(`poll`、`read output`、`list`)        |
-| **Browser**   | 采用类 Playwright 交互模型的无头浏览器自动化，并提供缓存一致性保证          |
-| **Knowledge** | 带实体/关系提取(v2)、BM25 全文搜索的基于图的知识管理                        |
-
-**包含可靠性工程**：上下文压缩、循环预防、断路器、陈旧响应保护器在持续数小时的会话中保持代理的生产力。
-
-### 4. 🤝 群集→团队→组织：各规模的多代理
-
-LibrAgent 从 solo 执行到显式组织协调拥有连贯的多代理故事：
-
-- **`delegate`**：父代理使用显式谱系跟踪生成、简报和监控子会话
-- **`teamwork`**：一条命令构建完整任务组工作空间(agents.md、MISSION.md、KANBAN.md)
-- **`org`**：通过持久组织身份、根会话恢复和 org-visible 成员层次结构正式化团队
-- **`schedule`**：CRON 基础自动化——代理无人值守、按计划、带工作空间宪法执行
-- **Concurrency Gate**：对并行会话和 Shell 进程设置硬性限制，防止死锁和成本失控
-
-### 5. ⚡ 捆绑技能——从空白安装到工作群集的最快路径
-
-LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼接的提示——而是任何代理都可以按名称调用的可重用操作程序。
-
-最重要的 day-one 技能：
-
-| 技能             | 功能                                                                          |
-| ---------------- | ----------------------------------------------------------------------------- |
-| `setup-wizard`   | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv)                         |
-| `tool-installer` | 从 npm/GitHub/JSON 注册 MCP 服务器，或从 Cursor、VS Code、Windsurf 等同步配置 |
-| `delegate`       | 引导父→子会话移交，带显式上下文传递和谱系跟踪                                 |
-| `teamwork`       | 为协调多代理工作构建共享工作空间宪法                                          |
-| `org`            | 正式化持久组织身份和 org-visible 成员层次结构                                 |
-| `schedule`       | 创建和管理无人值守自动化的定期计划任务组                                      |
-| `soul-awakening` | 将代理锚定到 `SOUL.md` 人格——语气、立场、身份                                 |
-
-这只是运营层。LibrAgent 还提供领域技能：
-
-- **知识和研究**：`deep-research`、`knowledge-distiller`
-- **文档与工作区内容**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`visualize`
-- **开发者工作流**：`git-workflow`, `bench`
-- **工作区入门**：`agent-init`
-- **协调与助手**：`consensus-delegation`、`loop`、`call-me-back`、`context-recall`、`recruit`、`boost`
-- **外部集成**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
-- **技能与流程编写**：`skill-creator`、`skill-deployer`、`playbook-creator`、`tool-creator`、`fine-tune`
-- **特殊操作**：`computer-diagnosis`
-
-_重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆绑技能是可重用的程序；内置功能和 MCP 工具是其下的执行底层架构。_
+**最适合：** 想要 harness 深度却不想泡在 JSON 里的运营者与高级用户；拒绝单一厂商智能体栈的开发者；需要浏览器 + 知识 + 调度集于一品的研究者。
 
 ---
 
-## 🌍 现实世界场景
+## 协调模式（捆绑技能）
 
-### 独立开发者——自动化代码审查
+按 **工作形态** 选模式，再在对话中运行：
 
-1. 通过 Workspace 工具连接你的本地仓库
-2. 安装 GitHub MCP 预设（一键）
-3. 请求：_"查找 PR #42 中的安全问题并生成 Markdown 报告"_
-4. 代理读取代码、运行分析、将发现保存到 Knowledge 服务器以供将来参考
+| 技能 | 模式 | 何时使用 |
+| ---- | ---- | -------- |
+| `pipeline` | 顺序阶段 | 输出喂给下一步（调研 → 起草 → 审阅） |
+| `hub-spoke` | 中心辐射 | 一名协调者整合多名工作者 |
+| `divide-conquer` | 并行拆分 | 独立片段，再合并 |
+| `consensus-delegation` | 多视角 | 同一问题交给多位专家，再调和 |
+| `gatekeeper` / `pair-programming` | 审阅循环 | 严格审阅或双智能体编程 |
+| `delegate` | 轻量交接 | 一个子会话，谱系可追踪 |
+| `teamwork` → `org` | 持久团队 | 共享章程 + Org UI |
+| `schedule` / `loop` / `call-me-back` | 时间与事件 | Cron、会话内延迟，或按进程/webhook 恢复 |
 
-### 市场营销——竞争对手情报自动驾驶
+选择启发式：[framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 完整指南：[Sub-agents](docs/user/guides/sub-agents.md)。
 
-1. 通过 Browser 工具配置 5 个竞争对手博客
-2. 告诉代理：_"每天早上 7 点创建竞争对手简报"_——代理可以使用 `schedule` 技能为你连接定期任务组
-3. 代理浏览、摘要并追加到 Knowledge 存储
-4. 随时询问：_"总结上周竞争对手的动向"_
-
-### 工程团队——离线代理堆栈
-
-1. `ollama pull qwen3:14b`——无需 API 密钥，无需云端
-2. 将 Workspace + Shell 工具连接到你的代码库
-3. 敏感 IP 永远不会离开机器
-4. 代理读取、修改、测试和提交——完全本地
-
-### 高级用户——多代理研究管道
-
-1. 使用 `teamwork` 搭建研究任务组（角色、MISSION.md、KANBAN.md）
-2. 协调者通过 `delegate` 技能并行委派
-3. 结果合并到 Content Store 中的单个结构化报告中
-4. 通过 `schedule` 每周计划整个工作流程
+其他第一天技能：`setup-wizard`、`tool-installer`、`playbook-creator` 等 — **[Bundled Skills](docs/user/guides/skills.md)**。
 
 ---
 
-## 📖 文档和指南
+## MCP 平台（仍具备高级用户能力）
 
-- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)**：60 秒产品叙事与 EN/KO/ZH 字幕表。
-- **[导航指南](docs/guides/navigation-guide.md)**：Command & Control 中心——`/assistants`(角色定义) 和 `/playbooks`(工作流程蓝图)。
-- **[架构指南](docs/architecture/agent-workflow-architecture.md)**：会话隔离、编排引擎和 Rust 驱动的 Think-Act-Observe 循环。
-- **[内置工具指南](docs/guides/builtin_tool_bp.md)**：工具设计标准和 MCP 响应模式。
+- 传输：stdio、HTTP、SSE、OAuth 2.1
+- 15+ 内置服务器（Workspace、Shell、Browser、Knowledge、Planning、Scheduled Tasks、…）
+- 一键预设 + 智能体辅助安装（`tool-installer`）
+- 按会话隔离工具；路径/命令守卫；自动化可选 YOLO / unsafe 模式
+
+### 执行基座
+
+| 基座 | 能力 |
+| ---- | ---- |
+| **Workspace** | 精确到行的编辑、多文件操作、`@file` / `@skill` / `@playbook` 上下文 |
+| **Shell** | 隔离与持久 shell，异步进程监控 |
+| **Browser** | 隔离浏览器 sidecar；可选已保存登录配置 |
+| **Knowledge** | 图知识 + BM25 搜索 |
+| **Export** | Markdown 报告与 ATIF 轨迹导出（[session export](docs/user/guides/session-export.md)） |
+
+长会话通过上下文压缩、防循环、断路器与过期响应守卫保持可用。
 
 ---
 
-## 📦 开始使用
+## 真实场景
 
-从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
+### 运营者 — 从空应用到每日简报
+
+1. 运行 **Morning Briefing** 配方（预设 + 助手 + 上午 9 点调度）
+2. 点一次 **Run now** 验证
+3. 放着不管 — 报告会落地，无需打开终端
+
+### 独立开发者 — 用预设，不是配置文件
+
+1. Extensions → 安装 GitHub MCP 预设
+2. 通过 Workspace 挂载本地仓库
+3. 要求一份留在磁盘上的 Markdown 安全/审阅报告
+
+### 非框架高级用户 — 具名编排
+
+1. 按工作形态使用 `@skill:pipeline`（或 `hub-spoke` / `divide-conquer`）
+2. 智能体在该模式下协作
+3. 工作区里一份合并后的交付物 — 无需维护编排库
+
+### 注重隐私的团队 — 同一产品，本地模型
+
+1. `ollama pull qwen3:14b`
+2. Workspace + Shell 留在本机
+3. 以后想换云端密钥也可以 — harness 不会替你换厂商
+
+---
+
+## 文档
+
+- **[User Guide](docs/user/README.md)** — 安装、首次对话、模型、技能（[docs site](https://fritzprix.github.io/libr-agent/)）
+- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)** — 规范产品演示（EN/KO/ZH 字幕）
+- **[Product Messaging Guide](docs/contributing/product-messaging-guide.md)** — 定位与文案
+- **[Recipes](docs/user/guides/recipes.md)** · **[Scheduled Tasks](docs/user/guides/scheduled-tasks.md)** · **[Sub-agents](docs/user/guides/sub-agents.md)** · **[Skills](docs/user/guides/skills.md)**
+- **[HTTP API](docs/api/http_api.md)** — 远程控制与可编程审批
+- **[Architecture](docs/architecture/agent-workflow-architecture.md)** — 会话隔离与 Think-Act-Observe
+
+---
+
+## 开始使用
+
+从 **[Releases 页面](https://github.com/fritzprix/libr-agent/releases/latest)** 下载最新安装包。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows：** [`LibrAgent_0.9.21_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64-setup.exe) · [`LibrAgent_0.9.21_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64_en-US.msi)
-- **macOS（Apple Silicon）：** [`LibrAgent_0.9.21_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_aarch64.dmg)
-- **Linux：** [`LibrAgent_0.9.21_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.AppImage) · [`LibrAgent_0.9.21_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.deb) · [`LibrAgent-0.9.21-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent-0.9.21-1.x86_64.rpm)
-- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.21)
+- **Windows:** [`LibrAgent_0.9.21_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64-setup.exe) · [`LibrAgent_0.9.21_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.21_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.21_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.AppImage) · [`LibrAgent_0.9.21_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.deb) · [`LibrAgent-0.9.21-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent-0.9.21-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.21)
 <!-- RELEASE_DOWNLOADS_END -->
 
-**开发者设置：**
+### 5 分钟上手路径
+
+**第 1 步 — 连接模型**（Settings → LLM Providers）
+
+- 云端：粘贴 OpenAI / Anthropic / Gemini / Groq API 密钥
+- 本地：`ollama pull qwen3:14b`，然后在 Settings 中选择 Ollama
+
+**第 2 步 — 不加 JSON 也能加工具**
+
+- Extensions → 安装预设（例如 GitHub），**或**
+- 告诉智能体：_"从 Cursor 导入我的 MCP 服务器"_
+
+**第 3 步 — 挂上工作区，要一份你会保留的文件**
+
+- 将 Workspace 指向真实项目文件夹
+- _"审查这个工作区，然后将发现写入 `DELIVERABLE.md`。"_
+
+**接下来 — 协调与自动化**
+
+- _"@skill:pipeline — 调研、起草、再审阅；一份最终报告。"_
+- _"为这个仓库准备 teamwork 工作区。"_
+- _"设置每天早上 7 点的竞品简报日程。"_（或运行 Morning Briefing 配方）
+
+### 可复制粘贴的首批提示
+
+- _"从 Cursor 导入我的 MCP 服务器，并告诉我新增了什么。"_
+- _"安装 GitHub MCP 预设，并挂到编码智能体上。"_
+- _"审查这个工作区，然后将发现写入 `DELIVERABLE.md`。"_
+- _"@skill:pipeline — 调研这个主题，起草摘要，再审阅；保存最终报告。"_
+- _"设置每天早上 7 点的竞品简报日程。"_
+
+### 开发者设置
 
 ```bash
 git clone https://github.com/fritzprix/libr-agent
@@ -223,75 +200,39 @@ pnpm install
 pnpm tauri dev
 ```
 
-### 5 分钟入门路径
-
-**第 1 步——连接模型**（Settings → LLM Providers）
-
-- 云端：粘贴 OpenAI / Anthropic / Gemini / Groq API 密钥
-- 本地：`ollama pull qwen3:14b` 然后在 Settings 中选择 Ollama
-
-**第 2 步——添加 MCP 工具**（Extensions 侧边栏）
-
-- 浏览预设目录并点击 Install，或
-- 告诉代理：*"Install @modelcontextprotocol/server-everything"*→ `tool-installer` 自动注册
-- 正在使用 Cursor 或 VS Code？告诉任何代理：*"从 Cursor 导入我的 MCP 服务器"*→ `tool-installer` 处理
-
-**第 3 步——创建你的第一个代理**
-
-- *"为竞争情报创建研究者代理"*→ 通过 Assistants 设置创建
-- *"用我的当前工具构建研究团队"*→ `teamwork` 搭建角色和共享工作空间
-- *"运行并行研究子任务"*→ `delegate` 生成并监控子会话
-
-**第 4 步——使用 `delegate` 并行工作**
-
-- 请求任何代理将子任务委派给子会话
-- `delegate` 技能管理上下文移交、谱系跟踪和结果合并
-
-**第 5 步——构建持久团队**
-
-- `teamwork`→ 使用 `agents.md`、`MISSION.md`、`KANBAN.md` 构建共享工作空间
-- `org`→ 通过持久身份和 org-root 会话管理正式化团队
-- `schedule`→ 让代理为你创建和管理 CRON 基础自动化
-
-### 可复制粘贴的首批提示
-
-- _"从 Cursor 导入我的 MCP 服务器并显示添加了什么。"_
-- _"用我的当前工具为竞争情报创建研究者代理。"_
-- _"安装 GitHub MCP 预设并将其附加到编码代理。"_
-- _"将仓库分析委派给子会话并带回摘要。"_
-- _"为此仓库准备 teamwork 工作空间，然后创建 org-ready 专家团队。"_
-- _"设置每天早上 7 点的计划每日竞争对手简报并保持在共享 teamwork 工作空间中。"_
-
 ---
 
-## LibrAgent 最适合什么场景
+## LibrAgent 最适合哪里
 
-| 如果你想要……                   | LibrAgent 的优势在于……                                                |
-| ------------------------------ | --------------------------------------------------------------------- |
-| **一台本地 AI 工作站**         | 文件、会话、工作空间和浏览器状态默认都保留在你的机器上                |
-| **真正 MCP 原生的桌面产品**    | 你可以直接在产品里安装、导入和管理 MCP 服务器，而不是把它当成一个薄壳 |
-| **能真正干活的代理**           | Workspace、Shell、Browser 和 Knowledge 工具都是为长时间执行设计的     |
-| **不用先造框架的多代理工作流** | `delegate`、`teamwork`、`org` 和 `schedule` 已经是产品内建能力        |
-| **兼顾 GUI 易用性和高级深度**  | 你得到桌面 UI，同时不丢失扩展性和控制力                               |
+| 如果你想要… | LibrAgent 强在… |
+| ----------- | --------------- |
+| **有 harness 深度，没有 harness 作业** | Extensions 预设、配方、`@skill:` 模式与审批 — 不是 JSON 优先上手 |
+| **有编排，不必自建框架** | `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation`、`teamwork` / `org`、`schedule` 作为产品提供 |
+| **摆脱厂商智能体栈** | 自带模型与 MCP 工具；MIT；默认本地优先 |
+| **真正的执行基座** | Workspace、shell、browser、knowledge、playbooks 与长会话守卫 |
+| **MCP 原生桌面产品** | 预设、导入与 15+ 内置 — 不是薄聊天壳 |
 
 ---
 
 ## 设计理念
 
-- **本地优先**：你的数据、密钥和代理"souls"完全由你控制。无需云底层架构。
-- **编排系统优于模型**：执行环境——工具、会话状态、委派、治理——比任何单个模型都重要。LibrAgent 旨在最大化任何模型的能力。
-- **稳定性优于功能**：CHANGELOG 反映了对运行时正确性的痴迷关注——会话隔离、压缩、循环预防、陈旧响应保护器——而不仅仅是新功能。
-- **MCP 作为基础设施**：不是插件系统。整个工具生态系统围绕 MCP 作为主要互操作层组织。
-- **开放标准**：MIT 许可。完全致力于 MCP、开源互操作性和用户数据主权。
+- **产品优于工具包**：无需拼装即可使用 harness。
+- **编排即技能**：协调模式有名称、可选、有文档 — 不埋在示例仓库里。
+- **栈的自由**：模型与工具由用户选择；产品不绑定单一 AI 厂商。
+- **本地优先**：工作区、会话、技能与浏览器状态由你掌控。仅在你选择时使用云端 LLM / 远程 MCP。
+- **Harness 重于模型**：工具、会话状态、委派与治理比任何单一模型更重要。
+- **稳定重于功能**：隔离、压缩、防循环 — 先于功能追逐。
+- **开放标准**：MIT。MCP 作为互操作层。
 
 ---
 
-## 贡献和许可
+## 贡献与许可
 
-LibrAgent 以 MIT 许可开源构建。欢迎贡献——无论是新的捆绑技能、MCP 集成、错误修复还是架构改进。
+LibrAgent 采用 MIT 许可，公开构建。欢迎贡献 — 捆绑技能、MCP 集成、缺陷修复或架构改进。
 
-- 📖 [贡献指南](CONTRIBUTING.md)
-- 🐛 [问题追踪器](https://github.com/fritzprix/libr-agent/issues)
-- 💬 [讨论](https://github.com/fritzprix/libr-agent/discussions)
+- 📖 [Contributing Guide](CONTRIBUTING.md)
+- 🐛 [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
+- 💬 [Discussions](https://github.com/fritzprix/libr-agent/discussions)
+- 🧪 基准测试（Harbor / Terminal-Bench）：见 [Harbor guide](benchmarks/harbor/README.md)（`pnpm bench:diverse`、`pnpm bench:terminal`、…）
 
-**许可**: MIT
+**License**: MIT

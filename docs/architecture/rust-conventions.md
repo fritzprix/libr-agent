@@ -124,4 +124,4 @@ When refactoring or implementing new features:
 4. **ISP** — Keep interfaces simple and focused
 5. **DIP** — Depend on traits/abstractions, not concrete implementations
 
-Extract common patterns into `src-tauri/src/utils/`. Document design decisions in `docs/refactoring/`.
+Extract common patterns into `src-tauri/src/utils/`. Document lasting design decisions under `docs/architecture/` (or `docs/contributing/` for process/messaging).

@@ -1,7 +1,7 @@
 # 🤖 LibrAgent
 
-> **실제 도구를 쓰고, 병렬로 일하고, 당신의 통제 아래 머무는 AI 에이전트를 위한 로컬 우선 데스크톱 앱.**
-> _어떤 LLM이든 연결하고, 어떤 MCP 서버든 붙인 뒤, 에이전트가 파일을 읽고, 셸을 실행하고, 웹을 탐색하고, 작업을 내 머신에서 끝내게 하세요._
+> **직접 운영하는 에이전트 실행 환경 — 모델은 고르고, 툴은 원클릭으로, 조율 패턴은 고르기만 하면 됩니다.**
+> _벤더 하네스 없음. JSON 숙제 없음. 결과는 내 머신의 파일로 남습니다._
 
 [English](./README.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -14,15 +14,17 @@
 
 ---
 
-## 🎬 실행 스토리
+## LibrAgent가 다른 점
 
-**LibrAgent는 채팅 앱이 아닙니다. 에이전트를 위한 실행 환경입니다.**
+대부분의 에이전트 하네스는 MCP JSON을 고치고, 터미널에서 살고, 조율을 코드로 조립한다고 가정합니다(또는 한 벤더 스택에 가둡니다).
 
-**한 세션. 한 목표. 내 머신에 남는 산출물 하나.**
+LibrAgent는 같은 일을 위한 **데스크톱 제품**입니다:
 
-1. 모델 연결 (API 키 또는 [Ollama](https://ollama.com))
-2. **Workspace**에 실제 프로젝트 폴더 연결
-3. 에이전트에게 **읽고, 실행하고, 파일로 남기라**고 요청 — 말풍선 속 제안으로 끝내지 않기
+| …대신 | 이렇게 |
+| ----- | ------ |
+| MCP 설정을 손수 편집 | **Extensions** — 원클릭 프리셋(GitHub, Brave Search, Filesystem, …)과 Cursor / VS Code / Claude Code / Windsurf에서 import |
+| “멀티에이전트 있어요” | 번들 스킬로 된 **이름 있는 조율 패턴** — `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, … |
+| 한 제공자의 모델 + 툴 | **내** LLM(API 키 또는 [Ollama](https://ollama.com))과 **내** MCP 스택 — MIT, 로컬 우선 |
 
 [최신 릴리스 다운로드](https://github.com/fritzprix/libr-agent/releases/latest) · [5분 온보딩](#5분-온보딩-경로) · [히어로 데모 스펙](docs/contributing/hero-demo-spec.md)
 
@@ -30,192 +32,164 @@
 
 ## 처음 10분 안에 할 수 있는 일
 
-### 1. 실제 도구로 저장소 리뷰하기
+### 1. 원클릭 툴, 그리고 산출물
 
-- Workspace 도구로 로컬 저장소 연결
-- GitHub MCP 프리셋 추가
-- _"PR #42의 보안 이슈를 찾아서 보고서로 저장해"_ 라고 요청
+- **Extensions**에서 프리셋 설치(예: GitHub) — JSON 없음
+- **Workspace**를 실제 폴더에 연결
+- 요청: _"이 저장소에서 신규 기여자에게 가장 큰 리스크를 찾아 `DELIVERABLE.md`로 저장해"_
 
-### 2. 완전한 로컬 에이전트 스택 만들기
+### 2. 원클릭 워크플로 레시피 배포
 
-- `ollama pull qwen3:14b` 실행
-- Workspace + Shell 연결
-- 코드를 클라우드 VM으로 보내지 않고 에이전트가 읽고, 수정하고, 테스트하고, 반복하게 만들기
+- Chat 홈 또는 [Scheduled Tasks](docs/user/guides/scheduled-tasks.md)에서 **Morning Briefing** 레시피 실행
+- Hacker News + Yahoo Finance 프리셋 설치, 어시스턴트 구성, 매일 오전 9시 스케줄
+- 일어나면 기술·시장 브리핑이 준비되어 있음 — 무인 실행
 
-### 3. 원클릭 워크플로우 레시피 배포하기
+### 3. 조율 패턴 고르기 (프레임워크 조립 없음)
 
-- Chat 홈 또는 [예약 작업](docs/user/guides/scheduled-tasks.md)에서 **Morning Briefing** 레시피 실행
-- Hacker News + Yahoo Finance 프리셋 설치, 전용 어시스턴트 구성, 매일 오전 9시 일정 등록
-- 매일 아침 합성된 기술·시장 브리핑을 무인으로 전달
+- 작업 형태를 말하거나 스킬 이름으로 붙이기:
+  - _"@skill:pipeline — 조사, 초안, 리뷰 순으로; 최종 보고서 하나만"_
+  - _"@skill:divide-conquer — 독립 조각으로 나눠 합쳐줘"_
+- 패턴은 제품화된 스킬입니다 — 직접 배선하는 SDK가 아닙니다. [서브에이전트 & 오케스트레이션](docs/user/guides/sub-agents.md) 참고.
 
-### 4. 리서치를 반복 가능한 워크플로우로 바꾸기
+### 4. 모델 선택의 자유
 
-- Browser + Knowledge 추가
-- _"이 경쟁사 블로그 5개를 추적해서 매일 아침 요약해"_ 라고 요청
-- [예약 작업](docs/user/guides/scheduled-tasks.md)으로 일회성 작업을 자동화 파이프라인으로 전환
-
----
-
-## 왜 LibrAgent인가?
-
-대부분의 에이전트 제품은 트레이드오프를 강요합니다: 쉬운 UI에 약한 실행력, 강한 자동화에 빈약한 제품 경험, 편한 클라우드에 약한 프라이버시, 또는 전부 직접 조립해야 하는 프레임워크.
-
-LibrAgent는 사람들이 실제로 원하는 중간 지점을 노립니다:
-
-- **로컬 우선 제어**: 파일, 워크스페이스, 세션, 브라우저 상태
-- **MCP 기반 개방형 확장성** (닫힌 플러그인 스토리가 아님)
-- **셸·브라우저·워크스페이스·지식 도구를 통한 실제 실행력**
-- **파워유저 깊이를 포기하지 않는 GUI**
-- **한 명의 에이전트에서 여러 명의 팀으로 확장되는 경로**
-
-**잘 맞는 사람:** 솔로 개발자, 파워 유저/운영자, 연구자·분석가, 로컬 실행과 거버넌스가 필요한 팀.
+- 클라우드: OpenAI / Anthropic / Gemini / Groq API 키
+- 로컬: `ollama pull qwen3:14b` 후 Ollama 선택 — 하네스는 동일
 
 ---
 
-## 데모 뒤에도 무너지지 않는 이유
+## 제품의 세 가지 약속
 
-### 로컬 우선 보안
+1. **하네스 숙제 없는 표면** — GUI, Extensions 원클릭, 레시피, 인앱 승인, `@skill:` — “먼저 설정과 셸을 열라”가 아님.
+2. **제품으로서의 오케스트레이션** — 스킬로 Sequential / Hub-and-spoke / Swarm 스타일 선택; 필요하면 `teamwork` → `org`, `schedule`로 확장 — LangGraph/CrewAI를 조립하지 않음.
+3. **제공자·스택 자유** — 지원 LLM 아무거나, MCP 인프라, 기존 IDE MCP import, MIT, 로컬 워크스페이스·브라우저 상태 기본.
 
-- **세션 격리**: 에이전트 세션마다 독립 도구 런타임 — 세션 간 데이터 누출 없음
-- **경로·명령 가드**: 경로 탐색·커맨드 인젝션을 시스템 경계에서 차단
-- **핵심 작업은 로컬**; 클라우드 LLM / 원격 MCP는 직접 구성할 때만 (선택적 업데이트 확인 포함)
-- **완전 오프라인**: [Ollama](https://ollama.com) + 로컬 MCP
-
-| 항상 로컬 | 선택할 때만 나감 |
-| --------- | ---------------- |
-| 워크스페이스, 파일, 스킬, 세션 상태, 브라우저 상태, 로컬 도구 | 클라우드 LLM, 원격 MCP/HTTP, 릴리스 업데이트 확인 |
-
-### MCP 네이티브 플랫폼
-
-- 트랜스포트: stdio, HTTP, SSE, OAuth 2.1
-- 15+ 내장 서버 (Planning, Knowledge, Browser, Workspace, Shell, Content Store, …)
-- 원클릭 프리셋 (GitHub, Brave Search, Filesystem, …)
-- Cursor / VS Code / Claude Code / Windsurf에서 MCP 구성 가져오기
-
-### 실행 기반
-
-| 기반          | 기능                                                                                          |
-| ------------- | --------------------------------------------------------------------------------------------- |
-| **Workspace** | 라인 정밀 편집, 멀티 파일 작업, `@file` / `@skill` / `@playbook` 컨텍스트                     |
-| **Shell**     | 격리·지속 셸과 비동기 프로세스 모니터링                                                       |
-| **Browser**   | 격리된 브라우저 사이드카 (Playwright 스타일 상호작용)                                         |
-| **Knowledge** | 그래프 지식 + BM25 검색                                                                       |
-| **Export**    | Markdown 보고서와 ATIF 궤적 내보내기 ([세션 내보내기](docs/user/guides/session-export.md)) |
-
-장시간 세션은 context compaction, 루프 방지, circuit breaker, stale-response guard로 유지됩니다.
-
-### Day-one 스킬
-
-에이전트가 이름으로 호출하는 재사용 운영 절차:
-
-| 스킬             | 역할                                                                    |
-| ---------------- | ----------------------------------------------------------------------- |
-| `setup-wizard`   | 누락 런타임(Python, Node.js, uv) 감지·설치                              |
-| `tool-installer` | MCP 서버 등록 또는 Cursor / VS Code / Windsurf 구성 가져오기            |
-| `schedule`       | 반복 예약 작업 그룹 생성                                                |
-| `delegate`       | 부모→자식 세션 인수인도와 계보 추적                                     |
-| `teamwork`       | 공유 멀티 에이전트 워크스페이스 헌법 scaffold                           |
-
-전체 목록: **[번들 스킬 가이드](docs/user/guides/skills.md)**.
+**잘 맞는 사람:** JSON 없이 하네스 깊이를 원하는 운영자·파워유저; 단일 벤더 에이전트 스택을 거부하는 개발자; 브라우저·지식·스케줄이 한 제품에 필요한 연구자.
 
 ---
 
-## 에이전트 하나가 부족할 때
+## 조율 패턴 (번들 스킬)
 
-첫 산출물이 동작한 뒤, 프레임워크를 조립하지 않고 확장합니다:
+**작업의 형태**에 맞춰 모델을 고른 뒤, 채팅에서 실행합니다:
 
-- **`delegate`** — 자식 세션 생성·모니터링
-- **`teamwork`** — 공유 워크스페이스 (`agents.md`, `MISSION.md`, `KANBAN.md`)
-- **`org`** — 내구성 있는 팀 정체성·계층
-- **`schedule`** — 워크스페이스 헌법과 함께 CRON 자동화
+| 스킬 | 패턴 | 이럴 때 |
+| ---- | ---- | ------- |
+| `pipeline` | 순차 단계 | 출력이 다음 단계 입력 (조사 → 초안 → 리뷰) |
+| `hub-spoke` | 허브–스포크 | 한 코디네이터가 여러 워커를 통합 |
+| `divide-conquer` | 병렬 분할 | 독립 조각 후 병합 |
+| `consensus-delegation` | 다관점 | 같은 질문을 여러 전문가에게 → 조정 |
+| `gatekeeper` / `pair-programming` | 리뷰 루프 | 엄격 리뷰 또는 페어 코딩 |
+| `delegate` | 가벼운 핸드오프 | 자식 세션 하나, 계보 추적 |
+| `teamwork` → `org` | 지속 팀 | 공유 헌장 + Org UI |
+| `schedule` / `loop` / `call-me-back` | 시간·이벤트 | Cron, 세션 내 지연, 프로세스/웹훅 재개 |
 
-동시성 제한으로 병렬 세션·셸의 비용 폭주를 막습니다.
+선택 휴리스틱: [framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 전체: [Sub-agents](docs/user/guides/sub-agents.md).
+
+기타 데이원 스킬: `setup-wizard`, `tool-installer`, `playbook-creator` 등 — **[Bundled Skills](docs/user/guides/skills.md)**.
 
 ---
 
-## 실전 시나리오
+## MCP 플랫폼 (파워유저 깊이 유지)
 
-### 솔로 개발자 — 자동 코드 리뷰
+- 전송: stdio, HTTP, SSE, OAuth 2.1
+- 15+ 내장 서버 (Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, …)
+- 원클릭 프리셋 + 에이전트 지원 설치 (`tool-installer`)
+- 세션별 툴 격리; 경로/명령 가드; 자동화용 YOLO / unsafe 모드
 
-1. Workspace로 로컬 리포 연결
-2. GitHub MCP 프리셋 설치
-3. _"PR #42 보안 이슈를 찾아 Markdown 보고서로 남겨"_ 
-4. 에이전트가 읽고 분석한 뒤, 열어볼 수 있는 보고서를 남김
+### 실행 기판
 
-### 마케팅 — 경쟁 정보 자동 수집
+| 기판 | 능력 |
+| ---- | ---- |
+| **Workspace** | 라인 단위 편집, 다중 파일, `@file` / `@skill` / `@playbook` |
+| **Shell** | 격리·지속 셸, 비동기 프로세스 모니터링 |
+| **Browser** | 격리 브라우저 사이드카; 선택적 저장 로그인 프로필 |
+| **Knowledge** | 지식 그래프 + BM25 |
+| **Export** | Markdown 보고서 및 ATIF 궤적 ([session export](docs/user/guides/session-export.md)) |
 
-1. Browser로 경쟁사 블로그 연결
-2. _"매일 아침 7시 경쟁사 브리프 예약해줘"_
-3. 에이전트가 탐색·요약 후 Knowledge에 저장
-4. 언제든 _"지난주 경쟁사 움직임 요약해줘"_
+긴 세션은 컨텍스트 압축, 루프 방지, 회로 차단기, stale-response 가드로 유지됩니다.
 
-### 엔지니어링 팀 — 오프라인 에이전트 스택
+---
+
+## 실제 시나리오
+
+### 운영자 — 빈 앱에서 매일 브리핑까지
+
+1. **Morning Briefing** 레시피 실행 (프리셋 + 어시스턴트 + 오전 9시)
+2. **Run now**로 한 번 검증
+3. 터미널 없이 보고서가 쌓이도록 두기
+
+### 솔로 개발자 — 설정 파일 대신 프리셋
+
+1. Extensions → GitHub MCP 프리셋 설치
+2. Workspace로 로컬 저장소 연결
+3. 디스크에 남는 Markdown 보안/리뷰 보고서 요청
+
+### 프레임워크 없는 파워유저 — 이름 있는 조율
+
+1. 작업 형태에 `@skill:pipeline` (또는 `hub-spoke` / `divide-conquer`)
+2. 해당 패턴으로 에이전트 조율
+3. 워크스페이스에 병합된 산출물 하나 — 유지할 오케스트레이션 라이브러리 없음
+
+### 프라이버시 팀 — 같은 제품, 로컬 모델
 
 1. `ollama pull qwen3:14b`
-2. Workspace + Shell 연결
-3. 민감 코드는 머신 안에 유지
-4. 읽고, 수정하고, 테스트하고, 커밋 — 완전 로컬
-
-### 파워 유저 — 멀티 에이전트 연구 파이프라인
-
-1. `teamwork`으로 역할·공유 문서 scaffold
-2. `delegate`로 병렬 리서치
-3. Content Store에 단일 보고서로 병합
-4. `schedule`로 주간 실행
+2. Workspace + Shell은 머신에 유지
+3. 나중에 클라우드 키로 바꿔도 — 하네스가 벤더를 강요하지 않음
 
 ---
 
 ## 문서
 
-- **[사용자 가이드](docs/user/README.md)** — 설치, 첫 채팅, 모델, 스킬 ([문서 사이트](https://fritzprix.github.io/libr-agent/))
-- **[히어로 데모 스펙](docs/contributing/hero-demo-spec.md)** — 60초 제품 스토리 기준 (EN/KO/ZH 자막)
-- **[레시피](docs/user/guides/recipes.md)** · **[예약 작업](docs/user/guides/scheduled-tasks.md)** · **[브라우저](docs/user/guides/browser-sidecar.md)** · **[스킬](docs/user/guides/skills.md)**
-- **[HTTP API](docs/api/http_api.md)** — 원격 제어·프로그래매틱 승인
-- **[아키텍처](docs/architecture/agent-workflow-architecture.md)** — 세션 격리와 Think-Act-Observe
+- **[User Guide](docs/user/README.md)** — 설치, 첫 채팅, 모델, 스킬 ([docs site](https://fritzprix.github.io/libr-agent/))
+- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)** — 제품 데모 (EN/KO/ZH 자막)
+- **[Product Messaging Guide](docs/contributing/product-messaging-guide.md)** — 포지셔닝과 카피
+- **[Recipes](docs/user/guides/recipes.md)** · **[Scheduled Tasks](docs/user/guides/scheduled-tasks.md)** · **[Sub-agents](docs/user/guides/sub-agents.md)** · **[Skills](docs/user/guides/skills.md)**
+- **[HTTP API](docs/api/http_api.md)** — 원격 제어와 프로그래밍 승인
+- **[Architecture](docs/architecture/agent-workflow-architecture.md)** — 세션 격리와 Think-Act-Observe
 
 ---
 
 ## 시작하기
 
-[릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
+**[Releases 페이지](https://github.com/fritzprix/libr-agent/releases/latest)**에서 최신 설치 파일을 받으세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
 - **Windows:** [`LibrAgent_0.9.21_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64-setup.exe) · [`LibrAgent_0.9.21_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.9.21_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.9.21_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.AppImage) · [`LibrAgent_0.9.21_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent_0.9.21_amd64.deb) · [`LibrAgent-0.9.21-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.21/LibrAgent-0.9.21-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.21)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.21)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5분 온보딩 경로
 
 **1단계 — 모델 연결** (Settings → LLM Providers)
 
-- 클라우드: OpenAI / Anthropic / Gemini / Groq API 키 붙여넣기
+- 클라우드: OpenAI / Anthropic / Gemini / Groq API 키
 - 로컬: `ollama pull qwen3:14b` 후 Settings에서 Ollama 선택
 
-**2단계 — 워크스페이스와 도구 연결**
+**2단계 — JSON 없이 툴 추가**
 
-- Workspace에 실제 프로젝트 폴더 지정
-- 선택: Extensions에서 프리셋(예: GitHub) 설치, 또는 _"Cursor에서 MCP 서버 가져와"_
+- Extensions → 프리셋 설치(예: GitHub), **또는**
+- 에이전트에게: _"Cursor에서 내 MCP 서버를 import해"_
 
-**3단계 — 산출물 요청**
+**3단계 — 워크스페이스 연결 후 남길 파일 요청**
 
-- _"이 리포에서 신규 기여자에게 가장 큰 리스크를 찾아 워크스페이스에 `DELIVERABLE.md`로 저장해."_
-- 디스크에서 열 수 있는 결과물을 우선 — 채팅 속 제안만으로 끝내지 않기
+- Workspace를 실제 프로젝트 폴더에
+- _"이 워크스페이스를 리뷰하고 결과를 `DELIVERABLE.md`에 남겨."_
 
-**다음 (에이전트가 하나 이상 필요할 때)**
+**다음 — 조율과 자동화**
 
-- _"리포 분석을 자식 세션에 위임하고 요약 가져와."_
-- _"이 리포용 teamwork 워크스페이스 준비해."_
-- _"매일 아침 7시 경쟁사 브리프 예약해."_
+- _"@skill:pipeline — 조사, 초안, 리뷰; 최종 보고서 하나."_
+- _"이 저장소용 teamwork 워크스페이스를 준비해."_
+- _"매일 오전 7시 경쟁사 브리프 스케줄을 만들어."_ (또는 Morning Briefing 레시피)
 
-### 복사-붙여넣기 첫 프롬프트
+### 복사해 쓸 첫 프롬프트
 
-- _"Cursor에서 MCP 서버 가져와서 뭐가 추가됐는지 보여줘."_
-- _"GitHub MCP 프리셋 설치하고 코딩 에이전트에 연결."_
-- _"이 워크스페이스를 리뷰한 뒤 결과를 `DELIVERABLE.md`에 써."_
-- _"현재 도구로 경쟁 정보용 리서처 에이전트 만들어."_
-- _"매일 아침 7시 경쟁사 브리프 예약해."_
+- _"Cursor에서 내 MCP 서버를 import하고 뭐가 추가됐는지 보여줘."_
+- _"GitHub MCP 프리셋을 설치하고 코딩 에이전트에 붙여."_
+- _"이 워크스페이스를 리뷰한 뒤 `DELIVERABLE.md`에 남겨."_
+- _"@skill:pipeline — 이 주제를 조사하고 요약을 초안한 뒤 리뷰; 최종 보고서를 저장."_
+- _"매일 오전 7시 경쟁사 브리프 스케줄을 만들어."_
 
 ### 개발자 설정
 
@@ -228,35 +202,37 @@ pnpm tauri dev
 
 ---
 
-## LibrAgent가 특히 잘 맞는 경우
+## LibrAgent가 잘 맞는 경우
 
-| 이런 걸 원한다면...                                             | LibrAgent가 강한 이유                                                                 |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| **로컬 AI 워크스테이션**                                        | 파일·세션·워크스페이스·브라우저 상태가 기본적으로 로컬에 남음                         |
-| **MCP 네이티브 데스크톱 제품**                                  | 얇은 래퍼가 아니라 설치·가져오기·관리가 제품 안에 있음                                |
-| **실제로 일하는 에이전트**                                      | Workspace·Shell·Browser·Knowledge가 장시간 실행 전제                                  |
-| **프레임워크를 먼저 짜지 않아도 되는 멀티 에이전트**            | `delegate`, `teamwork`, `org`, `schedule`가 이미 제품 안에 있음                       |
-| **GUI 사용성과 파워유저 깊이의 균형**                           | 데스크톱 UI를 쓰면서도 확장성과 통제력을 잃지 않음                                    |
+| 원하는 것 | LibrAgent가 강한 이유 |
+| --------- | --------------------- |
+| **하네스 숙제 없는 깊이** | Extensions 프리셋, 레시피, `@skill:` 패턴, 승인 — JSON 우선 온보딩이 아님 |
+| **프레임워크 조립 없는 조율** | `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork` / `org`, `schedule`가 제품으로 제공 |
+| **벤더 에이전트 스택으로부터의 자유** | 모델·MCP는 사용자가; MIT; 기본 로컬 우선 |
+| **실제 실행 기판** | Workspace, shell, browser, knowledge, playbook, 장기 세션 가드 |
+| **MCP 네이티브 데스크톱 제품** | 프리셋, import, 15+ 내장 — 얇은 채팅 래퍼가 아님 |
 
 ---
 
 ## 설계 철학
 
-- **로컬 우선**: 데이터, 키, 에이전트 페르소나는 당신의 통제 아래. 클라우드 기판 불필요.
-- **모델보다 하니스**: 도구·세션·위임·거버넌스가 개별 모델보다 중요.
-- **기능보다 안정성**: 격리·compaction·루프 방지 등 런타임 정확성이 우선.
-- **인프라로서의 MCP**: 도구 생태계의 상호운용성 레이어.
-- **오픈 표준**: MIT. MCP·오픈소스 상호운용성·데이터 주권.
+- **키트보다 제품**: 조립하지 않아도 하네스를 쓸 수 있다.
+- **스킬로서의 오케스트레이션**: 조율 패턴은 이름 있고 선택·문서화된다 — 샘플 레포에만 있지 않다.
+- **스택의 자유**: 모델과 툴은 사용자 선택; 특정 AI 벤더를 요구하지 않는다.
+- **로컬 우선**: 워크스페이스·세션·스킬·브라우저 상태는 사용자 통제. 클라우드 LLM / 원격 MCP는 선택 시에만.
+- **모델보다 하네스**: 툴, 세션 상태, 위임, 거버넌스가 단일 모델보다 중요하다.
+- **기능보다 안정**: 격리, 압축, 루프 방지 — 기능 추격 전에.
+- **열린 표준**: MIT. 상호운용 층으로서의 MCP.
 
 ---
 
-## 기여 및 라이선스
+## 기여 & 라이선스
 
-LibrAgent는 MIT 라이선스 오픈소스입니다. 번들 스킬, MCP 통합, 버그 수정, 아키텍처 개선 모두 환영합니다.
+LibrAgent는 MIT이며 공개적으로 만들어집니다. 번들 스킬, MCP 통합, 버그 수정, 아키텍처 개선을 환영합니다.
 
-- 📖 [기여 가이드](CONTRIBUTING.md)
-- 🐛 [이슈 트래커](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
-- 💬 [토론](https://github.com/fritzprix/libr-agent/discussions)
-- 🧪 벤치마크 (Harbor / Terminal-Bench): [Harbor 가이드](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`, …)
+- 📖 [Contributing Guide](CONTRIBUTING.md)
+- 🐛 [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
+- 💬 [Discussions](https://github.com/fritzprix/libr-agent/discussions)
+- 🧪 벤치마크 (Harbor / Terminal-Bench): [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`, …)
 
-**라이선스**: MIT
+**License**: MIT

@@ -1,3 +1,24 @@
+## [0.9.22] - 2026-10-02
+
+### 🚀 Features & Capabilities
+
+- **App Control MCP (`POST /mcp/control`)**: Sessionless UI chrome control surface for remote automation (hero demo capture, CI, and Cursor). Exposes generic primitives (`app__navigate`, `app__highlight`, `app__install_preset`, `app__focus_session`, `app__wait_ui`) driven via Tauri events into the desktop React app. Requires `--mcp --app-control`.
+- **Runtime Profiles (`prod`, `dev`, `demo`)**: Added `--demo` (and `LIBRAGENT_PROFILE=demo`) for isolated demo runs using dedicated data directory (`com.fritzprix.libragent-demo/`) and SQLite DB (`libragent_v2.demo.db`) with automatic clean-slate reset on launch.
+- **LLM Environment Seeding**: Automatically seeds preferred model, provider, API keys, and custom OpenAI-compatible base URLs into settings on boot via `LIBRAGENT_LLM_*` environment variables or `.env.demo`.
+- **`demo-play` bundled skill**: New bundled skill and `scripts/run-demo.sh` launcher to script hero demo beats cleanly without composite server tools.
+- **`postmortem-improve` skill**: Bundled skill for analyzing failures, extracting systemic root causes, and updating organizational guidelines.
+- **Spotlight discovery tips**: In-app feature discovery hints on Chat Hub and waiting strips to highlight lesser-known capabilities.
+
+### 🐛 Fixes & Hardening
+
+- **ActionBar copy scoping**: Scope ActionBar document copy button strictly to bubble UI documents.
+- **MCP server registry sync**: `refreshAll()` returns authoritative service data directly, preventing stale closure reads when installing presets via app control.
+
+### 🔧 Internal & Documentation
+
+- **Documentation cleanup**: Retired completed historical migration plans under `docs/refactoring/` and `docs/plans/`.
+- **Product messaging & README sync**: Aligned hero demo specification and product positioning across all 8 README language variants.
+
 ## [0.9.21] - 2026-10-01
 
 ### 🚀 Features & UI
