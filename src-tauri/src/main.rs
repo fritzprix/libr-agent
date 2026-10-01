@@ -1,17 +1,15 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use tauri_mcp_agent_lib::profile::{self, AppProfile};
+
 /// The main entry point for the LibrAgent application.
 ///
 /// This function is responsible for:
-/// 1. Loading environment variables from .env file (development mode only)
-/// 2. Determining the path for the SQLite database. It prioritizes the `LIBRAGENT_DB_PATH`
-///    environment variable, falling back to `libragent_v2.dev.db` (debug) or
-///    `libragent_v2.db` (release) within the user's data directory.
-/// 3. Ensuring the directory for the database exists.
-/// 4. Constructing the final SQLite connection URL.
-/// 5. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
-///    crate, passing it the database URL to initialize the application with database support.
+/// 1. Loading environment variables from profile-specific `.env*` files
+/// 2. Resolving runtime profile (`prod` | `dev` | `demo`) and DB / data paths
+/// 3. Optionally resetting demo data for a clean slate
+/// 4. Calling `run_with_sqlite_sync` with the SQLite URL
 fn main() {
     if std::env::args().any(|arg| arg == tauri_mcp_agent_lib::browser_sidecar::BROWSER_SIDECAR_FLAG)
     {
@@ -27,41 +25,127 @@ fn main() {
         println!("🐧 Linux detected - using default WebKit rendering path");
     }
 
-    // Load environment variables from .env file
-    // Development: loads .env.dev (if exists) or .env from current directory
-    // Production: loads .env from executable directory or current directory
+    load_dotenv_files();
+
+    let profile = profile::resolve_profile();
+    println!("📦 App profile: {}", profile.as_str());
+
+    if let Err(err) = profile::maybe_reset_demo_data(profile) {
+        eprintln!("❌ {err}");
+        std::process::exit(1);
+    }
+
+    let db_path = profile::db_path(profile);
+    let data_dir = profile::data_dir(profile);
+
+    if let Some(parent_dir) = db_path.parent() {
+        std::fs::create_dir_all(parent_dir).expect("Failed to create database directory");
+    } else {
+        std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+    }
+
+    let db_url =
+        tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url(db_path.to_string_lossy().as_ref());
+
+    match profile {
+        AppProfile::Demo => {
+            println!(
+                "ℹ️  Demo profile: data={} db={}",
+                data_dir.display(),
+                db_path.display()
+            );
+        }
+        AppProfile::Dev => {
+            if std::env::var("LIBRAGENT_DB_PATH").is_err() {
+                println!(
+                    "ℹ️  Dev profile using isolated DB (set LIBRAGENT_DB_PATH to override): {}",
+                    db_path.display()
+                );
+            }
+        }
+        AppProfile::Prod => {}
+    }
+
+    println!("🚀 Starting LibrAgent with SQLite database: {db_url}");
+
+    tauri_mcp_agent_lib::run_with_sqlite_sync(db_url)
+}
+
+fn wants_demo_profile() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--demo") {
+        return true;
+    }
+    if let Some(idx) = args.iter().position(|a| a == "--profile") {
+        if args
+            .get(idx + 1)
+            .is_some_and(|v| v.eq_ignore_ascii_case("demo"))
+        {
+            return true;
+        }
+    }
+    std::env::var("LIBRAGENT_PROFILE")
+        .map(|v| v.eq_ignore_ascii_case("demo"))
+        .unwrap_or(false)
+}
+
+fn try_load_dotenv(path: &std::path::Path) -> bool {
+    match dotenvy::from_path(path) {
+        Ok(()) => {
+            println!("✅ Loaded env file from: {}", path.display());
+            true
+        }
+        Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => {
+            eprintln!("⚠️  Warning: Failed to load {}: {e}", path.display());
+            false
+        }
+    }
+}
+
+/// Load dotenv files. Demo prefers `.env.demo`; debug prefers `.env.dev`.
+fn load_dotenv_files() {
+    if wants_demo_profile() {
+        let candidates = [
+            std::path::PathBuf::from(".env.demo"),
+            std::path::PathBuf::from("../.env.demo"),
+        ];
+        for path in &candidates {
+            if try_load_dotenv(path) {
+                return;
+            }
+        }
+        println!("ℹ️  No .env.demo found (using system environment variables)");
+        let _ = dotenvy::dotenv();
+        return;
+    }
+
     #[cfg(debug_assertions)]
     {
-        // Try .env.dev first in development, fallback to .env
         match dotenvy::from_filename(".env.dev") {
             Ok(path) => println!("✅ Loaded .env.dev file from: {}", path.display()),
-            Err(_) => {
-                // Fallback to .env
-                match dotenvy::dotenv() {
-                    Ok(path) => println!("✅ Loaded .env file from: {}", path.display()),
-                    Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
-                        println!("ℹ️  No .env or .env.dev file found (using system environment variables)");
-                    }
-                    Err(e) => {
-                        eprintln!("⚠️  Warning: Failed to load .env file: {e}");
-                    }
+            Err(_) => match dotenvy::dotenv() {
+                Ok(path) => println!("✅ Loaded .env file from: {}", path.display()),
+                Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
+                    println!(
+                        "ℹ️  No .env or .env.dev file found (using system environment variables)"
+                    );
                 }
-            }
+                Err(e) => {
+                    eprintln!("⚠️  Warning: Failed to load .env file: {e}");
+                }
+            },
         }
     }
 
     #[cfg(not(debug_assertions))]
     {
-        // Production: Try multiple .env locations for better compatibility
-        // 1. Current working directory (when run from project root)
-        // 2. Executable directory (when installed/distributed)
         let loaded = match dotenvy::dotenv() {
             Ok(path) => {
                 println!("✅ Loaded .env file from: {}", path.display());
                 true
             }
             Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
-                // Try loading from executable directory
                 if let Ok(exe_path) = std::env::current_exe() {
                     if let Some(exe_dir) = exe_path.parent() {
                         let env_path = exe_dir.join(".env");
@@ -89,39 +173,4 @@ fn main() {
             println!("ℹ️  No .env file found (using system environment variables and defaults)");
         }
     }
-
-    // Set the SQLite database path - stored in the user's data directory.
-    // Debug builds default to a separate file so `pnpm tauri dev` / migration
-    // experiments never mutate the production release DB. Override anytime with
-    // LIBRAGENT_DB_PATH (e.g. to intentionally reuse or inspect prod data).
-    let db_path = std::env::var("LIBRAGENT_DB_PATH").unwrap_or_else(|_| {
-        let data_dir = dirs::data_dir()
-            .expect("Failed to get data directory")
-            .join("com.fritzprix.libragent");
-
-        #[cfg(debug_assertions)]
-        let db_file = "libragent_v2.dev.db";
-        #[cfg(not(debug_assertions))]
-        let db_file = "libragent_v2.db";
-
-        data_dir.join(db_file).to_string_lossy().to_string()
-    });
-
-    // Check if the database directory exists and create it if it doesn't.
-    if let Some(parent_dir) = std::path::Path::new(&db_path).parent() {
-        std::fs::create_dir_all(parent_dir).expect("Failed to create database directory");
-    }
-
-    let db_url = tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url(&db_path);
-
-    #[cfg(debug_assertions)]
-    if std::env::var("LIBRAGENT_DB_PATH").is_err() {
-        println!(
-            "ℹ️  Debug build using isolated DB (set LIBRAGENT_DB_PATH to override): {db_path}"
-        );
-    }
-
-    println!("🚀 Starting LibrAgent with SQLite database: {db_url}");
-
-    tauri_mcp_agent_lib::run_with_sqlite_sync(db_url)
 }

@@ -16,6 +16,7 @@ mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
 pub mod media_assist;
 pub mod models;
+pub mod profile; // prod | dev | demo runtime profile (data dir + DB)
 pub mod repositories; // Make public for integration tests
 pub mod scheduled; // Cron-backed scheduled task background worker (public for integration tests)
 mod search;

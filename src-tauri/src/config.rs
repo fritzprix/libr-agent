@@ -18,8 +18,13 @@
 /// - `LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout in seconds (default: 3)
 /// - `LIBRAGENT_POLL_THRESHOLD`: Excessive polling detection threshold (default: 5 consecutive polls)
 /// - `MESSAGE_INDEX_SNIPPET_LENGTH`: Message snippet length for search index (default: 200)
-/// - `LIBRAGENT_DB_PATH`: SQLite database file path (default: `libragent_v2.dev.db` in
-///   debug builds, `libragent_v2.db` in release builds, under the user data directory)
+/// - `LIBRAGENT_PROFILE`: Runtime profile `prod` | `dev` | `demo` (also `--profile`, `--demo`)
+/// - `LIBRAGENT_DATA_DIR`: Override base data directory (sessions, skills, …)
+/// - `LIBRAGENT_DB_PATH`: SQLite database file path (default by profile:
+///   prod=`libragent_v2.db`, dev=`libragent_v2.dev.db`, demo=`libragent_v2.demo.db`)
+/// - `LIBRAGENT_DEMO_RESET` / `LIBRAGENT_DEMO_PERSIST`: Demo clean-slate controls
+/// - `LIBRAGENT_LLM_PROVIDER` / `LIBRAGENT_LLM_MODEL` / `LIBRAGENT_LLM_API_KEY` /
+///   `LIBRAGENT_LLM_BASE_URL`: Seed preferred model + serviceConfigs on boot
 /// - `LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES`: MCP server idle timeout in minutes (default: 5)
 /// - `LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES`: MCP cleanup interval in minutes (default: 5)
 use std::env;

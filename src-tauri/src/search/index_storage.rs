@@ -87,12 +87,10 @@ pub fn read_index(path: &Path) -> Result<IndexData, String> {
 
 /// Gets the default index directory path for a given session.
 ///
-/// Indices are stored in: `{app_data_dir}/message_indices/{session_id}.idx`
+/// Indices are stored in: `{profile_data_dir}/message_indices/{session_id}.idx`
 pub fn get_index_path(session_id: &str) -> Result<PathBuf, String> {
-    let data_dir = dirs::data_dir()
-        .ok_or_else(|| "Failed to get data directory".to_string())?
-        .join("com.fritzprix.libragent")
-        .join("message_indices");
+    let profile = crate::profile::resolve_profile();
+    let data_dir = crate::profile::data_dir(profile).join("message_indices");
 
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("Failed to create indices directory: {e}"))?;

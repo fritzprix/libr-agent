@@ -213,6 +213,14 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // MCP HTTP endpoint is enabled via env var or --mcp CLI flag
     let mcp_enabled =
         std::env::var("LIBRAGENT_MCP_ENABLE").is_ok() || std::env::args().any(|a| a == "--mcp");
+    // App chrome control (`POST /mcp/control`) — requires MCP HTTP plus explicit opt-in
+    let app_control_enabled = std::env::var("LIBRAGENT_APP_CONTROL").is_ok()
+        || std::env::args().any(|a| a == "--app-control");
+    if app_control_enabled && !mcp_enabled {
+        log::warn!(
+            "LIBRAGENT_APP_CONTROL / --app-control set but MCP HTTP is off; enable --mcp or LIBRAGENT_MCP_ENABLE for /mcp/control"
+        );
+    }
 
     let browser_server = InteractiveBrowserServer::new(startup_settings.web_action_timeout);
     app.manage(browser_server);
@@ -282,18 +290,21 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             startup_settings.http_port,
             startup_settings.http_expose,
             mcp_enabled,
+            app_control_enabled,
         )
         .await
         {
             Ok(actual_port) => {
                 info!(
-                    "✅ HTTP Server spawned on {}:{}",
+                    "✅ HTTP Server spawned on {}:{} (mcp={} app_control={})",
                     if startup_settings.http_expose {
                         "0.0.0.0"
                     } else {
                         "127.0.0.1"
                     },
-                    actual_port
+                    actual_port,
+                    mcp_enabled,
+                    app_control_enabled
                 );
             }
             Err(e) => {

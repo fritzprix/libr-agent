@@ -19,6 +19,7 @@ import { UpdateProvider } from '@/context/UpdateContext';
 import { useSettings } from '../context/SettingsContext';
 import { markStartupMilestone } from '@/lib/performance/startup-metrics';
 import { emitFrontendReadyOnce } from './frontend-ready';
+import { AppControlBridge } from '@/features/app-control/useAppControlBridge';
 import '../styles/globals.css';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
@@ -125,6 +126,7 @@ function App() {
                 <MCPServerRegistryProvider>
                   <MCPServerProvider>
                     <AgentSessionListProvider>
+                      <AppControlBridge />
                       <SidebarProvider className="h-full overflow-hidden">
                         <DnDContextProvider>
                           <AppSidebar />

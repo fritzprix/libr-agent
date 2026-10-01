@@ -48,6 +48,7 @@ pub async fn init(
     requested_port: u16,
     expose: bool,
     mcp_enabled: bool,
+    app_control_enabled: bool,
 ) -> Result<u16, Box<dyn std::error::Error>> {
     let bind_addr = if expose {
         std::net::Ipv4Addr::UNSPECIFIED
@@ -100,7 +101,7 @@ pub async fn init(
         let _ = std::fs::write(dir.join("http_port"), bound_port.to_string());
     }
 
-    let routes = routes::get_routes(agent_manager, mcp_enabled);
+    let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled);
 
     let server_future = warp::serve(routes).run((bind_addr.octets(), bound_port));
 

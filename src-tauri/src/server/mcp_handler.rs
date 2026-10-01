@@ -1,4 +1,7 @@
-use crate::mcp::types::{MCPError, MCPResponse, MCPResponseResult, ServerCapabilities, ServerInfo};
+use crate::mcp::builtin::app_control::AppControlServer;
+use crate::mcp::types::{
+    MCPError, MCPResponse, MCPResponseResult, MCPResult, ServerCapabilities, ServerInfo,
+};
 use crate::server::handlers::helpers::resolve_http_session_ref;
 use crate::state::get_mcp_service_proxy_manager;
 use serde::Deserialize;
@@ -104,7 +107,6 @@ async fn handle_tools_call(
                 // Strip structured_content before sending to external MCP clients.
                 // structured_content is a LibrAgent-internal UI extension — it must not
                 // be exposed to external AI agents (only the text content array is canonical).
-                use crate::mcp::types::MCPResult;
                 let sanitized = MCPResult {
                     structured_content: None,
                     ..result
@@ -116,6 +118,113 @@ async fn handle_tools_call(
         }
         Err(e) => error_response(id, -32603, e),
     }
+}
+
+fn handle_control_initialize(id: Option<serde_json::Value>) -> MCPResponse {
+    ok_response(
+        id,
+        MCPResponseResult::Initialize {
+            protocol_version: "2024-11-05".to_string(),
+            capabilities: Box::new(ServerCapabilities {
+                tools: Some(serde_json::json!({ "listChanged": false })),
+                resources: None,
+                prompts: None,
+                experimental: None,
+            }),
+            server_info: Some(ServerInfo {
+                name: "libragent-app-control".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            }),
+            instructions: Some(
+                "Sessionless UI chrome control. Generic primitives only: app__navigate, app__highlight, app__install_preset, app__focus_session, app__wait_ui. Compose hero/demo sequences in your client or scripts — not as composite tools here.".to_string(),
+            ),
+        },
+    )
+}
+
+fn handle_control_tools_list(id: Option<serde_json::Value>) -> MCPResponse {
+    let tools = AppControlServer::new().tools();
+    ok_response(id, MCPResponseResult::ToolsList { tools })
+}
+
+async fn handle_control_tools_call(
+    id: Option<serde_json::Value>,
+    params: Option<serde_json::Value>,
+) -> MCPResponse {
+    let params = match params {
+        Some(p) => p,
+        None => return error_response(id, -32602, "Missing params for tools/call".to_string()),
+    };
+
+    let call: ToolCallParams = match serde_json::from_value(params) {
+        Ok(c) => c,
+        Err(e) => return error_response(id, -32602, format!("Invalid params: {}", e)),
+    };
+
+    let args = call
+        .arguments
+        .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
+
+    match AppControlServer::new().call_tool(&call.name, args).await {
+        Ok(result) => {
+            let sanitized = MCPResult {
+                structured_content: None,
+                ..result
+            };
+            ok_response(id, MCPResponseResult::ToolCall(sanitized))
+        }
+        Err(e) => error_response(id, -32603, e),
+    }
+}
+
+/// Handler for `POST /mcp/control` — sessionless app chrome control (navigate, highlight, install).
+///
+/// Requires both MCP HTTP (`--mcp` / `LIBRAGENT_MCP_ENABLE`) and
+/// `LIBRAGENT_APP_CONTROL=1` (or `--app-control`). Not bound to an agent session.
+pub async fn mcp_control_rpc(
+    mcp_enabled: bool,
+    app_control_enabled: bool,
+    body: serde_json::Value,
+) -> Result<warp::reply::WithStatus<warp::reply::Json>, Rejection> {
+    // Return HTTP 404 here (do not `reject::not_found`) so Warp does not fall
+    // through to `POST /mcp/:session_id` with session_id="control".
+    if !mcp_enabled || !app_control_enabled {
+        let response = error_response(
+            None,
+            -32601,
+            "App Control MCP is disabled. Start with --mcp --app-control \
+             (or LIBRAGENT_MCP_ENABLE=1 and LIBRAGENT_APP_CONTROL=1)."
+                .to_string(),
+        );
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let req: JsonRpcRequest = match serde_json::from_value(body) {
+        Ok(r) => r,
+        Err(e) => {
+            let response = error_response(None, -32700, format!("Parse error: {}", e));
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&response),
+                StatusCode::OK,
+            ));
+        }
+    };
+
+    let id = req.id.clone();
+    let response = match req.method.as_str() {
+        "initialize" => handle_control_initialize(id),
+        "tools/list" => handle_control_tools_list(id),
+        "tools/call" => handle_control_tools_call(id, req.params).await,
+        other => error_response(id, -32601, format!("Method not found: {}", other)),
+    };
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&response),
+        StatusCode::OK,
+    ))
 }
 
 /// Handler for `POST /mcp/{session_id}` — routes JSON-RPC 2.0 MCP requests to builtin tools.

@@ -18,6 +18,7 @@ import {
   normalizePresetCategory,
 } from '../utils/preset-categories';
 import { presetNeedsUserConfig } from '../utils/preset-utils';
+import { usePresetHighlightName } from '@/features/app-control/presetHighlightStore';
 
 interface RecommendedPresetsProps {
   presets: MCPServerPreset[] | undefined;
@@ -29,7 +30,7 @@ interface RecommendedPresetsProps {
   onInstallOrConfigurePreset: (preset: MCPServerPreset) => void | Promise<void>;
   /** Preset names currently saving via one-click install */
   installingPresetNames?: ReadonlySet<string>;
-  onRetryRegistryLoad: () => Promise<void>;
+  onRetryRegistryLoad: () => Promise<unknown>;
 }
 
 type CategorizedPreset = MCPServerPreset & {
@@ -58,6 +59,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   onRetryRegistryLoad,
 }) => {
   const { t } = useTranslation('common');
+  const highlightedPresetName = usePresetHighlightName();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<'all' | PresetCategory>(
     'all',
@@ -235,11 +237,21 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
       );
     })();
 
+    const isAppControlHighlighted =
+      highlightedPresetName !== null &&
+      highlightedPresetName.toLowerCase() === preset.name.toLowerCase();
+
     return (
       <div
         key={preset.name}
+        data-preset-name={preset.name}
+        data-app-control-highlight={
+          isAppControlHighlighted ? 'true' : undefined
+        }
         className={cn(
           'group relative flex flex-col justify-between rounded-[1.5rem] border overflow-hidden bg-background/50 backdrop-blur-sm p-5 transition-all duration-300 focus-visible:ring-2 focus-visible:ring-primary/20 outline-none',
+          isAppControlHighlighted &&
+            'ring-2 ring-primary shadow-2xl border-primary/50 -translate-y-1',
           isInstalled && !isVerifying && !verifyFailed
             ? 'opacity-60 cursor-default bg-muted/20 border-border/50'
             : canInstall
