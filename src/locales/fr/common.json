@@ -1542,10 +1542,8 @@
       "preparingPrompt": "Préparation du prompt...",
       "expandThinking": "Développer",
       "actionBar": {
-        "copyFullAria": "Copier le message complet",
-        "copyFullTooltip": "Copier le message complet (texte, réflexion, outils, pièces jointes)",
-        "copyTextAria": "Copier le texte uniquement",
-        "copyTextTooltip": "Copier uniquement le contenu texte",
+        "copyAria": "Copier",
+        "copyTooltip": "Copier le message",
         "copyToolsAria": "Copier les appels d’outils",
         "copyToolsTooltip": "Copier les appels d’outils en JSON",
         "exportAria": "Exporter le message",

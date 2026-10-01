@@ -1542,10 +1542,8 @@
       "preparingPrompt": "Prompt wird vorbereitet...",
       "expandThinking": "Erweitern",
       "actionBar": {
-        "copyFullAria": "Vollständige Nachricht kopieren",
-        "copyFullTooltip": "Vollständige Nachricht kopieren (Text, Denken, Tools, Anhänge)",
-        "copyTextAria": "Nur Text kopieren",
-        "copyTextTooltip": "Nur Textinhalt kopieren",
+        "copyAria": "Kopieren",
+        "copyTooltip": "Nachricht kopieren",
         "copyToolsAria": "Tool-Aufrufe kopieren",
         "copyToolsTooltip": "Tool-Aufrufe als JSON kopieren",
         "exportAria": "Nachricht exportieren",

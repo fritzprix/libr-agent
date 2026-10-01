@@ -1542,10 +1542,8 @@
       "preparingPrompt": "プロンプトを準備中...",
       "expandThinking": "展開",
       "actionBar": {
-        "copyFullAria": "メッセージ全体をコピー",
-        "copyFullTooltip": "メッセージ全体をコピー（テキスト、思考、ツール、添付）",
-        "copyTextAria": "テキストのみコピー",
-        "copyTextTooltip": "テキスト内容のみをコピー",
+        "copyAria": "コピー",
+        "copyTooltip": "メッセージをコピー",
         "copyToolsAria": "ツール呼び出しをコピー",
         "copyToolsTooltip": "ツール呼び出しを JSON でコピー",
         "exportAria": "メッセージをエクスポート",

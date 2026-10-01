@@ -1585,10 +1585,8 @@
       "preparingPrompt": "프롬프트 준비 중...",
       "expandThinking": "펼치기",
       "actionBar": {
-        "copyFullAria": "전체 메시지 복사",
-        "copyFullTooltip": "전체 메시지 복사 (텍스트, 생각, 도구, 첨부파일)",
-        "copyTextAria": "텍스트만 복사",
-        "copyTextTooltip": "텍스트 내용만 복사",
+        "copyAria": "복사",
+        "copyTooltip": "메시지 복사",
         "copyToolsAria": "도구 호출 복사",
         "copyToolsTooltip": "도구 호출을 JSON으로 복사",
         "exportAria": "메시지 내보내기",

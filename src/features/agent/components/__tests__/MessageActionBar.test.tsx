@@ -31,7 +31,9 @@ vi.mock('@/hooks/use-is-dark-mode', () => ({
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  TooltipContent: () => null,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => (
+    <div role="tooltip">{children}</div>
+  ),
 }));
 
 vi.mock('@/components/ui/dropdown-menu', () => ({
@@ -74,13 +76,17 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('@/features/agent/lib/message-serialization', () => ({
-  serializeMessageForClipboard: (...args: unknown[]) => mockSerialize(...args),
-  serializeMessageForDownload: (...args: unknown[]) =>
-    mockSerializeForDownload(...args),
-  buildMessageExportFilename: (_message: Message, extension: string) =>
-    `export.${extension}`,
-}));
+vi.mock('@/features/agent/lib/message-serialization', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/features/agent/lib/message-serialization')
+  >('@/features/agent/lib/message-serialization');
+  return {
+    ...actual,
+    serializeMessageForClipboard: (...args: unknown[]) => mockSerialize(...args),
+    serializeMessageForDownload: (...args: unknown[]) =>
+      mockSerializeForDownload(...args),
+  };
+});
 
 vi.mock('@/features/agent/lib/pdf-export-preprocess', () => ({
   prepareMarkdownForPdfExport: (...args: unknown[]) =>
@@ -112,7 +118,7 @@ function createMessage(overrides: Partial<Message> = {}): Message {
 describe('MessageActionBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSerialize.mockReturnValue('## Assistant\n\nHello');
+    mockSerialize.mockReturnValue('[{"id":"call-1"}]');
     mockSerializeForDownload.mockReturnValue('## Answer\n\n- point one');
     mockCopyToClipboard.mockResolvedValue(undefined);
     mockDownloadTextFile.mockResolvedValue('/tmp/message.md');
@@ -123,48 +129,47 @@ describe('MessageActionBar', () => {
     });
   });
 
-  it('copies the full message when the primary copy button is clicked', async () => {
+  it('copies plain text for a normal message (not thinking/tools dump)', async () => {
     render(<MessageActionBar message={createMessage()} />);
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyFullAria',
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     );
 
     await waitFor(() => {
-      expect(mockSerialize).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'msg-1' }),
-        expect.objectContaining({ mode: 'full' }),
-      );
-      expect(mockCopyToClipboard).toHaveBeenCalledWith(
-        '## Assistant\n\nHello',
-      );
+      expect(mockCopyToClipboard).toHaveBeenCalledWith('Hello');
     });
+    expect(mockSerialize).not.toHaveBeenCalled();
   });
 
-  it('keeps the primary copy control visible without hover', () => {
-    render(<MessageActionBar message={createMessage()} />);
-
-    const copyButton = screen.getByRole('button', {
-      name: 'agent.bubble.actionBar.copyFullAria',
-    });
-
-    expect(copyButton).toBeVisible();
-    expect(copyButton.className).not.toMatch(/opacity-0/);
-  });
-
-  it('exposes icon-only flat actions with aria labels', () => {
+  it('keeps a single primary copy control (no text-only button)', () => {
     render(<MessageActionBar message={createMessage()} />);
 
     expect(
       screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyFullAria',
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     ).toBeVisible();
     expect(
-      screen.getByRole('button', {
+      screen.queryByRole('button', {
         name: 'agent.bubble.actionBar.copyTextAria',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {
+        name: 'agent.bubble.actionBar.copyFullAria',
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('exposes copy, tools, and export actions', () => {
+    render(<MessageActionBar message={createMessage()} />);
+
+    expect(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     ).toBeVisible();
     expect(
@@ -203,14 +208,14 @@ describe('MessageActionBar', () => {
         { isDark: true },
       );
       expect(mockDownloadTextPdf).toHaveBeenCalledWith({
-        fileName: 'export.pdf',
+        fileName: 'message.pdf',
         content: preprocessed.content,
         embeddedImages: preprocessed.embeddedImages,
       });
     });
   });
 
-  it('primary copy prefers reportResult document over wrapper transcript', async () => {
+  it('copy prefers reportResult document over wrapper transcript', async () => {
     mockCopyToClipboard.mockResolvedValue(undefined);
 
     render(
@@ -233,7 +238,7 @@ describe('MessageActionBar', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'agent.bubble.actionBar.copyFullAria',
+        name: 'agent.bubble.actionBar.copyAria',
       }),
     );
 
@@ -244,6 +249,97 @@ describe('MessageActionBar', () => {
     expect(copied).toContain('# Ship');
     expect(copied).toContain('ok');
     expect(copied).not.toContain('STOP');
+  });
+
+  it('copy uses bubble reportResult document, not first narration', async () => {
+    mockCopyToClipboard.mockResolvedValue(undefined);
+
+    const displayContent: MCPContent[] = [
+      { type: 'text', text: 'FIRST RESPONSE: planning...' },
+      {
+        type: 'tool_call',
+        id: 'call-report',
+        name: 'ui__reportResult',
+        arguments: '{}',
+      },
+    ];
+    const toolResultsMap = new Map<string, Message>([
+      [
+        'call-report',
+        createMessage({
+          id: 'tool-report',
+          role: 'tool',
+          tool_call_id: 'call-report',
+          content: [{ type: 'text', text: 'Final result reported STOP' }],
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'success',
+              title: 'Deliverable',
+              criteria: 'Must ship',
+              proof: 'CI green',
+              result: 'REPORT BODY',
+              deliverables: [],
+            },
+          },
+        }),
+      ],
+    ]);
+
+    render(
+      <MessageActionBar
+        message={createMessage({
+          content: [{ type: 'text', text: 'FIRST RESPONSE: planning...' }],
+          tool_calls: [
+            {
+              id: 'call-search',
+              type: 'function',
+              function: { name: 'workspace__runShell', arguments: '{}' },
+            },
+          ],
+        })}
+        displayContent={displayContent}
+        toolResultsMap={toolResultsMap}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyAria',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockCopyToClipboard).toHaveBeenCalled();
+    });
+    const copied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
+    expect(copied).toContain('# Deliverable');
+    expect(copied).toContain('REPORT BODY');
+    expect(copied).toContain('Must ship');
+    expect(copied).not.toContain('FIRST RESPONSE');
+    expect(mockSerialize).not.toHaveBeenCalled();
+  });
+
+  it('disables copy and export when the bubble has no document or text', () => {
+    render(
+      <MessageActionBar
+        message={createMessage({
+          content: [],
+          thinking: undefined,
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyAria',
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.exportAria',
+      }),
+    ).toBeDisabled();
   });
 
   it('exports presentInteractive HTML as .html and hides PDF', async () => {
