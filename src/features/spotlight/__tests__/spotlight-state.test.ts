@@ -61,13 +61,29 @@ describe('compareVersion', () => {
   });
 });
 
+function createMemoryStorage() {
+  const store = new Map<string, string>();
+  return {
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, String(value));
+    }),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key);
+    }),
+    clear: vi.fn(() => {
+      store.clear();
+    }),
+  };
+}
+
 describe('spotlight-state', () => {
   beforeEach(() => {
-    localStorage.clear();
+    vi.stubGlobal('localStorage', createMemoryStorage());
   });
 
   afterEach(() => {
-    localStorage.clear();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

@@ -62,10 +62,26 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+function createMemoryStorage() {
+  const store = new Map<string, string>();
+  return {
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, String(value));
+    }),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key);
+    }),
+    clear: vi.fn(() => {
+      store.clear();
+    }),
+  };
+}
+
 describe('ComposerBusyTipStrip', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    localStorage.clear();
+    vi.stubGlobal('localStorage', createMemoryStorage());
     mockNavigate.mockReset();
     workflowStatus = 'idle';
     settingsMock.showFeatureTips = true;
@@ -73,7 +89,7 @@ describe('ComposerBusyTipStrip', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    localStorage.clear();
+    vi.unstubAllGlobals();
   });
 
   it('hides when workflow is idle', () => {
