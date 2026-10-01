@@ -1544,8 +1544,10 @@
       "actionBar": {
         "copyFullAria": "Copiar mensagem completa",
         "copyFullTooltip": "Copiar mensagem completa (texto, pensamento, ferramentas, anexos)",
+        "copyFullDocumentTooltip": "Copiar o documento do cartão de resultado desta bolha",
         "copyTextAria": "Copiar apenas texto",
         "copyTextTooltip": "Copiar apenas o conteúdo de texto",
+        "copyTextDocumentTooltip": "Copiar apenas o corpo do resultado (sem critérios/provas)",
         "copyToolsAria": "Copiar chamadas de ferramentas",
         "copyToolsTooltip": "Copiar chamadas de ferramentas como JSON",
         "exportAria": "Exportar mensagem",

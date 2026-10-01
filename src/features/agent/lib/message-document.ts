@@ -7,8 +7,16 @@ import { composeReportResultMarkdown } from '@/features/agent/lib/markdown-docum
 export type MessageDocumentExportKind = 'markdown' | 'html';
 
 export interface ResolvedMessageDocument {
-  /** Source body for copy / export (markdown or HTML fragment). */
+  /**
+   * Full document for primary copy / markdown export
+   * (composed reportResult fields, or presentInteractive source).
+   */
   content: string;
+  /**
+   * Body-only payload for "text" copy — reportResult `result`, or the same
+   * source body for presentInteractive.
+   */
+  textBody: string;
   fileBaseName: string;
   exportKind: MessageDocumentExportKind;
   source: 'reportResult' | 'presentInteractive';
@@ -48,6 +56,7 @@ function tryReportResultDocument(
       proof: parsed.proof,
       result: parsed.result,
     }),
+    textBody: `${parsed.result.trim()}\n`,
     fileBaseName: parsed.title?.trim() || 'result',
     exportKind: 'markdown',
     source: 'reportResult',
@@ -110,8 +119,10 @@ function tryPresentInteractiveDocument(
     }
     const isMarkdown =
       html.includes("id='md-root'") || html.includes('id="md-root"');
+    const body = raw.endsWith('\n') ? raw : `${raw}\n`;
     return {
-      content: raw.endsWith('\n') ? raw : `${raw}\n`,
+      content: body,
+      textBody: body,
       fileBaseName:
         extractPresentInteractiveTitle(html) || 'present-interactive',
       exportKind: isMarkdown ? 'markdown' : 'html',

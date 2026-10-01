@@ -31,7 +31,9 @@ vi.mock('@/hooks/use-is-dark-mode', () => ({
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  TooltipContent: () => null,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => (
+    <div role="tooltip">{children}</div>
+  ),
 }));
 
 vi.mock('@/components/ui/dropdown-menu', () => ({
@@ -250,7 +252,7 @@ describe('MessageActionBar', () => {
     expect(copied).not.toContain('STOP');
   });
 
-  it('text copy uses reportResult from toolResultsMap, not first assistant narration', async () => {
+  it('text copy uses reportResult body only; full copy uses the composed document', async () => {
     mockCopyToClipboard.mockResolvedValue(undefined);
 
     const displayContent: MCPContent[] = [
@@ -275,6 +277,8 @@ describe('MessageActionBar', () => {
               type: 'reportResult',
               status: 'success',
               title: 'Deliverable',
+              criteria: 'Must ship',
+              proof: 'CI green',
               result: 'REPORT BODY',
               deliverables: [],
             },
@@ -309,10 +313,77 @@ describe('MessageActionBar', () => {
     await waitFor(() => {
       expect(mockCopyToClipboard).toHaveBeenCalled();
     });
-    const copied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
-    expect(copied).toContain('REPORT BODY');
-    expect(copied).not.toContain('FIRST RESPONSE');
+    const textCopied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
+    expect(textCopied.trim()).toBe('REPORT BODY');
+    expect(textCopied).not.toContain('FIRST RESPONSE');
+    expect(textCopied).not.toContain('Must ship');
     expect(mockSerialize).not.toHaveBeenCalled();
+
+    mockCopyToClipboard.mockClear();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.copyFullAria',
+      }),
+    );
+    await waitFor(() => {
+      expect(mockCopyToClipboard).toHaveBeenCalled();
+    });
+    const fullCopied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
+    expect(fullCopied).toContain('# Deliverable');
+    expect(fullCopied).toContain('REPORT BODY');
+    expect(fullCopied).toContain('Must ship');
+  });
+
+  it('shows document-aware tooltips when a UI document is present', () => {
+    const toolResultsMap = new Map<string, Message>([
+      [
+        'call-report',
+        createMessage({
+          id: 'tool-report',
+          role: 'tool',
+          tool_call_id: 'call-report',
+          metadata: {
+            structuredContent: {
+              type: 'reportResult',
+              status: 'success',
+              title: 'Ship',
+              result: 'ok',
+              deliverables: [],
+            },
+          },
+        }),
+      ],
+    ]);
+
+    render(
+      <MessageActionBar
+        message={createMessage({
+          tool_calls: [
+            {
+              id: 'call-report',
+              type: 'function',
+              function: { name: 'ui__reportResult', arguments: '{}' },
+            },
+          ],
+        })}
+        displayContent={[
+          {
+            type: 'tool_call',
+            id: 'call-report',
+            name: 'ui__reportResult',
+            arguments: '{}',
+          },
+        ]}
+        toolResultsMap={toolResultsMap}
+      />,
+    );
+
+    expect(
+      screen.getByText('agent.bubble.actionBar.copyFullDocumentTooltip'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('agent.bubble.actionBar.copyTextDocumentTooltip'),
+    ).toBeInTheDocument();
   });
 
   it('disables text copy and export when the bubble has no document or text', () => {

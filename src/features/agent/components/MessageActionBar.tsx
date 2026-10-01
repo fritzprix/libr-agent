@@ -59,19 +59,22 @@ export interface MessageActionBarProps {
 }
 
 /**
- * Bubble-local copy body: UI document (reportResult / presentInteractive)
- * wins over plain text. Never walks other bubbles' history.
+ * Bubble-local payloads: UI document wins over plain transcript text.
+ * Never walks other bubbles' history.
  */
-function resolveBubbleCopyBody(
+function resolveBubbleCopyPayloads(
   uiDocument: ReturnType<typeof resolveMessageDocument>,
   message: Message,
   displayContent?: MCPContent[],
-): string {
-  const fromDocument = uiDocument?.content.trim() ?? '';
-  if (fromDocument) {
-    return fromDocument;
+): { fullBody: string; textBody: string } {
+  if (uiDocument) {
+    return {
+      fullBody: uiDocument.content.trim(),
+      textBody: uiDocument.textBody.trim(),
+    };
   }
-  return serializeMessageTextOnly(message, displayContent).trim();
+  const plain = serializeMessageTextOnly(message, displayContent).trim();
+  return { fullBody: plain, textBody: plain };
 }
 
 function IconActionButton({
@@ -177,13 +180,16 @@ function MessageActionBarImpl({
   );
 
   // Priority within this bubble only: UI document → plain text.
-  const bubbleCopyBody = useMemo(
-    () => resolveBubbleCopyBody(uiDocument, message, displayContent),
+  const { fullBody: bubbleFullBody, textBody: bubbleTextBody } = useMemo(
+    () => resolveBubbleCopyPayloads(uiDocument, message, displayContent),
     [displayContent, message, uiDocument],
   );
-  const canCopyBody = bubbleCopyBody.length > 0;
-  const canCopyFull = canCopyBody || hasToolCalls || Boolean(message.thinking?.trim());
-  const canExportBody = canCopyBody;
+  const canCopyBody = bubbleTextBody.length > 0;
+  const canCopyFull =
+    bubbleFullBody.length > 0 ||
+    hasToolCalls ||
+    Boolean(message.thinking?.trim());
+  const canExportBody = canCopyBody || bubbleFullBody.length > 0;
 
   const handleCopy = useCallback(
     async (mode: CopyMode) => {
@@ -202,14 +208,16 @@ function MessageActionBarImpl({
 
       setBusyAction(mode);
       try {
-        // full/text: bubble-local document first, else text (text mode) /
-        // full transcript (full mode when no UI document).
+        // text → document textBody or plain text
+        // full → document content when present, else full transcript
         const content =
           mode === 'tools'
             ? serialize('tools')
-            : mode === 'text' || uiDocument
-              ? bubbleCopyBody
-              : serialize('full');
+            : mode === 'text'
+              ? bubbleTextBody
+              : uiDocument
+                ? bubbleFullBody
+                : serialize('full');
         if (!content.trim() || content === '[]') {
           toast.error(t('agent.bubble.actionBar.copyEmpty'));
           return;
@@ -229,7 +237,8 @@ function MessageActionBarImpl({
       }
     },
     [
-      bubbleCopyBody,
+      bubbleFullBody,
+      bubbleTextBody,
       canCopyBody,
       canCopyFull,
       copyToClipboard,
@@ -335,7 +344,11 @@ function MessageActionBarImpl({
     >
       <IconActionButton
         label={t('agent.bubble.actionBar.copyFullAria')}
-        tooltip={t('agent.bubble.actionBar.copyFullTooltip')}
+        tooltip={
+          uiDocument
+            ? t('agent.bubble.actionBar.copyFullDocumentTooltip')
+            : t('agent.bubble.actionBar.copyFullTooltip')
+        }
         onClick={() => {
           void handleCopy('full');
         }}
@@ -350,7 +363,11 @@ function MessageActionBarImpl({
 
       <IconActionButton
         label={t('agent.bubble.actionBar.copyTextAria')}
-        tooltip={t('agent.bubble.actionBar.copyTextTooltip')}
+        tooltip={
+          uiDocument
+            ? t('agent.bubble.actionBar.copyTextDocumentTooltip')
+            : t('agent.bubble.actionBar.copyTextTooltip')
+        }
         onClick={() => {
           void handleCopy('text');
         }}

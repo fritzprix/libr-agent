@@ -1544,8 +1544,10 @@
       "actionBar": {
         "copyFullAria": "Vollständige Nachricht kopieren",
         "copyFullTooltip": "Vollständige Nachricht kopieren (Text, Denken, Tools, Anhänge)",
+        "copyFullDocumentTooltip": "Ergebnisdokument dieser Blase kopieren",
         "copyTextAria": "Nur Text kopieren",
         "copyTextTooltip": "Nur Textinhalt kopieren",
+        "copyTextDocumentTooltip": "Nur Ergebnistext kopieren (ohne Kriterien/Nachweis)",
         "copyToolsAria": "Tool-Aufrufe kopieren",
         "copyToolsTooltip": "Tool-Aufrufe als JSON kopieren",
         "exportAria": "Nachricht exportieren",

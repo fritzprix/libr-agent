@@ -60,6 +60,7 @@ describe('message-document', () => {
     expect(doc?.content).toContain('# Done');
     expect(doc?.content).toContain('## Outcome');
     expect(doc?.content).toContain('shipped');
+    expect(doc?.textBody.trim()).toBe('shipped');
   });
 
   it('resolves presentInteractive HTML resource body', () => {
