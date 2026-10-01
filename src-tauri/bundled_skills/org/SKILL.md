@@ -9,6 +9,7 @@ Org is explicit lineage teamwork. It is not generic delegation and it is not sch
 
 Use `teamwork` first when the workspace constitution is not ready.
 Use `org-restructure` when the org already exists and roles or constitution files need to change (add, layoff, merge, agents.md updates).
+Use `postmortem-improve` after missions or repeated failures to capture lessons and route durable org improvements.
 
 ## Workflow
 
@@ -51,3 +52,4 @@ Use `org-restructure` when the org already exists and roles or constitution file
 
 - [Org patterns and tool call examples](references/org-patterns.md)
 - Living org changes (roles, constitution): use bundled skill `org-restructure`
+- After-action learning / continuous improvement: use bundled skill `postmortem-improve`
