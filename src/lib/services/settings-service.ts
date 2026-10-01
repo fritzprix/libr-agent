@@ -97,6 +97,8 @@ export interface DisplaySettings {
    */
   messageLayout: MessageLayoutStyle;
   colorTheme: ColorTheme;
+  /** When true, show release/hub feature discovery tips on the agent hub. */
+  showFeatureTips: boolean;
 }
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
@@ -233,6 +235,7 @@ export const DEFAULT_SETTING: Settings = {
     fontFamily: 'Pretendard',
     messageLayout: 'document',
     colorTheme: 'neutral',
+    showFeatureTips: true,
   },
   system: {
     maxFileUploadSizeMB: 50,
@@ -307,6 +310,10 @@ export function normalizeDisplaySettings(
     colorTheme: isColorTheme(blob.colorTheme)
       ? blob.colorTheme
       : defaults.colorTheme,
+    showFeatureTips:
+      typeof blob.showFeatureTips === 'boolean'
+        ? blob.showFeatureTips
+        : defaults.showFeatureTips,
   };
 }
 

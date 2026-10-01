@@ -504,7 +504,9 @@
         "violet": "アイリス バイオレット (AI)",
         "ocean": "オーシャン ブルー (落ち着き)",
         "forest": "フォレスト セージ (集中)"
-      }
+      },
+      "showFeatureTips": "機能ヒントを表示",
+      "showFeatureTipsDescription": "セットアップ後、チャットハブに「新着」とヒントカードを表示し、応答待ち中にもヒントを出します"
     },
     "advanced": {
       "maxRetries": "最大再試行回数",
@@ -1868,6 +1870,47 @@
       "scheduledTaskName": "毎朝9時 モーニングブリーフィング",
       "scheduledTaskMessage": "本日のHacker News人気記事トップ3と主要市場指標（S&P 500、ナスダック）を統合し、毎日のモーニングブリーフィングを作成してください。",
       "testRunPrompt": "本日注目のHacker News記事トップ3と主要株価指数を確認し、今すぐモーニングブリーフィングを作成してください。"
+    }
+  },
+  "spotlight": {
+    "releaseTitle": "v{{version}} の新機能",
+    "dismissAll": "閉じる",
+    "hubLabel": "ヒント",
+    "nextTip": "次のヒント",
+    "hide": "非表示",
+    "waitLine": "ヒント · {{title}}",
+    "waitOpenHint": "開く: {{detail}}",
+    "items": {
+      "browserProfile": {
+        "title": "ブラウザのログインを取り込みできます",
+        "body": "Chrome / Edge / Brave のプロファイルを LibrAgent に取り込み、サインイン済みのまま閲覧できます。設定 → System を確認してください。",
+        "cta": "System 設定を開く"
+      },
+      "starterTasks": {
+        "title": "予約タスクのテンプレートで始められます",
+        "body": "デイリースタンドアップやニュース監視など、ワンクリック自動化テンプレートが Scheduled Tasks にあります。",
+        "cta": "Scheduled Tasks を開く"
+      },
+      "visualize": {
+        "title": "CSV / Excel からチャートを作れます",
+        "body": "スプレッドシートをチャットにドロップしてチャートを依頼すると、可視化を手伝います。",
+        "cta": "チャットを開始"
+      },
+      "thinkingEffort": {
+        "title": "思考の深さを調整できます",
+        "body": "設定 → AI & Models の Thinking Effort で、速さと思考の深さを切り替えられます。",
+        "cta": "AI & Models 設定を開く"
+      },
+      "knowledgeGraph": {
+        "title": "ナレッジグラフを見てみましょう",
+        "body": "Knowledge で、エージェントが蓄えた概念のつながりをネットワークとして確認できます。",
+        "cta": "Knowledge を開く"
+      },
+      "themes": {
+        "title": "カラーテーマを変えられます",
+        "body": "設定 → General で Neutral、Amber、Ocean などのアクセントテーマを選べます。",
+        "cta": "General 設定を開く"
+      }
     }
   }
 }

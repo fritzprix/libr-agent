@@ -38,6 +38,19 @@ import {
 } from './utils/openAppWizard';
 import { useSettings } from '@/hooks/use-settings';
 import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
+import {
+  dismissSpotlight,
+  hrefToPath,
+  HubHintCard,
+  loadSpotlightState,
+  markReleaseSeen,
+  pickHubHint,
+  pickReleaseSpotlights,
+  ReleaseSpotlightCard,
+  rotateHubHint,
+  type Spotlight,
+  type SpotlightState,
+} from '@/features/spotlight';
 
 const RUNTIME_DISMISSED_KEY = 'libragent:runtime:onboarding-dismissed';
 
@@ -143,6 +156,52 @@ export default function AgentChatStartView() {
     !runtimeLoading &&
     isNpxReady &&
     !isRecipeDismissed;
+
+  const [spotlightState, setSpotlightState] = useState<SpotlightState>(() =>
+    loadSpotlightState(),
+  );
+
+  const tipsEnabled = settings.display?.showFeatureTips !== false;
+  const setupBlocking =
+    !hasConfiguredProviders || showRuntimeBanner || runtimeLoading;
+
+  const releaseItems = useMemo(() => {
+    if (!tipsEnabled || setupBlocking) {
+      return [];
+    }
+    return pickReleaseSpotlights(spotlightState, __APP_VERSION__);
+  }, [setupBlocking, spotlightState, tipsEnabled]);
+
+  const showReleaseSpotlight = releaseItems.length > 0;
+
+  const hubHint = useMemo(() => {
+    if (!tipsEnabled || setupBlocking || showReleaseSpotlight) {
+      return null;
+    }
+    return pickHubHint(spotlightState);
+  }, [setupBlocking, showReleaseSpotlight, spotlightState, tipsEnabled]);
+
+  const handleSpotlightCta = useCallback(
+    (tip: Spotlight) => {
+      navigate(hrefToPath(tip.href));
+    },
+    [navigate],
+  );
+
+  const handleDismissRelease = useCallback(() => {
+    setSpotlightState((prev) => markReleaseSeen(prev, __APP_VERSION__));
+  }, []);
+
+  const handleHideHubHint = useCallback(() => {
+    if (!hubHint) {
+      return;
+    }
+    setSpotlightState((prev) => dismissSpotlight(prev, hubHint.id));
+  }, [hubHint]);
+
+  const handleNextHubHint = useCallback(() => {
+    setSpotlightState((prev) => rotateHubHint(prev));
+  }, []);
 
   const handleDismissRecipe = () => {
     try {
@@ -468,6 +527,24 @@ export default function AgentChatStartView() {
               </Button>
             </div>
           </div>
+        ) : null}
+
+        {showReleaseSpotlight ? (
+          <ReleaseSpotlightCard
+            appVersion={__APP_VERSION__}
+            items={releaseItems}
+            onCta={handleSpotlightCta}
+            onDismissAll={handleDismissRelease}
+          />
+        ) : null}
+
+        {hubHint ? (
+          <HubHintCard
+            tip={hubHint}
+            onCta={handleSpotlightCta}
+            onNext={handleNextHubHint}
+            onHide={handleHideHubHint}
+          />
         ) : null}
 
         {/* Step 3: Featured Recipe Card (only after LLM + runtime) */}

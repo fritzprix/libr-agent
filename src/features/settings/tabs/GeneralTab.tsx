@@ -381,6 +381,28 @@ function GeneralTabComponent({
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={localDisplay.showFeatureTips !== false}
+                  onChange={(e) =>
+                    onDisplaySettingsChange('showFeatureTips', e.target.checked)
+                  }
+                  className="w-4 h-4 rounded border-input text-primary focus:ring-primary"
+                />
+                <span className="text-muted-foreground font-medium">
+                  {t('settings.display.showFeatureTips', 'Show feature tips')}
+                </span>
+              </label>
+              <p className="text-xs text-muted-foreground mt-1 ml-6">
+                {t(
+                  'settings.display.showFeatureTipsDescription',
+                  "Show What's New and tip cards on the chat hub, and occasional tips while waiting for a response",
+                )}
+              </p>
+            </div>
+
+            <div className="min-w-0">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
                   checked={localDisplay.showTokenSpeed}
                   onChange={(e) =>
                     onDisplaySettingsChange('showTokenSpeed', e.target.checked)
