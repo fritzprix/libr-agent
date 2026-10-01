@@ -136,7 +136,7 @@ function MessageActionBarImpl({
   className,
 }: MessageActionBarProps) {
   const { t } = useTranslation();
-  const { copyToClipboard } = useClipboard();
+  const { copied, copyToClipboard } = useClipboard();
   const isDark = useIsDarkMode();
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [lastCopied, setLastCopied] = useState<'copy' | 'tools' | null>(null);
@@ -328,7 +328,7 @@ function MessageActionBarImpl({
         }}
         disabled={isBusy || !canCopyBody}
         isBusy={busyAction === 'copy'}
-        showCheck={lastCopied === 'copy' && busyAction !== 'copy'}
+        showCheck={copied && lastCopied === 'copy' && busyAction !== 'copy'}
         emphasize
         isUserTone={isUserTone}
       >
@@ -343,7 +343,7 @@ function MessageActionBarImpl({
         }}
         disabled={isBusy || !hasToolCalls}
         isBusy={busyAction === 'tools'}
-        showCheck={lastCopied === 'tools' && busyAction !== 'tools'}
+        showCheck={copied && lastCopied === 'tools' && busyAction !== 'tools'}
         isUserTone={isUserTone}
       >
         <Braces className="h-3.5 w-3.5" />
