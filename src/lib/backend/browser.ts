@@ -62,3 +62,24 @@ export async function navigateToUrl(
 export async function clearAgentBrowserData(): Promise<void> {
   return safeInvoke<void>('clear_agent_browser_data');
 }
+
+export type ExtensionBridgeStatus = {
+  connected: boolean;
+  port: number;
+  tokenHint: string;
+  backendMode: string;
+};
+
+/**
+ * Local Chrome MV3 extension WebSocket bridge status (loopback).
+ */
+export async function getExtensionBridgeStatus(): Promise<ExtensionBridgeStatus> {
+  return safeInvoke<ExtensionBridgeStatus>('get_extension_bridge_status');
+}
+
+/**
+ * Absolute path to the Load unpacked chrome-extension/ folder.
+ */
+export async function getExtensionUnpackedPath(): Promise<string> {
+  return safeInvoke<string>('get_extension_unpacked_path');
+}

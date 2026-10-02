@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use crate::browser_extension_bridge::ExtensionBridge;
 use crate::browser_sidecar::{BrowserAutomationClient, HistoryNavigationStatus};
 
 use super::browser_error::BrowserError;
@@ -17,12 +18,23 @@ pub use types::{BrowserSession, NavigationUpdateOutcome, SessionStatus};
 pub mod utils;
 pub use utils::validate_and_normalize_url;
 
+const EXTENSION_UNSUPPORTED: &str = "not supported yet via Chrome extension bridge";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionBackend {
+    Sidecar,
+    Extension,
+}
+
 #[derive(Clone)]
 pub struct InteractiveBrowserServer {
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
     // Maps agent_session_id -> browser_session_id
     agent_browser_mapping: Arc<RwLock<HashMap<String, String>>>,
+    /// Tracks which transport owns each browser session.
+    session_backends: Arc<RwLock<HashMap<String, SessionBackend>>>,
     client: BrowserAutomationClient,
+    extension_bridge: ExtensionBridge,
 }
 
 impl InteractiveBrowserServer {
@@ -32,10 +44,48 @@ impl InteractiveBrowserServer {
             action_timeout
         );
 
+        let extension_bridge = ExtensionBridge::global();
+        extension_bridge.ensure_started();
+
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             agent_browser_mapping: Arc::new(RwLock::new(HashMap::new())),
+            session_backends: Arc::new(RwLock::new(HashMap::new())),
             client: BrowserAutomationClient::new(action_timeout),
+            extension_bridge,
+        }
+    }
+
+    fn session_backend(&self, session_id: &str) -> Result<SessionBackend, String> {
+        let backends = self
+            .session_backends
+            .read()
+            .map_err(|e| format!("Failed to acquire read lock on session_backends: {e}"))?;
+        Ok(backends
+            .get(session_id)
+            .copied()
+            .unwrap_or(SessionBackend::Sidecar))
+    }
+
+    fn set_session_backend(&self, session_id: &str, backend: SessionBackend) -> Result<(), String> {
+        let mut backends = self
+            .session_backends
+            .write()
+            .map_err(|e| format!("Failed to acquire write lock on session_backends: {e}"))?;
+        backends.insert(session_id.to_string(), backend);
+        Ok(())
+    }
+
+    fn clear_session_backend(&self, session_id: &str) {
+        if let Ok(mut backends) = self.session_backends.write() {
+            backends.remove(session_id);
+        }
+    }
+
+    fn ensure_sidecar_capability(&self, session_id: &str) -> Result<(), String> {
+        match self.session_backend(session_id)? {
+            SessionBackend::Extension => Err(EXTENSION_UNSUPPORTED.to_string()),
+            SessionBackend::Sidecar => Ok(()),
         }
     }
 
@@ -115,11 +165,30 @@ impl InteractiveBrowserServer {
             sessions.insert(session_id.clone(), session);
         }
 
-        info!("Creating browser sidecar session {session_id} for URL: {validated_url}");
-        let create_result = self
-            .client
-            .create_session(&session_id, &validated_url, title, visible)
-            .await;
+        let use_extension = self
+            .extension_bridge
+            .should_route_new_sessions_to_extension();
+        let backend = if use_extension {
+            SessionBackend::Extension
+        } else {
+            SessionBackend::Sidecar
+        };
+        self.set_session_backend(&session_id, backend)?;
+
+        info!(
+            "Creating browser session {session_id} via {:?} for URL: {validated_url}",
+            backend
+        );
+
+        let create_result = if use_extension {
+            self.extension_bridge
+                .create_session(&session_id, &validated_url)
+                .await
+        } else {
+            self.client
+                .create_session(&session_id, &validated_url, title, visible)
+                .await
+        };
 
         match create_result {
             Ok(state) => {
@@ -155,6 +224,7 @@ impl InteractiveBrowserServer {
                 if let Ok(mut sessions) = self.sessions.write() {
                     sessions.remove(&session_id);
                 }
+                self.clear_session_backend(&session_id);
                 Err(format!(
                     "Failed to create browser automation session: {error}"
                 ))
@@ -181,7 +251,10 @@ impl InteractiveBrowserServer {
             }
         }
 
-        self.client.evaluate(session_id, script).await
+        match self.session_backend(session_id)? {
+            SessionBackend::Extension => self.extension_bridge.evaluate(session_id, script).await,
+            SessionBackend::Sidecar => self.client.evaluate(session_id, script).await,
+        }
     }
 
     pub async fn get_console_logs(
@@ -189,6 +262,7 @@ impl InteractiveBrowserServer {
         session_id: &str,
         max_entries: Option<u32>,
     ) -> Result<Vec<crate::browser_sidecar::ConsoleEntry>, String> {
+        self.ensure_sidecar_capability(session_id)?;
         self.client.get_console_logs(session_id, max_entries).await
     }
 
@@ -215,7 +289,14 @@ impl InteractiveBrowserServer {
             }
         }
 
-        self.client.take_screenshot(session_id, full_page).await
+        match self.session_backend(session_id)? {
+            SessionBackend::Extension => {
+                self.extension_bridge
+                    .take_screenshot(session_id, full_page)
+                    .await
+            }
+            SessionBackend::Sidecar => self.client.take_screenshot(session_id, full_page).await,
+        }
     }
 
     pub fn list_sessions(&self) -> Vec<BrowserSession> {
@@ -249,11 +330,18 @@ impl InteractiveBrowserServer {
     pub async fn close_session(&self, session_id: &str) -> Result<String, String> {
         info!("Closing browser session: {session_id}");
         self.get_session(session_id)?;
+        let backend = self.session_backend(session_id)?;
 
-        let close_result = self.client.close_session(session_id).await;
+        let close_result = match backend {
+            SessionBackend::Extension => self.extension_bridge.close_session(session_id).await,
+            SessionBackend::Sidecar => self.client.close_session(session_id).await,
+        };
         let recovered = match close_result {
             Ok(()) => false,
-            Err(error) if is_recoverable_sidecar_failure(&error) => {
+            Err(error)
+                if matches!(backend, SessionBackend::Sidecar)
+                    && is_recoverable_sidecar_failure(&error) =>
+            {
                 warn!(
                     "Recovering browser session {} after sidecar failure during close: {}",
                     session_id, error
@@ -270,6 +358,7 @@ impl InteractiveBrowserServer {
                 .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
             sessions.remove(session_id);
         }
+        self.clear_session_backend(session_id);
 
         let message = if recovered {
             "Session closed after recovering from a browser sidecar failure".to_string()
@@ -308,7 +397,16 @@ impl InteractiveBrowserServer {
         let current_session = self.get_session(session_id)?;
         let target_url = resolve_target_url(url, &current_session.url)?;
         let next_generation = self.begin_navigation(session_id, Some(target_url.clone()))?;
-        let state = match self.client.navigate(session_id, &target_url).await {
+        let backend = self.session_backend(session_id)?;
+        let navigate_result = match backend {
+            SessionBackend::Extension => {
+                self.extension_bridge
+                    .navigate(session_id, &target_url)
+                    .await
+            }
+            SessionBackend::Sidecar => self.client.navigate(session_id, &target_url).await,
+        };
+        let state = match navigate_result {
             Ok(state) => state,
             Err(error) => {
                 self.mark_navigation_error(
@@ -344,7 +442,12 @@ impl InteractiveBrowserServer {
 
     pub async fn navigate_back(&self, session_id: &str) -> Result<String, String> {
         let next_generation = self.begin_navigation(session_id, None)?;
-        let state = match self.client.go_back(session_id).await {
+        let backend = self.session_backend(session_id)?;
+        let navigate_result = match backend {
+            SessionBackend::Extension => self.extension_bridge.go_back(session_id).await,
+            SessionBackend::Sidecar => self.client.go_back(session_id).await,
+        };
+        let state = match navigate_result {
             Ok(state) => state,
             Err(error) => {
                 self.mark_navigation_error(
@@ -363,7 +466,12 @@ impl InteractiveBrowserServer {
 
     pub async fn navigate_forward(&self, session_id: &str) -> Result<String, String> {
         let next_generation = self.begin_navigation(session_id, None)?;
-        let state = match self.client.go_forward(session_id).await {
+        let backend = self.session_backend(session_id)?;
+        let navigate_result = match backend {
+            SessionBackend::Extension => self.extension_bridge.go_forward(session_id).await,
+            SessionBackend::Sidecar => self.client.go_forward(session_id).await,
+        };
+        let state = match navigate_result {
             Ok(state) => state,
             Err(error) => {
                 self.mark_navigation_error(
