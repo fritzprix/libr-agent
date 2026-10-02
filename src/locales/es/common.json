@@ -1881,11 +1881,6 @@
     "waitLine": "Consejo · {{title}}",
     "waitOpenHint": "Abrir: {{detail}}",
     "items": {
-      "browserProfile": {
-        "title": "Importar sesiones del navegador",
-        "body": "Trae perfiles de Chrome, Edge o Brave a LibrAgent para que el agente navegue ya iniciado sesión. Abre Ajustes → System.",
-        "cta": "Abrir Ajustes System"
-      },
       "starterTasks": {
         "title": "Empieza con plantillas de tareas programadas",
         "body": "Daily Standup, monitoreo de noticias y más automatizaciones con un clic están en Scheduled Tasks.",

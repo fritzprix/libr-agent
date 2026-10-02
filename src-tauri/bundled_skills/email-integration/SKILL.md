@@ -4,14 +4,14 @@ description: |
   Integrates with any IMAP/SMTP mail server (Gmail, Outlook, Naver, Kakao, custom servers, etc.).
   Use when the user wants to read, send, search, reply to, or manage emails.
   Primary path: validate_config + email_client.py (hidden password setup via setup_account.py).
-  If Python/config/IMAP auth fails, fall back to browser saved-login webmail (Gmail/Outlook) via
-  browser-session-assist and use_profile=true after explicit user confirmation.
+  If Python/config/IMAP auth fails, fall back to browser webmail (Gmail/Outlook) via the sticky
+  agent browser profile after the user has signed in inside LibrAgent’s agent browser.
   Triggers: "메일 보여줘", "이메일 확인", "send email", "받은 편지함", "메일 보내줘", "메일 검색".
 ---
 
 # Email Integration
 
-Interact with mail on behalf of the user. Prefer **IMAP/SMTP scripts** when they work; use **browser profile webmail** only as fallback.
+Interact with mail on behalf of the user. Prefer **IMAP/SMTP scripts** when they work; use **sticky agent browser webmail** only as fallback.
 
 ## Path conventions
 
@@ -25,7 +25,7 @@ Paths are relative to this skill's Base Directory. Replace `<skill-base-dir>` wi
 - **NEVER** ask for passwords in chat or display `~/.libragent/email_config`
 - Collect password only via a single hidden shell prompt; persist with `setup_account.py`
 - If the user pastes a secret in chat, do not echo it—run setup immediately
-- Browser fallback: **never** set `use_profile=true` without explicit user confirmation (see `browser-session-assist`)
+- Browser fallback uses LibrAgent’s sticky agent browser profile (not everyday Chrome). Ask the user to sign in inside that browser when needed.
 
 ## Decision tree
 
@@ -34,9 +34,9 @@ Paths are relative to this skill's Base Directory. Replace `<skill-base-dir>` wi
    - `python` / `python3` missing
    - config missing/corrupt and user declines password setup, or setup/auth fails
    - IMAP/SMTP auth failure, app-password / Modern Auth blocked
-3. If user agrees → follow [references/browser-fallback.md](references/browser-fallback.md) (uses `browser-session-assist`).
-4. If `createSession` reports no imported profile → guide Settings import; if Google block → Open to sign in; then retry browser path.
-5. If user declines all paths → explain IMAP setup vs Saved browser logins and stop.
+3. If user agrees → follow [references/browser-fallback.md](references/browser-fallback.md).
+4. If not logged in inside the agent browser → ask the user to sign in once in a browser session, then retry.
+5. If user declines all paths → explain IMAP setup vs agent browser sign-in and stop.
 
 ## Workflow (IMAP primary)
 
@@ -78,4 +78,4 @@ See [references/output-format.md](references/output-format.md). Errors: [referen
 
 ## Browser fallback
 
-See [references/browser-fallback.md](references/browser-fallback.md) and skill `browser-session-assist`.
+See [references/browser-fallback.md](references/browser-fallback.md).

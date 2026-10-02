@@ -1,17 +1,14 @@
 # Email browser fallback (Gmail / Outlook web)
 
-Use only after the IMAP script path failed or the user prefers webmail, and only with **explicit confirmation** for `use_profile`.
+Use only after the IMAP script path failed or the user prefers webmail.
 
-Hand off procedure details to skill **`browser-session-assist`** (confirm → `createSession` → import / Open to sign in guidance).
-
-There is **no** agent MCP to list profiles. Probe with:
+Uses LibrAgent’s **sticky agent browser profile** — logins made inside that browser survive later `createSession` until cleared in Settings → System → Agent browser. This is not everyday Chrome.
 
 ```text
-browser__createSession({ "url": "<webmail>", "use_profile": true })
+browser__createSession({ "url": "<webmail>" })
 ```
 
-Error text containing `No imported browser profile` → guide Settings import (see `browser-session-assist` / its setup-guide).
-Error text about saved login **already open** → close the Open-to-sign-in Chrome window, then retry (not the same as Open to sign in for auth).
+If the page shows a login wall, ask the user to sign in inside the agent browser window, then continue.
 
 ## When to use
 
@@ -20,7 +17,7 @@ Error text about saved login **already open** → close the Open-to-sign-in Chro
 | `python`/`python3` not found | Offer browser fallback |
 | Config missing and user skips IMAP setup | Offer browser fallback |
 | IMAP/SMTP auth or Modern Auth failure | Offer browser fallback |
-| User asks to use logged-in browser mail | Browser path directly (still confirm `use_profile`) |
+| User asks to use logged-in browser mail | Browser path directly |
 
 ## Provider entry URLs
 
@@ -45,15 +42,14 @@ Mark read / move / delete via UI is **best-effort** only — confirm count and t
 
 ## Procedure sketch
 
-1. Load `browser-session-assist` rules; get confirmation for saved logins.
-2. `browser__createSession({ url: "<webmail>", use_profile: true })`.
-3. If not logged in or Google blocks automation → Open to sign in guidance → retry.
-4. For the user request: `listInteractable` / `getPageContent` / click / `inputText` as needed.
-5. Before sending mail: show draft summary (to, subject, short body preview) and wait for explicit OK.
-6. Present results in the same style as IMAP output-format when possible (list then detail).
+1. `browser__createSession({ url: "<webmail>" })`.
+2. If not logged in → ask user to sign in in the agent browser, then retry or continue.
+3. For the user request: `listInteractable` / `getPageContent` / click / `inputText` as needed.
+4. Before sending mail: show draft summary (to, subject, short body preview) and wait for explicit OK.
+5. Present results in the same style as IMAP output-format when possible (list then detail).
 
 ## Out of scope
 
-- Automating the Settings import UI
+- Importing everyday Chrome/Edge/Brave profiles into LibrAgent
 - Firefox profiles
-- Non-Gmail/Outlook webmail (Naver/Kakao/etc.) in this fallback doc — offer IMAP setup for those, or general `browser-session-assist` if the user already has a logged-in site
+- Non-Gmail/Outlook webmail (Naver/Kakao/etc.) in this fallback doc — offer IMAP setup for those, or a general sticky-browser session if the user already has a logged-in site
