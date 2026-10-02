@@ -7,6 +7,7 @@ use serde_json::Value;
 use tracing::info;
 
 pub mod agent;
+pub mod app_control;
 pub mod attachments;
 pub mod browser;
 pub mod browser_content_store;

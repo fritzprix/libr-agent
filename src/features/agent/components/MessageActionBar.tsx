@@ -9,7 +9,6 @@ import {
   FileDown,
   Loader2,
   Printer,
-  Type,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -26,12 +25,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useClipboard } from '@/hooks/useClipboard';
-import { downloadTextFile, downloadTextPdf } from '@/lib/backend';
+import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
 import { getLogger } from '@/lib/logger';
-import {
-  DOWNLOAD_CANCELLED,
-  notifyFileDownloadSuccess,
-} from '@/lib/notify-file-download';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
@@ -39,12 +34,18 @@ import {
   buildMessageExportFilename,
   serializeMessageForClipboard,
   serializeMessageForDownload,
+  serializeMessageTextOnly,
 } from '@/features/agent/lib/message-serialization';
+import {
+  exportMarkdownDocumentWithNotify,
+  markdownExportBaseName,
+  markdownExportLabelsFromT,
+} from '@/features/agent/lib/markdown-document-export';
+import { resolveMessageDocument } from '@/features/agent/lib/message-document';
 
 const logger = getLogger('MessageActionBar');
 
-type BusyAction = 'full' | 'text' | 'tools' | 'markdown' | 'pdf' | null;
-type CopyMode = 'full' | 'text' | 'tools';
+type BusyAction = 'copy' | 'tools' | 'markdown' | 'pdf' | null;
 
 export interface MessageActionBarProps {
   message: Message;
@@ -53,6 +54,22 @@ export interface MessageActionBarProps {
   /** Visual tone for user (primary) vs assistant/secondary bubbles */
   tone?: 'user' | 'assistant';
   className?: string;
+}
+
+/**
+ * One copy payload for the bubble: UI document if present, else plain text.
+ * Same rule for reportResult / presentInteractive and normal messages.
+ */
+function resolveBubbleCopyBody(
+  uiDocument: ReturnType<typeof resolveMessageDocument>,
+  message: Message,
+  displayContent?: MCPContent[],
+): string {
+  const fromDocument = uiDocument?.content.trim() ?? '';
+  if (fromDocument) {
+    return fromDocument;
+  }
+  return serializeMessageTextOnly(message, displayContent).trim();
 }
 
 function IconActionButton({
@@ -119,9 +136,10 @@ function MessageActionBarImpl({
   className,
 }: MessageActionBarProps) {
   const { t } = useTranslation();
-  const { copyToClipboard } = useClipboard();
+  const { copied, copyToClipboard } = useClipboard();
+  const isDark = useIsDarkMode();
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
-  const [lastCopiedMode, setLastCopiedMode] = useState<CopyMode | null>(null);
+  const [lastCopied, setLastCopied] = useState<'copy' | 'tools' | null>(null);
 
   const isBusy = busyAction !== null;
   const isUserTone = tone === 'user';
@@ -134,58 +152,105 @@ function MessageActionBarImpl({
     return content.some((item) => item.type === 'tool_call');
   }, [displayContent, message.content, message.tool_calls]);
 
-  const serialize = useCallback(
-    (mode: CopyMode) =>
-      serializeMessageForClipboard(message, {
-        mode,
+  const uiDocument = useMemo(
+    () =>
+      resolveMessageDocument(message, {
+        displayContent,
+        toolResultsMap,
+      }),
+    [displayContent, message, toolResultsMap],
+  );
+
+  const bubbleCopyBody = useMemo(
+    () => resolveBubbleCopyBody(uiDocument, message, displayContent),
+    [displayContent, message, uiDocument],
+  );
+  const canCopyBody = bubbleCopyBody.length > 0;
+  const canExportBody = canCopyBody;
+
+  const handleCopyBody = useCallback(async () => {
+    if (isBusy || !canCopyBody) {
+      return;
+    }
+    setBusyAction('copy');
+    try {
+      await copyToClipboard(bubbleCopyBody);
+      setLastCopied('copy');
+      toast.success(t('agent.bubble.actionBar.copySuccess'));
+    } catch (error) {
+      logger.error('Failed to copy message', error);
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        toast.error(t('agent.bubble.actionBar.copyDenied'));
+      } else {
+        toast.error(t('agent.bubble.actionBar.copyError'));
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }, [bubbleCopyBody, canCopyBody, copyToClipboard, isBusy, t]);
+
+  const handleCopyTools = useCallback(async () => {
+    if (isBusy || !hasToolCalls) {
+      return;
+    }
+    setBusyAction('tools');
+    try {
+      const content = serializeMessageForClipboard(message, {
+        mode: 'tools',
         displayContent,
         toolResultsMap,
         includeThinking: true,
         includeToolCalls: true,
         includeToolResults: true,
-      }),
-    [displayContent, message, toolResultsMap],
-  );
-
-  const handleCopy = useCallback(
-    async (mode: CopyMode) => {
-      if (isBusy) {
+      });
+      if (!content.trim() || content === '[]') {
+        toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
-      setBusyAction(mode);
-      try {
-        const content = serialize(mode);
-        if (!content.trim() || content === '[]') {
-          toast.error(t('agent.bubble.actionBar.copyEmpty'));
-          return;
-        }
-        await copyToClipboard(content);
-        setLastCopiedMode(mode);
-        toast.success(t('agent.bubble.actionBar.copySuccess'));
-      } catch (error) {
-        logger.error('Failed to copy message', error);
-        if (error instanceof DOMException && error.name === 'NotAllowedError') {
-          toast.error(t('agent.bubble.actionBar.copyDenied'));
-        } else {
-          toast.error(t('agent.bubble.actionBar.copyError'));
-        }
-      } finally {
-        setBusyAction(null);
+      await copyToClipboard(content);
+      setLastCopied('tools');
+      toast.success(t('agent.bubble.actionBar.copySuccess'));
+    } catch (error) {
+      logger.error('Failed to copy tools', error);
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        toast.error(t('agent.bubble.actionBar.copyDenied'));
+      } else {
+        toast.error(t('agent.bubble.actionBar.copyError'));
       }
-    },
-    [copyToClipboard, isBusy, serialize, t],
-  );
+    } finally {
+      setBusyAction(null);
+    }
+  }, [
+    copyToClipboard,
+    displayContent,
+    hasToolCalls,
+    isBusy,
+    message,
+    t,
+    toolResultsMap,
+  ]);
 
   const exportMarkdownContent = useCallback(
     () =>
       serializeMessageForDownload(message, {
         displayContent,
+        toolResultsMap,
       }),
-    [displayContent, message],
+    [displayContent, message, toolResultsMap],
   );
 
+  const exportFileBaseName = useCallback(() => {
+    if (uiDocument?.fileBaseName) {
+      return markdownExportBaseName(uiDocument.fileBaseName, 'export');
+    }
+    return markdownExportBaseName(
+      buildMessageExportFilename(message, 'md').replace(/\.md$/i, ''),
+      'message',
+    );
+  }, [message, uiDocument]);
+
   const handleExportMarkdown = useCallback(async () => {
-    if (isBusy) {
+    if (isBusy || !canExportBody) {
       return;
     }
     setBusyAction('markdown');
@@ -195,30 +260,30 @@ function MessageActionBarImpl({
         toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
-      const result = await downloadTextFile({
-        fileName: buildMessageExportFilename(message, 'md'),
+      await exportMarkdownDocumentWithNotify({
         content,
+        kind: uiDocument?.exportKind === 'html' ? 'html' : 'markdown',
+        fileBaseName: exportFileBaseName(),
+        isDark,
+        labels: markdownExportLabelsFromT(t),
       });
-      if (result === DOWNLOAD_CANCELLED) {
-        toast.info(t('agent.bubble.actionBar.exportCancelled'));
-        return;
-      }
-      notifyFileDownloadSuccess({
-        title: t('agent.bubble.actionBar.exportMarkdownSuccess'),
-        filePath: result,
-        openLabel: t('agent.bubble.actionBar.exportOpenFile'),
-        openErrorLabel: t('agent.bubble.actionBar.exportOpenFileError'),
-      });
-    } catch (error) {
-      logger.error('Failed to export markdown', error);
-      toast.error(t('agent.bubble.actionBar.exportError'));
+    } catch {
+      // Toast already shown in shared helper.
     } finally {
       setBusyAction(null);
     }
-  }, [exportMarkdownContent, isBusy, message, t]);
+  }, [
+    canExportBody,
+    exportFileBaseName,
+    exportMarkdownContent,
+    isBusy,
+    isDark,
+    t,
+    uiDocument?.exportKind,
+  ]);
 
   const handleExportPdf = useCallback(async () => {
-    if (isBusy) {
+    if (isBusy || !canExportBody || uiDocument?.exportKind === 'html') {
       return;
     }
     setBusyAction('pdf');
@@ -228,27 +293,27 @@ function MessageActionBarImpl({
         toast.error(t('agent.bubble.actionBar.copyEmpty'));
         return;
       }
-      const result = await downloadTextPdf({
-        fileName: buildMessageExportFilename(message, 'pdf'),
+      await exportMarkdownDocumentWithNotify({
         content,
+        kind: 'pdf',
+        fileBaseName: exportFileBaseName(),
+        isDark,
+        labels: markdownExportLabelsFromT(t),
       });
-      if (result === DOWNLOAD_CANCELLED) {
-        toast.info(t('agent.bubble.actionBar.exportCancelled'));
-        return;
-      }
-      notifyFileDownloadSuccess({
-        title: t('agent.bubble.actionBar.exportPdfSuccess'),
-        filePath: result,
-        openLabel: t('agent.bubble.actionBar.exportOpenFile'),
-        openErrorLabel: t('agent.bubble.actionBar.exportOpenFileError'),
-      });
-    } catch (error) {
-      logger.error('Failed to export PDF', error);
-      toast.error(t('agent.bubble.actionBar.exportPdfError'));
+    } catch {
+      // Toast already shown in shared helper.
     } finally {
       setBusyAction(null);
     }
-  }, [exportMarkdownContent, isBusy, message, t]);
+  }, [
+    canExportBody,
+    exportFileBaseName,
+    exportMarkdownContent,
+    isBusy,
+    isDark,
+    t,
+    uiDocument?.exportKind,
+  ]);
 
   return (
     <div
@@ -256,14 +321,14 @@ function MessageActionBarImpl({
       data-testid="message-action-bar"
     >
       <IconActionButton
-        label={t('agent.bubble.actionBar.copyFullAria')}
-        tooltip={t('agent.bubble.actionBar.copyFullTooltip')}
+        label={t('agent.bubble.actionBar.copyAria')}
+        tooltip={t('agent.bubble.actionBar.copyTooltip')}
         onClick={() => {
-          void handleCopy('full');
+          void handleCopyBody();
         }}
-        disabled={isBusy}
-        isBusy={busyAction === 'full'}
-        showCheck={lastCopiedMode === 'full' && busyAction !== 'full'}
+        disabled={isBusy || !canCopyBody}
+        isBusy={busyAction === 'copy'}
+        showCheck={copied && lastCopied === 'copy' && busyAction !== 'copy'}
         emphasize
         isUserTone={isUserTone}
       >
@@ -271,28 +336,14 @@ function MessageActionBarImpl({
       </IconActionButton>
 
       <IconActionButton
-        label={t('agent.bubble.actionBar.copyTextAria')}
-        tooltip={t('agent.bubble.actionBar.copyTextTooltip')}
-        onClick={() => {
-          void handleCopy('text');
-        }}
-        disabled={isBusy}
-        isBusy={busyAction === 'text'}
-        showCheck={lastCopiedMode === 'text' && busyAction !== 'text'}
-        isUserTone={isUserTone}
-      >
-        <Type className="h-3.5 w-3.5" />
-      </IconActionButton>
-
-      <IconActionButton
         label={t('agent.bubble.actionBar.copyToolsAria')}
         tooltip={t('agent.bubble.actionBar.copyToolsTooltip')}
         onClick={() => {
-          void handleCopy('tools');
+          void handleCopyTools();
         }}
         disabled={isBusy || !hasToolCalls}
         isBusy={busyAction === 'tools'}
-        showCheck={lastCopiedMode === 'tools' && busyAction !== 'tools'}
+        showCheck={copied && lastCopied === 'tools' && busyAction !== 'tools'}
         isUserTone={isUserTone}
       >
         <Braces className="h-3.5 w-3.5" />
@@ -312,7 +363,7 @@ function MessageActionBarImpl({
                     ? 'text-primary-foreground/75 hover:bg-primary-foreground/15 hover:text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
                 )}
-                disabled={isBusy}
+                disabled={isBusy || !canExportBody}
                 aria-label={t('agent.bubble.actionBar.exportAria')}
               >
                 {busyAction === 'markdown' || busyAction === 'pdf' ? (
@@ -333,18 +384,24 @@ function MessageActionBarImpl({
             onSelect={() => {
               void handleExportMarkdown();
             }}
+            disabled={!canExportBody}
           >
             <FileDown className="h-4 w-4" />
-            {t('agent.bubble.actionBar.exportMarkdown')}
+            {uiDocument?.exportKind === 'html'
+              ? t('agent.bubble.actionBar.exportHtml')
+              : t('agent.bubble.actionBar.exportMarkdown')}
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              void handleExportPdf();
-            }}
-          >
-            <Printer className="h-4 w-4" />
-            {t('agent.bubble.actionBar.exportPdf')}
-          </DropdownMenuItem>
+          {uiDocument?.exportKind === 'html' ? null : (
+            <DropdownMenuItem
+              onSelect={() => {
+                void handleExportPdf();
+              }}
+              disabled={!canExportBody}
+            >
+              <Printer className="h-4 w-4" />
+              {t('agent.bubble.actionBar.exportPdf')}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

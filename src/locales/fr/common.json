@@ -504,7 +504,9 @@
         "violet": "Iris Violet (IA)",
         "ocean": "Bleu Océan (Calme)",
         "forest": "Sauge Forêt (Concentration)"
-      }
+      },
+      "showFeatureTips": "Afficher les conseils de fonctionnalités",
+      "showFeatureTipsDescription": "Affiche les nouveautés et les cartes de conseils sur le hub de chat, et des conseils occasionnels pendant l’attente d’une réponse"
     },
     "advanced": {
       "maxRetries": "Nombre max de tentatives",
@@ -1542,27 +1544,28 @@
       "preparingPrompt": "Préparation du prompt...",
       "expandThinking": "Développer",
       "actionBar": {
-        "copyFullAria": "Copier le message complet",
-        "copyFullTooltip": "Copier le message complet (texte, réflexion, outils, pièces jointes)",
-        "copyTextAria": "Copier le texte uniquement",
-        "copyTextTooltip": "Copier uniquement le contenu texte",
+        "copyAria": "Copier",
+        "copyTooltip": "Copier le message",
         "copyToolsAria": "Copier les appels d’outils",
         "copyToolsTooltip": "Copier les appels d’outils en JSON",
         "exportAria": "Exporter le message",
         "exportTooltip": "Exporter le message",
         "exportMarkdown": "Exporter en Markdown",
         "exportPdf": "Exporter en PDF",
+        "exportHtml": "Exporter en HTML",
         "copySuccess": "Message copié dans le presse-papiers",
         "copyEmpty": "Rien à copier",
         "copyDenied": "Accès au presse-papiers refusé. Vérifiez les autorisations du navigateur.",
         "copyError": "Échec de la copie du message",
         "exportMarkdownSuccess": "Fichier Markdown téléchargé",
         "exportPdfSuccess": "Fichier PDF téléchargé",
+        "exportHtmlSuccess": "Fichier HTML téléchargé",
         "exportOpenFile": "Ouvrir",
         "exportOpenFileError": "Impossible d’ouvrir le fichier",
         "exportCancelled": "Téléchargement annulé",
         "exportError": "Échec de l’exportation du message",
-        "exportPdfError": "Échec de l’exportation PDF"
+        "exportPdfError": "Échec de l’exportation PDF",
+        "exportHtmlError": "Échec de l'exportation HTML"
       }
     },
     "start": {
@@ -1867,6 +1870,47 @@
       "scheduledTaskName": "Briefing matinal quotidien de 9h00",
       "scheduledTaskMessage": "Synthétisez les 3 principaux sujets de Hacker News et les indices majeurs (S&P 500, Nasdaq) dans un rapport de briefing matinal.",
       "testRunPrompt": "Consultez les 3 principaux articles de Hacker News et les indices boursiers actuels, puis rédigez le briefing matinal dès maintenant."
+    }
+  },
+  "spotlight": {
+    "releaseTitle": "Nouveautés de la v{{version}}",
+    "dismissAll": "Fermer",
+    "hubLabel": "Conseil",
+    "nextTip": "Conseil suivant",
+    "hide": "Masquer",
+    "waitLine": "Conseil · {{title}}",
+    "waitOpenHint": "Ouvrir : {{detail}}",
+    "items": {
+      "browserProfile": {
+        "title": "Importer les sessions de navigateur",
+        "body": "Importez des profils Chrome, Edge ou Brave dans LibrAgent pour naviguer déjà connecté. Ouvrez Paramètres → System.",
+        "cta": "Ouvrir System"
+      },
+      "starterTasks": {
+        "title": "Démarrer avec des modèles de tâches planifiées",
+        "body": "Daily Standup, veille d’actualités et d’autres automations en un clic sont prêts dans Scheduled Tasks.",
+        "cta": "Ouvrir Scheduled Tasks"
+      },
+      "visualize": {
+        "title": "Transformer CSV/Excel en graphiques",
+        "body": "Déposez une feuille de calcul dans le chat et demandez un graphique — LibrAgent visualise les données.",
+        "cta": "Démarrer un chat"
+      },
+      "thinkingEffort": {
+        "title": "Régler la profondeur de réflexion",
+        "body": "Dans Paramètres → AI & Models, ajustez Thinking Effort pour des réponses plus rapides ou plus approfondies.",
+        "cta": "Ouvrir AI & Models"
+      },
+      "knowledgeGraph": {
+        "title": "Explorer le graphe de connaissances",
+        "body": "Dans Knowledge, visualisez en réseau les concepts accumulés par l’agent.",
+        "cta": "Ouvrir Knowledge"
+      },
+      "themes": {
+        "title": "Changer de thème de couleurs",
+        "body": "Dans Paramètres → General, choisissez Neutral, Amber, Ocean, etc.",
+        "cta": "Ouvrir General"
+      }
     }
   }
 }

@@ -12,7 +12,7 @@ Analyzes `.trace.json` files produced by LibrAgent agent sessions.
 Run the bundled script against the trace file:
 
 ```powershell
-python .github/skills/trace-analyzer/scripts/trace_dump.py <path-to-.trace.json>
+python .agents/skills/trace-analyzer/scripts/trace_dump.py <path-to-.trace.json>
 ```
 
 The script outputs:

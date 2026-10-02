@@ -63,4 +63,28 @@ describe('normalizeDisplaySettings', () => {
       DEFAULT_SETTING.display,
     );
   });
+
+  it('fills missing showFeatureTips from defaults', () => {
+    const normalized = normalizeDisplaySettings({
+      metricDisplayMode: 'tooltip',
+      prefillDisplayFormat: 'tokensPerSecond',
+      showTokenSpeed: false,
+      compactMetrics: true,
+      toolDetailLevel: 'developer',
+      fontFamily: 'Inter',
+      messageLayout: 'document',
+      colorTheme: 'neutral',
+    });
+
+    expect(normalized.showFeatureTips).toBe(true);
+  });
+
+  it('preserves showFeatureTips false', () => {
+    const normalized = normalizeDisplaySettings({
+      ...DEFAULT_SETTING.display,
+      showFeatureTips: false,
+    });
+
+    expect(normalized.showFeatureTips).toBe(false);
+  });
 });

@@ -139,7 +139,7 @@ See [README.md](README.md) for detailed setup instructions.
 - **No backend response assumptions** — validate with type guards
 - **Generic functions require validator parameters**
 
-See [Type Safety Refactoring Plan](../docs/refactoring/type-safety-refactoring-plan.md) for migration guide.
+See [Type Safety Guide](docs/architecture/type-safety-guide.md) for conventions and patterns.
 
 ### Error Handling
 

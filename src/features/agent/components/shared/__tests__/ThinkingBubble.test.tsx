@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThinkingBubble } from '../ThinkingBubble';
 
 vi.mock('react-i18next', () => ({
@@ -22,6 +22,22 @@ vi.mock('react-i18next', () => ({
     },
   }),
 }));
+
+beforeEach(() => {
+  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+    save: vi.fn(),
+    restore: vi.fn(),
+    scale: vi.fn(),
+    clearRect: vi.fn(),
+    beginPath: vi.fn(),
+    arc: vi.fn(),
+    fill: vi.fn(),
+    fillStyle: '',
+    globalAlpha: 1,
+    shadowBlur: 0,
+    shadowColor: '',
+  }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+});
 
 function expandThinking() {
   fireEvent.click(screen.getByRole('button', { name: /Thinking Process/i }));
@@ -71,7 +87,9 @@ describe('ThinkingBubble', () => {
     expandThinking();
 
     expect(screen.getByText(longThinking)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Expand' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Expand' }),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps its internal scroll pinned to the bottom while streaming', () => {
@@ -182,10 +200,9 @@ describe('ThinkingBubble', () => {
     );
 
     expect(container.querySelector('.overflow-y-auto')).not.toBeNull();
-    expect(screen.getByRole('button', { name: /Thinking Process/i })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    expect(
+      screen.getByRole('button', { name: /Thinking Process/i }),
+    ).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('allows collapsing while streaming', () => {

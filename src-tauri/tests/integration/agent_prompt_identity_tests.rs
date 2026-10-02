@@ -19,6 +19,9 @@ async fn system_prompt_exposes_agent_runtime_identity() {
     assert!(prompt.contains("Agent ID (Config ID): agent-123"));
     assert!(prompt.contains("Session ID: (unknown-session)"));
     assert!(prompt.contains("## Core Execution Principles"));
+    assert!(
+        prompt.contains("Before starting work: in one or two sentences, state the user's intent")
+    );
     assert!(prompt.contains("checkable acceptance criteria"));
     assert!(prompt.contains("include that proof when reporting"));
     assert!(prompt.contains("when the request has checkable acceptance criteria"));

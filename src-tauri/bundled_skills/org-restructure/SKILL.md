@@ -9,6 +9,7 @@ Tune an existing explicit org. This is evolution, not creation and not teardown.
 
 Use `org` when the org does not exist yet or you need runtime coordination (spawn, resume, getOrg).
 Use `teamwork` when the teamwork artifact directory or constitution files do not exist yet.
+Use `postmortem-improve` when the change set comes from an after-action review (postmortem → classify → then restructure/boost/recruit).
 
 ## Path conventions
 
@@ -56,8 +57,6 @@ There is no `agent__detachFromOrg` tool today. To remove a session from org view
 
 - **Retire work:** `agent__stopSession(sessionId)` then `agent__deleteSession(sessionId)` if permanent removal is OK.
 - **Keep work, hide from org:** not supported — document the limitation and ask the user to choose stop/delete or leave the session idle.
-
-Passing `None` to `update_org_identity` exists in the backend but is not exposed as an agent tool.
 
 ## Guardrails
 

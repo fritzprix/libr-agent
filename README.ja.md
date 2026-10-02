@@ -1,220 +1,205 @@
-﻿# 🤖 LibrAgent
+<p align="center">
+  <img src="./src-tauri/icons/128x128.png" width="96" alt="LibrAgent" />
+</p>
 
-> **実際のツールを使い、並列に働き、しかも自分の管理下に置けるAIエージェントのためのローカルファーストなデスクトップアプリ。**
-> _任意のLLMを接続し、任意のMCPサーバーを追加して、エージェントにファイル読み取り、シェル実行、ウェブ操作、自動化の完遂まで任せられます。_
+# LibrAgent
+
+> **自分で動かすエージェント実行環境 — モデルを選び、ツールはワンクリック、協調パターンを選ぶ。**
+> _ベンダー製ハーネスなし。JSON 宿題なし。成果はマシン上のファイルとして残る。_
 
 [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
+[![Version](https://img.shields.io/github/v/release/fritzprix/libr-agent)](https://github.com/fritzprix/libr-agent/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
+[![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
-LibrAgentはTauri + Rust + Reactで構築された**ローカルファーストのエージェントワークスペース**です。単なるチャットUIではなく、実ファイルへのアクセス、シェル実行、ブラウザ自動化、MCP拡張性、そしてデモ一発で終わらず何時間も走り続けるマルチエージェントワークフローのために作られています。
+![ヒーローデモ — ツールはアプリのようにインストール。モデルは自分で選ぶ。成果はファイルに残る。](./assets/hero-demo-60s.gif)
 
-クラウドモデルでも、Ollamaのようなローカルランタイムでも接続できます。すでに使っているツールからMCPサーバーを取り込み、コード調査、ファイル編集、コマンド実行、ウェブ閲覧、知識蓄積、サブタスク委任をエージェントに任せてください。作業全体を他人のクラウドVMに渡す必要はありません。
-
-**ここから始める:** [最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディングへ移動](#5分オンボーディングパス) · [実世界のシナリオを見る](#実世界のシナリオ)
-
----
-
-## なぜLibrAgentなのか？
-
-多くのエージェント製品は、まだこの面倒なトレードオフを押しつけてきます。
-
-- **UIは簡単。でも実行力が弱い**
-- **自動化は強い。でも製品として粗い**
-- **クラウドは便利。でもプライバシー制御が弱い**
-- **フレームワークは柔軟。でも全部自分で組み立てる羽目になる**
-
-LibrAgentが狙っているのは、みんなが本当に欲しい中間地点です。
-
-- **ローカルファーストな制御**：ファイル、ワークスペース、セッション、ブラウザ状態を基本的に手元に残せる
-- **閉じたプラグイン路線ではなくMCPによるオープンな拡張性**
-- **シェル、ブラウザ、ワークスペース、知識ツールを横断する実行力**
-- **パワーユーザー向けの深さを失わないGUI**
-- **一人のエージェントから複数のチームへ自然に広げられる構造**
-
-### LibrAgentが対象とするユーザー
-
-- **ソロ開発者**：実際にローカルで読み書き実行・ブラウズしてコンテキストを維持するエージェントが欲しい人
-- **パワーユーザーとオペレーター**：ローカルモデル、APIプロバイダー、MCPサーバー、スケジュールワークフローから独自スタックを構築したい人
-- **研究者・アナリスト**：ブラウザ自動化、知識取得、反復可能なプレイブック、長時間セッションが必要な人
-- **プライバシー重視のチーム**：ローカル実行、明示的なガバナンス、単一エージェントから調整された組織へのパスが欲しいチーム
+[HD WebM](./assets/hero-demo-60s.webm) · _ツールはアプリのようにインストール。モデルは自分で選ぶ。成果はファイルに残る。_
 
 ---
 
-## 🎬 実行ストーリー
+## LibrAgent が違う理由
 
-**LibrAgentはチャットアプリではありません。エージェントのための実行環境です。**
+多くのエージェントハーネスは、MCP JSON を編集し、ターミナルに住み、オーケストレーションをコードで組み立てると仮定します（または単一ベンダーのスタックに閉じ込めます）。
 
-**1セッション。1つのゴール。手元に残る成果物ひとつ。**
+LibrAgent は同じ仕事のための **デスクトップ製品** です：
 
-1. モデルを接続（APIキーまたは [Ollama](https://ollama.com)）
-2. **Workspace** に実プロジェクトを接続
-3. エージェントに **読んで実行し、ファイルとして残す** よう依頼 — 吹き出しの提案で終わらせない
+| …の代わりに | 得られるもの |
+| ----------- | ------------ |
+| MCP 設定の手編集 | **Extensions** — ワンクリックプリセット（GitHub、Brave Search、Filesystem、…）と Cursor / VS Code / Claude Code / Windsurf からのインポート |
+| 「マルチエージェントがあります」 | バンドルスキルとしての **名前付き協調パターン** — `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation`、… |
+| ある提供者のモデル + ツール | **自分の** LLM（API キーまたは [Ollama](https://ollama.com)）と **自分の** MCP スタック — MIT、ローカル優先 |
 
-[最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディング](#5分オンボーディングパス) · [Hero Demo Spec](docs/contributing/hero-demo-spec.md)
-
----
-
-## 最初の10分でできること
-
-### 1. 実ツールでリポジトリをレビューする
-
-- Workspaceツールでローカルリポジトリを接続
-- GitHub MCPプリセットを追加
-- _「PR #42のセキュリティ問題を見つけて、レポートとして保存して」_ と依頼
-
-### 2. 完全ローカルなエージェントスタックを作る
-
-- `ollama pull qwen3:14b` を実行
-- Workspace + Shell を接続
-- コードをクラウドVMへ送らずに、エージェントへ読み取り、修正、テスト、反復を任せる
-
-### 3. 調査を繰り返し使えるワークフローに変える
-
-- Browser + Knowledge を追加
-- _「この競合ブログ5件を追跡して、毎朝要約して」_ と依頼
-- 単発タスクを定期パイプラインへ変換
-
-> マルチエージェント（`delegate` / `teamwork` / `org`）は**最初の成果物が動いてから**。下の「クラスター→チーム→組織」へ。
+[最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディング](#5分オンボーディングの道筋) · [ヒーローデモ仕様](docs/contributing/hero-demo-spec.md)
 
 ---
 
-## デモの後でも崩れない理由
+## 最初の 10 分でできること
 
-### 1. 🔐 ローカルファーストセキュリティ——データはあなたのマシンに
+### 1. ワンクリックツール、そして成果物
 
-LibrAgentはセキュリティをファーストクラスのアーキテクチャ上の関心事として扱います：
+- **Extensions** を開き、プリセットをインストール（例: GitHub）— JSON 不要
+- **Workspace** を実際のフォルダに向ける
+- 依頼：_"このリポジトリで新規貢献者にとって最大のリスクをレビューし、`DELIVERABLE.md` に保存して"_
 
-- **セッション分離**：エージェントセッションごとに独立したツールランタイム——クロスセッション漏洩なし
-- **パスとコマンドのガード**：パストラバーサルとコマンドインジェクションをシステム境界でブロック
-- **クラウド基盤不要**：中核となる実行はローカルで完結し、外部接続も主に選択したクラウドLLMプロバイダーやリモートMCP/HTTPサービスに限られ、加えて本番ビルドでは新しいリリースを確認する更新チェックが走ることがあります
-- **完全オフラインサポート**：[Ollama](https://ollama.com)とペアでエアギャップされたエージェントスタック
+### 2. ワンクリックワークフローレシピをデプロイ
 
-#### ローカルに留まるものと離れるもの
+- Chat ホームまたは [Scheduled Tasks](docs/user/guides/scheduled-tasks.md) から **Morning Briefing** レシピを起動
+- Hacker News + Yahoo Finance プリセットをインストールし、アシスタントを設定、毎日午前 9 時の実行をスケジュール
+- 起きると技術・市場のブリーフィングが用意されている — 無人実行
 
-- **常にローカル**：ワークスペース、ローカルファイル、バンドルスキル、セッション状態、MCPサーバー設定、ブラウザ状態、ローカルツール実行
-- **必要な時にのみ離れる**：明示的に設定したクラウドLLMプロバイダーやリモートMCP/HTTPサービスへのリクエスト、そして本番ビルドでの新しいリリース確認用アップデートチェック
-- **完全オフラインモード**：OllamaやローカルMCPサーバーでエアギャップされたワークフロー
+### 3. 協調パターンを選ぶ（フレームワーク組み立てなし）
 
-### 2. 🧩 MCPネイティブエコシステム——設計による無限の拡張性
+- 仕事の形を言うか、スキル名で添付：
+  - _"@skill:pipeline — 調査、下書き、レビューの順；最終レポートを一つ"_
+  - _"@skill:divide-conquer — 独立した断片に分けて結果をマージ"_
+- パターンは製品化されたスキルです — 自分で配線する SDK ではありません。[Sub-agents & orchestration](docs/user/guides/sub-agents.md) を参照。
 
-MCP（Model Context Protocol）は、LibrAgentの拡張性モデルを支えるオープンスタンダードです。LibrAgentはこれを機能としてではなくアーキテクチャの骨幹として扱います：
+### 4. モデルの自由を保つ
 
-- **完全なトランスポートサポート**：stdio、HTTP、SSE、OAuth 2.1——完全な仕様
-- **12以上の内蔵サーバー**：Planning、Knowledge(RAG)、Browser Automation、Workspace、Shell Execution、Content Storeなど
-- **プリセットカタログ**：GitHub、Brave Search、Filesystemなど人気サーバーをワンクリックでインストール
-- **セッション分離インスタンス**：各エージェントセッションが独立したMCPサーバー状態を持つ——並列エージェント間で干渉なし
-- **どこからでもインポート**：Cursor、VS Code、Claude Code、WindsurfからMCP設定を自動移行
-
-### 3. 🦾 プロダクショングレードの実行基盤
-
-ほとんどのAIツールはデモでは印象的ですが、プロダクションでは脆弱です。LibrAgentは長時間の実際の作業のために徹底的にエンジニアリングされています：
-
-| 基盤          | 機能                                                                                         |
-| ------------- | -------------------------------------------------------------------------------------------- |
-| **Workspace** | 行単位の精密編集、マルチファイル操作、統合検索、`@file`/`@skill`/`@playbook`コンテキスト注入 |
-| **Shell**     | 分離実行 AND 持続シェル——非同期プロセス監視(`poll`、`read output`、`list`)                   |
-| **Browser**   | Playwrightライクな操作モデルを備えたヘッドレスブラウザ自動化とキャッシュ一貫性保証           |
-| **Knowledge** | エンティティ/関係抽出(v2)、BM25全文検索付きグラフベース知識管理                              |
-
-**信頼性エンジニアリング込み**：コンテキスト圧縮、ループ防止、サーキットブレーカー、陳腐化レスポンスガードで数時間に及ぶセッションでもエージェントを生産的に保ちます。
-
-### 4. 🤝 クラスター→チーム→組織：あらゆる規模のマルチエージェント
-
-LibrAgentはソロ実行から明示的な組織調整まで一貫したマルチエージェントのストーリーを持ちます：
-
-- **`delegate`**：親エージェントが明示的系譜追跡で子セッションを生成、ブリーフィング、監視
-- **`teamwork`**：ワンコマンドで完全なタスクフォースワークスペース(agents.md、MISSION.md、KANBAN.md)をスキャフォールド
-- **`org`**：持続的組織アイデンティティ、ルートセッション再開、org-visibleメンバー階層でチームを正式化
-- **`schedule`**：CRONベースの自動化——エージェントが無人で、スケジュール通りに、ワークスペース憲法に従って実行
-- **Concurrency Gate**：並列セッションとシェルプロセスのハードリミットでデッドロックとコスト暴走を防止
-
-### 5. ⚡ バンドルスキル——空のインストールから動作するクラスターへの最速ルート
-
-LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱します。ランダムなプロンプトではなく——任意のエージェントが名前で呼び出せる再利用可能な操作手順です。
-
-最重要のday-oneスキル：
-
-| スキル           | 機能                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------------- |
-| `setup-wizard`   | すべてのプラットフォームで不足しているランタイム(Python、Node.js、uv)を検出・インストール   |
-| `tool-installer` | npm/GitHub/JSONからMCPサーバーを登録、またはCursor・VS Code・Windsurf等から設定をインポート |
-| `delegate`       | 明示的なコンテキスト転送と系譜追跡付きで親→子セッションの引き継ぎを案内                     |
-| `teamwork`       | 調整されたマルチエージェント作業のための共有ワークスペース憲法をスキャフォールド            |
-| `org`            | 持続的な組織アイデンティティとorg-visibleメンバー階層を正式化                               |
-| `schedule`       | 無人自動化のための定期スケジュールタスクグループを作成・管理                                |
-| `soul-awakening` | エージェントを`SOUL.md`ペルソナに固定——トーン、スタンス、アイデンティティ                   |
-
-これはオペレーターレイヤーだけです。LibrAgentはドメインスキルも提供します：
-
-- **知識と研究**：`deep-research`、`knowledge-distiller`
-- **ドキュメントとワークスペースコンテンツ**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`data-viz`
-- **開発者ワークフロー**：`git-workflow`, `bench`
-- **ワークスペースオンボーディング**：`agent-init`
-- **調整とアシスタント**：`consensus-delegation`、`loop`、`call-me-back`、`context-recall`、`recruit`、`boost`
-- **外部連携**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
-- **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`tool-creator`、`fine-tune`
-- **特殊操作**：`computer-diagnosis`
-
-_重要：`bootstrap`はこれらのスキルと並行して使用される内蔵機能です。バンドルスキルは再利用可能な手順であり、内蔵機能とMCPツールはその下の実行基盤です。_
+- クラウド：OpenAI / Anthropic / Gemini / Groq API キーを貼る
+- ローカル：`ollama pull qwen3:14b` して Ollama を選択 — ハーネスは同じ
 
 ---
 
-## 🌍 実世界のシナリオ
+## 三つの製品約束
 
-### ソロ開発者——自動コードレビュー
+1. **ハーネス宿題なしで表面に立つ** — GUI、Extensions ワンクリック、レシピ、アプリ内承認、`@skill:` — 「まず設定とシェルを開け」ではない。
+2. **オーケストレーションを製品として** — スキルで Sequential / Hub-and-spoke / Swarm 風フローを選択；耐久チームや cron が必要なら `teamwork` → `org` と `schedule` へ — それでも LangGraph/CrewAI を自分で組まない。
+3. **プロバイダとスタックの自由** — 対応 LLM どれでも、MCP をインフラとして、既存 IDE MCP 設定のインポート、MIT、デフォルトでローカルワークスペースとブラウザ状態。
 
-1. WorkspaceツールでローカルリポジトリをConnect
-2. GitHub MCPプリセットをインストール（ワンクリック）
-3. 依頼：_「PR #42のセキュリティ問題を見つけてMarkdownレポートを作成」_
-4. エージェントがコードを読み、分析を実行し、発見事項をKnowledgeサーバーに保存
-
-### マーケター——競合情報をオートパイロットに
-
-1. Browserツールで5つの競合ブログを設定
-2. エージェントに伝える：_「毎朝7時に競合ブリーフを予約して」_——エージェントが`schedule`スキルで定期タスクグループを設定
-3. エージェントがブラウズ、要約し、Knowledge storeに追記
-4. いつでも聞く：_「先週の競合の動向を要約して」_
-
-### エンジニアリングチーム——オフラインエージェントスタック
-
-1. `ollama pull qwen3:14b`——APIキー不要、クラウド不要
-2. Workspace + ShellツールをコードベースにConnect
-3. 機密IPがマシンから外に出ない
-4. エージェントが読み、修正し、テストし、コミット——完全ローカル
-
-### パワーユーザー——マルチエージェント研究パイプライン
-
-1. `teamwork`でリサーチタスクフォースをスキャフォールド（役割、MISSION.md、KANBAN.md）
-2. オーケストレーターが`delegate`スキルで並列委任
-3. 結果がContent Storeの単一構造化レポートにマージ
-4. `schedule`でワークフロー全体を週次予約
+**最適：** JSON なしでハーネスの深さを欲するオペレーターとパワーユーザー；単一ベンダーのエージェントスタックを拒否する開発者；ブラウザ + 知識 + スケジュールを一製品で要する研究者。
 
 ---
 
-## 📖 ドキュメントとガイド
+## 協調パターン（バンドルスキル）
 
-- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)**：60秒プロダクトストーリーと EN/KO/ZH 字幕。
-- **[ナビゲーションガイド](docs/guides/navigation-guide.md)**：Command & Controlハブ——`/assistants`(ロール定義)と`/playbooks`(ワークフロー設計図)。
-- **[アーキテクチャガイド](docs/architecture/agent-workflow-architecture.md)**：セッション分離、オーケストレーションエンジン、RustドリブンのThink-Act-Observeループ。
-- **[内蔵ツールガイド](docs/guides/builtin_tool_bp.md)**：ツール設計標準とMCPレスポンスパターン。
+**仕事の形** からモデルを選び、チャットから実行します：
+
+| スキル | パターン | 使うとき |
+| ------ | -------- | -------- |
+| `pipeline` | 順次ステージ | 出力が次の入力になる（調査 → 下書き → レビュー） |
+| `hub-spoke` | ハブアンドスポーク | 一人のコーディネータが多数のワーカーを統合 |
+| `divide-conquer` | 並列分割 | 独立した断片、その後マージ |
+| `consensus-delegation` | 多視点 | 同じ質問を複数の専門家へ、その後調整 |
+| `gatekeeper` / `pair-programming` | レビューループ | 厳格レビューまたは二人エージェントのコーディング |
+| `delegate` | 軽量ハンドオフ | 子セッション一つ、系譜を追跡 |
+| `teamwork` → `org` | 耐久チーム | 共有憲章 + Org UI |
+| `schedule` / `loop` / `call-me-back` | 時間とイベント | Cron、セッション内遅延、またはプロセス/webhook で再開 |
+
+選択ヒューリスティック：[framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 完全ガイド：[Sub-agents](docs/user/guides/sub-agents.md)。
+
+その他のデイワンスキル：`setup-wizard`、`tool-installer`、`playbook-creator` など — **[Bundled Skills](docs/user/guides/skills.md)**。
 
 ---
 
-## 📦 はじめに
+## MCP プラットフォーム（パワーユーザーにも耐える）
 
-**[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
+- トランスポート：stdio、HTTP、SSE、OAuth 2.1
+- 15+ 組み込みサーバー（Workspace、Shell、Browser、Knowledge、Planning、Scheduled Tasks、…）
+- ワンクリックプリセット + エージェント支援インストール（`tool-installer`）
+- セッションごとのツール分離；パス/コマンドガード；自動化向け YOLO / unsafe モード
+
+### 実行基盤
+
+| 基盤 | 能力 |
+| ---- | ---- |
+| **Workspace** | 行単位の精密編集、マルチファイル操作、`@file` / `@skill` / `@playbook` コンテキスト |
+| **Shell** | 隔離・永続シェルと非同期プロセス監視 |
+| **Browser** | 隔離ブラウザサイドカー；任意の保存ログインプロファイル |
+| **Knowledge** | グラフ知識 + BM25 検索 |
+| **Export** | Markdown レポートと ATIF 軌跡エクスポート（[session export](docs/user/guides/session-export.md)） |
+
+長いセッションはコンテキスト圧縮、ループ防止、サーキットブレーカー、stale-response ガードで生産性を保ちます。
+
+---
+
+## 実世界のシナリオ
+
+### オペレーター — 空のアプリから毎日のブリーフィングへ
+
+1. **Morning Briefing** レシピを実行（プリセット + アシスタント + 午前 9 時スケジュール）
+2. **Run now** を一度クリックして確認
+3. 放置 — ターミナルを開かずにレポートが届く
+
+### ソロ開発者 — 設定ファイルではなくプリセット
+
+1. Extensions → GitHub MCP プリセットをインストール
+2. Workspace でローカルリポジトリを接続
+3. ディスクに残る Markdown のセキュリティ/レビューレポートを依頼
+
+### フレームワークなしのパワーユーザー — 名前付きオーケストレーション
+
+1. 仕事の形に `@skill:pipeline`（または `hub-spoke` / `divide-conquer`）
+2. エージェントがそのパターンで協調
+3. ワークスペースにマージされた成果物一つ — 維持すべきオーケストレーションライブラリなし
+
+### プライバシー重視チーム — 同じ製品、ローカルモデル
+
+1. `ollama pull qwen3:14b`
+2. Workspace + Shell はマシン上に留まる
+3. 後からクラウドキーに切り替えても — ハーネスがベンダーを強制しない
+
+---
+
+## ドキュメント
+
+- **[User Guide](docs/user/README.md)** — インストール、最初のチャット、モデル、スキル（[docs site](https://fritzprix.github.io/libr-agent/)）
+- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)** — 正規の製品デモ（EN/KO/ZH 字幕）
+- **[Product Messaging Guide](docs/contributing/product-messaging-guide.md)** — ポジショニングとコピー
+- **[Recipes](docs/user/guides/recipes.md)** · **[Scheduled Tasks](docs/user/guides/scheduled-tasks.md)** · **[Sub-agents](docs/user/guides/sub-agents.md)** · **[Skills](docs/user/guides/skills.md)**
+- **[HTTP API](docs/api/http_api.md)** — リモート制御とプログラマティック承認
+- **[Architecture](docs/architecture/agent-workflow-architecture.md)** — セッション分離と Think-Act-Observe
+
+---
+
+## はじめに
+
+**[Releases ページ](https://github.com/fritzprix/libr-agent/releases/latest)** から最新インストーラーをダウンロードしてください。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.20_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_x64-setup.exe) · [`LibrAgent_0.9.20_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.20_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.20_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_amd64.AppImage) · [`LibrAgent_0.9.20_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent_0.9.20_amd64.deb) · [`LibrAgent-0.9.20-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.20/LibrAgent-0.9.20-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.20)
+- **Windows:** [`LibrAgent_0.9.22_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_x64-setup.exe) · [`LibrAgent_0.9.22_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.22_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.22_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_amd64.AppImage) · [`LibrAgent_0.9.22_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_amd64.deb) · [`LibrAgent-0.9.22-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent-0.9.22-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.22)
 <!-- RELEASE_DOWNLOADS_END -->
 
-**開発者セットアップ：**
+### 5分オンボーディングの道筋
+
+**ステップ 1 — モデルを接続**（Settings → LLM Providers）
+
+- クラウド：OpenAI / Anthropic / Gemini / Groq API キーを貼る
+- ローカル：`ollama pull qwen3:14b`、その後 Settings で Ollama を選択
+
+**ステップ 2 — JSON なしでツールを追加**
+
+- Extensions → プリセットをインストール（例: GitHub）、**または**
+- エージェントに：_"Cursor から MCP サーバーをインポートして"_
+
+**ステップ 3 — ワークスペースを接続し、残すファイルを依頼**
+
+- Workspace を実際のプロジェクトフォルダに
+- _"このワークスペースをレビューし、発見を `DELIVERABLE.md` に書いて。"_
+
+**次に — 協調と自動化**
+
+- _"@skill:pipeline — 調査、下書き、レビュー；最終レポート一つ。"_
+- _"このリポジトリ用の teamwork ワークスペースを準備して。"_
+- _"毎朝 7 時の競合ブリーフをスケジュールして。"_（または Morning Briefing レシピ）
+
+### コピー＆ペースト用の最初のプロンプト
+
+- _"Cursor から MCP サーバーをインポートし、何が追加されたか見せて。"_
+- _"GitHub MCP プリセットをインストールし、コーディングエージェントに付けて。"_
+- _"このワークスペースをレビューし、発見を `DELIVERABLE.md` に書いて。"_
+- _"@skill:pipeline — このトピックを調査し、要約を下書きし、レビュー；最終レポートを保存。"_
+- _"毎朝 7 時の競合ブリーフをスケジュールして。"_
+
+### 開発者セットアップ
 
 ```bash
 git clone https://github.com/fritzprix/libr-agent
@@ -223,75 +208,39 @@ pnpm install
 pnpm tauri dev
 ```
 
-### 5分オンボーディングパス
+---
 
-**ステップ1——モデルを接続** (Settings → LLM Providers)
+## LibrAgent が最も合う場所
 
-- クラウド：OpenAI / Anthropic / Gemini / Groq APIキーを貼り付け
-- ローカル：`ollama pull qwen3:14b`後にSettingsでOllamaを選択
-
-**ステップ2——MCPツールを追加** (Extensionsサイドバー)
-
-- プリセットカタログを閲覧してInstallをクリック、または
-- エージェントに：_「Install @modelcontextprotocol/server-everything」_ → `tool-installer`が自動登録
-- CursorやVS Codeを使用中？任意のエージェントに：_「CursorからMCPサーバーをインポートして」_ → `tool-installer`が対応
-
-**ステップ3——最初のエージェントを作成**
-
-- _「競合情報のためのresearcherエージェントを作成して」_ → Assistants設定で作成
-- _「現在のツールでresearchチームを構築して」_ → `teamwork`が役割と共有ワークスペースをスキャフォールド
-- _「並列リサーチサブタスクを実行して」_ → `delegate`が子セッションを生成・監視
-
-**ステップ4——`delegate`で並列作業**
-
-- 任意のエージェントに子セッションへのサブタスク委任を依頼
-- `delegate`スキルがコンテキスト引き継ぎ、系譜追跡、結果マージを管理
-
-**ステップ5——持続的チームを構築**
-
-- `teamwork` → `agents.md`、`MISSION.md`、`KANBAN.md`で共有ワークスペースをスキャフォールド
-- `org` → 持続的アイデンティティとorg-rootセッション管理でチームを正式化
-- `schedule` → 無人CRONベースの自動化をエージェントが作成・管理
-
-### コピーペーストできる最初のプロンプト
-
-- _「CursorからMCPサーバーをインポートして何が追加されたか見せて。」_
-- _「現在のツールで競合情報のためのresearcherエージェントを作成して。」_
-- _「GitHub MCPプリセットをインストールしてcodingエージェントに接続して。」_
-- _「リポジトリ分析を子セッションに委任して要約を返して。」_
-- _「このリポジトリのteamworkワークスペースを準備して、org-readyなspecialistチームを作成して。」_
-- _「毎朝7時に予約された日次競合ブリーフを設定して、shared teamworkワークスペースに保持して。」_
+| 欲しいもの | LibrAgent が強い理由 |
+| ---------- | -------------------- |
+| **ハーネスの深さ、宿題なし** | Extensions プリセット、レシピ、`@skill:` パターン、承認 — JSON 優先のオンボーディングではない |
+| **フレームワークを組み立てないオーケストレーション** | `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation`、`teamwork` / `org`、`schedule` が製品として提供 |
+| **ベンダーエージェントスタックからの自由** | モデルと MCP ツールは自分で；MIT；デフォルトでローカル優先 |
+| **本物の実行基盤** | Workspace、shell、browser、knowledge、playbooks、長時間セッションガード |
+| **MCP ネイティブなデスクトップ製品** | プリセット、インポート、15+ 組み込み — 薄いチャットラッパーではない |
 
 ---
 
-## LibrAgentが特にハマるケース
+## 設計思想
 
-| こういうものが欲しいなら…                                    | LibrAgentが強い理由                                                             |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| **ローカルAIワークステーション**                             | ファイル、セッション、ワークスペース、ブラウザ状態が基本的に自分のマシンに残る  |
-| **MCPネイティブなデスクトップ製品**                          | 薄いラッパーではなく、MCPサーバーの導入・インポート・管理まで製品内で完結できる |
-| **本当に仕事を進めるエージェント**                           | Workspace、Shell、Browser、Knowledge が長時間実行を前提に設計されている         |
-| **先にフレームワークを組まなくていいマルチエージェント運用** | `delegate`、`teamwork`、`org`、`schedule` がすでに製品に入っている              |
-| **GUIの使いやすさとパワーユーザーの深さの両立**              | デスクトップUIを使いながら拡張性と制御力を失わない                              |
-
----
-
-## 設計哲学
-
-- **ローカルファースト**：データ、キー、エージェントの「魂」はあなたの完全な管理下に。クラウド基盤不要。
-- **ハーネス優先**：実行環境——ツール、セッション状態、委任、ガバナンス——が個々のモデルより重要。LibrAgentはどのモデルでも最大限のパフォーマンスを発揮できるようエンジニアリング。
-- **安定性優先**：CHANGELOGはランタイムの正確性への強迫的なフォーカスを反映——セッション分離、圧縮、ループ防止、陳腐化レスポンスガード。
-- **インフラとしてのMCP**：プラグインシステムではなく。ツールエコシステム全体がMCPを主要な相互運用性レイヤーとして構成。
-- **オープンスタンダード**：MITライセンス。MCP、オープンソースの相互運用性、ユーザーデータ主権に完全にコミット。
+- **キットより製品**：組み立てなくてもハーネスが使える。
+- **オーケストレーションはスキル**：協調パターンは名前があり、選択可能で文書化されている — サンプルリポジトリに埋まっていない。
+- **スタックの自由**：モデルとツールはユーザーの選択；製品は特定の AI ベンダーを要求しない。
+- **ローカル優先**：ワークスペース、セッション、スキル、ブラウザ状態はあなたの管理下。クラウド LLM / リモート MCP はオプトイン時のみ。
+- **モデルよりハーネス**：ツール、セッション状態、委譲、ガバナンスが単一モデルより重要。
+- **機能より安定**：分離、圧縮、ループ防止 — 機能追いの前に。
+- **オープンスタンダード**：MIT。相互運用レイヤーとしての MCP。
 
 ---
 
 ## 貢献とライセンス
 
-LibrAgentはMITライセンスで公開されたオープンソースです。バンドルスキル、MCP統合、バグ修正、アーキテクチャ改善など、あらゆる貢献を歓迎します。
+LibrAgent は MIT ライセンスでオープンに構築されています。バンドルスキル、MCP 統合、バグ修正、アーキテクチャ改善を歓迎します。
 
-- 📖 [貢献ガイド](CONTRIBUTING.md)
-- 🐛 [イシュートラッカー](https://github.com/fritzprix/libr-agent/issues)
-- 💬 [ディスカッション](https://github.com/fritzprix/libr-agent/discussions)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
+- [Discussions](https://github.com/fritzprix/libr-agent/discussions)
+- ベンチマーク（Harbor / Terminal-Bench）：[Harbor guide](benchmarks/harbor/README.md) を参照（`pnpm bench:diverse`、`pnpm bench:terminal`、…）
 
-**ライセンス**: MIT
+**License**: MIT

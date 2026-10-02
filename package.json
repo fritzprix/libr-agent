@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.9.20",
+  "version": "0.9.22",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
@@ -21,10 +21,10 @@
     "shareable-config"
   ],
   "type": "module",
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@12.8.1",
   "engines": {
     "node": ">=20",
-    "pnpm": "9.15.9"
+    "pnpm": "12.8.1"
   },
   "scripts": {
     "dev": "node scripts/sync-builtin-services.cjs && node scripts/sync-execution-mode.cjs && vite",
@@ -102,11 +102,6 @@
     "xbench:harbor:all": "node scripts/run-harbor-bench.cjs --agent hermes --preset harbor-index",
     "bench:hermes:registry": "node scripts/run-harbor-bench.cjs --agent hermes --preset dataset"
   },
-  "pnpm": {
-    "overrides": {
-      "punycode": "^2.3.1"
-    }
-  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.64.0",
     "@cerebras/cerebras_cloud_sdk": "^1.64.1",
@@ -144,6 +139,7 @@
     "immer": "^10.1.1",
     "katex": "^0.16.27",
     "lucide-react": "^0.526.0",
+    "mermaid": "^11.17.2",
     "next-themes": "^0.4.6",
     "ollama": "^0.6.3",
     "openai": "^5.9.0",

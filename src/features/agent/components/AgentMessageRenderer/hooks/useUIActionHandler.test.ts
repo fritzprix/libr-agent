@@ -9,6 +9,8 @@ const {
   executeUiTauriActionMock,
   handleUserToolCallMock,
   openExternalUrlMock,
+  exportMarkdownDocumentWithNotifyMock,
+  toastErrorMock,
   loggerInfoMock,
   loggerWarnMock,
   loggerErrorMock,
@@ -18,6 +20,8 @@ const {
   executeUiTauriActionMock: vi.fn(),
   handleUserToolCallMock: vi.fn(),
   openExternalUrlMock: vi.fn(),
+  exportMarkdownDocumentWithNotifyMock: vi.fn(),
+  toastErrorMock: vi.fn(),
   loggerInfoMock: vi.fn(),
   loggerWarnMock: vi.fn(),
   loggerErrorMock: vi.fn(),
@@ -54,6 +58,35 @@ vi.mock('@/lib/backend', () => ({
   handleUserToolCall: handleUserToolCallMock,
 }));
 
+vi.mock('@/hooks/use-is-dark-mode', () => ({
+  useIsDarkMode: () => true,
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: toastErrorMock,
+    info: vi.fn(),
+    success: vi.fn(),
+  },
+}));
+
+vi.mock('@/features/agent/lib/markdown-document-export', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('@/features/agent/lib/markdown-document-export')
+    >();
+  return {
+    ...actual,
+    exportMarkdownDocumentWithNotify: exportMarkdownDocumentWithNotifyMock,
+  };
+});
+
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
     info: loggerInfoMock,
@@ -73,10 +106,110 @@ describe('useUIActionHandler', () => {
     executeUiTauriActionMock.mockReset();
     handleUserToolCallMock.mockReset();
     openExternalUrlMock.mockReset();
+    exportMarkdownDocumentWithNotifyMock.mockReset();
+    exportMarkdownDocumentWithNotifyMock.mockResolvedValue(undefined);
+    toastErrorMock.mockReset();
     loggerInfoMock.mockReset();
     loggerWarnMock.mockReset();
     loggerErrorMock.mockReset();
     loggerDebugMock.mockReset();
+  });
+
+  it('exports markdown via frontend helper without tauri routing', async () => {
+    const contentRef = {
+      current: [] as MCPContent[],
+    };
+
+    const { result } = renderHook(() => useUIActionHandler(contentRef));
+
+    const action: UIActionResult = {
+      type: 'tool',
+      payload: {
+        toolName: 'tauri:exportMarkdownFile',
+        params: {
+          content: '# Hello\n',
+          fileBaseName: 'note',
+        },
+      },
+    };
+
+    await expect(result.current(action)).resolves.toEqual({
+      status: 'tauri-processed',
+      message: 'UI export executed: tauri:exportMarkdownFile',
+    });
+
+    expect(exportMarkdownDocumentWithNotifyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: '# Hello\n',
+        kind: 'markdown',
+        fileBaseName: 'note',
+        isDark: true,
+      }),
+    );
+    expect(executeUiTauriActionMock).not.toHaveBeenCalled();
+  });
+
+  it('exports PDF via frontend helper with preprocess path', async () => {
+    const contentRef = {
+      current: [] as MCPContent[],
+    };
+
+    const { result } = renderHook(() => useUIActionHandler(contentRef));
+
+    const action: UIActionResult = {
+      type: 'tool',
+      payload: {
+        toolName: 'tauri:exportMarkdownPdf',
+        params: {
+          content: '```mermaid\nA-->B\n```\n',
+          fileBaseName: 'diagram',
+        },
+      },
+    };
+
+    await expect(result.current(action)).resolves.toEqual({
+      status: 'tauri-processed',
+      message: 'UI export executed: tauri:exportMarkdownPdf',
+    });
+
+    expect(exportMarkdownDocumentWithNotifyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'pdf',
+        fileBaseName: 'diagram',
+        isDark: true,
+      }),
+    );
+    expect(executeUiTauriActionMock).not.toHaveBeenCalled();
+  });
+
+  it('skips empty markdown export without calling the helper', async () => {
+    const contentRef = {
+      current: [] as MCPContent[],
+    };
+
+    const { result } = renderHook(() => useUIActionHandler(contentRef));
+
+    const action: UIActionResult = {
+      type: 'tool',
+      payload: {
+        toolName: 'tauri:exportMarkdownFile',
+        params: {
+          content: '   ',
+          fileBaseName: 'empty',
+        },
+      },
+    };
+
+    await expect(result.current(action)).resolves.toEqual({
+      status: 'tauri-processed',
+      message: 'UI export skipped (empty): tauri:exportMarkdownFile',
+    });
+
+    expect(exportMarkdownDocumentWithNotifyMock).not.toHaveBeenCalled();
+    expect(executeUiTauriActionMock).not.toHaveBeenCalled();
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      'agent.bubble.actionBar.copyEmpty',
+    );
   });
 
   it('routes tauri tool actions through the backend command path', async () => {

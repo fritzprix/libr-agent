@@ -124,6 +124,12 @@ Use this for short-lived reasoning, unresolved questions, or cross-role notes th
 
 Do not dump final decisions here. Promote durable conclusions into `DECISIONS.md`.
 
+## `coordination/LESSONS.md` and `coordination/POSTMORTEMS/`
+
+Optional but recommended for long-lived orgs. Index one-line lessons in `LESSONS.md`; keep full after-action writeups under `POSTMORTEMS/`.
+
+Owned by the **postmortem-improve** skill. Do not invent a parallel learning store outside the teamwork artifact directory.
+
 ## `.libragent/teamwork.json`
 
 This manifest should expose the execution contract in machine-readable form.

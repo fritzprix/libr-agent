@@ -27,6 +27,9 @@ vi.mock('@/hooks/use-settings', () => ({
   useSettings: () => ({
     value: {
       toolCallGroupVisibleCount: 4,
+      display: {
+        showFeatureTips: false,
+      },
     },
     update: vi.fn(),
     isLoading: false,

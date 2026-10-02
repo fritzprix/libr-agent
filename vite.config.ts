@@ -30,7 +30,18 @@ export default defineConfig(() => ({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Prebundled ESM avoids vite-plugin-wasm / top-level-await breaking d3-color
+      // (TypeError: Cannot set properties of undefined (setting 'prototype')).
+      // See: https://github.com/mermaid-js/mermaid/issues/5453
+      mermaid: path.resolve(
+        __dirname,
+        'node_modules/mermaid/dist/mermaid.esm.min.mjs',
+      ),
     },
+  },
+
+  optimizeDeps: {
+    include: ['mermaid'],
   },
 
   // Define global constants

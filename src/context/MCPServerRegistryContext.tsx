@@ -37,7 +37,8 @@ export interface MCPServerRegistryContextType {
   deleteServer: (id: string) => Promise<void>;
   toggleActive: (id: string, active: boolean) => Promise<void>;
   ensureLoaded: () => Promise<void>;
-  refreshAll: () => Promise<void>;
+  /** Reload from service and return the authoritative server list (does not wait on React state). */
+  refreshAll: () => Promise<MCPServerEntity[]>;
 }
 
 export const MCPServerRegistryContext = createContext<
@@ -76,7 +77,7 @@ export const MCPServerRegistryProvider = ({
   // Use ref to avoid stale closures in event handlers
   const allServersRef = useRef<MCPServerEntity[]>([]);
   const hasLoadedRef = useRef(false);
-  const refreshRequestRef = useRef<Promise<void> | null>(null);
+  const refreshRequestRef = useRef<Promise<MCPServerEntity[]> | null>(null);
   const serviceKeyRef = useRef(settings.agentHubUrl);
 
   if (settings.agentHubUrl !== prevAgentHubUrl) {
@@ -100,33 +101,36 @@ export const MCPServerRegistryProvider = ({
    * Loads all MCP servers from the database
    * This provides the full list for filtering and reference
    */
-  const refreshAll = useCallback(async () => {
+  const refreshAll = useCallback(async (): Promise<MCPServerEntity[]> => {
     if (refreshRequestRef.current) {
-      await refreshRequestRef.current;
-      return;
+      return refreshRequestRef.current;
     }
 
     const requestServiceKey = serviceKeyRef.current;
-    let request: Promise<void> | undefined;
-    request = (async () => {
+    let request: Promise<MCPServerEntity[]> | undefined;
+    request = (async (): Promise<MCPServerEntity[]> => {
       setLoading(true);
       try {
         const servers = await mcpServerService.getAll();
         if (serviceKeyRef.current !== requestServiceKey) {
-          return;
+          return [];
         }
+        // Keep ref in sync immediately so async callers don't wait on a React render.
+        allServersRef.current = servers;
         setAllServers(servers);
         hasLoadedRef.current = true;
         setLoaded(true);
         setError(undefined);
         logger.debug(`Loaded ${servers.length} MCP servers from service`);
+        return servers;
       } catch (err) {
         if (serviceKeyRef.current !== requestServiceKey) {
-          return;
+          return [];
         }
         const message = err instanceof Error ? err.message : 'Unknown error';
         logger.error('Failed to load all MCP servers', err);
         setError(message);
+        return [];
       } finally {
         if (serviceKeyRef.current === requestServiceKey) {
           setLoading(false);
@@ -138,7 +142,7 @@ export const MCPServerRegistryProvider = ({
     })();
 
     refreshRequestRef.current = request;
-    await request;
+    return request;
   }, [mcpServerService]);
 
   const ensureLoaded = useCallback(async () => {

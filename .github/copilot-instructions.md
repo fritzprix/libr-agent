@@ -405,7 +405,7 @@ When encountering type safety issues:
 4. **Document exceptions** - If cast is truly necessary, document why
 5. **Add tests** - Ensure validation catches invalid data
 
-See [Type Safety Refactoring Plan](../../docs/refactoring/type-safety-refactoring-plan.md) for detailed migration guide.
+See [Type Safety Guide](../docs/architecture/type-safety-guide.md) for conventions and patterns.
 
 #### 🎯 Acceptable `unknown` Usage
 
@@ -1015,7 +1015,7 @@ When refactoring or implementing new features, adhere to these fundamental softw
 - Extract common patterns into `src/lib/` or `src-tauri/src/utils/`
 - Use Rust traits and TypeScript interfaces for abstraction
 - Test utilities independently from business logic
-- Document design decisions in `docs/refactoring/`
+- Document lasting design decisions under `docs/architecture/` (or `docs/contributing/` for process/messaging)
 
 ### Critical Development Patterns
 
@@ -1121,7 +1121,7 @@ When refactoring or implementing new features, adhere to these fundamental softw
 - [UI Resource Implementation](../docs/guides/ui-resource-implementation.md) - Interactive HTML interfaces
 - [External MCP Integration](../docs/architecture/external-mcp-integration.md) - Session isolation architecture
 - [Workspace Tool Critique](../docs/analysis/workspace-tool-critique.md) - Implementation patterns
-- [Type Safety Refactoring](../docs/refactoring/) - Migration guides and plans
+- [Type Safety Guide](../docs/architecture/type-safety-guide.md) - Type-safety conventions and patterns
 
 ## Vibe
 

@@ -4,6 +4,7 @@ pub mod database;
 pub mod database_backup;
 pub mod database_error;
 pub mod frontend_ready;
+pub mod llm_env_seed;
 pub mod migration_verifier;
 pub mod repositories;
 pub mod retry_utils;
@@ -108,6 +109,11 @@ pub fn run_with_sqlite_sync(db_url: String) {
             "init_repositories",
             Some(repos_start.elapsed().as_millis()),
         );
+
+        // Seed preferred LLM provider from env (demo profile / CI / first-run).
+        let seed_start = std::time::Instant::now();
+        llm_env_seed::seed_llm_settings_from_env().await;
+        crate::state::log_startup_phase("llm_env_seed", Some(seed_start.elapsed().as_millis()));
 
         // Global MCPServerManager initialization is intentionally skipped.
         // Session-isolated MCP architecture uses MCPServiceProxyManager initialized in repositories.

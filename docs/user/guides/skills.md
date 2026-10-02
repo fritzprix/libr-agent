@@ -136,7 +136,7 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 ### 조사·문서
 
-`deep-research`, `knowledge-distiller`, `to-md`, `docx`, `pptx`, `data-viz`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+`deep-research`, `knowledge-distiller`, `to-md`, `docx`, `pptx`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
 
 ### 개발·연동·제작
 

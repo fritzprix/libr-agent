@@ -32,7 +32,7 @@ The Pair Programming pattern binds two sessions to a shared workspace (`workspac
 3. **Assign Roles**: Allocate the Driver role to a code-generation model and the Navigator role to an analysis-focused model.
 4. **Turn-based Interaction**:
    - The Driver implements a section of code and writes a summary of the edits for the Navigator.
-   - The Navigator runs `view_file` or `git diff` on the workspace, checks for issues, and sends feedback/next instructions to the Driver.
+   - The Navigator runs `workspace__readFile` or `git diff` on the workspace, checks for issues, and sends feedback/next instructions to the Driver.
 5. **Role Rotation**: Swap roles when moving between tasks (e.g., swapping to write test suites). See [role-rotation.md](references/role-rotation.md).
 6. **Validation**: Run the final project test pipeline to verify correctness.
 

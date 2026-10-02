@@ -504,7 +504,9 @@
         "violet": "아이리스 바이올렛 (AI)",
         "ocean": "오션 블루 (차분함)",
         "forest": "포레스트 세이지 (집중)"
-      }
+      },
+      "showFeatureTips": "기능 팁 표시",
+      "showFeatureTipsDescription": "설정이 끝난 뒤 채팅 허브에 What's New와 팁 카드를 표시하고, 응답 대기 중에도 팁을 보여 줍니다"
     },
     "advanced": {
       "maxRetries": "최대 재시도 횟수",
@@ -1585,27 +1587,28 @@
       "preparingPrompt": "프롬프트 준비 중...",
       "expandThinking": "펼치기",
       "actionBar": {
-        "copyFullAria": "전체 메시지 복사",
-        "copyFullTooltip": "전체 메시지 복사 (텍스트, 생각, 도구, 첨부파일)",
-        "copyTextAria": "텍스트만 복사",
-        "copyTextTooltip": "텍스트 내용만 복사",
+        "copyAria": "복사",
+        "copyTooltip": "메시지 복사",
         "copyToolsAria": "도구 호출 복사",
         "copyToolsTooltip": "도구 호출을 JSON으로 복사",
         "exportAria": "메시지 내보내기",
         "exportTooltip": "메시지 내보내기",
         "exportMarkdown": "Markdown으로 내보내기",
         "exportPdf": "PDF로 내보내기",
+        "exportHtml": "HTML로 내보내기",
         "copySuccess": "메시지를 클립보드에 복사했습니다",
         "copyEmpty": "복사할 내용이 없습니다",
         "copyDenied": "클립보드 접근이 거부되었습니다. 브라우저 권한을 확인하세요.",
         "copyError": "메시지 복사에 실패했습니다",
         "exportMarkdownSuccess": "Markdown 파일을 다운로드했습니다",
         "exportPdfSuccess": "PDF 파일을 다운로드했습니다",
+        "exportHtmlSuccess": "HTML 파일이 다운로드되었습니다",
         "exportOpenFile": "열기",
         "exportOpenFileError": "파일을 열지 못했습니다",
         "exportCancelled": "다운로드가 취소되었습니다",
         "exportError": "메시지 내보내기에 실패했습니다",
-        "exportPdfError": "PDF 내보내기에 실패했습니다"
+        "exportPdfError": "PDF 내보내기에 실패했습니다",
+        "exportHtmlError": "HTML 내보내기에 실패했습니다"
       }
     },
     "start": {
@@ -1910,6 +1913,47 @@
       "scheduledTaskName": "매일 아침 9시 모닝 브리핑",
       "scheduledTaskMessage": "오늘의 Hacker News 주요 인기 글 3개와 S&P 500, 나스닥 등 핵심 금융 지표를 종합하여 오늘의 모닝 브리핑 리포트를 작성해줘.",
       "testRunPrompt": "오늘자 Hacker News 상위 인기 글 3개와 주요 주가지수를 확인하고 지금 바로 모닝 브리핑을 작성해줘."
+    }
+  },
+  "spotlight": {
+    "releaseTitle": "v{{version}} 새 기능",
+    "dismissAll": "닫기",
+    "hubLabel": "팁",
+    "nextTip": "다른 팁",
+    "hide": "숨기기",
+    "waitLine": "팁 · {{title}}",
+    "waitOpenHint": "열기: {{detail}}",
+    "items": {
+      "browserProfile": {
+        "title": "브라우저 로그인을 가져올 수 있어요",
+        "body": "Chrome/Edge/Brave 프로필을 LibrAgent로 가져와 AI가 로그인된 상태로 브라우징할 수 있어요. 설정 → System에서 확인하세요.",
+        "cta": "System 설정 열기"
+      },
+      "starterTasks": {
+        "title": "예약 작업 템플릿으로 시작해요",
+        "body": "Daily Standup, 뉴스 모니터링 등 원클릭 자동화 템플릿이 Scheduled Tasks에 준비되어 있어요.",
+        "cta": "Scheduled Tasks 열기"
+      },
+      "visualize": {
+        "title": "CSV/Excel로 차트를 만들어요",
+        "body": "스프레드시트를 채팅에 올리고 차트를 요청하면 데이터 시각화를 도와줘요.",
+        "cta": "채팅 시작하기"
+      },
+      "thinkingEffort": {
+        "title": "사고 깊이를 조절할 수 있어요",
+        "body": "설정 → AI & Models에서 Thinking Effort로 응답 깊이와 속도를 조절할 수 있어요.",
+        "cta": "AI & Models 설정 열기"
+      },
+      "knowledgeGraph": {
+        "title": "지식 그래프를 살펴보세요",
+        "body": "Knowledge에서 AI가 모은 개념 관계를 네트워크로 볼 수 있어요.",
+        "cta": "Knowledge 열기"
+      },
+      "themes": {
+        "title": "테마를 바꿔보세요",
+        "body": "설정 → General에서 Neutral, Amber, Ocean 등 액센트 테마를 고를 수 있어요.",
+        "cta": "General 설정 열기"
+      }
     }
   }
 }

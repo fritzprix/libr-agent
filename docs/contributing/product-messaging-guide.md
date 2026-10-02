@@ -2,18 +2,20 @@
 
 This document is a positioning and PR messaging guide for LibrAgent. The goal is not to list features mechanically, but to explain why the product matters and how to describe it persuasively without drifting away from what the codebase actually supports.
 
+Canonical public README: [README.md](../../README.md)  
+Canonical demo filming: [hero-demo-spec.md](./hero-demo-spec.md)
+
 ---
 
 ## 1. Core positioning
 
-**LibrAgent is not just an app that connects to a good model. It is a local-first agent harness and an MCP-native agent operating environment.**
+**LibrAgent is an agent operating environment you run — not a vendor chat shell, and not a harness kit you assemble.**
 
 In practical terms:
 
-- it goes beyond a chat UI,
-- it connects to external tools through MCP,
-- it combines workspace, browser, shell, knowledge, and skills in one runtime,
-- and it can grow from a single agent into delegated, team-oriented, and schedule-driven coordination.
+- **Surface without harness homework** — GUI, Extensions one-click presets, recipes, in-app approvals, `@skill:` invocation
+- **Orchestration as product** — named coordination patterns (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, …) plus `teamwork` / `org` / `schedule` when you need teams or cron
+- **Provider & stack freedom** — any supported LLM (API or Ollama), MCP as infrastructure, import from Cursor / VS Code / Claude Code / Windsurf, MIT, local-first by default
 
 ---
 
@@ -21,76 +23,60 @@ In practical terms:
 
 ### The problem
 
-Many AI products still get trapped by the same three mistakes:
+The harness era still traps people in three ways:
 
-1. **assuming a better model automatically means a better product**
-2. **offering lots of tools without an operating system around them**
-3. **supporting individual agents without supporting real coordination and long-running work**
-
-Even a strong model will drift, lose context, and fail at sustained execution if the harness around it is weak.
+1. **Vendor harnesses** — great UX, but model/tool policy follows one company
+2. **Developer harnesses** — real power, but onboarding is JSON, `npx`/`uvx`, shell, and SDK graphs
+3. **Fake differentiation** — “not a chat app,” “agents use tools,” “local desktop,” “we have multi-agent” — table stakes every serious agent claims
 
 ### LibrAgent's answer
 
-LibrAgent responds with a harness-first design:
+Ship **harness depth as a product**:
 
-- Rust-centered orchestration
-- MCP-first architecture
-- practical execution through workspace, browser, shell, and knowledge systems
-- multi-agent coordination through `delegate`, `teamwork`, `org`, and `schedule`
-- local-first control over security and runtime boundaries
+- one-click MCP presets and IDE config import
+- bundled orchestration skills chosen from work shape (see `teamwork` framework-selection)
+- user-chosen models and tools — no required AI vendor
+- durable local execution (workspace, shell, browser, knowledge, sessions)
 
 ---
 
-## 3. The strongest message
+## 3. The strongest messages
 
-## **"LibrAgent is not a chat app. It is an execution environment for agents."**
+### Primary (use in README / hero / Show HN)
 
-That is the sharpest message.
+**Install tools like apps. Keep your model. Keep the file.**  
+**No vendor harness. No JSON homework.**
 
-Many competing products are strong in one narrow category:
+### Secondary (orchestration)
 
-- a polished coding assistant
-- a flexible framework that must be assembled manually
-- a powerful cloud agent with weaker local control
-- an open platform with uneven governance and operational discipline
+**Pick a coordination pattern — don’t assemble a framework.**  
+(`@skill:pipeline` / `hub-spoke` / `divide-conquer` / …)
 
-LibrAgent is unusual because it is simultaneously:
+### Do not lead with (alone)
 
-- a **product**
-- a **harness**
-- an **MCP platform**
-- and a **swarm-orchestration layer**
+- “Not a chat app. It is an execution environment.” — category noise
+- “Local-first desktop with MCP and tools” — saturated
+- “Multi-agent system” — undersells named patterns and non-dev surface
 
 ---
 
 ## 4. Competitive framing
 
-### Market-level framing
-
-The market has shifted from model wars toward harness wars.
-
-That means the real differentiators are:
-
-- execution loops rather than raw model quality
-- durable sessions rather than one-shot prompts
-- tool operating systems rather than isolated integrations
-- delegation and coordination rather than a single agent in a box
-
 ### Useful comparison frame
 
-| Competitor group                                  | Strength                      | Limitation                                       | LibrAgent advantage                                                                       |
-| ------------------------------------------------- | ----------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Cursor / Claude Code style tools                  | excellent coding productivity | centered on developer workflows                  | extends beyond coding into MCP, browser, knowledge, workspace, schedules, and swarm flows |
-| LangGraph / CrewAI / Pydantic AI style frameworks | deep flexibility              | requires assembly work                           | gives users a ready-to-run product experience                                             |
-| Open-source free-form agent platforms             | openness and extensibility    | uneven governance and operational consistency    | stronger local-first discipline, validation, and session isolation                        |
-| Cloud automation agents                           | broad automation imagination  | remote-first and less tied to local work context | stays closer to the user's real machine and workspace                                     |
+| Competitor group | Strength | Limitation | LibrAgent advantage |
+| ---------------- | -------- | ---------- | ------------------- |
+| Cursor / Claude Code | excellent coding productivity | developer-centric; often vendor-tied model story | product surface beyond IDE; presets/recipes; any model; orchestration skills |
+| LangGraph / CrewAI / Agents SDK | deep flexibility | you assemble and operate the harness | ready-to-run patterns as `@skill:` / GUI |
+| Hermes / CLI OSS agents | strong autonomy / open weights | terminal-first homework | desktop product + same freedom ethos |
+| ChatGPT / Claude Desktop | polished consumer UI | vendor stack gravity | bring your model and MCP; MIT local-first |
+| CC Switch | multi-CLI switchboard | no step-loop of its own | full execution + orchestration product |
 
-### The most persuasive advantages
+### The three persuasive advantages
 
-1. **The harness is unusually complete**
-2. **MCP is treated as a platform layer, not a bolt-on**
-3. **The growth path from one agent to coordinated teams is natural**
-4. **Users keep meaningful control over their own agent stack**
+1. **You can use the harness without being a harness engineer**
+2. **Orchestration is a menu of patterns, not a checkbox labeled multi-agent**
+3. **Stack freedom — model, tools, and coordination stay user choices**
 
 ---
 
@@ -100,76 +86,63 @@ Do **not** invent a different demo story for README, releases, or Show HN.
 
 Canonical filming + acceptance criteria: **[hero-demo-spec.md](./hero-demo-spec.md)**
 
-Summary locked by that spec:
+Locked summary:
 
-- Line: *LibrAgent is not a chat app. It is an execution environment for agents.*
-- Beat: one session → real tools → a deliverable file on the user's machine
-- Out of hero scope: swarm / org / settings tours
+- Line: *Install tools like apps. Keep your model. Keep the file.*
+- Beat: Extensions **Install** → workspace → deliverable on disk
+- Secondary clips: `@skill:pipeline` (or peers), Morning Briefing recipe, Cursor MCP import
+- Out of **primary** hero: org/swarm laundry lists, Settings tours
 
 ---
 
 ## 6. Onboarding story
 
-The introduction becomes convincing when it answers a simple question: **What do I do first?**
+Answer: **What do I do first?**
 
-### 1. Connect a model
+### 1. Connect a model (freedom)
 
 - local LLM via Ollama
-- hosted models via API keys such as OpenAI, Anthropic, or Gemini
+- hosted models via API keys (OpenAI, Anthropic, Gemini, Groq, …)
 
-### 2. Add MCP servers
+### 2. Add tools without JSON
 
-- install from presets,
-- or let an agent help with setup through bundled skills such as `mcp-installer`
+- Extensions → one-click presets, or
+- agent + `tool-installer` (_Import my MCP servers from Cursor_)
 
-### 3. Accelerate setup with bundled skills
+### 3. Attach a workspace and finish with a file
 
-- `system-setup`
-- `mcp-installer`
-- `recruit`
-- `boost`
-- `calendar-mgmt`
-- `git-workflow`
-- `data-viz`
+- real folder + deliverable on disk (`DELIVERABLE.md` / reportResult)
 
-### 4. Turn tools into agent capability
+### 4. Grow with named orchestration
 
-- create assistants via Assistants settings or `agent__createAgent`
-- assign MCP servers and builtin capabilities per assistant
+- `@skill:pipeline` / `hub-spoke` / `divide-conquer` / `consensus-delegation` / …
+- `teamwork` → `org` for durable teams
+- `schedule` / recipes for recurring work
+- `loop` / `call-me-back` for in-session or event-driven resume
 
-### 5. Grow from one agent to coordination
+### 5. Accelerate with other bundled skills
 
-- parallel work via `delegate`
-- shared operating rules via `teamwork`
-- durable team identity via `org`
-- recurring automation via `schedule`
+- `setup-wizard`, `tool-installer`, `recruit`, `boost`, `playbook-creator`, domain skills (`git-workflow`, `calendar-mgmt`, …)
 
 ---
 
 ## 7. Real usage stories
 
+### Operator
+
+- Morning Briefing recipe → presets + assistant + 9am schedule → file without terminal
+
 ### Solo developer
 
-- connect a local repository
-- install the GitHub MCP preset
-- run code analysis, security review, and documentation drafting
+- GitHub preset from Extensions → workspace → Markdown report on disk
 
-### Operator or researcher
+### Power user (non-framework)
 
-- combine browser, search, and knowledge flows
-- automate recurring scans or briefs
-- accumulate results into reusable context
+- `@skill:pipeline` or `divide-conquer` → merged deliverable — no orchestration library
 
-### Team workflow
+### Privacy-sensitive
 
-- create specialist agents
-- distribute work with `delegate`
-- establish more explicit coordination with `org`
-
-### Offline or privacy-sensitive setup
-
-- run Ollama with local MCP servers and a local workspace
-- keep sensitive data under local control
+- Ollama + local MCP + local workspace; swap cloud keys later without changing product identity
 
 ---
 
@@ -177,45 +150,46 @@ The introduction becomes convincing when it answers a simple question: **What do
 
 ### Short introduction
 
-**LibrAgent is an MCP-native, local-first platform that expands a single AI assistant into a working team of agents.**
+**LibrAgent is a desktop agent operating environment: one-click MCP, named orchestration skills, and any model you choose.**
 
 ### Stronger introduction
 
-**Most AI apps stop at a chat window wrapped around a good model. LibrAgent goes further by combining models, tools, workspace, browser, knowledge, sessions, delegation, and team coordination into one agent harness.**
+**Most “harnesses” are either locked to one AI vendor or assume you can edit JSON and assemble frameworks. LibrAgent ships the operating surface — presets, recipes, `@skill:` coordination patterns — and leaves the model and tool stack to you.**
 
 ### One-line position
 
-**LibrAgent is not a chat app. It is an execution environment for agents.**
+**Install tools like apps. Keep your model. Keep the file.**
 
-### Onboarding call-to-action
+### Onboarding CTA
 
-**Connect one model, attach a real workspace, finish with a file you keep — then grow from delegation to swarm and org-style coordination when you need it.**
+**Connect a model, one-click a preset, finish with a file you keep — then attach `@skill:pipeline` (or a recipe) when one pass is not enough.**
 
 ---
 
 ## 9. Recommended narrative order
 
-For PRs, launch posts, and product intros, this sequence works best:
+For PRs, launch posts, and product intros:
 
-1. **Define the problem:** the market has moved beyond model quality alone
-2. **Declare the identity:** LibrAgent is an agent operating environment, not just an AI app
-3. **Show the hero beat:** one session, real tools, a deliverable on the user's machine ([hero-demo-spec.md](./hero-demo-spec.md))
-4. **Frame the competitive edge:** it is not only a framework, not only a coding tool, and not a chaotic runtime
-5. **Make the journey concrete:** connect a model, add MCP, use bundled skills, create specialists, delegate, then coordinate
-6. **Close with the point:** LibrAgent is a platform for operating agents, not merely chatting with them
+1. **Name the trap:** vendor lock-in *or* developer homework
+2. **Declare the product:** operating environment with one-click tools + pattern skills + stack freedom
+3. **Show the hero beat:** Extensions Install → deliverable ([hero-demo-spec.md](./hero-demo-spec.md))
+4. **Show orchestration without frameworks:** one `@skill:` pattern clip
+5. **Close:** your model, your tools, your coordination pattern
 
 ---
 
 ## 10. Final take
 
-Weak messaging says, "it has a lot of features."
+Weak messaging says, "it has a lot of features" or "it's not a chat app."
 
 The better message is:
 
-> **LibrAgent is a product for the harness era.**
+> **LibrAgent is a product for people who want harness power without harness homework — and without a vendor owning the stack.**
 >
-> It is not about attaching one more model to a chat UI. It is about giving agents a real environment in which they can work, collaborate, recover, and scale.
+> One-click tools. Named coordination patterns. Your model. Files you keep.
 
-And the most attractive closing angle is this:
+---
 
-> **You can start locally, extend through MCP, and grow naturally from one agent to swarm and org coordination.**
+## 11. Locale sync
+
+After changing English README or this guide’s locked lines, update locale READMEs (`README.ko.md`, `README.zh.md`, …) to the same beats — translate wording, do not invent a different product story.

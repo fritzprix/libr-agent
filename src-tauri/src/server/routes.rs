@@ -7,6 +7,7 @@ use warp::Filter;
 pub fn get_routes(
     agent_manager: Arc<AgentSessionManager>,
     mcp_enabled: bool,
+    app_control_enabled: bool,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let agent_manager = warp::any().map(move || agent_manager.clone());
 
@@ -157,6 +158,18 @@ pub fn get_routes(
 
     // POST /mcp/:session_id — MCP JSON-RPC endpoint (gated by mcp_enabled flag)
     let mcp_enabled_filter = warp::any().map(move || mcp_enabled);
+    let app_control_enabled_filter = warp::any().map(move || app_control_enabled);
+
+    // POST /mcp/control — sessionless app chrome (must register before /mcp/:session_id)
+    let mcp_control_route = warp::post()
+        .and(warp::path("mcp"))
+        .and(warp::path("control"))
+        .and(warp::path::end())
+        .and(mcp_enabled_filter)
+        .and(app_control_enabled_filter)
+        .and(warp::body::json())
+        .and_then(mcp_handler::mcp_control_rpc);
+
     let mcp_route = warp::post()
         .and(warp::path("mcp"))
         .and(warp::path::param::<String>())
@@ -188,6 +201,7 @@ pub fn get_routes(
         .or(get_assistant)
         .or(health)
         .or(preferred_model)
+        .or(mcp_control_route)
         .or(mcp_auto_route)
         .or(mcp_route)
         .with(cors)

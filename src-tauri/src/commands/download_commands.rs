@@ -2,7 +2,9 @@
 ///
 /// This module contains commands for downloading files and creating ZIP archives
 /// from the workspace.
-use crate::commands::markdown_pdf::build_markdown_pdf;
+use crate::commands::markdown_pdf::{
+    build_markdown_pdf, build_markdown_pdf_with_embeds, PdfEmbeddedImage,
+};
 use crate::commands::workspace_commands::resolve_workspace_scoped_file_path;
 use crate::services::FileExportService;
 use crate::session::get_session_manager;
@@ -177,12 +179,17 @@ pub async fn download_text_file(
 }
 
 /// Renders Markdown to PDF via `markdown2pdf` (github theme) and saves via dialog.
+///
+/// Optional `embedded_images` are PNGs referenced from Markdown via
+/// `libragent-pdf-embed:N` (frontend Mermaid preprocess). LaTeX `$` / `$$`
+/// is handled by markdown2pdf's built-in TeX engine — no frontend images.
 #[tauri::command]
 pub async fn download_text_pdf(
     app_handle: tauri::AppHandle,
     file_name: String,
     content: String,
     title: Option<String>,
+    embedded_images: Option<Vec<PdfEmbeddedImage>>,
 ) -> Result<String, String> {
     if file_name.trim().is_empty() {
         return Err("fileName is required".to_string());
@@ -190,10 +197,17 @@ pub async fn download_text_pdf(
 
     // Title is unused — export is body-only Markdown (no role/document chrome).
     let _ = title;
+    let embeds = embedded_images.unwrap_or_default();
 
-    let bytes = tokio::task::spawn_blocking(move || build_markdown_pdf(&content))
-        .await
-        .map_err(|e| format!("PDF generation task failed: {e}"))??;
+    let bytes = tokio::task::spawn_blocking(move || {
+        if embeds.is_empty() {
+            build_markdown_pdf(&content)
+        } else {
+            build_markdown_pdf_with_embeds(&content, &embeds)
+        }
+    })
+    .await
+    .map_err(|e| format!("PDF generation task failed: {e}"))??;
 
     let resolved_name = if Path::new(&file_name)
         .extension()

@@ -3,6 +3,7 @@ import type { MCPContent, MCPTextContent } from '@/lib/mcp';
 import { extractTextContent } from '@/lib/message-utils';
 import { messageToMarkdown } from '@/lib/message-markdown';
 import { hasToolCallError } from '@/lib/tool-call-utils';
+import { resolveMessageDocument } from '@/features/agent/lib/message-document';
 
 export type MessageSerializationMode = 'full' | 'text' | 'tools';
 
@@ -158,6 +159,13 @@ export function serializeMessageForClipboard(
   const mode = options.mode ?? 'full';
 
   if (mode === 'text') {
+    const document = resolveMessageDocument(message, {
+      displayContent: options.displayContent,
+      toolResultsMap: options.toolResultsMap,
+    });
+    if (document) {
+      return document.content;
+    }
     return serializeMessageTextOnly(message, options.displayContent);
   }
 
@@ -199,12 +207,23 @@ export function serializeMessageForClipboard(
 
 /**
  * Serialize message body for file download (MD/PDF).
- * Returns the reply text only — no role header, thinking, or tool calls.
+ * Prefers UI tool documents (reportResult / presentInteractive); otherwise
+ * returns the reply text only — no role header, thinking, or tool calls.
  */
 export function serializeMessageForDownload(
   message: Message,
-  options: Pick<SerializeMessageOptions, 'displayContent'> = {},
+  options: Pick<
+    SerializeMessageOptions,
+    'displayContent' | 'toolResultsMap'
+  > = {},
 ): string {
+  const document = resolveMessageDocument(message, {
+    displayContent: options.displayContent,
+    toolResultsMap: options.toolResultsMap,
+  });
+  if (document) {
+    return document.content;
+  }
   return serializeMessageTextOnly(message, options.displayContent);
 }
 

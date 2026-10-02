@@ -1,0 +1,68 @@
+import type { Spotlight } from './types';
+
+/**
+ * Static feature discovery pool. Keep CTAs pointed at real routes/settings only.
+ * sinceVersion: first app version where the tip is relevant.
+ */
+export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
+  {
+    id: 'browser-profile-import',
+    sinceVersion: '0.9.12',
+    titleKey: 'spotlight.items.browserProfile.title',
+    bodyKey: 'spotlight.items.browserProfile.body',
+    ctaLabelKey: 'spotlight.items.browserProfile.cta',
+    href: { type: 'settings', tab: 'system' },
+    surfaces: ['release', 'hub', 'wait'],
+    priority: 1,
+  },
+  {
+    id: 'starter-tasks',
+    sinceVersion: '0.9.10',
+    titleKey: 'spotlight.items.starterTasks.title',
+    bodyKey: 'spotlight.items.starterTasks.body',
+    ctaLabelKey: 'spotlight.items.starterTasks.cta',
+    href: { type: 'route', path: '/scheduled-tasks' },
+    surfaces: ['release', 'hub', 'wait'],
+    priority: 2,
+  },
+  {
+    id: 'visualize-csv',
+    sinceVersion: '0.9.8',
+    titleKey: 'spotlight.items.visualize.title',
+    bodyKey: 'spotlight.items.visualize.body',
+    ctaLabelKey: 'spotlight.items.visualize.cta',
+    href: { type: 'route', path: '/agent/draft' },
+    surfaces: ['release', 'hub'],
+    priority: 3,
+  },
+  {
+    id: 'thinking-effort',
+    sinceVersion: '0.9.6',
+    titleKey: 'spotlight.items.thinkingEffort.title',
+    bodyKey: 'spotlight.items.thinkingEffort.body',
+    ctaLabelKey: 'spotlight.items.thinkingEffort.cta',
+    href: { type: 'settings', tab: 'ai-models' },
+    surfaces: ['release', 'hub', 'wait'],
+    priority: 4,
+  },
+  {
+    id: 'knowledge-graph',
+    sinceVersion: '0.9.5',
+    titleKey: 'spotlight.items.knowledgeGraph.title',
+    bodyKey: 'spotlight.items.knowledgeGraph.body',
+    ctaLabelKey: 'spotlight.items.knowledgeGraph.cta',
+    href: { type: 'route', path: '/knowledge' },
+    surfaces: ['release', 'hub', 'wait'],
+    priority: 5,
+  },
+  {
+    id: 'themes',
+    sinceVersion: '0.9.4',
+    titleKey: 'spotlight.items.themes.title',
+    bodyKey: 'spotlight.items.themes.body',
+    ctaLabelKey: 'spotlight.items.themes.cta',
+    href: { type: 'settings', tab: 'general' },
+    surfaces: ['hub'],
+    priority: 6,
+  },
+];

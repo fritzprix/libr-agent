@@ -182,4 +182,4 @@ When encountering type safety issues:
 4. **Document exceptions** — If cast is truly necessary, document why
 5. **Add tests** — Ensure validation catches invalid data
 
-See [Type Safety Refactoring Plan](../../docs/refactoring/type-safety-refactoring-plan.md) for detailed migration guide.
+This guide is the living reference for type-safety conventions (the old `docs/refactoring/` migration plans were removed after completion).

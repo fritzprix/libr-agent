@@ -20,6 +20,11 @@ Recently active sessions are retained warm in memory, making switching between s
 - A session **workspace override** (custom working folder) is kept even if the path is briefly unavailable; it applies again when the directory returns.
 - Type **`/reload`** in chat to refresh workspace tools and skills without wiping history.
 
+### Rich content in chat
+
+- **Mermaid** (`` ```mermaid ``) and **LaTeX** (`$…$` / `$$…$$`) render in chat messages, deliverable cards, and interactive markdown panels.
+- Per-message **Copy** / **Export PDF** keep diagrams and equations (PDF preprocess embeds Mermaid as images; math uses the PDF TeX path).
+
 ---
 
 ## Export

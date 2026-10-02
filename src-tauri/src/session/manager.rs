@@ -16,10 +16,8 @@ pub struct SessionManager {
 
 impl SessionManager {
     pub fn new() -> Result<Self, String> {
-        let base_data_dir = dirs::data_dir()
-            .ok_or_else(|| "Failed to get system data directory".to_string())?
-            .join("com.fritzprix.libragent");
-
+        let profile = crate::profile::resolve_profile();
+        let base_data_dir = crate::profile::data_dir(profile);
         Self::new_with_base_dir(base_data_dir)
     }
 

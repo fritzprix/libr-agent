@@ -30,6 +30,7 @@ import { AgentChatStatusBar } from './components/AgentChatStatusBar';
 import { AgentChatMessages } from './components/AgentChatMessages';
 import { AgentChatInput } from './components/AgentChatInput';
 import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
+import { ComposerBusyTipStrip } from './components/ComposerBusyTipStrip';
 import { AgentSidePanelShell } from './components/AgentSidePanelShell';
 import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { AgentProcessAttentionUpdates } from './components/AgentProcessAttentionUpdates';
@@ -194,6 +195,7 @@ function AgentChatComposer() {
           className={cn(isDocumentMode ? DOCUMENT_CONTENT_RAIL_CLASS : null)}
         >
           <AgentChatAttachedFiles />
+          <ComposerBusyTipStrip />
           <AgentChatInput />
         </div>
       </div>

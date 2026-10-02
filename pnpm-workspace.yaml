@@ -2,7 +2,10 @@ packages:
   - '.'
   - 'website'
 
-onlyBuiltDependencies:
-  - '@swc/core'
-  - '@tailwindcss/oxide'
-  - esbuild
+overrides:
+  punycode: ^2.3.1
+
+allowBuilds:
+  '@swc/core': true
+  '@tailwindcss/oxide': true
+  esbuild: true

@@ -504,7 +504,9 @@
         "violet": "Iris Violeta (IA)",
         "ocean": "Azul Océano (Calma)",
         "forest": "Verde Sabia (Enfoque)"
-      }
+      },
+      "showFeatureTips": "Mostrar consejos de funciones",
+      "showFeatureTipsDescription": "Muestra Novedades y tarjetas de consejos en el hub del chat, y consejos ocasionales mientras esperas una respuesta"
     },
     "advanced": {
       "maxRetries": "Intentos máximos de reintento",
@@ -1542,27 +1544,28 @@
       "preparingPrompt": "Preparando prompt...",
       "expandThinking": "Expandir",
       "actionBar": {
-        "copyFullAria": "Copiar mensaje completo",
-        "copyFullTooltip": "Copiar mensaje completo (texto, pensamiento, herramientas, adjuntos)",
-        "copyTextAria": "Copiar solo texto",
-        "copyTextTooltip": "Copiar solo el contenido de texto",
+        "copyAria": "Copiar",
+        "copyTooltip": "Copiar mensaje",
         "copyToolsAria": "Copiar llamadas a herramientas",
         "copyToolsTooltip": "Copiar llamadas a herramientas como JSON",
         "exportAria": "Exportar mensaje",
         "exportTooltip": "Exportar mensaje",
         "exportMarkdown": "Exportar como Markdown",
         "exportPdf": "Exportar como PDF",
+        "exportHtml": "Exportar como HTML",
         "copySuccess": "Mensaje copiado al portapapeles",
         "copyEmpty": "No hay nada que copiar",
         "copyDenied": "Acceso al portapapeles denegado. Comprueba los permisos del navegador.",
         "copyError": "Error al copiar el mensaje",
         "exportMarkdownSuccess": "Archivo Markdown descargado",
         "exportPdfSuccess": "Archivo PDF descargado",
+        "exportHtmlSuccess": "Archivo HTML descargado",
         "exportOpenFile": "Abrir",
         "exportOpenFileError": "No se pudo abrir el archivo",
         "exportCancelled": "Descarga cancelada",
         "exportError": "Error al exportar el mensaje",
-        "exportPdfError": "Error al exportar el PDF"
+        "exportPdfError": "Error al exportar el PDF",
+        "exportHtmlError": "Error al exportar el HTML"
       }
     },
     "start": {
@@ -1867,6 +1870,47 @@
       "scheduledTaskName": "Informe matutino diario 9:00 AM",
       "scheduledTaskMessage": "Sintetice las 3 principales historias de Hacker News y los índices clave (S&P 500, Nasdaq) en un informe matutino diario.",
       "testRunPrompt": "Revise las 3 noticias principales de Hacker News y los índices clave, y redacte el informe matutino ahora mismo."
+    }
+  },
+  "spotlight": {
+    "releaseTitle": "Novedades en v{{version}}",
+    "dismissAll": "Cerrar",
+    "hubLabel": "Consejo",
+    "nextTip": "Siguiente consejo",
+    "hide": "Ocultar",
+    "waitLine": "Consejo · {{title}}",
+    "waitOpenHint": "Abrir: {{detail}}",
+    "items": {
+      "browserProfile": {
+        "title": "Importar sesiones del navegador",
+        "body": "Trae perfiles de Chrome, Edge o Brave a LibrAgent para que el agente navegue ya iniciado sesión. Abre Ajustes → System.",
+        "cta": "Abrir Ajustes System"
+      },
+      "starterTasks": {
+        "title": "Empieza con plantillas de tareas programadas",
+        "body": "Daily Standup, monitoreo de noticias y más automatizaciones con un clic están en Scheduled Tasks.",
+        "cta": "Abrir Scheduled Tasks"
+      },
+      "visualize": {
+        "title": "Convierte CSV/Excel en gráficos",
+        "body": "Suelta una hoja de cálculo en el chat y pide un gráfico: LibrAgent puede visualizar los datos.",
+        "cta": "Empezar chat"
+      },
+      "thinkingEffort": {
+        "title": "Ajusta el esfuerzo de pensamiento",
+        "body": "En Ajustes → AI & Models, regula Thinking Effort para respuestas más rápidas o más profundas.",
+        "cta": "Abrir AI & Models"
+      },
+      "knowledgeGraph": {
+        "title": "Explora el grafo de conocimiento",
+        "body": "En Knowledge verás como red los conceptos que ha acumulado el agente.",
+        "cta": "Abrir Knowledge"
+      },
+      "themes": {
+        "title": "Prueba otro tema de color",
+        "body": "En Ajustes → General elige temas como Neutral, Amber u Ocean.",
+        "cta": "Abrir General"
+      }
     }
   }
 }
