@@ -1,4 +1,8 @@
-# 🤖 LibrAgent
+<p align="center">
+  <img src="./src-tauri/icons/128x128.png" width="96" alt="LibrAgent" />
+</p>
+
+# LibrAgent
 
 > **직접 운영하는 에이전트 실행 환경 — 모델은 고르고, 툴은 원클릭으로, 조율 패턴은 고르기만 하면 됩니다.**
 > _벤더 하네스 없음. JSON 숙제 없음. 결과는 내 머신의 파일로 남습니다._
@@ -234,9 +238,9 @@ pnpm tauri dev
 
 LibrAgent는 MIT이며 공개적으로 만들어집니다. 번들 스킬, MCP 통합, 버그 수정, 아키텍처 개선을 환영합니다.
 
-- 📖 [Contributing Guide](CONTRIBUTING.md)
-- 🐛 [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
-- 💬 [Discussions](https://github.com/fritzprix/libr-agent/discussions)
-- 🧪 벤치마크 (Harbor / Terminal-Bench): [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`, …)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
+- [Discussions](https://github.com/fritzprix/libr-agent/discussions)
+- 벤치마크 (Harbor / Terminal-Bench): [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`, …)
 
 **License**: MIT

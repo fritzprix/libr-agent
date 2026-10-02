@@ -1,4 +1,8 @@
-﻿# 🤖 LibrAgent
+<p align="center">
+  <img src="./src-tauri/icons/128x128.png" width="96" alt="LibrAgent" />
+</p>
+
+# LibrAgent
 
 > **你自己运行的智能体操作环境 — 选模型，一键装工具，选协调模式。**
 > _没有厂商套壳。没有 JSON 作业。成果以文件形式留在你的机器上。_
@@ -234,9 +238,9 @@ pnpm tauri dev
 
 LibrAgent 采用 MIT 许可，公开构建。欢迎贡献 — 捆绑技能、MCP 集成、缺陷修复或架构改进。
 
-- 📖 [Contributing Guide](CONTRIBUTING.md)
-- 🐛 [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
-- 💬 [Discussions](https://github.com/fritzprix/libr-agent/discussions)
-- 🧪 基准测试（Harbor / Terminal-Bench）：见 [Harbor guide](benchmarks/harbor/README.md)（`pnpm bench:diverse`、`pnpm bench:terminal`、…）
+- [Contributing Guide](CONTRIBUTING.md)
+- [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
+- [Discussions](https://github.com/fritzprix/libr-agent/discussions)
+- 基准测试（Harbor / Terminal-Bench）：见 [Harbor guide](benchmarks/harbor/README.md)（`pnpm bench:diverse`、`pnpm bench:terminal`、…）
 
 **License**: MIT

@@ -1,4 +1,8 @@
-﻿# 🤖 LibrAgent
+<p align="center">
+  <img src="./src-tauri/icons/128x128.png" width="96" alt="LibrAgent" />
+</p>
+
+# LibrAgent
 
 > **Un entorno operativo de agentes que tú ejecutas — elige el modelo, herramientas en un clic, elige el patrón de coordinación.**
 > _Sin arnés de proveedor. Sin deberes de JSON. El trabajo termina como archivos en tu máquina._
@@ -234,9 +238,9 @@ pnpm tauri dev
 
 LibrAgent tiene licencia MIT y se construye en abierto. Las contribuciones son bienvenidas — skills empaquetados, integraciones MCP, correcciones de bugs o mejoras de arquitectura.
 
-- 📖 [Contributing Guide](CONTRIBUTING.md)
-- 🐛 [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
-- 💬 [Discussions](https://github.com/fritzprix/libr-agent/discussions)
-- 🧪 Benchmarks (Harbor / Terminal-Bench): ver [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`, …)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
+- [Discussions](https://github.com/fritzprix/libr-agent/discussions)
+- Benchmarks (Harbor / Terminal-Bench): ver [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`, …)
 
 **License**: MIT
