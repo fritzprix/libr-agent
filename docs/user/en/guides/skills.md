@@ -37,8 +37,7 @@ Manage local skills folder in sidebar **Extensions → Skills**.
 | `loop`                   | In-session clock reminders / delayed loops (not global cron)                 |
 | `call-me-back`           | Resume a session on an external completion signal (HTTP inject)              |
 | `ig-cli`                 | Instagram CLI workflows (credentials via skill setup)                        |
-| `email-integration`      | IMAP/SMTP mail; falls back to saved-login webmail                            |
-| `browser-session-assist` | Confirm + `use_profile` browser sessions; import / Open to sign in guidance  |
+| `email-integration`      | IMAP/SMTP mail; falls back to sticky agent browser webmail                   |
 | `visualize`              | Mermaid/LaTeX in chat & UI cards; Chart.js charts from CSV/Excel/JSON        |
 | Domain skills            | Your team procedures                                                         |
 

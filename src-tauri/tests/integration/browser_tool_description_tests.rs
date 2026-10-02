@@ -63,6 +63,25 @@ fn create_session_description_explains_single_stateful_session() {
         description.contains("shares one cookie jar"),
         "createSession should document shared sticky cookie jar across sessions"
     );
+    assert!(
+        !description.to_lowercase().contains("use_profile"),
+        "createSession must not mention removed use_profile"
+    );
+    assert!(
+        !description.to_lowercase().contains("saved-login")
+            && !description.to_lowercase().contains("saved login"),
+        "createSession must not mention saved-login import path"
+    );
+}
+
+#[test]
+fn create_session_schema_omits_use_profile() {
+    let tool = browser_tool("createSession");
+    let properties = object_properties(&tool.input_schema, "createSession");
+    assert!(
+        !properties.contains_key("use_profile"),
+        "createSession schema must not expose use_profile"
+    );
 }
 
 #[test]

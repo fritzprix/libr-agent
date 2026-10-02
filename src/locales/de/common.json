@@ -1881,11 +1881,6 @@
     "waitLine": "Tipp · {{title}}",
     "waitOpenHint": "Öffnen: {{detail}}",
     "items": {
-      "browserProfile": {
-        "title": "Browser-Anmeldungen importieren",
-        "body": "Importieren Sie Chrome-, Edge- oder Brave-Profile in LibrAgent, damit der Agent angemeldet browsen kann. Öffnen Sie Einstellungen → System.",
-        "cta": "System-Einstellungen öffnen"
-      },
       "starterTasks": {
         "title": "Mit Vorlagen für geplante Aufgaben starten",
         "body": "Daily Standup, News-Monitoring und weitere Ein-Klick-Automationen finden Sie unter Scheduled Tasks.",
