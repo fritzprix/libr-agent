@@ -619,6 +619,19 @@
       "description": "앱 런타임, 백그라운드 워커, 자동화 제한 및 네트워크 동작을 제어합니다.",
       "restartRequired": "저장 후 재시작 필요",
       "networkRestartPending": "네트워크 설정이 변경되었습니다. 변경사항을 저장한 후 앱을 재시작하여 적용하세요.",
+      "agentBrowser": {
+        "sectionTitle": "에이전트 브라우저",
+        "title": "에이전트 브라우저 데이터",
+        "description": "LibrAgent 내장 브라우저에서 한 로그인은 이 기기에 유지되어 createSession 이후에도 세션이 유지됩니다. 일상 Chrome과는 별개입니다.",
+        "clearButton": "에이전트 브라우저 데이터 지우기",
+        "clearing": "지우는 중…",
+        "clearConfirmTitle": "에이전트 브라우저 데이터를 지울까요?",
+        "clearConfirm": "LibrAgent 에이전트 브라우저에 저장된 쿠키와 로그인이 삭제됩니다. 열린 브라우저 세션은 닫힙니다. 일상 Chrome은 영향받지 않습니다.",
+        "clearSuccess": "에이전트 브라우저 데이터를 지웠습니다",
+        "clearSuccessBody": "에이전트 브라우저에 저장된 로그인이 제거되었습니다. 일상 Chrome은 그대로입니다.",
+        "clearErrorTitle": "지우기 실패",
+        "clearError": "에이전트 브라우저 데이터를 지우지 못했습니다. 열린 에이전트 브라우저 창을 닫고 다시 시도하세요."
+      },
       "browserProfiles": {
         "sectionTitle": "저장된 브라우저 로그인",
         "title": "저장된 브라우저 로그인",

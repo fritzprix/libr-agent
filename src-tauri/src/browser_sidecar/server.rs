@@ -8,9 +8,7 @@ use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
 use chromiumoxide::cdp::browser_protocol::network::{
     CookieParam, CookieSameSite, SetCookiesParams, TimeSinceEpoch,
 };
-use chromiumoxide::cdp::browser_protocol::target::{
-    CreateBrowserContextParams, CreateTargetParams,
-};
+use chromiumoxide::cdp::browser_protocol::target::CreateTargetParams;
 use log::warn;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -26,7 +24,7 @@ use super::page::{
     navigate_forward, serialize_evaluation_result, snapshot_page_state,
 };
 use super::runtime::{
-    cleanup_failed_context_launch, cleanup_session_resources, shutdown_runtime,
+    cleanup_failed_context_launch, cleanup_session_resources, shutdown_runtime, BrowserProfileMode,
     BrowserRuntimeManager, SidecarSession,
 };
 
@@ -225,11 +223,11 @@ impl BrowserSidecarServer {
             None
         };
         let use_imported_profile = imported_user_data_dir.is_some();
+        let requested_mode = BrowserProfileMode::from_imported(use_imported_profile);
 
         if let Some(current) = self.runtime.current_runtime().await {
-            // ephemeral=true ↔ clean profile; use_imported_profile=true ↔ saved login.
-            // Equality means the requested mode differs from the running runtime.
-            if current.ephemeral == use_imported_profile {
+            // Sticky agent ↔ imported saved-login use different user-data-dirs.
+            if current.mode != requested_mode {
                 // Another createSession mid-flight (not yet inserted into sessions) is a real race.
                 let other_creates_in_flight = self.creates_in_flight.load(Ordering::SeqCst) > 1;
                 if other_creates_in_flight {
@@ -238,9 +236,9 @@ impl BrowserSidecarServer {
                     );
                 }
 
-                // Stale sessions from a previous agent chat leave the runtime in imported/clean
+                // Stale sessions from a previous agent chat leave the runtime in sticky/imported
                 // mode with no session the current agent can closeSession. Drain them so
-                // ephemeral ↔ imported mode switches are not stuck forever.
+                // mode switches are not stuck forever.
                 let drained = self.drain_all_sessions_for_runtime_recycle().await;
                 if drained > 0 {
                     warn!(
@@ -262,36 +260,9 @@ impl BrowserSidecarServer {
             .ensure_runtime(params.visible, imported_user_data_dir)
             .await?;
 
-        // Imported profiles must use the default CDP context so cookies/logins
-        // from User Data/Default are visible. Ephemeral sessions stay isolated.
-        let context_id: Option<BrowserContextId> = if use_imported_profile {
-            None
-        } else {
-            let context_id = match tokio::time::timeout(SESSION_TARGET_TIMEOUT, async {
-                runtime
-                    .browser
-                    .lock()
-                    .await
-                    .create_browser_context(CreateBrowserContextParams::default())
-                    .await
-            })
-            .await
-            {
-                Ok(Ok(context_id)) => context_id,
-                Ok(Err(error)) => {
-                    return Err(format!(
-                        "Failed to create isolated browser context: {error}"
-                    ));
-                }
-                Err(_) => {
-                    return Err(format!(
-                        "Timed out creating isolated browser context after {}s",
-                        SESSION_TARGET_TIMEOUT.as_secs()
-                    ));
-                }
-            };
-            Some(context_id)
-        };
+        // Sticky agent + imported profiles share the default CDP cookie jar so logins persist.
+        // (Isolated contexts were for the old wipe-on-shutdown ephemeral path.)
+        let context_id: Option<BrowserContextId> = None;
 
         // Open about:blank first so createTarget does not block on a never-idle URL.
         // Navigation is bounded separately via goto_with_load_timeout.
@@ -590,7 +561,7 @@ impl BrowserSidecarServer {
     /// while the *current* agent sees "no active session" from `browser__closeSession`. Without
     /// draining, createSession then fails forever with "Cannot switch browser profile mode…".
     ///
-    /// Only called when an actual mode switch is required (`ephemeral` vs imported). Concurrent
+    /// Only called when an actual mode switch is required (sticky agent vs imported). Concurrent
     /// createSession races are still rejected via `creates_in_flight > 1`.
     async fn drain_all_sessions_for_runtime_recycle(&self) -> usize {
         let drained = {

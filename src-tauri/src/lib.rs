@@ -282,6 +282,7 @@ pub fn run() {
                 execute_script,
                 navigate_back,
                 navigate_forward,
+                clear_agent_browser_data,
                 list_browser_profiles,
                 list_discoverable_browser_profiles,
                 check_browser_profile_import_ready,

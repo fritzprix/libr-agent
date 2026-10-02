@@ -14,6 +14,8 @@ pub fn create_session_tool() -> MCPTool {
                 "Call browser__createSession before other browser tools if no active session exists.",
                 "If a session already exists, browser__createSession closes it and starts a fresh one.",
                 "If url is omitted, the session opens https://www.google.com.",
+                "Default (use_profile=false) uses LibrAgent's sticky agent browser profile — logins made inside that browser survive later createSession until the user clears agent browser data in Settings.",
+                "The sticky profile shares one cookie jar across browser sessions on this machine (including concurrent agent chats using the browser sidecar).",
                 "Set use_profile=true only when the user needs their LibrAgent saved browser logins (Chrome/Edge/Brave copy in Settings); requires explicit user confirmation. Prefer Open to sign in for Google.",
                 "Never invent or request filesystem profile paths — use_profile is a boolean only.",
                 "If Google shows 'browser may not be secure', tell the user to use Settings → Saved browser logins → Open to sign in (manual login in real Chrome), then retry use_profile.",
@@ -36,7 +38,7 @@ pub fn create_session_tool() -> MCPTool {
                 (
                     "use_profile".to_string(),
                     boolean_prop(Some(
-                        "When true, use the user's LibrAgent Chromium saved-login copy (Settings import; Open to sign in for Google if needed). Requires explicit confirmation. Default false = clean isolated profile.",
+                        "When true, use the user's LibrAgent Chromium saved-login copy (Settings import; Open to sign in for Google if needed). Requires explicit confirmation. Default false = sticky agent browser profile (logins persist across createSession until cleared in Settings).",
                     )),
                 ),
             ],
