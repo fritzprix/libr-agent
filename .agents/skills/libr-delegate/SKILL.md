@@ -43,7 +43,9 @@ Port file is written when LibrAgent’s HTTP server binds; fallback is `3030`.
 3. Write a self-contained handoff (LibrAgent child does **not** see Cursor
    chat, parent workspace instructions, or workspace-local skills unless you
    pass an absolute `workspacePath`)
-4. Create — `POST $BASE/api/sessions` (include `request` or create idle)
+4. Create — write JSON payload to a file, **validate non-empty JSON**, then
+   `POST $BASE/api/sessions` (include `request` or create idle). See
+   `references/session-api.md` (preferred file recipe + empty-body guard)
 5. If idle — `POST $BASE/api/sessions/:id/messages` with `{"content":"..."}`
 6. Poll — `GET $BASE/api/sessions/:id` until not Busy/Provisioning
 7. Read result — `GET $BASE/api/sessions/:id/messages`
@@ -130,6 +132,10 @@ The LibrAgent session is not a clone of this Cursor chat:
   (they are not part of the Session API)
 - Leaving one-shot delegate sessions undeleted after the handoff completes
 - Putting this skill under `src-tauri/bundled_skills` (Cursor-only)
+- Referencing shell vars as bare Python names inside `<<'PY'` (e.g.
+  `workspacePath: WORKSPACE`) → `NameError` → empty payload file → create
+  400 `EOF while parsing a value`
+- `curl -d @file` without checking the file is non-empty valid JSON first
 
 ## Related repo docs
 

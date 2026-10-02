@@ -51,3 +51,10 @@ Do not treat “done” prose without evidence as success.
 - Assumed shared workspace without `workspacePath` → child cannot find files
 - Spamming status GET → slowdowns / rate limits — backoff
 - Forgot LibrAgent not running → connection refused — start the app first
+- **Empty create body** → HTTP 400
+  `Request body deserialize error: EOF while parsing a value at line 1 column 0`
+  Usually: Python/`jq` failed while writing the payload file (e.g. bare
+  `WORKSPACE` inside `<<'PY'` → `NameError`), then `curl -d @file` posted 0
+  bytes. Fix: write JSON via `Path.write_text(json.dumps(...))` with literal
+  paths, then `test -s` + `python3 -m json.tool` before curl (see
+  `session-api.md`)

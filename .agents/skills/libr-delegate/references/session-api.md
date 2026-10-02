@@ -18,6 +18,43 @@ Pick an `assistantId` from the assistants list for create.
 
 ## Create session
 
+### Preferred: write JSON to a file, then curl
+
+Long `request` bodies and shell escaping break easily with inline `-d`. Prefer
+Python (or similar) writing a file, then validate before POST.
+
+```bash
+ASSISTANT_ID="…"          # from GET /api/assistants
+WORKSPACE="/absolute/path" # optional
+PAYLOAD=/tmp/libr-delegate-create.json
+
+# IMPORTANT: <<'PY' does NOT expand shell vars. Pass paths as Python string
+# literals (or use unquoted <<PY carefully). Never reference WORKSPACE as a
+# bare Python name inside <<'PY' — that yields NameError → empty file → 400.
+python3 - <<PY
+import json
+from pathlib import Path
+Path("$PAYLOAD").write_text(json.dumps({
+    "assistantId": "$ASSISTANT_ID",
+    "name": "cursor-delegate",
+    "workspacePath": "$WORKSPACE",
+    "executionMode": "yolo",
+    "request": """self-contained task here""",
+}, ensure_ascii=False))
+PY
+
+# Guard: refuse empty / invalid JSON (empty body → HTTP 400
+# "Request body deserialize error: EOF while parsing a value")
+test -s "$PAYLOAD" || { echo "empty payload: $PAYLOAD"; exit 1; }
+python3 -m json.tool "$PAYLOAD" >/dev/null || { echo "invalid JSON: $PAYLOAD"; exit 1; }
+
+curl -sS -X POST "$BASE/api/sessions" \
+  -H 'content-type: application/json' \
+  -d @"$PAYLOAD"
+```
+
+### Inline JSON (short payloads only)
+
 ```bash
 curl -sS -X POST "$BASE/api/sessions" \
   -H 'content-type: application/json' \
