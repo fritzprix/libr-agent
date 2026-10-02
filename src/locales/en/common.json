@@ -631,6 +631,25 @@
         "clearSuccessBody": "Saved logins inside LibrAgent’s agent browser were removed. Everyday Chrome is unchanged.",
         "clearErrorTitle": "Clear failed",
         "clearError": "Could not clear agent browser data. Close any open agent browser windows and try again."
+      },
+      "extensionBridge": {
+        "title": "Chrome extension bridge",
+        "description": "Optional Load unpacked MV3 extension for everyday Chrome. When connected, create/navigate/close prefer the extension; otherwise LibrAgent uses the sticky agent browser sidecar.",
+        "statusLabel": "Status",
+        "connected": "Connected",
+        "disconnected": "Disconnected",
+        "checking": "Checking…",
+        "portLabel": "Port",
+        "tokenLabel": "Token",
+        "modeLabel": "Backend",
+        "pathLabel": "Load unpacked path",
+        "refresh": "Refresh",
+        "copyPath": "Copy Load unpacked path",
+        "pathCopied": "Load unpacked path copied",
+        "pathCopyFailed": "Could not copy path to clipboard",
+        "statusErrorTitle": "Bridge status unavailable",
+        "statusError": "Could not read extension bridge status.",
+        "pathError": "Could not resolve the Load unpacked path."
       }
     },
     "about": {

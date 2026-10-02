@@ -4,6 +4,7 @@ use tauri::Manager;
 use crate::services::InteractiveBrowserServer;
 
 pub mod agent; // pub for integration tests (cancel_logic.rs)
+pub mod browser_extension_bridge;
 pub mod browser_sidecar;
 pub mod commands; // Make public for integration tests
 mod config;
@@ -277,6 +278,8 @@ pub fn run() {
                 navigate_back,
                 navigate_forward,
                 clear_agent_browser_data,
+                get_extension_bridge_status,
+                get_extension_unpacked_path,
                 // OAuth 2.1 Authentication commands
                 has_oauth_token,
                 get_oauth_token,
