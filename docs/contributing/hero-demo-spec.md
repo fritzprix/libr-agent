@@ -50,7 +50,7 @@ README hero sections (all locales) must use the same story; translate wording, d
 1. **Pick a pattern** — `@skill:pipeline` (or hub-spoke / divide-conquer) → staged work → one merged report. Proves orchestration-as-product.
 2. **Morning Briefing recipe** — recipe Install → presets + assistant + schedule → Run now → briefing file.
 3. **Import from Cursor** — agent imports MCP → Extensions list fills (acquisition / freedom).
-4. **Logged-in browse** — Settings → **Saved browser logins** → import → `use_profile` → authenticated page (after #1952 lands).
+4. **Logged-in browse** — Agent sticky browser profile: sign in once inside LibrAgent’s agent browser, then later sessions reuse those cookies until cleared in Settings → System → Agent browser.
 
 ---
 

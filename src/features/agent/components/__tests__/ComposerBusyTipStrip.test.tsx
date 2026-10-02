@@ -48,14 +48,11 @@ vi.mock('react-i18next', () => ({
       if (key === 'spotlight.waitLine' && options?.title) {
         return `Tip · ${options.title}`;
       }
-      if (key === 'spotlight.items.browserProfile.title') {
-        return 'Import browser login sessions';
-      }
       if (key === 'spotlight.items.starterTasks.title') {
         return 'Try starter tasks';
       }
-      if (key === 'spotlight.items.browserProfile.body') {
-        return 'Bring profiles into LibrAgent';
+      if (key === 'spotlight.items.starterTasks.body') {
+        return 'One-click automation starters are ready';
       }
       return options?.defaultValue ?? key;
     },
@@ -111,22 +108,22 @@ describe('ComposerBusyTipStrip', () => {
     );
 
     const tip = screen.getByTestId('composer-busy-tip');
-    expect(tip).toHaveTextContent('Tip · Import browser login sessions');
+    expect(tip).toHaveTextContent('Tip · Try starter tasks');
+
+    fireEvent.click(screen.getByTestId('composer-busy-tip'));
+    expect(mockNavigate).toHaveBeenCalledWith('/scheduled-tasks');
 
     act(() => {
       vi.advanceTimersByTime(WAIT_TIP_ROTATE_MS);
     });
 
     expect(screen.getByTestId('composer-busy-tip')).toHaveTextContent(
-      'Tip · Try starter tasks',
+      'Tip · spotlight.items.thinkingEffort.title',
     );
-
-    fireEvent.click(screen.getByTestId('composer-busy-tip'));
-    expect(mockNavigate).toHaveBeenCalledWith('/scheduled-tasks');
 
     const stored = JSON.parse(
       localStorage.getItem(SPOTLIGHT_STATE_KEY) ?? '{}',
     ) as { waitTipIndex?: number };
-    expect(stored.waitTipIndex).toBeGreaterThanOrEqual(2);
+    expect(stored.waitTipIndex).toBeGreaterThanOrEqual(1);
   });
 });

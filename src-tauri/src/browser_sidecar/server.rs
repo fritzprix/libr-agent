@@ -1,13 +1,9 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
 use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
-use chromiumoxide::cdp::browser_protocol::network::{
-    CookieParam, CookieSameSite, SetCookiesParams, TimeSinceEpoch,
-};
 use chromiumoxide::cdp::browser_protocol::target::CreateTargetParams;
 use log::warn;
 use serde_json::Value;
@@ -24,7 +20,7 @@ use super::page::{
     navigate_forward, serialize_evaluation_result, snapshot_page_state,
 };
 use super::runtime::{
-    cleanup_failed_context_launch, cleanup_session_resources, shutdown_runtime, BrowserProfileMode,
+    cleanup_failed_context_launch, cleanup_session_resources, shutdown_runtime,
     BrowserRuntimeManager, SidecarSession,
 };
 
@@ -44,27 +40,12 @@ struct BrowserSidecarServer {
     sessions: Mutex<HashMap<String, SidecarSession>>,
     console_listeners: Mutex<HashMap<String, tokio::task::AbortHandle>>,
     dialog_listeners: Mutex<HashMap<String, tokio::task::AbortHandle>>,
-    /// Counts createSession calls between entry and session insert / early return.
-    /// Prevents profile-mode recycle from racing with another create that has not
-    /// registered a session yet.
-    creates_in_flight: AtomicUsize,
-}
-
-struct CreateSessionInFlightGuard<'a> {
-    counter: &'a AtomicUsize,
-}
-
-impl Drop for CreateSessionInFlightGuard<'_> {
-    fn drop(&mut self) {
-        self.counter.fetch_sub(1, Ordering::SeqCst);
-    }
 }
 
 impl BrowserSidecarServer {
     fn new() -> Self {
         Self {
             runtime: BrowserRuntimeManager::new(),
-            creates_in_flight: AtomicUsize::new(0),
             sessions: Mutex::new(HashMap::new()),
             console_listeners: Mutex::new(HashMap::new()),
             dialog_listeners: Mutex::new(HashMap::new()),
@@ -206,62 +187,13 @@ impl BrowserSidecarServer {
         let params: CreateSessionParams = serde_json::from_value(params)
             .map_err(|e| format!("Invalid createSession params: {e}"))?;
 
-        self.creates_in_flight.fetch_add(1, Ordering::SeqCst);
-        let _in_flight = CreateSessionInFlightGuard {
-            counter: &self.creates_in_flight,
-        };
-
-        // Close this session id first so a profile-mode switch can recycle safely
-        // when no other sessions remain.
+        // Close this session id first so createSession can replace an existing page.
         self.close_existing_session_if_present(&params.session_id)
             .await?;
 
-        let imported_user_data_dir = if params.use_profile {
-            // Resolve inside the sidecar only — never accept paths from the wire protocol.
-            Some(crate::browser_profiles::resolve_default_imported_user_data_dir()?)
-        } else {
-            None
-        };
-        let use_imported_profile = imported_user_data_dir.is_some();
-        let requested_mode = BrowserProfileMode::from_imported(use_imported_profile);
+        let runtime = self.runtime.ensure_runtime(params.visible).await?;
 
-        if let Some(current) = self.runtime.current_runtime().await {
-            // Sticky agent ↔ imported saved-login use different user-data-dirs.
-            if current.mode != requested_mode {
-                // Another createSession mid-flight (not yet inserted into sessions) is a real race.
-                let other_creates_in_flight = self.creates_in_flight.load(Ordering::SeqCst) > 1;
-                if other_creates_in_flight {
-                    return Err(
-                        "Cannot switch browser profile mode while another createSession is in progress. Retry after it finishes.".to_string(),
-                    );
-                }
-
-                // Stale sessions from a previous agent chat leave the runtime in sticky/imported
-                // mode with no session the current agent can closeSession. Drain them so
-                // mode switches are not stuck forever.
-                let drained = self.drain_all_sessions_for_runtime_recycle().await;
-                if drained > 0 {
-                    warn!(
-                        "Recycled {drained} leftover browser session(s) before profile-mode switch (requested_imported={use_imported_profile}); other chats sharing this sidecar lose those sessions"
-                    );
-                } else {
-                    warn!(
-                        "Recycling browser runtime to switch profile mode (requested_imported={use_imported_profile})"
-                    );
-                }
-                if let Some(old) = self.runtime.take_runtime().await {
-                    shutdown_runtime(old).await;
-                }
-            }
-        }
-
-        let runtime = self
-            .runtime
-            .ensure_runtime(params.visible, imported_user_data_dir)
-            .await?;
-
-        // Sticky agent + imported profiles share the default CDP cookie jar so logins persist.
-        // (Isolated contexts were for the old wipe-on-shutdown ephemeral path.)
+        // Sticky agent profile uses the default CDP cookie jar so logins persist.
         let context_id: Option<BrowserContextId> = None;
 
         // Open about:blank first so createTarget does not block on a never-idle URL.
@@ -317,19 +249,6 @@ impl BrowserSidecarServer {
             }
             Err(error) => {
                 warn!("Failed to attach JS dialog auto-dismiss listener: {error}");
-            }
-        }
-
-        // Firefox imports (legacy): inject cookies into Chromium; Chromium User Data
-        // imports have no inject file and skip this step.
-        if use_imported_profile {
-            if let Err(error) =
-                inject_imported_cookies_if_present(page.as_ref(), &runtime.user_data_dir).await
-            {
-                self.abort_session_listeners(&params.session_id).await;
-                let _ = page.as_ref().clone().close().await;
-                cleanup_failed_context_launch(runtime.browser.clone(), context_id.clone()).await;
-                return Err(error);
             }
         }
 
@@ -554,49 +473,6 @@ impl BrowserSidecarServer {
         cleanup_session_resources(runtime.browser.clone(), session, session_id).await
     }
 
-    /// Remove every tracked session so the shared runtime can be shut down for a profile-mode switch.
-    ///
-    /// This is intentionally aggressive: the sidecar runtime is shared across agent chats, so a
-    /// leftover session from a previous chat (or a crashed client) can leave `sessions` non-empty
-    /// while the *current* agent sees "no active session" from `browser__closeSession`. Without
-    /// draining, createSession then fails forever with "Cannot switch browser profile mode…".
-    ///
-    /// Only called when an actual mode switch is required (sticky agent vs imported). Concurrent
-    /// createSession races are still rejected via `creates_in_flight > 1`.
-    async fn drain_all_sessions_for_runtime_recycle(&self) -> usize {
-        let drained = {
-            let mut sessions = self.sessions.lock().await;
-            std::mem::take(&mut *sessions)
-        };
-        let count = drained.len();
-        if count == 0 {
-            return 0;
-        }
-
-        if let Some(runtime) = self.runtime.current_runtime().await {
-            {
-                let mut logs = runtime.console_logs.write().await;
-                for session_id in drained.keys() {
-                    logs.remove(session_id);
-                }
-            }
-            self.abort_all_listeners().await;
-            for (session_id, session) in drained {
-                if let Err(error) =
-                    cleanup_session_resources(runtime.browser.clone(), session, &session_id).await
-                {
-                    warn!(
-                        "Failed to close leftover browser session {session_id} during profile-mode switch: {error}"
-                    );
-                }
-            }
-        } else {
-            self.abort_all_listeners().await;
-        }
-
-        count
-    }
-
     async fn get_session_page(&self, session_id: &str) -> Result<Arc<chromiumoxide::Page>, String> {
         let sessions = self.sessions.lock().await;
         sessions
@@ -665,77 +541,4 @@ impl BrowserSidecarServer {
 fn extract_request_id_from_line(line: &str) -> Option<String> {
     let value = serde_json::from_str::<Value>(line).ok()?;
     value.get("id")?.as_str().map(ToString::to_string)
-}
-
-/// Apply a legacy cookie-inject JSON file via CDP (older Firefox imports only).
-/// Uses `Network.setCookies` directly so it works while the page is still on about:blank.
-///
-/// Returns `Ok(())` when no inject file is present (normal Chromium User Data imports).
-/// Returns `Err` when an inject file exists but cookies cannot be applied — callers must
-/// abort the session rather than continuing without auth state.
-///
-/// New Firefox import is disabled; if this path fails, import Chrome/Edge/Brave from Settings.
-async fn inject_imported_cookies_if_present(
-    page: &chromiumoxide::Page,
-    user_data_dir: &std::path::Path,
-) -> Result<(), String> {
-    let Some(cookies) = crate::browser_profiles::read_inject_cookies_file(user_data_dir)? else {
-        return Ok(());
-    };
-    if cookies.is_empty() {
-        return Err(
-            "Legacy cookie-inject file is empty. Remove that saved login and import Chrome, Edge, or Brave from Settings."
-                .to_string(),
-        );
-    }
-
-    let mut params = Vec::with_capacity(cookies.len());
-    for cookie in cookies {
-        let mut secure = cookie.secure;
-        let same_site = match cookie.same_site.as_deref() {
-            Some("Strict") => Some(CookieSameSite::Strict),
-            Some("Lax") => Some(CookieSameSite::Lax),
-            Some("None") => {
-                // Chromium requires Secure for SameSite=None.
-                secure = true;
-                Some(CookieSameSite::None)
-            }
-            _ => None,
-        };
-        let url = if secure && cookie.url.starts_with("http://") {
-            cookie.url.replacen("http://", "https://", 1)
-        } else {
-            cookie.url.clone()
-        };
-        params.push(CookieParam {
-            name: cookie.name,
-            value: cookie.value,
-            url: Some(url),
-            domain: Some(cookie.domain),
-            path: Some(cookie.path),
-            secure: Some(secure),
-            http_only: Some(cookie.http_only),
-            same_site,
-            expires: cookie.expires.map(TimeSinceEpoch::new),
-            priority: None,
-            same_party: None,
-            source_scheme: None,
-            source_port: None,
-            partition_key: None,
-        });
-    }
-
-    // Network.setCookies via Page::execute (generic CDP Command — not Runtime.evaluate).
-    // Same path chromiumoxide's Page::set_cookies uses internally.
-    const BATCH: usize = 100;
-    for chunk in params.chunks(BATCH) {
-        page.execute(SetCookiesParams::new(chunk.to_vec()))
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to apply legacy cookie-inject file: {e}. Remove that saved login and import Chrome, Edge, or Brave from Settings."
-                )
-            })?;
-    }
-    Ok(())
 }

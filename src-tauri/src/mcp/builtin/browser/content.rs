@@ -795,7 +795,6 @@ async fn fetch_url_via_headless(
             url,
             Some("Fetch Tool Session"),
             false,
-            false,
         )
         .await
     {

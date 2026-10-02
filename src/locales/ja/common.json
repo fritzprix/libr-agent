@@ -1881,11 +1881,6 @@
     "waitLine": "ヒント · {{title}}",
     "waitOpenHint": "開く: {{detail}}",
     "items": {
-      "browserProfile": {
-        "title": "ブラウザのログインを取り込みできます",
-        "body": "Chrome / Edge / Brave のプロファイルを LibrAgent に取り込み、サインイン済みのまま閲覧できます。設定 → System を確認してください。",
-        "cta": "System 設定を開く"
-      },
       "starterTasks": {
         "title": "予約タスクのテンプレートで始められます",
         "body": "デイリースタンドアップやニュース監視など、ワンクリック自動化テンプレートが Scheduled Tasks にあります。",
