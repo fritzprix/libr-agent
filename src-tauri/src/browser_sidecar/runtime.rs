@@ -228,7 +228,7 @@ async fn connect_imported_profile_runtime(
 
     if chrome_profile_appears_in_use(&user_data_dir) {
         return Err(
-            "This saved browser login is already open in another Chrome window. Close the LibrAgent Chrome window from Settings → Open to sign in (or any other Chrome using this saved login), then retry."
+            "Your saved browser login is already open in a LibrAgent Chrome window. Close that window (Settings → Saved browser logins → Close login window), then retry. Do not leave Open to sign in open while the agent runs."
                 .to_string(),
         );
     }
@@ -307,11 +307,14 @@ async fn launch_ephemeral_runtime(visible: bool) -> Result<SharedBrowserRuntime,
         executable.display(),
         user_data_dir.display(),
     ));
+    // chromiumoxide defaults viewport to 800x600 DeviceMetricsOverride. That locks CSS
+    // layout even when the OS window is resized — unlike use_profile system Chrome.
+    // Headed sessions: disable emulation so content fills the window (Playwright viewport:null).
     let mut builder = BrowserConfig::builder()
         .chrome_executable(executable)
         .user_data_dir(&user_data_dir);
     if visible {
-        builder = builder.with_head();
+        builder = builder.with_head().viewport(None);
     }
     let config = match builder.build() {
         Ok(config) => config,

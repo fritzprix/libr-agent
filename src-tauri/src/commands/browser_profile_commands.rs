@@ -2,10 +2,12 @@ use crate::browser_profiles::{
     delete_imported_browser_profile, import_browser_profiles as import_browser_profiles_impl,
     list_discoverable_browser_profiles as list_discoverable_browser_profiles_impl,
     list_imported_profiles, list_running_browsers_for_import, list_running_browsers_for_profiles,
-    open_imported_profile_for_signin as open_imported_profile_for_signin_impl,
+    load_registry, open_imported_profile_for_signin as open_imported_profile_for_signin_impl,
     quit_browsers_for_profile_import as quit_browsers_for_profile_import_impl,
+    quit_processes_holding_imported_profile,
     set_default_browser_profile as set_default_browser_profile_impl, BrowserProfileInfo,
-    DiscoverableBrowserProfile, ImportReport, QuitBrowsersReport,
+    DiscoverableBrowserProfile, ImportKind, ImportReport, QuitBrowsersReport,
+    QuitSavedLoginWindowsReport,
 };
 use log::info;
 use serde::Serialize;
@@ -117,4 +119,30 @@ pub async fn open_browser_profile_for_signin(name: String) -> Result<(), String>
     tokio::task::spawn_blocking(move || open_imported_profile_for_signin_impl(&name_for_task))
         .await
         .map_err(|e| format!("Open browser profile for sign-in task failed: {e}"))?
+}
+
+/// Close LibrAgent Chrome windows still holding an imported saved-login profile.
+///
+/// Call after Open to sign in so agents can attach with `use_profile: true`.
+#[tauri::command]
+pub async fn quit_browser_profile_signin_windows(
+    name: String,
+    user_confirmed: bool,
+) -> Result<QuitSavedLoginWindowsReport, String> {
+    info!("Command: quit_browser_profile_signin_windows name={name} confirmed={user_confirmed}");
+    tokio::task::spawn_blocking(move || {
+        let registry = load_registry()?;
+        let profile = registry
+            .profiles
+            .get(&name)
+            .ok_or_else(|| format!("Imported browser profile '{name}' was not found."))?;
+        if profile.import_kind == ImportKind::FirefoxCookies {
+            return Err(
+                "Firefox cookie imports do not use a LibrAgent Chrome login window.".to_string(),
+            );
+        }
+        quit_processes_holding_imported_profile(&profile.user_data_dir, user_confirmed)
+    })
+    .await
+    .map_err(|e| format!("Quit saved-login windows task failed: {e}"))?
 }

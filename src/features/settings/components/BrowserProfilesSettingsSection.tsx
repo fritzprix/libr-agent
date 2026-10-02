@@ -21,6 +21,7 @@ import {
   removeBrowserProfile,
   setDefaultBrowserProfile,
   openBrowserProfileForSignIn,
+  quitBrowserProfileSignInWindows,
   type BrowserProfileInfo,
   type DiscoverableBrowserProfile,
 } from '@/lib/backend/browser';
@@ -28,7 +29,12 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('BrowserProfilesSettings');
 
-type DialogMode = 'closed' | 'close-browsers' | 'confirm' | 'remove';
+/** Honest import flow — never pretend this is one click. */
+type WizardStep = 'select' | 'close' | 'copy' | 'done';
+
+type ImportOutcome = 'success' | 'partial' | 'blocked' | 'none' | 'error';
+
+const WIZARD_STEPS: WizardStep[] = ['select', 'close', 'copy', 'done'];
 
 function formatImportedAt(value: string): string {
   const date = new Date(value);
@@ -40,6 +46,38 @@ function formatImportedAt(value: string): string {
 
 function formatBrowserList(names: string[]): string {
   return names.join(', ');
+}
+
+function WizardStepList({
+  active,
+  labels,
+}: {
+  active: WizardStep;
+  labels: Record<WizardStep, string>;
+}) {
+  const activeIndex = WIZARD_STEPS.indexOf(active);
+  return (
+    <ol className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+      {WIZARD_STEPS.map((step, index) => {
+        const isActive = step === active;
+        const isDone = index < activeIndex;
+        return (
+          <li
+            key={step}
+            className={
+              isActive
+                ? 'font-medium text-foreground'
+                : isDone
+                  ? 'text-muted-foreground'
+                  : 'text-muted-foreground/60'
+            }
+          >
+            <span className="tabular-nums">{index + 1}.</span> {labels[step]}
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 export function BrowserProfilesSettingsSection() {
@@ -57,15 +95,25 @@ export function BrowserProfilesSettingsSection() {
   const [settingDefault, setSettingDefault] = useState<string | null>(null);
   const [removingName, setRemovingName] = useState<string | null>(null);
   const [signingInName, setSigningInName] = useState<string | null>(null);
-  const [dialogMode, setDialogMode] = useState<DialogMode>('closed');
+  const [closingSignInName, setClosingSignInName] = useState<string | null>(null);
+  const [signInHelpOpenFor, setSignInHelpOpenFor] = useState<string | null>(
+    null,
+  );
+  const [signInSessionFor, setSignInSessionFor] = useState<string | null>(null);
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [runningBrowsers, setRunningBrowsers] = useState<string[]>([]);
+  const [browsersReady, setBrowsersReady] = useState(false);
   const [profilePendingRemoval, setProfilePendingRemoval] = useState<{
     name: string;
     label: string;
   } | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusTone, setStatusTone] = useState<'ok' | 'warn' | 'error'>('ok');
-  const [blockerVisible, setBlockerVisible] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<WizardStep>('select');
+  const [importOutcome, setImportOutcome] = useState<ImportOutcome | null>(
+    null,
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -82,7 +130,6 @@ export function BrowserProfilesSettingsSection() {
         if (kept.length > 0) {
           return kept;
         }
-        // Prefer system-priority first discoverable (Chrome > Edge > …) when nothing selected.
         return available.length > 0 ? [available[0].name] : [];
       });
       setPreferredDefault((prev) => {
@@ -114,6 +161,26 @@ export function BrowserProfilesSettingsSection() {
     [discoverable, selectedNames],
   );
 
+  const selectedBrowserLabels = selectedProfiles.map((p) => p.browserLabel);
+  const confirmBrowserList =
+    selectedBrowserLabels.length > 0
+      ? formatBrowserList([...new Set(selectedBrowserLabels)])
+      : '';
+
+  const wizardStepLabels = useMemo(
+    () =>
+      ({
+        select: t(
+          'settings.system.browserProfiles.wizardStepSelect',
+          'Choose',
+        ),
+        close: t('settings.system.browserProfiles.wizardStepClose', 'Close'),
+        copy: t('settings.system.browserProfiles.wizardStepCopy', 'Copy'),
+        done: t('settings.system.browserProfiles.wizardStepDone', 'Done'),
+      }) satisfies Record<WizardStep, string>,
+    [t],
+  );
+
   const refreshReadiness = useCallback(async (): Promise<boolean> => {
     setCheckingReady(true);
     try {
@@ -121,10 +188,12 @@ export function BrowserProfilesSettingsSection() {
         selectedNames.length > 0 ? selectedNames : undefined,
       );
       setRunningBrowsers(readiness.runningBrowsers);
+      setBrowsersReady(readiness.ready);
       return readiness.ready;
     } catch (error) {
       logger.error('Failed to check browser import readiness', error);
       setRunningBrowsers([]);
+      setBrowsersReady(false);
       return false;
     } finally {
       setCheckingReady(false);
@@ -139,8 +208,6 @@ export function BrowserProfilesSettingsSection() {
           : [...prevSelected, name]
         : prevSelected.filter((n) => n !== name);
 
-      // Prefer the newly checked browser when nothing is preferred yet,
-      // or when the previous preferred is no longer in the selection.
       setPreferredDefault((prevPreferred) => {
         if (checked) {
           if (prevPreferred === null || prevPreferred === name) {
@@ -161,109 +228,24 @@ export function BrowserProfilesSettingsSection() {
     });
   };
 
-  const runImport = async () => {
-    setDialogMode('closed');
-    setImporting(true);
+  const openWizard = () => {
     setStatusMessage(null);
-    setBlockerVisible(false);
-    try {
-      const names =
-        selectedNames.length > 0 ? selectedNames : undefined;
-      const preferred =
-        preferredDefault && names?.includes(preferredDefault)
-          ? preferredDefault
-          : names?.[0];
-      const report = await importBrowserProfiles({
-        profileNames: names,
-        preferredDefault: preferred,
-      });
-      await refresh();
-      const stillOpen = report.runningBrowsers ?? [];
-      setRunningBrowsers(stillOpen);
-
-      if (report.imported.length > 0 && report.skipped.length === 0) {
-        setStatusTone('ok');
-        setStatusMessage(
-          t(
-            'settings.system.browserProfiles.importSuccess',
-            'Done — your browser logins are ready for LibrAgent. When an agent needs them, you will be asked to confirm first.',
-          ),
-        );
-        return;
-      }
-
-      if (report.imported.length > 0 && report.skipped.length > 0) {
-        setStatusTone('warn');
-        setStatusMessage(
-          t(
-            'settings.system.browserProfiles.importPartial',
-            'Some logins were saved, but others could not be copied because a browser was still open.',
-          ),
-        );
-        if (stillOpen.length > 0) {
-          setBlockerVisible(true);
-        }
-        return;
-      }
-
-      if (stillOpen.length > 0 || report.skipped.length > 0) {
-        setStatusTone('warn');
-        setStatusMessage(
-          t(
-            'settings.system.browserProfiles.importBlocked',
-            'Import could not finish because a browser is still open. Tap Quit browsers, then try again.',
-          ),
-        );
-        setBlockerVisible(true);
-        return;
-      }
-
-      if (report.warnings.length > 0) {
-        setStatusTone('warn');
-        setStatusMessage(
-          t(
-            'settings.system.browserProfiles.importNoneFound',
-            'No supported browser profiles were found. Install Chrome, Edge, or Brave and sign in there first.',
-          ),
-        );
-        return;
-      }
-
-      setStatusTone('warn');
-      setStatusMessage(
-        t(
-          'settings.system.browserProfiles.importNone',
-          'Nothing was imported. Make sure a browser is installed and you have signed in at least once.',
-        ),
-      );
-    } catch (error) {
-      logger.error('Failed to import browser profiles', error);
-      const ready = await refreshReadiness();
-      setStatusTone('error');
-      if (!ready) {
-        setStatusMessage(
-          t(
-            'settings.system.browserProfiles.importBlocked',
-            'Import could not finish because a browser is still open. Tap Quit browsers, then try again.',
-          ),
-        );
-        setBlockerVisible(true);
-      } else {
-        setStatusMessage(
-          t(
-            'settings.system.browserProfiles.importError',
-            'Import failed. Quit the browsers from this screen, wait a few seconds, then try again.',
-          ),
-        );
-      }
-    } finally {
-      setImporting(false);
-    }
+    setImportOutcome(null);
+    setBrowsersReady(false);
+    setRunningBrowsers([]);
+    setWizardStep('select');
+    setWizardOpen(true);
   };
 
-  const handleImportClick = async () => {
-    setStatusMessage(null);
-    setBlockerVisible(false);
+  const closeWizard = () => {
+    setWizardOpen(false);
+    setWizardStep('select');
+    setImportOutcome(null);
+    setBrowsersReady(false);
+    setRunningBrowsers([]);
+  };
+
+  const goToCloseStep = async () => {
     if (selectedNames.length === 0) {
       setStatusTone('warn');
       setStatusMessage(
@@ -274,12 +256,9 @@ export function BrowserProfilesSettingsSection() {
       );
       return;
     }
-    const ready = await refreshReadiness();
-    if (!ready) {
-      setDialogMode('close-browsers');
-      return;
-    }
-    setDialogMode('confirm');
+    setStatusMessage(null);
+    setWizardStep('close');
+    await refreshReadiness();
   };
 
   const handleQuitBrowsers = async () => {
@@ -291,25 +270,22 @@ export function BrowserProfilesSettingsSection() {
         selectedNames.length > 0 ? selectedNames : undefined,
       );
       setRunningBrowsers(report.stillRunning);
+      setBrowsersReady(report.ready);
       if (report.ready) {
-        setBlockerVisible(false);
-        setDialogMode('confirm');
         setStatusTone('ok');
         setStatusMessage(
           t(
             'settings.system.browserProfiles.quitSuccess',
-            'Browsers were closed. You can import your logins now.',
+            'Those browsers are closed. Continue to copy your logins.',
           ),
         );
         return;
       }
-      setBlockerVisible(true);
-      setDialogMode('close-browsers');
       setStatusTone('warn');
       setStatusMessage(
         t(
           'settings.system.browserProfiles.quitPartial',
-          'Still open: {{browsers}}. Tap Quit browsers again, or close any remaining windows.',
+          'Still open: {{browsers}}. Quit again, or close any remaining windows yourself.',
           { browsers: formatBrowserList(report.stillRunning) },
         ),
       );
@@ -319,11 +295,134 @@ export function BrowserProfilesSettingsSection() {
       setStatusMessage(
         t(
           'settings.system.browserProfiles.quitError',
-          'Could not close the browsers automatically. Close them yourself, then try again.',
+          'Could not close the browsers automatically. Close them yourself, then check again.',
         ),
       );
     } finally {
       setQuitting(false);
+    }
+  };
+
+  const goToCopyStep = async () => {
+    const ready = await refreshReadiness();
+    if (!ready) {
+      setStatusTone('warn');
+      setStatusMessage(
+        t(
+          'settings.system.browserProfiles.closeNeededBody',
+          'Still open: {{browsers}}. Close them before copying.',
+          { browsers: formatBrowserList(runningBrowsers) },
+        ),
+      );
+      return;
+    }
+    setStatusMessage(null);
+    setWizardStep('copy');
+  };
+
+  const runImport = async () => {
+    setImporting(true);
+    setStatusMessage(null);
+    try {
+      const names = selectedNames.length > 0 ? selectedNames : undefined;
+      const preferred =
+        preferredDefault && names?.includes(preferredDefault)
+          ? preferredDefault
+          : names?.[0];
+      const report = await importBrowserProfiles({
+        profileNames: names,
+        preferredDefault: preferred,
+      });
+      await refresh();
+      const stillOpen = report.runningBrowsers ?? [];
+      setRunningBrowsers(stillOpen);
+      setBrowsersReady(stillOpen.length === 0);
+
+      if (report.imported.length > 0 && report.skipped.length === 0) {
+        setImportOutcome('success');
+        setStatusTone('ok');
+        setStatusMessage(
+          t(
+            'settings.system.browserProfiles.importSuccess',
+            'Done — your browser logins are ready for LibrAgent. When an agent needs them, you will be asked to confirm first.',
+          ),
+        );
+        setWizardStep('done');
+        return;
+      }
+
+      if (report.imported.length > 0 && report.skipped.length > 0) {
+        setImportOutcome('partial');
+        setStatusTone('warn');
+        setStatusMessage(
+          t(
+            'settings.system.browserProfiles.importPartial',
+            'Some logins were saved, but others could not be copied because a browser was still open.',
+          ),
+        );
+        setWizardStep('done');
+        return;
+      }
+
+      if (stillOpen.length > 0 || report.skipped.length > 0) {
+        setImportOutcome('blocked');
+        setStatusTone('warn');
+        setStatusMessage(
+          t(
+            'settings.system.browserProfiles.importBlocked',
+            'Copy could not finish because a browser is still open. Go back one step, close it, then try again.',
+          ),
+        );
+        setWizardStep('close');
+        return;
+      }
+
+      if (report.warnings.length > 0) {
+        setImportOutcome('none');
+        setStatusTone('warn');
+        setStatusMessage(
+          t(
+            'settings.system.browserProfiles.importNoneFound',
+            'No supported browser profiles were found. Install Chrome, Edge, or Brave and sign in there first.',
+          ),
+        );
+        setWizardStep('done');
+        return;
+      }
+
+      setImportOutcome('none');
+      setStatusTone('warn');
+      setStatusMessage(
+        t(
+          'settings.system.browserProfiles.importNone',
+          'Nothing was imported. Make sure a browser is installed and you have signed in at least once.',
+        ),
+      );
+      setWizardStep('done');
+    } catch (error) {
+      logger.error('Failed to import browser profiles', error);
+      const ready = await refreshReadiness();
+      setImportOutcome(ready ? 'error' : 'blocked');
+      setStatusTone('error');
+      if (!ready) {
+        setStatusMessage(
+          t(
+            'settings.system.browserProfiles.importBlocked',
+            'Copy could not finish because a browser is still open. Go back one step, close it, then try again.',
+          ),
+        );
+        setWizardStep('close');
+      } else {
+        setStatusMessage(
+          t(
+            'settings.system.browserProfiles.importError',
+            'Copy failed. Close the browsers, wait a few seconds, then try again.',
+          ),
+        );
+        setWizardStep('done');
+      }
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -355,11 +454,10 @@ export function BrowserProfilesSettingsSection() {
   };
 
   const handleRemove = async (name: string) => {
-    setDialogMode('closed');
+    setRemoveDialogOpen(false);
     setProfilePendingRemoval(null);
     setRemovingName(name);
     setStatusMessage(null);
-    setBlockerVisible(false);
     try {
       await removeBrowserProfile(name);
       await refresh();
@@ -389,11 +487,13 @@ export function BrowserProfilesSettingsSection() {
     setStatusMessage(null);
     try {
       await openBrowserProfileForSignIn(name);
+      setSignInSessionFor(name);
+      setSignInHelpOpenFor(name);
       setStatusTone('ok');
       setStatusMessage(
         t(
           'settings.system.browserProfiles.signInOpened',
-          'Chrome opened for this LibrAgent login. Sign in to Google (and any other sites) in that window, then close it. Agents can reuse those logins after you approve.',
+          'Chrome opened for this saved copy. Sign in there, then tap “I’m done signing in” below.',
         ),
       );
     } catch (error) {
@@ -412,19 +512,52 @@ export function BrowserProfilesSettingsSection() {
     }
   };
 
+  const handleCloseSignInWindow = async (name: string) => {
+    setClosingSignInName(name);
+    setStatusMessage(null);
+    try {
+      const report = await quitBrowserProfileSignInWindows(name, true);
+      await refresh();
+      if (report.closed) {
+        setSignInSessionFor((current) => (current === name ? null : current));
+        setStatusTone('ok');
+        setStatusMessage(
+          t(
+            'settings.system.browserProfiles.closeSignInSuccess',
+            'Done. Agents can use this saved login after you approve browser access.',
+          ),
+        );
+      } else {
+        setStatusTone('warn');
+        setStatusMessage(
+          t(
+            'settings.system.browserProfiles.closeSignInPartial',
+            'Still open. Close any remaining LibrAgent Chrome window for this login, then Refresh.',
+          ),
+        );
+      }
+    } catch (error) {
+      logger.error('Failed to close browser profile sign-in window', error);
+      setStatusTone('error');
+      setStatusMessage(
+        t(
+          'settings.system.browserProfiles.closeSignInError',
+          'Could not close the login window automatically. Close the LibrAgent Chrome window yourself, then Refresh.',
+        ),
+      );
+    } finally {
+      setClosingSignInName(null);
+    }
+  };
+
   const busy =
     importing ||
     removingName !== null ||
     checkingReady ||
     quitting ||
     settingDefault !== null ||
-    signingInName !== null;
-
-  const selectedBrowserLabels = selectedProfiles.map((p) => p.browserLabel);
-  const confirmBrowserList =
-    selectedBrowserLabels.length > 0
-      ? formatBrowserList([...new Set(selectedBrowserLabels)])
-      : '';
+    signingInName !== null ||
+    closingSignInName !== null;
 
   return (
     <div className="rounded-xl border border-border/70 p-4 max-w-lg space-y-4">
@@ -435,112 +568,386 @@ export function BrowserProfilesSettingsSection() {
         <p className="text-xs text-muted-foreground leading-relaxed">
           {t(
             'settings.system.browserProfiles.description',
-            'Copies Chrome/Edge/Brave into a LibrAgent-only profile (not your everyday browser). Import may reuse some sessions; for Google, use Open to sign in if needed. Agents use this copy only after you approve.',
+            'This is a short guided process — not one click. You choose a browser, close it so files can be read, then LibrAgent copies logins into a private folder. Your everyday browser stays unchanged.',
           )}
         </p>
       </div>
 
-      {discoverable.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-foreground">
+      {!wizardOpen ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="default"
+            disabled={busy || loading || discoverable.length === 0}
+            onClick={openWizard}
+          >
             {t(
-              'settings.system.browserProfiles.selectTitle',
-              'Browsers to import',
+              'settings.system.browserProfiles.startImportWizard',
+              'Start import…',
             )}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'settings.system.browserProfiles.selectHint',
-              'Only selected browsers are checked and closed. Importing Edge will not ask you to quit Chrome.',
-            )}
-          </p>
-          <ul className="space-y-2">
-            {discoverable.map((profile) => {
-              const checked = selectedNames.includes(profile.name);
-              return (
-                <li
-                  key={profile.name}
-                  className="flex items-start gap-3 rounded-lg bg-muted/40 px-3 py-2"
-                >
-                  <Checkbox
-                    id={`import-${profile.name}`}
-                    checked={checked}
-                    disabled={busy}
-                    onCheckedChange={(value) => {
-                      toggleSelected(profile.name, value === true);
-                    }}
-                    className="mt-0.5"
-                  />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <label
-                      htmlFor={`import-${profile.name}`}
-                      className="text-sm font-medium cursor-pointer"
-                    >
-                      {profile.browserLabel}
-                    </label>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {profile.label}
-                    </p>
-                    {checked ? (
-                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                        <input
-                          type="radio"
-                          name="preferred-default"
-                          className="h-3.5 w-3.5 accent-primary"
-                          checked={preferredDefault === profile.name}
-                          disabled={busy}
-                          onChange={() => setPreferredDefault(profile.name)}
-                        />
-                        {t(
-                          'settings.system.browserProfiles.preferAsPrimary',
-                          'Use as primary after import',
-                        )}
-                      </label>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loading || busy}
+            onClick={() => void refresh()}
+          >
+            {t('settings.system.browserProfiles.refresh', 'Refresh list')}
+          </Button>
         </div>
-      ) : (
-        !loading && (
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'settings.system.browserProfiles.noneDiscoverable',
-              'No supported browsers found on this computer yet.',
-            )}
-          </p>
-        )
-      )}
+      ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="default"
-          disabled={busy || selectedNames.length === 0}
-          onClick={() => void handleImportClick()}
-        >
-          {importing
-            ? t('settings.system.browserProfiles.importing', 'Importing…')
-            : checkingReady
-              ? t('settings.system.browserProfiles.checking', 'Checking…')
-              : t(
-                  'settings.system.browserProfiles.importButton',
-                  'Import selected',
+      {!wizardOpen && discoverable.length === 0 && !loading ? (
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'settings.system.browserProfiles.noneDiscoverable',
+            'No supported browsers found on this computer yet.',
+          )}
+        </p>
+      ) : null}
+
+      {wizardOpen ? (
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-foreground">
+                {t(
+                  'settings.system.browserProfiles.wizardTitle',
+                  'Import browser logins',
                 )}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={loading || busy}
-          onClick={() => void refresh()}
-        >
-          {t('settings.system.browserProfiles.refresh', 'Refresh list')}
-        </Button>
-      </div>
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={busy && wizardStep !== 'done'}
+                onClick={closeWizard}
+              >
+                {t('settings.system.browserProfiles.wizardCancel', 'Cancel')}
+              </Button>
+            </div>
+            <WizardStepList active={wizardStep} labels={wizardStepLabels} />
+          </div>
 
-      {statusMessage ? (
+          {wizardStep === 'select' ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  {t(
+                    'settings.system.browserProfiles.wizardSelectTitle',
+                    'Step 1 — Choose what to copy',
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'settings.system.browserProfiles.selectHint',
+                    'Only selected browsers are closed in the next step. Importing Edge will not ask you to quit Chrome.',
+                  )}
+                </p>
+              </div>
+              {discoverable.length > 0 ? (
+                <ul className="space-y-2">
+                  {discoverable.map((profile) => {
+                    const checked = selectedNames.includes(profile.name);
+                    return (
+                      <li
+                        key={profile.name}
+                        className="flex items-start gap-3 rounded-lg bg-background/70 px-3 py-2"
+                      >
+                        <Checkbox
+                          id={`import-${profile.name}`}
+                          checked={checked}
+                          disabled={busy}
+                          onCheckedChange={(value) => {
+                            toggleSelected(profile.name, value === true);
+                          }}
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <label
+                            htmlFor={`import-${profile.name}`}
+                            className="text-sm font-medium cursor-pointer"
+                          >
+                            {profile.browserLabel}
+                          </label>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {profile.label}
+                          </p>
+                          {checked ? (
+                            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                              <input
+                                type="radio"
+                                name="preferred-default"
+                                className="h-3.5 w-3.5 accent-primary"
+                                checked={preferredDefault === profile.name}
+                                disabled={busy}
+                                onChange={() =>
+                                  setPreferredDefault(profile.name)
+                                }
+                              />
+                              {t(
+                                'settings.system.browserProfiles.preferAsPrimary',
+                                'Use as primary after import',
+                              )}
+                            </label>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'settings.system.browserProfiles.noneDiscoverable',
+                    'No supported browsers found on this computer yet.',
+                  )}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  disabled={busy || selectedNames.length === 0}
+                  onClick={() => void goToCloseStep()}
+                >
+                  {t(
+                    'settings.system.browserProfiles.wizardNextClose',
+                    'Next: close browsers',
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {wizardStep === 'close' ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  {t(
+                    'settings.system.browserProfiles.wizardCloseTitle',
+                    'Step 2 — Close those browsers',
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {t(
+                    'settings.system.browserProfiles.wizardCloseBody',
+                    'Browsers lock their login files while open. They must be fully quit before LibrAgent can copy anything. Unsaved tabs may be lost.',
+                  )}
+                </p>
+              </div>
+
+              {checkingReady ? (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'settings.system.browserProfiles.checking',
+                    'Checking…',
+                  )}
+                </p>
+              ) : browsersReady ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                  {t(
+                    'settings.system.browserProfiles.wizardCloseReady',
+                    'Ready — selected browsers are closed.',
+                  )}
+                </p>
+              ) : (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+                  <p className="text-xs font-medium text-foreground">
+                    {t(
+                      'settings.system.browserProfiles.closeNeededTitle',
+                      'Still open',
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'settings.system.browserProfiles.closeNeededBody',
+                      'Still open: {{browsers}}. Close them before copying.',
+                      {
+                        browsers:
+                          formatBrowserList(runningBrowsers) ||
+                          t(
+                            'settings.system.browserProfiles.closeDialogBrowsersFallback',
+                            'your browser',
+                          ),
+                      },
+                    )}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setWizardStep('select')}
+                >
+                  {t('settings.system.browserProfiles.wizardBack', 'Back')}
+                </Button>
+                {!browsersReady ? (
+                  <Button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleQuitBrowsers()}
+                  >
+                    {quitting
+                      ? t(
+                          'settings.system.browserProfiles.quitting',
+                          'Closing browsers…',
+                        )
+                      : t(
+                          'settings.system.browserProfiles.quitBrowsers',
+                          'Quit browsers for me',
+                        )}
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant={browsersReady ? 'default' : 'outline'}
+                  disabled={busy}
+                  onClick={() => void goToCopyStep()}
+                >
+                  {checkingReady
+                    ? t(
+                        'settings.system.browserProfiles.checking',
+                        'Checking…',
+                      )
+                    : browsersReady
+                      ? t(
+                          'settings.system.browserProfiles.wizardNextCopy',
+                          'Next: copy logins',
+                        )
+                      : t(
+                          'settings.system.browserProfiles.wizardRecheck',
+                          'I’ve closed them — check again',
+                        )}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {wizardStep === 'copy' ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  {t(
+                    'settings.system.browserProfiles.wizardCopyTitle',
+                    'Step 3 — Copy into LibrAgent',
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {confirmBrowserList
+                    ? t(
+                        'settings.system.browserProfiles.importConfirmSelected',
+                        'LibrAgent will copy signed-in sessions from {{browsers}} into its own private folder. Your original browsers are not changed. Agents can use these logins only after you approve.',
+                        { browsers: confirmBrowserList },
+                      )
+                    : t(
+                        'settings.system.browserProfiles.importConfirm',
+                        'LibrAgent will copy signed-in sessions from browsers on this computer into its own private folder. Your original browsers are not changed. Agents can use these logins only after you approve.',
+                      )}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setWizardStep('close')}
+                >
+                  {t('settings.system.browserProfiles.wizardBack', 'Back')}
+                </Button>
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void runImport()}
+                >
+                  {importing
+                    ? t(
+                        'settings.system.browserProfiles.importing',
+                        'Copying…',
+                      )
+                    : t(
+                        'settings.system.browserProfiles.importConfirmAction',
+                        'Copy logins now',
+                      )}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {wizardStep === 'done' ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  {t(
+                    'settings.system.browserProfiles.wizardDoneTitle',
+                    'Step 4 — Finished',
+                  )}
+                </p>
+                <p
+                  className={
+                    importOutcome === 'success'
+                      ? 'text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed'
+                      : importOutcome === 'error' ||
+                          importOutcome === 'blocked'
+                        ? 'text-xs text-destructive leading-relaxed'
+                        : 'text-xs text-amber-700 dark:text-amber-400 leading-relaxed'
+                  }
+                >
+                  {statusMessage ??
+                    t(
+                      'settings.system.browserProfiles.importSuccess',
+                      'Done — your browser logins are ready for LibrAgent.',
+                    )}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {importOutcome === 'blocked' || importOutcome === 'partial' ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => {
+                      setImportOutcome(null);
+                      setWizardStep('close');
+                      void refreshReadiness();
+                    }}
+                  >
+                    {t(
+                      'settings.system.browserProfiles.wizardRetryClose',
+                      'Back to close browsers',
+                    )}
+                  </Button>
+                ) : null}
+                <Button type="button" onClick={closeWizard}>
+                  {t(
+                    'settings.system.browserProfiles.wizardFinish',
+                    'Close',
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {wizardStep !== 'done' && statusMessage ? (
+            <p
+              className={
+                statusTone === 'error'
+                  ? 'text-xs text-destructive'
+                  : statusTone === 'warn'
+                    ? 'text-xs text-amber-700 dark:text-amber-400'
+                    : 'text-xs text-muted-foreground'
+              }
+            >
+              {statusMessage}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!wizardOpen && statusMessage ? (
         <p
           className={
             statusTone === 'error'
@@ -554,251 +961,173 @@ export function BrowserProfilesSettingsSection() {
         </p>
       ) : null}
 
-      {blockerVisible && runningBrowsers.length > 0 ? (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-3">
-          <p className="text-xs font-medium text-foreground">
-            {t(
-              'settings.system.browserProfiles.closeNeededTitle',
-              'Browsers are still open',
-            )}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'settings.system.browserProfiles.closeNeededBody',
-              'Still open: {{browsers}}. LibrAgent can close them for you (unsaved tabs may be lost).',
-              { browsers: formatBrowserList(runningBrowsers) },
-            )}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy}
-              onClick={() => void handleQuitBrowsers()}
-            >
-              {quitting
-                ? t(
-                    'settings.system.browserProfiles.quitting',
-                    'Closing browsers…',
-                  )
-                : t(
-                    'settings.system.browserProfiles.quitBrowsers',
-                    'Quit browsers for me',
-                  )}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
       {profiles.length > 0 ? (
-        <ul className="space-y-2 text-sm">
-          {profiles.map((profile) => (
-            <li
-              key={profile.name}
-              className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2"
-            >
-              <div className="min-w-0">
-                <p className="font-medium truncate">{profile.label}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {profile.sourceBrowser}
-                  {profile.isDefault
-                    ? ` · ${t('settings.system.browserProfiles.defaultBadge', 'primary')}`
-                    : ''}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {t('settings.system.browserProfiles.importedAt', 'Saved')}:{' '}
-                  {formatImportedAt(profile.importedAt)}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
+        <div className="space-y-2">
+          {!wizardOpen ? (
+            <p className="text-xs font-medium text-foreground">
+              {t(
+                'settings.system.browserProfiles.savedListTitle',
+                'Already saved',
+              )}
+            </p>
+          ) : null}
+          <ul className="space-y-2 text-sm">
+            {profiles.map((profile) => (
+              <li
+                key={profile.name}
+                className="rounded-lg bg-muted/40 px-3 py-2 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{profile.label}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {profile.sourceBrowser}
+                      {profile.isDefault
+                        ? ` · ${t('settings.system.browserProfiles.defaultBadge', 'primary')}`
+                        : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {t('settings.system.browserProfiles.importedAt', 'Saved')}
+                      : {formatImportedAt(profile.importedAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!profile.isDefault ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={busy}
+                        onClick={() => void handleSetDefault(profile.name)}
+                      >
+                        {settingDefault === profile.name
+                          ? t(
+                              'settings.system.browserProfiles.settingDefault',
+                              'Updating…',
+                            )
+                          : t(
+                              'settings.system.browserProfiles.setAsPrimary',
+                              'Set primary',
+                            )}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                      disabled={busy}
+                      onClick={() => {
+                        setProfilePendingRemoval({
+                          name: profile.name,
+                          label: profile.label,
+                        });
+                        setRemoveDialogOpen(true);
+                      }}
+                    >
+                      {removingName === profile.name
+                        ? t(
+                            'settings.system.browserProfiles.removing',
+                            'Removing…',
+                          )
+                        : t(
+                            'settings.system.browserProfiles.remove',
+                            'Remove',
+                          )}
+                    </Button>
+                  </div>
+                </div>
                 {profile.importKind !== 'firefox_cookies' ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    disabled={busy}
-                    onClick={() => void handleOpenForSignIn(profile.name)}
-                  >
-                    {signingInName === profile.name
-                      ? t(
-                          'settings.system.browserProfiles.signingIn',
-                          'Opening…',
+                  <div className="border-t border-border/50 pt-2">
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                      disabled={busy}
+                      onClick={() =>
+                        setSignInHelpOpenFor((current) =>
+                          current === profile.name ? null : profile.name,
                         )
-                      : t(
-                          'settings.system.browserProfiles.openToSignIn',
-                          'Open to sign in',
+                      }
+                    >
+                      {t(
+                        'settings.system.browserProfiles.signInHelpToggle',
+                        'Google still asks you to sign in?',
+                      )}
+                    </button>
+                    {signInHelpOpenFor === profile.name ? (
+                      <div className="mt-2 space-y-2">
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {t(
+                            'settings.system.browserProfiles.signInHelpBody',
+                            'Rare extra step: open a LibrAgent-only Chrome window, sign in once, then confirm below. Your everyday Chrome is not used.',
+                          )}
+                        </p>
+                        {signInSessionFor === profile.name ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() =>
+                              void handleCloseSignInWindow(profile.name)
+                            }
+                          >
+                            {closingSignInName === profile.name
+                              ? t(
+                                  'settings.system.browserProfiles.closingSignIn',
+                                  'Closing…',
+                                )
+                              : t(
+                                  'settings.system.browserProfiles.signInDone',
+                                  'I’m done signing in',
+                                )}
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() =>
+                              void handleOpenForSignIn(profile.name)
+                            }
+                          >
+                            {signingInName === profile.name
+                              ? t(
+                                  'settings.system.browserProfiles.signingIn',
+                                  'Opening…',
+                                )
+                              : t(
+                                  'settings.system.browserProfiles.openToSignIn',
+                                  'Open Chrome to sign in',
+                                )}
+                          </Button>
                         )}
-                  </Button>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
-                {!profile.isDefault ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    disabled={busy}
-                    onClick={() => void handleSetDefault(profile.name)}
-                  >
-                    {settingDefault === profile.name
-                      ? t(
-                          'settings.system.browserProfiles.settingDefault',
-                          'Updating…',
-                        )
-                      : t(
-                          'settings.system.browserProfiles.setAsPrimary',
-                          'Set primary',
-                        )}
-                  </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                  disabled={busy}
-                  onClick={() => {
-                    setProfilePendingRemoval({
-                      name: profile.name,
-                      label: profile.label,
-                    });
-                    setDialogMode('remove');
-                  }}
-                >
-                  {removingName === profile.name
-                    ? t('settings.system.browserProfiles.removing', 'Removing…')
-                    : t('settings.system.browserProfiles.remove', 'Remove')}
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : (
-        !loading && (
+        !loading &&
+        !wizardOpen && (
           <p className="text-xs text-muted-foreground">
             {t(
               'settings.system.browserProfiles.empty',
-              'Nothing saved yet. Import from your browsers when you are ready.',
+              'Nothing saved yet. Start the import when you are ready.',
             )}
           </p>
         )
       )}
 
       <AlertDialog
-        open={dialogMode === 'close-browsers'}
+        open={removeDialogOpen}
         onOpenChange={(open) => {
-          if (!open && !quitting) {
-            // Stay on confirm/remove if we already advanced; don't clobber after quit success.
-            setDialogMode((mode) =>
-              mode === 'close-browsers' ? 'closed' : mode,
-            );
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(
-                'settings.system.browserProfiles.closeDialogTitle',
-                'Quit browsers to continue?',
-              )}
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3 text-sm text-muted-foreground">
-                <p>
-                  {t(
-                    'settings.system.browserProfiles.closeDialogBody',
-                    'To copy your logins, these apps must be closed: {{browsers}}. LibrAgent can quit them for you now.',
-                    {
-                      browsers:
-                        formatBrowserList(runningBrowsers) ||
-                        t(
-                          'settings.system.browserProfiles.closeDialogBrowsersFallback',
-                          'your browser',
-                        ),
-                    },
-                  )}
-                </p>
-                <p>
-                  {t(
-                    'settings.system.browserProfiles.quitConsentWarning',
-                    'Unsaved work in open tabs may be lost. Save anything important first.',
-                  )}
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={quitting}>
-              {t('common.cancel', 'Cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={quitting}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleQuitBrowsers();
-              }}
-            >
-              {quitting
-                ? t(
-                    'settings.system.browserProfiles.quitting',
-                    'Closing browsers…',
-                  )
-                : t(
-                    'settings.system.browserProfiles.quitBrowsers',
-                    'Quit browsers for me',
-                  )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={dialogMode === 'confirm'}
-        onOpenChange={(open) => {
+          setRemoveDialogOpen(open);
           if (!open) {
-            setDialogMode('closed');
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(
-                'settings.system.browserProfiles.importConfirmTitle',
-                'Import your browser logins?',
-              )}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmBrowserList
-                ? t(
-                    'settings.system.browserProfiles.importConfirmSelected',
-                    'LibrAgent will copy signed-in sessions from {{browsers}} into its own private folder. Your original browsers are not changed. Agents can use these logins only after you approve.',
-                    { browsers: confirmBrowserList },
-                  )
-                : t(
-                    'settings.system.browserProfiles.importConfirm',
-                    'LibrAgent will copy signed-in sessions from browsers on this computer into its own private folder. Your original browsers are not changed. Agents can use these logins only after you approve.',
-                  )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel', 'Cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void runImport()}>
-              {t(
-                'settings.system.browserProfiles.importConfirmAction',
-                'Import',
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={dialogMode === 'remove'}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDialogMode('closed');
             setProfilePendingRemoval(null);
           }
         }}

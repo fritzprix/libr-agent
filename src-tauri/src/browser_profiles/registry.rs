@@ -60,6 +60,9 @@ pub struct BrowserProfileInfo {
     /// How this profile was imported — Chromium User Data vs Firefox cookie inject.
     #[serde(default)]
     pub import_kind: ImportKind,
+    /// True when Open-to-sign-in (or another Chrome) currently holds this copy.
+    #[serde(default)]
+    pub sign_in_window_open: bool,
 }
 
 pub fn profiles_storage_root() -> Result<PathBuf, String> {
@@ -116,14 +119,20 @@ pub fn list_imported_profiles() -> Result<Vec<BrowserProfileInfo>, String> {
     Ok(registry
         .profiles
         .iter()
-        .map(|(name, profile)| BrowserProfileInfo {
-            name: name.clone(),
-            label: profile.label.clone(),
-            source_label: profile.source_label.clone(),
-            source_browser: profile.source_browser.clone(),
-            imported_at: profile.imported_at,
-            is_default: default_name.as_ref() == Some(name),
-            import_kind: profile.import_kind,
+        .map(|(name, profile)| {
+            // Avoid PowerShell/process scans on every Settings refresh (Firefox/Brave-style
+            // import UI is "close → import → done"; sign-in help is optional, on demand).
+            let sign_in_window_open = false;
+            BrowserProfileInfo {
+                name: name.clone(),
+                label: profile.label.clone(),
+                source_label: profile.source_label.clone(),
+                source_browser: profile.source_browser.clone(),
+                imported_at: profile.imported_at,
+                is_default: default_name.as_ref() == Some(name),
+                import_kind: profile.import_kind,
+                sign_in_window_open,
+            }
         })
         .collect())
 }

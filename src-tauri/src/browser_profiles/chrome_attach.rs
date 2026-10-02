@@ -10,10 +10,14 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use log::{info, warn};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration as StdDuration, Instant};
+
+use crate::utils::platform::suppress_console_window;
 
 use super::registry::{ensure_under_profiles_storage, load_registry, ImportKind};
 
-const PROFILE_IN_USE_HINT: &str = "Close the LibrAgent Chrome window from Settings → Open to sign in (or any other Chrome using this saved login), then retry.";
+const PROFILE_IN_USE_HINT: &str = "Close that LibrAgent Chrome window (Settings → Saved browser logins → Close login window), then retry. Do not leave Open to sign in open while the agent runs.";
 
 /// Pick an unused TCP port on 127.0.0.1 for Chrome remote debugging.
 pub fn pick_loopback_debug_port() -> Result<u16, String> {
@@ -105,7 +109,9 @@ fn system_chrome_candidate_paths() -> Vec<PathBuf> {
 
 #[cfg(target_os = "linux")]
 fn which_program(name: &str) -> Result<PathBuf, ()> {
-    let output = Command::new("which").arg(name).output().map_err(|_| ())?;
+    let mut which_cmd = Command::new("which");
+    suppress_console_window(&mut which_cmd);
+    let output = which_cmd.arg(name).output().map_err(|_| ())?;
     if !output.status.success() {
         return Err(());
     }
@@ -116,8 +122,28 @@ fn which_program(name: &str) -> Result<PathBuf, ()> {
     Ok(PathBuf::from(path))
 }
 
-/// True when Chrome's profile SingletonLock points at a still-running process.
+/// True when this LibrAgent profile User Data dir is held by a live browser.
+///
+/// Prefers a live process command-line match (authoritative). SingletonLock is
+/// used on Unix only — on Windows a stale lock file after crash is common and
+/// must not block attach / “I’m done signing in” when no process holds the dir.
 pub fn chrome_profile_appears_in_use(user_data_dir: &Path) -> bool {
+    if profile_held_by_browser_process(user_data_dir) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        return singleton_lock_indicates_in_use(user_data_dir);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = user_data_dir;
+        false
+    }
+}
+
+#[cfg(unix)]
+fn singleton_lock_indicates_in_use(user_data_dir: &Path) -> bool {
     let lock_path = user_data_dir.join("SingletonLock");
     // Chrome's SingletonLock is often a symlink to "hostname-pid" (not a real path).
     // `Path::exists` follows links and would report false — use symlink_metadata instead.
@@ -125,24 +151,283 @@ pub fn chrome_profile_appears_in_use(user_data_dir: &Path) -> bool {
         return false;
     };
 
-    #[cfg(unix)]
-    {
-        if meta.file_type().is_symlink() {
-            if let Ok(target) = std::fs::read_link(&lock_path) {
-                if let Some(pid) = parse_chrome_singleton_pid(&target) {
-                    return process_appears_alive(pid);
-                }
+    if meta.file_type().is_symlink() {
+        if let Ok(target) = std::fs::read_link(&lock_path) {
+            if let Some(pid) = parse_chrome_singleton_pid(&target) {
+                return process_appears_alive(pid);
             }
         }
-        // Non-symlink lock (or unreadable target): treat as in-use to avoid a confusing CDP timeout.
-        true
     }
+    // Non-symlink lock (or unreadable target): treat as in-use to avoid a confusing CDP timeout.
+    true
+}
 
+/// Normalize a User Data path for substring matching against process command lines.
+pub(crate) fn user_data_dir_match_needles(user_data_dir: &Path) -> Vec<String> {
+    let raw = user_data_dir.to_string_lossy();
+    let stripped = raw
+        .strip_prefix(r"\\?\")
+        .or_else(|| raw.strip_prefix("//?/"))
+        .unwrap_or(raw.as_ref());
+    let mut variants = Vec::new();
+    for candidate in [stripped, raw.as_ref()] {
+        let back = candidate.replace('/', "\\");
+        let forward = candidate.replace('\\', "/");
+        for v in [back, forward] {
+            let lower = v.to_ascii_lowercase();
+            if !lower.is_empty() && !variants.iter().any(|e: &String| e == &lower) {
+                variants.push(lower);
+            }
+        }
+    }
+    variants
+}
+
+fn command_line_matches_user_data_dir(command_line: &str, user_data_dir: &Path) -> bool {
+    let haystack = command_line.to_ascii_lowercase();
+    user_data_dir_match_needles(user_data_dir)
+        .iter()
+        .any(|needle| haystack.contains(needle))
+}
+
+fn profile_held_by_browser_process(user_data_dir: &Path) -> bool {
+    browser_process_command_lines()
+        .iter()
+        .any(|line| command_line_matches_user_data_dir(line, user_data_dir))
+}
+
+#[derive(Debug, Clone)]
+struct BrowserProcessRef {
+    pid: u32,
+    command_line: String,
+}
+
+static BROWSER_PROCESS_CACHE: OnceLock<Mutex<Option<(Instant, Vec<BrowserProcessRef>)>>> =
+    OnceLock::new();
+
+const BROWSER_PROCESS_CACHE_TTL: StdDuration = StdDuration::from_secs(2);
+
+/// Chrome/Edge/Brave processes with a readable command line (best-effort).
+fn browser_processes() -> Vec<BrowserProcessRef> {
+    let cache = BROWSER_PROCESS_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = cache.lock() {
+        if let Some((at, processes)) = guard.as_ref() {
+            if at.elapsed() < BROWSER_PROCESS_CACHE_TTL {
+                return processes.clone();
+            }
+        }
+        let fresh = browser_processes_uncached();
+        *guard = Some((Instant::now(), fresh.clone()));
+        return fresh;
+    }
+    browser_processes_uncached()
+}
+
+fn browser_processes_uncached() -> Vec<BrowserProcessRef> {
     #[cfg(windows)]
     {
-        let _ = meta;
-        // Windows holds SingletonLock while Chrome is running; a live second instance fails fast.
-        true
+        windows_browser_processes()
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        unix_browser_processes()
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        Vec::new()
+    }
+}
+
+/// Top-level browser process (taskkill /T once); renderers also carry --user-data-dir.
+fn is_browser_main_process(command_line: &str) -> bool {
+    !command_line.to_ascii_lowercase().contains("--type=")
+}
+
+fn browser_process_command_lines() -> Vec<String> {
+    browser_processes()
+        .into_iter()
+        .map(|p| p.command_line)
+        .collect()
+}
+
+#[cfg(windows)]
+fn windows_browser_processes() -> Vec<BrowserProcessRef> {
+    // CommandLine is required; tasklist alone cannot see --user-data-dir.
+    let mut ps = Command::new("powershell");
+    suppress_console_window(&mut ps);
+    let output = ps
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe' OR Name = 'msedge.exe' OR Name = 'brave.exe' OR Name = 'chromium.exe' OR Name = 'vivaldi.exe'\" | ForEach-Object { if ($_.CommandLine) { '{0}|{1}' -f $_.ProcessId, $_.CommandLine } }",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_pid_cmdline_table(&stdout, '|')
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn unix_browser_processes() -> Vec<BrowserProcessRef> {
+    let mut ps_cmd = Command::new("ps");
+    suppress_console_window(&mut ps_cmd);
+    let output = ps_cmd
+        .args(["-A", "-o", "pid=", "-o", "args="])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut out = Vec::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some(pid_end) = trimmed.find(|c: char| c.is_whitespace()) else {
+            continue;
+        };
+        let Ok(pid) = trimmed[..pid_end].trim().parse::<u32>() else {
+            continue;
+        };
+        let command_line = trimmed[pid_end..].trim().to_string();
+        if command_line.is_empty() {
+            continue;
+        }
+        let lower = command_line.to_ascii_lowercase();
+        let is_browser = [
+            "google chrome",
+            "google-chrome",
+            "/chrome ",
+            "chromium",
+            "microsoft edge",
+            "microsoft-edge",
+            "msedge",
+            "brave",
+            "vivaldi",
+        ]
+        .iter()
+        .any(|n| lower.contains(n));
+        if is_browser && lower.contains("user-data-dir") {
+            out.push(BrowserProcessRef { pid, command_line });
+        }
+    }
+    out
+}
+
+fn parse_pid_cmdline_table(blob: &str, separator: char) -> Vec<BrowserProcessRef> {
+    let mut out = Vec::new();
+    for line in blob.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some((pid_str, cmdline)) = trimmed.split_once(separator) else {
+            continue;
+        };
+        let Ok(pid) = pid_str.trim().parse::<u32>() else {
+            continue;
+        };
+        let command_line = cmdline.trim().to_string();
+        if !command_line.is_empty() {
+            out.push(BrowserProcessRef { pid, command_line });
+        }
+    }
+    out
+}
+
+/// Report after attempting to close Open-to-sign-in / profile-holding browsers.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuitSavedLoginWindowsReport {
+    /// PIDs we attempted to terminate.
+    pub attempted_pids: Vec<u32>,
+    /// True when no matching browser process remains.
+    pub closed: bool,
+}
+
+/// Quit browser processes whose command line references this imported User Data dir.
+///
+/// Requires `user_confirmed` (Settings button / explicit consent). Does not touch the
+/// user's everyday Chrome profile — only LibrAgent `browser_profiles/...` paths.
+pub fn quit_processes_holding_imported_profile(
+    user_data_dir: &Path,
+    user_confirmed: bool,
+) -> Result<QuitSavedLoginWindowsReport, String> {
+    if !user_confirmed {
+        return Err(
+            "Closing the login window was not confirmed. Use the button in Settings first."
+                .to_string(),
+        );
+    }
+    let safe_dir = super::registry::ensure_under_profiles_storage(user_data_dir)?;
+    let matching: Vec<BrowserProcessRef> = browser_processes()
+        .into_iter()
+        .filter(|proc| command_line_matches_user_data_dir(&proc.command_line, &safe_dir))
+        .collect();
+    let targets: Vec<BrowserProcessRef> = matching
+        .iter()
+        .filter(|proc| is_browser_main_process(&proc.command_line))
+        .cloned()
+        .collect();
+    let targets = if targets.is_empty() {
+        matching
+    } else {
+        targets
+    };
+    let attempted_pids: Vec<u32> = targets.iter().map(|p| p.pid).collect();
+    for proc in &targets {
+        kill_process_best_effort(proc.pid);
+    }
+    if !attempted_pids.is_empty() {
+        std::thread::sleep(Duration::from_millis(800));
+    }
+    let still_open = profile_held_by_browser_process(&safe_dir);
+    #[cfg(unix)]
+    let still_open = still_open || singleton_lock_indicates_in_use(&safe_dir);
+    Ok(QuitSavedLoginWindowsReport {
+        attempted_pids,
+        closed: !still_open,
+    })
+}
+
+fn kill_process_best_effort(pid: u32) {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("taskkill");
+        suppress_console_window(&mut cmd);
+        let _ = cmd
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let mut term = Command::new("kill");
+        suppress_console_window(&mut term);
+        let _ = term
+            .args(["-TERM", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        std::thread::sleep(Duration::from_millis(400));
+        let mut kill = Command::new("kill");
+        suppress_console_window(&mut kill);
+        let _ = kill
+            .args(["-KILL", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
 }
 
@@ -174,7 +459,7 @@ fn process_appears_alive(pid: u32) -> bool {
 
 fn profile_in_use_error() -> String {
     format!(
-        "This saved browser login is already open in another Chrome window. {PROFILE_IN_USE_HINT}"
+        "Your saved browser login is already open in a LibrAgent Chrome window. {PROFILE_IN_USE_HINT}"
     )
 }
 
@@ -182,7 +467,7 @@ fn attach_failed_before_cdp_error(user_data_dir: &Path) -> String {
     if chrome_profile_appears_in_use(user_data_dir) {
         return profile_in_use_error();
     }
-    format!("Chrome exited before remote debugging was ready. {PROFILE_IN_USE_HINT}")
+    format!("Could not start the agent browser with your saved logins. {PROFILE_IN_USE_HINT}")
 }
 
 /// Options for spawning Chrome against an app-local profile.
@@ -462,6 +747,16 @@ mod tests {
     }
 
     #[test]
+    fn main_process_filter_skips_renderer_command_lines() {
+        assert!(is_browser_main_process(
+            r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir=C:\foo"#
+        ));
+        assert!(!is_browser_main_process(
+            r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --type=renderer --user-data-dir=C:\foo"#
+        ));
+    }
+
+    #[test]
     fn parse_singleton_pid_from_chrome_lock_target() {
         assert_eq!(
             parse_chrome_singleton_pid(OsStr::new("myhost-12345")),
@@ -477,6 +772,46 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("mkdir");
         assert!(!chrome_profile_appears_in_use(&dir));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn matches_verbatim_and_plain_user_data_paths() {
+        let dir = PathBuf::from(
+            r"C:\Users\Demo\AppData\Roaming\com.fritzprix.libragent\browser_profiles\chrome_default",
+        );
+        let needles = user_data_dir_match_needles(&dir);
+        assert!(needles
+            .iter()
+            .any(|n| n.contains("browser_profiles\\chrome_default")));
+
+        let verbatim = format!(
+            r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir=\\?\{} --no-first-run"#,
+            dir.display()
+        );
+        assert!(command_line_matches_user_data_dir(&verbatim, &dir));
+
+        let plain = format!(
+            r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir={} --no-first-run"#,
+            dir.display()
+        );
+        assert!(command_line_matches_user_data_dir(&plain, &dir));
+        assert!(!command_line_matches_user_data_dir(
+            r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir=C:\Users\Demo\AppData\Local\Google\Chrome\User Data"#,
+            &dir
+        ));
+    }
+
+    #[test]
+    fn parse_pid_cmdline_rows() {
+        let rows = parse_pid_cmdline_table(
+            "13856|chrome.exe --user-data-dir=\\\\?\\C:\\tmp\\chrome_default\n\
+             bad\n\
+             42|edge.exe --user-data-dir=C:\\tmp\\edge_default\n",
+            '|',
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].pid, 13856);
+        assert_eq!(rows[1].pid, 42);
     }
 
     #[cfg(unix)]

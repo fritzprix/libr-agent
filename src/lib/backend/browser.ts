@@ -17,6 +17,8 @@ export interface BrowserProfileInfo {
   isDefault: boolean;
   /** chromium_user_data | firefox_cookies */
   importKind?: 'chromium_user_data' | 'firefox_cookies';
+  /** Open-to-sign-in (or other) Chrome currently holds this LibrAgent copy. */
+  signInWindowOpen?: boolean;
 }
 
 /** Installed browser Default profile available to import (no filesystem paths). */
@@ -44,6 +46,11 @@ export interface QuitBrowsersForImportReport {
   attempted: string[];
   stillRunning: string[];
   ready: boolean;
+}
+
+export interface QuitSavedLoginWindowsReport {
+  attemptedPids: number[];
+  closed: boolean;
 }
 
 /**
@@ -175,4 +182,18 @@ export async function removeBrowserProfile(name: string): Promise<void> {
  */
 export async function openBrowserProfileForSignIn(name: string): Promise<void> {
   return safeInvoke<void>('open_browser_profile_for_signin', { name });
+}
+
+/**
+ * Close LibrAgent Chrome still holding a saved-login profile (after Open to sign in).
+ * Required before agents can attach with `use_profile: true`.
+ */
+export async function quitBrowserProfileSignInWindows(
+  name: string,
+  userConfirmed: boolean,
+): Promise<QuitSavedLoginWindowsReport> {
+  return safeInvoke<QuitSavedLoginWindowsReport>(
+    'quit_browser_profile_signin_windows',
+    { name, userConfirmed },
+  );
 }

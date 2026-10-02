@@ -69,6 +69,7 @@ export {
   setDefaultBrowserProfile,
   removeBrowserProfile,
   openBrowserProfileForSignIn,
+  quitBrowserProfileSignInWindows,
 } from './browser';
 export type {
   BrowserProfileInfo,
@@ -76,6 +77,7 @@ export type {
   BrowserProfileImportReport,
   BrowserProfileImportReadiness,
   QuitBrowsersForImportReport,
+  QuitSavedLoginWindowsReport,
 } from './browser';
 
 // File operations

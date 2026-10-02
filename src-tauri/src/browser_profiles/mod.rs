@@ -14,8 +14,9 @@ mod registry;
 
 pub use chrome_attach::{
     chrome_profile_appears_in_use, open_imported_profile_for_signin, pick_loopback_debug_port,
-    spawn_system_chrome_for_profile, spawn_system_chrome_for_profile_async, wait_for_cdp_ready,
-    ChromeProfileSpawnOptions,
+    quit_processes_holding_imported_profile, spawn_system_chrome_for_profile,
+    spawn_system_chrome_for_profile_async, wait_for_cdp_ready, ChromeProfileSpawnOptions,
+    QuitSavedLoginWindowsReport,
 };
 pub use discover::{discover_browser_profiles, discover_chrome_profiles, DiscoveredBrowserProfile};
 pub use firefox::{read_inject_cookies_file, InjectableCookie, INJECT_COOKIES_FILE};
