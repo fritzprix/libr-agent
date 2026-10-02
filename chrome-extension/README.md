@@ -56,7 +56,7 @@ When Connected, these go through everyday Chrome:
 - Session: `createSession`, `navigateToUrl`, `navigateBack`, `navigateForward`, `closeSession`
 - Read / JS: `getPageTitle`, `getCurrentUrl`, `getPageContent`, `evaluateJS`, `listInteractable`
 - Interact: `clickElement`, `inputText`, `scrollPage`
-- Screenshot: `takeScreenshot` (**visible viewport only**; `fullPage` is ignored)
+- Screenshot: `takeScreenshot` (**visible viewport only**; `fullPage` is ignored and logged)
 
 Still sidecar-only:
 

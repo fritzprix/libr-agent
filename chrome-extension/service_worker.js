@@ -17,6 +17,8 @@ const RECONNECT_MS = 2000;
 const KEEPALIVE_ALARM = 'libragent-bridge-keepalive';
 const KEEPALIVE_MINUTES = 0.4; // ~24s (Chrome may clamp to ~1 min)
 const TAB_LOAD_TIMEOUT_MS = 20000;
+/** History nav often has no load event when there is no entry — keep this short. */
+const HISTORY_NAV_TIMEOUT_MS = 2500;
 
 /** @type {Map<string, number>} */
 const sessionToTab = new Map();
@@ -113,6 +115,61 @@ async function tabState(tabId) {
     title: tab.title ?? null,
     tabId,
   };
+}
+
+/**
+ * Wait briefly after goBack/goForward. Resolves as soon as the tab URL/status
+ * updates, or after a short timeout when history is empty (no load event).
+ *
+ * @param {number} tabId
+ * @param {'back' | 'forward'} direction
+ * @returns {Promise<{ url: string, title: string | null, tabId: number }>}
+ */
+async function navigateHistory(tabId, direction) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(timer);
+      void chrome.tabs
+        .get(tabId)
+        .then((tab) =>
+          resolve({
+            url: tab.url ?? 'about:blank',
+            title: tab.title ?? null,
+            tabId,
+          }),
+        )
+        .catch(reject);
+    };
+
+    /** @param {number} id @param {chrome.tabs.TabChangeInfo} changeInfo */
+    const onUpdated = (id, changeInfo) => {
+      if (id !== tabId) {
+        return;
+      }
+      if (changeInfo.status === 'complete' || typeof changeInfo.url === 'string') {
+        finish();
+      }
+    };
+
+    const timer = setTimeout(finish, HISTORY_NAV_TIMEOUT_MS);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+
+    const nav =
+      direction === 'back'
+        ? chrome.tabs.goBack(tabId)
+        : chrome.tabs.goForward(tabId);
+
+    void Promise.resolve(nav).catch((error) => {
+      console.info(`[LibrAgent Bridge] go${direction === 'back' ? 'Back' : 'Forward'}:`, error);
+      finish();
+    });
+  });
 }
 
 /**
@@ -253,30 +310,18 @@ async function handleRequest(message) {
       case 'goBack': {
         const sessionId = String(params.sessionId ?? '');
         const tabId = requireTabId(sessionId);
-        try {
-          await chrome.tabs.goBack(tabId);
-        } catch (error) {
-          // No history entry — still return current state.
-          console.info('[LibrAgent Bridge] goBack:', error);
-        }
-        await waitForTabComplete(tabId);
-        reply({ ok: true, result: await tabState(tabId) });
+        reply({ ok: true, result: await navigateHistory(tabId, 'back') });
         break;
       }
       case 'goForward': {
         const sessionId = String(params.sessionId ?? '');
         const tabId = requireTabId(sessionId);
-        try {
-          await chrome.tabs.goForward(tabId);
-        } catch (error) {
-          console.info('[LibrAgent Bridge] goForward:', error);
-        }
-        await waitForTabComplete(tabId);
-        reply({ ok: true, result: await tabState(tabId) });
+        reply({ ok: true, result: await navigateHistory(tabId, 'forward') });
         break;
       }
       case 'takeScreenshot': {
         const sessionId = String(params.sessionId ?? '');
+        const fullPage = Boolean(params.fullPage);
         const tabId = requireTabId(sessionId);
         // Activate tab so captureVisibleTab targets it.
         await chrome.tabs.update(tabId, { active: true });
@@ -284,11 +329,22 @@ async function handleRequest(message) {
         const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
           format: 'png',
         });
-        // App expects raw base64 (no data-URL prefix). fullPage is ignored (viewport only).
+        // App expects raw base64 (no data-URL prefix). fullPage is viewport-only.
         const base64 = String(dataUrl).includes('base64,')
           ? String(dataUrl).split('base64,')[1]
           : String(dataUrl);
-        reply({ ok: true, result: base64 });
+        if (fullPage) {
+          reply({
+            ok: true,
+            result: {
+              base64,
+              warning:
+                'Chrome extension bridge captures the visible viewport only; fullPage was ignored',
+            },
+          });
+        } else {
+          reply({ ok: true, result: base64 });
+        }
         break;
       }
       case 'ping': {
