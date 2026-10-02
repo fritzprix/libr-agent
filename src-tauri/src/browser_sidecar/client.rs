@@ -364,6 +364,10 @@ impl BrowserAutomationClient {
         let mut command = Command::new(current_exe);
         command
             .arg(BROWSER_SIDECAR_FLAG)
+            .env(
+                "LIBRAGENT_PROFILE",
+                crate::profile::resolve_profile().as_str(),
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

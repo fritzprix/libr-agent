@@ -176,3 +176,11 @@ export async function removeBrowserProfile(name: string): Promise<void> {
 export async function openBrowserProfileForSignIn(name: string): Promise<void> {
   return safeInvoke<void>('open_browser_profile_for_signin', { name });
 }
+
+/**
+ * Close browser sessions and delete the sticky agent Chromium profile.
+ * Does not touch everyday Chrome or imported Saved browser logins.
+ */
+export async function clearAgentBrowserData(): Promise<void> {
+  return safeInvoke<void>('clear_agent_browser_data');
+}
