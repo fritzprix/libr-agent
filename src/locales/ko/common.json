@@ -631,6 +631,25 @@
         "clearSuccessBody": "에이전트 브라우저에 저장된 로그인이 제거되었습니다. 일상 Chrome은 그대로입니다.",
         "clearErrorTitle": "지우기 실패",
         "clearError": "에이전트 브라우저 데이터를 지우지 못했습니다. 열린 에이전트 브라우저 창을 닫고 다시 시도하세요."
+      },
+      "extensionBridge": {
+        "title": "Chrome 확장 프로그램 브리지",
+        "description": "일상 Chrome용 Load unpacked MV3 확장(선택). 연결되면 create/navigate/close는 확장을 우선하고, 끊기면 sticky 에이전트 브라우저 sidecar를 사용합니다.",
+        "statusLabel": "상태",
+        "connected": "연결됨",
+        "disconnected": "연결 안 됨",
+        "checking": "확인 중…",
+        "portLabel": "포트",
+        "tokenLabel": "토큰",
+        "modeLabel": "백엔드",
+        "pathLabel": "Load unpacked 경로",
+        "refresh": "새로고침",
+        "copyPath": "Load unpacked 경로 복사",
+        "pathCopied": "Load unpacked 경로를 복사했습니다",
+        "pathCopyFailed": "클립보드에 경로를 복사하지 못했습니다",
+        "statusErrorTitle": "브리지 상태를 읽을 수 없음",
+        "statusError": "확장 브리지 상태를 읽지 못했습니다.",
+        "pathError": "Load unpacked 경로를 찾지 못했습니다."
       }
     },
     "about": {

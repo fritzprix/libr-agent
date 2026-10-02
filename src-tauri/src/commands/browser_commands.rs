@@ -243,3 +243,17 @@ pub async fn clear_agent_browser_data(
     error!("Failed to clear agent browser profile after {CLEAR_ATTEMPTS} attempts: {error}");
     Err(error)
 }
+
+/// Status of the local Chrome MV3 extension WebSocket bridge.
+#[tauri::command]
+pub async fn get_extension_bridge_status(
+) -> Result<crate::browser_extension_bridge::ExtensionBridgeStatus, String> {
+    crate::browser_extension_bridge::ensure_started();
+    Ok(crate::browser_extension_bridge::status())
+}
+
+/// Absolute path to the Load unpacked `chrome-extension/` folder.
+#[tauri::command]
+pub async fn get_extension_unpacked_path() -> Result<String, String> {
+    crate::browser_extension_bridge::extension_unpacked_path()
+}
