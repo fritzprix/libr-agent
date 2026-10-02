@@ -16,10 +16,14 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
+            // Strip inline/fenced code so stack notes like `Fixes #1234` are ignored.
             const text = [
               context.payload.pull_request.title ?? '',
               context.payload.pull_request.body ?? '',
-            ].join('\n');
+            ]
+              .join('\n')
+              .replace(/```[\s\S]*?```/g, '')
+              .replace(/`[^`]*`/g, '');
 
             const regex =
               /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s*:?\s+#(\d+)/gi;
@@ -30,12 +34,32 @@ jobs:
             }
 
             for (const issue_number of issueNumbers) {
-              core.info(`Closing issue #${issue_number}`);
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number,
-                state: 'closed',
-                state_reason: 'completed',
-              });
+              try {
+                const { data: issue } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number,
+                });
+                if (issue.state === 'closed') {
+                  core.info(`Issue #${issue_number} already closed; skipping`);
+                  continue;
+                }
+                core.info(`Closing issue #${issue_number}`);
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number,
+                  state: 'closed',
+                  state_reason: 'completed',
+                });
+              } catch (error) {
+                const status = error?.status ?? error?.response?.status;
+                if (status === 422) {
+                  core.warning(
+                    `Skip #${issue_number}: already closed or not closable (${error.message})`,
+                  );
+                  continue;
+                }
+                throw error;
+              }
             }
