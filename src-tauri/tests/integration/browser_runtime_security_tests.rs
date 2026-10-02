@@ -1,7 +1,9 @@
 use serde_json::json;
+#[allow(deprecated)]
 use tauri_mcp_agent_lib::browser_sidecar::{
-    browser_runtime_profile_dir, browser_runtime_profile_root, classify_browser_page,
-    serialize_browser_result_value, BrowserAutomationClient, PageClassification,
+    agent_sticky_user_data_dir, browser_runtime_profile_dir, browser_runtime_profile_root,
+    classify_browser_page, clear_agent_sticky_profile_dir, serialize_browser_result_value,
+    BrowserAutomationClient, PageClassification,
 };
 use tauri_mcp_agent_lib::services::interactive_browser_server::{
     BrowserSession, NavigationUpdateOutcome, SessionStatus,
@@ -170,9 +172,12 @@ fn classify_browser_page_leaves_normal_pages_alone() {
 
 #[test]
 fn browser_runtime_profile_dirs_are_unique_and_not_the_chromiumoxide_default() {
+    #[allow(deprecated)]
     let first = browser_runtime_profile_dir(uuid::Uuid::new_v4());
+    #[allow(deprecated)]
     let second = browser_runtime_profile_dir(uuid::Uuid::new_v4());
     let chromiumoxide_default = std::env::temp_dir().join("chromiumoxide-runner");
+    #[allow(deprecated)]
     let profile_root = browser_runtime_profile_root();
 
     assert_ne!(first, second);
@@ -180,6 +185,56 @@ fn browser_runtime_profile_dirs_are_unique_and_not_the_chromiumoxide_default() {
     assert_ne!(second, chromiumoxide_default);
     assert!(first.starts_with(&profile_root));
     assert!(second.starts_with(&profile_root));
+}
+
+#[test]
+fn agent_sticky_user_data_dir_is_stable_and_under_app_data() {
+    let first = agent_sticky_user_data_dir().expect("sticky dir");
+    let second = agent_sticky_user_data_dir().expect("sticky dir");
+    let chromiumoxide_default = std::env::temp_dir().join("chromiumoxide-runner");
+
+    assert_eq!(first, second);
+    assert_ne!(first, chromiumoxide_default);
+    assert!(
+        first.file_name().and_then(|name| name.to_str()) == Some("browser_agent_profile"),
+        "sticky profile must use fixed browser_agent_profile dir, got {}",
+        first.display()
+    );
+    assert!(
+        !first.starts_with(&{
+            #[allow(deprecated)]
+            {
+                browser_runtime_profile_root()
+            }
+        }),
+        "sticky profile must live in app data, not cache UUID profiles"
+    );
+}
+
+/// #1984 contract: sticky profile is wiped only via explicit clear, never via UUID cache helpers.
+#[test]
+fn sticky_profile_is_not_the_legacy_uuid_cache_layout() {
+    let sticky = agent_sticky_user_data_dir().expect("sticky dir");
+    #[allow(deprecated)]
+    let legacy_root = browser_runtime_profile_root();
+    assert_ne!(sticky, legacy_root);
+    assert!(!sticky.starts_with(&legacy_root));
+    assert_eq!(
+        sticky.file_name().and_then(|n| n.to_str()),
+        Some("browser_agent_profile")
+    );
+}
+
+#[test]
+fn clear_agent_sticky_profile_dir_is_idempotent_when_missing() {
+    // Uses the real sticky path for this process; safe when the dir does not exist.
+    let dir = agent_sticky_user_data_dir().expect("sticky dir");
+    if dir.exists() {
+        // Do not wipe a developer's real sticky profile in unit tests.
+        return;
+    }
+    clear_agent_sticky_profile_dir().expect("clear missing sticky dir");
+    clear_agent_sticky_profile_dir().expect("clear again");
 }
 
 #[test]

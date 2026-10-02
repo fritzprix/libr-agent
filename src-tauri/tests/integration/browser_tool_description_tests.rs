@@ -55,6 +55,14 @@ fn create_session_description_explains_single_stateful_session() {
         description.contains("One agent has one active browser session/page"),
         "createSession should explain the single-session model"
     );
+    assert!(
+        description.contains("sticky agent browser profile"),
+        "createSession should document sticky agent login persistence"
+    );
+    assert!(
+        description.contains("shares one cookie jar"),
+        "createSession should document shared sticky cookie jar across sessions"
+    );
 }
 
 #[test]

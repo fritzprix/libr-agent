@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,6 +15,29 @@ use crate::browser_profiles::{
     chrome_profile_appears_in_use, pick_loopback_debug_port, spawn_system_chrome_for_profile_async,
     wait_for_cdp_ready, ChromeProfileSpawnOptions,
 };
+use crate::session::get_session_manager;
+
+/// App-local sticky Chromium user-data dir (agent logins only — not everyday Chrome).
+const AGENT_STICKY_PROFILE_DIR: &str = "browser_agent_profile";
+
+/// Which cookie jar / user-data-dir the shared runtime is bound to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BrowserProfileMode {
+    /// Fixed LibrAgent agent profile; cookies survive createSession / runtime recycle.
+    AgentSticky,
+    /// Imported saved-login copy from Settings (`use_profile: true`).
+    Imported,
+}
+
+impl BrowserProfileMode {
+    pub(crate) fn from_imported(use_imported_profile: bool) -> Self {
+        if use_imported_profile {
+            Self::Imported
+        } else {
+            Self::AgentSticky
+        }
+    }
+}
 
 const SESSION_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const BROWSER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -33,8 +56,7 @@ pub(crate) struct SharedBrowserRuntime {
     pub(crate) handler_abort: tokio::task::AbortHandle,
     pub(crate) headed: bool,
     pub(crate) user_data_dir: PathBuf,
-    /// When true, `user_data_dir` is disposable and may be deleted on shutdown.
-    pub(crate) ephemeral: bool,
+    pub(crate) mode: BrowserProfileMode,
     /// Process we spawned for imported-profile attach (`Browser::connect` has no child).
     pub(crate) owned_child: Option<Arc<Mutex<tokio::process::Child>>>,
     pub(crate) console_logs: Arc<
@@ -58,8 +80,8 @@ enum RuntimeState {
 }
 
 pub(crate) struct SidecarSession {
-    /// Isolated CDP context for clean ephemeral sessions. `None` when using the
-    /// imported Default profile so cookies/logins from User Data are shared.
+    /// Isolated CDP context when used. Sticky agent + imported profiles use
+    /// `None` (default cookie jar) so logins persist across createSession.
     pub(crate) context_id: Option<BrowserContextId>,
     pub(crate) page: Arc<chromiumoxide::Page>,
 }
@@ -85,6 +107,7 @@ impl BrowserRuntimeManager {
                     Reject(String),
                 }
 
+                let requested_mode = BrowserProfileMode::from_imported(use_imported_profile);
                 let ready_decision = match &*state {
                     RuntimeState::Ready(runtime) => {
                         if runtime.headed != visible {
@@ -93,9 +116,9 @@ impl BrowserRuntimeManager {
                 if runtime.headed { "visible" } else { "headless" },
                 if visible { "visible" } else { "headless" }
               )))
-                        } else if runtime.ephemeral == use_imported_profile {
+                        } else if runtime.mode != requested_mode {
                             Some(ReadyDecision::Reject(
-                                "Browser runtime is already running with a different profile mode. Close active browser sessions before switching between clean and imported profiles.".to_string(),
+                                "Browser runtime is already running with a different profile mode. Close active browser sessions before switching between the agent sticky profile and imported saved logins.".to_string(),
                             ))
                         } else {
                             Some(ReadyDecision::Use(runtime.clone()))
@@ -207,7 +230,7 @@ async fn launch_runtime(
     if let Some(path) = imported_user_data_dir {
         return connect_imported_profile_runtime(visible, path).await;
     }
-    launch_ephemeral_runtime(visible).await
+    launch_agent_sticky_runtime(visible).await
 }
 
 /// Imported / saved-login mode: spawn system Chrome (no automation DEFAULT_ARGS), then CDP connect.
@@ -292,17 +315,24 @@ async fn connect_imported_profile_runtime(
         handler_abort: handler_task.abort_handle(),
         headed: visible,
         user_data_dir,
-        ephemeral: false,
+        mode: BrowserProfileMode::Imported,
         owned_child: Some(Arc::new(Mutex::new(child))),
         console_logs: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
     })
 }
 
-async fn launch_ephemeral_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
+/// Sticky agent profile: fixed app-data user-data-dir, default cookie jar, not deleted on shutdown.
+async fn launch_agent_sticky_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
     let executable = resolve_browser_executable().await?;
-    let user_data_dir = create_browser_runtime_profile_dir().await?;
+    let user_data_dir = ensure_agent_sticky_user_data_dir().await?;
+    if chrome_profile_appears_in_use(&user_data_dir) {
+        return Err(
+            "The LibrAgent agent browser profile is already open in another Chromium window. Close that window (or clear agent browser data from Settings after closing sessions), then retry."
+                .to_string(),
+        );
+    }
     emit_sidecar_diagnostic(format!(
-        "Launching Chromium automation runtime in {} mode with executable: {} (profile: {}, ephemeral=true)",
+        "Launching Chromium automation runtime in {} mode with executable: {} (sticky profile: {})",
         if visible { "visible" } else { "headless" },
         executable.display(),
         user_data_dir.display(),
@@ -313,13 +343,9 @@ async fn launch_ephemeral_runtime(visible: bool) -> Result<SharedBrowserRuntime,
     if visible {
         builder = builder.with_head();
     }
-    let config = match builder.build() {
-        Ok(config) => config,
-        Err(error) => {
-            cleanup_browser_runtime_profile_dir(&user_data_dir).await;
-            return Err(format!("Failed to build browser config: {error}"));
-        }
-    };
+    let config = builder
+        .build()
+        .map_err(|error| format!("Failed to build browser config: {error}"))?;
     let (browser, mut handler) =
         match tokio::time::timeout(BROWSER_LAUNCH_TIMEOUT, Browser::launch(config)).await {
             Ok(Ok(browser)) => browser,
@@ -329,7 +355,6 @@ async fn launch_ephemeral_runtime(visible: bool) -> Result<SharedBrowserRuntime,
                     if visible { "visible" } else { "headless" },
                     error
                 ));
-                cleanup_browser_runtime_profile_dir(&user_data_dir).await;
                 return Err(format!(
                     "Failed to launch Chromium automation session: {error}"
                 ));
@@ -340,7 +365,6 @@ async fn launch_ephemeral_runtime(visible: bool) -> Result<SharedBrowserRuntime,
                     BROWSER_LAUNCH_TIMEOUT,
                     if visible { "visible" } else { "headless" }
                 ));
-                cleanup_browser_runtime_profile_dir(&user_data_dir).await;
                 return Err(format!(
                     "Chromium automation launch timed out after {}s",
                     BROWSER_LAUNCH_TIMEOUT.as_secs()
@@ -361,7 +385,7 @@ async fn launch_ephemeral_runtime(visible: bool) -> Result<SharedBrowserRuntime,
         handler_abort: handler_task.abort_handle(),
         headed: visible,
         user_data_dir,
-        ephemeral: true,
+        mode: BrowserProfileMode::AgentSticky,
         owned_child: None,
         console_logs: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
     })
@@ -440,44 +464,63 @@ pub fn browser_runtime_cache_root() -> PathBuf {
         .join("browser-runtime")
 }
 
-pub fn browser_runtime_profile_root() -> PathBuf {
-    browser_runtime_cache_root().join("profiles")
+/// Fixed app-data Chromium profile for agent sticky logins (not everyday Chrome User Data).
+pub fn agent_sticky_user_data_dir() -> Result<PathBuf, String> {
+    if let Ok(manager) = get_session_manager() {
+        return Ok(manager.get_base_data_dir().join(AGENT_STICKY_PROFILE_DIR));
+    }
+    Ok(crate::profile::data_dir(crate::profile::resolve_profile()).join(AGENT_STICKY_PROFILE_DIR))
 }
 
-pub fn browser_runtime_profile_dir(runtime_id: Uuid) -> PathBuf {
-    browser_runtime_profile_root().join(runtime_id.to_string())
-}
-
-async fn create_browser_runtime_profile_dir() -> Result<PathBuf, String> {
-    let user_data_dir = browser_runtime_profile_dir(Uuid::new_v4());
+async fn ensure_agent_sticky_user_data_dir() -> Result<PathBuf, String> {
+    let user_data_dir = agent_sticky_user_data_dir()?;
     tokio::fs::create_dir_all(&user_data_dir)
         .await
         .map_err(|error| {
             format!(
-                "Failed to create browser runtime profile directory '{}': {error}",
+                "Failed to create agent sticky browser profile directory '{}': {error}",
                 user_data_dir.display()
             )
         })?;
     emit_sidecar_diagnostic(format!(
-        "Using isolated browser runtime profile directory: {}",
+        "Using sticky agent browser profile directory: {}",
         user_data_dir.display()
     ));
     Ok(user_data_dir)
 }
 
-pub(crate) async fn cleanup_browser_runtime_profile_dir(user_data_dir: &Path) {
-    match tokio::fs::remove_dir_all(user_data_dir).await {
-        Ok(()) => debug!(
-            "Cleaned up browser runtime profile directory: {}",
-            user_data_dir.display()
-        ),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => warn!(
-            "Failed to clean up browser runtime profile directory {}: {}",
-            user_data_dir.display(),
-            error
-        ),
+/// Delete the sticky agent profile (cookies/logins). Caller must ensure no runtime is using it.
+pub fn clear_agent_sticky_profile_dir() -> Result<(), String> {
+    let user_data_dir = agent_sticky_user_data_dir()?;
+    if chrome_profile_appears_in_use(&user_data_dir) {
+        return Err(
+            "Agent browser profile is in use. Close all browser sessions first, then try again."
+                .to_string(),
+        );
     }
+    if !user_data_dir.exists() {
+        return Ok(());
+    }
+    std::fs::remove_dir_all(&user_data_dir).map_err(|error| {
+        format!(
+            "Failed to clear agent browser profile '{}': {error}",
+            user_data_dir.display()
+        )
+    })?;
+    Ok(())
+}
+
+/// Legacy cache UUID profile helpers kept for existing tests only.
+/// Production createSession uses [`agent_sticky_user_data_dir`] since #1984.
+#[deprecated(note = "UUID cache profiles are no longer used; prefer agent_sticky_user_data_dir")]
+pub fn browser_runtime_profile_root() -> PathBuf {
+    browser_runtime_cache_root().join("profiles")
+}
+
+#[deprecated(note = "UUID cache profiles are no longer used; prefer agent_sticky_user_data_dir")]
+pub fn browser_runtime_profile_dir(runtime_id: Uuid) -> PathBuf {
+    #[allow(deprecated)]
+    browser_runtime_profile_root().join(runtime_id.to_string())
 }
 
 pub(crate) async fn cleanup_failed_context_launch(
@@ -610,12 +653,11 @@ pub(crate) async fn shutdown_runtime(runtime: SharedBrowserRuntime) {
         }
     }
 
-    if runtime.ephemeral {
-        cleanup_browser_runtime_profile_dir(&runtime.user_data_dir).await;
-    } else {
-        debug!(
-            "Preserving imported browser profile directory: {}",
-            runtime.user_data_dir.display()
-        );
-    }
+    // Sticky agent + imported profiles always keep their user-data-dir.
+    // Wipe only via Settings → Clear agent browser data (sticky) or remove imported profile.
+    debug!(
+        "Preserving browser profile directory ({:?}): {}",
+        runtime.mode,
+        runtime.user_data_dir.display()
+    );
 }

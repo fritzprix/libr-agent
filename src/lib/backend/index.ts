@@ -69,6 +69,7 @@ export {
   setDefaultBrowserProfile,
   removeBrowserProfile,
   openBrowserProfileForSignIn,
+  clearAgentBrowserData,
 } from './browser';
 export type {
   BrowserProfileInfo,
