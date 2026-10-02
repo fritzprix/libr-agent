@@ -45,10 +45,7 @@ pub(crate) struct BrowserRuntimeManager {
 
 enum RuntimeState {
     Uninitialized,
-    Starting {
-        visible: bool,
-        notify: Arc<Notify>,
-    },
+    Starting { visible: bool, notify: Arc<Notify> },
     Ready(SharedBrowserRuntime),
 }
 
