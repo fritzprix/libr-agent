@@ -271,7 +271,7 @@ impl ExtensionBridge {
                 other
                     .get("base64")
                     .and_then(|v| v.as_str())
-                    .map(|s| strip_data_url_base64(s))
+                    .map(strip_data_url_base64)
                     .ok_or_else(|| {
                         format!(
                             "Invalid extension screenshot payload: expected string or {{base64}}, got {other}"
