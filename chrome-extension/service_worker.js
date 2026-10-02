@@ -12,6 +12,9 @@
 const DEFAULT_PORT = 3847;
 const DEFAULT_TOKEN = 'libragent-dev';
 const RECONNECT_MS = 2000;
+/** Keep the MV3 service worker alive so the bridge WebSocket is not dropped. */
+const KEEPALIVE_ALARM = 'libragent-bridge-keepalive';
+const KEEPALIVE_MINUTES = 0.4; // ~24s (Chrome minimum alarm period is ~0.5–1 min in practice)
 
 /** @type {Map<string, number>} */
 const sessionToTab = new Map();
@@ -195,11 +198,32 @@ async function connect() {
   });
 }
 
+function ensureKeepaliveAlarm() {
+  void chrome.alarms.create(KEEPALIVE_ALARM, {
+    periodInMinutes: KEEPALIVE_MINUTES,
+  });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== KEEPALIVE_ALARM) {
+    return;
+  }
+  // Touch the worker + re-open WS if Chrome suspended us.
+  void connect();
+});
+
 chrome.runtime.onInstalled.addListener(() => {
+  ensureKeepaliveAlarm();
   void connect();
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  ensureKeepaliveAlarm();
+  void connect();
+});
+
+chrome.action.onClicked.addListener(() => {
+  ensureKeepaliveAlarm();
   void connect();
 });
 
@@ -226,4 +250,5 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
+ensureKeepaliveAlarm();
 void connect();
