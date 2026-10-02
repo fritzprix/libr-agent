@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { SystemSettings } from '@/context/SettingsContext';
 import { SystemPerformanceSettings } from '../components/SystemPerformanceSettings';
 import { AgentBrowserDataSettingsSection } from '../components/AgentBrowserDataSettingsSection';
+import { ExtensionBridgeSettingsSection } from '../components/ExtensionBridgeSettingsSection';
 import { Button, Slider } from '@/components/ui';
 
 interface SystemTabProps {
@@ -112,6 +113,9 @@ function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
           )}
         </h3>
         <AgentBrowserDataSettingsSection />
+        <div className="mt-8 border-t pt-6">
+          <ExtensionBridgeSettingsSection />
+        </div>
       </div>
 
       <div className="border-t pt-6">
