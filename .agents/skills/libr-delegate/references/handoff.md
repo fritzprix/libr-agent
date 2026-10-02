@@ -39,6 +39,8 @@ After Idle:
 2. Read latest assistant message text from `GET …/messages`
 3. Spot-check cited paths/commands yourself in this Cursor workspace if relevant
 4. Re-steer with another `POST …/messages` if incomplete
+5. If one-shot: dump `…/messages?limit=500` (optional keep file), then
+   `terminate` + `DELETE` — extract before delete
 
 Do not treat “done” prose without evidence as success.
 

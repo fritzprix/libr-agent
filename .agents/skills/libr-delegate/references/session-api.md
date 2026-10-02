@@ -68,7 +68,23 @@ curl -sS "$BASE/api/sessions/$SID/children"
 
 Statuses: `Idle` | `Busy` | `Paused` | `Error` | `Provisioning`.
 
+## Extract transcript (before delete)
+
+Session API has no dedicated trace/export route. Dump message history while
+the session still exists (default `limit` is 50):
+
+```bash
+OUT=".libragent/work/libr-delegate-${SID}-messages.json"
+mkdir -p "$(dirname "$OUT")"
+curl -sS "$BASE/api/sessions/$SID/messages?limit=500" > "$OUT"
+```
+
+Use the latest assistant message as the handoff result; keep `$OUT` when you
+need tool/role history after cleanup.
+
 ## Resume / terminate / delete
+
+For one-shot delegates, prefer this order: **extract → terminate → delete**.
 
 ```bash
 curl -sS -X POST "$BASE/api/sessions/$SID/resume"
@@ -76,7 +92,8 @@ curl -sS -X POST "$BASE/api/sessions/$SID/terminate"
 curl -sS -X DELETE "$BASE/api/sessions/$SID"
 ```
 
-Delete cascades descendants; response includes `deletedIds`.
+Delete cascades descendants; response includes `deletedIds`. After DELETE,
+`GET …/messages` is gone — do not delete first if you still need the dump.
 
 ## Channel inject (optional)
 
