@@ -11,10 +11,11 @@ Web Store.
 2. Open Chrome → `chrome://extensions` → enable **Developer mode**.
 3. Click **Load unpacked** and select this folder
    (`chrome-extension/` in the LibrAgent repo).
-4. Confirm the extension connects (service worker console should log
-   `Connected to ws://127.0.0.1:3847/...`).
-5. After updating this folder, click **Reload** on the extension card so
-   permission / service-worker changes apply.
+4. Confirm the extension connects (toolbar icon popup should say **Connected**,
+   or the service worker console logs `Connected to ws://127.0.0.1:3847/...`).
+5. After updating this folder (permissions / popup changes), click **Reload** on
+   the extension card once. Everyday LibrAgent restarts should **not** require
+   revisiting this page — the extension reconnects automatically.
 
 You can also copy the absolute path from **Settings → System → Agent browser →
 Chrome extension bridge**.
@@ -64,8 +65,12 @@ Still sidecar-only:
 
 ## Troubleshooting
 
-- Settings shows **Disconnected**: open the extension service worker inspector or
-  click the extension action, then Reload.
+- Toolbar popup says **LibrAgent not running**: start the LibrAgent desktop app.
+  Leave the extension enabled; it retries on its own.
+- Toolbar popup says **Reconnecting…**: wait a few seconds after the app starts.
+  You should not need `chrome://extensions` unless you changed extension files.
+- After pulling extension code / permission changes: click **Reload** once on the
+  extension card (developer update only).
 - Tools error with “not supported yet via Chrome extension bridge”: only
-  `getConsoleLogs` should still say that after this parity work — reload the
-  unpacked extension and restart LibrAgent if an older build is running.
+  `getConsoleLogs` should still say that after tool parity — reload the unpacked
+  extension and restart LibrAgent if an older build is running.

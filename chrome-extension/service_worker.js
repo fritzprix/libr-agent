@@ -20,6 +20,21 @@ const TAB_LOAD_TIMEOUT_MS = 20000;
 /** History nav often has no load event when there is no entry — keep this short. */
 const HISTORY_NAV_TIMEOUT_MS = 2500;
 
+/** @typedef {'connected' | 'reconnecting' | 'app_offline'} BridgeUiState */
+
+/**
+ * Persist UI-facing bridge status for the toolbar popup.
+ * @param {BridgeUiState} state
+ * @param {string} [detail]
+ */
+function setBridgeUiState(state, detail) {
+  void chrome.storage.local.set({
+    bridgeUiState: state,
+    bridgeUiDetail: typeof detail === 'string' ? detail : '',
+    bridgeUiUpdatedAt: Date.now(),
+  });
+}
+
 /** @type {Map<string, number>} */
 const sessionToTab = new Map();
 
@@ -380,16 +395,28 @@ async function connect() {
   const url = `ws://127.0.0.1:${bridgePort}/extension-bridge?token=${encodeURIComponent(bridgeToken)}`;
 
   intentionalClose = false;
+  setBridgeUiState(
+    'reconnecting',
+    'Looking for LibrAgent on this machine…',
+  );
   try {
     socket = new WebSocket(url);
   } catch (error) {
     console.warn('[LibrAgent Bridge] WebSocket construct failed', error);
+    setBridgeUiState(
+      'app_offline',
+      'Could not open a bridge socket. Start LibrAgent, then wait — reconnect is automatic.',
+    );
     scheduleReconnect();
     return;
   }
 
   socket.addEventListener('open', () => {
     console.info(`[LibrAgent Bridge] Connected to ${url}`);
+    setBridgeUiState(
+      'connected',
+      'Agents can use everyday Chrome tabs while LibrAgent is running.',
+    );
   });
 
   socket.addEventListener('message', (event) => {
@@ -407,12 +434,20 @@ async function connect() {
     socket = null;
     if (!intentionalClose) {
       console.info('[LibrAgent Bridge] Disconnected; reconnecting…');
+      setBridgeUiState(
+        'reconnecting',
+        'Bridge closed. If LibrAgent is starting up, this clears on its own — no need to reopen chrome://extensions.',
+      );
       scheduleReconnect();
     }
   });
 
   socket.addEventListener('error', () => {
-    // close handler schedules reconnect
+    // close handler schedules reconnect; mark offline while waiting
+    setBridgeUiState(
+      'app_offline',
+      'Start the LibrAgent app. This extension keeps retrying automatically.',
+    );
   });
 }
 
@@ -442,6 +477,60 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.action.onClicked.addListener(() => {
   ensureKeepaliveAlarm();
   void connect();
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+  if (message.type === 'forceReconnect') {
+    intentionalClose = true;
+    if (socket) {
+      socket.close();
+      socket = null;
+    }
+    intentionalClose = false;
+    void connect().then(() => {
+      sendResponse({
+        state:
+          socket && socket.readyState === WebSocket.OPEN
+            ? 'connected'
+            : 'reconnecting',
+      });
+    });
+    return true;
+  }
+  if (message.type === 'getBridgeStatus') {
+    void connect().then(() => {
+      const open = Boolean(socket && socket.readyState === WebSocket.OPEN);
+      const connecting = Boolean(
+        socket && socket.readyState === WebSocket.CONNECTING,
+      );
+      chrome.storage.local.get(['bridgeUiState', 'bridgeUiDetail'], (stored) => {
+        let state = stored.bridgeUiState;
+        if (open) {
+          state = 'connected';
+        } else if (connecting) {
+          state = 'reconnecting';
+        } else if (
+          state !== 'connected' &&
+          state !== 'reconnecting' &&
+          state !== 'app_offline'
+        ) {
+          state = 'reconnecting';
+        }
+        sendResponse({
+          state,
+          detail:
+            typeof stored.bridgeUiDetail === 'string'
+              ? stored.bridgeUiDetail
+              : '',
+        });
+      });
+    });
+    return true;
+  }
+  return false;
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

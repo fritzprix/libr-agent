@@ -112,9 +112,9 @@ function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
             'Agent browser',
           )}
         </h3>
-        <AgentBrowserDataSettingsSection />
+        <ExtensionBridgeSettingsSection />
         <div className="mt-8 border-t pt-6">
-          <ExtensionBridgeSettingsSection />
+          <AgentBrowserDataSettingsSection />
         </div>
       </div>
 

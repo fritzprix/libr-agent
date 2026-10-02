@@ -26,7 +26,8 @@ For logged-in sites in **your everyday Chrome**, LibrAgent can optionally drive 
 | **Sticky CDP sidecar** | Default when the extension is disconnected (or `LIBRAGENT_BROWSER_BACKEND=sidecar`) |
 | **Chrome extension bridge** | When the extension is connected and backend mode is `auto` (default) or `extension` |
 
-- Install steps: see `chrome-extension/README.md`, or copy the path from Settings → System → **Agent browser** → Chrome extension bridge.
+- Install steps: see `chrome-extension/README.md`, or copy the path from Settings → System → **Agent browser** → Chrome extension bridge (status-first card).
+- After a one-time Load unpacked install, LibrAgent restarts should reconnect automatically. Use the toolbar popup or Settings status — you only need **Reload** on `chrome://extensions` when the extension files themselves change.
 - When Connected, most browser tools (navigate, content, click/input, evaluateJS, viewport screenshot) use everyday Chrome. `getConsoleLogs` remains sticky-sidecar only. Extension screenshots are viewport-only (`fullPage` ignored).
 - Auth: fixed dev token `libragent-dev` when `LIBRAGENT_EXTENSION_BRIDGE_TOKEN` is unset. Production will use a rotating token.
 
