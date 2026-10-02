@@ -19,15 +19,15 @@ LibrAgent는 에이전트가 웹사이트를 탐색하고, 필요한 정보를 �
 
 ## 일상 Chrome (MV3 확장 브리지)
 
-**일상 Chrome**에 이미 로그인된 사이트를 쓰려면, 로컬 **Load unpacked** MV3 확장과 loopback WebSocket 브리지(`ws://127.0.0.1:3847/extension-bridge`, 기본값)로 탭을 제어할 수 있습니다.
+**일상 Chrome**에 이미 로그인된 사이트를 쓰려면, 로컬 MV3 확장(Load unpacked 또는 Chrome Web Store)과 loopback WebSocket 브리지(`ws://127.0.0.1:3847/extension-bridge`, 기본값)로 탭을 제어할 수 있습니다.
 
 | 경로 | 사용 시점 |
 | --- | --- |
 | **Sticky CDP sidecar** | 확장이 연결되지 않았을 때 기본값 (`LIBRAGENT_BROWSER_BACKEND=sidecar`로 강제 가능) |
 | **Chrome 확장 브리지** | 확장이 연결되고 백엔드 모드가 `auto`(기본) 또는 `extension`일 때 |
 
-- 설치: `chrome-extension/README.md` 참고, 또는 설정 → 시스템 → **에이전트 브라우저** → Chrome 확장 프로그램 브리지(상태 우선 카드)에서 경로 복사.
-- Load unpacked로 한 번만 설치하면 LibrAgent 재시작 시 확장이 자동으로 다시 붙습니다. 툴바 팝업·설정 상태를 보면 되고, 확장 **파일**을 바꾼 뒤에만 `chrome://extensions`에서 **새로고침**이 필요합니다.
+- 설치: `chrome-extension/README.md` 참고, 또는 설정 → 시스템 → **에이전트 브라우저** → Chrome 확장 프로그램 브리지(상태 우선 카드)에서 경로 복사. Chrome Web Store 패키징은 `chrome-extension/STORE.md`를 참고하세요.
+- 한 번 설치하면(Load unpacked 또는 Store) LibrAgent 재시작 시 확장이 자동으로 다시 붙습니다. 툴바 팝업·설정 상태를 보면 되고, 확장 **파일**을 바꾼 뒤에만 `chrome://extensions`에서 **새로고침**이 필요합니다(개발자 업데이트).
 - Connected면 대부분의 브라우저 도구(navigate, content, click/input, evaluateJS, 뷰포트 스크린샷)가 일상 Chrome으로 동작합니다. `getConsoleLogs`만 sticky sidecar 전용입니다. 확장 스크린샷은 뷰포트만 지원합니다(`fullPage` 무시).
 - 인증: `LIBRAGENT_EXTENSION_BRIDGE_TOKEN`이 없으면 고정 개발 토큰 `libragent-dev`. 프로덕션에서는 회전 토큰을 사용할 예정입니다.
 
