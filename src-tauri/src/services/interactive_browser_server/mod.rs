@@ -252,9 +252,7 @@ impl InteractiveBrowserServer {
         }
 
         match self.session_backend(session_id)? {
-            SessionBackend::Extension => {
-                self.extension_bridge.evaluate(session_id, script).await
-            }
+            SessionBackend::Extension => self.extension_bridge.evaluate(session_id, script).await,
             SessionBackend::Sidecar => self.client.evaluate(session_id, script).await,
         }
     }
@@ -297,9 +295,7 @@ impl InteractiveBrowserServer {
                     .take_screenshot(session_id, full_page)
                     .await
             }
-            SessionBackend::Sidecar => {
-                self.client.take_screenshot(session_id, full_page).await
-            }
+            SessionBackend::Sidecar => self.client.take_screenshot(session_id, full_page).await,
         }
     }
 

@@ -219,10 +219,7 @@ impl ExtensionBridge {
             return Err("Chrome extension bridge is not connected".to_string());
         }
         let result = self
-            .rpc(
-                ExtensionMethod::GoBack,
-                json!({ "sessionId": session_id }),
-            )
+            .rpc(ExtensionMethod::GoBack, json!({ "sessionId": session_id }))
             .await?;
         Ok(page_state_from_tab(parse_tab_state(result)?))
     }
