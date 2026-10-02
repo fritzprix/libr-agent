@@ -307,11 +307,14 @@ async fn launch_ephemeral_runtime(visible: bool) -> Result<SharedBrowserRuntime,
         executable.display(),
         user_data_dir.display(),
     ));
+    // chromiumoxide defaults viewport to 800x600 DeviceMetricsOverride. That locks CSS
+    // layout even when the OS window is resized. Headed sessions: disable emulation so
+    // content fills the window (same idea as Playwright viewport: null).
     let mut builder = BrowserConfig::builder()
         .chrome_executable(executable)
         .user_data_dir(&user_data_dir);
     if visible {
-        builder = builder.with_head();
+        builder = builder.with_head().viewport(None);
     }
     let config = match builder.build() {
         Ok(config) => config,
