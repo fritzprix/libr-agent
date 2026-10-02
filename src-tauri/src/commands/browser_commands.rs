@@ -28,7 +28,7 @@ pub async fn create_browser_session(
     info!("Command: create_browser_session called with URL: {url}");
 
     match server
-        .create_browser_session(&url, title.as_deref(), true, false)
+        .create_browser_session(&url, title.as_deref(), true)
         .await
     {
         Ok((session_id, message)) => {
@@ -203,7 +203,7 @@ pub async fn navigate_forward(
 
 /// Close browser sessions and delete the sticky agent Chromium profile (cookies/logins).
 ///
-/// Does not affect everyday Chrome or imported "Saved browser logins" copies.
+/// Does not affect everyday Chrome.
 #[tauri::command]
 pub async fn clear_agent_browser_data(
     server: State<'_, InteractiveBrowserServer>,

@@ -6,16 +6,6 @@ import type { Spotlight } from './types';
  */
 export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
   {
-    id: 'browser-profile-import',
-    sinceVersion: '0.9.12',
-    titleKey: 'spotlight.items.browserProfile.title',
-    bodyKey: 'spotlight.items.browserProfile.body',
-    ctaLabelKey: 'spotlight.items.browserProfile.cta',
-    href: { type: 'settings', tab: 'system' },
-    surfaces: ['release', 'hub', 'wait'],
-    priority: 1,
-  },
-  {
     id: 'starter-tasks',
     sinceVersion: '0.9.10',
     titleKey: 'spotlight.items.starterTasks.title',
@@ -23,7 +13,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.starterTasks.cta',
     href: { type: 'route', path: '/scheduled-tasks' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 2,
+    priority: 1,
   },
   {
     id: 'visualize-csv',
@@ -33,7 +23,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.visualize.cta',
     href: { type: 'route', path: '/agent/draft' },
     surfaces: ['release', 'hub'],
-    priority: 3,
+    priority: 2,
   },
   {
     id: 'thinking-effort',
@@ -43,7 +33,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.thinkingEffort.cta',
     href: { type: 'settings', tab: 'ai-models' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 4,
+    priority: 3,
   },
   {
     id: 'knowledge-graph',
@@ -53,7 +43,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.knowledgeGraph.cta',
     href: { type: 'route', path: '/knowledge' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 5,
+    priority: 4,
   },
   {
     id: 'themes',
@@ -63,6 +53,6 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.themes.cta',
     href: { type: 'settings', tab: 'general' },
     surfaces: ['hub'],
-    priority: 6,
+    priority: 5,
   },
 ];

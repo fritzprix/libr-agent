@@ -1,6 +1,7 @@
 mod client;
 mod contracts;
 mod page;
+mod profile_lock;
 mod runtime;
 mod server;
 
