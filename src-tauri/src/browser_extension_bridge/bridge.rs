@@ -124,11 +124,7 @@ impl ExtensionBridge {
         }
     }
 
-    pub async fn create_session(
-        &self,
-        session_id: &str,
-        url: &str,
-    ) -> Result<PageState, String> {
+    pub async fn create_session(&self, session_id: &str, url: &str) -> Result<PageState, String> {
         if !self.is_connected() {
             return Err("Chrome extension bridge is not connected".to_string());
         }
@@ -223,10 +219,7 @@ impl ExtensionBridge {
             return Err("Chrome extension bridge is not connected".to_string());
         }
         let result = self
-            .rpc(
-                ExtensionMethod::GoBack,
-                json!({ "sessionId": session_id }),
-            )
+            .rpc(ExtensionMethod::GoBack, json!({ "sessionId": session_id }))
             .await?;
         Ok(page_state_from_tab(parse_tab_state(result)?))
     }
@@ -299,7 +292,9 @@ impl ExtensionBridge {
             .map_err(|e| format!("Failed to encode extension bridge request: {e}"))?;
 
         let (tx, rx) = oneshot::channel();
-        self.inner.pending.insert(id.clone(), PendingSlot { sender: tx });
+        self.inner
+            .pending
+            .insert(id.clone(), PendingSlot { sender: tx });
 
         {
             let mut outbound = self.inner.outbound.lock().await;
@@ -362,9 +357,7 @@ impl ExtensionBridge {
         let addr: std::net::SocketAddr = ([127, 0, 0, 1], port).into();
         info!("Binding Chrome extension bridge on {addr}");
         warp::serve(routes).try_bind(addr).await;
-        Err(format!(
-            "Chrome extension bridge server on {addr} stopped"
-        ))
+        Err(format!("Chrome extension bridge server on {addr} stopped"))
     }
 
     async fn mark_disconnected(&self) {
@@ -479,8 +472,7 @@ fn complete_pending(bridge: &ExtensionBridge, reply: ExtensionReply) {
 }
 
 fn parse_tab_state(value: Value) -> Result<ExtensionTabState, String> {
-    serde_json::from_value(value)
-        .map_err(|e| format!("Invalid extension tab state payload: {e}"))
+    serde_json::from_value(value).map_err(|e| format!("Invalid extension tab state payload: {e}"))
 }
 
 fn page_state_from_tab(state: ExtensionTabState) -> PageState {

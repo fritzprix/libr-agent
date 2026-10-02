@@ -31,10 +31,7 @@ fn decode_error_reply() {
     let raw = r#"{"id":"abc","ok":false,"error":"Unknown sessionId: s1"}"#;
     let reply = decode_reply(raw).expect("reply should decode");
     assert!(!reply.ok);
-    assert_eq!(
-        reply.error.as_deref(),
-        Some("Unknown sessionId: s1")
-    );
+    assert_eq!(reply.error.as_deref(), Some("Unknown sessionId: s1"));
 }
 
 #[test]

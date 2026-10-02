@@ -57,9 +57,10 @@ impl InteractiveBrowserServer {
     }
 
     fn session_backend(&self, session_id: &str) -> Result<SessionBackend, String> {
-        let backends = self.session_backends.read().map_err(|e| {
-            format!("Failed to acquire read lock on session_backends: {e}")
-        })?;
+        let backends = self
+            .session_backends
+            .read()
+            .map_err(|e| format!("Failed to acquire read lock on session_backends: {e}"))?;
         Ok(backends
             .get(session_id)
             .copied()
@@ -67,9 +68,10 @@ impl InteractiveBrowserServer {
     }
 
     fn set_session_backend(&self, session_id: &str, backend: SessionBackend) -> Result<(), String> {
-        let mut backends = self.session_backends.write().map_err(|e| {
-            format!("Failed to acquire write lock on session_backends: {e}")
-        })?;
+        let mut backends = self
+            .session_backends
+            .write()
+            .map_err(|e| format!("Failed to acquire write lock on session_backends: {e}"))?;
         backends.insert(session_id.to_string(), backend);
         Ok(())
     }
@@ -250,9 +252,7 @@ impl InteractiveBrowserServer {
         }
 
         match self.session_backend(session_id)? {
-            SessionBackend::Extension => {
-                self.extension_bridge.evaluate(session_id, script).await
-            }
+            SessionBackend::Extension => self.extension_bridge.evaluate(session_id, script).await,
             SessionBackend::Sidecar => self.client.evaluate(session_id, script).await,
         }
     }
@@ -295,9 +295,7 @@ impl InteractiveBrowserServer {
                     .take_screenshot(session_id, full_page)
                     .await
             }
-            SessionBackend::Sidecar => {
-                self.client.take_screenshot(session_id, full_page).await
-            }
+            SessionBackend::Sidecar => self.client.take_screenshot(session_id, full_page).await,
         }
     }
 
