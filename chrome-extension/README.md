@@ -11,11 +11,26 @@ Web Store.
 2. Open Chrome → `chrome://extensions` → enable **Developer mode**.
 3. Click **Load unpacked** and select this folder
    (`chrome-extension/` in the LibrAgent repo).
-4. Confirm the extension connects (service worker console should log
-   `Connected to ws://127.0.0.1:3847/...`).
+4. Confirm the extension connects (toolbar icon popup should say **Connected**,
+   or the service worker console logs `Connected to ws://127.0.0.1:3847/...`).
+5. After updating this folder (permissions / popup changes), click **Reload** on
+   the extension card once. Everyday LibrAgent restarts should **not** require
+   revisiting this page — the extension reconnects automatically.
 
 You can also copy the absolute path from **Settings → System → Agent browser →
 Chrome extension bridge**.
+
+## Permissions
+
+| Permission | Why |
+| --- | --- |
+| `tabs` | Create / navigate / close agent tabs; history; visible screenshot |
+| `scripting` | `evaluate` / page content / click / input (MAIN world) |
+| `storage` / `alarms` | Options + keep the service worker / WebSocket alive |
+| `<all_urls>` host access | Inject scripts and capture screenshots on sites the agent opens |
+
+Granting `<all_urls>` lets LibrAgent control tabs the extension creates for the
+agent. Prefer Load unpacked only on machines you trust.
 
 ## Defaults
 
@@ -35,13 +50,27 @@ MVP auth: when the app env token is unset, LibrAgent uses the fixed dev token
 | `extension` | Require the extension bridge |
 | `sidecar` | Always use the sticky agent Chromium sidecar |
 
-Supported via extension today: `createSession`, `navigate`, `closeSession`,
-`getState`. Screenshot / evaluate / click / etc. still need the sidecar (or a
-future extension capability).
+## Supported tools (via extension)
 
-## Manual smoke test
+When Connected, these go through everyday Chrome:
 
-1. Load the extension and confirm Settings shows **Connected**.
-2. Ask an agent to `browser__createSession` with a normal HTTPS URL.
-3. A new tab should open in your everyday Chrome (not the sticky agent profile).
-4. Disconnect the extension (disable it) → new sessions fall back to the sidecar.
+- Session: `createSession`, `navigateToUrl`, `navigateBack`, `navigateForward`, `closeSession`
+- Read / JS: `getPageTitle`, `getCurrentUrl`, `getPageContent`, `evaluateJS`, `listInteractable`
+- Interact: `clickElement`, `inputText`, `scrollPage`
+- Screenshot: `takeScreenshot` (**visible viewport only**; `fullPage` is ignored and logged)
+
+Still sidecar-only:
+
+- `getConsoleLogs` (needs debugger-style hooks; deferred)
+
+## Troubleshooting
+
+- Toolbar popup says **LibrAgent not running**: start the LibrAgent desktop app.
+  Leave the extension enabled; it retries on its own.
+- Toolbar popup says **Reconnecting…**: wait a few seconds after the app starts.
+  You should not need `chrome://extensions` unless you changed extension files.
+- After pulling extension code / permission changes: click **Reload** once on the
+  extension card (developer update only).
+- Tools error with “not supported yet via Chrome extension bridge”: only
+  `getConsoleLogs` should still say that after tool parity — reload the unpacked
+  extension and restart LibrAgent if an older build is running.

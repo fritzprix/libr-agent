@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "LibrAgent Browser Bridge",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "description": "Local WebSocket bridge so LibrAgent can drive everyday Chrome tabs (Load unpacked MVP).",
-  "permissions": ["tabs", "storage", "alarms"],
+  "permissions": ["tabs", "storage", "alarms", "scripting"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1/*", "http://localhost/*"],
   "background": {
     "service_worker": "service_worker.js",
     "type": "module"
@@ -13,7 +14,7 @@
     "open_in_tab": false
   },
   "action": {
-    "default_title": "LibrAgent Browser Bridge"
-  },
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"]
+    "default_title": "LibrAgent Browser Bridge",
+    "default_popup": "popup.html"
+  }
 }
