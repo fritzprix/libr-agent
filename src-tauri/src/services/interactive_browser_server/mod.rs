@@ -234,7 +234,6 @@ impl InteractiveBrowserServer {
 
     pub async fn execute_script(&self, session_id: &str, script: &str) -> Result<String, String> {
         debug!("Executing browser script in session {session_id}: {script}");
-        self.ensure_sidecar_capability(session_id)?;
         let session = self.get_session(session_id)?;
         match &session.status {
             SessionStatus::Active => {}
@@ -252,7 +251,12 @@ impl InteractiveBrowserServer {
             }
         }
 
-        self.client.evaluate(session_id, script).await
+        match self.session_backend(session_id)? {
+            SessionBackend::Extension => {
+                self.extension_bridge.evaluate(session_id, script).await
+            }
+            SessionBackend::Sidecar => self.client.evaluate(session_id, script).await,
+        }
     }
 
     pub async fn get_console_logs(
@@ -270,7 +274,6 @@ impl InteractiveBrowserServer {
         session_id: &str,
         full_page: bool,
     ) -> Result<String, String> {
-        self.ensure_sidecar_capability(session_id)?;
         let session = self.get_session(session_id)?;
         match &session.status {
             SessionStatus::Active => {}
@@ -288,7 +291,16 @@ impl InteractiveBrowserServer {
             }
         }
 
-        self.client.take_screenshot(session_id, full_page).await
+        match self.session_backend(session_id)? {
+            SessionBackend::Extension => {
+                self.extension_bridge
+                    .take_screenshot(session_id, full_page)
+                    .await
+            }
+            SessionBackend::Sidecar => {
+                self.client.take_screenshot(session_id, full_page).await
+            }
+        }
     }
 
     pub fn list_sessions(&self) -> Vec<BrowserSession> {
@@ -433,9 +445,13 @@ impl InteractiveBrowserServer {
     }
 
     pub async fn navigate_back(&self, session_id: &str) -> Result<String, String> {
-        self.ensure_sidecar_capability(session_id)?;
         let next_generation = self.begin_navigation(session_id, None)?;
-        let state = match self.client.go_back(session_id).await {
+        let backend = self.session_backend(session_id)?;
+        let navigate_result = match backend {
+            SessionBackend::Extension => self.extension_bridge.go_back(session_id).await,
+            SessionBackend::Sidecar => self.client.go_back(session_id).await,
+        };
+        let state = match navigate_result {
             Ok(state) => state,
             Err(error) => {
                 self.mark_navigation_error(
@@ -453,9 +469,13 @@ impl InteractiveBrowserServer {
     }
 
     pub async fn navigate_forward(&self, session_id: &str) -> Result<String, String> {
-        self.ensure_sidecar_capability(session_id)?;
         let next_generation = self.begin_navigation(session_id, None)?;
-        let state = match self.client.go_forward(session_id).await {
+        let backend = self.session_backend(session_id)?;
+        let navigate_result = match backend {
+            SessionBackend::Extension => self.extension_bridge.go_forward(session_id).await,
+            SessionBackend::Sidecar => self.client.go_forward(session_id).await,
+        };
+        let state = match navigate_result {
             Ok(state) => state,
             Err(error) => {
                 self.mark_navigation_error(

@@ -53,6 +53,26 @@ fn roundtrip_request_value() {
 }
 
 #[test]
+fn decode_evaluate_and_screenshot_methods() {
+    let eval = decode_request(
+        r#"{"id":"e1","method":"evaluate","params":{"sessionId":"s1","script":"document.title"}}"#,
+    )
+    .expect("evaluate request");
+    assert_eq!(eval.method, ExtensionMethod::Evaluate.as_str());
+    assert_eq!(eval.params["script"], "document.title");
+
+    let shot = decode_request(
+        r#"{"id":"s1","method":"takeScreenshot","params":{"sessionId":"s1","fullPage":false}}"#,
+    )
+    .expect("screenshot request");
+    assert_eq!(shot.method, ExtensionMethod::TakeScreenshot.as_str());
+
+    let back = decode_request(r#"{"id":"b1","method":"goBack","params":{"sessionId":"s1"}}"#)
+        .expect("goBack request");
+    assert_eq!(back.method, ExtensionMethod::GoBack.as_str());
+}
+
+#[test]
 fn documented_defaults() {
     assert_eq!(DEFAULT_BRIDGE_PORT, 3847);
     assert_eq!(DEV_BRIDGE_TOKEN, "libragent-dev");

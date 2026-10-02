@@ -197,6 +197,81 @@ impl ExtensionBridge {
         Ok(page_state_from_tab(parse_tab_state(result)?))
     }
 
+    /// Run arbitrary page JS in the extension-owned tab (MAIN world).
+    pub async fn evaluate(&self, session_id: &str, script: &str) -> Result<String, String> {
+        if !self.is_connected() {
+            return Err("Chrome extension bridge is not connected".to_string());
+        }
+        let result = self
+            .rpc(
+                ExtensionMethod::Evaluate,
+                json!({
+                    "sessionId": session_id,
+                    "script": script,
+                }),
+            )
+            .await?;
+        Ok(stringify_evaluate_result(result))
+    }
+
+    pub async fn go_back(&self, session_id: &str) -> Result<PageState, String> {
+        if !self.is_connected() {
+            return Err("Chrome extension bridge is not connected".to_string());
+        }
+        let result = self
+            .rpc(
+                ExtensionMethod::GoBack,
+                json!({ "sessionId": session_id }),
+            )
+            .await?;
+        Ok(page_state_from_tab(parse_tab_state(result)?))
+    }
+
+    pub async fn go_forward(&self, session_id: &str) -> Result<PageState, String> {
+        if !self.is_connected() {
+            return Err("Chrome extension bridge is not connected".to_string());
+        }
+        let result = self
+            .rpc(
+                ExtensionMethod::GoForward,
+                json!({ "sessionId": session_id }),
+            )
+            .await?;
+        Ok(page_state_from_tab(parse_tab_state(result)?))
+    }
+
+    /// Capture the visible tab as standard base64 PNG (no data-URL prefix).
+    /// `full_page` is accepted for API parity; the MV3 bridge currently captures
+    /// the visible viewport only.
+    pub async fn take_screenshot(
+        &self,
+        session_id: &str,
+        full_page: bool,
+    ) -> Result<String, String> {
+        if !self.is_connected() {
+            return Err("Chrome extension bridge is not connected".to_string());
+        }
+        let result = self
+            .rpc(
+                ExtensionMethod::TakeScreenshot,
+                json!({
+                    "sessionId": session_id,
+                    "fullPage": full_page,
+                }),
+            )
+            .await?;
+        match result {
+            Value::String(data) => Ok(strip_data_url_base64(&data)),
+            other => other
+                .get("base64")
+                .and_then(|v| v.as_str())
+                .map(|s| strip_data_url_base64(s))
+                .ok_or_else(|| {
+                    format!("Invalid extension screenshot payload: expected string, got {other}")
+                }),
+        }
+    }
+
     async fn rpc(&self, method: ExtensionMethod, params: Value) -> Result<Value, String> {
         let id = Uuid::new_v4().to_string();
         let request = ExtensionRequest {
@@ -398,5 +473,21 @@ fn page_state_from_tab(state: ExtensionTabState) -> PageState {
         classification: None,
         navigation_status: None,
         navigation_message: Some("Opened via Chrome extension bridge".to_string()),
+    }
+}
+
+fn stringify_evaluate_result(value: Value) -> String {
+    match value {
+        Value::String(s) => s,
+        Value::Null => "null".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn strip_data_url_base64(raw: &str) -> String {
+    if let Some(idx) = raw.find("base64,") {
+        raw[idx + "base64,".len()..].to_string()
+    } else {
+        raw.to_string()
     }
 }

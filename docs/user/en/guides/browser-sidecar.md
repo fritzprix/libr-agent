@@ -27,7 +27,7 @@ For logged-in sites in **your everyday Chrome**, LibrAgent can optionally drive 
 | **Chrome extension bridge** | When the extension is connected and backend mode is `auto` (default) or `extension` |
 
 - Install steps: see `chrome-extension/README.md`, or copy the path from Settings → System → **Agent browser** → Chrome extension bridge.
-- MVP supports create / navigate / close (and getState). Screenshot, evaluate, and in-page interaction still require the sticky sidecar (or a future extension capability).
+- When Connected, most browser tools (navigate, content, click/input, evaluateJS, viewport screenshot) use everyday Chrome. `getConsoleLogs` remains sticky-sidecar only. Extension screenshots are viewport-only (`fullPage` ignored).
 - Auth: fixed dev token `libragent-dev` when `LIBRAGENT_EXTENSION_BRIDGE_TOKEN` is unset. Production will use a rotating token.
 
 ---
