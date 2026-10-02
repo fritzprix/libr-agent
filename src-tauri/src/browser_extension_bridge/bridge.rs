@@ -242,7 +242,7 @@ impl ExtensionBridge {
 
     /// Capture the visible tab as standard base64 PNG (no data-URL prefix).
     /// `full_page` is accepted for API parity; the MV3 bridge currently captures
-    /// the visible viewport only.
+    /// the visible viewport only and may return a warning in the RPC payload.
     pub async fn take_screenshot(
         &self,
         session_id: &str,
@@ -250,6 +250,11 @@ impl ExtensionBridge {
     ) -> Result<String, String> {
         if !self.is_connected() {
             return Err("Chrome extension bridge is not connected".to_string());
+        }
+        if full_page {
+            warn!(
+                "Chrome extension bridge ignores fullPage for session {session_id}; capturing viewport only"
+            );
         }
         let result = self
             .rpc(
@@ -262,13 +267,20 @@ impl ExtensionBridge {
             .await?;
         match result {
             Value::String(data) => Ok(strip_data_url_base64(&data)),
-            other => other
-                .get("base64")
-                .and_then(|v| v.as_str())
-                .map(|s| strip_data_url_base64(s))
-                .ok_or_else(|| {
-                    format!("Invalid extension screenshot payload: expected string, got {other}")
-                }),
+            other => {
+                if let Some(warning) = other.get("warning").and_then(|v| v.as_str()) {
+                    warn!("Extension screenshot warning: {warning}");
+                }
+                other
+                    .get("base64")
+                    .and_then(|v| v.as_str())
+                    .map(|s| strip_data_url_base64(s))
+                    .ok_or_else(|| {
+                        format!(
+                            "Invalid extension screenshot payload: expected string or {{base64}}, got {other}"
+                        )
+                    })
+            }
         }
     }
 
