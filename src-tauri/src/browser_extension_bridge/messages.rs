@@ -15,6 +15,10 @@ pub enum ExtensionMethod {
     Navigate,
     CloseSession,
     GetState,
+    Evaluate,
+    GoBack,
+    GoForward,
+    TakeScreenshot,
     Ping,
 }
 
@@ -25,6 +29,10 @@ impl ExtensionMethod {
             Self::Navigate => "navigate",
             Self::CloseSession => "closeSession",
             Self::GetState => "getState",
+            Self::Evaluate => "evaluate",
+            Self::GoBack => "goBack",
+            Self::GoForward => "goForward",
+            Self::TakeScreenshot => "takeScreenshot",
             Self::Ping => "ping",
         }
     }
