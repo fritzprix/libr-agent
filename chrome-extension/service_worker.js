@@ -43,6 +43,9 @@ let socket = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let reconnectTimer = null;
 let intentionalClose = false;
+/** Serialize connect() so concurrent callers cannot open two sockets and flap. */
+/** @type {Promise<void> | null} */
+let connectInFlight = null;
 
 /**
  * @returns {Promise<{ bridgePort: number, bridgeToken: string }>}
@@ -390,8 +393,26 @@ async function connect() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return;
   }
+  if (connectInFlight) {
+    return connectInFlight;
+  }
+  connectInFlight = openBridgeSocket().finally(() => {
+    connectInFlight = null;
+  });
+  return connectInFlight;
+}
+
+async function openBridgeSocket() {
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
 
   const { bridgePort, bridgeToken } = await loadConfig();
+  // Re-check after await — another caller may have opened meanwhile.
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
   const url = `ws://127.0.0.1:${bridgePort}/extension-bridge?token=${encodeURIComponent(bridgeToken)}`;
 
   intentionalClose = false;
@@ -399,8 +420,11 @@ async function connect() {
     'reconnecting',
     'Looking for LibrAgent on this machine…',
   );
+
+  /** @type {WebSocket} */
+  let ws;
   try {
-    socket = new WebSocket(url);
+    ws = new WebSocket(url);
   } catch (error) {
     console.warn('[LibrAgent Bridge] WebSocket construct failed', error);
     setBridgeUiState(
@@ -411,7 +435,12 @@ async function connect() {
     return;
   }
 
-  socket.addEventListener('open', () => {
+  socket = ws;
+
+  ws.addEventListener('open', () => {
+    if (socket !== ws) {
+      return;
+    }
     console.info(`[LibrAgent Bridge] Connected to ${url}`);
     setBridgeUiState(
       'connected',
@@ -419,7 +448,10 @@ async function connect() {
     );
   });
 
-  socket.addEventListener('message', (event) => {
+  ws.addEventListener('message', (event) => {
+    if (socket !== ws) {
+      return;
+    }
     let parsed;
     try {
       parsed = JSON.parse(String(event.data));
@@ -430,9 +462,12 @@ async function connect() {
     void handleRequest(parsed);
   });
 
-  socket.addEventListener('close', () => {
-    socket = null;
-    if (!intentionalClose) {
+  ws.addEventListener('close', () => {
+    // Only clear if this socket is still the active one (avoid racing a newer connect).
+    if (socket === ws) {
+      socket = null;
+    }
+    if (!intentionalClose && socket === null) {
       console.info('[LibrAgent Bridge] Disconnected; reconnecting…');
       setBridgeUiState(
         'reconnecting',
@@ -442,7 +477,10 @@ async function connect() {
     }
   });
 
-  socket.addEventListener('error', () => {
+  ws.addEventListener('error', () => {
+    if (socket !== ws) {
+      return;
+    }
     // close handler schedules reconnect; mark offline while waiting
     setBridgeUiState(
       'app_offline',

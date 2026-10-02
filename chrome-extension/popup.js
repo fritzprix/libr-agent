@@ -71,4 +71,5 @@ optionsLink.addEventListener('click', (event) => {
 
 refreshFromStorage();
 askStatus();
-window.setInterval(askStatus, 2000);
+// Poll storage only — do not call connect() every tick (that raced dual sockets).
+window.setInterval(refreshFromStorage, 2000);
