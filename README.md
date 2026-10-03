@@ -4,8 +4,8 @@
 
 # LibrAgent
 
-> **An agent operating environment you run — pick the model, one-click the tools, pick the coordination pattern.**
-> _No vendor harness. No JSON homework. Work finishes as files on your machine._
+> **A local agent operating environment. Select your model, install tools with one click, and choose a coordination pattern.**
+> _You do not need a vendor harness or manual JSON configuration. The software saves completed work as files on your machine._
 
 [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -24,15 +24,15 @@
 
 ## How LibrAgent is different
 
-Most agent harnesses assume you can edit MCP JSON, live in a terminal, and assemble orchestration in code (or lock you to one vendor’s stack).
+Many agent harnesses require you to edit JSON configuration files, use command-line terminals, and assemble code frameworks. Other products lock you into a single vendor stack.
 
-LibrAgent is a **desktop product** for the same job:
+LibrAgent provides a **desktop product** for these tasks:
 
-| Instead of… | You get… |
-| ----------- | -------- |
-| Hand-editing MCP configs | **Extensions** — one-click presets (GitHub, Brave Search, Filesystem, …) and import from Cursor / VS Code / Claude Code / Windsurf |
-| “We have multi-agent” | **Named coordination patterns** as bundled skills — `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, … |
-| One provider’s model + tools | **Your** LLM (API key or [Ollama](https://ollama.com)) and **your** MCP stack — MIT, local-first |
+| Traditional Setup | With LibrAgent |
+| ----------------- | -------------- |
+| Edit MCP configuration files manually | **Extensions** — One-click presets (GitHub, Brave Search, Filesystem) and import from Cursor, VS Code, Claude Code, and Windsurf |
+| Assemble multi-agent systems from code | **Standard coordination patterns** as bundled skills (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`) |
+| Restricted to one provider model and toolset | **Choose your LLM** (API keys or local [Ollama](https://ollama.com)) and your tool stack with MIT, local-first architecture |
 
 [Download the latest release](https://github.com/fritzprix/libr-agent/releases/latest) · [5-minute onboarding](#the-5-minute-onboarding-path) · [Hero demo spec](docs/contributing/hero-demo-spec.md)
 
@@ -40,120 +40,120 @@ LibrAgent is a **desktop product** for the same job:
 
 ## What You Can Do in the First 10 Minutes
 
-### 1. One-click tools, then a deliverable
+### 1. Install tools with one click, then generate a deliverable
 
-- Open **Extensions** and install a preset (e.g. GitHub) — no JSON
-- Point **Workspace** at a real folder
-- Ask: _"Review this repo for the top risk for a new contributor and save `DELIVERABLE.md`"_
+- Open **Extensions** and install a preset (such as GitHub) without manual JSON editing.
+- Point **Workspace** to a local directory on your machine.
+- Submit your request: _"Review this repo for the top risk for a new contributor and save `DELIVERABLE.md`"_
 
-### 2. Deploy a one-click workflow recipe
+### 2. Run an automated workflow recipe
 
-- Launch the **Morning Briefing** recipe from Chat home or [Scheduled Tasks](docs/user/guides/scheduled-tasks.md)
-- Installs Hacker News + Yahoo Finance presets, configures an assistant, and schedules a daily 9 AM run
-- Wake up to a synthesized tech & market briefing — unattended
+- Launch the **Morning Briefing** recipe from Chat home or [Scheduled Tasks](docs/user/guides/scheduled-tasks.md).
+- The recipe installs Hacker News and Yahoo Finance presets, configures an assistant, and schedules execution for 09:00 daily.
+- Review your synthesized technology and market briefing automatically.
 
-### 3. Pick a coordination pattern (no framework assembly)
+### 3. Select a coordination pattern without code assembly
 
-- Say what the work looks like, or attach a skill by name:
-  - _"@skill:pipeline — research, then draft, then review; leave one final report"_
-  - _"@skill:divide-conquer — split this into independent pieces and merge the results"_
-- Patterns are productized skills — not an SDK you wire yourself. See [Sub-agents & orchestration](docs/user/guides/sub-agents.md).
+- Describe your workflow, or attach a skill directly by name:
+  - _"@skill:pipeline — research, draft, and review; generate one final report"_
+  - _"@skill:divide-conquer — divide this task into independent steps and merge the results"_
+- Coordination patterns are packaged skills that do not require external SDK setup. See [Sub-agents & orchestration](docs/user/guides/sub-agents.md).
 
-### 4. Keep your model freedom
+### 4. Maintain control of your models
 
-- Cloud: paste an OpenAI / Anthropic / Gemini / Groq API key
-- Local: `ollama pull qwen3:14b` and select Ollama — same harness either way
+- Cloud: Paste an API key for OpenAI, Anthropic, Gemini, or Groq.
+- Local: Run `ollama pull qwen3:14b` and select Ollama in settings to use the same desktop environment locally.
 
 ---
 
 ## Three product promises
 
-1. **Surface without harness homework** — GUI, Extensions one-click, recipes, in-app approvals, `@skill:` — not “open a config and a shell first.”
-2. **Orchestration as product** — choose Sequential / Hub-and-spoke / Swarm-style flows via skills; grow into `teamwork` → `org` and `schedule` when you need durable teams or cron — still without assembling LangGraph/CrewAI yourself.
-3. **Provider & stack freedom** — any supported LLM, MCP as infrastructure, import existing IDE MCP configs, MIT license, local workspaces and browser state by default.
+1. **Direct user interface without manual configuration** — Graphical interface, one-click extensions, automated recipes, and in-app approvals. You do not need to edit configuration files or open a terminal.
+2. **Orchestration as a built-in feature** — Select Sequential, Hub-and-spoke, or Swarm workflows through skills. Expand to `teamwork` and `schedule` when you need persistent teams or scheduled tasks.
+3. **Model and stack freedom** — Connect to any supported LLM, use MCP as open infrastructure, and import IDE configurations. Workspaces and browser sessions remain local by default under an MIT license.
 
-**Best fit:** operators and power users who want harness depth without living in JSON; developers who refuse a single-vendor agent stack; researchers who need browser + knowledge + schedules in one product.
+**Target users:** Operators who require agent capabilities without manual configuration; developers who avoid vendor lock-in; researchers who need browser, knowledge, and scheduled execution in one application.
 
 ---
 
 ## Coordination patterns (bundled skills)
 
-Choose the model from the **shape of the work**, then run it from chat:
+Select a pattern that matches the structure of your task, then execute it from the chat interface:
 
 | Skill | Pattern | When to use |
 | ----- | ------- | ----------- |
-| `pipeline` | Sequential stages | Outputs feed the next step (research → draft → review) |
-| `hub-spoke` | Hub-and-spoke | One coordinator integrates many workers |
-| `divide-conquer` | Parallel split | Independent pieces, then merge |
-| `consensus-delegation` | Multi-perspective | Same question to several specialists, then reconcile |
-| `gatekeeper` / `pair-programming` | Review loops | Strict review or two-agent coding |
-| `delegate` | Lightweight handoff | One child session, lineage tracked |
-| `teamwork` → `org` | Durable team | Shared constitution + Org UI |
-| `schedule` / `loop` / `call-me-back` | Time & events | Cron, in-session delays, or resume on process/webhook |
+| `pipeline` | Sequential stages | Output from each step supplies the next step (research → draft → review) |
+| `hub-spoke` | Hub-and-spoke | One coordinator delegates tasks to multiple specialized workers |
+| `divide-conquer` | Parallel split | Divide work into independent tasks, then merge the results |
+| `consensus-delegation` | Multi-perspective | Send the same question to multiple specialists, then reconcile differences |
+| `gatekeeper` / `pair-programming` | Review loops | Enforce strict code review or collaborative two-agent programming |
+| `delegate` | Lightweight handoff | Run one child session with lineage tracking |
+| `teamwork` → `org` | Persistent team | Create durable multi-agent teams with shared guidelines |
+| `schedule` / `loop` / `call-me-back` | Time & events | Execute cron schedules, in-session delays, or resume on process events |
 
-Selection heuristics: [framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · full guide: [Sub-agents](docs/user/guides/sub-agents.md).
+Selection heuristics: [framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · Full guide: [Sub-agents](docs/user/guides/sub-agents.md).
 
-Other day-one skills: `setup-wizard`, `tool-installer`, `playbook-creator`, and more — **[Bundled Skills](docs/user/guides/skills.md)**.
+Additional default skills: `setup-wizard`, `tool-installer`, `playbook-creator`, and more — **[Bundled Skills](docs/user/guides/skills.md)**.
 
 ---
 
-## MCP platform (still power-user capable)
+## MCP platform (advanced capabilities)
 
 - Transports: stdio, HTTP, SSE, OAuth 2.1
-- 15+ built-in servers (Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, …)
-- One-click presets + agent-assisted install (`tool-installer`)
-- Per-session tool isolation; path/command guards; optional YOLO / unsafe modes for automation
+- 15+ built-in servers (Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, and others)
+- One-click presets and agent-assisted installation (`tool-installer`)
+- Tool isolation per session, file path guards, command guards, and optional automated execution modes
 
 ### Execution substrate
 
 | Substrate     | Capabilities                                                                                         |
 | ------------- | ---------------------------------------------------------------------------------------------------- |
-| **Workspace** | Line-precise editing, multi-file ops, `@file` / `@skill` / `@playbook` context                       |
-| **Shell**     | Isolated and persistent shells with async process monitoring                                         |
-| **Browser**   | Isolated browser sidecar; optional saved-login profiles                                              |
-| **Knowledge** | Graph knowledge + BM25 search                                                                        |
-| **Export**    | Markdown reports and ATIF trajectory exports ([session export](docs/user/guides/session-export.md)) |
+| **Workspace** | Line-precise editing, multi-file operations, and `@file` / `@skill` / `@playbook` context            |
+| **Shell**     | Isolated and persistent terminal sessions with asynchronous process monitoring                       |
+| **Browser**   | Isolated browser sidecar and persistent agent profile support                                        |
+| **Knowledge** | Graph-based knowledge store and BM25 search                                                          |
+| **Export**    | Markdown reports and ATIF trajectory exports ([session export](docs/user/guides/session-export.md))  |
 
-Long sessions stay productive via context compaction, loop prevention, circuit breakers, and stale-response guards.
+Long-running sessions maintain stability through context compaction, loop prevention, circuit breakers, and stale-response protection.
 
 ---
 
 ## Real-World Scenarios
 
-### Operator — from empty app to daily briefing
+### Operator — Automated daily briefing
 
-1. Run the **Morning Briefing** recipe (presets + assistant + 9 AM schedule)
-2. Click **Run now** once to verify
-3. Leave it — the report lands without opening a terminal
+1. Run the **Morning Briefing** recipe (installs presets, sets up assistant, schedules execution at 09:00).
+2. Click **Run now** to verify the configuration.
+3. Receive the generated briefing report directly in the application without using a terminal.
 
-### Solo developer — preset, not config files
+### Solo developer — Direct tool installation without configuration files
 
-1. Extensions → install the GitHub MCP preset
-2. Attach a local repo via Workspace
-3. Ask for a Markdown security/review report you keep on disk
+1. Open Extensions and install the GitHub MCP preset.
+2. Connect a local repository using the Workspace selector.
+3. Prompt the agent to generate a Markdown security and code review report saved to disk.
 
-### Non-framework power user — named orchestration
+### Non-framework power user — Standard orchestration patterns
 
-1. `@skill:pipeline` (or `hub-spoke` / `divide-conquer`) for the work shape
-2. Agents coordinate under that pattern
-3. One merged deliverable in the workspace — no orchestration library to maintain
+1. Enter `@skill:pipeline` (or `hub-spoke` / `divide-conquer`) to specify workflow structure.
+2. Agents coordinate according to the selected pattern.
+3. Review the consolidated deliverable in your workspace without maintaining external framework code.
 
-### Privacy-sensitive team — same product, local model
+### Privacy-sensitive team — Local models with zero cloud transmission
 
-1. `ollama pull qwen3:14b`
-2. Workspace + Shell stay on the machine
-3. Swap cloud keys later if you want — the harness does not change vendors for you
+1. Run `ollama pull qwen3:14b`.
+2. Keep Workspace and Shell interactions strictly on your local machine.
+3. Add cloud API keys later if necessary; the application workflow remains unchanged.
 
 ---
 
 ## Documentation
 
-- **[User Guide](docs/user/README.md)** — install, first chat, models, skills ([docs site](https://fritzprix.github.io/libr-agent/))
-- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)** — canonical product demo (EN/KO/ZH subtitles)
-- **[Product Messaging Guide](docs/contributing/product-messaging-guide.md)** — positioning and copy
+- **[User Guide](docs/user/README.md)** — Installation, initial setup, models, and skills ([documentation website](https://fritzprix.github.io/libr-agent/))
+- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)** — Canonical product demonstration specification (EN/KO/ZH subtitles)
+- **[Product Messaging Guide](docs/contributing/product-messaging-guide.md)** — Product positioning and documentation style
 - **[Recipes](docs/user/guides/recipes.md)** · **[Scheduled Tasks](docs/user/guides/scheduled-tasks.md)** · **[Sub-agents](docs/user/guides/sub-agents.md)** · **[Skills](docs/user/guides/skills.md)**
-- **[HTTP API](docs/api/http_api.md)** — remote control and programmatic approvals
-- **[Architecture](docs/architecture/agent-workflow-architecture.md)** — session isolation and Think-Act-Observe
+- **[HTTP API](docs/api/http_api.md)** — Remote control interface and programmatic approvals
+- **[Architecture](docs/architecture/agent-workflow-architecture.md)** — Session isolation and Think-Act-Observe cycle
 
 ---
 
@@ -172,24 +172,24 @@ Download the latest installer from the **[Releases page](https://github.com/frit
 
 **Step 1 — Connect a model** (Settings → LLM Providers)
 
-- Cloud: paste an OpenAI / Anthropic / Gemini / Groq API key
-- Local: `ollama pull qwen3:14b`, then select Ollama in Settings
+- Cloud: Paste an OpenAI, Anthropic, Gemini, or Groq API key.
+- Local: Run `ollama pull qwen3:14b`, then select Ollama in Settings.
 
-**Step 2 — Add tools without JSON**
+**Step 2 — Add tools without manual configuration**
 
-- Extensions → install a preset (e.g. GitHub), **or**
-- Tell an agent: _"Import my MCP servers from Cursor"_
+- Open Extensions and install a preset (such as GitHub), **or**
+- Instruct the agent: _"Import my MCP servers from Cursor"_
 
-**Step 3 — Attach a workspace and ask for a file you keep**
+**Step 3 — Attach a workspace and generate files**
 
-- Point Workspace at a real project folder
-- _"Review this workspace, then write findings to `DELIVERABLE.md`."_
+- Select a local project directory in Workspace.
+- Instruct the agent: _"Review this workspace, then write findings to `DELIVERABLE.md`."_
 
-**Next — coordination and automation**
+**Next — Coordination and automation**
 
-- _"@skill:pipeline — research, draft, then review; one final report."_
+- _"@skill:pipeline — research, draft, then review; save one final report."_
 - _"Prepare a teamwork workspace for this repo."_
-- _"Set up a scheduled daily competitor brief at 7am."_ (or run the Morning Briefing recipe)
+- _"Set up a scheduled daily competitor brief at 7am."_ (or launch the Morning Briefing recipe)
 
 ### First prompts to copy-paste
 
@@ -212,35 +212,35 @@ pnpm tauri dev
 
 ## Where LibrAgent Fits Best
 
-| If you want... | LibrAgent is strong because... |
-| -------------- | ------------------------------ |
-| **Harness depth without harness homework** | Extensions presets, recipes, `@skill:` patterns, and approvals — not JSON-first onboarding |
-| **Orchestration without building a framework** | `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork` / `org`, `schedule` ship as product |
-| **Freedom from a vendor agent stack** | Bring your model and MCP tools; MIT; local-first by default |
-| **A real execution substrate** | Workspace, shell, browser, knowledge, playbooks, and long-running session guards |
-| **An MCP-native desktop product** | Presets, import, and 15+ builtins — not a thin chat wrapper |
+| If you want... | LibrAgent is suitable because... |
+| -------------- | -------------------------------- |
+| **Comprehensive capabilities without manual setup** | Extensions presets, recipes, `@skill:` patterns, and UI approvals replace JSON-first configuration |
+| **Orchestration without framework assembly** | Standard patterns (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork`, `schedule`) are built into the product |
+| **Independence from proprietary agent stacks** | Use your choice of model and MCP tools under an MIT, local-first architecture |
+| **Dedicated execution substrate** | Local workspace, shell, browser, knowledge store, playbooks, and session safety guards |
+| **Native MCP desktop environment** | Direct presets, configuration import, and 15+ built-in servers |
 
 ---
 
 ## Design Philosophy
 
-- **Product over kit**: The harness is usable without assembling it.
-- **Orchestration as skills**: Coordination patterns are named, selectable, and documented — not buried in sample repos.
-- **Freedom of stack**: Models and tools are user choices; the product does not require one AI vendor.
-- **Local First**: Workspaces, sessions, skills, and browser state stay under your control. Cloud LLM / remote MCP only when you opt in.
-- **Harness over Model**: Tools, session state, delegation, and governance matter more than any single model.
-- **Stability over Features**: Isolation, compaction, loop prevention — before feature chase.
-- **Open Standards**: MIT. MCP as the interoperability layer.
+- **Product over kit**: The runtime is ready for immediate use without manual code assembly.
+- **Orchestration as skills**: Coordination patterns are named, selectable, and documented.
+- **Independence of stack**: Models and tools remain user choices; the software does not depend on a single AI vendor.
+- **Local First**: Workspaces, sessions, skills, and browser states remain on your machine. Cloud LLM and remote MCP connections occur only when explicitly enabled.
+- **Harness over Model**: Tools, session state, delegation, and governance provide more value than any individual model.
+- **Stability over Features**: Isolation, context compaction, and loop prevention take precedence over feature quantity.
+- **Open Standards**: MIT license with MCP as the foundational interoperability layer.
 
 ---
 
 ## Contributing & License
 
-LibrAgent is MIT licensed and built in the open. Contributions are welcome — bundled skills, MCP integrations, bug fixes, or architecture improvements.
+LibrAgent is MIT licensed and built in the open. Contributions are welcome, including bundled skills, MCP integrations, bug fixes, and architectural improvements.
 
 - [Contributing Guide](CONTRIBUTING.md)
 - [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
 - [Discussions](https://github.com/fritzprix/libr-agent/discussions)
-- Benchmarks (Harbor / Terminal-Bench): see [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`, …)
+- Benchmarks (Harbor / Terminal-Bench): See [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`)
 
 **License**: MIT
