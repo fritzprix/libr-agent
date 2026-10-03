@@ -13,7 +13,7 @@ LibrAgent empowers agents to browse the web, search and extract live information
 Complex web pages or in-page script crashes will never compromise your desktop workspace:
 
 - **Isolated Sandbox Execution**: Browser automation operates in an isolated background process separate from the main LibrAgent desktop app. Heavy memory consumption or browser crashes cannot freeze or crash your main application.
-- **Sticky agent profile**: By default, `browser__createSession` reuses a fixed LibrAgent agent browser profile on this device. Logins you make *inside* that browser survive later sessions until you clear them in Settings → System → **Agent browser** → Clear agent browser data. This is not your everyday Chrome. Concurrent agent chats share that same cookie jar while the browser sidecar is running.
+- **Sticky agent profile**: `browser__createSession` with `browser="sidecar"` (default) reuses a fixed LibrAgent agent browser profile on this device. Logins you make *inside* that browser survive later sessions until you clear them in Settings → System → **Agent browser** → Clear agent browser data. This is not your everyday Chrome. Concurrent agent chats share that same cookie jar while the browser sidecar is running.
 
 ---
 
@@ -21,14 +21,18 @@ Complex web pages or in-page script crashes will never compromise your desktop w
 
 For logged-in sites in **your everyday Chrome**, LibrAgent can optionally drive tabs through a local MV3 extension (Load unpacked or Chrome Web Store) and a loopback WebSocket bridge (`ws://127.0.0.1:3847/extension-bridge` by default).
 
-| Path | When it is used |
+| `browser` on `createSession` | Meaning |
 | --- | --- |
-| **Sticky CDP sidecar** | Default when the extension is disconnected (or `LIBRAGENT_BROWSER_BACKEND=sidecar`) |
-| **Chrome extension bridge** | When the extension is connected and backend mode is `auto` (default) or `extension` |
+| **`sidecar`** (default) | Sticky CDP agent browser — separate from everyday Chrome |
+| **`userChrome`** | Everyday Chrome via the extension bridge — **errors if not Connected**; never silently opens sidecar |
+
+Agents must pick the target at create time. A failed `userChrome` session does not contaminate reads by falling back to the agent browser.
+
+**One active browser session per agent (SSOT):** each agent chat has a single active browser session. `browser__createSession` replaces any previous session (including when switching `sidecar` ↔ `userChrome`). Other browser tools always target that active session — there is no `sessionId` argument and no dual-open of everyday Chrome + agent browser at once. To change backend, create again.
 
 - Install steps: see `chrome-extension/README.md`, or copy the path from Settings → System → **Agent browser** → Chrome extension bridge (status-first card). Chrome Web Store packaging notes live in `chrome-extension/STORE.md`.
 - After a one-time install (Load unpacked or Store), LibrAgent restarts should reconnect automatically. Use the toolbar popup or Settings status — you only need **Reload** on `chrome://extensions` when the extension files themselves change (developer updates).
-- When Connected, most browser tools (navigate, content, click/input, evaluateJS, viewport screenshot) use everyday Chrome. `getConsoleLogs` remains sticky-sidecar only. Extension screenshots are viewport-only (`fullPage` ignored).
+- With `browser="userChrome"` and Connected, most browser tools (navigate, content, click/input, evaluateJS, viewport screenshot) use everyday Chrome. `getConsoleLogs` remains sticky-sidecar only. Extension screenshots are viewport-only (`fullPage` ignored).
 - Auth: fixed dev token `libragent-dev` when `LIBRAGENT_EXTENSION_BRIDGE_TOKEN` is unset. Production will use a rotating token.
 
 ---

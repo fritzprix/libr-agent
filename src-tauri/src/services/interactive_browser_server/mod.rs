@@ -26,6 +26,34 @@ enum SessionBackend {
     Extension,
 }
 
+/// Explicit create-time browser target. Never silently switched mid-session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserSessionTarget {
+    /// LibrAgent sticky agent Chromium profile (CDP sidecar).
+    Sidecar,
+    /// User's everyday Chrome via the MV3 extension bridge.
+    UserChrome,
+}
+
+impl BrowserSessionTarget {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sidecar => "sidecar",
+            Self::UserChrome => "userChrome",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        match raw.trim() {
+            "sidecar" => Ok(Self::Sidecar),
+            "userChrome" => Ok(Self::UserChrome),
+            other => Err(format!(
+                "Invalid browser value '{other}'. Use \"sidecar\" (sticky agent browser) or \"userChrome\" (everyday Chrome extension)."
+            )),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct InteractiveBrowserServer {
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
@@ -140,12 +168,28 @@ impl InteractiveBrowserServer {
         url: &str,
         title: Option<&str>,
         visible: bool,
+        target: BrowserSessionTarget,
     ) -> Result<(String, String), String> {
         if url.trim().is_empty() {
             return Err("The 'url' parameter is required".to_string());
         }
 
         let validated_url = validate_and_normalize_url(url)?;
+
+        // Fail before allocating a session id when userChrome cannot be used.
+        // Never silently open sidecar instead — that would contaminate which browser is being read.
+        if matches!(target, BrowserSessionTarget::UserChrome)
+            && !self.extension_bridge.is_connected()
+        {
+            return Err(
+                "userChrome unavailable: LibrAgent Browser Bridge extension is not Connected. \
+                 No browser session was created (no silent sidecar fallback). \
+                 Retry browser__createSession with browser=\"sidecar\" for LibrAgent's separate sticky agent browser, \
+                 or ask the user to connect the extension (Settings → System → Chrome extension bridge) and retry with browser=\"userChrome\"."
+                    .to_string(),
+            );
+        }
+
         let session_id = generate_session_id();
         let session = BrowserSession {
             id: session_id.clone(),
@@ -165,29 +209,28 @@ impl InteractiveBrowserServer {
             sessions.insert(session_id.clone(), session);
         }
 
-        let use_extension = self
-            .extension_bridge
-            .should_route_new_sessions_to_extension();
-        let backend = if use_extension {
-            SessionBackend::Extension
-        } else {
-            SessionBackend::Sidecar
+        let backend = match target {
+            BrowserSessionTarget::UserChrome => SessionBackend::Extension,
+            BrowserSessionTarget::Sidecar => SessionBackend::Sidecar,
         };
         self.set_session_backend(&session_id, backend)?;
 
         info!(
-            "Creating browser session {session_id} via {:?} for URL: {validated_url}",
-            backend
+            "Creating browser session {session_id} via {} for URL: {validated_url}",
+            target.as_str()
         );
 
-        let create_result = if use_extension {
-            self.extension_bridge
-                .create_session(&session_id, &validated_url)
-                .await
-        } else {
-            self.client
-                .create_session(&session_id, &validated_url, title, visible)
-                .await
+        let create_result = match target {
+            BrowserSessionTarget::UserChrome => {
+                self.extension_bridge
+                    .create_session(&session_id, &validated_url)
+                    .await
+            }
+            BrowserSessionTarget::Sidecar => {
+                self.client
+                    .create_session(&session_id, &validated_url, title, visible)
+                    .await
+            }
         };
 
         match create_result {
@@ -203,18 +246,30 @@ impl InteractiveBrowserServer {
                     session.runtime_ready_generation = Some(session.page_generation);
                 }
 
+                let backend_label = match target {
+                    BrowserSessionTarget::Sidecar => {
+                        "browser=sidecar (sticky agent profile — not everyday Chrome)"
+                    }
+                    BrowserSessionTarget::UserChrome => {
+                        "browser=userChrome (everyday Chrome via extension bridge)"
+                    }
+                };
+
                 let message = match state.navigation_message {
                     Some(nav_msg) if nav_msg.contains("load wait timed out") => {
-                        format!("Session created for {}. {}", state.url, nav_msg)
+                        format!(
+                            "Session created ({backend_label}) for {}. {}",
+                            state.url, nav_msg
+                        )
                     }
                     Some(nav_msg) => {
                         format!(
-                            "Session created for {} - active session ready for content extraction. {}",
+                            "Session created ({backend_label}) for {} - active session ready for content extraction. {}",
                             state.url, nav_msg
                         )
                     }
                     None => format!(
-                        "Session created for {} - active session ready for content extraction",
+                        "Session created ({backend_label}) for {} - active session ready for content extraction",
                         state.url
                     ),
                 };
@@ -225,8 +280,17 @@ impl InteractiveBrowserServer {
                     sessions.remove(&session_id);
                 }
                 self.clear_session_backend(&session_id);
+                let hint = match target {
+                    BrowserSessionTarget::UserChrome => {
+                        " userChrome create failed with no sidecar fallback. \
+                         Retry with browser=\"sidecar\" for the sticky agent browser, \
+                         or fix the extension connection and retry browser=\"userChrome\"."
+                    }
+                    BrowserSessionTarget::Sidecar => "",
+                };
                 Err(format!(
-                    "Failed to create browser automation session: {error}"
+                    "Failed to create browser automation session ({}): {error}.{hint}",
+                    target.as_str()
                 ))
             }
         }

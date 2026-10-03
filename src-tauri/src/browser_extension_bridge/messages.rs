@@ -60,7 +60,7 @@ pub struct ExtensionReply {
     pub error: Option<String>,
 }
 
-/// Tab / page state returned by createSession / navigate / getState.
+/// Tab / page state returned by createSession / navigate / getState / history.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionTabState {
@@ -68,6 +68,11 @@ pub struct ExtensionTabState {
     pub title: Option<String>,
     #[serde(default)]
     pub tab_id: Option<i64>,
+    /// History navigation only: `navigated` | `noHistoryEntry` | `blockedInterstitial`.
+    #[serde(default)]
+    pub navigation_status: Option<String>,
+    #[serde(default)]
+    pub navigation_message: Option<String>,
 }
 
 /// Status snapshot for Settings UI / Tauri commands.

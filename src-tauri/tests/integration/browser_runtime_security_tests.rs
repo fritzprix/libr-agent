@@ -248,3 +248,70 @@ fn browser_automation_client_uses_a_longer_bootstrap_timeout() {
         std::time::Duration::from_secs(60)
     );
 }
+
+#[test]
+fn browser_session_target_parse_accepts_known_values() {
+    use tauri_mcp_agent_lib::services::BrowserSessionTarget;
+
+    assert_eq!(
+        BrowserSessionTarget::parse("sidecar").unwrap(),
+        BrowserSessionTarget::Sidecar
+    );
+    assert_eq!(
+        BrowserSessionTarget::parse("userChrome").unwrap(),
+        BrowserSessionTarget::UserChrome
+    );
+    assert_eq!(
+        BrowserSessionTarget::parse("  sidecar  ").unwrap(),
+        BrowserSessionTarget::Sidecar
+    );
+}
+
+#[test]
+fn browser_session_target_parse_rejects_unknown_values() {
+    use tauri_mcp_agent_lib::services::BrowserSessionTarget;
+
+    let err = BrowserSessionTarget::parse("auto").unwrap_err();
+    assert!(err.contains("Invalid browser value"));
+    assert!(err.contains("sidecar"));
+    assert!(err.contains("userChrome"));
+
+    let err = BrowserSessionTarget::parse("extension").unwrap_err();
+    assert!(err.contains("Invalid browser value"));
+}
+
+#[tokio::test]
+async fn user_chrome_create_fails_when_extension_disconnected() {
+    use std::time::Duration;
+    use tauri_mcp_agent_lib::browser_extension_bridge;
+    use tauri_mcp_agent_lib::services::{BrowserSessionTarget, InteractiveBrowserServer};
+
+    if browser_extension_bridge::is_connected() {
+        // Local machine already has everyday Chrome Connected — skip to avoid opening a real tab.
+        return;
+    }
+
+    let server = InteractiveBrowserServer::new(Duration::from_secs(5));
+    let err = server
+        .create_browser_session(
+            "https://example.com",
+            None,
+            false,
+            BrowserSessionTarget::UserChrome,
+        )
+        .await
+        .expect_err("userChrome must fail without Connected extension");
+
+    assert!(
+        err.contains("userChrome unavailable"),
+        "expected unavailable error, got: {err}"
+    );
+    assert!(
+        err.contains("no silent sidecar fallback"),
+        "expected no-fallback wording, got: {err}"
+    );
+    assert!(
+        err.contains("browser=\"sidecar\""),
+        "expected sidecar retry guidance, got: {err}"
+    );
+}

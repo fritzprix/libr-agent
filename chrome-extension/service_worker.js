@@ -17,7 +17,7 @@ const RECONNECT_MS = 2000;
 const KEEPALIVE_ALARM = 'libragent-bridge-keepalive';
 const KEEPALIVE_MINUTES = 0.4; // ~24s (Chrome may clamp to ~1 min)
 const TAB_LOAD_TIMEOUT_MS = 20000;
-/** History nav often has no load event when there is no entry — keep this short. */
+/** Max wait for history.back/forward to change the tab URL before reporting noHistoryEntry. */
 const HISTORY_NAV_TIMEOUT_MS = 2500;
 
 /** @typedef {'connected' | 'reconnecting' | 'app_offline'} BridgeUiState */
@@ -136,14 +136,34 @@ async function tabState(tabId) {
 }
 
 /**
- * Wait briefly after goBack/goForward. Resolves as soon as the tab URL/status
- * updates, or after a short timeout when history is empty (no load event).
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function urlsMatch(a, b) {
+  const norm = (u) => {
+    try {
+      const parsed = new URL(u);
+      const path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '');
+      return `${parsed.protocol}//${parsed.host}${path}${parsed.search}${parsed.hash}`;
+    } catch {
+      return String(u || '').replace(/\/$/, '');
+    }
+  };
+  return norm(a) === norm(b);
+}
+
+/**
+ * Wait until the tab URL differs from `beforeUrl`, or until timeout.
+ * Does not treat a bare `status=complete` on the same URL as success (avoids
+ * racing goBack against a spurious complete event).
  *
  * @param {number} tabId
- * @param {'back' | 'forward'} direction
+ * @param {string} beforeUrl
+ * @param {number} timeoutMs
  * @returns {Promise<{ url: string, title: string | null, tabId: number }>}
  */
-async function navigateHistory(tabId, direction) {
+function waitForHistoryUrlChange(tabId, beforeUrl, timeoutMs) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = () => {
@@ -170,24 +190,110 @@ async function navigateHistory(tabId, direction) {
       if (id !== tabId) {
         return;
       }
-      if (changeInfo.status === 'complete' || typeof changeInfo.url === 'string') {
+      if (typeof changeInfo.url === 'string' && !urlsMatch(changeInfo.url, beforeUrl)) {
         finish();
+        return;
+      }
+      if (changeInfo.status === 'complete') {
+        void chrome.tabs
+          .get(tabId)
+          .then((tab) => {
+            const url = tab.url ?? 'about:blank';
+            if (!urlsMatch(url, beforeUrl)) {
+              finish();
+            }
+          })
+          .catch(() => {
+            // Ignore transient get errors while waiting.
+          });
       }
     };
 
-    const timer = setTimeout(finish, HISTORY_NAV_TIMEOUT_MS);
+    const timer = setTimeout(finish, timeoutMs);
     chrome.tabs.onUpdated.addListener(onUpdated);
-
-    const nav =
-      direction === 'back'
-        ? chrome.tabs.goBack(tabId)
-        : chrome.tabs.goForward(tabId);
-
-    void Promise.resolve(nav).catch((error) => {
-      console.info(`[LibrAgent Bridge] go${direction === 'back' ? 'Back' : 'Forward'}:`, error);
-      finish();
-    });
   });
+}
+
+/**
+ * Trigger history back/forward, then report whether the URL actually changed.
+ * Prefer in-page history (sidecar parity); fall back to chrome.tabs.goBack/Forward.
+ * Never reports navigated when the URL is unchanged.
+ *
+ * @param {number} tabId
+ * @param {'back' | 'forward'} direction
+ * @returns {Promise<{
+ *   url: string,
+ *   title: string | null,
+ *   tabId: number,
+ *   navigationStatus: 'navigated' | 'noHistoryEntry',
+ *   navigationMessage?: string,
+ * }>}
+ */
+async function navigateHistory(tabId, direction) {
+  const before = await tabState(tabId);
+  const beforeUrl = before.url;
+  const label = direction === 'back' ? 'back' : 'forward';
+
+  let triggerError = null;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      args: [direction],
+      func: (dir) => {
+        if (dir === 'back') {
+          history.back();
+        } else {
+          history.forward();
+        }
+      },
+    });
+  } catch (scriptError) {
+    try {
+      if (direction === 'back') {
+        await chrome.tabs.goBack(tabId);
+      } else {
+        await chrome.tabs.goForward(tabId);
+      }
+    } catch (tabsError) {
+      triggerError = tabsError;
+    }
+  }
+
+  if (triggerError) {
+    return {
+      url: before.url,
+      title: before.title,
+      tabId,
+      navigationStatus: 'noHistoryEntry',
+      navigationMessage: `No ${label} history entry (${String(
+        triggerError && triggerError.message ? triggerError.message : triggerError,
+      )})`,
+    };
+  }
+
+  const after = await waitForHistoryUrlChange(
+    tabId,
+    beforeUrl,
+    HISTORY_NAV_TIMEOUT_MS,
+  );
+
+  if (urlsMatch(after.url, beforeUrl)) {
+    return {
+      url: after.url,
+      title: after.title,
+      tabId,
+      navigationStatus: 'noHistoryEntry',
+      navigationMessage: `${label} navigation produced no observable page change; staying on ${after.url}`,
+    };
+  }
+
+  return {
+    url: after.url,
+    title: after.title,
+    tabId,
+    navigationStatus: 'navigated',
+  };
 }
 
 /**

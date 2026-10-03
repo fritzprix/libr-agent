@@ -55,10 +55,10 @@ pub async fn evaluate_js(server: &BrowserServer, args: Value) -> Result<MCPResul
                 "Evaluate JavaScript",
                 &error,
                 vec![
-                    "Verify the script uses valid JavaScript syntax".to_string(),
-                    "Wrap complex return values with JSON.stringify(...) before returning them"
+                    "Use a valid expression or IIFE (() => { ...; return value; })(). Do not use a top-level return."
                         .to_string(),
-                    "Use browser__getConsoleLogs to inspect page-side errors after execution"
+                    "For objects, use JSON.stringify(...) as the final expression".to_string(),
+                    "On browser=\"sidecar\" only: use browser__getConsoleLogs for console output. On userChrome, catch errors in an IIFE and return the message."
                         .to_string(),
                 ],
                 ToolGroup::Browser,
@@ -69,7 +69,10 @@ pub async fn evaluate_js(server: &BrowserServer, args: Value) -> Result<MCPResul
     let hint = SuccessHint::new(
         format!("JavaScript executed\n\nResult:\n{}", result),
         vec![
-            "Use browser__getConsoleLogs if you need page-side error output".to_string(),
+            "On browser=\"sidecar\", use browser__getConsoleLogs for console output (unsupported on userChrome)."
+                .to_string(),
+            "If Result is null, retry with a final expression or IIFE. A top-level return often yields null."
+                .to_string(),
             "Use browser__getPageContent to verify page state after DOM changes".to_string(),
         ],
     );
@@ -111,15 +114,29 @@ pub async fn get_console_logs(server: &BrowserServer, args: Value) -> Result<MCP
     {
         Ok(logs) => logs,
         Err(error) => {
+            let mut guidance = vec![
+                "Verify the browser session is still active".to_string(),
+                "Use browser__evaluateJS to inspect page state (works on sidecar and userChrome)"
+                    .to_string(),
+            ];
+            if error.contains("not supported yet via Chrome extension")
+                || error.contains("extension bridge")
+            {
+                guidance.insert(
+                    0,
+                    "getConsoleLogs is sticky-sidecar only. Retry with browser__createSession browser=\"sidecar\", or use browser__evaluateJS on the current userChrome session."
+                        .to_string(),
+                );
+            } else {
+                guidance.push(
+                    "Use browser__navigateToUrl or browser__createSession to reset the page if logging has stalled"
+                        .to_string(),
+                );
+            }
             return Ok(operation_failed_error(
                 "Get console logs",
                 &error,
-                vec![
-                    "Verify the browser session is still active".to_string(),
-                    "Use browser__evaluateJS to reproduce the issue before reading logs again".to_string(),
-                    "Use browser__navigateToUrl or browser__createSession to reset the page if logging has stalled"
-                        .to_string(),
-                ],
+                guidance,
                 ToolGroup::Browser,
             ));
         }

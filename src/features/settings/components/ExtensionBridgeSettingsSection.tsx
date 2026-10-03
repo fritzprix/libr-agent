@@ -118,12 +118,12 @@ export function ExtensionBridgeSettingsSection() {
     userState === 'connected'
       ? t(
           'settings.system.extensionBridge.connectedHint',
-          'Agents prefer your logged-in Chrome tabs. If the link drops, LibrAgent reconnects automatically when this app is running — you should not need to reopen chrome://extensions.',
+          'Agents can open sessions with browser="userChrome". Sticky agent browser stays available via browser="sidecar". If the link drops, LibrAgent reconnects when this app is running — you should not need to reopen chrome://extensions.',
         )
       : userState === 'waiting_extension'
         ? t(
             'settings.system.extensionBridge.waitingHint',
-            'One-time setup: install the Load unpacked extension, then leave it enabled. While disconnected, agents use the built-in agent browser below as a fallback.',
+            'One-time setup: install the Load unpacked extension, then leave it enabled. Until Connected, browser="userChrome" errors; agents must use browser="sidecar" for the separate sticky agent browser.',
           )
         : null;
 
@@ -139,7 +139,7 @@ export function ExtensionBridgeSettingsSection() {
         <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
           {t(
             'settings.system.extensionBridge.description',
-            'Optional. Connect once so agents can browse with the logins already in your everyday Chrome. Restarting LibrAgent should reconnect by itself.',
+            'Optional. Connect once so agents can call createSession with browser="userChrome" and use logins already in your everyday Chrome. Restarting LibrAgent should reconnect by itself.',
           )}
         </p>
       </div>
@@ -165,7 +165,7 @@ export function ExtensionBridgeSettingsSection() {
           <p className="text-xs text-muted-foreground leading-relaxed">
             {t(
               'settings.system.extensionBridge.fallbackNote',
-              'Fallback is on: sticky agent browser (separate from everyday Chrome).',
+              'Not connected: use browser="sidecar" (sticky agent browser). There is no silent fallback into everyday Chrome.',
             )}
           </p>
         ) : null}

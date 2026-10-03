@@ -18,7 +18,7 @@ use super::messages::{
     BridgeQuery, ExtensionBridgeStatus, ExtensionMethod, ExtensionReply, ExtensionRequest,
     ExtensionTabState, DEFAULT_RPC_TIMEOUT_SECS,
 };
-use crate::browser_sidecar::PageState;
+use crate::browser_sidecar::{HistoryNavigationStatus, PageState};
 
 static GLOBAL_BRIDGE: OnceLock<ExtensionBridge> = OnceLock::new();
 
@@ -112,15 +112,6 @@ impl ExtensionBridge {
             port: self.inner.port,
             token_hint: token_hint(&self.inner.token),
             backend_mode: resolve_backend_mode(),
-        }
-    }
-
-    /// Whether new sessions should prefer the extension backend.
-    pub fn should_route_new_sessions_to_extension(&self) -> bool {
-        match resolve_backend_mode().as_str() {
-            "sidecar" => false,
-            "extension" => true,
-            _ => self.is_connected(),
         }
     }
 
@@ -475,14 +466,42 @@ fn parse_tab_state(value: Value) -> Result<ExtensionTabState, String> {
     serde_json::from_value(value).map_err(|e| format!("Invalid extension tab state payload: {e}"))
 }
 
-fn page_state_from_tab(state: ExtensionTabState) -> PageState {
+/// Map extension tab payload into the shared [`PageState`] contract (incl. history status).
+pub fn page_state_from_extension_tab(state: ExtensionTabState) -> PageState {
+    let navigation_status = match state
+        .navigation_status
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some("navigated") => Some(HistoryNavigationStatus::Navigated),
+        Some("noHistoryEntry") => Some(HistoryNavigationStatus::NoHistoryEntry),
+        Some("blockedInterstitial") => Some(HistoryNavigationStatus::BlockedInterstitial),
+        Some(other) => {
+            warn!("Unknown extension navigationStatus '{other}'; treating as unset");
+            None
+        }
+        None => None,
+    };
+
+    let navigation_message = match (&navigation_status, state.navigation_message) {
+        (_, Some(msg)) => Some(msg),
+        (Some(_), None) => None,
+        // create/navigate/getState: keep a stable backend label for logs/UI.
+        (None, None) => Some("Opened via Chrome extension bridge".to_string()),
+    };
+
     PageState {
         url: state.url,
         title: state.title,
         classification: None,
-        navigation_status: None,
-        navigation_message: Some("Opened via Chrome extension bridge".to_string()),
+        navigation_status,
+        navigation_message,
     }
+}
+
+fn page_state_from_tab(state: ExtensionTabState) -> PageState {
+    page_state_from_extension_tab(state)
 }
 
 fn stringify_evaluate_result(value: Value) -> String {

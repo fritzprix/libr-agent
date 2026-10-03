@@ -24,9 +24,14 @@ mod tools;
 /// # Browser Tool Workflows
 ///
 /// ## Basic Navigation Flow
-/// 1. `createSession(url?)` → create or replace the active browser session for this agent
-/// 2. `navigateToUrl(url)` → navigate the active session to a new page
+/// 1. `createSession(browser?, url?)` → create or **replace** the single active browser session (`browser=sidecar|userChrome`)
+/// 2. `navigateToUrl(url)` → navigate that active session to a new page
 /// 3. `getPageContent` → extract or read content from the current page
+///
+/// ## Single-active SSOT
+/// Each agent session has at most one active browser session. Tools always target that
+/// slot (no `sessionId` arg). A new `createSession` closes the previous session — including
+/// when switching `sidecar` ↔ `userChrome`. Parallel dual-open is unsupported.
 ///
 /// ## Interaction Flow
 /// 1. `listInteractable` → find elements
@@ -42,7 +47,7 @@ mod tools;
 pub struct BrowserServer {
     pub(crate) app_handle: AppHandle,
     pub(crate) agent_session_id: String,
-    // We keep track of the browser session ID associated with this agent session
+    /// Single active browser session id for this agent (SSOT slot; replaced on createSession).
     pub(crate) browser_session_id: Arc<RwLock<Option<String>>>,
     // Cache for browser state to avoid expensive JS injection on every context request
     // Format: (url, title, last_update_timestamp)
