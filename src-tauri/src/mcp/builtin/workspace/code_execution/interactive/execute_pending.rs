@@ -8,6 +8,7 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::builtin::workspace::code_execution::normalization;
 use crate::mcp::builtin::workspace::code_execution::shell::{
     format_command_io_message, format_duration_ms, shell_signal_interrupt_result,
+    truncate_sync_shell_stream,
 };
 use crate::mcp::builtin::workspace::code_execution::validation;
 use crate::mcp::builtin::workspace::{
@@ -234,10 +235,10 @@ impl WorkspaceServer {
             if redact_output {
                 error_sections.push(output_redacted_notice.to_string());
             } else if !stdout.is_empty() {
-                error_sections.push(format!("Output:\n{stdout}"));
+                error_sections.push(format!("Output:\n{}", truncate_sync_shell_stream(&stdout)));
             }
             if !redact_output && !stderr.is_empty() {
-                error_sections.push(format!("Stderr:\n{stderr}"));
+                error_sections.push(format!("Stderr:\n{}", truncate_sync_shell_stream(&stderr)));
             }
 
             let error_output = if error_sections.is_empty() {

@@ -17,6 +17,41 @@ pub(super) fn format_duration_ms(duration_ms: u64) -> String {
     }
 }
 
+/// Soft cap for each stdout/stderr stream embedded in a sync shell observation.
+///
+/// Background process streams already enforce a hard byte limit on disk; sync
+/// `runShell` observations previously embedded the full buffer and could dump
+/// multi-10KB diffs into the model context. Keep this well below that.
+pub const SYNC_SHELL_OBS_MAX_CHARS: usize = 8_192;
+
+const SYNC_SHELL_OBS_HEAD_CHARS: usize = 5_120;
+const SYNC_SHELL_OBS_TAIL_CHARS: usize = 2_048;
+
+/// Marker inserted when a sync shell stream is truncated for observation size.
+pub const SYNC_SHELL_OBS_TRUNCATION_MARKER: &str = "[Output truncated: sync observation limit exceeded; showing head+tail. Redirect to a file or use head/tail in the command for the full stream.]";
+
+/// Bound one stdout/stderr stream for embedding in a sync shell tool observation.
+///
+/// Preserves the head and tail so agents still see command start and failure
+/// endings (e.g. diff summaries). Returns the input unchanged when under the cap.
+pub fn truncate_sync_shell_stream(stream: &str) -> String {
+    let char_count = stream.chars().count();
+    if char_count <= SYNC_SHELL_OBS_MAX_CHARS {
+        return stream.to_string();
+    }
+
+    let head: String = stream.chars().take(SYNC_SHELL_OBS_HEAD_CHARS).collect();
+    let tail_skip = char_count.saturating_sub(SYNC_SHELL_OBS_TAIL_CHARS);
+    let tail: String = stream.chars().skip(tail_skip).collect();
+    let omitted = char_count
+        .saturating_sub(SYNC_SHELL_OBS_HEAD_CHARS)
+        .saturating_sub(SYNC_SHELL_OBS_TAIL_CHARS);
+
+    format!(
+        "{head}\n\n{SYNC_SHELL_OBS_TRUNCATION_MARKER}\n\n(omitted {omitted} characters)\n\n{tail}"
+    )
+}
+
 pub fn format_command_io_message(
     header: &str,
     stdout_label: &str,
@@ -24,6 +59,8 @@ pub fn format_command_io_message(
     stderr_label: &str,
     stderr: &str,
 ) -> String {
+    let stdout = truncate_sync_shell_stream(stdout);
+    let stderr = truncate_sync_shell_stream(stderr);
     match (stdout.is_empty(), stderr.is_empty()) {
         // Exit success with empty streams is still a factual observation — do not
         // omit IO so agents do not treat "silent success" as missing feedback.
