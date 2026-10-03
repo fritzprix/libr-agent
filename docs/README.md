@@ -22,10 +22,12 @@ LLM provider setup: [llm-services/provider-setup.md](./llm-services/provider-set
 - **[Tauri API Reference](./api/tauri-commands.md)**: A detailed reference for all Tauri commands and data types.
 - **[HTTP API Reference](./api/http_api.md)**: HTTP API documentation for remote management of AI agents and sessions.
 - **[Guides](./guides/getting-started-dev.md)**: Developer environment setup (`getting-started.md` redirects here for contributors).
+- **[Session Export Formats](./guides/session-export-formats.md)**: Trajectory export architecture (ATIF-v1.7 and Markdown).
 - **[Navigation (dev)](./guides/navigation-guide-dev.md)**: UI routes mapped to source.
 - **[Troubleshooting (dev)](./guides/troubleshooting-dev.md)**: WebKit, build, MCP process debugging.
 - **[Assistant System Prompt Guide](./guides/system-prompt-guide.md)**: Guidelines for writing robust and effective system prompts.
 - **[Architecture](./architecture/agent-workflow-architecture.md)**: An overview of the system architecture, data flow, and security considerations.
+- **[MediaAssist Architecture](./architecture/media-assist-architecture.md)**: Host multimodal plugin engine (audio/image/video transcription).
 - **[Gemini Request Caching Implementation](./architecture/gemini-caching-implementation.md)**: How Gemini request shaping, explicit cached-content reuse, and cache lifecycle management work.
 - **[Session Lineage & Tree UI](./architecture/session-lineage-and-tree-ui.md)**: Design and implementation status for nested sessions, `session_api` MCP integration, and tree-based session UX.
 - **[Agent Vibe Charter](./architecture/agent-vibe-charter.md)**: The operating personality and decision rules for this workspace's agent behavior.

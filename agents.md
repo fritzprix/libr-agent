@@ -248,9 +248,11 @@ docs/
 │   ├── getting-started.md       # Setup and quick start
 │   ├── navigation-guide.md      # Internal structure and UI routes
 │   ├── system-prompt-guide.md   # Assistant prompt guidelines
-│   └── builtin_tool_bp.md       # Built-in tool design standards
+│   ├── builtin_tool_bp.md       # Built-in tool design standards
+│   └── session-export-formats.md # Session trajectory export formats (ATIF / Markdown)
 ├── architecture/
 │   ├── agent-workflow-architecture.md
+│   ├── media-assist-architecture.md # Host multimodal plugin engine
 │   ├── gemini-caching-implementation.md
 │   ├── session-lineage-and-tree-ui.md
 │   ├── agent-vibe-charter.md
