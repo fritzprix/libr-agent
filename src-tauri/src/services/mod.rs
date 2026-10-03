@@ -25,7 +25,9 @@ pub use assistant_service::AssistantService;
 pub use attachments_service::AttachmentsService;
 pub use dropped_file_service::DroppedFileService;
 pub use file_export_service::FileExportService;
-pub use interactive_browser_server::{BrowserSession, InteractiveBrowserServer, SessionStatus};
+pub use interactive_browser_server::{
+    BrowserSession, BrowserSessionTarget, InteractiveBrowserServer, SessionStatus,
+};
 pub use log_service::LogService;
 pub use mcp_server_service::McpServerService;
 pub use message_service::MessageService;

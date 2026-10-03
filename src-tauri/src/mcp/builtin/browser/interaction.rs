@@ -430,10 +430,92 @@ fn get_filter_script(filter_type: &str, scope: &str) -> String {
                 return true;
             }}
 
+            function escapeAttr(value) {{
+                if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value);
+                return String(value).replace(/["\\\\]/g, '\\\\$&');
+            }}
+
+            function isUnique(sel) {{
+                try {{ return document.querySelectorAll(sel).length === 1; }}
+                catch (_) {{ return false; }}
+            }}
+
+            // Prefer stable, agent-usable CSS: #id → [name] → [name][value] → [type] →
+            // aria/placeholder → scoped nth-of-type. Never emit a known-non-unique selector
+            // mid-chain (continue searching); keep a best-effort fallback for the end.
             function getUniqueSelector(el) {{
-                if (el.id) return '#' + CSS.escape(el.id);
-                // Minimal fallback
-                return el.tagName.toLowerCase(); 
+                if (el.id) {{
+                    const byId = '#' + escapeAttr(el.id);
+                    if (isUnique(byId)) return byId;
+                }}
+
+                const tag = el.tagName.toLowerCase();
+                const name = el.getAttribute('name');
+                const type = el.getAttribute('type');
+                const value = el.getAttribute('value');
+                let fallback = tag;
+
+                if (name) {{
+                    const byName = tag + '[name="' + escapeAttr(name) + '"]';
+                    if (isUnique(byName)) return byName;
+                    fallback = byName;
+                    if (value !== null && value !== '') {{
+                        const byNameValue = byName + '[value="' + escapeAttr(value) + '"]';
+                        if (isUnique(byNameValue)) return byNameValue;
+                        fallback = byNameValue;
+                    }}
+                }}
+
+                if (type) {{
+                    const byType = tag + '[type="' + escapeAttr(type) + '"]';
+                    if (isUnique(byType)) return byType;
+                }}
+
+                const aria = el.getAttribute('aria-label');
+                if (aria) {{
+                    if (name) {{
+                        const byNameAria = tag + '[name="' + escapeAttr(name) + '"][aria-label="' + escapeAttr(aria) + '"]';
+                        if (isUnique(byNameAria)) return byNameAria;
+                    }}
+                    const byAria = tag + '[aria-label="' + escapeAttr(aria) + '"]';
+                    if (isUnique(byAria)) return byAria;
+                }}
+
+                const placeholder = el.getAttribute('placeholder');
+                if (placeholder) {{
+                    if (name) {{
+                        const byNamePh = tag + '[name="' + escapeAttr(name) + '"][placeholder="' + escapeAttr(placeholder) + '"]';
+                        if (isUnique(byNamePh)) return byNamePh;
+                    }}
+                    const byPh = tag + '[placeholder="' + escapeAttr(placeholder) + '"]';
+                    if (isUnique(byPh)) return byPh;
+                }}
+
+                // :nth-of-type counts same-tag siblings (not attribute matches).
+                const parent = el.parentElement;
+                if (parent) {{
+                    const siblings = Array.from(parent.children).filter(
+                        (c) => c.tagName === el.tagName
+                    );
+                    const nth = siblings.indexOf(el) + 1;
+                    if (nth > 0) {{
+                        let base = tag;
+                        if (type) base += '[type="' + escapeAttr(type) + '"]';
+                        const relative = base + ':nth-of-type(' + nth + ')';
+                        if (parent.id) {{
+                            const withParent = '#' + escapeAttr(parent.id) + ' > ' + relative;
+                            if (isUnique(withParent)) return withParent;
+                        }}
+                        const ancestor = el.closest('[id]');
+                        if (ancestor && ancestor !== el) {{
+                            const scoped = '#' + escapeAttr(ancestor.id) + ' ' + relative;
+                            if (isUnique(scoped)) return scoped;
+                        }}
+                        if (isUnique(relative)) return relative;
+                    }}
+                }}
+
+                return fallback;
             }}
 
             const visible = candidates.filter(isVisible).slice(0, 50).map((el, idx) => {{
@@ -444,6 +526,8 @@ fn get_filter_script(filter_type: &str, scope: &str) -> String {
                     attributes: {{
                         href: el.getAttribute('href'),
                         type: el.getAttribute('type'),
+                        name: el.getAttribute('name'),
+                        value: el.getAttribute('value'),
                         placeholder: el.getAttribute('placeholder'),
                         "aria-label": el.getAttribute('aria-label')
                     }},
@@ -603,5 +687,74 @@ async fn suggest_selectors(
             _ => String::new(),
         },
         Err(_) => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_script_builds_name_aware_unique_selectors() {
+        let script = get_filter_script("semantic_input", "viewport");
+        assert!(
+            script.contains("getAttribute('name')"),
+            "selector builder must read name attributes"
+        );
+        assert!(
+            script.contains("[name=\""),
+            "selector builder must emit name-based CSS"
+        );
+        assert!(
+            script.contains("nth-of-type"),
+            "selector builder must fall back to nth-of-type"
+        );
+        assert!(
+            script.contains("name: el.getAttribute('name')"),
+            "listed attributes must include name for agent readability"
+        );
+        assert!(
+            script.contains("let fallback"),
+            "non-unique name must continue the chain via fallback, not early-return"
+        );
+        assert!(
+            script.contains("closest('[id]')"),
+            "nth-of-type must try an id-bearing ancestor before unscoped relative"
+        );
+        assert!(
+            script.contains("if (isUnique(relative)) return relative"),
+            "unscoped nth-of-type must only be emitted when unique"
+        );
+        for line in script.lines() {
+            let trimmed = line.trim();
+            if trimmed == "return byName;" || trimmed == "return byNameValue;" {
+                panic!("unconditional mid-chain return of non-unique name selector: {trimmed}");
+            }
+            if trimmed.contains("return byName;") {
+                assert!(
+                    trimmed.contains("isUnique(byName)"),
+                    "return byName must be gated by isUnique: {trimmed}"
+                );
+            }
+            if trimmed.contains("return byNameValue;") {
+                assert!(
+                    trimmed.contains("isUnique(byNameValue)"),
+                    "return byNameValue must be gated by isUnique: {trimmed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_interactive_elements_preserves_name_selectors() {
+        let json = r#"[
+            {"index":0,"tag":"input","text":"","attributes":{"name":"custname","type":"text"},"selector":"input[name=\"custname\"]"},
+            {"index":1,"tag":"input","text":"","attributes":{"name":"size","type":"radio","value":"small"},"selector":"input[name=\"size\"][value=\"small\"]"}
+        ]"#;
+        let formatted =
+            format_interactive_elements(json, "semantic_input", "viewport").expect("format");
+        assert!(formatted.contains("Selector: input[name=\"custname\"]"));
+        assert!(formatted.contains("Selector: input[name=\"size\"][value=\"small\"]"));
+        assert!(formatted.contains("name=\"custname\""));
     }
 }

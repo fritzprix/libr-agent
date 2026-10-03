@@ -13,7 +13,7 @@ LibrAgent는 에이전트가 웹사이트를 탐색하고, 필요한 정보를 �
 웹 브라우징 중 복잡한 웹페이지나 스크립트 오류가 발생하더라도 사용자의 작업 환경을 안전하게 보호합니다:
 
 - **독립된 샌드박스 실행**: 브라우저 자동화는 LibrAgent 데스크톱 앱 본체와 분리된 독립 프로세스에서 안전하게 실행됩니다. 웹페이지가 충돌하거나 과도한 메모리를 사용해도 앱 본체는 안전합니다.
-- **고정 에이전트 프로필**: 기본적으로 `browser__createSession`은 이 기기의 LibrAgent 에이전트 브라우저 프로필을 재사용합니다. 그 브라우저 *안에서* 한 로그인은 이후 세션에도 유지되며, 설정 → 시스템 → **에이전트 브라우저** → 에이전트 브라우저 데이터 지우기로 삭제할 수 있습니다. 일상 Chrome과는 별개입니다. 브라우저 sidecar가 떠 있는 동안 여러 에이전트 채팅은 같은 쿠키 jar를 공유합니다.
+- **고정 에이전트 프로필**: `browser__createSession`의 `browser="sidecar"`(기본값)는 이 기기의 LibrAgent 에이전트 브라우저 프로필을 재사용합니다. 그 브라우저 *안에서* 한 로그인은 이후 세션에도 유지되며, 설정 → 시스템 → **에이전트 브라우저** → 에이전트 브라우저 데이터 지우기로 삭제할 수 있습니다. 일상 Chrome과는 별개입니다. 브라우저 sidecar가 떠 있는 동안 여러 에이전트 채팅은 같은 쿠키 jar를 공유합니다.
 
 ---
 
@@ -21,14 +21,18 @@ LibrAgent는 에이전트가 웹사이트를 탐색하고, 필요한 정보를 �
 
 **일상 Chrome**에 이미 로그인된 사이트를 쓰려면, 로컬 MV3 확장(Load unpacked 또는 Chrome Web Store)과 loopback WebSocket 브리지(`ws://127.0.0.1:3847/extension-bridge`, 기본값)로 탭을 제어할 수 있습니다.
 
-| 경로 | 사용 시점 |
+| `createSession`의 `browser` | 의미 |
 | --- | --- |
-| **Sticky CDP sidecar** | 확장이 연결되지 않았을 때 기본값 (`LIBRAGENT_BROWSER_BACKEND=sidecar`로 강제 가능) |
-| **Chrome 확장 브리지** | 확장이 연결되고 백엔드 모드가 `auto`(기본) 또는 `extension`일 때 |
+| **`sidecar`** (기본) | Sticky CDP 에이전트 브라우저 — 일상 Chrome과 별개 |
+| **`userChrome`** | 확장 브리지로 일상 Chrome — **미연결이면 에러**; sidecar로 조용히 넘어가지 않음 |
+
+에이전트는 create 시점에 대상을 골라야 합니다. `userChrome` 실패 시 sidecar로 자동 전환하지 않아 읽기 대상이 섞이지 않습니다.
+
+**에이전트당 active 브라우저 세션 1개(SSOT):** 각 에이전트 채팅은 active 브라우저 세션을 하나만 둡니다. `browser__createSession`은 이전 세션을 닫고 교체합니다(`sidecar` ↔ `userChrome` 전환 포함). 다른 브라우저 도구는 항상 그 active만 대상으로 하며, `sessionId` 인자나 일상 Chrome+에이전트 브라우저 동시 유지는 없습니다. 백엔드를 바꾸려면 create를 다시 호출하세요.
 
 - 설치: `chrome-extension/README.md` 참고, 또는 설정 → 시스템 → **에이전트 브라우저** → Chrome 확장 프로그램 브리지(상태 우선 카드)에서 경로 복사. Chrome Web Store 패키징은 `chrome-extension/STORE.md`를 참고하세요.
 - 한 번 설치하면(Load unpacked 또는 Store) LibrAgent 재시작 시 확장이 자동으로 다시 붙습니다. 툴바 팝업·설정 상태를 보면 되고, 확장 **파일**을 바꾼 뒤에만 `chrome://extensions`에서 **새로고침**이 필요합니다(개발자 업데이트).
-- Connected면 대부분의 브라우저 도구(navigate, content, click/input, evaluateJS, 뷰포트 스크린샷)가 일상 Chrome으로 동작합니다. `getConsoleLogs`만 sticky sidecar 전용입니다. 확장 스크린샷은 뷰포트만 지원합니다(`fullPage` 무시).
+- `browser="userChrome"`이고 Connected일 때 대부분의 브라우저 도구(navigate, content, click/input, evaluateJS, 뷰포트 스크린샷)가 일상 Chrome으로 동작합니다. `getConsoleLogs`만 sticky sidecar 전용입니다. 확장 스크린샷은 뷰포트만 지원합니다(`fullPage` 무시).
 - 인증: `LIBRAGENT_EXTENSION_BRIDGE_TOKEN`이 없으면 고정 개발 토큰 `libragent-dev`. 프로덕션에서는 회전 토큰을 사용할 예정입니다.
 
 ---

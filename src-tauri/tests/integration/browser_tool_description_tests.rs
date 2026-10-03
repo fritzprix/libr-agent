@@ -52,16 +52,38 @@ fn create_session_description_explains_single_stateful_session() {
     let description = browser_tool_description("createSession");
 
     assert!(
-        description.contains("One agent has one active browser session/page"),
+        description.contains("one active browser session")
+            || description.contains("single active browser session"),
         "createSession should explain the single-session model"
     );
     assert!(
-        description.contains("sticky agent browser profile"),
+        description.contains("Do not keep userChrome and sidecar open at the same time")
+            || description.contains("no dual-open")
+            || description.contains("Do not assume two browser sessions"),
+        "createSession must forbid parallel userChrome+sidecar sessions"
+    );
+    assert!(
+        description.contains("closes it and starts a fresh one"),
+        "createSession must state that a new create replaces the previous session"
+    );
+    assert!(
+        description.contains("sticky agent"),
         "createSession should document sticky agent login persistence"
     );
     assert!(
-        description.contains("shares one cookie jar"),
+        description.contains("shares one cookie jar")
+            || description.contains("Shares one cookie jar"),
         "createSession should document shared sticky cookie jar across sessions"
+    );
+    assert!(
+        description.contains("userChrome"),
+        "createSession should document everyday Chrome via userChrome"
+    );
+    assert!(
+        description.contains("Explicit choice")
+            || description.contains("no silent fallback")
+            || description.contains("does NOT open sidecar"),
+        "createSession must forbid silent sidecar fallback from userChrome"
     );
     assert!(
         !description.to_lowercase().contains("use_profile"),
@@ -75,12 +97,65 @@ fn create_session_description_explains_single_stateful_session() {
 }
 
 #[test]
-fn create_session_schema_omits_use_profile() {
+fn create_session_schema_exposes_browser_target_not_use_profile() {
     let tool = browser_tool("createSession");
     let properties = object_properties(&tool.input_schema, "createSession");
     assert!(
         !properties.contains_key("use_profile"),
         "createSession schema must not expose use_profile"
+    );
+    assert!(
+        properties.contains_key("browser"),
+        "createSession schema must expose browser=sidecar|userChrome"
+    );
+    let browser = properties.get("browser").expect("browser property missing");
+    let values = browser
+        .enum_values
+        .as_ref()
+        .expect("browser enum_values missing");
+    let as_str: Vec<&str> = values.iter().filter_map(|v| v.as_str()).collect();
+    assert!(as_str.contains(&"sidecar"));
+    assert!(as_str.contains(&"userChrome"));
+}
+
+#[test]
+fn get_console_logs_description_marks_sidecar_only() {
+    let description = browser_tool_description("getConsoleLogs");
+    assert!(
+        description.contains("sidecar") && description.contains("userChrome"),
+        "getConsoleLogs must document sidecar-only vs userChrome unsupported"
+    );
+    assert!(
+        description.to_lowercase().contains("not available")
+            || description.contains("unsupported")
+            || description.contains("Not available"),
+        "getConsoleLogs must state userChrome is unavailable"
+    );
+}
+
+#[test]
+fn evaluate_js_description_notes_console_logs_sidecar_only() {
+    let description = browser_tool_description("evaluateJS");
+    assert!(
+        description.contains("userChrome"),
+        "evaluateJS should mention userChrome support"
+    );
+    assert!(
+        description.contains("getConsoleLogs") && description.contains("sidecar"),
+        "evaluateJS should steer console logs to sidecar-only"
+    );
+}
+
+#[test]
+fn evaluate_js_description_requires_expression_or_iife() {
+    let description = browser_tool_description("evaluateJS");
+    assert!(
+        description.contains("IIFE") || description.contains("final expression"),
+        "evaluateJS must steer agents away from top-level return"
+    );
+    assert!(
+        description.to_lowercase().contains("top-level return") || description.contains("null"),
+        "evaluateJS must warn that top-level return often yields null"
     );
 }
 
@@ -168,6 +243,10 @@ fn list_interactable_description_explains_selector_discovery_role() {
     assert!(
         description.contains("instead of guessing"),
         "listInteractable should explicitly discourage guessed selectors"
+    );
+    assert!(
+        description.contains("[name=") || description.contains("name="),
+        "listInteractable should document name-aware selectors"
     );
 }
 

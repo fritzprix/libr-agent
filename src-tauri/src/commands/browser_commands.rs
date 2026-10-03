@@ -1,4 +1,4 @@
-use crate::services::{BrowserSession, InteractiveBrowserServer};
+use crate::services::{BrowserSession, BrowserSessionTarget, InteractiveBrowserServer};
 use log::{debug, error, info};
 use tauri::State;
 
@@ -28,7 +28,7 @@ pub async fn create_browser_session(
     info!("Command: create_browser_session called with URL: {url}");
 
     match server
-        .create_browser_session(&url, title.as_deref(), true)
+        .create_browser_session(&url, title.as_deref(), true, BrowserSessionTarget::Sidecar)
         .await
     {
         Ok((session_id, message)) => {

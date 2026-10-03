@@ -65,15 +65,18 @@ When the app env token is unset, LibrAgent uses the fixed development token
 
 ## Backend selection (app)
 
-| `LIBRAGENT_BROWSER_BACKEND` | Behavior |
+`browser__createSession` takes an explicit `browser` argument:
+
+| `browser` | Behavior |
 | --- | --- |
-| unset / `auto` | Prefer the extension when connected; otherwise sticky CDP sidecar |
-| `extension` | Require the extension bridge |
-| `sidecar` | Always use the sticky agent Chromium sidecar |
+| `sidecar` (default) | Sticky agent Chromium CDP sidecar |
+| `userChrome` | Everyday Chrome via this extension — **errors if not Connected**; never falls back to sidecar |
+
+`LIBRAGENT_BROWSER_BACKEND` remains for diagnostics/status only; it does not silently reroute createSession.
 
 ## Supported tools (via extension)
 
-When Connected, these go through everyday Chrome:
+When Connected **and** the agent calls `createSession` with `browser="userChrome"`, these go through everyday Chrome:
 
 - Session: `createSession`, `navigateToUrl`, `navigateBack`, `navigateForward`, `closeSession`
 - Read / JS: `getPageTitle`, `getCurrentUrl`, `getPageContent`, `evaluateJS`, `listInteractable`

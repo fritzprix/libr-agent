@@ -1,12 +1,12 @@
-//! Loopback WebSocket bridge for the LibrAgent Chrome MV3 extension (Load unpacked MVP).
+//! Loopback WebSocket bridge for the LibrAgent Chrome MV3 extension (Load unpacked / Store).
 //!
-//! Sticky CDP sidecar remains the default when the extension is disconnected.
-//! Prefer extension when connected (`LIBRAGENT_BROWSER_BACKEND=auto`, default).
+//! Session routing is explicit at `browser__createSession` via `browser=sidecar|userChrome`.
+//! There is no silent auto-fallback between everyday Chrome and the sticky sidecar.
 
 mod bridge;
 mod messages;
 
-pub use bridge::ExtensionBridge;
+pub use bridge::{page_state_from_extension_tab, ExtensionBridge};
 pub use messages::{
     decode_reply, decode_request, resolve_backend_mode, resolve_bridge_port, resolve_bridge_token,
     ExtensionBridgeStatus, ExtensionMethod, ExtensionReply, ExtensionRequest, ExtensionTabState,
@@ -26,10 +26,6 @@ pub fn status() -> ExtensionBridgeStatus {
 
 pub fn is_connected() -> bool {
     ExtensionBridge::global().is_connected()
-}
-
-pub fn should_route_new_sessions_to_extension() -> bool {
-    ExtensionBridge::global().should_route_new_sessions_to_extension()
 }
 
 /// Absolute path to the Load unpacked extension folder, when resolvable.
