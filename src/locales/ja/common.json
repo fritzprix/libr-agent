@@ -1441,6 +1441,7 @@
       "ariaLabel": "利用可能なツールリスト",
       "badgeBuiltin": "組み込み",
       "badgeMcp": "mcp",
+      "viewDescription": "説明を表示",
       "viewSchema": "入力スキーマを表示"
     },
     "panels": {

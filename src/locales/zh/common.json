@@ -1441,6 +1441,7 @@
       "ariaLabel": "可用工具列表",
       "badgeBuiltin": "内置",
       "badgeMcp": "mcp",
+      "viewDescription": "查看说明",
       "viewSchema": "查看输入模式"
     },
     "panels": {

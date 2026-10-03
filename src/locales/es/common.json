@@ -1441,6 +1441,7 @@
       "ariaLabel": "Lista de herramientas disponibles",
       "badgeBuiltin": "integrada",
       "badgeMcp": "mcp",
+      "viewDescription": "Ver descripción",
       "viewSchema": "Ver esquema de entrada"
     },
     "panels": {

@@ -1484,6 +1484,7 @@
       "ariaLabel": "Available tools list",
       "badgeBuiltin": "builtin",
       "badgeMcp": "mcp",
+      "viewDescription": "View Description",
       "viewSchema": "View Input Schema"
     },
     "panels": {
