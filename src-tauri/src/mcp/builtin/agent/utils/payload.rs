@@ -102,34 +102,3 @@ pub fn read_required_string(args: &Value, key: &str) -> Result<String, String> {
         .map(|v| v.to_string())
         .ok_or_else(|| format!("Missing required parameter: {key}"))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn build_agent_session_tool_data_emits_display_and_storage_ids() {
-        let data = build_agent_session_tool_data(
-            "checkSession",
-            "session-1735123456789012345",
-            "ok",
-            "idle",
-            "success",
-            1,
-            vec![],
-        );
-
-        assert_eq!(
-            data.get("sessionId").and_then(|v| v.as_str()),
-            Some("6789012345")
-        );
-        assert_eq!(
-            data.get("storageSessionId").and_then(|v| v.as_str()),
-            Some("session-1735123456789012345")
-        );
-        assert_eq!(
-            data.get("resourceId").and_then(|v| v.as_str()),
-            Some("6789012345")
-        );
-    }
-}

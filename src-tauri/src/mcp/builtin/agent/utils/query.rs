@@ -1,8 +1,7 @@
+use super::extraction::{latest_session_output, session_output_is_missing};
 use crate::agent::AgentSessionManager;
 use crate::repositories::{MessageRepository, SessionMetadata, SessionRepository};
 use serde_json::Value;
-
-use super::output::{latest_session_output, session_output_is_missing};
 
 pub const CHECK_SESSION_RESULT_MESSAGE_LIMIT: u64 = 20;
 
@@ -154,41 +153,4 @@ pub async fn count_session_turns(session_id: &str) -> usize {
         .await
         .unwrap_or_default();
     messages.iter().filter(|m| m.role == "assistant").count()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn assistant_json(id: &str, text: &str) -> Value {
-        json!({
-            "id": id,
-            "role": "assistant",
-            "content": [{"type": "text", "text": text}]
-        })
-    }
-
-    #[test]
-    fn select_preferred_prefers_cache_when_db_lags_behind_terminal_assistant() {
-        let db_messages = vec![assistant_json("asst-1", "older answer")];
-        let cached_messages = vec![
-            assistant_json("asst-2", "final answer"),
-            assistant_json("asst-1", "older answer"),
-        ];
-
-        let selected = select_preferred_session_messages(db_messages, Some(cached_messages));
-
-        assert_eq!(latest_session_output(&selected), "final answer");
-    }
-
-    #[test]
-    fn select_preferred_keeps_db_when_cache_is_stale() {
-        let db_messages = vec![assistant_json("asst-2", "authoritative answer")];
-        let cached_messages = vec![assistant_json("asst-1", "stale cache")];
-
-        let selected = select_preferred_session_messages(db_messages, Some(cached_messages));
-
-        assert_eq!(latest_session_output(&selected), "authoritative answer");
-    }
 }

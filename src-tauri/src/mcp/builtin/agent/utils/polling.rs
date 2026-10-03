@@ -1,3 +1,6 @@
+use super::extraction::format_message_summary;
+use super::payload::{build_agent_session_tool_data, check_session_next_actions};
+use super::query::{count_session_turns, fetch_session_value};
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::{MCPContent, MCPResult};
 use crate::repositories::MessageRepository;
@@ -7,9 +10,24 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
-use super::output::{extract_session_status, is_wait_complete_status};
-use super::payloads::{build_agent_session_tool_data, check_session_next_actions};
-use super::query::{count_session_turns, fetch_session_value};
+pub fn extract_session_status(session: &Value) -> String {
+    session
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+pub fn is_terminal_status(status: &str) -> bool {
+    matches!(
+        status.to_ascii_lowercase().as_str(),
+        "idle" | "terminated" | "failed" | "error"
+    )
+}
+
+pub fn is_wait_complete_status(status: &str) -> bool {
+    is_terminal_status(status) || status.eq_ignore_ascii_case("paused")
+}
 
 pub async fn wait_until_session_terminal(
     manager: &AgentSessionManager,
@@ -77,55 +95,6 @@ pub async fn wait_until_session_terminal(
                 }
             } => {}
         }
-    }
-}
-
-fn format_message_summary(msg: &crate::models::chat::Message) -> String {
-    let mut text_parts = Vec::new();
-    for content in &msg.content {
-        match content {
-            MCPContent::Text { text, .. } => {
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    text_parts.push(trimmed.to_string());
-                }
-            }
-            MCPContent::Thinking { thinking, .. } => {
-                let trimmed = thinking.trim();
-                if !trimmed.is_empty() {
-                    text_parts.push(format!("[Thinking: {}]", trimmed));
-                }
-            }
-            MCPContent::Image { .. } => {
-                text_parts.push("[Image]".to_string());
-            }
-            MCPContent::Audio { .. } => {
-                text_parts.push("[Audio]".to_string());
-            }
-            MCPContent::Resource { .. } => {
-                text_parts.push("[Resource]".to_string());
-            }
-            _ => {}
-        }
-    }
-
-    if text_parts.is_empty() {
-        if let Some(tool_calls) = &msg.tool_calls {
-            let names: Vec<String> = tool_calls
-                .iter()
-                .map(|tc| tc.function.name.clone())
-                .collect();
-            text_parts.push(format!("[Tool Call: {}]", names.join(", ")));
-        }
-    }
-
-    let joined = text_parts.join(" ");
-    if joined.chars().count() > 150 {
-        let mut truncated: String = joined.chars().take(150).collect();
-        truncated.push_str("...");
-        truncated
-    } else {
-        joined
     }
 }
 
