@@ -1,6 +1,10 @@
 # Agent V2 Frontend Integration Guide
 
-This guide provides production-ready example code for integrating frontend components with the Rust backend's `AgentSessionManager` and Agent V2 architecture.
+> [!WARNING]
+> **Archived / Historical Architecture Reference**: This document describes early Agent V2 frontend scaffolding patterns.
+> Some referenced component filenames (such as `NewAgentSession.tsx`, `SessionList.tsx`, `AgentChat.tsx`) have since evolved into modern modular implementations under `src/features/agent/` and `src/components/chat/`. For current routing and production patterns, consult `src/App.tsx` and [frontend-architecture.md](../architecture/frontend-architecture.md).
+
+This guide provides architectural examples for integrating frontend components with the Rust backend's `AgentSessionManager` and Agent V2 architecture.
 
 ## Table of Contents
 

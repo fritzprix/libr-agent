@@ -10,7 +10,7 @@
 | ----------------------- | -------------------------------------------------------- |
 | **Rust**                | [rustup.rs](https://rustup.rs/) — `rustc --version` 확인 |
 | **Node.js**             | 20+ (LTS)                                                |
-| **pnpm**                | 9.15.9 (corepack로 pinned)                               |
+| **pnpm**                | 12.8.1 (corepack로 pinned)                              |
 | **System deps (Linux)** | 아래 패키지 목록 참조                                    |
 
 ### Linux 시스템 의존성
@@ -41,7 +41,7 @@ cd libr-agent
 
 # 2. pnpm pinned 활성화 (처음 한 번만)
 corepack enable
-corepack prepare pnpm@9.15.9 --activate
+corepack prepare pnpm@12.8.1 --activate
 
 # 3. 의존성 설치
 pnpm install --frozen-lockfile
@@ -82,12 +82,12 @@ pnpm dead-code     # 미사용 코드를 찾습니다 (unimported)
 
 ## Testing
 
-| 유형         | 위치               | 실행 방법                                  |
-| ------------ | ------------------ | ------------------------------------------ |
-| **Frontend** | `src/`             | `pnpm test:run` (Vitest)                   |
-| **Backend**  | `src-tauri/tests/` | `cargo test --tests` (CI 통합 테스트 전용) |
+| 유형         | 위치               | 실행 방법                                                                 |
+| ------------ | ------------------ | ------------------------------------------------------------------------- |
+| **Frontend** | `src/`             | `pnpm test:run` (Vitest)                                                  |
+| **Backend**  | `src-tauri/tests/` | `pnpm rust:test` (순차 안전 실행) 또는 `pnpm rust:test --test <target>` |
 
-> **주의**: Rust의 `#[cfg(test)]` 블록은 CI에서 실행되지 않습니다. 테스트는 반드시 `src-tauri/tests/`에 통합 테스트로 작성하세요.
+> **🚫 주의 (OOM 방지)**: `cargo test` / `cargo test --tests` 직접 실행은 Tauri 바이너리 다중 병렬 링크로 인해 심각한 OOM을 유발하므로 절대 금지됩니다. 반드시 순차 링크 래퍼인 `pnpm rust:test`를 사용하십시오. 또한 Rust의 `#[cfg(test)]` 블록은 CI에서 실행되지 않으므로, 테스트는 반드시 `src-tauri/tests/`에 통합 테스트로 작성하세요.
 
 ---
 
