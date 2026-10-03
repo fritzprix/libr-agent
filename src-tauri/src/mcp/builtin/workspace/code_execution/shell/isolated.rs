@@ -13,7 +13,7 @@ use super::super::super::{
     terminal_manager, workspace_server, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
 use super::super::{normalization, process, validation};
-use super::{format_command_io_message, format_duration_ms};
+use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
 
 impl WorkspaceServer {
     /// Execute shell commands with isolation
@@ -420,9 +420,9 @@ impl WorkspaceServer {
 
                 if !success {
                     let error_output = if !stderr.is_empty() {
-                        format!("Error output:\n{}", stderr)
+                        format!("Error output:\n{}", truncate_sync_shell_stream(&stderr))
                     } else if !stdout.is_empty() {
-                        format!("Command output:\n{}", stdout)
+                        format!("Command output:\n{}", truncate_sync_shell_stream(&stdout))
                     } else {
                         "No error output captured".to_string()
                     };
