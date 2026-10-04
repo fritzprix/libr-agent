@@ -9,7 +9,6 @@ use chrono::Utc;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
 use tokio::task;
 use uuid::Uuid;
 
@@ -278,7 +277,8 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
 
     // Save raw HTML if requested
     if save_raw_html {
-        match save_raw_html_to_file(&server.app_handle, &browser_session_id, &raw_html).await {
+        match save_raw_html_to_file(&server.agent_session_id, &browser_session_id, &raw_html).await
+        {
             Ok(path) => {
                 response_text.push_str(&format!(
                     "\n\n--- File Save Information ---\nRaw HTML saved to: {}",
@@ -512,20 +512,26 @@ fn create_metadata(
     })
 }
 
-/// Save raw HTML to file
-async fn save_raw_html_to_file(
-    app_handle: &AppHandle,
-    session_id: &str,
+/// Save raw HTML into the agent session workspace (and Docker-attach container).
+///
+/// Previously wrote under the global `SecureFileManager` root (`global_shared/`),
+/// so Harbor Docker-attach trials could not `workspace__readFile` the advertised
+/// `extracted-content/…` path. Uses the same session-scoped write pattern as
+/// [`save_downloaded_file`], and additionally pushes into the attach container
+/// when the agent session is Docker-attach (`save_downloaded_file` does not).
+pub async fn save_raw_html_to_file(
+    agent_session_id: &str,
+    browser_session_id: &str,
     raw_html: &str,
 ) -> Result<String, String> {
     use crate::services::secure_file_manager::SecureFileManager;
 
-    let file_manager = app_handle
-        .try_state::<SecureFileManager>()
-        .ok_or("SecureFileManager not found")?;
+    let session_manager = crate::session::get_session_manager().map_err(|e| e.to_string())?;
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(agent_session_id);
+    let file_manager = SecureFileManager::new_scoped_with_base_dir(workspace_dir.clone());
 
     let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%S").to_string();
-    let file_name = format!("extracted-{}-{}.html", session_id, timestamp);
+    let file_name = format!("extracted-{}-{}.html", browser_session_id, timestamp);
     let relative_path = {
         let p = std::path::PathBuf::from("extracted-content")
             .join(&file_name)
@@ -539,6 +545,14 @@ async fn save_raw_html_to_file(
     file_manager
         .write_file_string(&relative_path, raw_html)
         .await?;
+
+    let host_path = workspace_dir.join(&relative_path);
+    if let Some(session) =
+        crate::services::container_attach_fs::load_session(agent_session_id).await?
+    {
+        crate::services::container_attach_fs::push_host_file_to_container(&session, &host_path)
+            .await?;
+    }
 
     Ok(relative_path)
 }

@@ -12,6 +12,9 @@ use tauri::{AppHandle, Manager};
 use super::BuiltinMCPServer;
 
 mod content;
+/// Integration-test surface for session-scoped `saveRawHtml` writes.
+#[doc(hidden)]
+pub use content::save_raw_html_to_file;
 mod evaluate;
 mod interaction;
 mod navigation;
