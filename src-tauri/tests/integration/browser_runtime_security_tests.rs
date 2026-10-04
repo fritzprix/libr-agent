@@ -280,6 +280,86 @@ fn browser_session_target_parse_rejects_unknown_values() {
     assert!(err.contains("Invalid browser value"));
 }
 
+/// Regression: console listener must be attached before createSession navigation
+/// so on-load `console.log` is visible to getConsoleLogs (harbor c03 / S6).
+#[tokio::test(flavor = "multi_thread")]
+async fn create_session_captures_onload_console_log() {
+    use std::path::PathBuf;
+    use std::time::Duration;
+    use tauri_mcp_agent_lib::browser_sidecar::BrowserAutomationClient;
+
+    // Integration test binaries are not the app entrypoint; point sidecar spawn at
+    // the package `libragent` bin (set by cargo as CARGO_BIN_EXE_libragent).
+    let Some(sidecar_exe) = option_env!("CARGO_BIN_EXE_libragent").map(PathBuf::from) else {
+        eprintln!("skip create_session_captures_onload_console_log: no CARGO_BIN_EXE_libragent");
+        return;
+    };
+    if !sidecar_exe.is_file() {
+        eprintln!(
+            "skip create_session_captures_onload_console_log: missing {}",
+            sidecar_exe.display()
+        );
+        return;
+    }
+    // Test-only env for sidecar process selection (serial test body).
+    unsafe { std::env::set_var("LIBRAGENT_BROWSER_SIDECAR_EXE", &sidecar_exe) };
+
+    let client = BrowserAutomationClient::new(Duration::from_secs(30));
+    let session_id = format!(
+        "console-onload-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+    // Percent-encoded so the script runs during the initial goto.
+    let url = "data:text/html;charset=utf-8,<!doctype%20html><script>console.log(%22GATE-CONSOLE-TOKEN:7741%22)</script><body>ok</body>";
+
+    if let Err(err) = client
+        .create_session(&session_id, url, Some("console-onload"), false)
+        .await
+    {
+        // CI hosts without a usable Chromium binary skip rather than fail the suite.
+        let lower = err.to_lowercase();
+        if lower.contains("chromium")
+            || lower.contains("chrome")
+            || lower.contains("executable")
+            || lower.contains("failed to launch")
+            || lower.contains("browser runtime")
+            || lower.contains("closed its stdout")
+        {
+            eprintln!("skip create_session_captures_onload_console_log: {err}");
+            unsafe { std::env::remove_var("LIBRAGENT_BROWSER_SIDECAR_EXE") };
+            return;
+        }
+        unsafe { std::env::remove_var("LIBRAGENT_BROWSER_SIDECAR_EXE") };
+        panic!("create_session failed: {err}");
+    }
+
+    let mut matched = false;
+    for _ in 0..20 {
+        let logs = client
+            .get_console_logs(&session_id, Some(100))
+            .await
+            .expect("get_console_logs");
+        if logs
+            .iter()
+            .any(|entry| entry.text.contains("GATE-CONSOLE-TOKEN:7741"))
+        {
+            matched = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let _ = client.close_session(&session_id).await;
+    unsafe { std::env::remove_var("LIBRAGENT_BROWSER_SIDECAR_EXE") };
+    assert!(
+        matched,
+        "expected on-load console.log to be captured after createSession navigation"
+    );
+}
+
 #[tokio::test]
 async fn user_chrome_create_fails_when_extension_disconnected() {
     use std::time::Duration;

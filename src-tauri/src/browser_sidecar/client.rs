@@ -352,14 +352,25 @@ impl BrowserAutomationClient {
             return Ok(());
         }
 
-        let current_exe = std::env::current_exe().map_err(|e| {
-            format!("Failed to resolve current executable for browser sidecar: {e}")
-        })?;
+        // Prefer an explicit sidecar binary (tests / packaging). Default: this process
+        // (desktop/headless entrypoints handle `--browser-sidecar`).
+        let sidecar_exe = match std::env::var_os("LIBRAGENT_BROWSER_SIDECAR_EXE") {
+            Some(path) => std::path::PathBuf::from(path),
+            None => std::env::current_exe().map_err(|e| {
+                format!("Failed to resolve current executable for browser sidecar: {e}")
+            })?,
+        };
+        if !sidecar_exe.is_file() {
+            return Err(format!(
+                "Browser sidecar executable not found: {}",
+                sidecar_exe.display()
+            ));
+        }
         debug!(
             "Spawning browser sidecar process from executable {}",
-            current_exe.display()
+            sidecar_exe.display()
         );
-        let mut command = Command::new(current_exe);
+        let mut command = Command::new(sidecar_exe);
         command
             .arg(BROWSER_SIDECAR_FLAG)
             .env(
