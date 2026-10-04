@@ -21,7 +21,7 @@ use super::page::{
 };
 use super::runtime::{
     cleanup_failed_context_launch, cleanup_session_resources, shutdown_runtime,
-    BrowserRuntimeManager, SidecarSession,
+    BrowserRuntimeManager, SharedBrowserRuntime, SidecarSession,
 };
 
 /// Bound CDP context/target creation so a stuck Chromium call cannot silence createSession.
@@ -63,6 +63,83 @@ impl BrowserSidecarServer {
             let mut listeners = self.dialog_listeners.lock().await;
             if let Some(handle) = listeners.remove(session_id) {
                 handle.abort();
+            }
+        }
+    }
+
+    /// Subscribe to CDP console API events for a session.
+    ///
+    /// Callers must invoke this **before** the first navigation that may emit
+    /// `console.log` (createSession URL load). Subscribing after `goto` misses
+    /// on-load scripts.
+    async fn attach_console_api_listener(
+        &self,
+        page: &Arc<chromiumoxide::Page>,
+        runtime: &SharedBrowserRuntime,
+        session_id: &str,
+    ) {
+        use futures::StreamExt;
+
+        if let Err(e) = page.enable_runtime().await {
+            warn!("Failed to enable runtime domain for console event listener: {e}");
+        }
+
+        let console_logs = runtime.console_logs.clone();
+        let session_key = session_id.to_string();
+        match page
+            .event_listener::<chromiumoxide::cdp::js_protocol::runtime::EventConsoleApiCalled>()
+            .await
+        {
+            Ok(mut events) => {
+                let listener_session_id = session_key.clone();
+                let handle = tokio::spawn(async move {
+                    while let Some(event) = events.next().await {
+                        let level = format!("{:?}", event.r#type).to_lowercase();
+                        let text = event
+                            .args
+                            .iter()
+                            .map(|arg| {
+                                if let Some(val) = &arg.value {
+                                    if let Some(s) = val.as_str() {
+                                        s.to_string()
+                                    } else {
+                                        val.to_string()
+                                    }
+                                } else if let Some(desc) = &arg.description {
+                                    desc.clone()
+                                } else {
+                                    format!("{:?}", arg.r#type)
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ");
+
+                        let timestamp = serde_json::to_value(&event.timestamp)
+                            .ok()
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+
+                        let entry = ConsoleEntry {
+                            level,
+                            text,
+                            timestamp,
+                        };
+
+                        let mut logs = console_logs.write().await;
+                        let entries = logs
+                            .entry(listener_session_id.clone())
+                            .or_insert_with(Vec::new);
+                        entries.push(entry);
+                        if entries.len() > 1000 {
+                            entries.remove(0);
+                        }
+                    }
+                });
+                let mut listeners = self.console_listeners.lock().await;
+                listeners.insert(session_key, handle.abort_handle());
+            }
+            Err(e) => {
+                warn!("Failed to subscribe to console events: {e}");
             }
         }
     }
@@ -252,6 +329,11 @@ impl BrowserSidecarServer {
             }
         }
 
+        // Must attach before goto: on-load console.log (inline / early script) is
+        // otherwise missed because EventConsoleApiCalled only fires while subscribed.
+        self.attach_console_api_listener(&page, &runtime, &params.session_id)
+            .await;
+
         let navigated_state = match goto_with_load_timeout(page.as_ref(), &params.url).await {
             Ok(state) => state,
             Err(error) => {
@@ -261,68 +343,6 @@ impl BrowserSidecarServer {
                 return Err(error);
             }
         };
-
-        // Attach console event listener
-        use futures::StreamExt;
-        if let Err(e) = page.enable_runtime().await {
-            warn!("Failed to enable runtime domain for console event listener: {e}");
-        }
-
-        let console_logs = runtime.console_logs.clone();
-        let session_id = params.session_id.clone();
-        match page
-            .event_listener::<chromiumoxide::cdp::js_protocol::runtime::EventConsoleApiCalled>()
-            .await
-        {
-            Ok(mut events) => {
-                let handle = tokio::spawn(async move {
-                    while let Some(event) = events.next().await {
-                        let level = format!("{:?}", event.r#type).to_lowercase();
-                        let text = event
-                            .args
-                            .iter()
-                            .map(|arg| {
-                                if let Some(val) = &arg.value {
-                                    if let Some(s) = val.as_str() {
-                                        s.to_string()
-                                    } else {
-                                        val.to_string()
-                                    }
-                                } else if let Some(desc) = &arg.description {
-                                    desc.clone()
-                                } else {
-                                    format!("{:?}", arg.r#type)
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join(" ");
-
-                        let timestamp = serde_json::to_value(&event.timestamp)
-                            .ok()
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0);
-
-                        let entry = ConsoleEntry {
-                            level,
-                            text,
-                            timestamp,
-                        };
-
-                        let mut logs = console_logs.write().await;
-                        let entries = logs.entry(session_id.clone()).or_insert_with(Vec::new);
-                        entries.push(entry);
-                        if entries.len() > 1000 {
-                            entries.remove(0);
-                        }
-                    }
-                });
-                let mut listeners = self.console_listeners.lock().await;
-                listeners.insert(params.session_id.clone(), handle.abort_handle());
-            }
-            Err(e) => {
-                warn!("Failed to subscribe to console events: {e}");
-            }
-        }
 
         let mut state = match snapshot_page_state(&page).await {
             Ok(state) => state,
