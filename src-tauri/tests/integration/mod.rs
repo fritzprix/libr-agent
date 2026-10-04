@@ -121,6 +121,7 @@ pub mod workflow_finish_pending_tests;
 pub mod workflow_restart_state_tests;
 pub mod workflow_settlement_durability_tests;
 pub mod workspace_display_shell_cwd_tests;
+pub mod workspace_edit_object_tests;
 pub mod workspace_file_operation_utils_tests;
 pub mod workspace_guidance_tests;
 pub mod workspace_hash_anchor_tests;

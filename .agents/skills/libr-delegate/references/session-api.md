@@ -93,7 +93,7 @@ curl -sS -X POST "$BASE/api/sessions/$SID/messages" \
   -d '{"content":"…","source":"api"}'
 ```
 
-Idle → starts workflow. Busy → queues.
+`idle` → starts workflow. `busy` → queues.
 
 ## Status / messages / children
 
@@ -103,7 +103,13 @@ curl -sS "$BASE/api/sessions/$SID/messages?limit=50"
 curl -sS "$BASE/api/sessions/$SID/children"
 ```
 
-Statuses: `Idle` | `Busy` | `Paused` | `Error` | `Provisioning`.
+**Wire statuses are lowercase** (`SessionStatus` uses
+`serde(rename_all = "lowercase")`):
+
+`idle` | `busy` | `paused` | `error` | `queued` | `provisioning`
+
+Do **not** poll with PascalCase (`Idle`/`Busy`) — those strings never appear
+in JSON and a case-sensitive `case`/`==` will spin forever after completion.
 
 ## Extract transcript (before delete)
 
@@ -144,8 +150,30 @@ curl -sS -X POST "$BASE/api/sessions/$SID/channel" \
 
 Prefer `/messages` for normal task handoffs.
 
-## Polling hint
+## Polling
 
-Sleep with increasing backoff while `status` is `Busy` or `Provisioning`.
-Respect any rate-limit / backoff headers if present. Full schema:
+Prefer the skill helper (lowercases + backoff + exits on terminal):
+
+```bash
+# from repo root
+./.agents/skills/libr-delegate/scripts/poll-until-done.sh "$SID" "$BASE"
+```
+
+Manual loop (always `.lower()` the status):
+
+```bash
+for i in $(seq 1 40); do
+  status=$(curl -sS --max-time 10 "$BASE/api/sessions/$SID" \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("status","").lower())')
+  echo "poll=$i status=$status"
+  case "$status" in idle|error|paused) break ;; esac
+  if [ "$i" -lt 5 ]; then sleep 2
+  elif [ "$i" -lt 15 ]; then sleep 4
+  else sleep 6
+  fi
+done
+```
+
+Terminal: `idle` | `error` | `paused`. Non-terminal: `busy` | `queued` |
+`provisioning`. Respect rate-limit / backoff headers if present. Full schema:
 `docs/api/http_api.md`.

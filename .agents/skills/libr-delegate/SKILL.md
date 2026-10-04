@@ -47,9 +47,10 @@ Port file is written when LibrAgent’s HTTP server binds; fallback is `3030`.
    `POST $BASE/api/sessions` (include `request` or create idle). See
    `references/session-api.md` (preferred file recipe + empty-body guard)
 5. If idle — `POST $BASE/api/sessions/:id/messages` with `{"content":"..."}`
-6. Poll — `GET $BASE/api/sessions/:id` until not Busy/Provisioning
+6. Poll — `GET $BASE/api/sessions/:id` until terminal (prefer
+   `scripts/poll-until-done.sh`)
 7. Read result — `GET $BASE/api/sessions/:id/messages`
-8. On Paused after crash — `POST …/resume`, then poll again
+8. On paused after crash — `POST …/resume`, then poll again
 9. Optional lineage — set `parentSessionId`; list with `GET …/children`
 10. **Extract transcript before delete** — dump
     `GET …/messages?limit=500` to a file (see below)
@@ -57,7 +58,7 @@ Port file is written when LibrAgent’s HTTP server binds; fallback is `3030`.
     `DELETE …/sessions/:id` (delete cascades descendants)
 
 Curl recipes: `references/session-api.md`. Handoff / isolation:
-`references/handoff.md`.
+`references/handoff.md`. Poll helper: `scripts/poll-until-done.sh`.
 
 ## Extract transcript (API-side "trace") then delete
 
@@ -66,7 +67,7 @@ endpoint on the Session API. UI session export (Markdown / ATIF) is separate.
 For Cursor/harness handoffs, the recoverable history is message JSON:
 
 ```bash
-# After Idle (or Error) — save BEFORE delete
+# After idle (or error) — save BEFORE delete
 curl -sS "$BASE/api/sessions/$SID/messages?limit=500" \
   > ".libragent/work/libr-delegate-${SID}-messages.json"
 ```
@@ -102,14 +103,31 @@ final assistant text) then terminate+delete so sessions do not accumulate.
 
 ## Polling rules
 
-| Status | Action |
-| --- | --- |
-| `Busy` / `Provisioning` | Wait with backoff; do not spam |
-| `Idle` (after work) | Read messages; treat latest assistant text as result |
-| `Paused` | `POST …/resume` once, then poll |
-| `Error` | Fail the handoff; do not claim success from partial prose |
+**Wire `status` is always lowercase** (`serde(rename_all = "lowercase")`):
+`idle` | `busy` | `paused` | `error` | `queued` | `provisioning`.
 
-Follow-ups: another `POST …/messages` (queued if still Busy).
+| Status (wire) | Action |
+| --- | --- |
+| `busy` / `queued` / `provisioning` | Wait with backoff; do not spam |
+| `idle` (after work) | Read messages; treat latest assistant text as result |
+| `paused` | `POST …/resume` once, then poll |
+| `error` | Fail the handoff; do not claim success from partial prose |
+
+Preferred poll (normalizes case; exits on terminal):
+
+```bash
+./.agents/skills/libr-delegate/scripts/poll-until-done.sh "$SID" "$BASE"
+```
+
+If writing a one-off loop, **lowercase before match**:
+
+```bash
+status=$(curl -sS "$BASE/api/sessions/$SID" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("status","").lower())')
+case "$status" in idle|error|paused) break ;; esac
+```
+
+Follow-ups: another `POST …/messages` (queued if still `busy`).
 
 ## Isolation (critical)
 
@@ -126,7 +144,10 @@ The LibrAgent session is not a clone of this Cursor chat:
 - Calling nonexistent MCP tools (`spawnSession`, `session_api__*`) from Cursor
 - Echo-only stubs instead of real `POST …/messages`
 - Rapid fixed-interval polls with no backoff
-- Treating Paused / empty history / Error as success
+- Matching PascalCase statuses (`Idle`/`Busy`) — API returns `idle`/`busy`;
+  a `case Idle)` branch never fires and the poll loops until timeout even
+  after the session finished (postmortem: editObject smoke, 2026-04)
+- Treating paused / empty history / error as success
 - Deleting a session before saving `…/messages` when a transcript is needed
 - Assuming `~/.libragent/traces/*.trace.json` or `/api/.../trace` exists
   (they are not part of the Session API)
