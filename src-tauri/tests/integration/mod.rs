@@ -41,6 +41,7 @@ pub mod file_database_migration_regression_tests;
 pub mod file_export_service_tests;
 pub mod file_reference_indexing_tests;
 pub mod ghost_session_lazy_proxy_tests;
+pub mod harness_lessons_tests;
 pub mod history_builtin_tests;
 pub mod knowledge_builtin_tool_tests;
 pub mod knowledge_v2_extraction_tests;

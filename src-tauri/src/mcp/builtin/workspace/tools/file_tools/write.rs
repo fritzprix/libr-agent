@@ -12,7 +12,7 @@ pub fn create_write_file_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Path to write. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... to write into the canonical teamwork scaffold root without changing workspaceOverride. Skill aliases (@system-skills, @user-skills, @assistant-skills, @workspace-skills) are read/list-only — write workspace skills to .libragent/skills/<name>/SKILL.md (or use skill-deployer); never write through those aliases."),
+            Some("Path to write. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... for teamwork scaffold (app-local). Use @harness/LESSONS.active.md (or .libragent/harness/...) for git-safe operational lessons injected into the system prompt. Skill aliases (@system-skills, @user-skills, @assistant-skills, @workspace-skills) are read/list-only — write workspace skills to .libragent/skills/<name>/SKILL.md (or use skill-deployer); never write through those aliases."),
         ),
     );
     let mode_description = format!(

@@ -1,22 +1,33 @@
 ---
 name: postmortem-improve
 description: >
-  Run a postmortem → improve loop for LibrAgent multi-agent work so the harness
-  organization gets better over time. Capture evidence-backed failures and friction,
-  write a durable postmortem, then route each actionable to the right bundled skill
-  (teamwork, org, org-restructure, boost, recruit, agent-init, delegation-eval-loop,
-  schedule/loop). Use after incidents, repeated handoff failures, mission completion
-  retros, stuck KANBAN/Blocked items, or when the user asks for continuous improvement,
-  after-action review, postmortem, or org learning. Not for one-off task execution,
-  initial team bootstrap (use teamwork), or first-time org create (use org).
+  Run a postmortem → improve loop so LibrAgent sessions learn without dirtying
+  project git. Capture evidence-backed failures, then apply a Top-1 update to
+  `@harness/LESSONS.active.md` (app-local; injected into the system prompt) for
+  behavioral defects, or route deterministic tool/code defects to a fix/bug task
+  (never paper over with lessons). Works for solo sessions and org/teamwork.
+  Use after incidents, repeated failures, mission retros, stuck KANBAN/Blocked
+  items, or when the user asks for continuous improvement / after-action review.
+  Not for one-off task execution, initial team bootstrap (use teamwork), or
+  first-time org create (use org).
 ---
 
 # Postmortem → Improve
 
-Close the loop: **observe failure → write truth → change the system**.
+Close the loop: **observe failure → write truth → change what the next prompt sees**.
 
-This skill owns the learning cycle. Specialist skills own the mutations.
-Do not invent a parallel org model — improve the existing teamwork/org constitution.
+Primary enzyme (org **or** solo):
+
+```text
+@harness/LESSONS.active.md
+```
+
+App-local under `{appData}/harness-lessons/<scopeId>/` (outside project git).  
+Scope: `org-<orgRootSessionId>` when in org lineage, else `ws-<workspaceHash>`.  
+Harness injects non-empty content into system prompt as `## Active Operational Lessons` on the next LLM turn.
+
+Specialist skills own optional secondary mutations (boost, org-restructure, …).  
+Do not invent a parallel org model.
 
 ## Not This Skill
 
@@ -28,111 +39,119 @@ Do not invent a parallel org model — improve the existing teamwork/org constit
 | **delegation-eval-loop** | Grade one child sprint (not fleet learning) |
 | **boost** / **recruit** | Tune or create assistant configs only |
 | **schedule** / **loop** | Recurring wake-ups (cadence only) |
+| **agent-init** | Workspace `agents.md` (dirties project git — **not** default here) |
 
 ## Core Rules
 
-1. **Evidence before narrative.** Prefer coordination files, tool errors, session status, and diffs over memory.
-2. **One postmortem, many actions.** Split findings into discrete, routed improvements — no mega-patch.
-3. **Route, don't reinvent.** Each action maps to exactly one specialist skill (see routing table).
-4. **Durable artifacts.** Write under the teamwork artifact directory (`@teamwork/...`), not chat-only conclusions.
-5. **Refresh honesty.** `agents.md` / role-skill edits apply on a **later** execution step — say so after applying.
-6. **Bounded ambition.** Prefer 1–3 high-leverage actions per cycle. Park the rest in backlog.
+1. **Evidence before narrative.** Prefer tool errors, session status, diffs, coordination files over memory.
+2. **Two-track triage (mandatory).**
+   - **Deterministic / tool / contract defect** (`contract_lie`, wrong schema, handler bug, missing binary): **do not** write LESSONS. File a fix/bug task or apply a product patch if the user asked for code changes.
+   - **Behavioral / decision failure**: update `@harness/LESSONS.active.md` with falsifiable rules.
+3. **Prompt enzyme or it did not happen.** Chat-only conclusions and KANBAN-only backlog are **deferred**, not Done.
+4. **Git-clean by default.** Never treat workspace `agents.md` / `SOUL.md` / tracked repo edits as the learning channel unless the user explicitly asks.
+5. **Bounded ambition.** Max **5** active lesson rules; ≤30 lines / 2KB (harness truncates beyond that). Evict before adding a 6th.
+6. **Write from the governing session only.** Harness **rejects** `@harness` writes from children (`parent_session_id` / depth>0) and from org members whose `org_root_session_id !=` this session. Propose candidate rules in final text; root merges into `@harness/LESSONS.active.md`.
 
 ## When to Run
 
-Trigger when any of these are true:
-
-- A mission, sprint, or org objective finished (success or failure)
-- The same failure class repeats (≥2 times): wrong owner, missing tool, stale handoff, eval soft-accept
-- `coordination/KANBAN.md` has lingering **Blocked** or thrashing In Progress
+- A mission, sprint, or objective finished (success or failure)
+- The same failure class repeats (≥2 times)
 - User asks for postmortem, retro, after-action, continuous improvement, or "learn from this"
+- Optional: org/teamwork with stuck `coordination/KANBAN.md` Blocked items
 
-If no teamwork artifact directory exists yet, stop and use **teamwork** first.
+Teamwork/org is **optional**. Solo sessions skip `@teamwork` archive steps.
 
 ## Workflow
 
-### 1. Anchor on the teamwork SSOT
-
-1. Confirm artifact path via existing `.libragent/teamwork.json` / `@teamwork/`.
-2. Read, in order: `MISSION.md` → `ROLES.md` → `agents.md` → `coordination/KANBAN.md` → `HANDOFF.md` → `RISKS.md` → `DECISIONS.md`.
-3. If substrate is org: confirm `executionSubstrate.mode: "org"` and prefer the **org root** session for coordination writes.
-
-### 2. Gather evidence (short)
+### 1. Gather evidence (short)
 
 Collect only what supports root-cause claims:
 
 - Failed acceptance criteria / eval rejects
 - Session terminals: cancelled, timeout, circuit-break, empty final text
-- Ownership gaps (unowned KANBAN items, wrong role writes)
-- Tool/config mismatches (missing MCP, bloated tools) via `agent__listAgents` / `tool__listServers` when relevant
-- Optional: session trace excerpts — do not dump entire traces into the postmortem
+- Tool/config mismatches via `agent__listAgents` / `tool__listServers` when relevant
+- Optional: session trace excerpts — do not dump entire traces into the archive
 
-### 3. Write the postmortem
+If `@teamwork/` exists, also skim `MISSION.md` → `ROLES.md` → `agents.md` → `KANBAN.md` → `HANDOFF.md`.
 
-Create:
+### 2. Write the archive (optional but recommended)
 
-```text
-@teamwork/coordination/POSTMORTEMS/YYYY-MM-DD-<slug>.md
-```
+**With teamwork:** `@teamwork/coordination/POSTMORTEMS/YYYY-MM-DD-<slug>.md`  
+**Solo / no teamwork:** `@harness/POSTMORTEMS/YYYY-MM-DD-<slug>.md`
 
-Use the template in [postmortem-template.md](references/postmortem-template.md).
+Use [postmortem-template.md](references/postmortem-template.md).
 
-Also append a one-line index entry to `@teamwork/coordination/LESSONS.md` (create if missing):
+Optional index line in `@harness/LESSONS.md` (or `@teamwork/coordination/LESSONS.md` if teamwork exists):
 
 ```markdown
-- YYYY-MM-DD — <slug> — <one-line lesson> — actions: N open
+- YYYY-MM-DD — <slug> — <one-line lesson> — track: behavior|defect
 ```
 
-### 4. Classify and route improvements
+### 3. Triage Top-1
 
-For each actionable, pick **one** route from [improvement-routing.md](references/improvement-routing.md).
+Pick **one** primary actionable. Classify:
 
-| Action type | Route to |
-| --- | --- |
-| Role add/layoff/merge, constitution edit | **org-restructure** |
-| Missing coordination files / role skills / framework mismatch | **teamwork** (tighten scaffold) then **org-restructure** if org exists |
-| Assistant tool add/remove vs role | **boost** |
-| New specialist config needed | **recruit** |
-| Workspace `agents.md` / guide drift (non-org) | **agent-init** |
-| Weak acceptance criteria / soft "done" | **delegation-eval-loop** (update brief/eval habit) |
-| Recurring retro cadence | **schedule** (global) or **loop** (in-session) |
+| Track | Meaning | Done when |
+| --- | --- | --- |
+| `defect` | Tool/schema/handler/environment contract broken | Bug/fix task filed **or** code patched (user-authorized); **LESSONS write forbidden** |
+| `behavior` | Agent chose wrong strategy/tool/sequence despite honest tools | `@harness/LESSONS.active.md` updated with ≤5 structured rules |
 
-Write each action as a KANBAN item under **Backlog** or **In Progress** with owner + target skill name.
+Routing helpers (secondary, after enzyme): [improvement-routing.md](references/improvement-routing.md).
 
-### 5. Apply (execute the routes)
+### 4. Apply (behavior track)
 
-1. Record intent in `coordination/DECISIONS.md` (what changes and why).
-2. Invoke the specialist skill(s) for the top 1–3 actions **now**.
-3. Leave lower-priority actions as KANBAN backlog with clear owners.
-4. Update `LESSONS.md` action counts; move finished items to Done.
+Read current `@harness/LESSONS.active.md` (may be missing). Merge Top-1 rule(s).
 
-### 6. Verify the learning stuck
+Rule syntax (one line each):
+
+```markdown
+- [YYYY-MM-DD] TRIGGER: <when> | FORBIDDEN: <anti-pattern> | REQUIRED: <correct action>
+```
+
+Constraints:
+
+- Plain text only — no HTML/XML, no "ignore previous instructions"
+- Prefer concrete tool names / args / acceptance checks
+- If already at 5 rules, remove or merge the least relevant before adding
+
+Write with either:
+- `workspace__writeFile` to `@harness/LESSONS.active.md` with **`mode: "overwrite"`** (default `create` renames to `LESSONS.active-1.md` and the prompt will ignore it), or
+- `workspace__editFile` / replaceLines on the existing file.
+
+Never rely on default create-mode for updates.
+
+### 5. Verify learning stuck
 
 Before declaring the cycle complete:
 
-- [ ] Postmortem file exists and links evidence
-- [ ] At least one durable change landed (constitution, role skill, config, or eval contract) **or** an explicit deferred KANBAN item with owner
-- [ ] Org/team members are told refresh applies next step when constitution changed
-- [ ] No duplicate "learning" left only in chat
+- [ ] Archive exists (or user waived) with evidence pointers
+- [ ] Track decided: `defect` **or** `behavior`
+- [ ] **behavior:** `@harness/LESSONS.active.md` updated; next turn should show `## Active Operational Lessons` in system prompt
+- [ ] **defect:** LESSONS not used as a workaround; fix/bug path recorded
+- [ ] No learning left only in chat
+- [ ] Workspace git not dirtied for the learning step
+
+### 6. Optional secondary routes
+
+After the enzyme step, top remaining actions may go to boost / org-restructure / delegation-eval-loop / schedule — see routing table. Keep ≤2 secondary actions.
 
 ## Cadence (optional)
 
-For long-lived orgs, propose a lightweight recurring review:
+- After each major mission: run this skill even on success (near-misses)
+- Weekly: scan open defect tasks + LESSONS.active staleness
 
-- Weekly: scan Blocked + LESSONS.md open actions → run this skill if new friction
-- After each major mission: mandatory postmortem even on success (capture near-misses)
-
-Use **schedule** for org-wide cadence; **loop** only for a reminder inside the current conversation.
+Use **schedule** for org-wide cadence; **loop** only for in-conversation reminders.
 
 ## Guardrails
 
 - Do not rewrite history to protect a role — blame systems (contracts, tools, handoffs).
 - Do not dissolve the org or recreate `agent__createOrg` as "improvement".
 - Do not apply every idea — prefer reversible, measurable changes.
-- Do not mix boost (existing configs) with recruit (new configs) in one vague patch.
-- Do not skip writing `POSTMORTEMS/` because "we already talked about it".
+- Do not use LESSONS to paper over broken tools.
+- Do not edit workspace `agents.md` as the default learning path.
 
 ## References
 
 - [Postmortem template](references/postmortem-template.md)
 - [Improvement routing matrix](references/improvement-routing.md)
+- [LESSONS.active format](references/lessons-active.md)

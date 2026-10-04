@@ -10,6 +10,7 @@ use zip::{write::FileOptions, ZipWriter};
 pub struct SessionExportRoots {
     pub workspace_canon: PathBuf,
     pub teamwork_canon: Option<PathBuf>,
+    pub harness_canon: Option<PathBuf>,
     pub skill_alias_roots: Vec<(&'static str, PathBuf)>,
 }
 
@@ -33,6 +34,12 @@ impl SessionExportRoots {
             Ok(tw) => tokio::fs::canonicalize(&tw).await.ok().or(Some(tw)),
             Err(_) => None,
         };
+
+        let harness_canon =
+            match crate::session::resolve_harness_lessons_dir(session_manager, session_id).await {
+                Ok(hl) => tokio::fs::canonicalize(&hl).await.ok().or(Some(hl)),
+                Err(_) => None,
+            };
 
         let assistant_id = if let Some(repo) = crate::state::try_get_session_repository() {
             repo.get_session(session_id)
@@ -69,6 +76,7 @@ impl SessionExportRoots {
         Ok(Self {
             workspace_canon,
             teamwork_canon,
+            harness_canon,
             skill_alias_roots,
         })
     }
@@ -102,6 +110,41 @@ impl SessionExportRoots {
                         ".libragent/teamwork"
                     } else {
                         "@teamwork"
+                    };
+                    let rel_str = rel.to_string_lossy().replace('\\', "/");
+                    let rel_clean = rel_str.trim_start_matches('/');
+                    return Some(if rel_clean.is_empty() {
+                        prefix.to_string()
+                    } else {
+                        format!("{}/{}", prefix, rel_clean)
+                    });
+                }
+            }
+        }
+
+        let is_harness_hint = original_path_hint
+            .map(|h| {
+                let trimmed = h.trim().trim_start_matches('/');
+                trimmed.starts_with("@harness") || trimmed.starts_with(".libragent/harness")
+            })
+            .unwrap_or(false);
+
+        if is_harness_hint {
+            if let Some(hl_canon) = &self.harness_canon {
+                if let Some(rel) =
+                    crate::mcp::builtin::utils::relative_path_under_base(abs_canon, hl_canon)
+                {
+                    let prefix = if original_path_hint
+                        .map(|h| {
+                            h.trim()
+                                .trim_start_matches('/')
+                                .starts_with(".libragent/harness")
+                        })
+                        .unwrap_or(false)
+                    {
+                        ".libragent/harness"
+                    } else {
+                        "@harness"
                     };
                     let rel_str = rel.to_string_lossy().replace('\\', "/");
                     let rel_clean = rel_str.trim_start_matches('/');
@@ -166,6 +209,33 @@ impl SessionExportRoots {
                     ".libragent/teamwork"
                 } else {
                     "@teamwork"
+                };
+                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                let rel_clean = rel_str.trim_start_matches('/');
+                return Some(if rel_clean.is_empty() {
+                    prefix.to_string()
+                } else {
+                    format!("{}/{}", prefix, rel_clean)
+                });
+            }
+        }
+
+        // 4b. Check harness-lessons root
+        if let Some(hl_canon) = &self.harness_canon {
+            if let Some(rel) =
+                crate::mcp::builtin::utils::relative_path_under_base(abs_canon, hl_canon)
+            {
+                let prefix = if original_path_hint
+                    .map(|h| {
+                        h.trim()
+                            .trim_start_matches('/')
+                            .starts_with(".libragent/harness")
+                    })
+                    .unwrap_or(false)
+                {
+                    ".libragent/harness"
+                } else {
+                    "@harness"
                 };
                 let rel_str = rel.to_string_lossy().replace('\\', "/");
                 let rel_clean = rel_str.trim_start_matches('/');

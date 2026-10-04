@@ -75,6 +75,13 @@ impl WorkspaceServer {
         crate::session::resolve_teamwork_artifact_dir(&self.session_manager, session_id).await
     }
 
+    pub(super) async fn get_harness_lessons_root(
+        &self,
+        session_id: &str,
+    ) -> Result<PathBuf, String> {
+        crate::session::resolve_harness_lessons_dir(&self.session_manager, session_id).await
+    }
+
     pub(super) fn path_is_within_any_root(
         candidate_path: &Path,
         allowed_roots: &[PathBuf],

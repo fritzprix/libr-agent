@@ -32,6 +32,17 @@ impl WorkspaceServer {
                 .map_err(|e| format!("Security error: {e}"));
         }
 
+        if let Some(harness_relative_path) =
+            crate::session::extract_harness_alias_relative_path(path_str)
+        {
+            let harness_root = self.get_harness_lessons_root(&target_session_id).await?;
+            let harness_manager = SecureFileManager::new_scoped_with_base_dir(harness_root);
+            return harness_manager
+                .get_security_validator()
+                .validate_path_for_read(harness_relative_path)
+                .map_err(|e| format!("Security error: {e}"));
+        }
+
         if let Some((alias_prefix, relative_path)) =
             crate::services::skill_service::extract_skill_alias_relative_path(path_str)
         {
@@ -68,8 +79,10 @@ impl WorkspaceServer {
                     .get_allowed_absolute_skill_roots(&target_session_id)
                     .await?;
                 let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
+                let harness_root = self.get_harness_lessons_root(&target_session_id).await?;
                 let mut allowed_roots = allowed_roots;
                 allowed_roots.push(teamwork_root);
+                allowed_roots.push(harness_root);
 
                 if !Self::path_is_within_any_root(&candidate_path, &allowed_roots) {
                     return Err(format!("Security error: {original_error}"));
@@ -102,6 +115,23 @@ impl WorkspaceServer {
                 .map_err(|e| format!("Security error: {e}"));
         }
 
+        if let Some(harness_relative_path) =
+            crate::session::extract_harness_alias_relative_path(path_str)
+        {
+            crate::session::session_may_write_harness_lessons(&target_session_id).await?;
+            // Create scope dir only on write (reads/fingerprint must not mkdir).
+            let harness_root = crate::session::ensure_harness_lessons_dir(
+                &self.session_manager,
+                &target_session_id,
+            )
+            .await?;
+            let harness_manager = SecureFileManager::new_scoped_with_base_dir(harness_root);
+            return harness_manager
+                .get_security_validator()
+                .validate_path_for_write(harness_relative_path)
+                .map_err(|e| format!("Security error: {e}"));
+        }
+
         // Skill aliases (@workspace-skills, @user-skills, …) are read/list-only.
         // Resolving them for write would blur deploy paths; treating them as
         // workspace-relative paths creates a literal `@…` directory (regression).
@@ -125,6 +155,28 @@ impl WorkspaceServer {
                     let teamwork_manager =
                         SecureFileManager::new_scoped_with_base_dir(teamwork_root);
                     return teamwork_manager
+                        .get_security_validator()
+                        .validate_path_for_write(&relative_path)
+                        .map_err(|e| format!("Security error: {e}"));
+                }
+            }
+            if let Ok(harness_root) = crate::session::resolve_harness_lessons_dir(
+                &self.session_manager,
+                &target_session_id,
+            )
+            .await
+            {
+                if let Some(relative_path) =
+                    Self::extract_absolute_teamwork_relative_path(&candidate_path, &harness_root)
+                {
+                    crate::session::session_may_write_harness_lessons(&target_session_id).await?;
+                    let harness_root = crate::session::ensure_harness_lessons_dir(
+                        &self.session_manager,
+                        &target_session_id,
+                    )
+                    .await?;
+                    let harness_manager = SecureFileManager::new_scoped_with_base_dir(harness_root);
+                    return harness_manager
                         .get_security_validator()
                         .validate_path_for_write(&relative_path)
                         .map_err(|e| format!("Security error: {e}"));
