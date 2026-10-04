@@ -2,8 +2,8 @@
  * LibrAgent Browser Bridge — MV3 service worker (Load unpacked MVP).
  *
  * Connects to the local LibrAgent WebSocket bridge and maps sessionId → tabId
- * for createSession / navigate / closeSession / getState / evaluate / history /
- * screenshot.
+ * for createSession / navigate / closeSession / getState / evaluate /
+ * clickElement / inputText / history / screenshot.
  *
  * Defaults (override via Options or chrome.storage.local):
  *   bridgePort  = 3847
@@ -330,6 +330,26 @@ function serializeEvalResult(value) {
 }
 
 /**
+ * @param {chrome.scripting.InjectionResult[]} injection
+ * @returns {unknown}
+ */
+function firstInjectionResult(injection) {
+  const first = Array.isArray(injection) ? injection[0] : undefined;
+  if (!first) {
+    throw new Error('chrome.scripting.executeScript returned no result');
+  }
+  if (first.error) {
+    const err = first.error;
+    const msg =
+      typeof err === 'object' && err !== null
+        ? err.message || JSON.stringify(err)
+        : String(err);
+    throw new Error(msg);
+  }
+  return first.result;
+}
+
+/**
  * @param {number} tabId
  * @param {string} script
  * @returns {Promise<string>}
@@ -340,19 +360,150 @@ async function evaluateInTab(tabId, script) {
     world: 'MAIN',
     args: [script],
     // Run caller-provided expressions the same way the CDP sidecar evaluate path does.
+    // Note: page CSP without unsafe-eval may yield null — prefer clickElement/inputText.
     func: (code) => {
       // eslint-disable-next-line no-eval
       return (0, eval)(code);
     },
   });
-  const first = Array.isArray(injection) ? injection[0] : undefined;
-  if (!first) {
-    throw new Error('chrome.scripting.executeScript returned no result');
-  }
-  if (first.error) {
-    throw new Error(String(first.error));
-  }
-  return serializeEvalResult(first.result);
+  return serializeEvalResult(firstInjectionResult(injection));
+}
+
+/**
+ * CSP-safe click: extension-supplied function body (not page eval).
+ * @param {number} tabId
+ * @param {string} selector
+ * @returns {Promise<string>}
+ */
+async function clickElementInTab(tabId, selector) {
+  const injection = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [selector],
+    func: (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return 'Element not found';
+
+      const style = window.getComputedStyle(el);
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.opacity === '0'
+      ) {
+        return 'Element not visible';
+      }
+
+      el.scrollIntoView({ block: 'center' });
+      if (typeof el.focus === 'function') {
+        el.focus();
+      }
+      if (typeof el.click === 'function') {
+        el.click();
+      } else {
+        el.dispatchEvent(
+          new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+          }),
+        );
+      }
+      return 'Clicked element';
+    },
+  });
+  return serializeEvalResult(firstInjectionResult(injection));
+}
+
+/**
+ * CSP-safe text input with React 16+ native value setter support.
+ * @param {number} tabId
+ * @param {string} selector
+ * @param {string} text
+ * @returns {Promise<string>}
+ */
+async function inputTextInTab(tabId, selector, text) {
+  const injection = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [selector, text],
+    func: (sel, value) => {
+      const el = document.querySelector(sel);
+      if (!el) return 'Element not found';
+
+      const style = window.getComputedStyle(el);
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.opacity === '0'
+      ) {
+        return 'Element not visible';
+      }
+
+      el.scrollIntoView({ block: 'center' });
+      if (typeof el.focus === 'function') {
+        el.focus();
+      }
+
+      const isTextArea = el instanceof HTMLTextAreaElement;
+      const isInput = el instanceof HTMLInputElement;
+      if (isInput || isTextArea) {
+        const prototype = isTextArea
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+        const setter = descriptor && descriptor.set;
+        const prevValue = el.value;
+        if (setter) {
+          setter.call(el, value);
+        } else {
+          el.value = value;
+        }
+        const tracker = el._valueTracker;
+        if (tracker && typeof tracker.setValue === 'function') {
+          tracker.setValue(prevValue);
+        }
+        el.dispatchEvent(
+          new InputEvent('input', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: value,
+          }),
+        );
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return 'Input successful';
+      }
+
+      if (el.isContentEditable) {
+        let inserted = false;
+        try {
+          const selection = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          inserted = document.execCommand('insertText', false, value);
+        } catch {
+          inserted = false;
+        }
+        if (!inserted) {
+          el.textContent = value;
+          el.dispatchEvent(
+            new InputEvent('input', {
+              bubbles: true,
+              cancelable: true,
+              inputType: 'insertText',
+              data: value,
+            }),
+          );
+        }
+        return 'Input successful';
+      }
+
+      return 'Element is not an input';
+    },
+  });
+  return serializeEvalResult(firstInjectionResult(injection));
 }
 
 /**
@@ -428,6 +579,29 @@ async function handleRequest(message) {
           throw new Error('evaluate requires script');
         }
         const value = await evaluateInTab(tabId, script);
+        reply({ ok: true, result: value });
+        break;
+      }
+      case 'clickElement': {
+        const sessionId = String(params.sessionId ?? '');
+        const selector = String(params.selector ?? '');
+        const tabId = requireTabId(sessionId);
+        if (!selector) {
+          throw new Error('clickElement requires selector');
+        }
+        const value = await clickElementInTab(tabId, selector);
+        reply({ ok: true, result: value });
+        break;
+      }
+      case 'inputText': {
+        const sessionId = String(params.sessionId ?? '');
+        const selector = String(params.selector ?? '');
+        const text = params.text == null ? '' : String(params.text);
+        const tabId = requireTabId(sessionId);
+        if (!selector) {
+          throw new Error('inputText requires selector');
+        }
+        const value = await inputTextInTab(tabId, selector, text);
         reply({ ok: true, result: value });
         break;
       }

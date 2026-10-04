@@ -80,7 +80,7 @@ When Connected **and** the agent calls `createSession` with `browser="userChrome
 
 - Session: `createSession`, `navigateToUrl`, `navigateBack`, `navigateForward`, `closeSession`
 - Read / JS: `getPageTitle`, `getCurrentUrl`, `getPageContent`, `evaluateJS`, `listInteractable`
-- Interact: `clickElement`, `inputText`, `scrollPage`
+- Interact: `clickElement`, `inputText` (CSP-safe injected functions — not page `eval`), `scrollPage`
 - Screenshot: `takeScreenshot` (**visible viewport only**; `fullPage` is ignored and logged)
 
 Still sidecar-only:
@@ -94,7 +94,10 @@ Still sidecar-only:
 - Toolbar popup says **Reconnecting…**: wait a few seconds after the app starts.
   You should not need `chrome://extensions` unless you changed extension files.
 - After pulling extension code / permission changes: click **Reload** once on the
-  extension card (developer update only).
+  extension card (developer update only). Required for `clickElement` / `inputText`
+  RPC handlers added to the service worker.
+- On strict-CSP sites (e.g. x.com), prefer `clickElement` / `inputText` over
+  `evaluateJS` — arbitrary `eval` may return `null` even when the tab is fine.
 - Tools error with “not supported yet via Chrome extension bridge”: only
   `getConsoleLogs` should still say that after tool parity — reload the unpacked
   extension and restart LibrAgent if an older build is running.

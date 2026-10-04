@@ -290,11 +290,19 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
         }
     };
 
-    let result = match service
-        .execute_script(&browser_session_id, "window.location.href")
-        .await
-    {
-        Ok(res) => res,
+    let result = match service.get_page_state(&browser_session_id).await {
+        Ok(state) if !state.url.trim().is_empty() => state.url,
+        Ok(_) => {
+            return Ok(operation_failed_error(
+                "Get current URL",
+                "Page URL was empty",
+                vec![
+                    "Verify the browser session is active".to_string(),
+                    "Use browser__navigateToUrl if the tab has not loaded a page yet".to_string(),
+                ],
+                ToolGroup::Browser,
+            ));
+        }
         Err(e) => {
             return Ok(operation_failed_error(
                 "Get current URL",
@@ -335,11 +343,11 @@ pub async fn get_page_title(server: &BrowserServer, _args: Value) -> Result<MCPR
         "No active browser session. Call browser__createSession first.".to_string()
     })?;
 
-    let result = match service
-        .execute_script(&browser_session_id, "document.title")
-        .await
-    {
-        Ok(res) => res,
+    let result = match service.get_page_state(&browser_session_id).await {
+        Ok(state) => state
+            .title
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| "(empty title)".to_string()),
         Err(e) => {
             return Ok(operation_failed_error(
                 "Get page title",

@@ -48,12 +48,17 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
         ));
     }
 
-    let script = get_click_script(selector)?;
-    match service.execute_script(&browser_session_id, &script).await {
-        Ok(res) => {
-            if res.contains("Element not found") {
+    match service
+        .click_element(&browser_session_id, selector)
+        .await
+    {
+        Ok(res) => match classify_dom_action_result(&res, "Clicked element") {
+            DomActionOutcome::Success => {
+                create_rich_response(&service, &browser_session_id, "Clicked element").await
+            }
+            DomActionOutcome::NotFound => {
                 let suggestions = suggest_selectors(&service, &browser_session_id).await;
-                return Ok(operation_failed_error(
+                Ok(operation_failed_error(
                     "Click element",
                     &format!("Element with selector '{}' not found{}", selector, suggestions),
                     vec![
@@ -62,37 +67,43 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                         "Use browser__listInteractable to find valid selectors".to_string(),
                     ],
                     ToolGroup::Browser,
-                ));
+                ))
             }
-            if res.contains("Element not visible") {
-                return Ok(operation_failed_error(
-                    "Click element",
-                    &format!("Element with selector '{}' is not visible", selector),
-                    vec![
-                        "The element exists but is hidden. Use `browser__getPageContent({})` to analyze the page structure and find a parent container or toggle button.".to_string(),
-                        "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
-                        "Use `browser__listInteractable` to find visible elements that might reveal this target.".to_string(),
-                    ],
-                    ToolGroup::Browser,
-                ));
-            }
-
-            // ✅ Success: Return rich response with page state
-            create_rich_response(&service, &browser_session_id, "Clicked element").await
-        }
-        Err(e) => {
-            // ❌ Error: Only provide recovery guidance, no success hints
-            Ok(operation_failed_error(
+            DomActionOutcome::NotVisible => Ok(operation_failed_error(
                 "Click element",
-                &e,
+                &format!("Element with selector '{}' is not visible", selector),
                 vec![
-                    "Verify the selector is correct CSS syntax".to_string(),
-                    "Try using `scrollPage` to reveal lazy-loaded elements".to_string(),
-                    "Use browser__listInteractable to find valid selectors".to_string(),
+                    "The element exists but is hidden. Use `browser__getPageContent({})` to analyze the page structure and find a parent container or toggle button.".to_string(),
+                    "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
+                    "Use `browser__listInteractable` to find visible elements that might reveal this target.".to_string(),
                 ],
                 ToolGroup::Browser,
-            ))
-        }
+            )),
+            DomActionOutcome::Other(message) => Ok(operation_failed_error(
+                "Click element",
+                &format!(
+                    "Unexpected click result for selector '{}': {}",
+                    selector, message
+                ),
+                vec![
+                    "Verify the selector is correct CSS syntax".to_string(),
+                    "Use browser__listInteractable to find valid selectors".to_string(),
+                    "On userChrome, reload the Chrome extension after updating LibrAgent".to_string(),
+                ],
+                ToolGroup::Browser,
+            )),
+        },
+        Err(e) => Ok(operation_failed_error(
+            "Click element",
+            &e,
+            vec![
+                "Verify the selector is correct CSS syntax".to_string(),
+                "Try using `scrollPage` to reveal lazy-loaded elements".to_string(),
+                "Use browser__listInteractable to find valid selectors".to_string(),
+                "On userChrome, reload the Chrome extension after updating LibrAgent (Unsupported method: clickElement means a stale service worker)".to_string(),
+            ],
+            ToolGroup::Browser,
+        )),
     }
 }
 
@@ -142,34 +153,17 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
         ));
     }
 
-    let selector_json =
-        serde_json::to_string(selector).map_err(|e| format!("Serialization error: {}", e))?;
-    let text_json =
-        serde_json::to_string(text).map_err(|e| format!("Serialization error: {}", e))?;
-
-    let script = format!(
-        r#"(function() {{
-            const el = document.querySelector({});
-            if (!el) return 'Element not found';
-            
-            const style = window.getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {{
-                return 'Element not visible';
-            }}
-
-            el.value = {};
-            el.dispatchEvent(new Event('input', {{bubbles: true}}));
-            el.dispatchEvent(new Event('change', {{bubbles: true}}));
-            return 'Input successful';
-        }})()"#,
-        selector_json, text_json
-    );
-
-    match service.execute_script(&browser_session_id, &script).await {
-        Ok(res) => {
-            if res.contains("Element not found") {
+    match service
+        .input_text(&browser_session_id, selector, text)
+        .await
+    {
+        Ok(res) => match classify_dom_action_result(&res, "Input successful") {
+            DomActionOutcome::Success => {
+                create_rich_response(&service, &browser_session_id, "Input successful").await
+            }
+            DomActionOutcome::NotFound => {
                 let suggestions = suggest_selectors(&service, &browser_session_id).await;
-                return Ok(operation_failed_error(
+                Ok(operation_failed_error(
                     "Input text",
                     &format!("Element with selector '{}' not found{}", selector, suggestions),
                     vec![
@@ -178,37 +172,44 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                         "Use browser__listInteractable to find valid selectors".to_string(),
                     ],
                     ToolGroup::Browser,
-                ));
+                ))
             }
-            if res.contains("Element not visible") {
-                return Ok(operation_failed_error(
-                    "Input text",
-                    &format!("Element with selector '{}' is not visible", selector),
-                    vec![
-                        "The input is hidden. Use `browser__getPageContent({})` to find the form section or toggle that contains it.".to_string(),
-                        "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
-                        "Use `browser__clickElement` on the parent container or toggle to reveal the input.".to_string(),
-                    ],
-                    ToolGroup::Browser,
-                ));
-            }
-
-            // ✅ Success: Return rich response with page state
-            create_rich_response(&service, &browser_session_id, "Input successful").await
-        }
-        Err(e) => {
-            // ❌ Error: Only provide recovery guidance, no success hints
-            Ok(operation_failed_error(
+            DomActionOutcome::NotVisible => Ok(operation_failed_error(
                 "Input text",
-                &e,
+                &format!("Element with selector '{}' is not visible", selector),
                 vec![
-                    "Verify the selector targets an input/textarea element".to_string(),
-                    "Try using `scrollPage` to reveal lazy-loaded elements".to_string(),
-                    "Use browser__listInteractable with filterType='semantic_input'".to_string(),
+                    "The input is hidden. Use `browser__getPageContent({})` to find the form section or toggle that contains it.".to_string(),
+                    "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
+                    "Use `browser__clickElement` on the parent container or toggle to reveal the input.".to_string(),
                 ],
                 ToolGroup::Browser,
-            ))
-        }
+            )),
+            DomActionOutcome::Other(message) => Ok(operation_failed_error(
+                "Input text",
+                &format!(
+                    "Unexpected input result for selector '{}': {}",
+                    selector, message
+                ),
+                vec![
+                    "Verify the selector targets an input/textarea/contenteditable element"
+                        .to_string(),
+                    "Use browser__listInteractable with filterType='semantic_input'".to_string(),
+                    "On userChrome, reload the Chrome extension after updating LibrAgent".to_string(),
+                ],
+                ToolGroup::Browser,
+            )),
+        },
+        Err(e) => Ok(operation_failed_error(
+            "Input text",
+            &e,
+            vec![
+                "Verify the selector targets an input/textarea element".to_string(),
+                "Try using `scrollPage` to reveal lazy-loaded elements".to_string(),
+                "Use browser__listInteractable with filterType='semantic_input'".to_string(),
+                "On userChrome, reload the Chrome extension after updating LibrAgent (Unsupported method: inputText means a stale service worker)".to_string(),
+            ],
+            ToolGroup::Browser,
+        )),
     }
 }
 
@@ -367,28 +368,30 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
     Ok(hint.to_mcp_result())
 }
 
-/// Helper to inline the click script
-fn get_click_script(selector: &str) -> Result<String, String> {
-    let selector_json =
-        serde_json::to_string(selector).map_err(|e| format!("Serialization error: {}", e))?;
+enum DomActionOutcome {
+    Success,
+    NotFound,
+    NotVisible,
+    Other(String),
+}
 
-    Ok(format!(
-        r#"(function() {{
-            const el = document.querySelector({});
-            if (!el) return 'Element not found';
-            
-            const style = window.getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {{
-                return 'Element not visible';
-            }}
-
-            el.scrollIntoView({{block: 'center'}});
-            el.focus();
-            el.click();
-            return 'Clicked element';
-        }})()"#,
-        selector_json
-    ))
+/// Require an exact success/error token so `"null"` and echoed phrases are not false successes.
+fn classify_dom_action_result(result: &str, success_token: &str) -> DomActionOutcome {
+    let token = result.trim().trim_matches('"');
+    if token == success_token {
+        return DomActionOutcome::Success;
+    }
+    if token == "Element not found" {
+        return DomActionOutcome::NotFound;
+    }
+    if token == "Element not visible" {
+        return DomActionOutcome::NotVisible;
+    }
+    DomActionOutcome::Other(if token.is_empty() {
+        "(empty)".to_string()
+    } else {
+        token.to_string()
+    })
 }
 
 /// Helper to inline the listInteractable filter script
@@ -557,7 +560,18 @@ fn format_interactive_elements(
         selector: String,
     }
 
-    let elements: Vec<Element> = serde_json::from_str(json_result)
+    let trimmed = json_result.trim();
+    // userChrome evaluate often returns literal "null" under CSP; treat as empty, not a hard parse error.
+    if trimmed.is_empty() || trimmed == "null" || trimmed == "undefined" {
+        return Ok(
+            "Interactable discovery unavailable: page CSP likely blocked evaluate on userChrome \
+(or the script returned no data). Use known selectors with browser__clickElement / \
+browser__inputText, or create a session with browser=\"sidecar\"."
+                .to_string(),
+        );
+    }
+
+    let elements: Vec<Element> = serde_json::from_str(trimmed)
         .map_err(|e| format!("Failed to parse elements JSON: {}", e))?;
 
     if elements.is_empty() {
@@ -635,14 +649,21 @@ pub async fn create_rich_response(
     session_id: &str,
     action_result: &str,
 ) -> Result<MCPResult, String> {
-    let title = service
-        .execute_script(session_id, "document.title")
-        .await
-        .unwrap_or_else(|_| "Unknown Title".to_string());
-    let url = service
-        .execute_script(session_id, "window.location.href")
-        .await
-        .unwrap_or_else(|_| "Unknown URL".to_string());
+    // Prefer tabs/CDP page state — userChrome `evaluate` is unreliable under strict page CSP.
+    let (title, url) = match service.get_page_state(session_id).await {
+        Ok(state) => (
+            state
+                .title
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| "Unknown Title".to_string()),
+            if state.url.trim().is_empty() {
+                "Unknown URL".to_string()
+            } else {
+                state.url
+            },
+        ),
+        Err(_) => ("Unknown Title".to_string(), "Unknown URL".to_string()),
+    };
     let summary = format!(
         "Status: Success\nAction: {}\n\n--- Page State ---\nTitle: {}\nURL: {}\n",
         action_result, title, url
@@ -756,5 +777,47 @@ mod tests {
         assert!(formatted.contains("Selector: input[name=\"custname\"]"));
         assert!(formatted.contains("Selector: input[name=\"size\"][value=\"small\"]"));
         assert!(formatted.contains("name=\"custname\""));
+    }
+
+    #[test]
+    fn classify_dom_action_result_requires_exact_tokens() {
+        assert!(matches!(
+            classify_dom_action_result("Clicked element", "Clicked element"),
+            DomActionOutcome::Success
+        ));
+        assert!(matches!(
+            classify_dom_action_result("\"Input successful\"", "Input successful"),
+            DomActionOutcome::Success
+        ));
+        assert!(matches!(
+            classify_dom_action_result("Element not found", "Clicked element"),
+            DomActionOutcome::NotFound
+        ));
+        assert!(matches!(
+            classify_dom_action_result("Element not visible", "Input successful"),
+            DomActionOutcome::NotVisible
+        ));
+        // Substring / echoed phrases must not count as success.
+        assert!(matches!(
+            classify_dom_action_result("Failed while Clicked element", "Clicked element"),
+            DomActionOutcome::Other(_)
+        ));
+        assert!(matches!(
+            classify_dom_action_result("null", "Input successful"),
+            DomActionOutcome::Other(_)
+        ));
+        assert!(matches!(
+            classify_dom_action_result("", "Clicked element"),
+            DomActionOutcome::Other(_)
+        ));
+    }
+
+    #[test]
+    fn format_interactive_elements_null_explains_csp_limit() {
+        let formatted =
+            format_interactive_elements("null", "semantic_clickable", "viewport").expect("format");
+        assert!(formatted.contains("Interactable discovery unavailable"));
+        assert!(formatted.contains("userChrome"));
+        assert!(!formatted.contains("No semantic clickable elements found"));
     }
 }

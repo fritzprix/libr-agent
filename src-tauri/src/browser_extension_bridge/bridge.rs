@@ -205,6 +205,46 @@ impl ExtensionBridge {
         Ok(stringify_evaluate_result(result))
     }
 
+    /// Click a DOM element by CSS selector (injected function — not page `eval`).
+    pub async fn click_element(&self, session_id: &str, selector: &str) -> Result<String, String> {
+        if !self.is_connected() {
+            return Err("Chrome extension bridge is not connected".to_string());
+        }
+        let result = self
+            .rpc(
+                ExtensionMethod::ClickElement,
+                json!({
+                    "sessionId": session_id,
+                    "selector": selector,
+                }),
+            )
+            .await?;
+        Ok(stringify_evaluate_result(result))
+    }
+
+    /// Type into an input/textarea/contenteditable by CSS selector (CSP-safe inject).
+    pub async fn input_text(
+        &self,
+        session_id: &str,
+        selector: &str,
+        text: &str,
+    ) -> Result<String, String> {
+        if !self.is_connected() {
+            return Err("Chrome extension bridge is not connected".to_string());
+        }
+        let result = self
+            .rpc(
+                ExtensionMethod::InputText,
+                json!({
+                    "sessionId": session_id,
+                    "selector": selector,
+                    "text": text,
+                }),
+            )
+            .await?;
+        Ok(stringify_evaluate_result(result))
+    }
+
     pub async fn go_back(&self, session_id: &str) -> Result<PageState, String> {
         if !self.is_connected() {
             return Err("Chrome extension bridge is not connected".to_string());

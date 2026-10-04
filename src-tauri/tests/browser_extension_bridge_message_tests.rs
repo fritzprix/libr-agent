@@ -61,6 +61,20 @@ fn decode_evaluate_and_screenshot_methods() {
     assert_eq!(eval.method, ExtensionMethod::Evaluate.as_str());
     assert_eq!(eval.params["script"], "document.title");
 
+    let click = decode_request(
+        r##"{"id":"c1","method":"clickElement","params":{"sessionId":"s1","selector":"#go"}}"##,
+    )
+    .expect("clickElement request");
+    assert_eq!(click.method, ExtensionMethod::ClickElement.as_str());
+    assert_eq!(click.params["selector"], "#go");
+
+    let input = decode_request(
+        r##"{"id":"i1","method":"inputText","params":{"sessionId":"s1","selector":"input[name=q]","text":"hi"}}"##,
+    )
+    .expect("inputText request");
+    assert_eq!(input.method, ExtensionMethod::InputText.as_str());
+    assert_eq!(input.params["text"], "hi");
+
     let shot = decode_request(
         r#"{"id":"s1","method":"takeScreenshot","params":{"sessionId":"s1","fullPage":false}}"#,
     )
