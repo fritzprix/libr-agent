@@ -12,6 +12,8 @@ use super::browser_error::BrowserError;
 pub mod id_gen;
 pub use id_gen::generate_session_id;
 
+mod dom_scripts;
+
 pub mod types;
 pub use types::{BrowserSession, NavigationUpdateOutcome, SessionStatus};
 
@@ -298,26 +300,75 @@ impl InteractiveBrowserServer {
 
     pub async fn execute_script(&self, session_id: &str, script: &str) -> Result<String, String> {
         debug!("Executing browser script in session {session_id}: {script}");
-        let session = self.get_session(session_id)?;
-        match &session.status {
-            SessionStatus::Active => {}
-            SessionStatus::Error(message) => {
-                return Err(format!(
-                    "Browser session {} is in an error state: {}. Close the session or create a new one.",
-                    session_id, message
-                ));
-            }
-            _ => {
-                return Err(format!(
-                    "Browser session {} is not ready for script execution",
-                    session_id
-                ));
-            }
-        }
+        self.ensure_session_active(session_id, "script execution")?;
 
         match self.session_backend(session_id)? {
             SessionBackend::Extension => self.extension_bridge.evaluate(session_id, script).await,
             SessionBackend::Sidecar => self.client.evaluate(session_id, script).await,
+        }
+    }
+
+    /// Click by CSS selector. userChrome uses a CSP-safe injected function (not page eval).
+    pub async fn click_element(&self, session_id: &str, selector: &str) -> Result<String, String> {
+        self.ensure_session_active(session_id, "click")?;
+        match self.session_backend(session_id)? {
+            SessionBackend::Extension => {
+                self.extension_bridge
+                    .click_element(session_id, selector)
+                    .await
+            }
+            SessionBackend::Sidecar => {
+                let script = dom_scripts::click_script(selector)?;
+                self.client.evaluate(session_id, &script).await
+            }
+        }
+    }
+
+    /// Type into an input. userChrome uses a CSP-safe injected function with React value-setter support.
+    pub async fn input_text(
+        &self,
+        session_id: &str,
+        selector: &str,
+        text: &str,
+    ) -> Result<String, String> {
+        self.ensure_session_active(session_id, "input")?;
+        match self.session_backend(session_id)? {
+            SessionBackend::Extension => {
+                self.extension_bridge
+                    .input_text(session_id, selector, text)
+                    .await
+            }
+            SessionBackend::Sidecar => {
+                let script = dom_scripts::input_text_script(selector, text)?;
+                self.client.evaluate(session_id, &script).await
+            }
+        }
+    }
+
+    /// Best-effort live page URL/title (tabs API on userChrome; CDP snapshot on sidecar).
+    pub async fn get_page_state(
+        &self,
+        session_id: &str,
+    ) -> Result<crate::browser_sidecar::PageState, String> {
+        self.ensure_session_active(session_id, "page state")?;
+        match self.session_backend(session_id)? {
+            SessionBackend::Extension => self.extension_bridge.get_state(session_id).await,
+            SessionBackend::Sidecar => self.client.get_state(session_id).await,
+        }
+    }
+
+    fn ensure_session_active(&self, session_id: &str, action: &str) -> Result<(), String> {
+        let session = self.get_session(session_id)?;
+        match &session.status {
+            SessionStatus::Active => Ok(()),
+            SessionStatus::Error(message) => Err(format!(
+                "Browser session {} is in an error state: {}. Close the session or create a new one.",
+                session_id, message
+            )),
+            _ => Err(format!(
+                "Browser session {} is not ready for {}",
+                session_id, action
+            )),
         }
     }
 

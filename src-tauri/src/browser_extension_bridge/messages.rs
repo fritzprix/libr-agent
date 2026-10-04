@@ -16,6 +16,10 @@ pub enum ExtensionMethod {
     CloseSession,
     GetState,
     Evaluate,
+    /// DOM click via injected function (no page `eval` — CSP-safe).
+    ClickElement,
+    /// Form input via injected function (no page `eval` — CSP-safe).
+    InputText,
     GoBack,
     GoForward,
     TakeScreenshot,
@@ -30,6 +34,8 @@ impl ExtensionMethod {
             Self::CloseSession => "closeSession",
             Self::GetState => "getState",
             Self::Evaluate => "evaluate",
+            Self::ClickElement => "clickElement",
+            Self::InputText => "inputText",
             Self::GoBack => "goBack",
             Self::GoForward => "goForward",
             Self::TakeScreenshot => "takeScreenshot",
