@@ -1,114 +1,153 @@
 ---
-title: Troubleshooting
+title: Troubleshooting Guide
 ---
 
-# Troubleshooting
+# Troubleshooting Guide
 
-> Symptom → cause → fix using **real UI names**.
+> Diagnose symptoms, identify causes, and apply fixes based on actual UI element labels.
 
 ---
 
-## 1. API keys & models
+## 1. API Keys & Models
 
-### Chat fails immediately
+### Chat Fails Immediately or Requests Error Out
 
-**Cause**: Missing or wrong API key.
+**Cause**: API key is missing or invalid.
 
-**Fix**:
+**Resolution**:
 
-1. Sidebar **Settings** → **AI & Models**
-2. Check **API Key** on the provider card under **Provider API Keys**
-3. **Save Changes**
-4. Send again from **Chat**
+1. Navigate to **Settings → AI & Models** in the sidebar.
+2. In **Provider API Keys**, enter the key in the field for your provider.
+3. Click **Save Changes**.
+4. Return to **Chat** and resend your prompt.
 
-Keys: [Anthropic](https://console.anthropic.com/) · [OpenAI](https://platform.openai.com/api-keys) · [Gemini](https://aistudio.google.com/) · [Groq](https://console.groq.com/keys)
+Obtain API keys: [Anthropic](https://console.anthropic.com/) · [OpenAI](https://platform.openai.com/api-keys) · [Gemini](https://aistudio.google.com/) · [Groq](https://console.groq.com/keys)
 
-> There is no Settings “connected / verifying” badge. Confirm with a real request after save.
+> [!NOTE]
+> Settings does not display a "Connected / Validating" status indicator. Verify functionality by sending a real message in Chat.
 
-### `Invalid API key` / Authentication failed
+### `Invalid API key` / Authentication Failed
 
-1. **Settings → AI & Models → Provider API Keys**
-2. Re-paste without spaces / truncation
-3. Issue a new key in the provider console
-4. **Save Changes**
+1. Open **Settings → AI & Models → Provider API Keys**.
+2. Remove leading or trailing whitespace and re-paste the key.
+3. Generate a new key from your provider console if needed.
+4. Click **Save Changes**.
 
 ### `Rate limit exceeded`
 
-Wait and retry, or switch **Default LLM** / the session **Model** to another model or provider.
+Wait a few minutes before retrying, or change **Default LLM** / session **Model** to another model or provider.
 
-### Slow or expensive replies
+### Slow Replies or High Token Costs
 
-| Try                    | Where                                             |
-| ---------------------- | ------------------------------------------------- |
-| Smaller / faster model | Chat **Model** or Settings **Default LLM**        |
-| Shorter context        | **Settings → Chat Interface → Max Input Context** |
-| Local model            | Custom OpenAI Provider (e.g. Ollama)              |
+| Strategy | Location in UI |
+| --- | --- |
+| Select a smaller or faster model | **Model** selector in Chat or **Default LLM** in Settings |
+| Reduce input context | **Settings → Chat Interface → Max Input Context** |
+| Run local offline models | Add a Custom OpenAI Provider pointing to Ollama |
 
-### Too random
+### Output is Too Random or Inconsistent
 
-**Settings → AI & Models → Model Preferences**: enable **Override temperature** and lower **Temperature** (e.g. 0.2–0.5).
+Open **Settings → AI & Models → Model Preferences**. Enable **Override temperature** and reduce the **Temperature** value (e.g., 0.2–0.5).
 
 ---
 
 ## 2. Sessions
 
-### Cannot find a session
+### Cannot Find an Existing Session
 
-1. Restart the app
-2. Search **History**
-3. Deleted sessions cannot be restored
+1. Restart the application.
+2. Search within session history.
+3. Deleted sessions cannot be recovered.
 
-### New session will not open
+### New Session Will Not Open
 
-1. Confirm key + **Default LLM**, then **Save Changes**
-2. **Chat** → click a **Built-in Assistants** card
-3. Send from the **New Session** draft
+1. Verify provider keys and **Default LLM** in **Settings → AI & Models**, then click **Save Changes**.
+2. In the sidebar, select **Chat → Built-in Assistants** and click an assistant card.
+3. Send a prompt from the draft (**New Session**) state.
 
-> This is not a **「+ New Session」** button flow.
+> [!NOTE]
+> Sessions launch from assistant selection cards rather than a generic "+ New Session" button.
 
-### Session runs a long time
+### Session Execution Takes Too Long
 
-The agent may be using tools or sub-agents. Check progress / pause UI; stop and retry with a smaller model if needed.
-
----
-
-## 3. Tools · environment · MCP
-
-### Python / Node / uv missing
-
-Not a Settings tab:
-
-1. **Chat → Built-in Assistants → App Wizard**
-2. Ask it to check and guide installs (uses **setup-wizard** / alias `bootstrap`)
-
-### MCP tools missing
-
-1. Sidebar **Extensions** (not Settings)
-2. Enable / configure the server
-3. Attach it to the [Assistant](assistants.md)
-4. Start a new session
-
-See [Extensions](extensions.md) · [Custom MCP](custom-mcp.md).
-
-### Tool approval stuck
-
-Approve or deny pending tool calls. YOLO mode (if enabled) auto-approves — use carefully.
+The agent may be processing multiple tools or orchestrating sub-tasks. Review the progress badges in the UI. If necessary, interrupt the session and retry with a smaller model.
 
 ---
 
-## 4. Sub-agents
+## 3. Tools, Environment & MCP
 
-### Child has no context / wrong files
+### Application Reports Missing Python, Node, or uv
 
-Children do not inherit the parent workspace by default. Put paths and goals in the handoff, or use `workspaceOverride`. See [Sub-agents](sub-agents.md).
+Do not look in the Settings menu:
 
-### Org list empty
+1. Open **Chat → Built-in Assistants → App Wizard**.
+2. Request an environment diagnosis. App Wizard runs `setup-wizard` (alias `bootstrap`) to detect your OS and guide runtime installations.
 
-**Org** only lists **explicit orgs**. One-off `@skill:delegate` children stay in History.
+### External MCP Tools Do Not Connect
+
+There is no "MCP Servers" tab in Settings. Use the sidebar **Extensions** screen (`/mcp-servers`).
+
+1. **Recommended**: Select from [Extensions → Recommended Extensions](extensions.md).
+2. **Custom / Imports**: Use [Installing Custom MCP Servers](custom-mcp.md) or invoke `@skill:tool-installer`.
+3. Confirm that your assistant profile permits access to the target MCP server.
+4. Verify that execution runtimes (`npx`, `uv`) execute properly in your terminal.
+
+### Agent Does Not Invoke Available Tools
+
+Specify tool usage explicitly in your prompt, or verify that the active assistant profile allows the required built-in or MCP tools. Inspect tool execution badges in the agent response.
+
+### File or Workspace Tool Failures
+
+Verify the workspace folder path and ensure proper OS file permissions. Review configured paths in **Settings → General**.
+
+### Sub-Agent Cannot Find Files / Not Visible in Org
+
+- Child sessions do not inherit parent workspace folders or local skills automatically. Follow the isolation rules in the [Sub-Agents & Orchestration Guide](sub-agents.md). Write a self-contained handoff via `@skill:delegate` or use a shared workspace path.
+- The sidebar **Org** view displays only explicit organization hierarchies. For standard delegations, check sub-agent badges in the session conversation history.
 
 ---
 
-## Still stuck?
+## 4. Application Stability & UI
 
-- [FAQ](../faq/common-questions.md) · [Error codes](../faq/error-codes.md)
-- [GitHub Discussions](https://github.com/fritzprix/libr-agent/discussions) · [Issues](https://github.com/fritzprix/libr-agent/issues)
+### The Application Freezes
+
+1. Close the application completely and relaunch it.
+2. If freezes persist, report the issue on [GitHub Discussions](https://github.com/fritzprix/libr-agent/discussions) with your OS version, app version, and error logs (**exclude API keys**).
+
+> [!NOTE]
+> The **Dev** tab appears only in development builds and is not required for daily use.
+
+### The User Interface Renders Incorrectly
+
+Restart the application. If graphics glitches persist, check your OS display settings and graphics drivers.
+
+---
+
+## 5. Common Error Messages
+
+| Message | Recommended Action |
+| --- | --- |
+| Invalid API key | Re-enter key in **Settings → AI & Models → Provider API Keys**. |
+| Rate limit exceeded | Wait briefly or switch to another provider model. |
+| Model not found | Update **Default LLM** or click **Refresh models** in Chat. |
+| Connection refused / Timeout | Check network connection, local model daemon, or MCP process health. |
+| Permission denied | Verify folder read/write permissions in your operating system. |
+| Session not found | Restart application and search in Session History. |
+
+---
+
+## Reporting Issues
+
+When reporting issues on [GitHub Discussions](https://github.com/fritzprix/libr-agent/discussions), provide your OS version, LibrAgent version, active provider and model, error messages, and reproduction steps. **Never include API keys or secrets in bug reports.**
+
+---
+
+## Related Documentation
+
+- [Connecting Models](../getting-started/connecting-models.md) — Provider setup
+- [5-Minute Quickstart](../getting-started/5-minute-tutorial.md) — App Wizard instructions
+- [First Agent Chat](../getting-started/first-agent.md) — Session basics
+- [Skills Guide](skills.md) — Skill scopes and catalog
+- [Sub-Agents & Orchestration Guide](sub-agents.md) — Multi-agent coordination
+- [Extensions Guide](extensions.md) — MCP presets
+- [Custom MCP Guide](custom-mcp.md) — Manual MCP configuration

@@ -1,46 +1,59 @@
 ---
-title: Playbooks
+title: Playbooks Guide
 ---
 
-# Playbooks
+# Playbooks Guide
 
-> Capture a successful session pattern and re-run it later.
-
----
-
-## What is a Playbook?
-
-A Playbook stores a reusable workflow (prompt pattern, context, steps) derived from a good session so you do not retype the same setup.
+> Access the **Playbooks** screen (`/playbooks`) from the sidebar.  
+> Playbooks capture successful executions of complex tasks so you can re-run them without re-typing prompts.
 
 ---
 
-## Create from a session
+## Create a Playbook
 
-1. Finish a session you want to reuse.
-2. Open session / Playbook actions (UI may say **Save as Playbook** or similar).
-3. Name it and confirm.
+Rather than building workflows in a blank form wizard, create playbooks directly from successful conversations:
 
-Exact control labels can vary by version — look near the session header or History actions.
+1. In **Chat**, complete your multi-step task until you achieve the desired outcome.
+2. Ask the agent to save the session: `"Create a playbook from this session."`
+3. The new playbook appears automatically on the **Playbooks** page in the sidebar.
+
+The empty state screen offers the same recommendation: run a task with an agent, request a playbook, and click **Start** to re-run it anytime.
 
 ---
 
 ## Run a Playbook
 
-1. Open **Playbooks** from the sidebar (or Chat entry points).
-2. Select a playbook → run / start session.
-3. Adjust variables or the first message if prompted.
+1. Locate the playbook in **Playbooks** (use search, sort, or bookmarks).
+2. Click **Start** on the playbook card.
+3. A new session launches with the assigned assistant, automatically executing the recorded steps and goals.
+
+You can also reference playbooks in chat using the `@playbook:` mention prefix (auto-complete suggestions work in both chat and Scheduled Task triggers).
 
 ---
 
-## When to use
+## Manage Playbooks
 
-| Use Playbooks when…         | Prefer assistants / skills when… |
-| --------------------------- | -------------------------------- |
-| Same multi-step job repeats | You need a standing role/persona |
-| You want one-click replay   | Procedures live in `@skill:…`    |
+- **Bookmark**: Pin frequently used playbooks to the top of your list.
+- **Delete**: Remove obsolete playbooks permanently (deleted playbooks cannot be recovered).
+- **Sort**: Order playbooks by creation date, assistant name, or bookmarked status.
 
 ---
 
-## Related
+## Comparison: Playbook vs. Skill
 
-- [Automation](automation.md) · [Assistants](assistants.md) · [Sessions](sessions.md)
+| Aspect | Playbook | Skill (`@skill:`) |
+| --- | --- | --- |
+| **What it is** | A replay of a successful execution history | A `SKILL.md` procedural specification |
+| **How to create** | Request the agent to save a finished chat | Author via `skill-creator` and deploy |
+| **How to use** | Click **Start** or mention `@playbook:name` | Mention `@skill:name` in chat |
+
+Use both capabilities together: choose Playbooks for one-click workflow replays, and choose Skills for consistent procedural rules and reasoning steps.
+
+---
+
+## Related Documentation
+
+- [Assistants Guide](assistants.md) — Profiles linked to playbooks
+- [Skills Guide](skills.md) — Procedural instructions
+- [Automation & Scheduled Tasks Guide](automation.md) — Automate recurring playbooks
+- [Sessions Guide](sessions.md) — Manage execution sessions

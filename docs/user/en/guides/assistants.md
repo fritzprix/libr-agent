@@ -1,56 +1,65 @@
 ---
-title: Assistants
+title: Assistants Guide
 ---
 
-# Assistants
+# Assistants Guide
 
-> Custom agent profiles: name, system prompt, tools, and MCP servers.
-
----
-
-## Open the Assistants screen
-
-1. **Chat** → **+ Manage Assistants**, or
-2. Sidebar → **Assistants**
-
-Actions: **Import**, **Export**, **Create New Assistant**.
+> Create and manage customized AI agent profiles in the sidebar **Assistants** page (`/assistants`).  
+> To start a conversation, click an assistant card on the **Chat** screen.
 
 ---
 
-## Create New Assistant
+## Manage Assistants
 
-| Field              | Notes                             |
-| ------------------ | --------------------------------- |
-| Name / Description | Shown on cards                    |
-| System Prompt      | Role and rules                    |
-| Icon / Color       | Visual identity                   |
-| Tools              | Which builtins the agent may call |
-| MCP Servers        | Attach Extensions / custom MCP    |
+1. Open **Assistants** in the sidebar.
+2. Click **Create New Assistant** to build a custom profile.
+3. Click **Edit** or **Delete** on an assistant card. Built-in profiles marked **PROTECTED** cannot be deleted.
 
-Save, then start a session from **My Assistants** on Chat.
+Cards shown under **Built-in Assistants** and **My Assistants** on the **Chat** screen use these same profiles to launch sessions.
 
 ---
 
-## Three creation modes
+## Assistant Configuration Tabs
 
-| Mode        | Best for                  |
-| ----------- | ------------------------- |
-| **General** | Prompt-centric assistants |
-| **Tools**   | Tool-heavy workflows      |
-| **Skills**  | Skill-driven procedures   |
+The **Create New Assistant** and **Edit Assistant** views contain three tabs:
 
-Pick the mode that matches how you work; you can refine tools later.
+### 1. General Tab
+
+| Field | Description | Requirement |
+| --- | --- | --- |
+| **Assistant Name** | The display name shown on assistant cards | Required |
+| **Description** | A brief summary of the assistant's role | Optional |
+| **System Prompt** | Directives defining behavior, persona, and rules | Required |
+
+Click **Save** to apply changes.
+
+### 2. Tools Tab
+
+- **Built-in Tools**: Core built-in tools remain enabled permanently. Use toggles to enable or disable optional built-in tool packages.
+- **MCP Servers**: Select external MCP servers accessible to this assistant. To register new MCP servers, open **Extensions** in the sidebar (there is no MCP tab in Settings).
+
+### 3. Skills Tab
+
+Attach skills scoped specifically to this assistant. For details on skill directories and precedence, refer to the [Skills Guide](skills.md).
 
 ---
 
-## Tips
+## Recommended Workflows
 
-- Prefer the least privilege set of tools.
-- Attach MCP only when needed ([Extensions](extensions.md), [Custom MCP](custom-mcp.md)).
-- Pair with [Playbooks](playbooks.md) once a session works well.
+| Objective | Recommended Method |
+| --- | --- |
+| Start an immediate chat | Open **Chat** and click a Built-in or Custom Assistant card. |
+| Create a specialized persona | Open **Assistants → Create New Assistant**, or invoke `@skill:recruit`. |
+| Optimize tool selection | Invoke `@skill:boost`, or adjust tool toggles in the Tools tab. |
+| Connect new MCP tools | Register via [Extensions](extensions.md), then permit access in the Assistant **Tools** tab. |
 
 ---
 
-## Related
+## Related Documentation
 
-- [Sub-agents](sub-agents.md) · [Skills](skills.md) · [First agent chat](../getting-started/first-agent.md)
+- [First Agent Chat](../getting-started/first-agent.md) — Launch a chat session
+- [Extensions Guide](extensions.md) — Install pre-configured MCP tools
+- [Custom MCP Guide](custom-mcp.md) — Register custom MCP servers
+- [Skills Guide](skills.md) — Procedural skill workflows
+- [Sub-Agents & Orchestration Guide](sub-agents.md) — Multi-agent teams
+- [Playbooks Guide](playbooks.md) — Repeatable session templates
