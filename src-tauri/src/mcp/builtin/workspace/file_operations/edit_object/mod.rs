@@ -57,17 +57,15 @@ impl WorkspaceServer {
         }
 
         if let Err(message) = ensure_json_path(path_str) {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                message,
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Workspace)
+                    .guidance(vec![
                 "MVP supports .json only".to_string(),
                 "For YAML/TOML/source files use workspace__strReplace or workspace__writeFile"
                     .to_string(),
             ])
-            .to_mcp_result());
+                    .to_mcp_result(),
+            );
         }
 
         let ops_value = match args.get("ops") {

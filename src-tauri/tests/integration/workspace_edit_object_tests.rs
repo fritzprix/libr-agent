@@ -130,7 +130,11 @@ async fn edit_object_append_and_remove_array() {
         .await
         .expect("editObject should return");
 
-    assert!(!result.is_error.unwrap_or(true), "{}", extract_text_content(&result));
+    assert!(
+        !result.is_error.unwrap_or(true),
+        "{}",
+        extract_text_content(&result)
+    );
     let updated: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(file_path).unwrap()).unwrap();
     assert_eq!(updated["keywords"], json!(["b", "c"]));
@@ -220,7 +224,9 @@ async fn edit_object_rejects_invalid_json_on_disk() {
     let text = extract_text_content(&result);
     assert!(text.contains("Invalid JSON"), "{text}");
     assert!(
-        std::fs::read_to_string(file_path).unwrap().contains("// comment"),
+        std::fs::read_to_string(file_path)
+            .unwrap()
+            .contains("// comment"),
         "file must remain unchanged"
     );
 }
@@ -273,8 +279,7 @@ async fn edit_object_rejects_legacy_index_field() {
     let server = build_workspace_server(temp_dir.path(), session_id);
 
     let workspace_dir = server.get_workspace_dir(session_id);
-    std::fs::write(workspace_dir.join("data.json"), "{\"keywords\":[\"a\"]}\n")
-        .expect("seed file");
+    std::fs::write(workspace_dir.join("data.json"), "{\"keywords\":[\"a\"]}\n").expect("seed file");
 
     let result = server
         .call_tool(

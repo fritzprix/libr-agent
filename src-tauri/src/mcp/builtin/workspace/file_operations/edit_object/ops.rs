@@ -271,7 +271,10 @@ fn apply_set(root: &mut Value, op: &ObjectOp) -> Result<String, ApplyError> {
             }
             let before = compact_value(&arr[index]);
             arr[index] = value.clone();
-            Ok(format!("set [{index}] {before} → {}", compact_value(&value)))
+            Ok(format!(
+                "set [{index}] {before} → {}",
+                compact_value(&value)
+            ))
         }
         other => Err(type_mismatch(
             op,
@@ -546,11 +549,7 @@ mod tests {
 
     #[test]
     fn rejects_legacy_index_field() {
-        let err = parse_op(
-            &json!({"op":"remove","path":"/keywords","index":0}),
-            0,
-        )
-        .unwrap_err();
+        let err = parse_op(&json!({"op":"remove","path":"/keywords","index":0}), 0).unwrap_err();
         assert!(err.message.contains("index"), "{}", err.message);
     }
 
