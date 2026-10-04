@@ -1,7 +1,9 @@
+pub mod harness_lessons;
 pub mod manager;
 pub mod types;
 pub mod workspace_override;
 
+pub use harness_lessons::*;
 pub use manager::*;
 pub use types::*;
 pub use workspace_override::*;

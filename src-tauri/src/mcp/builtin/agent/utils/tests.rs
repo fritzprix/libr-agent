@@ -1,5 +1,5 @@
 use super::*;
-use serde_json::json;
+use serde_json::{json, Value};
 
 fn assistant_json(id: &str, text: &str) -> Value {
     json!({

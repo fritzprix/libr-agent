@@ -17,7 +17,7 @@ pub fn create_read_file_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Path to the file to read. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... for the canonical teamwork scaffold root. Read-only skill aliases are also available: @system-skills/..., @user-skills/..., @assistant-skills/..., and @workspace-skills/... when those roots exist for the session."),
+            Some("Path to the file to read. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... or .libragent/teamwork/... for teamwork scaffold. Use @harness/... or .libragent/harness/... for app-local operational lessons. Read-only skill aliases are also available: @system-skills/..., @user-skills/..., @assistant-skills/..., and @workspace-skills/... when those roots exist for the session."),
         ),
     );
 
@@ -67,7 +67,7 @@ pub fn create_list_directory_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Path to the directory to list. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork or @teamwork/... (or relative .libragent/teamwork/...) for the canonical teamwork scaffold root. Read-only skill aliases such as @system-skills or @user-skills may also be listed when available."),
+            Some("Path to the directory to list. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork or @teamwork/... for teamwork scaffold, or @harness/... for app-local operational lessons. Read-only skill aliases such as @system-skills or @user-skills may also be listed when available."),
         ),
     );
     props.insert(
@@ -109,7 +109,7 @@ fn search_path_prop() -> crate::mcp::schema::JSONSchema {
     string_prop(
         Some(1),
         Some(1000),
-        Some("Path to the file or directory to search. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork or @teamwork/... (or relative .libragent/teamwork/...) for the canonical teamwork scaffold root. Read-only skill aliases such as @system-skills/... and @user-skills/... may also be searched when available."),
+        Some("Path to the file or directory to search. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... for teamwork scaffold or @harness/... for app-local operational lessons. Read-only skill aliases such as @system-skills/... and @user-skills/... may also be searched when available."),
     )
 }
 
@@ -224,7 +224,7 @@ pub fn create_search_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Path to the file or directory to search. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork or @teamwork/... (or relative .libragent/teamwork/...) for the canonical teamwork scaffold root. Read-only skill aliases such as @system-skills/... and @user-skills/... may also be searched when available."),
+            Some("Path to the file or directory to search. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Use @teamwork/... for teamwork scaffold or @harness/... for app-local operational lessons. Read-only skill aliases such as @system-skills/... and @user-skills/... may also be searched when available."),
         ),
     );
     props.insert(

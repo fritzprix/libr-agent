@@ -1,17 +1,22 @@
 # Postmortem Template
 
-Save as `@teamwork/coordination/POSTMORTEMS/YYYY-MM-DD-<slug>.md`.
+Save as:
+
+- With teamwork: `@teamwork/coordination/POSTMORTEMS/YYYY-MM-DD-<slug>.md`
+- Solo: `@harness/POSTMORTEMS/YYYY-MM-DD-<slug>.md`
 
 Keep it short. Every claim needs a pointer (file path, session id, command, or quote).
+This archive is **not** auto-injected into the prompt — learning lands in `@harness/LESSONS.active.md`.
 
 ```markdown
 # Postmortem: <slug>
 
 - Date: YYYY-MM-DD
-- Mission / objective: <from MISSION.md>
+- Mission / objective:
 - Severity: low | medium | high
 - Outcome: success | partial | failure
-- Facilitator session: <org root or coordinator session id>
+- Facilitator session: <session id>
+- Track (Top-1): behavior | defect
 
 ## Timeline (compressed)
 
@@ -26,47 +31,39 @@ Keep it short. Every claim needs a pointer (file path, session id, command, or q
 
 ## Evidence
 
-- Coordination: `KANBAN.md` / `HANDOFF.md` / `RISKS.md` lines or sections
 - Sessions: `<sessionId>` status / final text excerpt (≤10 lines)
 - Tools / configs: server ids or assistant ids if relevant
+- Coordination (if any): `KANBAN.md` / `HANDOFF.md` lines
 - Commands / diffs: exit codes, authorized-path violations
 
 ## Impact
 
 - User / mission impact:
 - Wasted retries / cycles:
-- Wrong artifacts produced:
 
 ## Root causes (systems, not people)
 
 List 1–3 causes. Prefer contract gaps:
 
-- Missing or vague role ownership
-- Wrong execution substrate
 - Soft acceptance / no eval layers
 - Tool inventory mismatch
+- Schema/guidance mismatch (`schema_guidance`)
+- Contract lie / handler bug (`defect` track)
 - Handoff without artifact path
-- Constitution stale after prior change
+- Wrong strategy despite honest tools (`behavior` track)
 
 ## What went well
 
-1–3 items worth preserving (so the next change does not delete them).
+1–3 items worth preserving.
 
 ## Actionables
 
-| ID | Change | Owner role | Target skill | Done when |
-| --- | --- | --- | --- | --- |
-| A1 | … | coordinator | org-restructure | ROLES.md + DECISIONS updated |
-| A2 | … | coordinator | boost | assistant externalMcpServers match role |
-| A3 | … | implementer | delegation-eval-loop | next brief has checkbox criteria |
+| ID | Track | Change | Owner | Target | Done when |
+| --- | --- | --- | --- | --- | --- |
+| A1 | behavior | … | coordinator | @harness/LESSONS.active.md | rule landed; next prompt shows Active Operational Lessons |
+| A2 | defect | … | coordinator | bug/fix task | LESSONS **not** used as workaround |
 
-## Non-goals this cycle
+## Decision
 
-Items deferred on purpose (link KANBAN backlog ids).
+Top-1 = A? — applied / deferred (why)
 ```
-
-## Facilitation notes
-
-- Prefer the **org root** (or teamwork coordinator) to author the postmortem.
-- Quarantine blame language; rewrite as contract/tool/process gaps before saving.
-- If evidence is missing, say so — do not invent a root cause.

@@ -384,12 +384,14 @@ impl WorkspaceService {
     ///
     /// Supports:
     /// 1. Teamwork aliases (`@teamwork/...`, `.libragent/teamwork/...`, `./@teamwork/...`)
-    /// 2. Skill aliases (`@skills/system/...`, `@skills/user/...`, `@skills/workspace/...`, `@skills/assistant/...`)
-    /// 3. Normal workspace-relative paths (`src/main.rs`, `docs/foo.md`, `./data.csv`)
-    /// 4. Container-relative paths (`/workspace/...`)
-    /// 5. Host absolute paths that are contained within authorized roots:
+    /// 2. Harness lessons aliases (`@harness/...`, `.libragent/harness/...`)
+    /// 3. Skill aliases (`@skills/system/...`, `@skills/user/...`, `@skills/workspace/...`, `@skills/assistant/...`)
+    /// 4. Normal workspace-relative paths (`src/main.rs`, `docs/foo.md`, `./data.csv`)
+    /// 5. Container-relative paths (`/workspace/...`)
+    /// 6. Host absolute paths that are contained within authorized roots:
     ///    - The session's workspace directory
     ///    - The session's teamwork artifact directory
+    ///    - The session's harness-lessons directory
     ///    - The session's allowed skill roots
     pub async fn resolve_path_for_session(
         session_id: &str,
@@ -416,6 +418,13 @@ impl WorkspaceService {
             let teamwork_root =
                 crate::session::resolve_teamwork_artifact_dir(session_manager, session_id).await?;
             return crate::utils::security::resolve_secure_path(&teamwork_root, teamwork_rel).await;
+        }
+
+        // 1b. Harness lessons alias (@harness/..., .libragent/harness/...)
+        if let Some(harness_rel) = crate::session::extract_harness_alias_relative_path(file_path) {
+            let harness_root =
+                crate::session::resolve_harness_lessons_dir(session_manager, session_id).await?;
+            return crate::utils::security::resolve_secure_path(&harness_root, harness_rel).await;
         }
 
         // 2. Skill alias resolution (@skills/system/..., @skills/user/..., etc.)
@@ -478,6 +487,13 @@ impl WorkspaceService {
             {
                 if let Ok(canon_tw) = tokio::fs::canonicalize(&teamwork_root).await {
                     authorized_roots.push(canon_tw);
+                }
+            }
+            if let Ok(harness_root) =
+                crate::session::resolve_harness_lessons_dir(session_manager, session_id).await
+            {
+                if let Ok(canon_hl) = tokio::fs::canonicalize(&harness_root).await {
+                    authorized_roots.push(canon_hl);
                 }
             }
             if let Some(repo) = crate::state::try_get_session_repository() {
