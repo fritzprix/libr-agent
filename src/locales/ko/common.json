@@ -1164,7 +1164,7 @@
     },
     "messages": {
       "loadingOlder": "이전 메시지를 불러오는 중...",
-      "scrollToLoadOlder": "위로 스크롤하여 이전 메시지 불러오기",
+      "scrollToLoadOlder": "이전 메시지 불러오기",
       "scrollToLatest": "최신 메시지로 이동",
       "pendingApprovalsJump_one": "승인 대기 중인 도구 {{count}}개 — 이동하여 응답",
       "pendingApprovalsJump_other": "승인 대기 중인 도구 {{count}}개 — 이동하여 응답"

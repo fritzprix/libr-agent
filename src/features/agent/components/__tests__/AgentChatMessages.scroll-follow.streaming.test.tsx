@@ -826,6 +826,203 @@ describe('AgentChatMessages – streaming follow & prepend preservation', () => 
     }
   });
 
+  it('does not load older messages on startReached when hasOlderMessages is false', () => {
+    olderPageState.hasOlderMessages = false;
+    chatState.messages = [makeStreamingMessage('visible head')];
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    render(<AgentChatMessages />);
+
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      startReached?: () => void;
+    };
+
+    act(() => {
+      virtuosoProps.startReached?.();
+    });
+
+    expect(olderPageState.loadOlderMessages).not.toHaveBeenCalled();
+    // Premature startReached must not leave the list in history-browsing mode
+    // (FAB absent while still following / pinned).
+    expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+  });
+
+  it('loads older messages on startReached when hasOlderMessages is true', () => {
+    chatState.messages = [makeStreamingMessage('visible head')];
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    render(<AgentChatMessages />);
+
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      startReached?: () => void;
+    };
+
+    act(() => {
+      virtuosoProps.startReached?.();
+    });
+
+    expect(olderPageState.loadOlderMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads older messages via DOM near-top edge after leaving the top band', () => {
+    chatState.messages = [makeStreamingMessage('visible head')];
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    const { container } = render(<AgentChatMessages />);
+    const scroller = container.querySelector(
+      '.agent-chat-scrollbar',
+    ) as HTMLDivElement | null;
+    expect(scroller).not.toBeNull();
+
+    // Establish a non-top baseline (previousScrollTop !== null, wasNearTop=false).
+    setScrollerMetrics(scroller!, {
+      scrollHeight: 2_400,
+      clientHeight: 400,
+      scrollTop: 800,
+    });
+    act(() => {
+      scroller?.dispatchEvent(new Event('scroll'));
+    });
+    olderPageState.loadOlderMessages.mockClear();
+
+    // Enter near-top while not at trusted visual bottom.
+    setScrollerMetrics(scroller!, {
+      scrollHeight: 2_400,
+      clientHeight: 400,
+      scrollTop: 0,
+    });
+    act(() => {
+      scroller?.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(olderPageState.loadOlderMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupes concurrent startReached while an older-page load is in flight', async () => {
+    let resolveLoad: (() => void) | undefined;
+    olderPageState.loadOlderMessages.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => {
+          resolveLoad = () => {
+            resolve(undefined);
+          };
+        }),
+    );
+
+    chatState.messages = [makeStreamingMessage('visible head')];
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    render(<AgentChatMessages />);
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      startReached?: () => void;
+    };
+
+    act(() => {
+      virtuosoProps.startReached?.();
+      virtuosoProps.startReached?.();
+    });
+    expect(olderPageState.loadOlderMessages).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveLoad?.();
+    });
+  });
+
+  it('does not re-trigger DOM near-top load while oscillating inside the top band', () => {
+    chatState.messages = [makeStreamingMessage('visible head')];
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    const { container } = render(<AgentChatMessages />);
+    const scroller = container.querySelector(
+      '.agent-chat-scrollbar',
+    ) as HTMLDivElement | null;
+    expect(scroller).not.toBeNull();
+
+    setScrollerMetrics(scroller!, {
+      scrollHeight: 2_400,
+      clientHeight: 400,
+      scrollTop: 800,
+    });
+    act(() => {
+      scroller?.dispatchEvent(new Event('scroll'));
+    });
+    olderPageState.loadOlderMessages.mockClear();
+
+    setScrollerMetrics(scroller!, {
+      scrollHeight: 2_400,
+      clientHeight: 400,
+      scrollTop: 5,
+    });
+    act(() => {
+      scroller?.dispatchEvent(new Event('scroll'));
+    });
+    expect(olderPageState.loadOlderMessages).toHaveBeenCalledTimes(1);
+    olderPageState.loadOlderMessages.mockClear();
+
+    // Still inside NEAR_TOP_SCROLL_THRESHOLD (8) — wasNearTop stays latched.
+    setScrollerMetrics(scroller!, {
+      scrollHeight: 2_400,
+      clientHeight: 400,
+      scrollTop: 2,
+    });
+    act(() => {
+      scroller?.dispatchEvent(new Event('scroll'));
+    });
+    expect(olderPageState.loadOlderMessages).not.toHaveBeenCalled();
+  });
+
+  it('allows another older-page load after loadOlderMessages rejects', async () => {
+    olderPageState.loadOlderMessages
+      .mockRejectedValueOnce(new Error('network boom'))
+      .mockResolvedValueOnce(undefined);
+
+    chatState.messages = [makeStreamingMessage('visible head')];
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      makeStreamingGroupEntry('visible head'),
+    );
+
+    render(<AgentChatMessages />);
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      startReached?: () => void;
+    };
+
+    act(() => {
+      virtuosoProps.startReached?.();
+    });
+    expect(olderPageState.loadOlderMessages).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      virtuosoProps.startReached?.();
+    });
+    expect(olderPageState.loadOlderMessages).toHaveBeenCalledTimes(2);
+  });
+
   it('does not jump to bottom after startReached when top-edge reports false bottom', () => {
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;

@@ -1125,7 +1125,7 @@
     },
     "messages": {
       "loadingOlder": "Chargement des anciens messages...",
-      "scrollToLoadOlder": "Faites défiler vers le haut pour charger les anciens messages",
+      "scrollToLoadOlder": "Charger les anciens messages",
       "scrollToLatest": "Défiler vers les derniers messages",
       "pendingApprovalsJump_one": "{{count}} outil en attente d'approbation — cliquer pour répondre",
       "pendingApprovalsJump_other": "{{count}} outils en attente d'approbation — cliquer pour répondre"

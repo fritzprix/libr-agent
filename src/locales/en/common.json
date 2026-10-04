@@ -1168,7 +1168,7 @@
     },
     "messages": {
       "loadingOlder": "Loading older messages...",
-      "scrollToLoadOlder": "Scroll up to load older messages",
+      "scrollToLoadOlder": "Load older messages",
       "scrollToLatest": "Scroll to latest",
       "pendingApprovalsJump_one": "{{count}} tool awaiting approval — jump to respond",
       "pendingApprovalsJump_other": "{{count}} tools awaiting approval — jump to respond"

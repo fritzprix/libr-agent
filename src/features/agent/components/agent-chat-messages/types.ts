@@ -41,6 +41,8 @@ export interface AgentChatVirtuosoContext {
   isLoadingOlderMessages: boolean;
   latestMessage: Message | undefined;
   loadingOlderLabel: string;
+  /** Manual recovery when Virtuoso startReached was already consumed. */
+  onLoadOlderMessages: () => void;
   pendingApprovals: ReturnType<typeof useAgentSession>['pendingApprovals'];
   respondToToolApproval: ReturnType<
     typeof useAgentSession

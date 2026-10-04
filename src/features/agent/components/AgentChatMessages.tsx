@@ -154,7 +154,8 @@ export function AgentChatMessages() {
     handleVirtuosoAtBottomStateChange,
     handleTotalListHeightChanged,
     handleManualScrollToBottom,
-    handleStartReached,
+    handleReachTop,
+    handleManualLoadOlder,
     initialTopMostItemIndex,
     bottomThreshold,
     logScrollState,
@@ -167,23 +168,9 @@ export function AgentChatMessages() {
     agentError: error,
     agentLlmError: llmError,
     isLoadingOlderMessages,
-  });
-
-  const handleReachTop = useCallback(() => {
-    handleStartReached();
-    if (!hasOlderMessages || isLoadingOlderMessages) {
-      return;
-    }
-
-    void loadOlderMessages().catch(() => {
-      // Swallowed: loadOlderMessages already handles and logs errors internally.
-    });
-  }, [
-    handleStartReached,
     hasOlderMessages,
-    isLoadingOlderMessages,
     loadOlderMessages,
-  ]);
+  });
 
   const compactedEvent = useMemo(() => {
     if (!compactedRange) {
@@ -222,12 +209,13 @@ export function AgentChatMessages() {
         'agent.messages.loadingOlder',
         'Loading older messages...',
       ),
+      onLoadOlderMessages: handleManualLoadOlder,
       pendingApprovals,
       respondToToolApproval,
       retryMessage,
       scrollToLoadOlderLabel: t(
         'agent.messages.scrollToLoadOlder',
-        'Scroll up to load older messages',
+        'Load older messages',
       ),
       sessionAssistantName: assistantName,
       workflowStatus,
@@ -240,6 +228,7 @@ export function AgentChatMessages() {
       hasOlderMessages,
       isLoadingOlderMessages,
       latestMessage,
+      handleManualLoadOlder,
       t,
       pendingApprovals,
       respondToToolApproval,
