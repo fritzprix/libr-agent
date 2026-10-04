@@ -1125,7 +1125,7 @@
     },
     "messages": {
       "loadingOlder": "正在加载更早的消息...",
-      "scrollToLoadOlder": "向上滚动以加载更早的消息",
+      "scrollToLoadOlder": "加载更早的消息",
       "scrollToLatest": "滚动到底部最新消息",
       "pendingApprovalsJump_one": "有 {{count}} 个工具等待批准 — 点击处理",
       "pendingApprovalsJump_other": "有 {{count}} 个工具等待批准 — 点击处理"

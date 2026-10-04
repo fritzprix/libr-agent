@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import { createRef } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessagesHeader,
@@ -22,10 +22,11 @@ function createContext(
     isLoadingOlderMessages: false,
     latestMessage: undefined,
     loadingOlderLabel: 'Loading older messages...',
+    onLoadOlderMessages: vi.fn(),
     pendingApprovals: [],
     respondToToolApproval: vi.fn(),
     retryMessage: vi.fn(),
-    scrollToLoadOlderLabel: 'Scroll up to load older messages',
+    scrollToLoadOlderLabel: 'Load older messages',
     sessionAssistantName: 'Agent',
     workflowStatus: 'idle',
     executionMode: 'normal',
@@ -45,11 +46,11 @@ describe('VirtuosoListComponents', () => {
       minHeight: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
     });
     expect(
-      screen.queryByText('Scroll up to load older messages'),
+      screen.queryByRole('button', { name: 'Load older messages' }),
     ).not.toBeInTheDocument();
   });
 
-  it('reuses the same fixed header height when showing the load-older pill', () => {
+  it('reuses the same fixed header height when showing the load-older button', () => {
     render(
       <AgentChatMessagesHeader
         context={createContext({ hasOlderMessages: true })}
@@ -63,11 +64,28 @@ describe('VirtuosoListComponents', () => {
       minHeight: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
     });
     expect(
-      screen.getByText('Scroll up to load older messages'),
+      screen.getByRole('button', { name: 'Load older messages' }),
     ).toBeInTheDocument();
   });
 
-  it('keeps the same fixed header height while the older-page loading pill is shown', () => {
+  it('invokes onLoadOlderMessages when the load-older button is clicked', () => {
+    const onLoadOlderMessages = vi.fn();
+    render(
+      <AgentChatMessagesHeader
+        context={createContext({
+          hasOlderMessages: true,
+          onLoadOlderMessages,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Load older messages' }),
+    );
+    expect(onLoadOlderMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the same button node disabled while the older-page load is in flight', () => {
     render(
       <AgentChatMessagesHeader
         context={createContext({
@@ -82,7 +100,33 @@ describe('VirtuosoListComponents', () => {
       height: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
       minHeight: `${CHAT_LIST_HEADER_MIN_HEIGHT_PX}px`,
     });
-    expect(screen.getByText('Loading older messages...')).toBeInTheDocument();
+    const button = screen.getByRole('button', {
+      name: 'Loading older messages...',
+    });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button).toHaveAttribute(
+      'data-testid',
+      'agent-chat-load-older-button',
+    );
+  });
+
+  it('does not invoke onLoadOlderMessages while the button is disabled', () => {
+    const onLoadOlderMessages = vi.fn();
+    render(
+      <AgentChatMessagesHeader
+        context={createContext({
+          hasOlderMessages: true,
+          isLoadingOlderMessages: true,
+          onLoadOlderMessages,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Loading older messages...' }),
+    );
+    expect(onLoadOlderMessages).not.toHaveBeenCalled();
   });
 
   it('preserves Virtuoso List paddingTop while adding horizontal padding', () => {

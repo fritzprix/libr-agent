@@ -1125,7 +1125,7 @@
     },
     "messages": {
       "loadingOlder": "Ältere Nachrichten werden geladen...",
-      "scrollToLoadOlder": "Nach oben scrollen, um ältere Nachrichten zu laden",
+      "scrollToLoadOlder": "Ältere Nachrichten laden",
       "scrollToLatest": "Zu den neuesten Nachrichten scrollen",
       "pendingApprovalsJump_one": "{{count}} Werkzeug wartet auf Genehmigung — springen zum Antworten",
       "pendingApprovalsJump_other": "{{count}} Werkzeuge warten auf Genehmigung — springen zum Antworten"

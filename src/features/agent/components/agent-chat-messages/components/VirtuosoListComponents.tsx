@@ -47,6 +47,8 @@ export function AgentChatMessagesHeader({
 }: AgentChatVirtuosoContextProps) {
   const showOlderMessagesHint =
     context.hasOlderMessages || context.isLoadingOlderMessages;
+  const canLoadOlder =
+    context.hasOlderMessages && !context.isLoadingOlderMessages;
 
   return (
     <div
@@ -59,11 +61,23 @@ export function AgentChatMessagesHeader({
       data-testid="agent-chat-messages-header"
     >
       {showOlderMessagesHint ? (
-        <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+        <button
+          type="button"
+          className={cn(
+            'rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm',
+            canLoadOlder
+              ? 'cursor-pointer hover:bg-background hover:text-foreground'
+              : 'cursor-default opacity-80',
+          )}
+          onClick={canLoadOlder ? context.onLoadOlderMessages : undefined}
+          disabled={!canLoadOlder}
+          aria-busy={context.isLoadingOlderMessages || undefined}
+          data-testid="agent-chat-load-older-button"
+        >
           {context.isLoadingOlderMessages
             ? context.loadingOlderLabel
             : context.scrollToLoadOlderLabel}
-        </div>
+        </button>
       ) : null}
     </div>
   );

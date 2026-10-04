@@ -1125,7 +1125,7 @@
     },
     "messages": {
       "loadingOlder": "過去のメッセージを読み込み中...",
-      "scrollToLoadOlder": "上にスクロールして過去のメッセージを読み込む",
+      "scrollToLoadOlder": "過去のメッセージを読み込む",
       "scrollToLatest": "最新メッセージへスクロール",
       "pendingApprovalsJump_one": "承認待ちのツールが {{count}} 件あります — 移動して確認",
       "pendingApprovalsJump_other": "承認待ちのツールが {{count}} 件あります — 移動して確認"
