@@ -291,6 +291,9 @@ mod tests {
             .contains(&"workspace__writeFile".to_string()));
         assert!(config
             .requires_approval
+            .contains(&"workspace__editObject".to_string()));
+        assert!(config
+            .requires_approval
             .contains(&"scheduled_task__createScheduledTask".to_string()));
         assert!(config
             .requires_approval
