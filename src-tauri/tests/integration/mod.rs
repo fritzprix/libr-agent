@@ -10,6 +10,7 @@ pub mod assistant_validation_tests;
 pub mod bootstrap_isolation_tests;
 pub mod browser_guidance_contract_tests;
 pub mod browser_runtime_security_tests;
+pub mod browser_save_raw_html_workspace_tests;
 pub mod browser_tool_description_tests;
 pub mod builtin_security_validator_tests;
 pub mod builtin_service_registry_tests;
