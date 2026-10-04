@@ -17,23 +17,42 @@ LibrAgent는 에이전트가 웹사이트를 탐색하고, 필요한 정보를 �
 
 ---
 
-## 일상 Chrome (MV3 확장 브리지)
+---
 
-**일상 Chrome**에 이미 로그인된 사이트를 쓰려면, 로컬 MV3 확장(Load unpacked 또는 Chrome Web Store)과 loopback WebSocket 브리지(`ws://127.0.0.1:3847/extension-bridge`, 기본값)로 탭을 제어할 수 있습니다.
+## ✨ 신기능: 일상 Chrome 연동 (로그인 상태 그대로 사용)
 
-| `createSession`의 `browser` | 의미 |
-| --- | --- |
-| **`sidecar`** (기본) | Sticky CDP 에이전트 브라우저 — 일상 Chrome과 별개 |
-| **`userChrome`** | 확장 브리지로 일상 Chrome — **미연결이면 에러**; sidecar로 조용히 넘어가지 않음 |
+에이전트가 별도의 빈 브라우저를 띄우는 대신, **사용자가 평소 사용하던 진짜 Chrome 브라우저(`userChrome`)**의 탭을 직접 제어할 수 있습니다.
 
-에이전트는 create 시점에 대상을 골라야 합니다. `userChrome` 실패 시 sidecar로 자동 전환하지 않아 읽기 대상이 섞이지 않습니다.
+### 💡 일반 사용자가 얻는 핵심 혜택
 
-**에이전트당 active 브라우저 세션 1개(SSOT):** 각 에이전트 채팅은 active 브라우저 세션을 하나만 둡니다. `browser__createSession`은 이전 세션을 닫고 교체합니다(`sidecar` ↔ `userChrome` 전환 포함). 다른 브라우저 도구는 항상 그 active만 대상으로 하며, `sessionId` 인자나 일상 Chrome+에이전트 브라우저 동시 유지는 없습니다. 백엔드를 바꾸려면 create를 다시 호출하세요.
+- **로그인 상태 유지**: 이미 로그인된 네이버, 구글, 사내 인트라넷을 그대로 사용합니다. 비밀번호를 다시 입력할 필요가 없습니다.
+- **보안 사이트 클릭/입력 완벽 지원**: 엄격한 콘텐츠 보안 정책(CSP)이 적용된 사이트에서도 버튼 클릭과 텍스트 입력이 씹히지 않고 정확히 동작합니다.
+- **페이지 원본 저장 (`saveRawHtml`)**: 필요한 웹페이지의 전체 HTML 원본을 세션 작업 폴더에 파일로 저장하여 오프라인에서도 분석할 수 있습니다.
 
-- 설치: `chrome-extension/README.md` 참고, 또는 설정 → 시스템 → **에이전트 브라우저** → Chrome 확장 프로그램 브리지(상태 우선 카드)에서 경로 복사. Chrome Web Store 패키징은 `chrome-extension/STORE.md`를 참고하세요.
-- 한 번 설치하면(Load unpacked 또는 Store) LibrAgent 재시작 시 확장이 자동으로 다시 붙습니다. 툴바 팝업·설정 상태를 보면 되고, 확장 **파일**을 바꾼 뒤에만 `chrome://extensions`에서 **새로고침**이 필요합니다(개발자 업데이트).
-- `browser="userChrome"`이고 Connected일 때 대부분의 브라우저 도구(navigate, content, click/input, evaluateJS, 뷰포트 스크린샷)가 일상 Chrome으로 동작합니다. `getConsoleLogs`만 sticky sidecar 전용입니다. 확장 스크린샷은 뷰포트만 지원합니다(`fullPage` 무시).
-- 인증: `LIBRAGENT_EXTENSION_BRIDGE_TOKEN`이 없으면 고정 개발 토큰 `libragent-dev`. 프로덕션에서는 회전 토큰을 사용할 예정입니다.
+| 실행 모드 | 특징 | 적합한 작업 |
+| --- | --- | --- |
+| **`sidecar`** (기본) | LibrAgent 전용 격리 브라우저 | 일반 웹 검색, 공개 문서 조사, 독립된 샌드박스 작업 |
+| **`userChrome`** (확장 브리지) | 평소 쓰는 내 Chrome 브라우저 | 로그인 세션이 필요한 개인화 작업, 사내 서비스 조회 |
+
+---
+
+## 🚀 일상 Chrome 1분 연동 방법
+
+1. **경로 복사**: 사이드바 **Settings → System → 에이전트 브라우저**에서 Chrome 확장 프로그램 경로를 확인합니다.
+2. **확장 프로그램 등록**:
+   - Chrome 주소창에 `chrome://extensions`를 입력합니다.
+   - 우측 상단의 **개발자 모드**를 켭니다.
+   - **압축해제된 확장 프로그램을 로드합니다**를 클릭하고 복사한 경로(`chrome-extension`)를 선택합니다.
+3. **작업 지시**:
+   - 대화창에서 평소처럼 지시합니다:
+     ```
+     현재 내 Chrome 브라우저에서 장바구니 페이지 확인해줘.
+     ```
+   - 에이전트가 자동으로 `userChrome` 모드로 전환하여 현재 탭을 제어합니다.
+
+> [!NOTE]
+> - 한 번 등록해 두면 LibrAgent를 재시작해도 자동으로 다시 연결됩니다.
+> - 에이전트 채팅 하나당 활성 브라우저 세션은 1개(SSOT)만 유지됩니다. `sidecar`와 `userChrome` 사이를 전환하면 기존 브라우저 세션은 자동으로 정리됩니다.
 
 ---
 

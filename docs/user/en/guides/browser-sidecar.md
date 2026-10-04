@@ -17,23 +17,42 @@ Complex web pages or in-page script crashes will never compromise your desktop w
 
 ---
 
-## Everyday Chrome (MV3 extension bridge)
+---
 
-For logged-in sites in **your everyday Chrome**, LibrAgent can optionally drive tabs through a local MV3 extension (Load unpacked or Chrome Web Store) and a loopback WebSocket bridge (`ws://127.0.0.1:3847/extension-bridge` by default).
+## ✨ New Feature: Everyday Chrome Integration (Stay Logged In)
 
-| `browser` on `createSession` | Meaning |
-| --- | --- |
-| **`sidecar`** (default) | Sticky CDP agent browser — separate from everyday Chrome |
-| **`userChrome`** | Everyday Chrome via the extension bridge — **errors if not Connected**; never silently opens sidecar |
+Instead of opening a blank sandbox browser, agents can directly control tabs in **your personal everyday Chrome browser (`userChrome`)**.
 
-Agents must pick the target at create time. A failed `userChrome` session does not contaminate reads by falling back to the agent browser.
+### 💡 Key Benefits for Everyday Users
 
-**One active browser session per agent (SSOT):** each agent chat has a single active browser session. `browser__createSession` replaces any previous session (including when switching `sidecar` ↔ `userChrome`). Other browser tools always target that active session — there is no `sessionId` argument and no dual-open of everyday Chrome + agent browser at once. To change backend, create again.
+- **Preserve Logged-in Sessions**: Work directly with services where you are already signed in (Google, GitHub, internal dashboards). You do not need to re-enter passwords.
+- **Reliable Clicks on Protected Sites**: Input simulation bypasses strict Content Security Policies (CSP). Button clicks and keystrokes work reliably on complex websites.
+- **Save Raw Webpage HTML (`saveRawHtml`)**: Saves complete webpage source files to your session workspace for offline inspection and verification.
 
-- Install steps: see `chrome-extension/README.md`, or copy the path from Settings → System → **Agent browser** → Chrome extension bridge (status-first card). Chrome Web Store packaging notes live in `chrome-extension/STORE.md`.
-- After a one-time install (Load unpacked or Store), LibrAgent restarts should reconnect automatically. Use the toolbar popup or Settings status — you only need **Reload** on `chrome://extensions` when the extension files themselves change (developer updates).
-- With `browser="userChrome"` and Connected, most browser tools (navigate, content, click/input, evaluateJS, viewport screenshot) use everyday Chrome. `getConsoleLogs` remains sticky-sidecar only. Extension screenshots are viewport-only (`fullPage` ignored).
-- Auth: fixed dev token `libragent-dev` when `LIBRAGENT_EXTENSION_BRIDGE_TOKEN` is unset. Production will use a rotating token.
+| Execution Mode | Behavior | Best Suited For |
+| --- | --- | --- |
+| **`sidecar`** (Default) | Dedicated isolated agent browser | Public web search, documentation research, sandbox tasks |
+| **`userChrome`** (Extension Bridge) | Your personal Chrome browser | Tasks requiring personal logins, private intranets, shopping carts |
+
+---
+
+## 🚀 1-Minute Quick Setup
+
+1. **Locate Extension Path**: Open **Settings → System → Agent browser** and copy the Chrome extension folder path.
+2. **Install Extension in Chrome**:
+   - Open `chrome://extensions` in your Chrome browser.
+   - Enable **Developer mode** in the top right corner.
+   - Click **Load unpacked** and select the extension folder path.
+3. **Instruct the Agent**:
+   - Prompt the agent naturally in chat:
+     ```
+     Check the items in my shopping cart in my current Chrome window.
+     ```
+   - The agent switches to `userChrome` mode and controls your active tab.
+
+> [!NOTE]
+> - After installation, the extension reconnects automatically when you restart LibrAgent.
+> - Each agent chat maintains exactly one active browser session (Single Source of Truth). Switching between `sidecar` and `userChrome` closes previous sessions cleanly.
 
 ---
 
