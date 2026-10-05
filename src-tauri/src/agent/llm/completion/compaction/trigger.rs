@@ -11,7 +11,6 @@
 //!    `chosen_split_idx` so regressions are visible in production logs.
 
 use crate::agent::llm::completion::request::normalize_request_messages;
-use crate::agent::llm::load_context_management_settings;
 use crate::agent::state::{
     AgentSession, CompactionBeginOutcome, CompactionKind, CompactionReuseOutcome,
 };
@@ -134,7 +133,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
         (session.compact_context.clone(), session.compaction.clone())
     };
     let compact_context_record = compact_context_handle.read().await.clone();
-    let settings = load_context_management_settings().await;
+    let settings =
+        crate::agent::llm::completion::load_context_management_settings_for_session(
+            active_sessions,
+            session_id,
+        )
+        .await;
     let current_context_limit =
         std::cmp::min(settings.max_input_context(), settings.model_max_limit);
     let effective_input_budget = crate::agent::llm::token_utils::calculate_effective_input_budget(
@@ -418,6 +422,20 @@ pub(crate) async fn try_trigger_preflight_compaction(
                 compaction.reset_recovery_progress().await;
                 return Err(error);
             }
+            compaction
+                .push_telemetry_event(
+                    crate::agent::compaction_telemetry::CompactionTelemetryEventDraft {
+                        phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::Started,
+                        to_id: Some(compact_event.to_id.clone()),
+                        condensed_count: Some(compact_event.compacted_delta_count),
+                        error: None,
+                        epoch_path: None,
+                        fallback_path: None,
+                        prompt_tokens_before: None,
+                        prompt_tokens_after_projection: None,
+                    },
+                )
+                .await;
             if let Err(error) = emit_compact_request(app_handle, compact_event) {
                 compaction.clear_runtime_state(true).await;
                 compaction.reset_recovery_progress().await;
@@ -436,6 +454,23 @@ pub(crate) async fn try_trigger_preflight_compaction(
                 Some(session_name.to_string()),
                 resume_completion_after_compact,
             )?;
+            if let Some(current_request) = compaction.current_request().await {
+                compaction
+                    .push_telemetry_event(
+                        crate::agent::compaction_telemetry::CompactionTelemetryEventDraft {
+                            phase:
+                                crate::agent::compaction_telemetry::CompactionTelemetryPhase::Started,
+                            to_id: Some(current_request.to_id),
+                            condensed_count: Some(current_request.compacted_delta_count),
+                            error: None,
+                            epoch_path: None,
+                            fallback_path: None,
+                            prompt_tokens_before: None,
+                            prompt_tokens_after_projection: None,
+                        },
+                    )
+                    .await;
+            }
             if resume_completion_after_compact {
                 match reuse_outcome {
                     CompactionReuseOutcome::Promoted | CompactionReuseOutcome::NoChange => {

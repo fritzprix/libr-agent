@@ -311,14 +311,22 @@ Therefore compaction must:
 2. skip any candidate whose projected post-compact resume still exceeds budget
 3. if prepare fails for a candidate (compaction-input overflow / no-op), try the
    next shallower ownership-safe resume-fit candidate instead of aborting
-4. treat an empty compaction response as a recoverable compaction failure while the
+4. if payload fitting leaves `compacted_delta_count == 0` (only prior summary /
+   instruction remain): while the soft-retry ladder still has room, treat this as
+   a recoverable prepare failure so later phases (especially `DegradedTools`) can
+   free budget and keep real deltas; only after the ladder is exhausted treat
+   prepare as a no-op (do not call the compaction LLM / do not rewrite the stored
+   handoff). Response handling must also abort empty-delta replies without
+   persist (`Failed` telemetry with `empty_delta_noop`, not `Succeeded`; UI must
+   not surface that code as a user-facing error toast)
+5. treat an empty compaction response as a recoverable compaction failure while the
    recovery ladder still has room
-5. stop after the bounded soft-retry ladder is exhausted:
+6. stop after the bounded soft-retry ladder is exhausted:
    `CacheAligned -> OverflowRecovery -> DegradedTools`
-6. if the ladder is exhausted but a compaction boundary did exist, persist a
+7. if the ladder is exhausted but a compaction boundary did exist, persist a
    deterministic hard fallback summary with fixed handoff sections instead of
    deadlocking the workflow
-7. if the artifact spill write fails, keep the fallback summary path alive anyway;
+8. if the artifact spill write fails, keep the fallback summary path alive anyway;
    artifact persistence is best-effort, not a gate on resume
 
 ### 5.6 Prompt-cache alignment for the compaction LLM call

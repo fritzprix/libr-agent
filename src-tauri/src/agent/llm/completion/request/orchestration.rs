@@ -12,7 +12,8 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 use crate::agent::llm::completion::context::{
-    load_context_management_settings, uses_compaction_strategy, ContextManagementSettings,
+    load_context_management_settings_for_session, uses_compaction_strategy,
+    ContextManagementSettings,
 };
 use crate::agent::llm::prompt::build_session_system_prompt_split;
 use crate::agent::llm::types::{
@@ -78,8 +79,8 @@ pub async fn request_llm_completion(
     .await;
     let normalized_messages = normalize_messages(messages, &session_id);
 
-    // 7. Context Settings & Tokens
-    let context_settings = load_context_management_settings().await;
+    // 7. Context Settings & Tokens (session maxInputContext override when present)
+    let context_settings = load_context_management_settings_for_session(active_sessions, &session_id).await;
     let raw_messages = normalized_messages.clone();
     let measured_output_tokens_reserve =
         crate::agent::llm::token_utils::derive_measured_output_tokens_reserve(

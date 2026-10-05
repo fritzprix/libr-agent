@@ -533,6 +533,35 @@ impl AgentSessionManager {
         execution_mode::set_execution_mode(self, session_id, mode).await
     }
 
+    /// Apply an optional session-scoped `maxInputContext` override (runtime-only).
+    ///
+    /// When `max_input_context` is `None`, this is a no-op. When `Some(0)`, returns
+    /// an error. Used by Session API / Harbor to lower the compaction budget without
+    /// mutating global UI settings.
+    pub async fn set_max_input_context_override(
+        &self,
+        session_id: &str,
+        max_input_context: Option<u64>,
+    ) -> Result<(), String> {
+        let Some(tokens) = max_input_context else {
+            return Ok(());
+        };
+        if tokens == 0 {
+            return Err("maxInputContext must be greater than 0".to_string());
+        }
+        let mut active = self.active_sessions.write().await;
+        let Some(session) = active.get_mut(session_id) else {
+            return Err(format!("Session not found: {}", session_id));
+        };
+        session.max_input_context_override = Some(tokens as usize);
+        log::info!(
+            "Set session maxInputContext override: session={}, value={}",
+            session_id,
+            tokens
+        );
+        Ok(())
+    }
+
     /// Handle LLM error from frontend
     pub async fn handle_llm_error(
         &self,

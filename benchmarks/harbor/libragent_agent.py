@@ -62,6 +62,21 @@ MAIN_COMPOSE_SERVICE = "main"
 TRAJECTORY_MESSAGE_LIMIT = 10_000
 PACKAGE_JSON_PATH = Path(__file__).resolve().parents[2] / "package.json"
 BENCHMARK_CONTRACT_SCHEMA_VERSION = 1
+COMPACTION_TELEMETRY_SCHEMA_VERSION = "compaction-telemetry/v1"
+
+# Provisional session maxInputContext for compaction-* tasks.
+# Keys are family slugs (matched as ``compaction-<slug>`` with optional ``-vN``).
+# Source: c05 peaks (n=1), ~2k under so compaction can fire. Locked only as the
+# c06 eligibility map — do NOT retune to minimize compactionCount (not a penalty).
+# Env `LIBRAGENT_BENCH_MAX_INPUT_CONTEXT` wins.
+COMPACTION_TASK_MAX_INPUT_CONTEXT: dict[str, int] = {
+    "haystack": 42_500,  # peak 44_544
+    "puzzle-chain": 55_500,  # peak 57_519
+    "log-triage": 41_500,  # peak 43_407
+    "coding-spec": 52_500,  # peak 54_577
+    "fact-recall": 43_500,  # peak 45_665
+}
+COMPACTION_SUITE_DEFAULT_MAX_INPUT_CONTEXT = 43_000
 
 
 @dataclass(frozen=True)
@@ -880,6 +895,82 @@ def build_atif_trajectory(
     )
 
 
+def build_compaction_telemetry_document(
+    api_payload: dict[str, Any] | None,
+    *,
+    session_id: str,
+    workspace_root: Path | None = None,
+) -> dict[str, Any]:
+    """Normalize Session API compact-context JSON into ``compaction.json``.
+
+    When the API is unavailable, still emit a valid empty document so analyzers
+    can distinguish "no compaction" from "telemetry missing".
+    """
+    captured_at = datetime.now(timezone.utc).isoformat()
+    if isinstance(api_payload, dict) and api_payload.get("schemaVersion"):
+        document = dict(api_payload)
+        document.setdefault("schemaVersion", COMPACTION_TELEMETRY_SCHEMA_VERSION)
+        document.setdefault("sessionId", session_id)
+        document.setdefault("capturedAt", captured_at)
+        document.setdefault("events", [])
+        document.setdefault(
+            "workspaceArtifacts",
+            {"preCompactionEpochs": [], "fallbackArtifacts": []},
+        )
+        derived = document.get("derived")
+        if not isinstance(derived, dict):
+            document["derived"] = {
+                "compactionCount": 0,
+                "usedHardFallback": False,
+                "hasCompactContext": document.get("compactContext") is not None,
+                "evidenceBasis": "none",
+            }
+        return document
+
+    epochs: list[str] = []
+    fallbacks: list[str] = []
+    if workspace_root is not None:
+        libragent = workspace_root / ".libragent"
+        if libragent.is_dir():
+            epochs = sorted(
+                f".libragent/{path.name}"
+                for path in libragent.glob("pre_compaction_epoch_*.md")
+            )
+            fallback_dir = libragent / "tool-results" / "compaction"
+            if fallback_dir.is_dir():
+                fallbacks = sorted(
+                    f".libragent/tool-results/compaction/{path.name}"
+                    for path in fallback_dir.glob("fallback-*")
+                )
+    has_artifacts = bool(epochs or fallbacks)
+    return {
+        "schemaVersion": COMPACTION_TELEMETRY_SCHEMA_VERSION,
+        "sessionId": session_id,
+        "capturedAt": captured_at,
+        "compactContext": None,
+        "events": [],
+        "workspaceArtifacts": {
+            "preCompactionEpochs": epochs,
+            "fallbackArtifacts": fallbacks,
+        },
+        "derived": {
+            "compactionCount": 1 if has_artifacts else 0,
+            "usedHardFallback": bool(fallbacks),
+            "hasCompactContext": False,
+            "evidenceBasis": "workspace_epochs" if has_artifacts else "none",
+        },
+    }
+
+
+def write_compaction_telemetry(path: Path, document: dict[str, Any]) -> None:
+    """Serialize compaction telemetry to ``path`` (usually ``logs_dir/compaction.json``)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def write_atif_trajectory(path: Path, trajectory: Trajectory) -> None:
     """Serialize an ATIF trajectory to ``path`` (usually ``logs_dir/trajectory.json``)."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -933,6 +1024,44 @@ def resolve_poll_timeout_sec(
     if raw is None or raw.strip() == "":
         return None
     return float(raw)
+
+
+def resolve_max_input_context(
+    task_id: str,
+    *,
+    env: dict[str, str] | None = None,
+) -> int | None:
+    """Resolve optional Session API ``maxInputContext`` for a Harbor trial.
+
+    Precedence:
+    1. ``LIBRAGENT_BENCH_MAX_INPUT_CONTEXT`` (suite-wide override)
+    2. Per-task provisional map for ``compaction-*`` tasks (c05 peak − ~2k)
+    3. Suite default for unknown ``compaction-*`` task ids
+    4. ``None`` for non-compaction tasks (omit field; keep global UI budget)
+    """
+    env_map = env if env is not None else os.environ
+    raw = env_map.get("LIBRAGENT_BENCH_MAX_INPUT_CONTEXT")
+    if raw is not None and raw.strip() != "":
+        value = int(raw.strip())
+        if value <= 0:
+            raise ValueError(
+                "LIBRAGENT_BENCH_MAX_INPUT_CONTEXT must be a positive integer "
+                f"(got {raw!r})."
+            )
+        return value
+
+    normalized = task_id.strip().lower()
+    # Prefer longer slugs first so "puzzle-chain" wins over a hypothetical "puzzle".
+    for slug, value in sorted(
+        COMPACTION_TASK_MAX_INPUT_CONTEXT.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if f"compaction-{slug}" in normalized:
+            return value
+    if "compaction-" in normalized:
+        return COMPACTION_SUITE_DEFAULT_MAX_INPUT_CONTEXT
+    return None
 
 
 def sanitize_docker_compose_project_name(name: str) -> str:
@@ -1387,12 +1516,19 @@ class LibrAgentHarborAdapter(BaseAgent):
         )
         inferred_task_id, _ = _task_identity_from_logs_dir(self.logs_dir)
         task_id = context_task_id or inferred_task_id or "bench"
+        max_input_context = resolve_max_input_context(task_id)
         payload: dict[str, Any] = {
             "assistantId": self.assistant_id,
             "name": f"Harbor Benchmark Task: {task_id}",
             "request": instruction,
             "executionMode": self.execution_mode,
         }
+        if max_input_context is not None:
+            payload["maxInputContext"] = max_input_context
+            print(
+                f"[{self.name()}] Session maxInputContext override: "
+                f"{max_input_context} (task={task_id})"
+            )
 
         if use_attach and attach_container_id is not None:
             payload["workspaceIsolation"] = "docker"
@@ -1469,6 +1605,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 workspace_mode=workspace_mode_name(use_attach),
                 started_at=session_started_at_utc,
                 session_info=last_session_info,
+                max_input_context=max_input_context,
             )
             if self.poll_timeout_sec is not None:
                 print(
@@ -1680,6 +1817,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 session_id=session_id,
                 telemetry=telemetry,
             )
+            await self._write_compaction_telemetry_best_effort(session_id=session_id)
 
             if telemetry.tool_calls_count == 0:
                 print(
@@ -1826,6 +1964,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             session_id=session_id,
             telemetry=telemetry,
         )
+        await self._write_compaction_telemetry_best_effort(session_id=session_id)
         meta_extra: dict[str, Any] = {"assistant_id": self.assistant_id}
         if extra:
             meta_extra.update(extra)
@@ -1884,6 +2023,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         workspace_mode: str,
         started_at: str,
         session_info: dict[str, Any] | None,
+        max_input_context: int | None = None,
     ) -> None:
         """Write non-secret run settings needed for later comparisons."""
         session_model, session_provider = extract_model_provider_from_session_payload(
@@ -1914,6 +2054,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "workspace_mode": workspace_mode,
                 "container_id": container_id,
                 "container_workdir": container_workdir,
+                "max_input_context": max_input_context,
             },
             "harbor": _benchmark_contract_environment(),
             "adapter": {
@@ -1924,6 +2065,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             "session": {
                 "id": session_id,
                 "status": session_status,
+                "max_input_context": max_input_context,
             },
             "started_at": started_at,
             "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -1972,6 +2114,60 @@ class LibrAgentHarborAdapter(BaseAgent):
             print(
                 f"[{self.name()}] Warning: failed to write ATIF trajectory "
                 f"to {trajectory_path}: {e}"
+            )
+
+    async def _fetch_compact_context_best_effort(
+        self, session_id: str
+    ) -> dict[str, Any] | None:
+        """GET compact-context; never raise."""
+        if httpx is None:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(
+                    f"{self.api_url}/sessions/{session_id}/compact-context"
+                )
+            if response.status_code != 200:
+                print(
+                    f"[{self.name()}] Warning: compact-context harvest failed "
+                    f"({response.status_code})"
+                )
+                return None
+            payload = response.json()
+            return payload if isinstance(payload, dict) else None
+        except Exception as exc:
+            print(
+                f"[{self.name()}] Warning: compact-context harvest error: {exc}"
+            )
+            return None
+
+    async def _write_compaction_telemetry_best_effort(self, *, session_id: str) -> None:
+        """Dump ``compaction.json`` under Harbor's agent logs dir (best-effort)."""
+        compaction_path = self.logs_dir / "compaction.json"
+        try:
+            api_payload = await self._fetch_compact_context_best_effort(session_id)
+            # Trial workspace sibling of agent/ when Harbor layout is trial/agent.
+            workspace_root = self.logs_dir.parent / "workspace"
+            document = build_compaction_telemetry_document(
+                api_payload,
+                session_id=session_id,
+                workspace_root=workspace_root if workspace_root.is_dir() else None,
+            )
+            write_compaction_telemetry(compaction_path, document)
+            derived = document.get("derived") if isinstance(document, dict) else None
+            count = (
+                derived.get("compactionCount")
+                if isinstance(derived, dict)
+                else None
+            )
+            print(
+                f"[{self.name()}] Wrote compaction telemetry "
+                f"(compactionCount={count}) to {compaction_path}"
+            )
+        except Exception as exc:
+            print(
+                f"[{self.name()}] Warning: failed to write compaction telemetry "
+                f"to {compaction_path}: {exc}"
             )
 
     async def _delete_session(self, session_id: str) -> None:

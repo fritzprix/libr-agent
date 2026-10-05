@@ -233,6 +233,12 @@ export async function setupCompactStateListener({
           duration: 3000,
         });
       } else if (phase === 'FAILED') {
+        // Backend empty-delta abort: clear compacting flags without alarming toast.
+        // Keep in sync with EMPTY_DELTA_NOOP_ERROR in preparation.rs.
+        if (error === 'empty_delta_noop') {
+          toast.dismiss(toastId);
+          return;
+        }
         toast.error(`Compaction failed`, {
           id: toastId,
           description: error ? `${description} - ${error}` : description,

@@ -1,5 +1,8 @@
+use crate::agent::state::AgentSession;
 use crate::repositories::settings_repository::SettingsRepository;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextManagementSettings {
@@ -139,6 +142,65 @@ pub(crate) async fn load_context_management_settings() -> ContextManagementSetti
     settings
 }
 
+/// Apply a session-scoped `maxInputContext` override onto an in-memory copy.
+///
+/// Mutates only the passed `ContextManagementSettings` value — never the
+/// settings repository / global UI config.
+pub(crate) fn apply_session_max_input_context_override(
+    settings: &mut ContextManagementSettings,
+    override_tokens: Option<usize>,
+) {
+    if let Some(tokens) = override_tokens.filter(|value| *value > 0) {
+        settings.max_input_context = tokens;
+    }
+}
+
+/// Load global context-management settings, then overlay any session override
+/// onto the returned copy. Global settings storage is read-only here.
+pub(crate) async fn load_context_management_settings_for_session(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> ContextManagementSettings {
+    let mut settings = load_context_management_settings().await;
+    let override_tokens = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .and_then(|session| session.max_input_context_override)
+    };
+    if let Some(tokens) = override_tokens.filter(|value| *value > 0) {
+        log::info!(
+            "Using session maxInputContext override (global settings unchanged): session={}, value={}",
+            session_id,
+            tokens
+        );
+        apply_session_max_input_context_override(&mut settings, Some(tokens));
+    }
+    settings
+}
+
 pub fn uses_compaction_strategy(context_strategy: &str) -> bool {
     context_strategy == "compact"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_session_override_replaces_max_input_context() {
+        let mut settings = default_context_management_settings();
+        assert_eq!(settings.max_input_context(), 49_152);
+        apply_session_max_input_context_override(&mut settings, Some(43_000));
+        assert_eq!(settings.max_input_context(), 43_000);
+    }
+
+    #[test]
+    fn apply_session_override_ignores_none_and_zero() {
+        let mut settings = default_context_management_settings();
+        apply_session_max_input_context_override(&mut settings, None);
+        assert_eq!(settings.max_input_context(), 49_152);
+        apply_session_max_input_context_override(&mut settings, Some(0));
+        assert_eq!(settings.max_input_context(), 49_152);
+    }
 }

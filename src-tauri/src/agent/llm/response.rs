@@ -598,7 +598,12 @@ pub async fn handle_llm_error_with_outcome(
         error.display_message
     );
 
-    let context_settings = crate::agent::llm::completion::load_context_management_settings().await;
+    let context_settings =
+        crate::agent::llm::completion::load_context_management_settings_for_session(
+            active_sessions,
+            &session_id,
+        )
+        .await;
     let context_strategy = context_settings.context_strategy().to_string();
 
     if matches!(

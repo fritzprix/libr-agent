@@ -1,5 +1,6 @@
 mod assistants;
 mod channel;
+mod compact_context;
 mod health;
 pub(crate) mod helpers;
 mod messages;
@@ -12,6 +13,7 @@ pub use assistants::{get_assistant, get_assistants};
 pub use channel::{
     inject_channel_message, inject_channel_message_auto, respond_channel_permission,
 };
+pub use compact_context::get_compact_context;
 pub use health::health;
 pub use messages::{get_messages, send_message};
 pub use sessions::{
