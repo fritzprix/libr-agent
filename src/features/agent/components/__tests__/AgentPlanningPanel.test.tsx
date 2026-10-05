@@ -14,8 +14,10 @@ vi.mock('@/context/AgentSessionContext', () => ({
 }));
 
 vi.mock('@/context/AgentChatContext', () => ({
-  useAgentChat: () => ({
+  useAgentChatState: () => ({
     serviceContexts: {},
+  }),
+  useAgentChatActions: () => ({
     updateServiceContexts: mockUpdateServiceContexts,
   }),
 }));

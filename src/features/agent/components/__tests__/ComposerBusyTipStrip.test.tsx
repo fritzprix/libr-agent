@@ -23,7 +23,7 @@ vi.mock('react-router-dom', async () => {
 });
 
 vi.mock('@/context/AgentChatContext', () => ({
-  useAgentChat: () => ({
+  useAgentChatState: () => ({
     get workflowStatus() {
       return workflowStatus;
     },

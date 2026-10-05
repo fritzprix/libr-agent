@@ -19,8 +19,12 @@ vi.mock('@/context/AgentSessionContext', () => ({
 }));
 
 vi.mock('@/context/AgentChatContext', () => ({
-  useAgentChatState: () => ({
+  useAgentChatState: () => ({}),
+  useAgentChatMessages: () => ({
     messages: [],
+  }),
+  useAgentChatMessageTail: () => ({
+    lastMessage: undefined,
   }),
 }));
 

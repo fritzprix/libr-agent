@@ -2,6 +2,8 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   AgentChatProvider,
+  useAgentChatMessages,
+  useAgentChatMessageTail,
   useAgentChatState,
   useAgentChatActions,
   useAgentChat,
@@ -159,14 +161,33 @@ describe('AgentChatContext', () => {
         wrapper: TestWrapper,
       });
 
-      await waitFor(() => {
-        expect(result.current.messages).toEqual(mockMessages);
-      });
-
       expect(result.current).toBeDefined();
       expect(result.current.isSessionLoading).toBe(false);
       expect(result.current.error).toBeNull();
       expect(result.current.workflowStatus).toBe('idle');
+      expect(result.current).not.toHaveProperty('messages');
+    });
+
+    it('should provide messages context separately from state', async () => {
+      const { result } = renderHook(() => useAgentChatMessages(), {
+        wrapper: TestWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual(mockMessages);
+      });
+    });
+
+    it('should expose message tail keyed by last message id', async () => {
+      const { result } = renderHook(() => useAgentChatMessageTail(), {
+        wrapper: TestWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.lastMessage?.id).toBe(
+          mockMessages[mockMessages.length - 1]?.id,
+        );
+      });
     });
 
     it('should provide actions context', () => {

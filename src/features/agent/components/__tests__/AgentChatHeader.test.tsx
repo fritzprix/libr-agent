@@ -99,7 +99,7 @@ vi.mock('@/context/AgentPanelsContext', async () => {
 });
 
 vi.mock('@/context/AgentChatContext', () => ({
-  useAgentChat: () => ({
+  useAgentChatMessages: () => ({
     messages: [],
   }),
 }));

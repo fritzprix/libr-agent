@@ -83,7 +83,18 @@ export async function upsertSetting<T>(obj: DatabaseObject<T>): Promise<void> {
 export async function upsertSettings<T>(
   objs: DatabaseObject<T>[],
 ): Promise<void> {
-  for (const obj of objs) {
-    await setSetting(obj.key, obj.value);
+  if (objs.length === 0) {
+    return;
   }
+
+  if (objs.length === 1) {
+    await setSetting(objs[0].key, objs[0].value);
+    return;
+  }
+
+  const settings: Record<string, unknown> = {};
+  for (const obj of objs) {
+    settings[obj.key] = obj.value;
+  }
+  await safeInvoke<SettingDto[]>('update_settings', { settings });
 }

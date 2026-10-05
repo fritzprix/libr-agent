@@ -53,11 +53,10 @@ const findLastPersistedAssistantMessage = (
 
 export { isAssistantStreamingMessageSuperseded } from '@/lib/message-streaming-supersession';
 
-// --- STATE CONTEXT ---
+// --- STATE CONTEXT (low churn: excludes streaming messages) ---
 interface AgentChatStateContextValue {
   isSessionLoading: boolean;
   isProxyReady: boolean;
-  messages: Message[];
   /** Waiting prompts (FIFO) shown above the input — not in the message list. */
   pendingQueue: Message[];
   error: MessageError | null;
@@ -74,6 +73,28 @@ interface AgentChatStateContextValue {
 
 const AgentChatStateContext = createContext<
   AgentChatStateContextValue | undefined
+>(undefined);
+
+// --- MESSAGES CONTEXT (high churn during token streaming) ---
+interface AgentChatMessagesContextValue {
+  messages: Message[];
+}
+
+const AgentChatMessagesContext = createContext<
+  AgentChatMessagesContextValue | undefined
+>(undefined);
+
+/**
+ * Low-churn tail of the message list — updates only when the last message
+ * *identity* (id) changes, not on every streaming token rewrite.
+ * Used by side-effect triggers (planning/workspace/process refresh).
+ */
+interface AgentChatMessageTailContextValue {
+  lastMessage: Message | undefined;
+}
+
+const AgentChatMessageTailContext = createContext<
+  AgentChatMessageTailContextValue | undefined
 >(undefined);
 
 // --- ACTIONS CONTEXT ---
@@ -539,7 +560,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     () => ({
       isSessionLoading,
       isProxyReady,
-      messages: displayMessages,
       pendingQueue,
       error,
       llmError,
@@ -549,13 +569,32 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     [
       isSessionLoading,
       isProxyReady,
-      displayMessages,
       pendingQueue,
       error,
       llmError,
       workflowStatus,
       serviceContexts,
     ],
+  );
+
+  const messagesValue: AgentChatMessagesContextValue = useMemo(
+    () => ({
+      messages: displayMessages,
+    }),
+    [displayMessages],
+  );
+
+  const lastDisplayMessage = displayMessages[displayMessages.length - 1];
+  const lastDisplayMessageId = lastDisplayMessage?.id;
+  // Snapshot last message only when its id changes so streaming token rewrites
+  // do not notify panel/workspace refresh subscribers.
+  const messageTailValue: AgentChatMessageTailContextValue = useMemo(
+    () => ({
+      lastMessage: lastDisplayMessageId ? lastDisplayMessage : undefined,
+    }),
+    // lastDisplayMessage is intentionally omitted: identity is lastDisplayMessageId.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lastDisplayMessageId],
   );
 
   const actionsValue: AgentChatActionsContextValue = useMemo(
@@ -583,9 +622,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   return (
     <AgentChatStateContext.Provider value={stateValue}>
-      <AgentChatActionsContext.Provider value={actionsValue}>
-        {children}
-      </AgentChatActionsContext.Provider>
+      <AgentChatMessageTailContext.Provider value={messageTailValue}>
+        <AgentChatMessagesContext.Provider value={messagesValue}>
+          <AgentChatActionsContext.Provider value={actionsValue}>
+            {children}
+          </AgentChatActionsContext.Provider>
+        </AgentChatMessagesContext.Provider>
+      </AgentChatMessageTailContext.Provider>
     </AgentChatStateContext.Provider>
   );
 }
@@ -594,6 +637,26 @@ export function useAgentChatState(): AgentChatStateContextValue {
   const context = useContext(AgentChatStateContext);
   if (!context) {
     throw new Error('useAgentChatState must be used within AgentChatProvider');
+  }
+  return context;
+}
+
+export function useAgentChatMessages(): AgentChatMessagesContextValue {
+  const context = useContext(AgentChatMessagesContext);
+  if (!context) {
+    throw new Error(
+      'useAgentChatMessages must be used within AgentChatProvider',
+    );
+  }
+  return context;
+}
+
+export function useAgentChatMessageTail(): AgentChatMessageTailContextValue {
+  const context = useContext(AgentChatMessageTailContext);
+  if (!context) {
+    throw new Error(
+      'useAgentChatMessageTail must be used within AgentChatProvider',
+    );
   }
   return context;
 }
@@ -610,10 +673,12 @@ export function useAgentChatActions(): AgentChatActionsContextValue {
 
 export function useAgentChat() {
   const state = useAgentChatState();
+  const { messages } = useAgentChatMessages();
   const actions = useAgentChatActions();
 
   return {
     ...state,
+    messages,
     ...actions,
   };
 }
