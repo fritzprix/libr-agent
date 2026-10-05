@@ -1,9 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
-import { MCPContent } from '@/lib/mcp';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('useMessageGrouping');
 
 export type GroupedMessage =
   | { type: 'single'; message: Message }
@@ -36,27 +32,6 @@ export interface MessageGroupingResult {
   groupedMessages: GroupedMessage[];
   toolResultsMap: Map<string, Message>;
 }
-
-// Optimization: Use regex to check for non-whitespace characters to avoid string allocation from trim()
-const NOT_WHITESPACE = /\S/;
-
-function validText(c: MCPContent) {
-  if (c.type === 'text') {
-    return c.text && NOT_WHITESPACE.test(c.text);
-  } else if (c.type === 'thinking') {
-    return c.thinking && NOT_WHITESPACE.test(c.thinking);
-  }
-}
-
-// Helper: Check if message has text content
-const hasTextContent = (msg: Message): boolean => {
-  // Check for thinking content
-  if (msg.thinking && NOT_WHITESPACE.test(msg.thinking)) {
-    return true;
-  }
-
-  return !!msg.content && msg.content.length > 0 && msg.content.some(validText);
-};
 
 const isToolErrorMessage = (msg: Message): boolean => {
   return msg.role === 'tool' && msg.metadata?.toolError === true;
@@ -263,97 +238,71 @@ export function useMessageGrouping(
         continue;
       }
 
-      // Group assistant messages with tool_calls
+      // Group one assistant response (tool_calls) with its immediately following
+      // tool results. Consecutive assistant turns stay separate so non-thinking
+      // and thinking modes share the same "response unit" boundary.
       if (
         msg.role === 'assistant' &&
         msg.tool_calls &&
         msg.tool_calls.length > 0
       ) {
-        const allToolCalls: ToolCall[] = [];
-        const groupToolCallIds = new Set<string>();
-        const groupMessages: Message[] = []; // Collect all messages in the group
-        const coveredMessageIds: string[] = [];
-        let j = i;
+        const allToolCalls: ToolCall[] = [...msg.tool_calls];
+        const groupToolCallIds = new Set(msg.tool_calls.map((tc) => tc.id));
+        const groupMessages: Message[] = [msg];
+        const coveredMessageIds: string[] = [msg.id];
+        const consumedToolResults: Message[] = [];
+        let j = i + 1;
 
-        // Collect consecutive assistant messages with tool calls
-        while (j < currentMessages.length) {
-          const currentMsg = currentMessages[j];
-
-          // Stop if not an assistant message with tool calls
-          if (
-            currentMsg.role !== 'assistant' ||
-            !currentMsg.tool_calls ||
-            currentMsg.tool_calls.length === 0
-          ) {
-            break;
-          }
-
-          // Stop if multipart message (text + tool calls) appears after first message
-          if (hasTextContent(currentMsg) && j > i) {
-            break;
-          }
-
-          groupMessages.push(currentMsg);
-          coveredMessageIds.push(currentMsg.id);
-          allToolCalls.push(...currentMsg.tool_calls);
-          currentMsg.tool_calls.forEach((tc) => groupToolCallIds.add(tc.id));
-
-          let hitBoundary = boundaryId ? currentMsg.id === boundaryId : false;
-
-          // Skip past associated tool results
+        // Consume every tool result for this response unit. Do not stop early on
+        // compaction boundaryId — parallel siblings must stay covered; dividers
+        // use coveredMessageIds.includes(boundaryId) instead.
+        while (
+          j < currentMessages.length &&
+          currentMessages[j].role === 'tool' &&
+          currentMessages[j].tool_call_id &&
+          groupToolCallIds.has(currentMessages[j].tool_call_id!)
+        ) {
+          const toolMsg = currentMessages[j];
+          captureToolResult(toolMsg, j);
+          consumedToolResults.push(toolMsg);
+          coveredMessageIds.push(toolMsg.id);
           j++;
-          while (
-            j < currentMessages.length &&
-            currentMessages[j].role === 'tool' &&
-            currentMessages[j].tool_call_id &&
-            groupToolCallIds.has(currentMessages[j].tool_call_id!)
-          ) {
-            // Capture skipped tool result in map.
-            captureToolResult(currentMessages[j], j);
-            coveredMessageIds.push(currentMessages[j].id);
-            if (boundaryId && currentMessages[j].id === boundaryId) {
-              hitBoundary = true;
-            }
-            j++;
-          }
-
-          if (hitBoundary) {
-            break;
-          }
         }
 
-        // Group if there are any tool calls
-        if (allToolCalls.length > 0) {
-          // Pre-calculate results array to avoid O(K) mapping in render loop
-          // Handle duplicate IDs by tracking usage count
-          const idUsageCount = new Map<string, number>();
-
-          const results = allToolCalls.map((call) => {
-            const count = idUsageCount.get(call.id) || 0;
-            idUsageCount.set(call.id, count + 1);
-
-            const key = count === 0 ? call.id : `${call.id}_dup${count}`;
-            return toolResultsMap.get(key);
-          });
-
-          groupedMessages.push({
-            type: 'tool_group',
-            message: msg,
-            messages: groupMessages,
-            coveredMessageIds,
-            toolGroup: { calls: allToolCalls, results },
-          });
-          groupEndIndices.push(j);
-        } else {
-          // Defensive fallback
-          logger.warn(
-            'Unexpected state: assistant message with tool_calls but allToolCalls is empty',
-            { messageId: msg.id },
-          );
-          groupedMessages.push({ type: 'single', message: msg });
-          groupEndIndices.push(i + 1);
-          j = i + 1;
+        // Map results from this response's consumed tools only. Session-wide
+        // toolResultsMap keys (_dupN) must not leak prior-turn hallucinated IDs
+        // into this group's precomputed results array.
+        const localResultsByKey = new Map<string, Message>();
+        for (const toolMsg of consumedToolResults) {
+          const callId = toolMsg.tool_call_id;
+          if (!callId) {
+            continue;
+          }
+          let key = callId;
+          let seq = 1;
+          while (localResultsByKey.has(key)) {
+            key = `${callId}_dup${seq}`;
+            seq++;
+          }
+          localResultsByKey.set(key, toolMsg);
         }
+
+        const idUsageCount = new Map<string, number>();
+        const results = allToolCalls.map((call) => {
+          const count = idUsageCount.get(call.id) || 0;
+          idUsageCount.set(call.id, count + 1);
+          const key = count === 0 ? call.id : `${call.id}_dup${count}`;
+          return localResultsByKey.get(key);
+        });
+
+        groupedMessages.push({
+          type: 'tool_group',
+          message: msg,
+          messages: groupMessages,
+          coveredMessageIds,
+          toolGroup: { calls: allToolCalls, results },
+        });
+        groupEndIndices.push(j);
         i = j;
       } else {
         // Regular message (user or assistant without tool calls)
