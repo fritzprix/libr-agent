@@ -9,6 +9,7 @@ import {
   INITIAL_FIRST_ITEM_INDEX,
   BOTTOM_FOLLOW_RELEASE_SCROLL_DISTANCE,
   NEAR_TOP_SCROLL_THRESHOLD,
+  USER_SCROLL_INTENT_WINDOW_MS,
 } from '../types';
 import {
   getInitialTopMostItemIndex,
@@ -68,9 +69,15 @@ export function useAgentChatScroll({
   const hasOlderMessagesRef = useRef(hasOlderMessages);
   const isLoadingOlderMessagesRef = useRef(isLoadingOlderMessages);
   const loadOlderMessagesRef = useRef(loadOlderMessages);
+  const userScrollIntentUntilRef = useRef(0);
+  const isStreamingContentGrowthRef = useRef(false);
   hasOlderMessagesRef.current = hasOlderMessages;
   isLoadingOlderMessagesRef.current = isLoadingOlderMessages;
   loadOlderMessagesRef.current = loadOlderMessages;
+  isStreamingContentGrowthRef.current =
+    workflowStatus === 'busy' ||
+    workflowStatus === 'queued' ||
+    latestMessage?.isStreaming === true;
 
   const [scrollerElement, setScrollerElement] = useState<HTMLDivElement | null>(
     null,
@@ -456,6 +463,7 @@ export function useAgentChatScroll({
     shouldFollowLatestRef.current = true;
     isPreservingPrependPositionRef.current = false;
     upwardReleaseDistanceRef.current = 0;
+    userScrollIntentUntilRef.current = 0;
     exitHistory('session-changed');
     setPinned(true);
     clearAutoScroll();
@@ -538,7 +546,9 @@ export function useAgentChatScroll({
         } else if (
           !isPreservingPrependPositionRef.current &&
           scrollDelta < 0 &&
-          !isSelfScroll
+          !isSelfScroll &&
+          (!isStreamingContentGrowthRef.current ||
+            performance.now() < userScrollIntentUntilRef.current)
         ) {
           upwardReleaseDistanceRef.current += Math.abs(scrollDelta);
           if (
@@ -606,15 +616,48 @@ export function useAgentChatScroll({
       });
     };
 
+    const markUserScrollIntent = () => {
+      userScrollIntentUntilRef.current =
+        performance.now() + USER_SCROLL_INTENT_WINDOW_MS;
+    };
+
     const handleScroll = () => {
       updatePinnedState();
     };
 
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        markUserScrollIntent();
+      }
+    };
+
+    const handleTouchMove = () => {
+      markUserScrollIntent();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === 'ArrowUp' ||
+        event.key === 'PageUp' ||
+        event.key === 'Home'
+      ) {
+        markUserScrollIntent();
+      }
+    };
+
     scrollerElement.addEventListener('scroll', handleScroll, { passive: true });
+    scrollerElement.addEventListener('wheel', handleWheel, { passive: true });
+    scrollerElement.addEventListener('touchmove', handleTouchMove, {
+      passive: true,
+    });
+    scrollerElement.addEventListener('keydown', handleKeyDown);
     updatePinnedState();
 
     return () => {
       scrollerElement.removeEventListener('scroll', handleScroll);
+      scrollerElement.removeEventListener('wheel', handleWheel);
+      scrollerElement.removeEventListener('touchmove', handleTouchMove);
+      scrollerElement.removeEventListener('keydown', handleKeyDown);
     };
   }, [
     abortBottomAlignment,

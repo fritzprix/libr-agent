@@ -391,3 +391,14 @@ export function setScrollerMetrics(
     configurable: true,
   });
 }
+
+export function dispatchExplicitUpwardScroll(
+  scroller: HTMLDivElement,
+  nextScrollTop: number,
+): void {
+  scroller.dispatchEvent(
+    new WheelEvent('wheel', { deltaY: -12, bubbles: true }),
+  );
+  scroller.scrollTop = nextScrollTop;
+  scroller.dispatchEvent(new Event('scroll'));
+}

@@ -6,6 +6,7 @@ import { AgentChatMessages } from '../AgentChatMessages';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import {
   setScrollerMetrics,
+  dispatchExplicitUpwardScroll,
   baseMessage,
   makeSingleGroupEntry,
   makeStreamingGroupEntry,
@@ -281,7 +282,7 @@ describe('AgentChatMessages – streaming follow & prepend preservation', () => 
     }
   });
 
-  it('allows unpin during content streaming when only resize-driven bottom-follow fires', () => {
+  it('keeps follow during streaming when resize-driven upward deltas have no user gesture', () => {
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
@@ -356,7 +357,7 @@ describe('AgentChatMessages – streaming follow & prepend preservation', () => 
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
       act(() => {
         resizeObserverCallbacks.current.forEach((callback) =>
@@ -364,7 +365,7 @@ describe('AgentChatMessages – streaming follow & prepend preservation', () => 
         );
       });
 
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
     } finally {
       performanceNowSpy.mockRestore();
       global.requestAnimationFrame = originalRequestAnimationFrame;
@@ -469,17 +470,15 @@ describe('AgentChatMessages – streaming follow & prepend preservation', () => 
       });
 
       currentTime = 500;
-      scroller!.scrollTop = 370;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 370);
       });
 
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
       currentTime = 700;
-      scroller!.scrollTop = 344;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 344);
       });
 
       expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();

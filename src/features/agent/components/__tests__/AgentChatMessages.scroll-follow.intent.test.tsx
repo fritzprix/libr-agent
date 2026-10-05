@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChatMessages } from '../AgentChatMessages';
 import {
   setScrollerMetrics,
+  dispatchExplicitUpwardScroll,
   makeStreamingGroupEntry,
   makeStreamingMessage,
 } from './AgentChatMessages.compaction-setup';
@@ -157,9 +158,8 @@ describe('AgentChatMessages – scroll intent detection', () => {
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
       currentTime = 300;
-      scroller!.scrollTop = 4;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 4);
       });
 
       expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
@@ -207,26 +207,80 @@ describe('AgentChatMessages – scroll intent detection', () => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
+      act(() => {
+        dispatchExplicitUpwardScroll(scroller!, 388);
+      });
+
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      act(() => {
+        dispatchExplicitUpwardScroll(scroller!, 376);
+      });
+
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      act(() => {
+        dispatchExplicitUpwardScroll(scroller!, 364);
+      });
+
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+    } finally {
+      performanceNowSpy.mockRestore();
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
+  });
+
+  it('does not pause follow on streaming reflow noise without a user gesture', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const performanceNowSpy = vi.spyOn(performance, 'now');
+    let currentTime = 0;
+
+    chatState.messages = [makeStreamingMessage()];
+    chatState.workflowStatus = 'busy';
+    groupedMessagesMock.splice(0, groupedMessagesMock.length, makeStreamingGroupEntry());
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    performanceNowSpy.mockImplementation(() => currentTime);
+
+    try {
+      const { container } = render(<AgentChatMessages />);
+      const scroller = container.querySelector(
+        '.agent-chat-scrollbar',
+      ) as HTMLDivElement | null;
+
+      expect(scroller).not.toBeNull();
+
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 500,
+        clientHeight: 100,
+        scrollTop: 400,
+      });
+
+      currentTime = 300;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
       scroller!.scrollTop = 388;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
-
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
       scroller!.scrollTop = 376;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
-
-      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
-
       scroller!.scrollTop = 364;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
     } finally {
       performanceNowSpy.mockRestore();
       global.requestAnimationFrame = originalRequestAnimationFrame;
@@ -275,9 +329,8 @@ describe('AgentChatMessages – scroll intent detection', () => {
       });
 
       currentTime = 250;
-      scroller!.scrollTop = 388;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 388);
       });
 
       currentTime = 260;
@@ -294,23 +347,20 @@ describe('AgentChatMessages – scroll intent detection', () => {
       });
 
       currentTime = 500;
-      scroller!.scrollTop = 388;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 388);
       });
 
       currentTime = 700;
-      scroller!.scrollTop = 376;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 376);
       });
 
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
       currentTime = 900;
-      scroller!.scrollTop = 364;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 364);
       });
 
       expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
@@ -358,23 +408,20 @@ describe('AgentChatMessages – scroll intent detection', () => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      scroller!.scrollTop = 388;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 388);
       });
 
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
-      scroller!.scrollTop = 376;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 376);
       });
 
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
-      scroller!.scrollTop = 364;
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 364);
       });
 
       expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
@@ -424,10 +471,8 @@ describe('AgentChatMessages – scroll intent detection', () => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      scroller!.scrollTop = 360;
-
       act(() => {
-        scroller?.dispatchEvent(new Event('scroll'));
+        dispatchExplicitUpwardScroll(scroller!, 360);
       });
 
       const scrollToLatestButton = screen.getByLabelText('Scroll to latest');
