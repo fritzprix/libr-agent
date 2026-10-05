@@ -145,6 +145,7 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
         tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
         tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
+        max_input_context_override: None,
     }
 }
 
