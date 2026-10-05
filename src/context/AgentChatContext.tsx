@@ -593,7 +593,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       lastMessage: lastDisplayMessageId ? lastDisplayMessage : undefined,
     }),
     // lastDisplayMessage is intentionally omitted: identity is lastDisplayMessageId.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [lastDisplayMessageId],
   );
 
