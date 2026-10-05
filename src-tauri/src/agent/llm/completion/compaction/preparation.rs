@@ -205,12 +205,11 @@ async fn prepare_compaction_request(
         return Ok(None);
     };
 
-    let settings =
-        crate::agent::llm::completion::load_context_management_settings_for_session(
-            active_sessions,
-            session_id,
-        )
-        .await;
+    let settings = crate::agent::llm::completion::load_context_management_settings_for_session(
+        active_sessions,
+        session_id,
+    )
+    .await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context(), settings.model_max_limit);
     let base_effective_input_budget =

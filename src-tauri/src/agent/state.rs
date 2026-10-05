@@ -279,7 +279,8 @@ pub struct CompactionRuntimeState {
     current_request: Arc<RwLock<Option<CompactRequest>>>,
 
     /// Ephemeral compaction telemetry ring for Session API / Harbor harvest.
-    telemetry_events: Arc<RwLock<Vec<crate::agent::compaction_telemetry::CompactionTelemetryEvent>>>,
+    telemetry_events:
+        Arc<RwLock<Vec<crate::agent::compaction_telemetry::CompactionTelemetryEvent>>>,
 }
 
 impl CompactionRuntimeState {

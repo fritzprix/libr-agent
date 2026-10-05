@@ -133,12 +133,11 @@ pub(crate) async fn try_trigger_preflight_compaction(
         (session.compact_context.clone(), session.compaction.clone())
     };
     let compact_context_record = compact_context_handle.read().await.clone();
-    let settings =
-        crate::agent::llm::completion::load_context_management_settings_for_session(
-            active_sessions,
-            session_id,
-        )
-        .await;
+    let settings = crate::agent::llm::completion::load_context_management_settings_for_session(
+        active_sessions,
+        session_id,
+    )
+    .await;
     let current_context_limit =
         std::cmp::min(settings.max_input_context(), settings.model_max_limit);
     let effective_input_budget = crate::agent::llm::token_utils::calculate_effective_input_budget(
@@ -425,7 +424,8 @@ pub(crate) async fn try_trigger_preflight_compaction(
             compaction
                 .push_telemetry_event(
                     crate::agent::compaction_telemetry::CompactionTelemetryEventDraft {
-                        phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::Started,
+                        phase:
+                            crate::agent::compaction_telemetry::CompactionTelemetryPhase::Started,
                         to_id: Some(compact_event.to_id.clone()),
                         condensed_count: Some(compact_event.compacted_delta_count),
                         error: None,

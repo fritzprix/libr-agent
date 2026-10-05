@@ -80,7 +80,8 @@ pub async fn request_llm_completion(
     let normalized_messages = normalize_messages(messages, &session_id);
 
     // 7. Context Settings & Tokens (session maxInputContext override when present)
-    let context_settings = load_context_management_settings_for_session(active_sessions, &session_id).await;
+    let context_settings =
+        load_context_management_settings_for_session(active_sessions, &session_id).await;
     let raw_messages = normalized_messages.clone();
     let measured_output_tokens_reserve =
         crate::agent::llm::token_utils::derive_measured_output_tokens_reserve(

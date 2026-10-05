@@ -402,9 +402,9 @@ fn test_build_compaction_request_payload_incremental_path_injects_latest_externa
         "incremental compaction should gate file-deliverable Done on write/existence evidence from newer messages or tool results"
     );
     assert!(
-        payload.instruction_text.contains(
-            "check off satisfied criteria, remove only obsolete/superseded ones"
-        ),
+        payload
+            .instruction_text
+            .contains("check off satisfied criteria, remove only obsolete/superseded ones"),
         "incremental compaction should check off satisfied criteria instead of removing them"
     );
     assert!(
@@ -497,9 +497,9 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
         "instruction should block fake tool-call markup from leaking into the summary"
     );
     assert!(
-        payload.instruction_text.contains(
-            "Never invent a deliverable file schema"
-        ),
+        payload
+            .instruction_text
+            .contains("Never invent a deliverable file schema"),
         "instruction should forbid inventing deliverable schemas while allowing fact snippets"
     );
     assert!(
@@ -515,9 +515,9 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
         "instruction should check off satisfied criteria and only remove obsolete ones"
     );
     assert!(
-        payload.instruction_text.contains(
-            "label any data snippet as working notes"
-        ),
+        payload
+            .instruction_text
+            .contains("label any data snippet as working notes"),
         "instruction should keep collected values as working notes, not file contracts"
     );
     assert!(

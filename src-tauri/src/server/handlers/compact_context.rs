@@ -55,10 +55,7 @@ pub struct CompactContextApiResponse {
     pub derived: CompactTelemetryDerived,
 }
 
-fn infer_compact_source(
-    events: &[CompactionTelemetryEvent],
-    summary: &str,
-) -> &'static str {
+fn infer_compact_source(events: &[CompactionTelemetryEvent], summary: &str) -> &'static str {
     if events
         .iter()
         .any(|event| event.phase == CompactionTelemetryPhase::HardFallback)
@@ -98,16 +95,16 @@ async fn scan_workspace_artifacts(session_id: &str) -> CompactWorkspaceArtifacts
     let mut pre_compaction_epochs = Vec::new();
     let mut fallback_artifacts = Vec::new();
 
-    let libragent_root = match WorkspaceService::resolve_path_for_session(session_id, ".libragent").await
-    {
-        Ok(path) => path,
-        Err(_) => {
-            return CompactWorkspaceArtifacts {
-                pre_compaction_epochs,
-                fallback_artifacts,
-            };
-        }
-    };
+    let libragent_root =
+        match WorkspaceService::resolve_path_for_session(session_id, ".libragent").await {
+            Ok(path) => path,
+            Err(_) => {
+                return CompactWorkspaceArtifacts {
+                    pre_compaction_epochs,
+                    fallback_artifacts,
+                };
+            }
+        };
 
     if let Ok(mut entries) = tokio::fs::read_dir(&libragent_root).await {
         while let Ok(Some(entry)) = entries.next_entry().await {

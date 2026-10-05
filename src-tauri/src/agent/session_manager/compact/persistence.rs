@@ -1,8 +1,6 @@
 use super::context::save_compact_context;
 use super::CompactResponseOutcome;
-use crate::agent::compaction_telemetry::{
-    CompactionTelemetryEventDraft, CompactionTelemetryPhase,
-};
+use crate::agent::compaction_telemetry::{CompactionTelemetryEventDraft, CompactionTelemetryPhase};
 use crate::agent::llm::types::CompactStatePhase;
 use crate::agent::state::{AgentSession, CompactionResumeAction};
 use crate::agent::tauri_events::{emit_compact_finished, emit_compact_request};
@@ -238,9 +236,7 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
         context.session_id.to_string(),
         context.session_name,
         CompactStatePhase::Failed,
-        Some(
-            crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR.to_string(),
-        ),
+        Some(crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR.to_string()),
     ) {
         log::warn!(
             "Failed to emit compact finished state for session {} after empty-delta abort: {}",
