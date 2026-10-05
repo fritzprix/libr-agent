@@ -38,6 +38,10 @@ LibrAgent는 에이전트가 웹사이트를 탐색하고, 필요한 정보를 �
 
 ## 🚀 일상 Chrome 1분 연동 방법
 
+> [!TIP]
+> **Chrome 웹 스토어 정식 출시 예정 (TBD)**  
+> 현재 Chrome Web Store 공식 등록 심사가 진행 중입니다. 스토어 링크 출시 전까지는 아래의 1분 로컬 등록(`Load unpacked`) 방식으로 즉시 연결하여 사용할 수 있습니다.
+
 1. **경로 복사**: 사이드바 **Settings → System → 에이전트 브라우저**에서 Chrome 확장 프로그램 경로를 확인합니다.
 2. **확장 프로그램 등록**:
    - Chrome 주소창에 `chrome://extensions`를 입력합니다.

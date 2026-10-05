@@ -4,7 +4,10 @@ import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import equal from 'fast-deep-equal';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { useAgentChat } from '@/context/AgentChatContext';
+import {
+  useAgentChatActions,
+  useAgentChatState,
+} from '@/context/AgentChatContext';
 import { useAgentPanels } from '@/context/AgentPanelsContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
@@ -51,7 +54,8 @@ export function AgentPlanningUpdates() {
   const { session } = useAgentSessionState();
   const { showPlanningPanel } = useAgentPlanning();
   const { markPanelAttention, clearPanelAttention } = useAgentPanels();
-  const { serviceContexts, updateServiceContexts } = useAgentChat();
+  const { serviceContexts } = useAgentChatState();
+  const { updateServiceContexts } = useAgentChatActions();
   const previousPlanningRef = useRef<PlanningState | undefined>(undefined);
   const previousScratchpadRef = useRef<ScratchpadState | undefined>(undefined);
   const trackedSessionIdRef = useRef<string | undefined>(undefined);

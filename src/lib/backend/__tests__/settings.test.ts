@@ -150,8 +150,14 @@ describe('settings', () => {
   });
 
   describe('upsertSettings', () => {
-    it('calls safeInvoke for each object in array', async () => {
-      vi.mocked(safeInvoke).mockResolvedValue(undefined);
+    it('returns immediately without calling safeInvoke when objs is empty', async () => {
+      await settings.upsertSettings([]);
+
+      expect(safeInvoke).not.toHaveBeenCalled();
+    });
+
+    it('batches multiple objects into a single update_settings call', async () => {
+      vi.mocked(safeInvoke).mockResolvedValue([]);
       const objs: DatabaseObject<string>[] = [
         { key: 'up_k1', value: 'up_v1', createdAt: new Date(), updatedAt: new Date() },
         { key: 'up_k2', value: 'up_v2', createdAt: new Date(), updatedAt: new Date() },
@@ -159,9 +165,25 @@ describe('settings', () => {
 
       await settings.upsertSettings(objs);
 
-      expect(safeInvoke).toHaveBeenCalledTimes(2);
-      expect(safeInvoke).toHaveBeenNthCalledWith(1, 'set_setting', { key: 'up_k1', value: 'up_v1' });
-      expect(safeInvoke).toHaveBeenNthCalledWith(2, 'set_setting', { key: 'up_k2', value: 'up_v2' });
+      expect(safeInvoke).toHaveBeenCalledTimes(1);
+      expect(safeInvoke).toHaveBeenCalledWith('update_settings', {
+        settings: { up_k1: 'up_v1', up_k2: 'up_v2' },
+      });
+    });
+
+    it('uses set_setting for a single object', async () => {
+      vi.mocked(safeInvoke).mockResolvedValue(undefined);
+      const objs: DatabaseObject<string>[] = [
+        { key: 'up_k1', value: 'up_v1', createdAt: new Date(), updatedAt: new Date() },
+      ];
+
+      await settings.upsertSettings(objs);
+
+      expect(safeInvoke).toHaveBeenCalledTimes(1);
+      expect(safeInvoke).toHaveBeenCalledWith('set_setting', {
+        key: 'up_k1',
+        value: 'up_v1',
+      });
     });
   });
 });

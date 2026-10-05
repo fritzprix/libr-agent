@@ -785,33 +785,52 @@ export function AgentSessionListProvider({
 
   // Subscribe to lightweight agent events to keep session metadata fresh in place.
   useEffect(() => {
+    let isMounted = true;
     let unlisten: (() => void) | undefined;
 
     const setup = async () => {
-      unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-        handleAgentEvent(
-          {
-            ...event.payload,
-            runtimeState:
-              event.payload.type === 'sessionRuntimeStateUpdated'
-                ? event.payload.runtimeState
-                : undefined,
-          },
-          {
-            activeSessionId,
-            applySessionUpdate,
-            clearPendingApproval,
-            logger,
-            markSessionViewed,
-            pendingApprovalKeysRef,
+      try {
+        const cleanup = await listen<AgentEventPayload>(
+          'agent:event',
+          (event) => {
+            if (!isMounted) {
+              return;
+            }
+
+            handleAgentEvent(
+              {
+                ...event.payload,
+                runtimeState:
+                  event.payload.type === 'sessionRuntimeStateUpdated'
+                    ? event.payload.runtimeState
+                    : undefined,
+              },
+              {
+                activeSessionId,
+                applySessionUpdate,
+                clearPendingApproval,
+                logger,
+                markSessionViewed,
+                pendingApprovalKeysRef,
+              },
+            );
           },
         );
-      });
+
+        if (isMounted) {
+          unlisten = cleanup;
+        } else {
+          cleanup();
+        }
+      } catch (err) {
+        logger.error('Failed to setup agent session list event listener', err);
+      }
     };
 
-    setup();
+    void setup();
     return () => {
-      if (unlisten) unlisten();
+      isMounted = false;
+      unlisten?.();
     };
   }, [
     activeSessionId,

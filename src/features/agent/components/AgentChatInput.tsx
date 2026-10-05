@@ -1,5 +1,8 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { useAgentChat } from '@/context/AgentChatContext';
+import {
+  useAgentChatActions,
+  useAgentChatState,
+} from '@/context/AgentChatContext';
 import {
   useAgentSessionActions,
   useAgentSessionState,
@@ -58,15 +61,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     pendingInteractiveShellPrompt,
   } = useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
-  const {
-    submit,
-    isSessionLoading,
-    workflowStatus,
-    cancel,
-    resume,
-    pendingQueue,
-    cancelPendingPrompt,
-  } = useAgentChat();
+  const { isSessionLoading, workflowStatus, pendingQueue } = useAgentChatState();
+  const { submit, cancel, resume, cancelPendingPrompt } = useAgentChatActions();
   const { isCompacting } = useLLMService();
   const [pendingCancel, setPendingCancel] = useState(false);
   const pendingCancelRef = useRef(false);

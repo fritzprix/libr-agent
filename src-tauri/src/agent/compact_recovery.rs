@@ -74,6 +74,28 @@ pub async fn handle_compact_error_state(
             .get(&session_id)
             .map(|session| session.compaction.clone())
     };
+    if let Some(compaction) = &compaction {
+        let current_request = compaction.current_request().await;
+        compaction
+            .push_telemetry_event(
+                crate::agent::compaction_telemetry::CompactionTelemetryEventDraft {
+                    phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::Failed,
+                    to_id: current_request
+                        .as_ref()
+                        .map(|request| request.to_id.clone())
+                        .or_else(|| snapshot.last_compacted_tail_id.clone()),
+                    condensed_count: current_request
+                        .as_ref()
+                        .map(|request| request.compacted_delta_count),
+                    error: Some(error.display_message.clone()),
+                    epoch_path: None,
+                    fallback_path: None,
+                    prompt_tokens_before: None,
+                    prompt_tokens_after_projection: None,
+                },
+            )
+            .await;
+    }
     clear_compaction_state(active_sessions, &session_id, true).await;
     if let Some(compaction) = compaction {
         compaction.reset_recovery_progress().await;

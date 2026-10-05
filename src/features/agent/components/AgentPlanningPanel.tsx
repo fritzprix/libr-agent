@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Circle, ListChecks } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAgentChat } from '@/context/AgentChatContext';
+import {
+  useAgentChatActions,
+  useAgentChatState,
+} from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +29,8 @@ export function AgentPlanningPanel({
 }: AgentPlanningPanelProps) {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
-  const { serviceContexts, updateServiceContexts } = useAgentChat();
+  const { serviceContexts } = useAgentChatState();
+  const { updateServiceContexts } = useAgentChatActions();
   const wasVisibleRef = useRef(false);
 
   useEffect(() => {

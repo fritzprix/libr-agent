@@ -5,7 +5,6 @@
 
 use crate::agent::events::AgentEvent;
 use crate::agent::llm::circuit_breaker;
-use crate::agent::llm::completion::load_context_management_settings;
 use crate::agent::llm::completion::request::apply_compact_summary_projection;
 use crate::agent::llm::natural_recovery::{LoopPreventionKind, LoopPreventionShortCircuit};
 use crate::agent::llm::token_utils::{
@@ -592,7 +591,12 @@ async fn apply_tool_loop_token_fence(
         )
     };
 
-    let context_settings = load_context_management_settings().await;
+    let context_settings =
+        crate::agent::llm::completion::load_context_management_settings_for_session(
+            active_sessions,
+            session_id,
+        )
+        .await;
 
     let history_messages = messages_lock.read().await.clone();
     let compact_record = compact_context_lock.read().await.clone();

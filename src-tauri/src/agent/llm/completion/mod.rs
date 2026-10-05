@@ -30,4 +30,4 @@ pub use request::{
 };
 
 // Crate-internal re-exports for intra-module visibility
-pub(crate) use context::load_context_management_settings;
+pub(crate) use context::load_context_management_settings_for_session;

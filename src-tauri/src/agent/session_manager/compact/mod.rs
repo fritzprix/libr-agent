@@ -11,11 +11,10 @@ use self::fallback::{
     compaction_fallback_artifact_relative_path,
 };
 use self::persistence::{
-    persist_compact_summary_and_resume, retry_invalid_compact_summary_if_possible,
-    CompactSummaryPersistenceContext,
+    abort_empty_delta_compaction_and_resume, persist_compact_summary_and_resume,
+    retry_invalid_compact_summary_if_possible, CompactSummaryPersistenceContext,
 };
 use self::summary::validate_compact_summary;
-use crate::agent::llm::completion::load_context_management_settings;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::SessionRepository;
@@ -140,6 +139,15 @@ async fn complete_compaction_with_hard_fallback(
             failure_reason
         );
     }
+    let epoch_path = markdown_result
+        .as_ref()
+        .ok()
+        .map(|(relative_path, _)| relative_path.clone());
+    let mut context = context;
+    context.telemetry_phase =
+        crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback;
+    context.epoch_path = epoch_path;
+    context.fallback_path = saved_artifact_relative_path.map(|path| path.to_string());
     persist_compact_summary_and_resume(context, summary).await
 }
 
@@ -197,7 +205,33 @@ pub async fn handle_compact_response(
         return Ok(CompactResponseOutcome { retried: false });
     }
 
-    let context_settings = load_context_management_settings().await;
+    // Defense in depth: prepare should already no-op empty deltas, but if a
+    // response still arrives with compacted_delta_count==0, never rewrite handoff.
+    if crate::agent::llm::completion::compaction::should_noop_empty_compaction_delta(
+        compacted_delta_count,
+    ) {
+        return abort_empty_delta_compaction_and_resume(CompactSummaryPersistenceContext {
+            active_sessions,
+            app_handle,
+            session_repo,
+            proxy_manager,
+            session_id,
+            session_name,
+            to_id,
+            compacted_delta_count,
+            telemetry_phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::Failed,
+            epoch_path: None,
+            fallback_path: None,
+        })
+        .await;
+    }
+
+    let context_settings =
+        crate::agent::llm::completion::load_context_management_settings_for_session(
+            active_sessions,
+            session_id,
+        )
+        .await;
     let compacted_messages =
         compacted_messages_prefix_for_to_id(active_sessions, session_id, &to_id).await;
     let clamped_summary = summary::clamp_compact_summary_to_context_limit(
@@ -243,6 +277,10 @@ pub async fn handle_compact_response(
                 session_name,
                 to_id,
                 compacted_delta_count,
+                telemetry_phase:
+                    crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback,
+                epoch_path: None,
+                fallback_path: None,
             },
             &validation_error,
             fallback_snapshot.as_ref(),
@@ -277,6 +315,10 @@ pub async fn handle_compact_response(
         log::warn!("Failed to write pre_compaction markdown: {}", e);
     }
 
+    let epoch_path = markdown_result
+        .as_ref()
+        .ok()
+        .map(|(relative_path, _)| relative_path.clone());
     persist_compact_summary_and_resume(
         CompactSummaryPersistenceContext {
             active_sessions,
@@ -287,6 +329,10 @@ pub async fn handle_compact_response(
             session_name,
             to_id,
             compacted_delta_count,
+            telemetry_phase:
+                crate::agent::compaction_telemetry::CompactionTelemetryPhase::Succeeded,
+            epoch_path,
+            fallback_path: None,
         },
         final_summary,
     )

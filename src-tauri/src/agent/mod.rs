@@ -1,6 +1,7 @@
 pub mod channel_routing;
 pub mod command_parser;
 pub mod compact_recovery;
+pub mod compaction_telemetry;
 pub mod compaction_text;
 pub mod concurrency;
 pub mod config;

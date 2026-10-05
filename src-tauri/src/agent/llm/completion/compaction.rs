@@ -26,6 +26,7 @@ pub use payload::{
     inspect_compaction_payload, CompactionPayloadDiagnostics, CompactionPayloadMessageDiagnostic,
     CompactionRequestPayloadPreview,
 };
+pub(crate) use preparation::{should_noop_empty_compaction_delta, EMPTY_DELTA_NOOP_ERROR};
 pub use trigger::{
     advance_compaction_overflow_recovery_step_for_testing,
     build_checkpoint_backoff_split_candidates_for_testing,

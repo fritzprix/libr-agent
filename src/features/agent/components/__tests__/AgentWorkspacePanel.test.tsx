@@ -90,12 +90,11 @@ vi.mock('@/context/AgentSessionContext', () => {
 });
 
 vi.mock('@/context/AgentChatContext', () => {
-  const mockState = {
-    messages: [],
-  };
   return {
     useAgentChatActions: () => mockChatActions,
-    useAgentChatState: () => mockState,
+    useAgentChatState: () => ({}),
+    useAgentChatMessages: () => ({ messages: [] }),
+    useAgentChatMessageTail: () => ({ lastMessage: undefined }),
   };
 });
 

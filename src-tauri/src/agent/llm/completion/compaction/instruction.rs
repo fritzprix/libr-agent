@@ -24,14 +24,20 @@ const COMPACTION_RULES: &[&str] = &[
     "Keep only the details needed to resume safely: durable facts, decisions, constraints, user preferences, unresolved work, and exact file paths or identifiers.",
     "Lead with the end-state: Target Deliverable and Completion Criteria before local next steps.",
     "You do not need to emit every possible section. Omit empty or low-value sections, and keep short sections brief.",
-    "Target Deliverable: list the CONCRETE final outputs the user wants. Not steps — the actual things the user cares about.",
+    "Target Deliverable: list the CONCRETE final outputs the user wants. Not steps — the actual things the user cares about. Prefer paths and names already stated in the workspace or user request.",
     "Progress: if the workflow has clear phases or milestones, include a Markdown table with columns Phase, Status, Notes. Use status values Done, In Progress, Not Started, or Blocked. If the workflow is too fluid, omit this section.",
-    "Completion Criteria: list verifiable checkpoints that define done. Prefer checkbox lines like `- [ ] ...`. Each criterion must be objectively testable. Remove criteria that are already satisfied.",
+    "Progress / criteria status: when a phase or criterion requires a named on-disk file deliverable, mark Done or check it off only if conversation or tool results confirm that path was written or already exists. Collecting values or preparing content is not enough — keep In Progress / unchecked and put the missing write in Active Request. For non-file milestones, mark Done/checked from clear conversation evidence of completion.",
+    "Completion Criteria: list verifiable checkpoints that define done. Prefer checkbox lines like `- [ ] ...`. Each criterion must be objectively testable. Check off criteria that are already satisfied; remove only criteria that are obsolete or superseded.",
     "Active Request: keep only the current unresolved user ask. Remove resolved asks.",
     "Required References: keep only the minimum paths, symbols, or IDs needed for the active request.",
     "Put fast-changing details in Current State, Recent Tool Results, or Next Actions.",
+    // Lossless grounding: keep values; do not invent deliverable contracts.
+    "Structured snippets (including fenced JSON) may preserve exact collected values, paths, or identifiers that already appeared in the conversation or workspace.",
+    "Never invent a deliverable file schema. Do not turn object/array shape, property names, or example file bodies into Completion Criteria or Active Request contracts unless that exact schema already appears in a workspace instruction or an existing on-disk file.",
+    "If a required output file already exists, treat that file as source of truth: record its path and status; do not replace it with a redesigned example body.",
+    "When values are collected but the file is not written yet, label any data snippet as working notes — not as the required file format. Deliverable format follows the original workspace/user instructions.",
     "Do not call tools. Even if tool definitions are visible, ignore them for this request.",
-    "Do not emit XML, JSON, pseudo tool-call markup, command blocks, or meta commentary.",
+    "Do not emit XML, pseudo tool-call markup, shell command blocks, or meta commentary about the summarization process.",
     "Do not tell the agent to continue from later messages or otherwise prime continuation. If the work appears complete, say so via empty Active Request and satisfied Completion Criteria.",
 ];
 
@@ -51,8 +57,10 @@ const COMPACTION_OUTPUT_CONSTRAINT: &str =
 const INCREMENTAL_COMPACTION_RESIDUAL_PREFIX: &str =
     "The first message is the prior compact summary for all earlier history.\n\
 Keep its Target Deliverable, Completion Criteria, Active Request, and Required References unless newer messages clearly replace or resolve them.\n\
-Merge deliverables and criteria across rounds; remove completed criteria and refresh Progress status from newer messages.\n\
-Preserve its durable facts, decisions, and constraints when merging the newer messages.";
+Merge deliverables and criteria across rounds; check off satisfied criteria, remove only obsolete/superseded ones, and refresh Progress status from newer messages.\n\
+Do not promote a Progress row to Done or check off a file-deliverable criterion unless newer messages or tool results confirm the named path was written or already exists.\n\
+Preserve its durable facts, decisions, and constraints when merging the newer messages.\n\
+If the prior summary invented a deliverable schema that is not grounded in workspace/user instructions or an existing file, drop that schema while keeping grounded facts and paths.";
 pub(super) const ACTIVE_REQUEST_BULLET_LIMIT: usize = 4;
 pub(super) const REQUIRED_REFERENCE_BULLET_LIMIT: usize = 5;
 pub(super) const REFERENCE_CONTEXT_WINDOW_MESSAGES: usize = 8;

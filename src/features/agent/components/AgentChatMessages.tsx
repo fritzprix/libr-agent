@@ -240,13 +240,18 @@ export function AgentChatMessages() {
     ],
   );
 
+  const latestGroupedMessageId =
+    groupedMessages[groupedMessages.length - 1]?.message.id;
+
   const renderMessageGroup = useCallback(
     (_index: number, groupedMessage: GroupedMessage) => {
-      // Only pin nested auto-scroll (thinking / resources) while the list itself
-      // is stick-to-bottom. The old `!isLatest || isPinned` kept followChatScroll
-      // true for every historical bubble, so load-older mounts could briefly
-      // yank a user bubble into view then release it.
-      const followChatScroll = isPinned;
+      // Nested auto-scroll (thinking / resources) only for the latest / streaming
+      // bubble while the list is stick-to-bottom. Passing isPinned to every
+      // historical bubble breaks AgentMessageBubble memoization on scroll.
+      const isLatestOrStreaming =
+        groupedMessage.message.id === latestGroupedMessageId ||
+        !!groupedMessage.message.isStreaming;
+      const followChatScroll = isPinned && isLatestOrStreaming;
       const isCompactBoundary = groupedMessageContainsBoundary(
         groupedMessage,
         compactedRange?.toId,
@@ -346,6 +351,7 @@ export function AgentChatMessages() {
       compactedEvent,
       compactedRange?.toId,
       isPinned,
+      latestGroupedMessageId,
       messageLayout,
       retryMessage,
       toolDetailLevel,

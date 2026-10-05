@@ -1,5 +1,9 @@
-import type { AgentResponse } from '@/models/agent-ipc';
-import { useAgentChat } from '@/context/AgentChatContext';
+import type { AgentResponse, PreflightTokenMetrics } from '@/models/agent-ipc';
+import {
+  useAgentChatActions,
+  useAgentChatMessages,
+  useAgentChatState,
+} from '@/context/AgentChatContext';
 import { useAgentSession } from '@/context/AgentSessionContext';
 import { useAgentSessionListState } from '@/context/AgentSessionListContext';
 import { BatchModelUpdateDialog } from './BatchModelUpdateDialog';
@@ -96,6 +100,46 @@ function findLatestAssistantUsage(messages: Message[]): TokenUsage | null {
   return null;
 }
 
+/** Isolates high-churn message subscription from the rest of the status bar. */
+function StatusBarTokenMetrics({
+  sessionPersistedUsage,
+  liveMetrics,
+  preflight,
+  compact,
+}: {
+  sessionPersistedUsage: TokenUsage | null;
+  liveMetrics: TokenUsage | null | undefined;
+  preflight: PreflightTokenMetrics | null | undefined;
+  compact: boolean;
+}) {
+  const { messages } = useAgentChatMessages();
+  const latestAssistantUsage = useMemo(
+    () => findLatestAssistantUsage(messages),
+    [messages],
+  );
+  const displayMetrics = useMemo(
+    () =>
+      mergeDisplayTokenUsage(
+        mergeDisplayTokenUsage(sessionPersistedUsage, latestAssistantUsage),
+        liveMetrics ?? null,
+      ),
+    [latestAssistantUsage, liveMetrics, sessionPersistedUsage],
+  );
+
+  if (!displayMetrics) {
+    return null;
+  }
+
+  return (
+    <TokenMetricsBadge
+      usage={displayMetrics}
+      preflight={preflight}
+      className="shrink-0"
+      compact={compact}
+    />
+  );
+}
+
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
   const isCompactStatusBar = useIsMobile(640);
@@ -114,8 +158,8 @@ export function AgentChatStatusBar() {
     provider: string;
   } | null>(null);
   const [descendantCount, setDescendantCount] = useState(0);
-  const { messages, workflowStatus, error, llmError, retryMessage, resume } =
-    useAgentChat();
+  const { workflowStatus, error, llmError } = useAgentChatState();
+  const { retryMessage, resume } = useAgentChatActions();
   const { isCompacting, isAwaitingCompact } = useLLMService();
   const [showToolsModal, setShowToolsModal] = useState(false);
   const { value: settings, update: updateSettings } = useSettings();
@@ -234,10 +278,6 @@ export function AgentChatStatusBar() {
     });
   }, [compacting, awaitingCompact, preflightTokenMetrics, sessionId]);
 
-  const latestAssistantUsage = useMemo(
-    () => findLatestAssistantUsage(messages),
-    [messages],
-  );
   const sessionPersistedUsage =
     persistedMetrics.sessionId === sessionId ? persistedMetrics.usage : null;
   const sessionPersistedStablePreflight =
@@ -248,17 +288,6 @@ export function AgentChatStatusBar() {
     awaitingCompact || compacting
       ? (sessionPersistedStablePreflight ?? preflightTokenMetrics)
       : preflightTokenMetrics;
-
-  // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
-  // without mutating state during render.
-  const displayMetrics = useMemo(
-    () =>
-      mergeDisplayTokenUsage(
-        mergeDisplayTokenUsage(sessionPersistedUsage, latestAssistantUsage),
-        metrics,
-      ),
-    [latestAssistantUsage, metrics, sessionPersistedUsage],
-  );
 
   // ✅ Single Source of Truth: Fetch filtered tools from Rust backend
   // Session hook invalidates SWR when MCP discovery catches up (slow stdio).
@@ -687,14 +716,12 @@ export function AgentChatStatusBar() {
               </div>
             </div>
 
-            {displayMetrics && (
-              <TokenMetricsBadge
-                usage={displayMetrics}
-                preflight={badgePreflightMetrics}
-                className="shrink-0"
-                compact={isCompactStatusBar}
-              />
-            )}
+            <StatusBarTokenMetrics
+              sessionPersistedUsage={sessionPersistedUsage}
+              liveMetrics={metrics}
+              preflight={badgePreflightMetrics}
+              compact={isCompactStatusBar}
+            />
 
             <div className="flex items-center gap-2">
               <span className="text-xs">{t('agent.statusBar.toolsLabel')}</span>

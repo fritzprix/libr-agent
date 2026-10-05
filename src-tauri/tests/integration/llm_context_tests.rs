@@ -396,6 +396,18 @@ fn test_build_compaction_request_payload_incremental_path_injects_latest_externa
         "incremental compaction should explicitly preserve prior deliverable, criteria, active-request and reference anchors"
     );
     assert!(
+        payload.instruction_text.contains(
+            "Do not promote a Progress row to Done or check off a file-deliverable criterion unless newer messages or tool results confirm the named path was written or already exists."
+        ),
+        "incremental compaction should gate file-deliverable Done on write/existence evidence from newer messages or tool results"
+    );
+    assert!(
+        payload.instruction_text.contains(
+            "check off satisfied criteria, remove only obsolete/superseded ones"
+        ),
+        "incremental compaction should check off satisfied criteria instead of removing them"
+    );
+    assert!(
         payload
             .instruction_text
             .contains("src-tauri/src/agent/llm/completion/compaction/payload.rs"),
@@ -481,8 +493,38 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
     assert!(
         payload
             .instruction_text
-            .contains("Do not emit XML, JSON, pseudo tool-call markup"),
+            .contains("Do not emit XML, pseudo tool-call markup"),
         "instruction should block fake tool-call markup from leaking into the summary"
+    );
+    assert!(
+        payload.instruction_text.contains(
+            "Never invent a deliverable file schema"
+        ),
+        "instruction should forbid inventing deliverable schemas while allowing fact snippets"
+    );
+    assert!(
+        payload.instruction_text.contains(
+            "when a phase or criterion requires a named on-disk file deliverable, mark Done or check it off only if conversation or tool results confirm that path was written or already exists"
+        ),
+        "instruction should gate file-deliverable Done on tool/conversation evidence, not non-file milestones"
+    );
+    assert!(
+        payload.instruction_text.contains(
+            "Check off criteria that are already satisfied; remove only criteria that are obsolete or superseded"
+        ),
+        "instruction should check off satisfied criteria and only remove obsolete ones"
+    );
+    assert!(
+        payload.instruction_text.contains(
+            "label any data snippet as working notes"
+        ),
+        "instruction should keep collected values as working notes, not file contracts"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("treat that file as source of truth"),
+        "instruction should prefer existing output files over redesigned example bodies"
     );
     assert!(
         payload

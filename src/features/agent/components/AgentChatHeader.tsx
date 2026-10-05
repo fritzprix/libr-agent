@@ -9,7 +9,7 @@ import {
   useAgentSessionListState,
 } from '@/context/AgentSessionListContext';
 import { AGENT_PANEL_IDS, useAgentPanels } from '@/context/AgentPanelsContext';
-import { useAgentChat } from '@/context/AgentChatContext';
+import { useAgentChatMessages } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +29,18 @@ interface AgentChatHeaderProps {
   assistantName?: string;
 }
 
+/** Isolates high-churn message subscription from the header chrome. */
+function HeaderSessionExportMenu({ sessionId }: { sessionId: string }) {
+  const { messages } = useAgentChatMessages();
+  return (
+    <SessionExportMenu
+      sessionId={sessionId}
+      messages={messages}
+      showClipboardCopy
+    />
+  );
+}
+
 export function AgentChatHeader({
   children,
   assistantName,
@@ -41,7 +53,6 @@ export function AgentChatHeader({
   const { isShellOpen, toggleShell, hasPanelAttention } = useAgentPanels();
   const shellOpen = isShellOpen();
   const shellAttention = AGENT_PANEL_IDS.some((id) => hasPanelAttention(id));
-  const { messages } = useAgentChat();
   const [bookmarkOverride, setBookmarkOverride] = useState<
     boolean | undefined
   >();
@@ -91,11 +102,7 @@ export function AgentChatHeader({
     >
       {children}
       {session?.id ? (
-        <SessionExportMenu
-          sessionId={session.id}
-          messages={messages}
-          showClipboardCopy
-        />
+        <HeaderSessionExportMenu sessionId={session.id} />
       ) : null}
 
       <HeaderStatusBadges />
