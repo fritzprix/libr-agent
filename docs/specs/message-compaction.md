@@ -290,6 +290,21 @@ round.
 Normal compaction must not silently leave half of that selected delta outside the
 summary.
 
+Handoff grounding (lossless): structured snippets may preserve exact collected
+values, paths, and identifiers. The summarizer must not invent a deliverable file
+schema (object/array shape, property names, example bodies) as Completion Criteria
+or Active Request unless that schema already appears in workspace/user
+instructions or an existing on-disk file. Existing required outputs are source of
+truth; unwritten candidates are working notes, not format contracts. When a phase
+or criterion requires a named on-disk file deliverable, Progress `Done` / checked
+criteria need conversation or tool-result confirmation that the path was written
+or already exists — collecting values alone is not enough; keep `In Progress` /
+unchecked and leave the missing write in Active Request. Non-file milestones may
+be marked Done/checked from clear conversation evidence. Satisfied criteria are
+checked off; only obsolete or superseded criteria are removed. Incremental rounds
+must drop ungrounded invented schemas while keeping grounded facts, and must not
+promote file-deliverable Done without write/existence evidence.
+
 ### 5.4 Post-compaction invalidation
 
 After a compaction step succeeds:
