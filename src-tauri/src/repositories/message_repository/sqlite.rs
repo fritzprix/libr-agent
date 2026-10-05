@@ -12,7 +12,10 @@ use crate::utils::pagination::Page;
 use super::super::error::DbError;
 use super::index_meta;
 use super::persist;
-use super::types::{MessageForwardPage, MessageRepository, MessageRowWithCursor, MessageSlicePage};
+use super::types::{
+    MessageForwardPage, MessageIndexDocument, MessageRepository, MessageRowWithCursor,
+    MessageSlicePage,
+};
 
 /// SQLite implementation of MessageRepository using SeaORM
 #[derive(Debug)]
@@ -64,6 +67,39 @@ impl SqliteMessageRepository {
         rows.iter()
             .map(persist::row_to_message_model)
             .collect::<Result<Vec<_>, _>>()
+    }
+
+    async fn query_index_documents(
+        &self,
+        sql: &str,
+        values: Vec<sea_orm::Value>,
+    ) -> Result<Vec<MessageIndexDocument>, DbError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        rows.iter()
+            .map(|row| {
+                Ok(MessageIndexDocument {
+                    id: row.try_get("", "id").map_err(DbError::SeaOrmQueryFailed)?,
+                    session_id: row
+                        .try_get("", "session_id")
+                        .map_err(DbError::SeaOrmQueryFailed)?,
+                    content: row
+                        .try_get("", "content")
+                        .map_err(DbError::SeaOrmQueryFailed)?,
+                    created_at: row
+                        .try_get("", "created_at")
+                        .map_err(DbError::SeaOrmQueryFailed)?,
+                })
+            })
+            .collect()
     }
 
     /// Stable `pub(crate)` surface used by pending-queue compaction.
@@ -154,16 +190,22 @@ impl MessageRepository for SqliteMessageRepository {
     }
 
     async fn insert(&self, message: &Message) -> Result<(), DbError> {
+        use sea_orm::TransactionTrait;
+
         let model = persist::message_to_active_model(message)?;
+        let txn = self.db.begin().await?;
 
         MessageEntity::insert(model)
             .on_conflict(persist::get_upsert_on_conflict())
-            .exec(&self.db)
+            .exec(&txn)
             .await?;
 
-        persist::update_session_last_message_at(&self.db, &message.session_id, message.created_at)
+        persist::update_session_last_message_at(&txn, &message.session_id, message.created_at)
             .await?;
 
+        txn.commit()
+            .await
+            .map_err(|e| DbError::TransactionFailed(e.to_string()))?;
         Ok(())
     }
 
@@ -171,21 +213,30 @@ impl MessageRepository for SqliteMessageRepository {
         use sea_orm::TransactionTrait;
         use std::collections::HashMap;
 
+        if messages.is_empty() {
+            return Ok(());
+        }
+
+        // 18 bound columns per row. Stay far under SQLite's default variable limit.
+        const UPSERT_BATCH_SIZE: usize = 64;
+
         let txn = self.db.begin().await?;
         let mut latest_by_session: HashMap<String, i64> = HashMap::new();
 
-        for message in messages {
-            let model = persist::message_to_active_model(&message)?;
+        for chunk in messages.chunks(UPSERT_BATCH_SIZE) {
+            let mut models = Vec::with_capacity(chunk.len());
+            for message in chunk {
+                models.push(persist::message_to_active_model(message)?);
+                latest_by_session
+                    .entry(message.session_id.clone())
+                    .and_modify(|current| *current = (*current).max(message.created_at))
+                    .or_insert(message.created_at);
+            }
 
-            MessageEntity::insert(model)
+            MessageEntity::insert_many(models)
                 .on_conflict(persist::get_upsert_on_conflict())
                 .exec(&txn)
                 .await?;
-
-            latest_by_session
-                .entry(message.session_id.clone())
-                .and_modify(|current| *current = (*current).max(message.created_at))
-                .or_insert(message.created_at);
         }
 
         for (session_id, last_message_at) in latest_by_session {
@@ -264,6 +315,10 @@ impl MessageRepository for SqliteMessageRepository {
 
     async fn is_index_dirty(&self, session_id: &str) -> Result<bool, DbError> {
         index_meta::is_index_dirty(&self.db, session_id).await
+    }
+
+    async fn get_dirty_session_ids(&self) -> Result<Vec<String>, DbError> {
+        index_meta::get_dirty_session_ids(&self.db).await
     }
 
     async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError> {
@@ -391,5 +446,35 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         Ok(models)
+    }
+
+    async fn get_index_documents_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<MessageIndexDocument>, DbError> {
+        self.query_index_documents(
+            "SELECT id, session_id, content, created_at \
+             FROM messages \
+             WHERE session_id = ? \
+             ORDER BY rowid DESC \
+             LIMIT ?",
+            vec![session_id.into(), (limit as i64).into()],
+        )
+        .await
+    }
+
+    async fn get_recent_index_documents(
+        &self,
+        limit: u64,
+    ) -> Result<Vec<MessageIndexDocument>, DbError> {
+        self.query_index_documents(
+            "SELECT id, session_id, content, created_at \
+             FROM messages \
+             ORDER BY rowid DESC \
+             LIMIT ?",
+            vec![(limit as i64).into()],
+        )
+        .await
     }
 }

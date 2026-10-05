@@ -4,7 +4,7 @@
 /// between repositories, index storage, and the search engine itself.
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
-use crate::search::message_index::MessageSearchEngine;
+use crate::search::message_index::{MessageDocument, MessageSearchEngine};
 use crate::state::get_message_repository;
 
 /// Rebuilds the search index for a specific session and persists it to disk.
@@ -27,15 +27,17 @@ pub async fn rebuild_and_persist_index(session_id: &str) -> Result<MessageSearch
 
     let start_time = std::time::Instant::now();
 
-    // Fetch messages from database (most recent max_docs)
-    let messages = repo
-        .get_message_models_by_session(session_id, max_docs as u64)
+    // Index columns only. Thinking blocks and attachments stay out of this read.
+    let documents = repo
+        .get_index_documents_by_session(session_id, max_docs as u64)
         .await
-        .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
+        .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?
+        .into_iter()
+        .map(MessageDocument::from)
+        .collect();
 
-    // Build index
     let engine =
-        MessageSearchEngine::build_from_models(session_id.to_string(), messages, max_docs)?;
+        MessageSearchEngine::build_from_documents(session_id.to_string(), documents, max_docs)?;
 
     // Persist to disk
     let serialized = engine.serialize()?;
@@ -76,12 +78,13 @@ pub async fn build_global_temporary_index() -> Result<MessageSearchEngine, Strin
     let repo = get_message_repository();
     let max_docs = MessageSearchEngine::max_docs_from_env();
 
-    // Fetch recent messages across all sessions up to max_docs
-    let messages = repo
-        .get_recent_message_models(max_docs as u64)
+    let documents = repo
+        .get_recent_index_documents(max_docs as u64)
         .await
-        .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
+        .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?
+        .into_iter()
+        .map(MessageDocument::from)
+        .collect();
 
-    // Build a temporary in-memory global search engine
-    MessageSearchEngine::build_from_models("global".to_string(), messages, max_docs)
+    MessageSearchEngine::build_from_documents("global".to_string(), documents, max_docs)
 }
