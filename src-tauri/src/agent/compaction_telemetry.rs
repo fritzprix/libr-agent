@@ -8,9 +8,10 @@ use sha2::{Digest, Sha256};
 
 pub const MAX_COMPACTION_TELEMETRY_EVENTS: usize = 32;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionTelemetryPhase {
+    #[default]
     Started,
     Succeeded,
     Failed,
@@ -49,12 +50,6 @@ pub struct CompactionTelemetryEventDraft {
     pub fallback_path: Option<String>,
     pub prompt_tokens_before: Option<u64>,
     pub prompt_tokens_after_projection: Option<u64>,
-}
-
-impl Default for CompactionTelemetryPhase {
-    fn default() -> Self {
-        Self::Started
-    }
 }
 
 pub fn utc_now_rfc3339() -> String {
