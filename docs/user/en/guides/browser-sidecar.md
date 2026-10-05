@@ -38,6 +38,10 @@ Instead of opening a blank sandbox browser, agents can directly control tabs in 
 
 ## 🚀 1-Minute Quick Setup
 
+> [!TIP]
+> **Chrome Web Store Release Pending (TBD)**  
+> The extension is currently under review for the Chrome Web Store. Until the public store link is published, you can install it locally via the 1-minute `Load unpacked` method below.
+
 1. **Locate Extension Path**: Open **Settings → System → Agent browser** and copy the Chrome extension folder path.
 2. **Install Extension in Chrome**:
    - Open `chrome://extensions` in your Chrome browser.
