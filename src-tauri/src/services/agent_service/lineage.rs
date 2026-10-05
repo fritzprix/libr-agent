@@ -109,23 +109,28 @@ pub async fn resolve_spawn_lineage(
     let requested_max_fanout = request.max_fanout;
 
     if let Some(parent_id) = request.parent_session_id.as_deref() {
-        let store = lineage_store().read().await;
-        if let Some(parent_meta) = store.get(parent_id) {
+        // Clone parent fields under the read lock, then drop before any await
+        // (SQLite child-count query inside `build_child_lineage_meta`).
+        let cached_seed = {
+            let store = lineage_store().read().await;
+            store.get(parent_id).map(|parent_meta| ChildLineageSeed {
+                parent_id: parent_id.to_string(),
+                lineage_id: parent_meta.lineage_id.clone(),
+                parent_depth: parent_meta.depth,
+                inherited_max_depth: parent_meta.max_depth,
+                inherited_max_fanout: parent_meta.max_fanout,
+            })
+        };
+
+        if let Some(seed) = cached_seed {
             return build_child_lineage_meta(
-                ChildLineageSeed {
-                    parent_id: parent_id.to_string(),
-                    lineage_id: parent_meta.lineage_id.clone(),
-                    parent_depth: parent_meta.depth,
-                    inherited_max_depth: parent_meta.max_depth,
-                    inherited_max_fanout: parent_meta.max_fanout,
-                },
+                seed,
                 requested_max_depth,
                 requested_max_fanout,
                 explicit_org,
             )
             .await;
         }
-        drop(store);
 
         let session_repo = crate::state::get_session_repository();
         let parent_meta = session_repo.get_session(parent_id).await.ok().flatten();

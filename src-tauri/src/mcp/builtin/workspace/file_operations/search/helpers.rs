@@ -21,6 +21,7 @@ pub(super) const SKIPPED_SEARCH_DIR_NAMES: &[&str] = &[
 ];
 const MAX_BRACE_GLOB_EXPANSIONS: usize = 64;
 
+#[derive(Clone)]
 pub(super) struct GlobMatcher {
     patterns: Vec<glob::Pattern>,
 }

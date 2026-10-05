@@ -8,7 +8,142 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHi
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+struct SearchableFileCandidate {
+    path: PathBuf,
+    rel_path: String,
+}
+
+struct ContentDirWalkResult {
+    files: Vec<SearchableFileCandidate>,
+    skipped_heavy_dirs: usize,
+    skipped_gitignored_dirs: usize,
+    skipped_large_files: usize,
+}
+
+fn is_skipped_binary_extension(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "svg"
+            | "ico"
+            | "pdf"
+            | "zip"
+            | "tar"
+            | "gz"
+            | "bz2"
+            | "xz"
+            | "exe"
+            | "dll"
+            | "so"
+            | "dylib"
+            | "bin"
+            | "wasm"
+            | "mp3"
+            | "mp4"
+            | "wav"
+            | "ogg"
+            | "flac"
+            | "ttf"
+            | "woff"
+            | "woff2"
+    )
+}
+
+/// Synchronous directory walk for content search. Runs on a blocking pool so
+/// deep trees do not starve Tokio workers.
+fn collect_content_search_candidates_blocking(
+    workspace_root: PathBuf,
+    dir: PathBuf,
+    file_pattern: Option<GlobMatcher>,
+    max_size: usize,
+) -> ContentDirWalkResult {
+    use walkdir::WalkDir;
+
+    let mut files = Vec::new();
+    let mut skipped_heavy_dirs = 0usize;
+    let mut skipped_gitignored_dirs = 0usize;
+    let mut skipped_large_files = 0usize;
+    let gitignore = build_gitignore_matcher(&dir, &workspace_root);
+
+    let walker = WalkDir::new(&dir)
+        .into_iter()
+        .filter_entry(|entry| {
+            if let Some(reason) =
+                classify_search_entry_skip(&workspace_root, entry, gitignore.as_ref())
+            {
+                if entry.file_type().is_dir() {
+                    match reason {
+                        SearchEntrySkipReason::Gitignored => skipped_gitignored_dirs += 1,
+                        SearchEntrySkipReason::HeavyweightDirectory => skipped_heavy_dirs += 1,
+                        SearchEntrySkipReason::InternalArtifactDirectory => {}
+                    }
+                }
+                return false;
+            }
+
+            true
+        })
+        .filter_map(|e| e.ok());
+
+    for entry in walker {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let file_name = path.file_name().and_then(|n| n.to_str());
+        let rel_path_obj = path.strip_prefix(&dir).unwrap_or(path);
+
+        if let Some(ref glob_pat) = file_pattern {
+            if !matches_glob(glob_pat, rel_path_obj, file_name) {
+                continue;
+            }
+        }
+
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if is_skipped_binary_extension(&ext) {
+            continue;
+        }
+
+        let file_size = match entry.metadata() {
+            Ok(metadata) => metadata.len() as usize,
+            Err(_) => continue,
+        };
+        if file_size > max_size {
+            skipped_large_files += 1;
+            continue;
+        }
+
+        let rel_path = {
+            let p = rel_path_obj.to_string_lossy().to_string();
+            #[cfg(target_os = "windows")]
+            let p = p.replace('\\', "/");
+            p
+        };
+
+        files.push(SearchableFileCandidate {
+            path: path.to_path_buf(),
+            rel_path,
+        });
+    }
+
+    ContentDirWalkResult {
+        files,
+        skipped_heavy_dirs,
+        skipped_gitignored_dirs,
+        skipped_large_files,
+    }
+}
 
 pub(super) struct SearchContentRequest<'a> {
     pub display_path: &'a str,
@@ -298,8 +433,6 @@ pub(super) async fn search_content_in_file(
 pub(super) async fn search_content_in_dir(
     request: SearchDirectoryRequest<'_>,
 ) -> Result<MCPResult, String> {
-    use walkdir::WalkDir;
-
     let SearchDirectoryRequest {
         workspace_root,
         dir,
@@ -323,95 +456,30 @@ pub(super) async fn search_content_in_dir(
 
     let mut file_matches: Vec<FileMatch> = Vec::new();
     let mut files_searched: usize = 0;
-    let mut skipped_heavy_dirs = 0usize;
-    let mut skipped_gitignored_dirs = 0usize;
     let mut skipped_binary_files = 0usize;
-    let mut skipped_large_files = 0usize;
     let max_size = effective_search_content_file_size_limit();
-    let gitignore = build_gitignore_matcher(dir, workspace_root);
 
-    let walker = WalkDir::new(dir)
-        .into_iter()
-        .filter_entry(|entry| {
-            if let Some(reason) =
-                classify_search_entry_skip(workspace_root, entry, gitignore.as_ref())
-            {
-                if entry.file_type().is_dir() {
-                    match reason {
-                        SearchEntrySkipReason::Gitignored => skipped_gitignored_dirs += 1,
-                        SearchEntrySkipReason::HeavyweightDirectory => skipped_heavy_dirs += 1,
-                        SearchEntrySkipReason::InternalArtifactDirectory => {}
-                    }
-                }
-                return false;
-            }
+    let workspace_root_owned = workspace_root.to_path_buf();
+    let dir_owned = dir.to_path_buf();
+    let file_pattern_owned = file_pattern.cloned();
+    let ContentDirWalkResult {
+        files: candidates,
+        skipped_heavy_dirs,
+        skipped_gitignored_dirs,
+        skipped_large_files,
+    } = tokio::task::spawn_blocking(move || {
+        collect_content_search_candidates_blocking(
+            workspace_root_owned,
+            dir_owned,
+            file_pattern_owned,
+            max_size,
+        )
+    })
+    .await
+    .map_err(|e| format!("Content search walk failed: {e}"))?;
 
-            true
-        })
-        .filter_map(|e| e.ok());
-
-    for entry in walker {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let file_name = path.file_name().and_then(|n| n.to_str());
-        let rel_path_obj = path.strip_prefix(dir).unwrap_or(path);
-
-        if let Some(glob_pat) = file_pattern {
-            if !matches_glob(glob_pat, rel_path_obj, file_name) {
-                continue;
-            }
-        }
-
-        // Skip obviously binary extensions
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        if matches!(
-            ext.as_str(),
-            "png"
-                | "jpg"
-                | "jpeg"
-                | "gif"
-                | "webp"
-                | "svg"
-                | "ico"
-                | "pdf"
-                | "zip"
-                | "tar"
-                | "gz"
-                | "bz2"
-                | "xz"
-                | "exe"
-                | "dll"
-                | "so"
-                | "dylib"
-                | "bin"
-                | "wasm"
-                | "mp3"
-                | "mp4"
-                | "wav"
-                | "ogg"
-                | "flac"
-                | "ttf"
-                | "woff"
-                | "woff2"
-        ) {
-            continue;
-        }
-
-        let file_size = match entry.metadata() {
-            Ok(metadata) => metadata.len() as usize,
-            Err(_) => continue,
-        };
-        if file_size > max_size {
-            skipped_large_files += 1;
-            continue;
-        }
+    for candidate in candidates {
+        let path = candidate.path.as_path();
         if is_probably_binary_file(path).await {
             skipped_binary_files += 1;
             continue;
@@ -422,13 +490,6 @@ pub(super) async fn search_content_in_dir(
             Err(_) => continue, // skip unreadable
         };
         files_searched += 1;
-
-        let rel_path = {
-            let p = rel_path_obj.to_string_lossy().to_string();
-            #[cfg(target_os = "windows")]
-            let p = p.replace('\\', "/");
-            p
-        };
 
         let matched_lines = collect_matched_line_indices(&content, regex);
         let mut hits = Vec::new();
@@ -442,7 +503,10 @@ pub(super) async fn search_content_in_dir(
         }
 
         if !hits.is_empty() {
-            file_matches.push(FileMatch { rel_path, hits });
+            file_matches.push(FileMatch {
+                rel_path: candidate.rel_path,
+                hits,
+            });
         }
     }
 

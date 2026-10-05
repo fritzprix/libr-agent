@@ -5,15 +5,30 @@ use crate::repositories::{MessageRepository, SessionStatus};
 use crate::search::message_index::{MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
 use crate::utils::pagination::{paginate_in_memory, Page};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-/// Global cache for loaded search indices (session_id -> MessageSearchEngine)
-static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEngine>>> =
-    once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+/// Soft cap for in-memory BM25 engines (desktop: few concurrent sessions).
+const MAX_INDEX_CACHE_ENTRIES: usize = 32;
+
+struct IndexCache {
+    engines: HashMap<String, Arc<MessageSearchEngine>>,
+    /// Insertion order for FIFO eviction (KISS; not access-recency LRU).
+    order: VecDeque<String>,
+}
+
+/// Global cache for loaded search indices (session_id -> shared engine).
+/// Stored behind `Arc` so cache hits do not deep-clone the BM25 index.
+static INDEX_CACHE: once_cell::sync::Lazy<Mutex<IndexCache>> =
+    once_cell::sync::Lazy::new(|| {
+        Mutex::new(IndexCache {
+            engines: HashMap::new(),
+            order: VecDeque::new(),
+        })
+    });
 
 /// Compares two messages for content equality to detect duplicate user messages.
 /// - ⚠️ Designed to work ONLY with user-role messages (user-message-only).
@@ -194,7 +209,7 @@ impl MessageService {
     }
 
     /// Load or rebuild the search index for a session.
-    async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, String> {
+    async fn get_or_build_index(session_id: &str) -> Result<Arc<MessageSearchEngine>, String> {
         let repo = get_message_repository();
 
         // Check if index exists and is up to date
@@ -208,22 +223,34 @@ impl MessageService {
             let cache = INDEX_CACHE
                 .lock()
                 .map_err(|e| format!("Cache lock error: {e}"))?;
-            if let Some(engine) = cache.get(session_id) {
+            if let Some(engine) = cache.engines.get(session_id) {
                 if !is_dirty {
-                    return Ok(engine.clone());
+                    return Ok(Arc::clone(engine));
                 }
             }
         }
 
         // If dirty or not cached, rebuild
-        let engine = crate::search::service::rebuild_and_persist_index(session_id).await?;
+        let engine = Arc::new(crate::search::service::rebuild_and_persist_index(session_id).await?);
 
-        // Cache the engine
+        // Cache the engine with bounded FIFO eviction
         {
             let mut cache = INDEX_CACHE
                 .lock()
                 .map_err(|e| format!("Cache lock error: {e}"))?;
-            cache.insert(session_id.to_string(), engine.clone());
+            if cache.engines.contains_key(session_id) {
+                cache.engines.insert(session_id.to_string(), Arc::clone(&engine));
+            } else {
+                while cache.engines.len() >= MAX_INDEX_CACHE_ENTRIES {
+                    if let Some(evict_key) = cache.order.pop_front() {
+                        cache.engines.remove(&evict_key);
+                    } else {
+                        break;
+                    }
+                }
+                cache.order.push_back(session_id.to_string());
+                cache.engines.insert(session_id.to_string(), Arc::clone(&engine));
+            }
         }
 
         Ok(engine)
@@ -459,13 +486,15 @@ impl MessageService {
             }
         }
 
-        let sessions = active_sessions.read().await;
-        let session = sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
         // ── Phase 1: Message dedup + In-memory push ───────────────────────
+        // Hold `active_sessions` only for the in-memory mutation. Drop before
+        // SQLite persistence so session spawn/switch/reset are not blocked.
         {
+            let sessions = active_sessions.read().await;
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
             // 1a. Capture last-message signature while holding the lock
             let last_msg_sig = {
                 let session_messages = session.messages.read().await;
@@ -535,7 +564,7 @@ impl MessageService {
                     }
                 }
             }
-        } // session.messages lock released
+        } // active_sessions + session.messages locks released
 
         // ── Phase 2: Persist to DB (SYNC — crash-safe) ──────────────────────
         {
@@ -554,7 +583,6 @@ impl MessageService {
         }
 
         // ── Phase 3: Emit UI events ─────────────────────────────────────────
-        drop(sessions);
         for msg in &messages {
             let event = crate::agent::events::AgentEvent::MessageAdded {
                 session_id: session_id.to_string(),

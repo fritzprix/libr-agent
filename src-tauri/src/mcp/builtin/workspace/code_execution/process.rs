@@ -10,6 +10,11 @@ use tracing::{error, info, warn};
 use crate::mcp::builtin::workspace::terminal_manager;
 use crate::mcp::builtin::workspace::text_encoding::{decode_text_bytes, DecodedText};
 
+/// Batch disk flushes while streaming process output (live UI still uses the broadcast channel).
+const STREAM_FILE_FLUSH_EVERY_N_LINES: usize = 64;
+/// Also flush when output pauses so disk readers (`terminal_readOutput`) stay fresh.
+const STREAM_FILE_FLUSH_IDLE: Duration = Duration::from_millis(250);
+
 fn strip_ansi_escapes(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
@@ -435,12 +440,17 @@ pub async fn spawn_and_stream_hybrid(
                 Ok(file) => {
                     let mut writer = tokio::io::BufWriter::new(file);
                     let mut total_bytes = 0u64;
+                    let mut lines_since_flush = 0usize;
 
                     loop {
                         tokio::select! {
                             _ = cancel_clone.cancelled() => {
                                 info!("Process {} stdout streaming cancelled", label);
                                 break;
+                            }
+                            _ = tokio::time::sleep(STREAM_FILE_FLUSH_IDLE), if lines_since_flush > 0 => {
+                                let _ = writer.flush().await;
+                                lines_since_flush = 0;
                             }
                             line_result = lines.next_line() => {
                                 match line_result {
@@ -460,10 +470,14 @@ pub async fn spawn_and_stream_hybrid(
                                         // 1. Send to broadcast channel + buffer (visible immediately)
                                         streaming_clone.push_stdout(cleaned_line.clone()).await;
 
-                                        // 2. Write to file and flush every line for disk readers
+                                        // 2. Write to file; flush every N lines or on idle pause
                                         if writer.write_all(cleaned_line.as_bytes()).await.is_ok() {
                                             let _ = writer.write_all(b"\n").await;
-                                            let _ = writer.flush().await;
+                                            lines_since_flush += 1;
+                                            if lines_since_flush >= STREAM_FILE_FLUSH_EVERY_N_LINES {
+                                                let _ = writer.flush().await;
+                                                lines_since_flush = 0;
+                                            }
                                         }
                                     }
                                     Ok(None) => break, // EOF
@@ -507,12 +521,17 @@ pub async fn spawn_and_stream_hybrid(
                 Ok(file) => {
                     let mut writer = tokio::io::BufWriter::new(file);
                     let mut total_bytes = 0u64;
+                    let mut lines_since_flush = 0usize;
 
                     loop {
                         tokio::select! {
                             _ = cancel_clone.cancelled() => {
                                 info!("Process {} stderr streaming cancelled", label);
                                 break;
+                            }
+                            _ = tokio::time::sleep(STREAM_FILE_FLUSH_IDLE), if lines_since_flush > 0 => {
+                                let _ = writer.flush().await;
+                                lines_since_flush = 0;
                             }
                             line_result = lines.next_line() => {
                                 match line_result {
@@ -532,10 +551,14 @@ pub async fn spawn_and_stream_hybrid(
                                         // 1. Send to broadcast channel + buffer (visible immediately)
                                         streaming_clone.push_stderr(cleaned_line.clone()).await;
 
-                                        // 2. Write to file and flush every line for disk readers
+                                        // 2. Write to file; flush every N lines or on idle pause
                                         if writer.write_all(cleaned_line.as_bytes()).await.is_ok() {
                                             let _ = writer.write_all(b"\n").await;
-                                            let _ = writer.flush().await;
+                                            lines_since_flush += 1;
+                                            if lines_since_flush >= STREAM_FILE_FLUSH_EVERY_N_LINES {
+                                                let _ = writer.flush().await;
+                                                lines_since_flush = 0;
+                                            }
                                         }
                                     }
                                     Ok(None) => break, // EOF

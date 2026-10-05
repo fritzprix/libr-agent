@@ -155,7 +155,10 @@ pub async fn list_relative_paths_in_root(
         return Err("Workspace path must be a directory".to_string());
     }
 
-    Ok(collect_relative_file_paths(root, max_depth))
+    let root = root.to_path_buf();
+    tokio::task::spawn_blocking(move || collect_relative_file_paths(&root, max_depth))
+        .await
+        .map_err(|error| format!("Failed to list workspace files: {error}"))
 }
 
 /// Returns a flat list of relative file paths in the workspace (non-recursive directories excluded).
