@@ -79,10 +79,7 @@ export function ExtensionBridgeSettingsSection() {
     try {
       await navigator.clipboard.writeText(unpackedPath);
       toast.success(
-        t(
-          'settings.system.extensionBridge.pathCopied',
-          'Install path copied',
-        ),
+        t('settings.system.extensionBridge.pathCopied', 'Install path copied'),
       );
     } catch {
       toast.error(
@@ -118,12 +115,12 @@ export function ExtensionBridgeSettingsSection() {
     userState === 'connected'
       ? t(
           'settings.system.extensionBridge.connectedHint',
-          'Agents can open sessions with browser="userChrome". Sticky agent browser stays available via browser="sidecar". If the link drops, LibrAgent reconnects when this app is running — you should not need to reopen chrome://extensions.',
+          'The agent can use your everyday Chrome logins. The separate built-in browser also remains available. LibrAgent reconnects automatically if the link drops.',
         )
       : userState === 'waiting_extension'
         ? t(
             'settings.system.extensionBridge.waitingHint',
-            'One-time setup: install the Load unpacked extension, then leave it enabled. Until Connected, browser="userChrome" errors; agents must use browser="sidecar" for the separate sticky agent browser.',
+            'Install the extension once, then keep it enabled. Until connected, the agent uses only the separate built-in browser.',
           )
         : null;
 
@@ -131,15 +128,12 @@ export function ExtensionBridgeSettingsSection() {
     <div className="space-y-4 max-w-lg">
       <div>
         <h4 className="text-sm font-medium text-foreground">
-          {t(
-            'settings.system.extensionBridge.title',
-            'Everyday Chrome',
-          )}
+          {t('settings.system.extensionBridge.title', 'Everyday Chrome')}
         </h4>
         <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
           {t(
             'settings.system.extensionBridge.description',
-            'Optional. Connect once so agents can call createSession with browser="userChrome" and use logins already in your everyday Chrome. Restarting LibrAgent should reconnect by itself.',
+            'Optional. Connect once to let the AI agent use logins from your everyday Chrome. LibrAgent reconnects automatically after restart.',
           )}
         </p>
       </div>
@@ -165,7 +159,7 @@ export function ExtensionBridgeSettingsSection() {
           <p className="text-xs text-muted-foreground leading-relaxed">
             {t(
               'settings.system.extensionBridge.fallbackNote',
-              'Not connected: use browser="sidecar" (sticky agent browser). There is no silent fallback into everyday Chrome.',
+              'Not connected: the agent uses the separate built-in browser.',
             )}
           </p>
         ) : null}
@@ -180,10 +174,7 @@ export function ExtensionBridgeSettingsSection() {
             disabled={!unpackedPath}
             onClick={() => void copyPath()}
           >
-            {t(
-              'settings.system.extensionBridge.copyPath',
-              'Copy install path',
-            )}
+            {t('settings.system.extensionBridge.copyPath', 'Copy install path')}
           </Button>
           <Button
             type="button"
@@ -232,7 +223,9 @@ export function ExtensionBridgeSettingsSection() {
         </ol>
       ) : null}
 
-      {pathError ? <p className="text-xs text-destructive">{pathError}</p> : null}
+      {pathError ? (
+        <p className="text-xs text-destructive">{pathError}</p>
+      ) : null}
 
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
         <CollapsibleTrigger asChild>
@@ -259,13 +252,15 @@ export function ExtensionBridgeSettingsSection() {
               </p>
               <p>
                 <span className="font-medium text-foreground">
-                  {t('settings.system.extensionBridge.tokenLabel', 'Token')}:{' '}
+                  {t('settings.system.extensionBridge.tokenLabel', 'Token')}
+                  :{' '}
                 </span>
                 {status.tokenHint}
               </p>
               <p>
                 <span className="font-medium text-foreground">
-                  {t('settings.system.extensionBridge.modeLabel', 'Backend')}:{' '}
+                  {t('settings.system.extensionBridge.modeLabel', 'Backend')}
+                  :{' '}
                 </span>
                 {status.backendMode}
               </p>
@@ -274,10 +269,7 @@ export function ExtensionBridgeSettingsSection() {
           {unpackedPath ? (
             <p className="break-all">
               <span className="font-medium text-foreground">
-                {t(
-                  'settings.system.extensionBridge.pathLabel',
-                  'Install path',
-                )}
+                {t('settings.system.extensionBridge.pathLabel', 'Install path')}
                 :{' '}
               </span>
               {unpackedPath}

@@ -105,11 +105,11 @@ function SystemBackgroundTasksSectionComponent({
       <NumberSettingField
         label={t(
           'settings.system.mcpServerStartupTimeout',
-          'MCP Discovery Timeout (Sec)',
+          'Extension Discovery Timeout (Sec)',
         )}
         description={t(
           'settings.system.mcpServerStartupTimeoutDescription',
-          'How long to wait for MCP servers to finish tool discovery before marking them timed out and opening the session. Increase for slow servers (e.g. npx first run).',
+          'Maximum wait time to discover tools from extensions. Increase this value for slow extensions.',
         )}
         placeholder={t(
           'settings.system.placeholders.mcpServerStartupTimeout',
@@ -145,7 +145,7 @@ function SystemBackgroundTasksSectionComponent({
         }
         description={t(
           'settings.system.mcpToolTimeoutDescription',
-          'How long to wait for a single tool call before cancelling it. Set to 0 to disable (recommended for long-running agent tools like awaitAgent).',
+          'Maximum wait time for a single tool call. Set to 0 for no limit (recommended for long tasks).',
         )}
         placeholder={t(
           'settings.system.placeholders.mcpToolTimeout',

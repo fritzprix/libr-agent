@@ -243,7 +243,7 @@ function AIModelsTabComponent({
         </h3>
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
-            {t('settings.llmPreference', 'Default LLM')}
+            {t('settings.llmPreference', 'Default AI Model')}
           </label>
           <AgentModelPicker
             currentModel={localPreferredModel.model}
@@ -258,7 +258,7 @@ function AIModelsTabComponent({
 
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
-            {t('settings.aiModels.fallbackModel', 'Fallback LLM')}
+            {t('settings.aiModels.fallbackModel', 'Backup AI Model')}
           </label>
           <AgentModelPicker
             currentModel={localFallbackModel?.model ?? ''}
@@ -274,7 +274,7 @@ function AIModelsTabComponent({
           <p className="mt-1 text-xs text-muted-foreground">
             {t(
               'settings.aiModels.fallbackModelDescription',
-              'Used as a last resort when the primary model returns malformed or empty responses after all retries.',
+              'Used when the default model fails to respond after all retries.',
             )}
           </p>
         </div>
@@ -326,7 +326,7 @@ function AIModelsTabComponent({
           <p className="text-xs text-muted-foreground">
             {t(
               'settings.aiModels.temperatureOverrideDescription',
-              'When disabled, provider and serving-engine defaults apply. Enable to send a custom temperature on AI requests.',
+              'When disabled, the recommended default of each model applies. Enable to set a custom value.',
             )}
           </p>
           {temperatureOverrideEnabled ? (
@@ -334,7 +334,7 @@ function AIModelsTabComponent({
               label={t('settings.aiModels.temperature', 'Temperature')}
               description={t(
                 'settings.aiModels.temperatureDescription',
-                'Controls randomness. Lower is more deterministic; higher is more creative. Range 0–2.',
+                'Controls response creativity. Lower values are more deterministic; higher values are more creative. Range 0–2.',
               )}
               value={temperature}
               min={0}

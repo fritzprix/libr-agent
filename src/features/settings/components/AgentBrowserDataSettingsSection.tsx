@@ -62,7 +62,7 @@ export function AgentBrowserDataSettingsSection() {
         <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
           {t(
             'settings.system.agentBrowser.description',
-            'Logins made inside LibrAgent’s built-in browser are kept on this device so agents do not lose sessions after createSession. This is separate from your everyday Chrome.',
+            'LibrAgent saves logins in its built-in browser so new sessions stay signed in. This is separate from your everyday Chrome.',
           )}
         </p>
       </div>

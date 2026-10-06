@@ -635,29 +635,17 @@ export function useAgentChatScroll({
       markUserScrollIntent();
     };
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === 'ArrowUp' ||
-        event.key === 'PageUp' ||
-        event.key === 'Home'
-      ) {
-        markUserScrollIntent();
-      }
-    };
-
     scrollerElement.addEventListener('scroll', handleScroll, { passive: true });
     scrollerElement.addEventListener('wheel', handleWheel, { passive: true });
     scrollerElement.addEventListener('touchmove', handleTouchMove, {
       passive: true,
     });
-    scrollerElement.addEventListener('keydown', handleKeyDown);
     updatePinnedState();
 
     return () => {
       scrollerElement.removeEventListener('scroll', handleScroll);
       scrollerElement.removeEventListener('wheel', handleWheel);
       scrollerElement.removeEventListener('touchmove', handleTouchMove);
-      scrollerElement.removeEventListener('keydown', handleKeyDown);
     };
   }, [
     abortBottomAlignment,
