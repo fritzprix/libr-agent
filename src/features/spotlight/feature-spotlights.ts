@@ -6,6 +6,16 @@ import type { Spotlight } from './types';
  */
 export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
   {
+    id: 'everyday-chrome',
+    sinceVersion: '0.9.23',
+    titleKey: 'spotlight.items.everydayChrome.title',
+    bodyKey: 'spotlight.items.everydayChrome.body',
+    ctaLabelKey: 'spotlight.items.everydayChrome.cta',
+    href: { type: 'settings', tab: 'system' },
+    surfaces: ['release', 'hub', 'wait'],
+    priority: 1,
+  },
+  {
     id: 'starter-tasks',
     sinceVersion: '0.9.10',
     titleKey: 'spotlight.items.starterTasks.title',
@@ -13,7 +23,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.starterTasks.cta',
     href: { type: 'route', path: '/scheduled-tasks' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 1,
+    priority: 2,
   },
   {
     id: 'visualize-csv',
@@ -23,7 +33,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.visualize.cta',
     href: { type: 'route', path: '/agent/draft' },
     surfaces: ['release', 'hub'],
-    priority: 2,
+    priority: 3,
   },
   {
     id: 'thinking-effort',
@@ -33,7 +43,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.thinkingEffort.cta',
     href: { type: 'settings', tab: 'ai-models' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 3,
+    priority: 4,
   },
   {
     id: 'knowledge-graph',
@@ -43,7 +53,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.knowledgeGraph.cta',
     href: { type: 'route', path: '/knowledge' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 4,
+    priority: 5,
   },
   {
     id: 'themes',
@@ -53,6 +63,6 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.themes.cta',
     href: { type: 'settings', tab: 'general' },
     surfaces: ['hub'],
-    priority: 5,
+    priority: 6,
   },
 ];

@@ -163,10 +163,10 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 从 **[Releases 页面](https://github.com/fritzprix/libr-agent/releases/latest)** 下载最新安装包。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.22_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_x64-setup.exe) · [`LibrAgent_0.9.22_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.22_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.22_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_amd64.AppImage) · [`LibrAgent_0.9.22_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_amd64.deb) · [`LibrAgent-0.9.22-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent-0.9.22-1.x86_64.rpm)
-- **所有发布资产:** [Releases 页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.22)
+- **Windows：** [`LibrAgent_0.9.23_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_x64-setup.exe) · [`LibrAgent_0.9.23_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.9.23_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.9.23_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_amd64.AppImage) · [`LibrAgent_0.9.23_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_amd64.deb) · [`LibrAgent-0.9.23-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent-0.9.23-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.23)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5 分钟上手路径

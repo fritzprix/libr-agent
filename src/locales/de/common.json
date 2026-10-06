@@ -1906,6 +1906,11 @@
         "title": "Farbthema wechseln",
         "body": "Unter Einstellungen → General wählen Sie Akzentthemen wie Neutral, Amber oder Ocean.",
         "cta": "General öffnen"
+      },
+      "everydayChrome": {
+        "title": "Alltäglichen Chrome nutzen",
+        "body": "Verbinden Sie die Chrome-Erweiterung unter Einstellungen → System, damit Agenten in Ihrem echten Browser mit bestehenden Anmeldungen arbeiten.",
+        "cta": "Systemeinstellungen öffnen"
       }
     }
   }

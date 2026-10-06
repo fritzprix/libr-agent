@@ -1,3 +1,26 @@
+## [0.9.23] - 2026-10-06
+
+### 🚀 Features & Capabilities
+
+- **Everyday Chrome (`userChrome`)**: Optional MV3 extension bridge so agents can drive your real Chrome with existing logins (`browser="userChrome"`). Sticky agent browser remains `browser="sidecar"`. Setup under Settings → System.
+- **Chat tool grouping**: Tool calls are grouped by assistant response unit for a clearer timeline while agents work.
+- **`editObject` workspace tool**: Structured JSON object edits without rewriting whole files.
+- **Harness lessons**: Operational lessons from app data can inject into the stable prompt for better recovery guidance.
+
+### 🐛 Fixes & Hardening
+
+- **Windows Open on deliverables**: Strip `\\?\` / `//?/` verbatim prefixes so reportResult / workspace Open launches files correctly (#2036).
+- **Chat scroll while streaming**: Ignore streaming reflow when the user pauses bottom-follow (#2029).
+- **Compaction / chat context**: Isolate streaming chat context and harden compaction handoff (#2030).
+- **Browser**: CSP-safe click/input via extension inject; capture on-load console before goto; `saveRawHtml` into session workspace for Docker attach; restore older-message load at chat top.
+- **Workspace**: Truncate oversized sync shell observations; Available Tools modal overflow contained.
+
+### 🔧 Performance & Internal
+
+- Stop Tokio worker blocking in file search / `@file` walks; narrow `active_sessions` and lineage locks across SQLite (#2028).
+- Collapse search reindex queries and add hot-path SQLite indexes.
+- Docs/README sync for everyday Chrome and ASD-STE100 plain-language guides.
+
 ## [0.9.22] - 2026-10-02
 
 ### 🚀 Features & Capabilities

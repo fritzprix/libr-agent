@@ -64,19 +64,26 @@ pub(super) async fn read_file_lines_range(
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     let path_buf = path.to_path_buf();
 
-    let (collected_lines, decode_note) = if file_size > LARGE_FILE_THRESHOLD {
-        tokio::task::spawn_blocking(move || {
-            let bytes = std::fs::read(&path_buf).map_err(|e| e.to_string())?;
-            decode_file_bytes_to_lines(&bytes)
+    // Large files: stream with BufReader (two-pass for accurate total_lines / negative offsets)
+    // instead of allocating the whole file as `Vec<String>`.
+    if file_size > LARGE_FILE_THRESHOLD {
+        return tokio::task::spawn_blocking(move || {
+            read_large_file_lines_range_blocking(
+                &path_buf,
+                offset_opt,
+                size_opt,
+                show_line_anchors,
+                visible_content_limit_bytes,
+            )
         })
         .await
-        .map_err(|e| format!("Task join error: {}", e))??
-    } else {
-        let bytes = tokio::fs::read(path)
-            .await
-            .map_err(|e| format!("Failed to read file: {}", e))?;
-        decode_file_bytes_to_lines(&bytes)?
-    };
+        .map_err(|e| format!("Task join error: {}", e))?;
+    }
+
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let (collected_lines, decode_note) = decode_file_bytes_to_lines(&bytes)?;
 
     let total_lines = collected_lines.len();
     let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
@@ -101,6 +108,169 @@ pub(super) async fn read_file_lines_range(
     }
 
     Ok(chunk)
+}
+
+fn read_large_file_lines_range_blocking(
+    path: &std::path::Path,
+    offset_opt: Option<isize>,
+    size_opt: Option<isize>,
+    show_line_anchors: bool,
+    visible_content_limit_bytes: usize,
+) -> Result<ReadFileChunk, String> {
+    use std::io::Read;
+
+    // Sniff encoding / binary without loading the whole file into a line Vec.
+    // Do NOT reject NULs here — UTF-16 text is full of them; `decode_text_bytes`
+    // already distinguishes binary vs UTF-16 via `looks_like_binary`.
+    let mut sniff = [0u8; 8 * 1024];
+    let sniff_len = {
+        let mut file =
+            std::fs::File::open(path).map_err(|e| format!("Failed to read file: {e}"))?;
+        file.read(&mut sniff)
+            .map_err(|e| format!("Failed to read file: {e}"))?
+    };
+
+    use crate::mcp::builtin::workspace::text_encoding::{decode_text_bytes, DecodedText};
+    let decode_note = match decode_text_bytes(&sniff[..sniff_len]) {
+        DecodedText::Binary => {
+            return Err(
+                "Failed to read file: content appears to be binary (embedded null bytes). \
+                 Use a specialized tool or shell commands for binary files."
+                    .to_string(),
+            );
+        }
+        DecodedText::Text { note, .. } => note,
+    };
+
+    // Stream UTF-8 (including BOM). Other encodings need a full decode.
+    let stream_utf8_bom = matches!(decode_note, Some("decoded with UTF-8 BOM stripped"));
+    let can_stream_utf8 = decode_note.is_none() || stream_utf8_bom;
+    if !can_stream_utf8 {
+        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read file: {e}"))?;
+        let (collected_lines, note) = decode_file_bytes_to_lines(&bytes)?;
+        let total_lines = collected_lines.len();
+        let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
+        let mut chunk = read_chunk_from_lines(
+            collected_lines
+                .into_iter()
+                .map(Ok::<String, std::io::Error>),
+            start,
+            end,
+            total_lines,
+            show_line_anchors,
+            visible_content_limit_bytes,
+        )?;
+        if let Some(note) = note {
+            if !chunk.content.is_empty() {
+                chunk.content = format!("[encoding: {note}]\n{}", chunk.content);
+            } else {
+                chunk.content = format!("[encoding: {note}]");
+            }
+        }
+        return Ok(chunk);
+    }
+
+    let bom_skip = if stream_utf8_bom { 3 } else { 0 };
+    let total_lines = count_utf8_lines_by_newlines(path, bom_skip)?;
+    let (start, end) = resolve_range(total_lines, offset_opt, size_opt);
+    let mut chunk = read_chunk_from_lines(
+        utf8_lossy_line_iter(path, bom_skip)?,
+        start,
+        end,
+        total_lines,
+        show_line_anchors,
+        visible_content_limit_bytes,
+    )?;
+
+    if let Some(note) = decode_note {
+        if !chunk.content.is_empty() {
+            chunk.content = format!("[encoding: {note}]\n{}", chunk.content);
+        } else {
+            chunk.content = format!("[encoding: {note}]");
+        }
+    }
+
+    Ok(chunk)
+}
+
+/// Count lines by scanning for `b'\n'` (no UTF-8 validation / no String allocs).
+fn count_utf8_lines_by_newlines(
+    path: &std::path::Path,
+    skip_bytes: usize,
+) -> Result<usize, String> {
+    use std::io::{BufReader, Read};
+
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let mut reader = BufReader::new(file);
+    if skip_bytes > 0 {
+        std::io::copy(
+            &mut reader.by_ref().take(skip_bytes as u64),
+            &mut std::io::sink(),
+        )
+        .map_err(|e| format!("Failed to read file: {e}"))?;
+    }
+
+    let mut buf = [0u8; 64 * 1024];
+    let mut total_bytes = 0u64;
+    let mut newline_count = 0usize;
+    let mut last_byte = None::<u8>;
+
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("Failed to read file: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        total_bytes += n as u64;
+        newline_count += buf[..n].iter().filter(|&&b| b == b'\n').count();
+        last_byte = Some(buf[n - 1]);
+    }
+
+    if total_bytes == 0 {
+        return Ok(0);
+    }
+
+    Ok(match last_byte {
+        Some(b'\n') => newline_count,
+        _ => newline_count.saturating_add(1),
+    })
+}
+
+/// Yield lines as lossy UTF-8 strings so mid-file invalid sequences do not abort
+/// the whole range read (matches small-file `from_utf8_lossy` behavior).
+fn utf8_lossy_line_iter(
+    path: &std::path::Path,
+    skip_bytes: usize,
+) -> Result<impl Iterator<Item = Result<String, std::io::Error>>, String> {
+    use std::io::{BufRead, BufReader, Read};
+
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let mut reader = BufReader::new(file);
+    if skip_bytes > 0 {
+        std::io::copy(
+            &mut reader.by_ref().take(skip_bytes as u64),
+            &mut std::io::sink(),
+        )
+        .map_err(|e| format!("Failed to read file: {e}"))?;
+    }
+
+    Ok(std::iter::from_fn(move || {
+        let mut raw = Vec::new();
+        match reader.read_until(b'\n', &mut raw) {
+            Ok(0) => None,
+            Ok(_) => {
+                if raw.last() == Some(&b'\n') {
+                    raw.pop();
+                    if raw.last() == Some(&b'\r') {
+                        raw.pop();
+                    }
+                }
+                Some(Ok(String::from_utf8_lossy(&raw).into_owned()))
+            }
+            Err(e) => Some(Err(e)),
+        }
+    }))
 }
 
 fn decode_file_bytes_to_lines(bytes: &[u8]) -> Result<(Vec<String>, Option<&'static str>), String> {

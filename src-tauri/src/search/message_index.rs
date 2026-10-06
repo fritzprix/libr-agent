@@ -38,6 +38,17 @@ impl From<Model> for MessageDocument {
     }
 }
 
+impl From<crate::repositories::MessageIndexDocument> for MessageDocument {
+    fn from(document: crate::repositories::MessageIndexDocument) -> Self {
+        Self {
+            id: document.id,
+            session_id: document.session_id,
+            content: document.content,
+            created_at: document.created_at,
+        }
+    }
+}
+
 /// BM25 Message Search Engine
 ///
 /// Maintains an in-memory BM25 index for fast full-text search.
@@ -100,17 +111,12 @@ impl MessageSearchEngine {
         }
     }
 
-    /// Builds a new search engine from a list of message models.
-    ///
-    /// This handles the conversion from database models to indexable documents
-    /// and populates the engine.
-    pub fn build_from_models(
+    /// Builds a search engine from documents that already contain only index columns.
+    pub fn build_from_documents(
         session_id: String,
-        models: Vec<Model>,
+        documents: Vec<MessageDocument>,
         max_docs: usize,
     ) -> Result<Self, String> {
-        let documents: Vec<MessageDocument> =
-            models.into_iter().map(MessageDocument::from).collect();
         let mut engine = Self::new(session_id, max_docs);
         engine.add_documents(documents)?;
         Ok(engine)

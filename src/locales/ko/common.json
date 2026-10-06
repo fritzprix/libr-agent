@@ -1945,6 +1945,11 @@
         "title": "테마를 바꿔보세요",
         "body": "설정 → General에서 Neutral, Amber, Ocean 등 액센트 테마를 고를 수 있어요.",
         "cta": "General 설정 열기"
+      },
+      "everydayChrome": {
+        "title": "일상 Chrome 그대로 쓰기",
+        "body": "설정 → 시스템에서 Chrome 확장 프로그램을 연결하면, 이미 로그인된 실제 Chrome에서 에이전트가 작업할 수 있습니다.",
+        "cta": "시스템 설정 열기"
       }
     }
   }

@@ -2,8 +2,105 @@ use super::super::utils::format_file_size;
 use super::helpers::*;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
-use serde_json::json;
-use std::path::Path;
+use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
+
+struct FileWalkResult {
+    results: Vec<Value>,
+    skipped_heavy_dirs: usize,
+    skipped_gitignored_dirs: usize,
+}
+
+fn walk_matching_files_blocking(
+    workspace_root: PathBuf,
+    root_path: PathBuf,
+    display_path: String,
+    glob_pattern: GlobMatcher,
+) -> FileWalkResult {
+    use walkdir::WalkDir;
+
+    let mut results = Vec::new();
+    let mut skipped_heavy_dirs = 0usize;
+    let mut skipped_gitignored_dirs = 0usize;
+    let gitignore = build_gitignore_matcher(&root_path, &workspace_root);
+
+    if root_path.is_file() {
+        let file_name = root_path.file_name().and_then(|n| n.to_str());
+        if matches_glob(&glob_pattern, &root_path, file_name) {
+            let size = std::fs::metadata(&root_path).map(|m| m.len()).unwrap_or(0);
+            results.push(json!({
+                "path": display_path,
+                "type": "file",
+                "size": size
+            }));
+        }
+        return FileWalkResult {
+            results,
+            skipped_heavy_dirs,
+            skipped_gitignored_dirs,
+        };
+    }
+
+    let walker = WalkDir::new(&root_path)
+        .into_iter()
+        .filter_entry(|entry| {
+            if let Some(reason) =
+                classify_search_entry_skip(&workspace_root, entry, gitignore.as_ref())
+            {
+                if entry.file_type().is_dir() {
+                    match reason {
+                        SearchEntrySkipReason::Gitignored => skipped_gitignored_dirs += 1,
+                        SearchEntrySkipReason::HeavyweightDirectory => skipped_heavy_dirs += 1,
+                        SearchEntrySkipReason::InternalArtifactDirectory => {}
+                    }
+                }
+                return false;
+            }
+
+            true
+        })
+        .filter_map(|e| e.ok());
+
+    for entry in walker {
+        let path = entry.path();
+        let is_dir = path.is_dir();
+        let is_file = path.is_file();
+
+        if !is_file && !is_dir {
+            continue;
+        }
+
+        let file_name = path.file_name().and_then(|n| n.to_str());
+        let relative_path = path.strip_prefix(&root_path).unwrap_or(path);
+
+        if matches_glob(&glob_pattern, relative_path, file_name) {
+            let path_str = {
+                let p = relative_path.to_string_lossy().to_string();
+                #[cfg(target_os = "windows")]
+                let p = p.replace('\\', "/");
+                p
+            };
+
+            let size = if is_file {
+                entry.metadata().ok().map(|m| m.len())
+            } else {
+                None
+            };
+
+            results.push(json!({
+                "path": path_str,
+                "type": if is_dir { "directory" } else { "file" },
+                "size": size
+            }));
+        }
+    }
+
+    FileWalkResult {
+        results,
+        skipped_heavy_dirs,
+        skipped_gitignored_dirs,
+    }
+}
 
 pub(super) async fn search_files_only(
     workspace_root: &Path,
@@ -13,8 +110,6 @@ pub(super) async fn search_files_only(
     limit: usize,
     offset: usize,
 ) -> Result<MCPResult, String> {
-    use walkdir::WalkDir;
-
     let glob_pattern = match GlobMatcher::parse(pattern) {
         Ok(pat) => pat,
         Err(e) => {
@@ -29,80 +124,19 @@ pub(super) async fn search_files_only(
         }
     };
 
-    let mut results = Vec::new();
-    let mut skipped_heavy_dirs = 0usize;
-    let mut skipped_gitignored_dirs = 0usize;
-    let gitignore = build_gitignore_matcher(root_path, workspace_root);
+    let workspace_root = workspace_root.to_path_buf();
+    let root_path = root_path.to_path_buf();
+    let display_path_owned = display_path.to_string();
 
-    // Check if root_path itself is a file
-    if root_path.is_file() {
-        let file_name = root_path.file_name().and_then(|n| n.to_str());
-        if matches_glob(&glob_pattern, root_path, file_name) {
-            let size = tokio::fs::metadata(root_path)
-                .await
-                .map(|m| m.len())
-                .unwrap_or(0);
-            results.push(json!({
-                "path": display_path,
-                "type": "file",
-                "size": size
-            }));
-        }
-    } else {
-        let walker = WalkDir::new(root_path)
-            .into_iter()
-            .filter_entry(|entry| {
-                if let Some(reason) =
-                    classify_search_entry_skip(workspace_root, entry, gitignore.as_ref())
-                {
-                    if entry.file_type().is_dir() {
-                        match reason {
-                            SearchEntrySkipReason::Gitignored => skipped_gitignored_dirs += 1,
-                            SearchEntrySkipReason::HeavyweightDirectory => skipped_heavy_dirs += 1,
-                            SearchEntrySkipReason::InternalArtifactDirectory => {}
-                        }
-                    }
-                    return false;
-                }
-
-                true
-            })
-            .filter_map(|e| e.ok());
-
-        for entry in walker {
-            let path = entry.path();
-            let is_dir = path.is_dir();
-            let is_file = path.is_file();
-
-            if !is_file && !is_dir {
-                continue;
-            }
-
-            let file_name = path.file_name().and_then(|n| n.to_str());
-            let relative_path = path.strip_prefix(root_path).unwrap_or(path);
-
-            if matches_glob(&glob_pattern, relative_path, file_name) {
-                let path_str = {
-                    let p = relative_path.to_string_lossy().to_string();
-                    #[cfg(target_os = "windows")]
-                    let p = p.replace('\\', "/");
-                    p
-                };
-
-                let size = if is_file {
-                    entry.metadata().ok().map(|m| m.len())
-                } else {
-                    None
-                };
-
-                results.push(json!({
-                    "path": path_str,
-                    "type": if is_dir { "directory" } else { "file" },
-                    "size": size
-                }));
-            }
-        }
-    }
+    let FileWalkResult {
+        results,
+        skipped_heavy_dirs,
+        skipped_gitignored_dirs,
+    } = tokio::task::spawn_blocking(move || {
+        walk_matching_files_blocking(workspace_root, root_path, display_path_owned, glob_pattern)
+    })
+    .await
+    .map_err(|e| format!("File search task failed: {e}"))?;
 
     let total_matches = results.len();
     let paginated_results: Vec<_> = results.into_iter().skip(offset).take(limit).collect();

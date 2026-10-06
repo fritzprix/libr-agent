@@ -1906,6 +1906,11 @@
         "title": "Experimente outro tema de cores",
         "body": "Em Configurações → General, escolha temas como Neutral, Amber ou Ocean.",
         "cta": "Abrir General"
+      },
+      "everydayChrome": {
+        "title": "Usar o Chrome do dia a dia",
+        "body": "Conecte a extensão do Chrome em Configurações → Sistema para os agentes trabalharem no seu navegador real já autenticado.",
+        "cta": "Abrir configurações do Sistema"
       }
     }
   }

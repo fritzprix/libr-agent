@@ -2,7 +2,7 @@ use crate::db_schema_validator::validate_schema;
 use crate::lifecycle::schema_version;
 use crate::migration::{Migrator, MigratorTrait};
 use log::{error, info, warn};
-use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
+use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, SqlxSqliteConnector, Statement,
 };
@@ -19,6 +19,8 @@ use super::migration_verifier::MigrationVerifier;
 const SQLITE_POOL_MIN_CONNECTIONS: u32 = 1;
 const SQLITE_POOL_MAX_CONNECTIONS: u32 = 8;
 const SQLITE_POOL_ACQUIRE_TIMEOUT_SECS: u64 = 15;
+/// Negative `cache_size` is kibibytes. 32 MiB keeps hot pages in memory for a local agent DB.
+const SQLITE_CACHE_SIZE_KIB: i64 = -32_768;
 
 /// Extract the filesystem path from a `sqlite://` URL, stripping any query parameters.
 ///
@@ -96,6 +98,16 @@ async fn connect_existing_database(db_file_path: &str) -> DatabaseResult<Databas
     connect_sqlite_database(db_file_path, false, SQLITE_POOL_MAX_CONNECTIONS).await
 }
 
+/// Open a SQLite file with the same runtime pragmas the app uses at startup.
+///
+/// Tests use this to assert WAL, `synchronous=NORMAL`, and the page cache.
+pub async fn connect_sqlite_with_app_pragmas(
+    db_file_path: &str,
+    create_if_missing: bool,
+) -> DatabaseResult<DatabaseConnection> {
+    connect_sqlite_database(db_file_path, create_if_missing, SQLITE_POOL_MAX_CONNECTIONS).await
+}
+
 async fn connect_sqlite_database(
     db_file_path: &str,
     create_if_missing: bool,
@@ -106,6 +118,12 @@ async fn connect_sqlite_database(
         .map_err(|e| DatabaseError::ConnectionFailed(format!("Invalid SQLite path: {e}")))?
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(Duration::from_secs(5))
+        // WAL + NORMAL syncs at checkpoint. App and OS crashes stay consistent;
+        // a power loss can drop transactions committed since the last checkpoint.
+        // That is the SQLite-recommended setting for WAL and avoids a FULL fsync per commit.
+        .synchronous(SqliteSynchronous::Normal)
+        .pragma("cache_size", SQLITE_CACHE_SIZE_KIB.to_string())
+        .pragma("temp_store", "MEMORY")
         // Enforce ON DELETE CASCADE / FK checks declared in migrations.
         // SQLite defaults to OFF; sqlx may enable this, but we set it explicitly.
         .foreign_keys(true)

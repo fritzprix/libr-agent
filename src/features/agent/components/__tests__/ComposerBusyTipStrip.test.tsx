@@ -48,6 +48,12 @@ vi.mock('react-i18next', () => ({
       if (key === 'spotlight.waitLine' && options?.title) {
         return `Tip · ${options.title}`;
       }
+      if (key === 'spotlight.items.everydayChrome.title') {
+        return 'Use your everyday Chrome';
+      }
+      if (key === 'spotlight.items.everydayChrome.body') {
+        return 'Connect the Chrome extension under Settings';
+      }
       if (key === 'spotlight.items.starterTasks.title') {
         return 'Try starter tasks';
       }
@@ -108,17 +114,17 @@ describe('ComposerBusyTipStrip', () => {
     );
 
     const tip = screen.getByTestId('composer-busy-tip');
-    expect(tip).toHaveTextContent('Tip · Try starter tasks');
+    expect(tip).toHaveTextContent('Tip · Use your everyday Chrome');
 
     fireEvent.click(screen.getByTestId('composer-busy-tip'));
-    expect(mockNavigate).toHaveBeenCalledWith('/scheduled-tasks');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=system');
 
     act(() => {
       vi.advanceTimersByTime(WAIT_TIP_ROTATE_MS);
     });
 
     expect(screen.getByTestId('composer-busy-tip')).toHaveTextContent(
-      'Tip · spotlight.items.thinkingEffort.title',
+      'Tip · Try starter tasks',
     );
 
     const stored = JSON.parse(

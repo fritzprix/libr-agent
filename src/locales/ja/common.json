@@ -1906,6 +1906,11 @@
         "title": "カラーテーマを変えられます",
         "body": "設定 → General で Neutral、Amber、Ocean などのアクセントテーマを選べます。",
         "cta": "General 設定を開く"
+      },
+      "everydayChrome": {
+        "title": "普段の Chrome を使う",
+        "body": "設定 → システムで Chrome 拡張機能を接続すると、ログイン済みの普段のブラウザでエージェントが作業できます。",
+        "cta": "システム設定を開く"
       }
     }
   }

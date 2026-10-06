@@ -87,6 +87,11 @@ pub trait MessageRepository: Send + Sync {
     /// Check if a session has messages newer than the last index build
     async fn is_index_dirty(&self, session_id: &str) -> Result<bool, DbError>;
 
+    /// Session IDs whose newest message is newer than `message_index_meta.last_indexed_at`.
+    ///
+    /// Sessions with no index row are included. Sessions with no messages are not.
+    async fn get_dirty_session_ids(&self) -> Result<Vec<String>, DbError>;
+
     /// Delete index metadata for a specific session
     async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError>;
 
@@ -133,4 +138,26 @@ pub trait MessageRepository: Send + Sync {
 
     /// Get recent message models across all sessions for search indexing
     async fn get_recent_message_models(&self, limit: u64) -> Result<Vec<message::Model>, DbError>;
+
+    /// Columns the BM25 index stores: id, session, content, created_at.
+    async fn get_index_documents_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<MessageIndexDocument>, DbError>;
+
+    /// Recent index documents across sessions, newest `rowid` first.
+    async fn get_recent_index_documents(
+        &self,
+        limit: u64,
+    ) -> Result<Vec<MessageIndexDocument>, DbError>;
+}
+
+/// Projection used to build a BM25 index without loading thinking blocks or attachments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageIndexDocument {
+    pub id: String,
+    pub session_id: String,
+    pub content: String,
+    pub created_at: i64,
 }

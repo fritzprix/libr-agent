@@ -366,14 +366,30 @@ pub fn path_starts_with(path: &Path, base: &Path) -> bool {
     relative_path_under_base(path, base).is_some()
 }
 
-/// Strip Windows extended-length (`\\?\`) prefix for display / docker / agent Metadata.
+/// Strip Windows extended-length (`\\?\` / `//?/`) prefix for display, openers,
+/// docker, and agent metadata.
 ///
-/// Leaves `\\?\UNC\...` unchanged (network paths need the verbatim form).
+/// Rust `Path::canonicalize()` on Windows yields `\\?\C:\...`. Call sites that
+/// normalize separators to `/` turn that into `//?/C:/...`. Both forms break
+/// `tauri_plugin_opener` / Explorer; strip them back to a normal drive path.
+///
+/// Leaves `\\?\UNC\...` and `//?/UNC/...` unchanged (network paths need the
+/// verbatim form). Note: ShellExecute / `tauri_plugin_opener` may still reject
+/// verbatim UNC; LibrAgent open paths are local drive workspaces today.
 pub fn strip_windows_verbatim_prefix(path: &str) -> &str {
-    match path.strip_prefix(r"\\?\") {
-        Some(rest) if !rest.starts_with(r"UNC\") => rest,
-        _ => path,
+    if let Some(rest) = path.strip_prefix(r"\\?\") {
+        if rest.starts_with(r"UNC\") || rest.starts_with("UNC/") {
+            return path;
+        }
+        return rest;
     }
+    if let Some(rest) = path.strip_prefix("//?/") {
+        if rest.starts_with("UNC/") || rest.starts_with(r"UNC\") {
+            return path;
+        }
+        return rest;
+    }
+    path
 }
 
 /// Human-facing workspace path: strip Windows verbatim prefix, keep the rest.
