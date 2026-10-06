@@ -149,6 +149,21 @@ function Write-Step([string]$Message) {
   Write-Host "`n==> $Message" -ForegroundColor Cyan
 }
 
+# Match bash append_include_globs: comma-separated -Include values become repeated -i.
+function Expand-IncludePatterns([string[]]$Patterns) {
+  $expanded = [System.Collections.Generic.List[string]]::new()
+  foreach ($pattern in $Patterns) {
+    if (-not $pattern) { continue }
+    foreach ($part in ($pattern -split ',')) {
+      $trimmed = $part.Trim()
+      if ($trimmed) {
+        $expanded.Add($trimmed)
+      }
+    }
+  }
+  return , $expanded.ToArray()
+}
+
 function Assert-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     if ($Name -eq "harbor") {
@@ -511,12 +526,8 @@ switch ($Preset) {
     }
     Write-Step "Preset: Terminal-Bench dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
-    if ($Include) {
-      foreach ($pattern in $Include) {
-        if ($pattern) {
-          $harborArgs += @("-i", $pattern)
-        }
-      }
+    foreach ($pattern in (Expand-IncludePatterns $Include)) {
+      $harborArgs += @("-i", $pattern)
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")
@@ -528,12 +539,8 @@ switch ($Preset) {
     }
     Write-Step "Preset: Harbor Index dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
-    if ($Include) {
-      foreach ($pattern in $Include) {
-        if ($pattern) {
-          $harborArgs += @("-i", $pattern)
-        }
-      }
+    foreach ($pattern in (Expand-IncludePatterns $Include)) {
+      $harborArgs += @("-i", $pattern)
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")
@@ -546,12 +553,8 @@ switch ($Preset) {
     $resolvedPath = (Resolve-Path $Path).Path
     Write-Step "Preset: local path ($resolvedPath)"
     $harborArgs += @("-p", $resolvedPath)
-    if ($Include) {
-      foreach ($pattern in $Include) {
-        if ($pattern) {
-          $harborArgs += @("-i", $pattern)
-        }
-      }
+    foreach ($pattern in (Expand-IncludePatterns $Include)) {
+      $harborArgs += @("-i", $pattern)
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")
@@ -563,12 +566,8 @@ switch ($Preset) {
     }
     Write-Step "Preset: dataset ($Dataset)"
     $harborArgs += @("-d", $Dataset)
-    if ($Include) {
-      foreach ($pattern in $Include) {
-        if ($pattern) {
-          $harborArgs += @("-i", $pattern)
-        }
-      }
+    foreach ($pattern in (Expand-IncludePatterns $Include)) {
+      $harborArgs += @("-i", $pattern)
     }
     if ($NTasks -gt 0) {
       $harborArgs += @("-l", "$NTasks")

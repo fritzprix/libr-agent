@@ -241,6 +241,6 @@ LibrAgent is MIT licensed and built in the open. Contributions are welcome, incl
 - [Contributing Guide](CONTRIBUTING.md)
 - [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
 - [Discussions](https://github.com/fritzprix/libr-agent/discussions)
-- Benchmarks (Harbor / Terminal-Bench): See [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`)
+- Benchmarks (Harbor / Terminal-Bench): See [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:swe`, `pnpm bench:terminal`)
 
 **License**: MIT
