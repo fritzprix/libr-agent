@@ -124,7 +124,8 @@ fn read_large_file_lines_range_blocking(
     // already distinguishes binary vs UTF-16 via `looks_like_binary`.
     let mut sniff = [0u8; 8 * 1024];
     let sniff_len = {
-        let mut file = std::fs::File::open(path).map_err(|e| format!("Failed to read file: {e}"))?;
+        let mut file =
+            std::fs::File::open(path).map_err(|e| format!("Failed to read file: {e}"))?;
         file.read(&mut sniff)
             .map_err(|e| format!("Failed to read file: {e}"))?
     };
@@ -193,7 +194,10 @@ fn read_large_file_lines_range_blocking(
 }
 
 /// Count lines by scanning for `b'\n'` (no UTF-8 validation / no String allocs).
-fn count_utf8_lines_by_newlines(path: &std::path::Path, skip_bytes: usize) -> Result<usize, String> {
+fn count_utf8_lines_by_newlines(
+    path: &std::path::Path,
+    skip_bytes: usize,
+) -> Result<usize, String> {
     use std::io::{BufReader, Read};
 
     let file = std::fs::File::open(path).map_err(|e| format!("Failed to read file: {e}"))?;

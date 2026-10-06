@@ -133,12 +133,7 @@ pub(super) async fn search_files_only(
         skipped_heavy_dirs,
         skipped_gitignored_dirs,
     } = tokio::task::spawn_blocking(move || {
-        walk_matching_files_blocking(
-            workspace_root,
-            root_path,
-            display_path_owned,
-            glob_pattern,
-        )
+        walk_matching_files_blocking(workspace_root, root_path, display_path_owned, glob_pattern)
     })
     .await
     .map_err(|e| format!("File search task failed: {e}"))?;

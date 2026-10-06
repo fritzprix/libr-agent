@@ -22,13 +22,12 @@ struct IndexCache {
 
 /// Global cache for loaded search indices (session_id -> shared engine).
 /// Stored behind `Arc` so cache hits do not deep-clone the BM25 index.
-static INDEX_CACHE: once_cell::sync::Lazy<Mutex<IndexCache>> =
-    once_cell::sync::Lazy::new(|| {
-        Mutex::new(IndexCache {
-            engines: HashMap::new(),
-            order: VecDeque::new(),
-        })
-    });
+static INDEX_CACHE: once_cell::sync::Lazy<Mutex<IndexCache>> = once_cell::sync::Lazy::new(|| {
+    Mutex::new(IndexCache {
+        engines: HashMap::new(),
+        order: VecDeque::new(),
+    })
+});
 
 /// Compares two messages for content equality to detect duplicate user messages.
 /// - ⚠️ Designed to work ONLY with user-role messages (user-message-only).
@@ -239,7 +238,9 @@ impl MessageService {
                 .lock()
                 .map_err(|e| format!("Cache lock error: {e}"))?;
             if cache.engines.contains_key(session_id) {
-                cache.engines.insert(session_id.to_string(), Arc::clone(&engine));
+                cache
+                    .engines
+                    .insert(session_id.to_string(), Arc::clone(&engine));
             } else {
                 while cache.engines.len() >= MAX_INDEX_CACHE_ENTRIES {
                     if let Some(evict_key) = cache.order.pop_front() {
@@ -249,7 +250,9 @@ impl MessageService {
                     }
                 }
                 cache.order.push_back(session_id.to_string());
-                cache.engines.insert(session_id.to_string(), Arc::clone(&engine));
+                cache
+                    .engines
+                    .insert(session_id.to_string(), Arc::clone(&engine));
             }
         }
 
