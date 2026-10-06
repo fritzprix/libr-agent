@@ -1949,6 +1949,11 @@
         "title": "Try a different color theme",
         "body": "Switch accent themes such as Neutral, Amber, or Ocean from Settings → General.",
         "cta": "Open General settings"
+      },
+      "everydayChrome": {
+        "title": "Use your everyday Chrome",
+        "body": "Connect the Chrome extension under Settings → System so agents can work in your real browser with logins already open.",
+        "cta": "Open System settings"
       }
     }
   }

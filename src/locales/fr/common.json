@@ -1906,6 +1906,11 @@
         "title": "Changer de thème de couleurs",
         "body": "Dans Paramètres → General, choisissez Neutral, Amber, Ocean, etc.",
         "cta": "Ouvrir General"
+      },
+      "everydayChrome": {
+        "title": "Utiliser votre Chrome quotidien",
+        "body": "Connectez l'extension Chrome dans Paramètres → Système pour que les agents travaillent dans votre vrai navigateur déjà connecté.",
+        "cta": "Ouvrir les paramètres Système"
       }
     }
   }

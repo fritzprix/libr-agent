@@ -1906,6 +1906,11 @@
         "title": "可以更换主题配色",
         "body": "在 设置 → General 中切换 Neutral、Amber、Ocean 等强调色主题。",
         "cta": "打开 General 设置"
+      },
+      "everydayChrome": {
+        "title": "使用日常 Chrome",
+        "body": "在设置 → 系统中连接 Chrome 扩展后，代理可在已登录的真实 Chrome 中工作。",
+        "cta": "打开系统设置"
       }
     }
   }
