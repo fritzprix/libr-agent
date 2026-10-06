@@ -196,8 +196,11 @@ impl WorkspaceService {
             .to_str()
             .ok_or_else(|| "Invalid path encoding".to_string())?;
 
+        // Windows verbatim prefixes (`\\?\` / `//?/`) break tauri_plugin_opener.
+        let openable = crate::mcp::builtin::utils::strip_windows_verbatim_prefix(abs_path_str);
+
         // Use tauri-plugin-opener to open file with system default app
-        tauri_plugin_opener::open_path(abs_path_str, None::<&str>)
+        tauri_plugin_opener::open_path(openable, None::<&str>)
             .map_err(|e| format!("Failed to open file: {}", e))?;
 
         Ok(())

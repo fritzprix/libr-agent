@@ -1,5 +1,35 @@
-use tauri_mcp_agent_lib::mcp::builtin::utils::{normalize_user_path, SecurityValidator};
+use tauri_mcp_agent_lib::mcp::builtin::utils::{
+    normalize_user_path, strip_windows_verbatim_prefix, SecurityValidator,
+};
 use tempfile::tempdir;
+
+#[test]
+fn strip_windows_verbatim_prefix_removes_drive_forms() {
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"\\?\C:\Users\me\file.html"),
+        r"C:\Users\me\file.html"
+    );
+    assert_eq!(
+        strip_windows_verbatim_prefix("//?/C:/Users/me/file.html"),
+        "C:/Users/me/file.html"
+    );
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"C:\Users\me\file.html"),
+        r"C:\Users\me\file.html"
+    );
+}
+
+#[test]
+fn strip_windows_verbatim_prefix_preserves_unc() {
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"\\?\UNC\server\share\file.html"),
+        r"\\?\UNC\server\share\file.html"
+    );
+    assert_eq!(
+        strip_windows_verbatim_prefix("//?/UNC/server/share/file.html"),
+        "//?/UNC/server/share/file.html"
+    );
+}
 
 #[test]
 fn test_normalize_user_path_relative_unchanged() {

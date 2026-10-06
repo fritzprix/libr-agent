@@ -604,11 +604,11 @@ impl WorkspaceServer {
 
                 let hint = SuccessHint::new(message, next_steps);
 
-                let absolute_path = write_safe_path
-                    .canonicalize()
-                    .unwrap_or_else(|_| write_safe_path.clone())
-                    .to_string_lossy()
-                    .to_string();
+                let absolute_path = crate::mcp::builtin::utils::display_workspace_path(
+                    &write_safe_path
+                        .canonicalize()
+                        .unwrap_or_else(|_| write_safe_path.clone()),
+                );
 
                 let mut structured = json!({
                     "path": write_display_path,
