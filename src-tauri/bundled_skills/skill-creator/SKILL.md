@@ -31,6 +31,7 @@ Checks frontmatter (same rules as the Rust scanner) and warns about common path 
 
 - **Concise body**: SKILL.md under ~150 lines; move detail to `references/`
 - **Triggers in frontmatter**: all "when to use" guidance goes in `description`, not the body
+- **Cross-platform by default**: never assume Linux/Bash; provide dual recipes (Bash + PowerShell) or OS-neutral commands/scripts
 - **Name matches folder**: `name:` in frontmatter must equal the directory name
 - **Safe YAML**: use double quotes in `description` when text contains apostrophes (`"Telegram's"`, not `'Telegram\'s'`)
 - **No duplicate reads**: information lives in SKILL.md *or* references, not both

@@ -49,6 +49,13 @@ Match the level of specificity to the task's fragility and variability:
 
 Think of Claude as exploring a path: a narrow bridge with cliffs needs specific guardrails (low freedom), while an open field allows many routes (high freedom).
 
+### Cross-Platform by Default
+
+Never assume Linux/Bash. LibrAgent runs on Windows, macOS, and Linux.
+- **Dual command recipes**: Provide Bash and PowerShell snippets whenever commands use line continuations (`\`), environment variables, or chaining (`&&`). PowerShell 5.1 does not support `&&` (use `;`).
+- **Safe argument quoting**: Avoid unquoted variables in CLI arguments (e.g., `-p $prompt` splits arguments on spaces in PowerShell). Use quotes or Here-Strings (`@' ... '@`).
+- **Scripts parity**: Prefer OS-agnostic scripts (Node.js/Python), or provide dual `.sh` and `.ps1` wrappers. Use `/` for paths.
+
 ### Anatomy of a Skill
 
 Every skill consists of a required SKILL.md file and optional bundled resources:
