@@ -374,7 +374,8 @@ pub fn path_starts_with(path: &Path, base: &Path) -> bool {
 /// `tauri_plugin_opener` / Explorer; strip them back to a normal drive path.
 ///
 /// Leaves `\\?\UNC\...` and `//?/UNC/...` unchanged (network paths need the
-/// verbatim form).
+/// verbatim form). Note: ShellExecute / `tauri_plugin_opener` may still reject
+/// verbatim UNC; LibrAgent open paths are local drive workspaces today.
 pub fn strip_windows_verbatim_prefix(path: &str) -> &str {
     if let Some(rest) = path.strip_prefix(r"\\?\") {
         if rest.starts_with(r"UNC\") || rest.starts_with("UNC/") {

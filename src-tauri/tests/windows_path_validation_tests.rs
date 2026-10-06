@@ -1,5 +1,6 @@
+use std::path::Path;
 use tauri_mcp_agent_lib::mcp::builtin::utils::{
-    normalize_user_path, strip_windows_verbatim_prefix, SecurityValidator,
+    display_workspace_path, normalize_user_path, strip_windows_verbatim_prefix, SecurityValidator,
 };
 use tempfile::tempdir;
 
@@ -29,6 +30,26 @@ fn strip_windows_verbatim_prefix_preserves_unc() {
         strip_windows_verbatim_prefix("//?/UNC/server/share/file.html"),
         "//?/UNC/server/share/file.html"
     );
+}
+
+#[test]
+fn strip_windows_verbatim_prefix_edge_cases() {
+    assert_eq!(strip_windows_verbatim_prefix(""), "");
+    assert_eq!(strip_windows_verbatim_prefix("//?"), "//?");
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"//?/UNC\server\share\file.html"),
+        r"//?/UNC\server\share\file.html"
+    );
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"\\?\UNC/server/share/file.html"),
+        r"\\?\UNC/server/share/file.html"
+    );
+}
+
+#[test]
+fn display_workspace_path_strips_verbatim_drive_prefix() {
+    let path = Path::new(r"\\?\C:\Users\me\workspace");
+    assert_eq!(display_workspace_path(path), r"C:\Users\me\workspace");
 }
 
 #[test]
