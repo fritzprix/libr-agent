@@ -72,30 +72,20 @@ async fn worker_loop(shutdown: Arc<AtomicBool>, check_interval: Duration) {
 
 /// Finds all sessions with dirty indices and rebuilds them.
 async fn reindex_dirty_sessions() -> Result<(), String> {
-    // Get all unique session IDs
-    let sessions = crate::get_message_repository()
-        .get_distinct_sessions()
+    let sessions = get_message_repository()
+        .get_dirty_session_ids()
         .await
-        .map_err(|e| format!("Failed to fetch session IDs: {e}"))?;
+        .map_err(|e| format!("Failed to fetch dirty session IDs: {e}"))?;
 
     for session_id in sessions {
-        // Check if index is dirty
-        let repo = get_message_repository();
-        let is_dirty = repo
-            .is_index_dirty(&session_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        log::info!("🔨 Rebuilding index for session: {session_id}");
 
-        if is_dirty {
-            log::info!("🔨 Rebuilding index for session: {session_id}");
-
-            if let Err(e) = rebuild_session_index(&session_id).await {
-                log::error!("❌ Failed to rebuild index for session {session_id}: {e}");
-                continue;
-            }
-
-            log::info!("✅ Index rebuilt for session: {session_id}");
+        if let Err(e) = rebuild_session_index(&session_id).await {
+            log::error!("❌ Failed to rebuild index for session {session_id}: {e}");
+            continue;
         }
+
+        log::info!("✅ Index rebuilt for session: {session_id}");
     }
 
     Ok(())

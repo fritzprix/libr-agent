@@ -1,5 +1,6 @@
 use sea_orm::{
-    sea_query::Expr, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
+    sea_query::Expr, ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    EntityTrait, QueryFilter, QuerySelect, Set, Statement,
 };
 
 use crate::entity::prelude::{Message as MessageEntity, MessageIndexMeta};
@@ -67,6 +68,34 @@ pub(super) async fn is_index_dirty(
         .await?;
 
     Ok(max_created.map(|t| t > last_indexed_at).unwrap_or(false))
+}
+
+/// Sessions whose newest message is newer than the last index build.
+///
+/// One grouped scan replaces the background worker's per-session pair of
+/// `message_index_meta` + `MAX(created_at)` queries. `sessions.last_message_at`
+/// is not the dirty signal: that column was added nullable and was never
+/// backfilled, so legacy sessions would be skipped.
+pub(super) async fn get_dirty_session_ids(db: &DatabaseConnection) -> Result<Vec<String>, DbError> {
+    let rows = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "SELECT m.session_id AS session_id \
+             FROM messages AS m \
+             LEFT JOIN message_index_meta AS meta ON meta.session_id = m.session_id \
+             GROUP BY m.session_id \
+             HAVING MAX(m.created_at) > COALESCE(MAX(meta.last_indexed_at), 0)"
+                .to_string(),
+        ))
+        .await
+        .map_err(DbError::SeaOrmQueryFailed)?;
+
+    rows.into_iter()
+        .map(|row| {
+            row.try_get("", "session_id")
+                .map_err(DbError::SeaOrmQueryFailed)
+        })
+        .collect()
 }
 
 pub(super) async fn delete_index_metadata(
