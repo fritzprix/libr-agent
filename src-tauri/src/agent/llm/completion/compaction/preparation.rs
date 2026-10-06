@@ -16,7 +16,6 @@
 //! completion fit — that is already decided by resume-fit before prepare runs.
 //! See `docs/specs/message-compaction.md` §5.2 step 6.
 
-use crate::agent::llm::load_context_management_settings;
 use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
 use crate::agent::state::{AgentSession, CompactionRecoveryPhase};
 use crate::mcp::types::MCPTool;
@@ -39,6 +38,26 @@ pub(super) const MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS: u32 = 3;
 /// Must stay high enough that deep resume-fit candidates are not truncated away
 /// before a shallow checkpoint seed is considered.
 pub(super) const MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS: usize = 64;
+
+/// After payload fit, zero new messages means the summarizer would only rewrite
+/// an existing handoff. Callers must skip the compaction LLM and persist path.
+pub(crate) fn should_noop_empty_compaction_delta(compacted_delta_count: usize) -> bool {
+    compacted_delta_count == 0
+}
+
+/// Stable error code for empty-delta abort (telemetry + UI). Keep in sync with
+/// frontend silent-dismiss handling in `compact-listener.ts`.
+pub(crate) const EMPTY_DELTA_NOOP_ERROR: &str = "empty_delta_noop";
+
+/// Empty-after-fit should only become a hard no-op once the soft-retry ladder
+/// cannot free more budget (e.g. via `DegradedTools`). Earlier phases return
+/// `false` so prepare reports `Err` and the ladder advances.
+fn should_abort_empty_delta_as_noop(
+    recovery_phase: CompactionRecoveryPhase,
+    retry_attempt: u32,
+) -> bool {
+    advance_compaction_overflow_recovery_step(recovery_phase, retry_attempt).is_none()
+}
 
 pub(super) struct PreparedCompactionRequest {
     pub compact_event: CompactRequest,
@@ -186,7 +205,11 @@ async fn prepare_compaction_request(
         return Ok(None);
     };
 
-    let settings = load_context_management_settings().await;
+    let settings = crate::agent::llm::completion::load_context_management_settings_for_session(
+        active_sessions,
+        session_id,
+    )
+    .await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context(), settings.model_max_limit);
     let base_effective_input_budget =
@@ -305,6 +328,28 @@ async fn prepare_compaction_request(
         );
     }
 
+    // Fitting can leave only prior summary + instruction (no new messages).
+    // Prefer advancing the recovery ladder (e.g. DegradedTools) before treating
+    // this as a hard no-op that skips the compaction LLM entirely.
+    if should_noop_empty_compaction_delta(final_compacted_delta_count) {
+        if !should_abort_empty_delta_as_noop(recovery_phase, retry_attempt) {
+            return Err(format!(
+                "empty_delta_after_fit: no new messages remain after payload fit \
+                 (phase={:?}, retry_attempt={}); advancing recovery ladder",
+                recovery_phase, retry_attempt
+            ));
+        }
+        log::info!(
+            "⏭️ Compaction prepare no-op (empty delta after fit): session={}, to_id={}, split_idx={}, reused_prior_summary={}, recovery_phase={:?}",
+            session_id,
+            boundary_to_id,
+            split_idx,
+            reused_prior_summary,
+            recovery_phase
+        );
+        return Ok(None);
+    }
+
     if retry_attempt > 0 {
         log::warn!(
             "🔧 Applying compaction retry budget: session={}, retry_attempt={}, safe_input_token_limit={}, measured_output_tokens_reserve={}, base_effective_input_budget={}, effective_input_token_limit={}",
@@ -388,5 +433,41 @@ pub(super) async fn prepare_compaction_request_with_recovery_ladder(
                 retry_attempt = next_retry_attempt;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        should_abort_empty_delta_as_noop, should_noop_empty_compaction_delta,
+        MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS,
+    };
+    use crate::agent::state::CompactionRecoveryPhase;
+
+    #[test]
+    fn empty_delta_count_is_noop() {
+        assert!(should_noop_empty_compaction_delta(0));
+        assert!(!should_noop_empty_compaction_delta(1));
+        assert!(!should_noop_empty_compaction_delta(12));
+    }
+
+    #[test]
+    fn empty_delta_advances_ladder_until_degraded_tools_exhausted() {
+        assert!(!should_abort_empty_delta_as_noop(
+            CompactionRecoveryPhase::CacheAligned,
+            0
+        ));
+        assert!(!should_abort_empty_delta_as_noop(
+            CompactionRecoveryPhase::CacheAligned,
+            MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS
+        ));
+        assert!(!should_abort_empty_delta_as_noop(
+            CompactionRecoveryPhase::OverflowRecovery,
+            0
+        ));
+        assert!(should_abort_empty_delta_as_noop(
+            CompactionRecoveryPhase::DegradedTools,
+            0
+        ));
     }
 }

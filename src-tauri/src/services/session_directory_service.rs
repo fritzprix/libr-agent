@@ -17,6 +17,9 @@ impl SessionDirectoryService {
         fs::create_dir_all(base_data_dir.join("teamwork-artifacts"))
             .map_err(|e| format!("Failed to create teamwork artifacts directory: {e}"))?;
 
+        fs::create_dir_all(base_data_dir.join("harness-lessons"))
+            .map_err(|e| format!("Failed to create harness-lessons directory: {e}"))?;
+
         fs::create_dir_all(base_data_dir.join("workspaces").join("templates"))
             .map_err(|e| format!("Failed to create templates directory: {e}"))?;
 
@@ -189,6 +192,11 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
         self.base_data_dir
             .join("teamwork-artifacts")
             .join(root_session_id)
+    }
+
+    /// App-local harness lessons scope directory (outside project git).
+    pub fn get_harness_lessons_dir_unverified(&self, scope_id: &str) -> PathBuf {
+        self.base_data_dir.join("harness-lessons").join(scope_id)
     }
 
     /// Ensure an app-local teamwork artifact directory exists for the given governing/root session.

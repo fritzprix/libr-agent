@@ -1125,7 +1125,7 @@
     },
     "messages": {
       "loadingOlder": "Chargement des anciens messages...",
-      "scrollToLoadOlder": "Faites défiler vers le haut pour charger les anciens messages",
+      "scrollToLoadOlder": "Charger les anciens messages",
       "scrollToLatest": "Défiler vers les derniers messages",
       "pendingApprovalsJump_one": "{{count}} outil en attente d'approbation — cliquer pour répondre",
       "pendingApprovalsJump_other": "{{count}} outils en attente d'approbation — cliquer pour répondre"
@@ -1441,6 +1441,7 @@
       "ariaLabel": "Liste des outils disponibles",
       "badgeBuiltin": "intégré",
       "badgeMcp": "mcp",
+      "viewDescription": "Voir la description",
       "viewSchema": "Voir le schéma d'entrée"
     },
     "panels": {
@@ -1881,11 +1882,6 @@
     "waitLine": "Conseil · {{title}}",
     "waitOpenHint": "Ouvrir : {{detail}}",
     "items": {
-      "browserProfile": {
-        "title": "Importer les sessions de navigateur",
-        "body": "Importez des profils Chrome, Edge ou Brave dans LibrAgent pour naviguer déjà connecté. Ouvrez Paramètres → System.",
-        "cta": "Ouvrir System"
-      },
       "starterTasks": {
         "title": "Démarrer avec des modèles de tâches planifiées",
         "body": "Daily Standup, veille d’actualités et d’autres automations en un clic sont prêts dans Scheduled Tasks.",

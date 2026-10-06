@@ -104,7 +104,18 @@ vi.mock('@/context/AgentSessionContext', () => ({
 }));
 
 vi.mock('@/context/AgentChatContext', () => ({
-  useAgentChat: () => mockAgentChat,
+  useAgentChatState: () => ({
+    workflowStatus: mockAgentChat.workflowStatus,
+    error: mockAgentChat.error,
+    llmError: mockAgentChat.llmError,
+  }),
+  useAgentChatActions: () => ({
+    retryMessage: mockAgentChat.retryMessage,
+    resume: mockAgentChat.resume,
+  }),
+  useAgentChatMessages: () => ({
+    messages: mockAgentChat.messages,
+  }),
 }));
 
 vi.mock('@/context/LLMServiceContext', () => ({

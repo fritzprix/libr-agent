@@ -20,23 +20,26 @@ Load only the reference you need. Do not paste this whole skill into every turn.
 1. **Assistant `systemPrompt`** — shallow identity from the assistant config (bundled seed is one line).
 2. **`## Agent Runtime Identity`** — name, agent id, session id, external wake POST URL (and sub-agent parent when applicable). Already injected; do not restate.
 3. **`## Session Context`** — note that live `<session-context>` may appear.
-4. **`## Persona Template`** — first non-empty of `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, `soul.md` in the **effective workspace**.
-5. **`## Workspace Instructions`** — first non-empty of `agents.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`.
-6. Context providers / service tool state (skills catalog, time, etc.).
+4. **`## Core Execution Principles`** — hardcoded acceptance/deliverable rules.
+5. **`## Persona Template`** — first non-empty of `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, `soul.md` in the **effective workspace**.
+6. **`## Workspace Instructions`** — first non-empty of `agents.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`.
+7. **`## Active Operational Lessons`** — `@harness/LESSONS.active.md` when present (app-local harness-lessons; git-safe). See `references/prompt-layers.md`.
+8. Context providers / service tool state (skills catalog, time, etc.).
 
-Missing SOUL / agents.md → that section is omitted. No error.
+Missing SOUL / agents.md / LESSONS → that section is omitted. No error.
 
 ## Where knowledge should live
 
 | Need | Put it here | Skill / action |
 | --- | --- | --- |
 | Who this assistant is (1–2 lines) | Assistant `systemPrompt` | Edit assistant; bundled `prompt.md` is seed-only |
-| User/project prefs, bans, commands | Workspace `agents.md` (+ modular guides) | **agent-init** |
+| User/project prefs, bans, commands | Workspace `agents.md` (+ modular guides) | **agent-init** (may dirty git) |
+| After-action behavioral lessons (git-safe) | `@harness/LESSONS.active.md` | **postmortem-improve** |
 | Tone / persona | `SOUL.md` | **soul-awakening** if missing |
 | How LibrAgent itself works | This skill + `references/` | Read on demand |
 | Multi-agent team constitution | teamwork / org artifacts | **teamwork** / **org** |
 
-Do **not** dump long operating doctrine into every assistant `systemPrompt`. Prefer workspace files (when the user wants them) or skills.
+Do **not** dump long operating doctrine into every assistant `systemPrompt`. Prefer `@harness` lessons for incident learning, workspace files when the user wants project standing orders, or skills.
 
 ## Cold-start routing
 

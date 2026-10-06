@@ -76,13 +76,15 @@ vi.mock('@/context/AgentSessionContext', () => ({
 }));
 
 vi.mock('@/context/AgentChatContext', () => ({
-  useAgentChat: () => ({
-    submit: mocks.submit,
+  useAgentChatState: () => ({
     isSessionLoading: mocks.isSessionLoading,
     workflowStatus: mocks.workflowStatus,
+    pendingQueue: [],
+  }),
+  useAgentChatActions: () => ({
+    submit: mocks.submit,
     cancel: mocks.cancel,
     resume: mocks.resume,
-    pendingQueue: [],
     cancelPendingPrompt: vi.fn(),
   }),
 }));

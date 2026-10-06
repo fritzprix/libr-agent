@@ -1125,7 +1125,7 @@
     },
     "messages": {
       "loadingOlder": "正在加载更早的消息...",
-      "scrollToLoadOlder": "向上滚动以加载更早的消息",
+      "scrollToLoadOlder": "加载更早的消息",
       "scrollToLatest": "滚动到底部最新消息",
       "pendingApprovalsJump_one": "有 {{count}} 个工具等待批准 — 点击处理",
       "pendingApprovalsJump_other": "有 {{count}} 个工具等待批准 — 点击处理"
@@ -1441,6 +1441,7 @@
       "ariaLabel": "可用工具列表",
       "badgeBuiltin": "内置",
       "badgeMcp": "mcp",
+      "viewDescription": "查看说明",
       "viewSchema": "查看输入模式"
     },
     "panels": {
@@ -1881,11 +1882,6 @@
     "waitLine": "提示 · {{title}}",
     "waitOpenHint": "打开：{{detail}}",
     "items": {
-      "browserProfile": {
-        "title": "可以导入浏览器登录状态",
-        "body": "将 Chrome、Edge 或 Brave 配置文件导入 LibrAgent，让智能体在已登录状态下浏览。请打开 设置 → System。",
-        "cta": "打开 System 设置"
-      },
       "starterTasks": {
         "title": "用定时任务模板快速开始",
         "body": "Daily Standup、新闻监控等一键自动化模板已在 Scheduled Tasks 中准备好。",

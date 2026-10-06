@@ -91,7 +91,7 @@ describe('useMessageGrouping', () => {
     }
   });
 
-  it('groups multiple tool calls from consecutive assistant messages and captures all results', () => {
+  it('keeps each assistant tool response as its own tool_group (response unit)', () => {
     const messages: Message[] = [
       createMessage('1', 'user', 'Run tools'),
       createMessage('2', 'assistant', '', [
@@ -101,31 +101,35 @@ describe('useMessageGrouping', () => {
           function: { name: 'tool1', arguments: '{}' },
         },
       ]),
-      createMessage('3', 'assistant', '', [
+      createMessage('3', 'tool', 'Result 1', undefined, 'call_1'),
+      createMessage('4', 'assistant', '', [
         {
           id: 'call_2',
           type: 'function',
           function: { name: 'tool2', arguments: '{}' },
         },
       ]),
-      createMessage('4', 'tool', 'Result 1', undefined, 'call_1'),
       createMessage('5', 'tool', 'Result 2', undefined, 'call_2'),
     ];
 
     const { result } = renderHook(() => useMessageGrouping(messages));
 
-    expect(result.current.groupedMessages).toHaveLength(2);
+    expect(result.current.groupedMessages).toHaveLength(3);
     expect(result.current.groupedMessages[1].type).toBe('tool_group');
+    expect(result.current.groupedMessages[2].type).toBe('tool_group');
 
-    const group = result.current.groupedMessages[1];
-    if (group.type === 'tool_group') {
-      expect(group.toolGroup.calls).toHaveLength(2);
-      expect(group.toolGroup.calls[0].id).toBe('call_1');
-      expect(group.toolGroup.calls[1].id).toBe('call_2');
-      // Verify pre-calculated results
-      expect(group.toolGroup.results).toHaveLength(2);
-      expect(group.toolGroup.results[0]?.id).toBe('4');
-      expect(group.toolGroup.results[1]?.id).toBe('5');
+    const group1 = result.current.groupedMessages[1];
+    const group2 = result.current.groupedMessages[2];
+    if (group1.type === 'tool_group' && group2.type === 'tool_group') {
+      expect(group1.toolGroup.calls).toHaveLength(1);
+      expect(group1.toolGroup.calls[0].id).toBe('call_1');
+      expect(group1.toolGroup.results[0]?.id).toBe('3');
+      expect(group1.messages).toHaveLength(1);
+
+      expect(group2.toolGroup.calls).toHaveLength(1);
+      expect(group2.toolGroup.calls[0].id).toBe('call_2');
+      expect(group2.toolGroup.results[0]?.id).toBe('5');
+      expect(group2.messages).toHaveLength(1);
     }
 
     expect(result.current.toolResultsMap.size).toBe(2);
@@ -133,7 +137,38 @@ describe('useMessageGrouping', () => {
     expect(result.current.toolResultsMap.get('call_2')).toBeDefined();
   });
 
-  it('does NOT group consecutive assistant messages if the second one has thinking content', () => {
+  it('still groups parallel tool calls from a single assistant response', () => {
+    const messages: Message[] = [
+      createMessage('1', 'user', 'Run tools'),
+      createMessage('2', 'assistant', '', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'tool1', arguments: '{}' },
+        },
+        {
+          id: 'call_2',
+          type: 'function',
+          function: { name: 'tool2', arguments: '{}' },
+        },
+      ]),
+      createMessage('3', 'tool', 'Result 1', undefined, 'call_1'),
+      createMessage('4', 'tool', 'Result 2', undefined, 'call_2'),
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+    expect(result.current.groupedMessages).toHaveLength(2);
+    const group = result.current.groupedMessages[1];
+    expect(group.type).toBe('tool_group');
+    if (group.type === 'tool_group') {
+      expect(group.toolGroup.calls).toHaveLength(2);
+      expect(group.toolGroup.results[0]?.id).toBe('3');
+      expect(group.toolGroup.results[1]?.id).toBe('4');
+    }
+  });
+
+  it('does NOT merge consecutive assistant messages even without thinking content', () => {
     const messages: Message[] = [
       createMessage('1', 'user', 'Run tools'),
       createMessage('2', 'assistant', '', [
@@ -157,24 +192,13 @@ describe('useMessageGrouping', () => {
 
     const { result } = renderHook(() => useMessageGrouping(messages));
 
-    // Expected behavior after fix:
-    // Group 1: Single (User)
-    // Group 2: Tool Group (Msg 2 + call_1)
-    // Group 3: Single (Msg 3 + thinking + call_2) - NOT merged because of thinking
-
-    // CURRENT BROKEN BEHAVIOR:
-    // It groups them, effectively hiding the thinking content of Msg 3 because 
-    // the group only keeps the "main" message (Msg 2) and the list of tool calls.
-    // So we expect this test to FAIL if we assert they are separate.
-
-    // For reproduction, we assert the DESIRED behavior.
-    // Msg 3 has tool calls, so it should be a tool_group, but it should be SEPARATE from Group 2.
     expect(result.current.groupedMessages).toHaveLength(3);
     expect(result.current.groupedMessages[1].type).toBe('tool_group');
     expect(result.current.groupedMessages[2].type).toBe('tool_group');
     expect(result.current.groupedMessages[2].message.id).toBe('3');
   });
-  it('preserves all messages in a tool group', () => {
+
+  it('preserves only the assistant message for each response-unit tool group', () => {
     const messages: Message[] = [
       createMessage('1', 'user', 'Run tools'),
       createMessage('2', 'assistant', '', [
@@ -195,14 +219,17 @@ describe('useMessageGrouping', () => {
 
     const { result } = renderHook(() => useMessageGrouping(messages));
 
-    expect(result.current.groupedMessages).toHaveLength(2);
-    const group = result.current.groupedMessages[1];
+    expect(result.current.groupedMessages).toHaveLength(3);
+    const group1 = result.current.groupedMessages[1];
+    const group2 = result.current.groupedMessages[2];
 
-    expect(group.type).toBe('tool_group');
-    if (group.type === 'tool_group') {
-      expect(group.messages).toHaveLength(2);
-      expect(group.messages[0].id).toBe('2');
-      expect(group.messages[1].id).toBe('3');
+    expect(group1.type).toBe('tool_group');
+    expect(group2.type).toBe('tool_group');
+    if (group1.type === 'tool_group' && group2.type === 'tool_group') {
+      expect(group1.messages).toHaveLength(1);
+      expect(group1.messages[0].id).toBe('2');
+      expect(group2.messages).toHaveLength(1);
+      expect(group2.messages[0].id).toBe('3');
     }
   });
 
@@ -592,13 +619,14 @@ describe('useMessageGrouping', () => {
       },
     ];
 
-    // Without boundaryId, consecutive tool calls are grouped into 1 tool_group
+    // Without boundaryId, each assistant response is already its own tool_group
     const { result: withoutBoundary } = renderHook(() =>
       useMessageGrouping(messages),
     );
-    expect(withoutBoundary.current.groupedMessages.length).toBe(1);
+    expect(withoutBoundary.current.groupedMessages.length).toBe(2);
 
-    // With boundaryId set to '2' (tool result 1), tool_group should be split after message 2
+    // With boundaryId set to '2' (tool result 1), response units stay intact;
+    // divider placement uses coveredMessageIds, not truncated consumption.
     const { result: withBoundary } = renderHook(() =>
       useMessageGrouping(messages, '2'),
     );
@@ -613,5 +641,82 @@ describe('useMessageGrouping', () => {
     if (group1.type === 'tool_group') {
       expect(group1.coveredMessageIds).toEqual(['3', '4']);
     }
+  });
+
+  it('keeps parallel tool results when boundaryId matches the first result (#audit)', () => {
+    const messages: Message[] = [
+      createMessage('1', 'assistant', '', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'tool_1', arguments: '{}' },
+        },
+        {
+          id: 'call_2',
+          type: 'function',
+          function: { name: 'tool_2', arguments: '{}' },
+        },
+      ]),
+      createMessage('2', 'tool', 'Result 1', undefined, 'call_1'),
+      createMessage('3', 'tool', 'Result 2', undefined, 'call_2'),
+      createMessage('4', 'assistant', '', [
+        {
+          id: 'call_3',
+          type: 'function',
+          function: { name: 'tool_3', arguments: '{}' },
+        },
+      ]),
+      createMessage('5', 'tool', 'Result 3', undefined, 'call_3'),
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages, '2'));
+
+    expect(result.current.groupedMessages).toHaveLength(2);
+    const group0 = result.current.groupedMessages[0];
+    expect(group0.type).toBe('tool_group');
+    if (group0.type === 'tool_group') {
+      expect(group0.coveredMessageIds).toEqual(['1', '2', '3']);
+      expect(group0.toolGroup.results).toHaveLength(2);
+      expect(group0.toolGroup.results[0]?.id).toBe('2');
+      expect(group0.toolGroup.results[1]?.id).toBe('3');
+    }
+  });
+
+  it('maps each response unit to its own result when tool_call_id is reused (#audit)', () => {
+    const messages: Message[] = [
+      createMessage('1', 'user', 'Run tools'),
+      createMessage('2', 'assistant', '', [
+        {
+          id: 'reused_id',
+          type: 'function',
+          function: { name: 'tool', arguments: '{"n":1}' },
+        },
+      ]),
+      createMessage('3', 'tool', 'Result turn 1', undefined, 'reused_id'),
+      createMessage('4', 'assistant', '', [
+        {
+          id: 'reused_id',
+          type: 'function',
+          function: { name: 'tool', arguments: '{"n":2}' },
+        },
+      ]),
+      createMessage('5', 'tool', 'Result turn 2', undefined, 'reused_id'),
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+    expect(result.current.groupedMessages).toHaveLength(3);
+    const group1 = result.current.groupedMessages[1];
+    const group2 = result.current.groupedMessages[2];
+    expect(group1.type).toBe('tool_group');
+    expect(group2.type).toBe('tool_group');
+    if (group1.type === 'tool_group' && group2.type === 'tool_group') {
+      expect(group1.toolGroup.results[0]?.id).toBe('3');
+      expect(group2.toolGroup.results[0]?.id).toBe('5');
+    }
+
+    // Session map still isolates duplicates for other consumers.
+    expect(result.current.toolResultsMap.get('reused_id')?.id).toBe('3');
+    expect(result.current.toolResultsMap.get('reused_id_dup1')?.id).toBe('5');
   });
 });

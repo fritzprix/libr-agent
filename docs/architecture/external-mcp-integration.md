@@ -551,29 +551,37 @@ pub async fn collect_available_tools(
 }
 ```
 
-**Tool Execution** (`src-tauri/src/mcp/service_proxy.rs:95-122`)
+**Tool Execution** (`src-tauri/src/mcp/service_proxy/routing.rs` and `mod.rs`)
 
 ```rust
-pub async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResponse> {
-    if tool_name.starts_with("builtin_") {
-        // Extract: "builtin_content_store__add" -> "content_store"
-        let tool_id = tool_name
-            .strip_prefix("builtin_")
-            .and_then(|s| s.split("__").next())?;
+// Canonical routing: all tools follow `server__tool` format
+pub fn route_tool(tool_name: &str) -> Result<ToolRouting, String> {
+    let (server_name, real_tool_name) = tool_name.split_once("__").ok_or_else(|| {
+        format!("Invalid tool name format (expected server__tool): {}", tool_name)
+    })?;
 
-        let server = self.builtin_servers.get(tool_id)?;
-        let result = server.handle_call(tool_name, args).await?;
-
-        Ok(MCPResponse {
-            result: Some(MCPResponseResult::ToolCall(result)),
-            error: None,
+    if let Some(service_id) = BuiltinServiceId::from_alias(server_name) {
+        Ok(ToolRouting::Builtin {
+            server_id: service_id.name().to_string(),
+            tool_name: real_tool_name.to_string(),
         })
     } else {
-        // External: "filesystem__read_file" -> server="filesystem", tool="read_file"
-        let (server_name, real_tool_name) = tool_name.split_once("__")?;
+        Ok(ToolRouting::External {
+            server_name: server_name.to_string(),
+            tool_name: real_tool_name.to_string(),
+        })
+    }
+}
 
+// In MCPServiceProxy::call_tool
+match route_tool(tool_name)? {
+    ToolRouting::Builtin { server_id, tool_name } => {
+        let server = self.builtin_servers.get(&server_id)?;
+        server.handle_call(&tool_name, args).await
+    }
+    ToolRouting::External { server_name, tool_name } => {
         self.external_mcp_manager
-            .call_tool(server_name, real_tool_name, args, None)
+            .call_tool(&server_name, &tool_name, args, None)
             .await
     }
 }
@@ -664,10 +672,10 @@ let result = proxy.call_tool(
 
 // Call builtin tool
 let result = proxy.call_tool(
-    "builtin_content_store__add",
+    "attachments__addAttachment",
     json!({
-        "content": "Important data",
-        "metadata": {"type": "note"}
+        "sessionId": "session-123",
+        "path": "/path/to/file.txt"
     })
 ).await?;
 ```

@@ -9,6 +9,7 @@ import {
   INITIAL_FIRST_ITEM_INDEX,
   BOTTOM_FOLLOW_RELEASE_SCROLL_DISTANCE,
   NEAR_TOP_SCROLL_THRESHOLD,
+  USER_SCROLL_INTENT_WINDOW_MS,
 } from '../types';
 import {
   getInitialTopMostItemIndex,
@@ -38,6 +39,10 @@ export interface UseAgentChatScrollOptions {
   agentLlmError: ReturnType<typeof useAgentChat>['llmError'];
   /** True while an older-page fetch is in flight (header height may change). */
   isLoadingOlderMessages?: boolean;
+  /** True when the session still has pages before the loaded window. */
+  hasOlderMessages?: boolean;
+  /** Fetch the previous page; errors are handled by the caller. */
+  loadOlderMessages?: () => Promise<void>;
 }
 
 export function useAgentChatScroll({
@@ -49,14 +54,30 @@ export function useAgentChatScroll({
   agentError,
   agentLlmError,
   isLoadingOlderMessages = false,
+  hasOlderMessages = false,
+  loadOlderMessages,
 }: UseAgentChatScrollOptions) {
   const footerEndRef = useRef<HTMLDivElement | null>(null);
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const virtuosoAtBottomRef = useRef(false);
   const previousScrollTopRef = useRef<number | null>(null);
   const scrollTopRef = useRef(0);
+  const wasNearTopRef = useRef(false);
+  const olderLoadInFlightRef = useRef(false);
   const groupedMessageCountRef = useRef(groupedMessages.length);
   const previousLatestMessageRef = useRef<Message | undefined>(latestMessage);
+  const hasOlderMessagesRef = useRef(hasOlderMessages);
+  const isLoadingOlderMessagesRef = useRef(isLoadingOlderMessages);
+  const loadOlderMessagesRef = useRef(loadOlderMessages);
+  const userScrollIntentUntilRef = useRef(0);
+  const isStreamingContentGrowthRef = useRef(false);
+  hasOlderMessagesRef.current = hasOlderMessages;
+  isLoadingOlderMessagesRef.current = isLoadingOlderMessages;
+  loadOlderMessagesRef.current = loadOlderMessages;
+  isStreamingContentGrowthRef.current =
+    workflowStatus === 'busy' ||
+    workflowStatus === 'queued' ||
+    latestMessage?.isStreaming === true;
 
   const [scrollerElement, setScrollerElement] = useState<HTMLDivElement | null>(
     null,
@@ -226,25 +247,54 @@ export function useAgentChatScroll({
     visualBottomRef,
   ]);
 
-  const handleStartReached = useCallback(() => {
-    // Virtuoso can fire startReached before scrollTop hits NEAR_TOP — pause
-    // follow so the subsequent older-page load cannot auto-scroll to bottom.
-    visualBottomRef.current = false;
-    enterHistoryBrowsing('start-reached');
-    abortBottomAlignment('start-reached');
-    clearScheduledAutoScroll();
-    pauseBottomFollow('start-reached');
-    setEffectivePinnedState(false);
-    logScrollState('start-reached:pause-follow');
-  }, [
-    abortBottomAlignment,
-    clearScheduledAutoScroll,
-    enterHistoryBrowsing,
-    logScrollState,
-    pauseBottomFollow,
-    setEffectivePinnedState,
-    visualBottomRef,
-  ]);
+  const requestOlderMessages = useCallback(
+    (reason: 'start-reached' | 'dom-near-top' | 'manual-load-older') => {
+      if (
+        !hasOlderMessagesRef.current ||
+        isLoadingOlderMessagesRef.current ||
+        olderLoadInFlightRef.current ||
+        !loadOlderMessagesRef.current
+      ) {
+        return;
+      }
+
+      // Pause follow only when an older-page load will actually run — a wasted
+      // startReached on empty mount must not unpin / skip hydration scroll.
+      olderLoadInFlightRef.current = true;
+      visualBottomRef.current = false;
+      enterHistoryBrowsing(reason);
+      abortBottomAlignment(reason);
+      clearScheduledAutoScroll();
+      pauseBottomFollow(reason);
+      setEffectivePinnedState(false);
+      logScrollState(`${reason}:pause-follow`);
+
+      void Promise.resolve(loadOlderMessagesRef.current())
+        .catch(() => {
+          // Swallowed: loadOlderMessages already handles and logs errors.
+        })
+        .finally(() => {
+          olderLoadInFlightRef.current = false;
+        });
+    },
+    [
+      abortBottomAlignment,
+      clearScheduledAutoScroll,
+      enterHistoryBrowsing,
+      logScrollState,
+      pauseBottomFollow,
+      setEffectivePinnedState,
+      visualBottomRef,
+    ],
+  );
+
+  const handleReachTop = useCallback(() => {
+    requestOlderMessages('start-reached');
+  }, [requestOlderMessages]);
+
+  const handleManualLoadOlder = useCallback(() => {
+    requestOlderMessages('manual-load-older');
+  }, [requestOlderMessages]);
 
   const handleResizeObserverLayoutChange = useCallback(
     (reason: 'content-resize-observer' | 'scroller-resize-observer') => {
@@ -413,6 +463,7 @@ export function useAgentChatScroll({
     shouldFollowLatestRef.current = true;
     isPreservingPrependPositionRef.current = false;
     upwardReleaseDistanceRef.current = 0;
+    userScrollIntentUntilRef.current = 0;
     exitHistory('session-changed');
     setPinned(true);
     clearAutoScroll();
@@ -422,6 +473,8 @@ export function useAgentChatScroll({
     }
     previousScrollTopRef.current = null;
     scrollTopRef.current = 0;
+    wasNearTopRef.current = false;
+    olderLoadInFlightRef.current = false;
     logState('sessionEffect:reset-bottom-alignment');
     requestAlignment('session-changed');
     scheduleBottom('session-changed', false);
@@ -493,7 +546,9 @@ export function useAgentChatScroll({
         } else if (
           !isPreservingPrependPositionRef.current &&
           scrollDelta < 0 &&
-          !isSelfScroll
+          !isSelfScroll &&
+          (!isStreamingContentGrowthRef.current ||
+            performance.now() < userScrollIntentUntilRef.current)
         ) {
           upwardReleaseDistanceRef.current += Math.abs(scrollDelta);
           if (
@@ -520,6 +575,22 @@ export function useAgentChatScroll({
         }
       }
 
+      // Level-edge fallback: Virtuoso startReached is one-shot and can be
+      // consumed before hasOlderMessages is known. Re-arm load when the user
+      // (re-)enters the near-top band after leaving it. Skip the first sample
+      // and trusted visual-bottom (short chats fit both top and bottom).
+      const isNearTop = currentScrollTop <= NEAR_TOP_SCROLL_THRESHOLD;
+      if (
+        isNearTop &&
+        !wasNearTopRef.current &&
+        previousScrollTop !== null &&
+        !isSelfScroll &&
+        !trustedVisualBottom
+      ) {
+        requestOlderMessages('dom-near-top');
+      }
+      wasNearTopRef.current = isNearTop;
+
       if (!trustedVisualBottom && !shouldFollowLatestRef.current) {
         virtuosoAtBottomRef.current = false;
         abortBottomAlignment('visual-bottom-lost');
@@ -545,15 +616,48 @@ export function useAgentChatScroll({
       });
     };
 
+    const markUserScrollIntent = () => {
+      userScrollIntentUntilRef.current =
+        performance.now() + USER_SCROLL_INTENT_WINDOW_MS;
+    };
+
     const handleScroll = () => {
       updatePinnedState();
     };
 
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        markUserScrollIntent();
+      }
+    };
+
+    const handleTouchMove = () => {
+      markUserScrollIntent();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === 'ArrowUp' ||
+        event.key === 'PageUp' ||
+        event.key === 'Home'
+      ) {
+        markUserScrollIntent();
+      }
+    };
+
     scrollerElement.addEventListener('scroll', handleScroll, { passive: true });
+    scrollerElement.addEventListener('wheel', handleWheel, { passive: true });
+    scrollerElement.addEventListener('touchmove', handleTouchMove, {
+      passive: true,
+    });
+    scrollerElement.addEventListener('keydown', handleKeyDown);
     updatePinnedState();
 
     return () => {
       scrollerElement.removeEventListener('scroll', handleScroll);
+      scrollerElement.removeEventListener('wheel', handleWheel);
+      scrollerElement.removeEventListener('touchmove', handleTouchMove);
+      scrollerElement.removeEventListener('keydown', handleKeyDown);
     };
   }, [
     abortBottomAlignment,
@@ -565,6 +669,7 @@ export function useAgentChatScroll({
     isPreservingPrependPositionRef,
     logScrollState,
     pauseBottomFollow,
+    requestOlderMessages,
     resumeBottomFollow,
     scheduleBottomAlignmentVerification,
     scrollerElement,
@@ -719,7 +824,8 @@ export function useAgentChatScroll({
     handleVirtuosoAtBottomStateChange,
     handleTotalListHeightChanged,
     handleManualScrollToBottom,
-    handleStartReached,
+    handleReachTop,
+    handleManualLoadOlder,
     initialTopMostItemIndex,
     bottomThreshold,
     logScrollState,

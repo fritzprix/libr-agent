@@ -8,17 +8,19 @@ pub fn create_session_tool() -> MCPTool {
         name: "createSession".to_string(),
         title: Some("Create Browser Session".to_string()),
         description: tool_description(
-            "Create or replace the active browser session for this agent. One agent has one active browser session/page at a time.",
+            "Create one active browser session for this agent.",
             &[],
             &[
                 "Call browser__createSession before other browser tools if no active session exists.",
-                "If a session already exists, browser__createSession closes it and starts a fresh one.",
+                "One agent has one active browser session. Other browser tools use that session only.",
+                "If a session already exists, browser__createSession closes it and starts a fresh one. This also applies when you switch browser=\"sidecar\" and browser=\"userChrome\".",
+                "Do not keep userChrome and sidecar open at the same time.",
                 "If url is omitted, the session opens https://www.google.com.",
-                "Set use_profile=true only when the user needs their LibrAgent saved browser logins (Chrome/Edge/Brave copy in Settings); requires explicit user confirmation. Prefer Open to sign in for Google.",
-                "Never invent or request filesystem profile paths — use_profile is a boolean only.",
-                "If Google shows 'browser may not be secure', tell the user to use Settings → Saved browser logins → Open to sign in (manual login in real Chrome), then retry use_profile.",
-                "Saved logins are an app-local Chromium copy — not the user's everyday browser window. Firefox is not supported for use_profile.",
-                "If createSession fails with a profile-mode switch error, retry once; leftover sessions from another chat are recycled automatically on retry.",
+                "Set browser to \"sidecar\" (default) or \"userChrome\". There is no silent fallback between them.",
+                "browser=\"sidecar\": sticky agent Chromium profile. Logins inside that browser survive later createSession until cleared in Settings. Shares one cookie jar across concurrent agent chats. Not everyday Chrome.",
+                "browser=\"userChrome\": everyday Chrome via the Browser Bridge extension. Errors if not Connected. Does NOT open sidecar instead.",
+                "If userChrome fails, ask the user to connect the extension, or retry with browser=\"sidecar\".",
+                "Never invent or request filesystem profile paths.",
             ],
             &[],
         )
@@ -26,18 +28,22 @@ pub fn create_session_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 (
+                    "browser".to_string(),
+                    enum_prop(
+                        vec!["sidecar", "userChrome"],
+                        "sidecar",
+                        Some(
+                            "Browser to control: \"sidecar\" (sticky agent browser) or \"userChrome\" (everyday Chrome). Errors if userChrome is disconnected. Never falls back to sidecar.",
+                        ),
+                    ),
+                ),
+                (
                     "url".to_string(),
                     string_prop(
                         None,
                         None,
-                        Some("Initial URL to open in the new active session."),
+                        Some("URL to open in the new active session."),
                     ),
-                ),
-                (
-                    "use_profile".to_string(),
-                    boolean_prop(Some(
-                        "When true, use the user's LibrAgent Chromium saved-login copy (Settings import; Open to sign in for Google if needed). Requires explicit confirmation. Default false = clean isolated profile.",
-                    )),
                 ),
             ],
             vec![],
@@ -335,6 +341,7 @@ pub fn list_interactable_tool() -> MCPTool {
         description: "List interactable elements on the page.
 
 Use this before `browser__clickElement` or `browser__inputText` to discover valid CSS selectors instead of guessing.
+Selectors prefer #id, then tag[name=...], then type/nth-of-type — pass them to inputText/clickElement as-is.
 Prefer this over browser__getPageContent when you only need to find elements for interaction."
             .to_string(),
         input_schema: object_prop(
@@ -372,6 +379,7 @@ pub fn close_session_tool() -> MCPTool {
         title: Some("Close Browser Session".to_string()),
         description: "Explicitly close the browser session and clear the stored session state.
 
+Closes the agent's single active browser session (one active slot per agent — nothing stays open in the background).
 Good practice after finishing a task to free resources.
 starting over with `browser__createSession` after closing is the recommended recovery path if the session enters a broken state."
             .to_string(),
@@ -456,15 +464,20 @@ pub fn evaluate_js_tool() -> MCPTool {
             "Execute JavaScript in the active browser session and return the serialized result.",
             &["Active browser session from browser__createSession."],
             &[
-                "Use this for page inspection, debugging, or controlled DOM manipulation in the current page.",
-                "Return plain values when possible. For complex objects, serialize them in the script with JSON.stringify(...).",
+                "Works with browser=\"sidecar\" and browser=\"userChrome\".",
+                "Pass a final expression (example: document.title) or an IIFE (example: (() => { return value; })()).",
+                "Do not use a top-level return. A top-level return often yields null.",
+                "For objects, use JSON.stringify(...) as the final expression.",
+                "browser__getConsoleLogs works on sidecar only. On userChrome, catch errors in an IIFE and return the message string.",
             ],
             &[],
         ),
         input_schema: object_prop(
             vec![(
                 "script".to_string(),
-                string_prop_required("JavaScript code to execute"),
+                string_prop_required(
+                    "JavaScript expression or IIFE to evaluate. Avoid top-level return.",
+                ),
             )],
             vec!["script".to_string()],
             None,
@@ -481,11 +494,15 @@ pub fn get_console_logs_tool() -> MCPTool {
         name: "getConsoleLogs".to_string(),
         title: Some("Get Console Logs".to_string()),
         description: tool_description(
-            "Read recent browser console output from the active browser session.",
-            &["Active browser session from browser__createSession."],
+            "Read recent console logs from a sidecar browser session.",
             &[
-                "Use this after navigation, form submission, or browser__evaluateJS when you need runtime logs from the page.",
-                "Adjust maxEntries when you need a broader or narrower log window.",
+                "Active browser session from browser__createSession with browser=\"sidecar\".",
+                "Not available for browser=\"userChrome\". That call returns an error.",
+            ],
+            &[
+                "Use after navigation, form submit, or browser__evaluateJS when you need sidecar console logs.",
+                "On userChrome, use browser__evaluateJS to inspect errors. Or create a new session with browser=\"sidecar\".",
+                "Set maxEntries to change how many log lines to return.",
             ],
             &[],
         ),
@@ -495,7 +512,7 @@ pub fn get_console_logs_tool() -> MCPTool {
                 integer_prop(
                     Some(100),
                     Some(1000),
-                    Some("Maximum number of log entries to return (default 100, max 1000)"),
+                    Some("Max log entries to return (default 100, max 1000)"),
                 ),
             )],
             vec![],

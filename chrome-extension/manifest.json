@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "LibrAgent Browser Bridge",
+  "version": "0.4.0",
+  "description": "Connect LibrAgent to your everyday Chrome so agents can open tabs, navigate, and interact on this computer.",
+  "homepage_url": "https://github.com/fritzprix/libr-agent",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["tabs", "storage", "alarms", "scripting"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1/*", "http://localhost/*"],
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "action": {
+    "default_title": "LibrAgent Browser Bridge",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  }
+}

@@ -1,0 +1,878 @@
+/**
+ * LibrAgent Browser Bridge — MV3 service worker (Load unpacked MVP).
+ *
+ * Connects to the local LibrAgent WebSocket bridge and maps sessionId → tabId
+ * for createSession / navigate / closeSession / getState / evaluate /
+ * clickElement / inputText / history / screenshot.
+ *
+ * Defaults (override via Options or chrome.storage.local):
+ *   bridgePort  = 3847
+ *   bridgeToken = libragent-dev
+ */
+
+const DEFAULT_PORT = 3847;
+const DEFAULT_TOKEN = 'libragent-dev';
+const RECONNECT_MS = 2000;
+/** Keep the MV3 service worker alive so the bridge WebSocket is not dropped. */
+const KEEPALIVE_ALARM = 'libragent-bridge-keepalive';
+const KEEPALIVE_MINUTES = 0.4; // ~24s (Chrome may clamp to ~1 min)
+const TAB_LOAD_TIMEOUT_MS = 20000;
+/** Max wait for history.back/forward to change the tab URL before reporting noHistoryEntry. */
+const HISTORY_NAV_TIMEOUT_MS = 2500;
+
+/** @typedef {'connected' | 'reconnecting' | 'app_offline'} BridgeUiState */
+
+/**
+ * Persist UI-facing bridge status for the toolbar popup.
+ * @param {BridgeUiState} state
+ * @param {string} [detail]
+ */
+function setBridgeUiState(state, detail) {
+  void chrome.storage.local.set({
+    bridgeUiState: state,
+    bridgeUiDetail: typeof detail === 'string' ? detail : '',
+    bridgeUiUpdatedAt: Date.now(),
+  });
+}
+
+/** @type {Map<string, number>} */
+const sessionToTab = new Map();
+
+/** @type {WebSocket | null} */
+let socket = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let reconnectTimer = null;
+let intentionalClose = false;
+/** Serialize connect() so concurrent callers cannot open two sockets and flap. */
+/** @type {Promise<void> | null} */
+let connectInFlight = null;
+
+/**
+ * @returns {Promise<{ bridgePort: number, bridgeToken: string }>}
+ */
+async function loadConfig() {
+  const stored = await chrome.storage.local.get(['bridgePort', 'bridgeToken']);
+  const portRaw = stored.bridgePort;
+  const port =
+    typeof portRaw === 'number' && Number.isFinite(portRaw)
+      ? portRaw
+      : typeof portRaw === 'string' && portRaw.trim()
+        ? Number.parseInt(portRaw, 10)
+        : DEFAULT_PORT;
+  const token =
+    typeof stored.bridgeToken === 'string' && stored.bridgeToken.trim()
+      ? stored.bridgeToken.trim()
+      : DEFAULT_TOKEN;
+  return {
+    bridgePort: Number.isFinite(port) && port > 0 ? port : DEFAULT_PORT,
+    bridgeToken: token,
+  };
+}
+
+/**
+ * @param {number} tabId
+ * @param {number} [timeoutMs]
+ * @returns {Promise<chrome.tabs.Tab>}
+ */
+function waitForTabComplete(tabId, timeoutMs = TAB_LOAD_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (tab) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(timer);
+      resolve(tab);
+    };
+    const fail = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(timer);
+      reject(error);
+    };
+
+    /** @param {number} id @param {chrome.tabs.TabChangeInfo} changeInfo */
+    const onUpdated = (id, changeInfo) => {
+      if (id === tabId && changeInfo.status === 'complete') {
+        void chrome.tabs.get(tabId).then(finish).catch(fail);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      void chrome.tabs
+        .get(tabId)
+        .then(finish)
+        .catch(fail);
+    }, timeoutMs);
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    void chrome.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (tab.status === 'complete') {
+          finish(tab);
+        }
+      })
+      .catch(fail);
+  });
+}
+
+/**
+ * @param {number} tabId
+ * @returns {Promise<{ url: string, title: string | null, tabId: number }>}
+ */
+async function tabState(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  return {
+    url: tab.url ?? 'about:blank',
+    title: tab.title ?? null,
+    tabId,
+  };
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function urlsMatch(a, b) {
+  const norm = (u) => {
+    try {
+      const parsed = new URL(u);
+      const path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '');
+      return `${parsed.protocol}//${parsed.host}${path}${parsed.search}${parsed.hash}`;
+    } catch {
+      return String(u || '').replace(/\/$/, '');
+    }
+  };
+  return norm(a) === norm(b);
+}
+
+/**
+ * Wait until the tab URL differs from `beforeUrl`, or until timeout.
+ * Does not treat a bare `status=complete` on the same URL as success (avoids
+ * racing goBack against a spurious complete event).
+ *
+ * @param {number} tabId
+ * @param {string} beforeUrl
+ * @param {number} timeoutMs
+ * @returns {Promise<{ url: string, title: string | null, tabId: number }>}
+ */
+function waitForHistoryUrlChange(tabId, beforeUrl, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(timer);
+      void chrome.tabs
+        .get(tabId)
+        .then((tab) =>
+          resolve({
+            url: tab.url ?? 'about:blank',
+            title: tab.title ?? null,
+            tabId,
+          }),
+        )
+        .catch(reject);
+    };
+
+    /** @param {number} id @param {chrome.tabs.TabChangeInfo} changeInfo */
+    const onUpdated = (id, changeInfo) => {
+      if (id !== tabId) {
+        return;
+      }
+      if (typeof changeInfo.url === 'string' && !urlsMatch(changeInfo.url, beforeUrl)) {
+        finish();
+        return;
+      }
+      if (changeInfo.status === 'complete') {
+        void chrome.tabs
+          .get(tabId)
+          .then((tab) => {
+            const url = tab.url ?? 'about:blank';
+            if (!urlsMatch(url, beforeUrl)) {
+              finish();
+            }
+          })
+          .catch(() => {
+            // Ignore transient get errors while waiting.
+          });
+      }
+    };
+
+    const timer = setTimeout(finish, timeoutMs);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
+/**
+ * Trigger history back/forward, then report whether the URL actually changed.
+ * Prefer in-page history (sidecar parity); fall back to chrome.tabs.goBack/Forward.
+ * Never reports navigated when the URL is unchanged.
+ *
+ * @param {number} tabId
+ * @param {'back' | 'forward'} direction
+ * @returns {Promise<{
+ *   url: string,
+ *   title: string | null,
+ *   tabId: number,
+ *   navigationStatus: 'navigated' | 'noHistoryEntry',
+ *   navigationMessage?: string,
+ * }>}
+ */
+async function navigateHistory(tabId, direction) {
+  const before = await tabState(tabId);
+  const beforeUrl = before.url;
+  const label = direction === 'back' ? 'back' : 'forward';
+
+  let triggerError = null;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      args: [direction],
+      func: (dir) => {
+        if (dir === 'back') {
+          history.back();
+        } else {
+          history.forward();
+        }
+      },
+    });
+  } catch (scriptError) {
+    try {
+      if (direction === 'back') {
+        await chrome.tabs.goBack(tabId);
+      } else {
+        await chrome.tabs.goForward(tabId);
+      }
+    } catch (tabsError) {
+      triggerError = tabsError;
+    }
+  }
+
+  if (triggerError) {
+    return {
+      url: before.url,
+      title: before.title,
+      tabId,
+      navigationStatus: 'noHistoryEntry',
+      navigationMessage: `No ${label} history entry (${String(
+        triggerError && triggerError.message ? triggerError.message : triggerError,
+      )})`,
+    };
+  }
+
+  const after = await waitForHistoryUrlChange(
+    tabId,
+    beforeUrl,
+    HISTORY_NAV_TIMEOUT_MS,
+  );
+
+  if (urlsMatch(after.url, beforeUrl)) {
+    return {
+      url: after.url,
+      title: after.title,
+      tabId,
+      navigationStatus: 'noHistoryEntry',
+      navigationMessage: `${label} navigation produced no observable page change; staying on ${after.url}`,
+    };
+  }
+
+  return {
+    url: after.url,
+    title: after.title,
+    tabId,
+    navigationStatus: 'navigated',
+  };
+}
+
+/**
+ * @param {string} sessionId
+ * @returns {number}
+ */
+function requireTabId(sessionId) {
+  const tabId = sessionToTab.get(sessionId);
+  if (typeof tabId !== 'number') {
+    throw new Error(`Unknown sessionId: ${sessionId}`);
+  }
+  return tabId;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function serializeEvalResult(value) {
+  if (value === undefined) {
+    return 'undefined';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value === null) {
+    return 'null';
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * @param {chrome.scripting.InjectionResult[]} injection
+ * @returns {unknown}
+ */
+function firstInjectionResult(injection) {
+  const first = Array.isArray(injection) ? injection[0] : undefined;
+  if (!first) {
+    throw new Error('chrome.scripting.executeScript returned no result');
+  }
+  if (first.error) {
+    const err = first.error;
+    const msg =
+      typeof err === 'object' && err !== null
+        ? err.message || JSON.stringify(err)
+        : String(err);
+    throw new Error(msg);
+  }
+  return first.result;
+}
+
+/**
+ * @param {number} tabId
+ * @param {string} script
+ * @returns {Promise<string>}
+ */
+async function evaluateInTab(tabId, script) {
+  const injection = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [script],
+    // Run caller-provided expressions the same way the CDP sidecar evaluate path does.
+    // Note: page CSP without unsafe-eval may yield null — prefer clickElement/inputText.
+    func: (code) => {
+      // eslint-disable-next-line no-eval
+      return (0, eval)(code);
+    },
+  });
+  return serializeEvalResult(firstInjectionResult(injection));
+}
+
+/**
+ * CSP-safe click: extension-supplied function body (not page eval).
+ * @param {number} tabId
+ * @param {string} selector
+ * @returns {Promise<string>}
+ */
+async function clickElementInTab(tabId, selector) {
+  const injection = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [selector],
+    func: (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return 'Element not found';
+
+      const style = window.getComputedStyle(el);
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.opacity === '0'
+      ) {
+        return 'Element not visible';
+      }
+
+      el.scrollIntoView({ block: 'center' });
+      if (typeof el.focus === 'function') {
+        el.focus();
+      }
+      if (typeof el.click === 'function') {
+        el.click();
+      } else {
+        el.dispatchEvent(
+          new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+          }),
+        );
+      }
+      return 'Clicked element';
+    },
+  });
+  return serializeEvalResult(firstInjectionResult(injection));
+}
+
+/**
+ * CSP-safe text input with React 16+ native value setter support.
+ * @param {number} tabId
+ * @param {string} selector
+ * @param {string} text
+ * @returns {Promise<string>}
+ */
+async function inputTextInTab(tabId, selector, text) {
+  const injection = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [selector, text],
+    func: (sel, value) => {
+      const el = document.querySelector(sel);
+      if (!el) return 'Element not found';
+
+      const style = window.getComputedStyle(el);
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.opacity === '0'
+      ) {
+        return 'Element not visible';
+      }
+
+      el.scrollIntoView({ block: 'center' });
+      if (typeof el.focus === 'function') {
+        el.focus();
+      }
+
+      const isTextArea = el instanceof HTMLTextAreaElement;
+      const isInput = el instanceof HTMLInputElement;
+      if (isInput || isTextArea) {
+        const prototype = isTextArea
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+        const setter = descriptor && descriptor.set;
+        const prevValue = el.value;
+        if (setter) {
+          setter.call(el, value);
+        } else {
+          el.value = value;
+        }
+        const tracker = el._valueTracker;
+        if (tracker && typeof tracker.setValue === 'function') {
+          tracker.setValue(prevValue);
+        }
+        el.dispatchEvent(
+          new InputEvent('input', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: value,
+          }),
+        );
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return 'Input successful';
+      }
+
+      if (el.isContentEditable) {
+        let inserted = false;
+        try {
+          const selection = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          inserted = document.execCommand('insertText', false, value);
+        } catch {
+          inserted = false;
+        }
+        if (!inserted) {
+          el.textContent = value;
+          el.dispatchEvent(
+            new InputEvent('input', {
+              bubbles: true,
+              cancelable: true,
+              inputType: 'insertText',
+              data: value,
+            }),
+          );
+        }
+        return 'Input successful';
+      }
+
+      return 'Element is not an input';
+    },
+  });
+  return serializeEvalResult(firstInjectionResult(injection));
+}
+
+/**
+ * @param {{ id?: string, method?: string, params?: Record<string, unknown> }} message
+ */
+async function handleRequest(message) {
+  const id = typeof message.id === 'string' ? message.id : null;
+  const method = typeof message.method === 'string' ? message.method : '';
+  const params =
+    message.params && typeof message.params === 'object' ? message.params : {};
+
+  const reply = (payload) => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    socket.send(JSON.stringify({ id, ...payload }));
+  };
+
+  try {
+    switch (method) {
+      case 'createSession': {
+        const sessionId = String(params.sessionId ?? '');
+        const url = String(params.url ?? '');
+        if (!sessionId || !url) {
+          throw new Error('createSession requires sessionId and url');
+        }
+        const tab = await chrome.tabs.create({ url, active: true });
+        if (typeof tab.id !== 'number') {
+          throw new Error('chrome.tabs.create did not return a tab id');
+        }
+        sessionToTab.set(sessionId, tab.id);
+        await waitForTabComplete(tab.id);
+        reply({ ok: true, result: await tabState(tab.id) });
+        break;
+      }
+      case 'navigate': {
+        const sessionId = String(params.sessionId ?? '');
+        const url = String(params.url ?? '');
+        const tabId = requireTabId(sessionId);
+        if (!url) {
+          throw new Error('navigate requires url');
+        }
+        await chrome.tabs.update(tabId, { url, active: true });
+        await waitForTabComplete(tabId);
+        reply({ ok: true, result: await tabState(tabId) });
+        break;
+      }
+      case 'closeSession': {
+        const sessionId = String(params.sessionId ?? '');
+        const tabId = sessionToTab.get(sessionId);
+        if (typeof tabId === 'number') {
+          try {
+            await chrome.tabs.remove(tabId);
+          } catch {
+            // Tab may already be closed by the user.
+          }
+          sessionToTab.delete(sessionId);
+        }
+        reply({ ok: true, result: { closed: true } });
+        break;
+      }
+      case 'getState': {
+        const sessionId = String(params.sessionId ?? '');
+        const tabId = requireTabId(sessionId);
+        reply({ ok: true, result: await tabState(tabId) });
+        break;
+      }
+      case 'evaluate': {
+        const sessionId = String(params.sessionId ?? '');
+        const script = String(params.script ?? '');
+        const tabId = requireTabId(sessionId);
+        if (!script) {
+          throw new Error('evaluate requires script');
+        }
+        const value = await evaluateInTab(tabId, script);
+        reply({ ok: true, result: value });
+        break;
+      }
+      case 'clickElement': {
+        const sessionId = String(params.sessionId ?? '');
+        const selector = String(params.selector ?? '');
+        const tabId = requireTabId(sessionId);
+        if (!selector) {
+          throw new Error('clickElement requires selector');
+        }
+        const value = await clickElementInTab(tabId, selector);
+        reply({ ok: true, result: value });
+        break;
+      }
+      case 'inputText': {
+        const sessionId = String(params.sessionId ?? '');
+        const selector = String(params.selector ?? '');
+        const text = params.text == null ? '' : String(params.text);
+        const tabId = requireTabId(sessionId);
+        if (!selector) {
+          throw new Error('inputText requires selector');
+        }
+        const value = await inputTextInTab(tabId, selector, text);
+        reply({ ok: true, result: value });
+        break;
+      }
+      case 'goBack': {
+        const sessionId = String(params.sessionId ?? '');
+        const tabId = requireTabId(sessionId);
+        reply({ ok: true, result: await navigateHistory(tabId, 'back') });
+        break;
+      }
+      case 'goForward': {
+        const sessionId = String(params.sessionId ?? '');
+        const tabId = requireTabId(sessionId);
+        reply({ ok: true, result: await navigateHistory(tabId, 'forward') });
+        break;
+      }
+      case 'takeScreenshot': {
+        const sessionId = String(params.sessionId ?? '');
+        const fullPage = Boolean(params.fullPage);
+        const tabId = requireTabId(sessionId);
+        // Activate tab so captureVisibleTab targets it.
+        await chrome.tabs.update(tabId, { active: true });
+        const windowId = (await chrome.tabs.get(tabId)).windowId;
+        const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+          format: 'png',
+        });
+        // App expects raw base64 (no data-URL prefix). fullPage is viewport-only.
+        const base64 = String(dataUrl).includes('base64,')
+          ? String(dataUrl).split('base64,')[1]
+          : String(dataUrl);
+        if (fullPage) {
+          reply({
+            ok: true,
+            result: {
+              base64,
+              warning:
+                'Chrome extension bridge captures the visible viewport only; fullPage was ignored',
+            },
+          });
+        } else {
+          reply({ ok: true, result: base64 });
+        }
+        break;
+      }
+      case 'ping': {
+        reply({ ok: true, result: { pong: true } });
+        break;
+      }
+      default:
+        throw new Error(`Unsupported method: ${method || '(missing)'}`);
+    }
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : String(error ?? 'unknown error');
+    reply({ ok: false, error: errorMessage });
+  }
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer !== null) {
+    return;
+  }
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    void connect();
+  }, RECONNECT_MS);
+}
+
+async function connect() {
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+  if (connectInFlight) {
+    return connectInFlight;
+  }
+  connectInFlight = openBridgeSocket().finally(() => {
+    connectInFlight = null;
+  });
+  return connectInFlight;
+}
+
+async function openBridgeSocket() {
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const { bridgePort, bridgeToken } = await loadConfig();
+  // Re-check after await — another caller may have opened meanwhile.
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const url = `ws://127.0.0.1:${bridgePort}/extension-bridge?token=${encodeURIComponent(bridgeToken)}`;
+
+  intentionalClose = false;
+  setBridgeUiState(
+    'reconnecting',
+    'Looking for LibrAgent on this machine…',
+  );
+
+  /** @type {WebSocket} */
+  let ws;
+  try {
+    ws = new WebSocket(url);
+  } catch (error) {
+    console.warn('[LibrAgent Bridge] WebSocket construct failed', error);
+    setBridgeUiState(
+      'app_offline',
+      'Could not open a bridge socket. Start LibrAgent, then wait — reconnect is automatic.',
+    );
+    scheduleReconnect();
+    return;
+  }
+
+  socket = ws;
+
+  ws.addEventListener('open', () => {
+    if (socket !== ws) {
+      return;
+    }
+    console.info(`[LibrAgent Bridge] Connected to ${url}`);
+    setBridgeUiState(
+      'connected',
+      'Agents can use everyday Chrome tabs while LibrAgent is running.',
+    );
+  });
+
+  ws.addEventListener('message', (event) => {
+    if (socket !== ws) {
+      return;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(String(event.data));
+    } catch (error) {
+      console.warn('[LibrAgent Bridge] Invalid JSON from bridge', error);
+      return;
+    }
+    void handleRequest(parsed);
+  });
+
+  ws.addEventListener('close', () => {
+    // Only clear if this socket is still the active one (avoid racing a newer connect).
+    if (socket === ws) {
+      socket = null;
+    }
+    if (!intentionalClose && socket === null) {
+      console.info('[LibrAgent Bridge] Disconnected; reconnecting…');
+      setBridgeUiState(
+        'reconnecting',
+        'Bridge closed. If LibrAgent is starting up, this clears on its own — no need to reopen chrome://extensions.',
+      );
+      scheduleReconnect();
+    }
+  });
+
+  ws.addEventListener('error', () => {
+    if (socket !== ws) {
+      return;
+    }
+    // close handler schedules reconnect; mark offline while waiting
+    setBridgeUiState(
+      'app_offline',
+      'Start the LibrAgent app. This extension keeps retrying automatically.',
+    );
+  });
+}
+
+function ensureKeepaliveAlarm() {
+  void chrome.alarms.create(KEEPALIVE_ALARM, {
+    periodInMinutes: KEEPALIVE_MINUTES,
+  });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== KEEPALIVE_ALARM) {
+    return;
+  }
+  void connect();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  ensureKeepaliveAlarm();
+  void connect();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  ensureKeepaliveAlarm();
+  void connect();
+});
+
+chrome.action.onClicked.addListener(() => {
+  ensureKeepaliveAlarm();
+  void connect();
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+  if (message.type === 'forceReconnect') {
+    intentionalClose = true;
+    if (socket) {
+      socket.close();
+      socket = null;
+    }
+    intentionalClose = false;
+    void connect().then(() => {
+      sendResponse({
+        state:
+          socket && socket.readyState === WebSocket.OPEN
+            ? 'connected'
+            : 'reconnecting',
+      });
+    });
+    return true;
+  }
+  if (message.type === 'getBridgeStatus') {
+    void connect().then(() => {
+      const open = Boolean(socket && socket.readyState === WebSocket.OPEN);
+      const connecting = Boolean(
+        socket && socket.readyState === WebSocket.CONNECTING,
+      );
+      chrome.storage.local.get(['bridgeUiState', 'bridgeUiDetail'], (stored) => {
+        let state = stored.bridgeUiState;
+        if (open) {
+          state = 'connected';
+        } else if (connecting) {
+          state = 'reconnecting';
+        } else if (
+          state !== 'connected' &&
+          state !== 'reconnecting' &&
+          state !== 'app_offline'
+        ) {
+          state = 'reconnecting';
+        }
+        sendResponse({
+          state,
+          detail:
+            typeof stored.bridgeUiDetail === 'string'
+              ? stored.bridgeUiDetail
+              : '',
+        });
+      });
+    });
+    return true;
+  }
+  return false;
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') {
+    return;
+  }
+  if (changes.bridgePort || changes.bridgeToken) {
+    intentionalClose = true;
+    if (socket) {
+      socket.close();
+      socket = null;
+    }
+    intentionalClose = false;
+    void connect();
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const [sessionId, mapped] of sessionToTab.entries()) {
+    if (mapped === tabId) {
+      sessionToTab.delete(sessionId);
+    }
+  }
+});
+
+ensureKeepaliveAlarm();
+void connect();

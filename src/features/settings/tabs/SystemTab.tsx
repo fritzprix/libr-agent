@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import type { SystemSettings } from '@/context/SettingsContext';
 import { SystemPerformanceSettings } from '../components/SystemPerformanceSettings';
-import { BrowserProfilesSettingsSection } from '../components/BrowserProfilesSettingsSection';
+import { AgentBrowserDataSettingsSection } from '../components/AgentBrowserDataSettingsSection';
+import { ExtensionBridgeSettingsSection } from '../components/ExtensionBridgeSettingsSection';
 import { Button, Slider } from '@/components/ui';
 
 interface SystemTabProps {
@@ -107,11 +108,14 @@ function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
       <div className="border-t pt-6">
         <h3 className="mb-4 text-lg font-medium text-foreground">
           {t(
-            'settings.system.browserProfiles.sectionTitle',
-            'Saved browser logins',
+            'settings.system.agentBrowser.sectionTitle',
+            'Agent browser',
           )}
         </h3>
-        <BrowserProfilesSettingsSection />
+        <ExtensionBridgeSettingsSection />
+        <div className="mt-8 border-t pt-6">
+          <AgentBrowserDataSettingsSection />
+        </div>
       </div>
 
       <div className="border-t pt-6">

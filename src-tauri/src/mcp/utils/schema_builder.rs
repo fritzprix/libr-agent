@@ -365,6 +365,43 @@ pub fn integer_const_prop(value: i64, description: Option<&str>) -> JSONSchema {
     }
 }
 
+/// Schema for an arbitrary JSON value (string/number/bool/null/object/array).
+///
+/// Uses `oneOf` without a separate `integer` branch — JSON Schema `number`
+/// already accepts integers, so including both would reject integers under
+/// exclusive `oneOf` validators.
+pub fn any_json_prop(description: Option<&str>) -> JSONSchema {
+    one_of_object_schema(
+        vec![
+            string_prop(None, None, Some("string")),
+            number_prop(None, None, Some("number (includes integers)")),
+            boolean_prop(Some("boolean")),
+            {
+                let mut null_schema = JSONSchema::null();
+                null_schema.description = Some("null".to_string());
+                null_schema
+            },
+            object_map_prop(Some("object")),
+            JSONSchema {
+                schema_type: JSONSchemaType::Array {
+                    items: None,
+                    min_items: None,
+                    max_items: None,
+                    unique_items: None,
+                },
+                title: None,
+                description: Some("array".to_string()),
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+                one_of: None,
+            },
+        ],
+        description,
+    )
+}
+
 /// Creates an object schema that validates exactly one of the provided variants.
 pub fn one_of_object_schema(variants: Vec<JSONSchema>, description: Option<&str>) -> JSONSchema {
     JSONSchema {

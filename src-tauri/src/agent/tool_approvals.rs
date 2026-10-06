@@ -134,29 +134,6 @@ pub async fn evaluate_tool_execution_policy(
         };
     }
 
-    if is_browser_create_session_with_profile(tool_name, args) {
-        match crate::browser_profiles::has_any_imported_profile() {
-            Ok(true) => {
-                return ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
-                    description: "Allow this agent to open a browser session with your imported browser profile (cookies and logins)? This requires your explicit confirmation.".to_string(),
-                    input_preview: "use_profile=true".to_string(),
-                });
-            }
-            Ok(false) => {
-                return ToolExecutionPolicyDecision::Block(BlockedToolExecution {
-                    message: "No imported browser profile is available. Import one from Settings → System → Saved browser logins, then retry with use_profile=true.".to_string(),
-                });
-            }
-            Err(error) => {
-                return ToolExecutionPolicyDecision::Block(BlockedToolExecution {
-                    message: format!(
-                        "Unable to verify imported browser profiles ({error}). Import a profile from Settings → System → Saved browser logins first."
-                    ),
-                });
-            }
-        }
-    }
-
     if requires_hard_approval {
         let arguments = args.to_string();
         return ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
@@ -239,15 +216,6 @@ fn pattern_list_matches(patterns: &[String], tool_name: &str) -> bool {
     false
 }
 
-fn is_browser_create_session_with_profile(tool_name: &str, args: &serde_json::Value) -> bool {
-    if tool_name != "browser__createSession" {
-        return false;
-    }
-    args.get("use_profile")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-}
-
 pub fn generate_channel_permission_request_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
@@ -323,6 +291,9 @@ mod tests {
             .contains(&"workspace__writeFile".to_string()));
         assert!(config
             .requires_approval
+            .contains(&"workspace__editObject".to_string()));
+        assert!(config
+            .requires_approval
             .contains(&"scheduled_task__createScheduledTask".to_string()));
         assert!(config
             .requires_approval
@@ -345,30 +316,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn browser_create_session_with_profile_blocks_without_import() {
-        let decision = evaluate_tool_execution_policy(
-            "browser__createSession",
-            &serde_json::json!({
-                "url": "https://example.com",
-                "use_profile": true
-            }),
-        )
-        .await;
-
-        // Without an imported profile (typical test/dev empty registry), block
-        // before prompting for approval.
-        assert!(
-            matches!(
-                decision,
-                ToolExecutionPolicyDecision::Block(_)
-                    | ToolExecutionPolicyDecision::RequireHardApproval(_)
-            ),
-            "expected Block (no import) or HardApproval (import present), got {decision:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn browser_create_session_without_profile_allows() {
+    async fn browser_create_session_allows_without_special_profile_gate() {
         let decision = evaluate_tool_execution_policy(
             "browser__createSession",
             &serde_json::json!({

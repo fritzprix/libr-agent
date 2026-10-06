@@ -3,6 +3,7 @@
 
 #[cfg(feature = "workspace-edit-file")]
 pub mod edit_line;
+pub mod edit_object;
 pub mod import;
 pub mod list_dir;
 mod list_dir_format;

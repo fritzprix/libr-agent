@@ -39,7 +39,7 @@ Do not ask clarifying questions — make reasonable assumptions and finish.
 1. `@skill:pipeline` (or hub-spoke / divide-conquer) → one merged report
 2. Morning Briefing recipe Install → Run now
 3. Import MCP from Cursor
-4. Saved browser logins → `use_profile`
+4. Sticky agent browser profile → authenticated page (sign in once; clear via Settings)
 
 ## Filming tips
 

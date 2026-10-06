@@ -72,3 +72,26 @@ fn create_session_request_treats_blank_request_as_present_string() {
 
     assert_eq!(request.request.as_deref(), Some("   "));
 }
+
+#[test]
+fn create_session_request_deserializes_max_input_context() {
+    let request: CreateSessionRequest = serde_json::from_value(serde_json::json!({
+        "assistantId": "assistant-1",
+        "request": "bench",
+        "maxInputContext": 43000
+    }))
+    .expect("request should deserialize");
+
+    assert_eq!(request.max_input_context, Some(43_000));
+}
+
+#[test]
+fn create_session_request_defaults_max_input_context_when_omitted() {
+    let request: CreateSessionRequest = serde_json::from_value(serde_json::json!({
+        "assistantId": "assistant-1",
+        "request": "hello"
+    }))
+    .expect("request should deserialize");
+
+    assert_eq!(request.max_input_context, None);
+}

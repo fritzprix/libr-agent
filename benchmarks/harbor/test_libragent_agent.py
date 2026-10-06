@@ -8,12 +8,15 @@ import pytest
 from harbor.models.agent.context import AgentContext
 
 from benchmarks.harbor.libragent_agent import (
+    COMPACTION_TASK_MAX_INPUT_CONTEXT,
+    COMPACTION_TELEMETRY_SCHEMA_VERSION,
     CompletionTelemetry,
     DEFAULT_EXECUTION_MODE,
     EmptyAgentWorkError,
     LibrAgentHarborAdapter,
     TrajectoryTelemetry,
     build_atif_trajectory,
+    build_compaction_telemetry_document,
     build_diagnostic_meta,
     copy_telemetry_to_context,
     extract_model_name_from_assistant_payload,
@@ -26,6 +29,7 @@ from benchmarks.harbor.libragent_agent import (
     read_repo_package_version,
     resolve_container_workdir,
     resolve_execution_mode,
+    resolve_max_input_context,
     resolve_poll_timeout_sec,
     sanitize_docker_compose_project_name,
     split_harbor_model_name,
@@ -34,6 +38,7 @@ from benchmarks.harbor.libragent_agent import (
     _task_identity_from_logs_dir,
     workspace_mode_name,
     write_atif_trajectory,
+    write_compaction_telemetry,
 )
 
 
@@ -72,6 +77,37 @@ def test_workflow_complete_does_not_treat_paused_or_busy_as_done() -> None:
     assert is_workflow_complete("paused", seen_non_idle=True) is False
     assert is_workflow_complete("busy", seen_non_idle=True) is False
     assert is_workflow_complete("queued", seen_non_idle=True) is False
+
+
+def test_resolve_max_input_context_uses_per_task_map() -> None:
+    assert (
+        resolve_max_input_context("compaction-haystack-v1", env={})
+        == COMPACTION_TASK_MAX_INPUT_CONTEXT["haystack"]
+    )
+    assert (
+        resolve_max_input_context("compaction-puzzle-chain-v1__abc", env={})
+        == COMPACTION_TASK_MAX_INPUT_CONTEXT["puzzle-chain"]
+    )
+
+
+def test_resolve_max_input_context_matches_versioned_and_unversioned_slugs() -> None:
+    expected = COMPACTION_TASK_MAX_INPUT_CONTEXT["haystack"]
+    assert resolve_max_input_context("compaction-haystack", env={}) == expected
+    assert resolve_max_input_context("compaction-haystack-v2", env={}) == expected
+
+
+def test_resolve_max_input_context_env_overrides_task_map() -> None:
+    assert (
+        resolve_max_input_context(
+            "compaction-haystack-v1",
+            env={"LIBRAGENT_BENCH_MAX_INPUT_CONTEXT": "16000"},
+        )
+        == 16_000
+    )
+
+
+def test_resolve_max_input_context_omits_non_compaction_tasks() -> None:
+    assert resolve_max_input_context("terminal-bench-hello", env={}) is None
 
 
 def test_resolve_poll_timeout_sec_from_env() -> None:
@@ -617,6 +653,68 @@ def test_adapter_write_atif_trajectory_best_effort(tmp_path) -> None:
     assert payload["final_metrics"]["total_prompt_tokens"] == 10
 
 
+def test_build_compaction_telemetry_document_from_api_payload() -> None:
+    document = build_compaction_telemetry_document(
+        {
+            "schemaVersion": COMPACTION_TELEMETRY_SCHEMA_VERSION,
+            "sessionId": "s1",
+            "capturedAt": "2026-10-05T00:00:00+00:00",
+            "compactContext": {
+                "id": "c1",
+                "toId": "m1",
+                "summary": "kept the pin",
+                "condensedCount": 12,
+            },
+            "events": [{"seq": 1, "phase": "succeeded"}],
+            "workspaceArtifacts": {
+                "preCompactionEpochs": [".libragent/pre_compaction_epoch_1.md"],
+                "fallbackArtifacts": [],
+            },
+            "derived": {
+                "compactionCount": 1,
+                "usedHardFallback": False,
+                "hasCompactContext": True,
+                "evidenceBasis": "events",
+            },
+        },
+        session_id="s1",
+    )
+    assert document["schemaVersion"] == COMPACTION_TELEMETRY_SCHEMA_VERSION
+    assert document["derived"]["compactionCount"] == 1
+    assert document["compactContext"]["summary"] == "kept the pin"
+
+
+def test_build_compaction_telemetry_document_workspace_fallback(tmp_path) -> None:
+    libragent = tmp_path / ".libragent"
+    libragent.mkdir()
+    (libragent / "pre_compaction_epoch_1.md").write_text("# epoch\n", encoding="utf-8")
+    fallback_dir = libragent / "tool-results" / "compaction"
+    fallback_dir.mkdir(parents=True)
+    (fallback_dir / "fallback-abc.md").write_text("# fallback\n", encoding="utf-8")
+
+    document = build_compaction_telemetry_document(
+        None,
+        session_id="s-fallback",
+        workspace_root=tmp_path,
+    )
+    assert document["derived"]["compactionCount"] == 1
+    assert document["derived"]["evidenceBasis"] == "workspace_epochs"
+    assert document["derived"]["usedHardFallback"] is True
+    assert document["workspaceArtifacts"]["preCompactionEpochs"] == [
+        ".libragent/pre_compaction_epoch_1.md"
+    ]
+
+
+def test_write_compaction_telemetry_creates_agent_logs_file(tmp_path) -> None:
+    path = tmp_path / "agent" / "compaction.json"
+    document = build_compaction_telemetry_document(None, session_id="s2")
+    write_compaction_telemetry(path, document)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["schemaVersion"] == COMPACTION_TELEMETRY_SCHEMA_VERSION
+    assert payload["sessionId"] == "s2"
+    assert payload["derived"]["compactionCount"] == 0
+
+
 def test_build_diagnostic_meta_includes_counts() -> None:
     telemetry = TrajectoryTelemetry(
         n_input_tokens=100,
@@ -787,6 +885,7 @@ def test_adapter_writes_benchmark_contract(
             "model": "Qwen3.6",
             "provider": "openai",
         },
+        max_input_context=42_500,
     )
 
     payload = json.loads(
@@ -805,10 +904,15 @@ def test_adapter_writes_benchmark_contract(
         "session_effective": "openai/Qwen3.6",
     }
     assert payload["execution"]["workspace_mode"] == "attach"
+    assert payload["execution"]["max_input_context"] == 42_500
     assert payload["harbor"]["n_attempts"] == "5"
     assert payload["harbor"]["concurrency"] == "2"
     assert payload["harbor"]["verifier_env_configured"] is True
-    assert payload["session"] == {"id": "session-1", "status": "busy"}
+    assert payload["session"] == {
+        "id": "session-1",
+        "status": "busy",
+        "max_input_context": 42_500,
+    }
 
 
 def test_task_identity_from_logs_dir() -> None:

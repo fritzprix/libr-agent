@@ -30,7 +30,7 @@ This workspace contains both application code (React/TypeScript frontend + Rust/
 
 ### Technology Stack
 
-- **Package Manager**: pnpm@9.15.9 (pinned via `packageManager` in package.json and enforced by preinstall script)
+- **Package Manager**: pnpm@12.8.1 (pinned via `packageManager` in package.json and enforced by preinstall script)
 - **Language**: TypeScript 5.6 (frontend), Rust 2021 edition (backend)
 - **Framework**: React 18.3 + Vite 6.x (frontend), Tauri 2.x (desktop framework)
 - **Build System**: Vite (frontend), Cargo (backend)
@@ -39,7 +39,7 @@ This workspace contains both application code (React/TypeScript frontend + Rust/
 ### Environment Setup
 
 1. Install Rust via [rustup.rs](https://rustup.rs/) and Node.js 20+
-2. Enable pinned pnpm: `corepack enable && corepack prepare pnpm@9.15.9 --activate`
+2. Enable pinned pnpm: `corepack enable && corepack prepare pnpm@12.8.1 --activate`
 3. Install dependencies: `pnpm install --frozen-lockfile`
 4. Start development: `pnpm tauri dev` (full desktop app with backend) or `pnpm dev` (frontend only)
 5. Build for production: `pnpm tauri build`
@@ -162,31 +162,36 @@ src/
 ├── context/          # React context providers
 ├── hooks/            # Generic, reusable hooks
 ├── lib/              # Service layer, business logic, data, API
+├── locales/          # i18n translation files (en, ko, etc.)
 ├── models/           # TypeScript types and interfaces
 ├── styles/           # Global or shared CSS
-└── test/             # Test utilities
+├── test/             # Test utilities
+└── types/            # Global ambient and module type declarations
 ```
 
 **Backend (`src-tauri/src/`):**
 
 ```
 src-tauri/src/
-├── agent/            # Agent orchestration (session lifecycle, LLM interaction, tool execution)
-├── browser_sidecar/  # Browser automation
-├── commands/         # Tauri command handlers
-├── entity/           # SeaORM entities
-├── lifecycle/        # Session creation/recovery
-├── mcp/              # MCP integration (builtin servers, external managers)
-├── models/           # Data models
-├── repositories/     # Data access layer
-├── scheduled/        # Scheduled tasks
-├── search/           # Search functionality
-├── server/           # HTTP server
-├── services/         # Browser, workspace, etc.
-├── session/          # Session management
-├── session_isolation/# Session isolation logic
-├── utils/            # Shared utilities
-└── main.rs           # Entry point
+├── agent/                    # Agent orchestration (session lifecycle, LLM interaction, tool execution)
+├── browser_extension_bridge/ # Everyday Chrome MV3 bridge server
+├── browser_sidecar/          # Browser automation (Playwright/CDP)
+├── commands/                 # Tauri command handlers
+├── entity/                   # SeaORM entities
+├── lifecycle/                # Session creation/recovery
+├── mcp/                      # MCP integration (builtin servers, external managers)
+├── media_assist/             # Audio/image/video transcription & media processing
+├── models/                   # Data models
+├── repositories/             # Data access layer
+├── scheduled/                # Scheduled tasks
+├── search/                   # Search functionality
+├── server/                   # HTTP server
+├── services/                 # Browser, workspace, etc.
+├── session/                  # Session management
+├── session_export/           # ATIF and Markdown session export formats
+├── session_isolation/        # Session isolation logic
+├── utils/                    # Shared utilities
+└── main.rs                   # Entry point
 ```
 
 ### Testing
@@ -203,7 +208,7 @@ src-tauri/src/
 ### CI / Pull Requests
 
 - GitHub Actions for CI and releases (`.github/workflows/ci.yml`, `release.yml`)
-- Node.js 20, pnpm@9.15.9 pinned
+- Node.js 20, pnpm@12.8.1 pinned
 - CI runs `pnpm install --frozen-lockfile`, lint, format check, Rust fmt/clippy, build, tests
 - `pnpm refactor:validate` mirrors the full CI pipeline locally
 
@@ -243,9 +248,11 @@ docs/
 │   ├── getting-started.md       # Setup and quick start
 │   ├── navigation-guide.md      # Internal structure and UI routes
 │   ├── system-prompt-guide.md   # Assistant prompt guidelines
-│   └── builtin_tool_bp.md       # Built-in tool design standards
+│   ├── builtin_tool_bp.md       # Built-in tool design standards
+│   └── session-export-formats.md # Session trajectory export formats (ATIF / Markdown)
 ├── architecture/
 │   ├── agent-workflow-architecture.md
+│   ├── media-assist-architecture.md # Host multimodal plugin engine
 │   ├── gemini-caching-implementation.md
 │   ├── session-lineage-and-tree-ui.md
 │   ├── agent-vibe-charter.md
@@ -253,16 +260,14 @@ docs/
 │   ├── soul-lounge-recovery-loop.md
 │   └── open-source-launch-manifesto.md
 ├── analysis/
-│   ├── product-strengths.md
-│   ├── competitive-landscape-2026.md
-│   └── workspace-tool-critique.md
+│   ├── product-analysis.md
+│   ├── ai-agent-platform-competitive-landscape.md
+│   └── libragent-comparative-analysis.md
 ├── contributing/
 │   ├── coding-standards.md
 │   ├── product-messaging-guide.md
 │   ├── open-source-launch-finale.md
 │   └── github-release-notes-template.md
-├── refactoring/
-│   └── type-safety-refactoring-plan.md
 └── sprints/
     └── README.md                # Archived sprint logs
 ```

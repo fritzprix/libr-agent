@@ -27,6 +27,11 @@ impl AgentService {
         body: CreateSessionRequest,
         message_source: Option<MessageSource>,
     ) -> Result<CreateSessionResponse, String> {
+        // Reject invalid override before creating DB/active session state.
+        if matches!(body.max_input_context, Some(0)) {
+            return Err("maxInputContext must be greater than 0".to_string());
+        }
+
         let assistant = load_assistant(&body.assistant_id).await?;
         let session_id = generate_spawn_session_id();
         let initial_request = body
@@ -128,6 +133,11 @@ impl AgentService {
             .set_execution_mode(&session_id, resolved_mode)
             .await
             .map_err(|e| format!("Failed to set execution mode: {}", e))?;
+
+        manager
+            .set_max_input_context_override(&session_id, body.max_input_context)
+            .await
+            .map_err(|e| format!("Failed to set maxInputContext override: {}", e))?;
 
         let Some(initial_request) = initial_request else {
             return Ok(CreateSessionResponse {

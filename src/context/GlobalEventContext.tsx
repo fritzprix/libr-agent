@@ -49,50 +49,65 @@ export function GlobalEventProvider({ children }: GlobalEventProviderProps) {
 
   // Subscribe to Tauri events on mount
   useEffect(() => {
+    let isMounted = true;
     let unlisten: (() => void) | undefined;
 
     const setupListener = async () => {
       try {
-        unlisten = await listen<GlobalEventPayload>('agent:event', (event) => {
-          const payload = event.payload;
-
-          if (payload.type === 'resourceUpdated') {
-            const { resourceType } = payload as ResourceUpdatedPayload;
-
-            logger.debug(
-              `Resource updated event received: ${resourceType}`,
-              payload,
-            );
-
-            // Debounce the update trigger
-            const existingTimer = debounceTimers.current.get(resourceType);
-            if (existingTimer) {
-              clearTimeout(existingTimer);
+        const cleanup = await listen<GlobalEventPayload>(
+          'agent:event',
+          (event) => {
+            if (!isMounted) {
+              return;
             }
 
-            const timer = setTimeout(() => {
-              const resourceListeners = listeners.current.get(resourceType);
-              if (resourceListeners) {
-                logger.debug(
-                  `Triggering ${resourceListeners.size} listeners for ${resourceType}`,
-                );
-                resourceListeners.forEach((cb) => cb());
-              }
-              debounceTimers.current.delete(resourceType);
-            }, 300);
+            const payload = event.payload;
 
-            debounceTimers.current.set(resourceType, timer);
-          }
-        });
+            if (payload.type === 'resourceUpdated') {
+              const { resourceType } = payload as ResourceUpdatedPayload;
+
+              logger.debug(
+                `Resource updated event received: ${resourceType}`,
+                payload,
+              );
+
+              // Debounce the update trigger
+              const existingTimer = debounceTimers.current.get(resourceType);
+              if (existingTimer) {
+                clearTimeout(existingTimer);
+              }
+
+              const timer = setTimeout(() => {
+                const resourceListeners = listeners.current.get(resourceType);
+                if (resourceListeners) {
+                  logger.debug(
+                    `Triggering ${resourceListeners.size} listeners for ${resourceType}`,
+                  );
+                  resourceListeners.forEach((cb) => cb());
+                }
+                debounceTimers.current.delete(resourceType);
+              }, 300);
+
+              debounceTimers.current.set(resourceType, timer);
+            }
+          },
+        );
+
+        if (isMounted) {
+          unlisten = cleanup;
+        } else {
+          cleanup();
+        }
       } catch (err) {
         logger.error('Failed to setup global event listener', err);
       }
     };
 
-    setupListener();
+    void setupListener();
 
     return () => {
-      if (unlisten) unlisten();
+      isMounted = false;
+      unlisten?.();
       // Clear all timers on unmount
       debounceTimers.current.forEach((timer) => clearTimeout(timer));
     };

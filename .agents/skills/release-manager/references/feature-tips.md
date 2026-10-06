@@ -92,7 +92,7 @@ For each new tip id `fooBar` (camelCase under `spotlight.items`):
 
 | CHANGELOG (user-facing) | Tip action |
 |-------------------------|------------|
-| “Import Chrome profiles in Settings → System” | New/update `browser-profile-import`, surfaces `release+hub+wait`, href settings/system |
+| “Sticky agent browser profile / clear agent browser data” | New/update tip for agent browser (settings/system); not Chrome profile import |
 | “CSV chart from chat drop” | Update `visualize-csv` for hub/release only (no wait) |
 | “Fixed race in tool loop” | Skip tip |
 | “Bump rmcp” | Skip tip |

@@ -4,8 +4,8 @@ import type { Message } from '@/models/chat';
 import { describe, it, expect } from 'vitest';
 import { createMessage } from './helpers';
 
-describe('useMessageGrouping - Performance Optimization Logic Check', () => {
-  it('merges consecutive assistant messages if the second one has ONLY whitespace content', () => {
+describe('useMessageGrouping - response-unit boundaries', () => {
+  it('does not merge consecutive assistant tool responses even with whitespace-only text', () => {
     const messages: Message[] = [
       createMessage('1', 'user', 'Run tools'),
       createMessage('2', 'assistant', 'Call tool 1', [
@@ -15,8 +15,6 @@ describe('useMessageGrouping - Performance Optimization Logic Check', () => {
           function: { name: 'tool1', arguments: '{}' },
         },
       ]),
-      // This message has whitespace content. It SHOULD be merged into the previous group.
-      // (Because hasTextContent returns false for whitespace-only strings)
       createMessage('3', 'assistant', '   \n   ', [
         {
           id: 'call_2',
@@ -28,18 +26,21 @@ describe('useMessageGrouping - Performance Optimization Logic Check', () => {
 
     const { result } = renderHook(() => useMessageGrouping(messages));
 
-    // Should result in:
-    // 1. User (single)
-    // 2. Assistant group (Msg 2 + Msg 3 merged)
-    expect(result.current.groupedMessages).toHaveLength(2);
+    expect(result.current.groupedMessages).toHaveLength(3);
     expect(result.current.groupedMessages[1].type).toBe('tool_group');
-    if (result.current.groupedMessages[1].type === 'tool_group') {
-      expect(result.current.groupedMessages[1].toolGroup.calls).toHaveLength(2);
-      expect(result.current.groupedMessages[1].messages).toHaveLength(2);
+    expect(result.current.groupedMessages[2].type).toBe('tool_group');
+    if (
+      result.current.groupedMessages[1].type === 'tool_group' &&
+      result.current.groupedMessages[2].type === 'tool_group'
+    ) {
+      expect(result.current.groupedMessages[1].toolGroup.calls).toHaveLength(1);
+      expect(result.current.groupedMessages[2].toolGroup.calls).toHaveLength(1);
+      expect(result.current.groupedMessages[1].messages).toHaveLength(1);
+      expect(result.current.groupedMessages[2].messages).toHaveLength(1);
     }
   });
 
-  it('does NOT merge consecutive assistant messages if the second one has non-whitespace content', () => {
+  it('does not merge consecutive assistant tool responses with non-whitespace text', () => {
     const messages: Message[] = [
       createMessage('1', 'user', 'Run tools'),
       createMessage('2', 'assistant', 'Call tool 1', [
@@ -49,7 +50,6 @@ describe('useMessageGrouping - Performance Optimization Logic Check', () => {
           function: { name: 'tool1', arguments: '{}' },
         },
       ]),
-      // This message has actual text content. It SHOULD start a NEW group.
       createMessage('3', 'assistant', '   But wait...   ', [
         {
           id: 'call_2',
@@ -61,16 +61,12 @@ describe('useMessageGrouping - Performance Optimization Logic Check', () => {
 
     const { result } = renderHook(() => useMessageGrouping(messages));
 
-    // Should result in:
-    // 1. User (single)
-    // 2. Assistant group (Msg 2)
-    // 3. Assistant group (Msg 3)
     expect(result.current.groupedMessages).toHaveLength(3);
     expect(result.current.groupedMessages[1].type).toBe('tool_group');
     expect(result.current.groupedMessages[2].type).toBe('tool_group');
   });
 
-  it('merges assistant message with whitespace-only thinking content', () => {
+  it('does not merge consecutive assistant tool responses with whitespace-only thinking', () => {
     const messages: Message[] = [
       createMessage('1', 'user', 'Run tools'),
       createMessage('2', 'assistant', 'Call tool 1', [
@@ -88,21 +84,21 @@ describe('useMessageGrouping - Performance Optimization Logic Check', () => {
             function: { name: 'tool2', arguments: '{}' },
           },
         ]),
-        thinking: '   \n   ', // Whitespace thinking
+        thinking: '   \n   ',
       },
     ];
 
     const { result } = renderHook(() => useMessageGrouping(messages));
 
-    // Should merge because thinking is whitespace only -> hasTextContent = false
-    expect(result.current.groupedMessages).toHaveLength(2);
+    expect(result.current.groupedMessages).toHaveLength(3);
     expect(result.current.groupedMessages[1].type).toBe('tool_group');
-    if (result.current.groupedMessages[1].type === 'tool_group') {
-      expect(result.current.groupedMessages[1].messages).toHaveLength(2);
+    expect(result.current.groupedMessages[2].type).toBe('tool_group');
+    if (result.current.groupedMessages[2].type === 'tool_group') {
+      expect(result.current.groupedMessages[2].messages).toHaveLength(1);
     }
   });
 
-  it('does NOT merge assistant message with actual thinking content', () => {
+  it('does not merge consecutive assistant tool responses with actual thinking content', () => {
     const messages: Message[] = [
       createMessage('1', 'user', 'Run tools'),
       createMessage('2', 'assistant', 'Call tool 1', [
@@ -120,13 +116,12 @@ describe('useMessageGrouping - Performance Optimization Logic Check', () => {
             function: { name: 'tool2', arguments: '{}' },
           },
         ]),
-        thinking: ' I am thinking... ', // Actual thinking content
+        thinking: ' I am thinking... ',
       },
     ];
 
     const { result } = renderHook(() => useMessageGrouping(messages));
 
-    // Should NOT merge because thinking has content -> hasTextContent = true
     expect(result.current.groupedMessages).toHaveLength(3);
     expect(result.current.groupedMessages[1].type).toBe('tool_group');
     expect(result.current.groupedMessages[2].type).toBe('tool_group');

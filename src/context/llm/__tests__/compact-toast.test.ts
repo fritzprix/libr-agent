@@ -3,17 +3,18 @@ import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import type { Message, RustMessage } from '@/models/chat';
 
 type ToastCall = {
-  kind: 'loading' | 'success' | 'error';
-  title: string;
+  kind: 'loading' | 'success' | 'error' | 'dismiss';
+  title?: string;
   id: string;
-  description: string;
-  duration: number;
+  description?: string;
+  duration?: number;
 };
 
 interface MockToast {
   loading: (title: string, opts: { id: string; description: string; duration: number }) => void;
   success: (title: string, opts: { id: string; description: string; duration: number }) => void;
   error: (title: string, opts: { id: string; description: string; duration: number }) => void;
+  dismiss: (id: string) => void;
   calls: ToastCall[];
 }
 
@@ -24,6 +25,7 @@ function makeToast(): MockToast {
     loading: (title, opts) => calls.push({ kind: 'loading', title, ...opts }),
     success: (title, opts) => calls.push({ kind: 'success', title, ...opts }),
     error: (title, opts) => calls.push({ kind: 'error', title, ...opts }),
+    dismiss: (id) => calls.push({ kind: 'dismiss', id }),
   };
 }
 
@@ -58,6 +60,7 @@ interface CompactStatePayload {
   compacting: boolean;
   awaitingCompact: boolean;
   phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
+  error?: string;
 }
 
 const COMPACT_RESPONSE_SUCCESS = {
@@ -151,6 +154,11 @@ function handleCompactStateEvent(payload: CompactStatePayload, toast: MockToast)
       description,
       duration: 3000,
     });
+    return;
+  }
+
+  if (payload.phase === 'FAILED' && payload.error === 'empty_delta_noop') {
+    toast.dismiss(toastId);
     return;
   }
 
@@ -259,6 +267,24 @@ describe('compact state toast flow', () => {
       id: `compact-${SESSION_ID}`,
       description: SESSION_NAME,
     });
+  });
+
+  it('silently dismisses toast for empty_delta_noop FAILED phase', () => {
+    const toast = makeToast();
+
+    handleCompactStateEvent(
+      {
+        sessionId: SESSION_ID,
+        sessionName: SESSION_NAME,
+        compacting: false,
+        awaitingCompact: false,
+        phase: 'FAILED',
+        error: 'empty_delta_noop',
+      },
+      toast,
+    );
+
+    expect(toast.calls).toEqual([{ kind: 'dismiss', id: `compact-${SESSION_ID}` }]);
   });
 
   it('falls back to short session id when sessionName is missing', () => {

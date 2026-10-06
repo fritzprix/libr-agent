@@ -4,8 +4,9 @@
 
 # LibrAgent
 
-> **自分で動かすエージェント実行環境 — モデルを選び、ツールはワンクリック、協調パターンを選ぶ。**
-> _ベンダー製ハーネスなし。JSON 宿題なし。成果はマシン上のファイルとして残る。_
+> **ユーザー自身がコントロールするローカル AI エージェントデスクトップ環境です。**
+> 任意の LLM を接続し、ワンクリックでツールを追加し、実証済みのマルチエージェント協調パターンでタスクを自動化します。
+> _特定ベンダーへの依存や複雑な JSON 設定は不要です。すべての成果物はローカル PC に安全にファイルとして保存されます。_
 
 [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -16,190 +17,190 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
-![ヒーローデモ — ツールはアプリのようにインストール。モデルは自分で選ぶ。成果はファイルに残る。](./assets/hero-demo-60s.gif)
+![ヒーローデモ — アプリ感覚でツールを導入し、モデルを自在に選択。成果物は手元のファイルに。](./assets/hero-demo-60s.gif)
 
-[HD WebM](./assets/hero-demo-60s.webm) · _ツールはアプリのようにインストール。モデルは自分で選ぶ。成果はファイルに残る。_
-
----
-
-## LibrAgent が違う理由
-
-多くのエージェントハーネスは、MCP JSON を編集し、ターミナルに住み、オーケストレーションをコードで組み立てると仮定します（または単一ベンダーのスタックに閉じ込めます）。
-
-LibrAgent は同じ仕事のための **デスクトップ製品** です：
-
-| …の代わりに | 得られるもの |
-| ----------- | ------------ |
-| MCP 設定の手編集 | **Extensions** — ワンクリックプリセット（GitHub、Brave Search、Filesystem、…）と Cursor / VS Code / Claude Code / Windsurf からのインポート |
-| 「マルチエージェントがあります」 | バンドルスキルとしての **名前付き協調パターン** — `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation`、… |
-| ある提供者のモデル + ツール | **自分の** LLM（API キーまたは [Ollama](https://ollama.com)）と **自分の** MCP スタック — MIT、ローカル優先 |
-
-[最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディング](#5分オンボーディングの道筋) · [ヒーローデモ仕様](docs/contributing/hero-demo-spec.md)
+[HD WebM](./assets/hero-demo-60s.webm) · _アプリ感覚でツールを導入し、モデルを自在に選択。成果物は手元のファイルに。_
 
 ---
 
-## 最初の 10 分でできること
+## LibrAgent が選ばれる理由
 
-### 1. ワンクリックツール、そして成果物
+多くのエージェントフレームワークは、ユーザーがターミナルでの煩雑なコマンド操作や手動の JSON 構成に慣れており、オーケストレーションをコードで自作することを前提としています。また、特定クラウドベンダーのスタックに強く依存するものも少なくありません。
 
-- **Extensions** を開き、プリセットをインストール（例: GitHub）— JSON 不要
-- **Workspace** を実際のフォルダに向ける
-- 依頼：_"このリポジトリで新規貢献者にとって最大のリスクをレビューし、`DELIVERABLE.md` に保存して"_
+LibrAgent は、これらの作業を直感的に解決する **完成されたデスクトップ製品** です：
 
-### 2. ワンクリックワークフローレシピをデプロイ
+| 従来の課題 | LibrAgent のアプローチ |
+| ---------- | ---------------------- |
+| 複雑な MCP JSON 設定の手動編集 | **ワンクリック拡張機能** — GitHub、Brave Search、ファイルシステムなどのプリセット提供、および Cursor / VS Code / Claude Code からの設定インポート |
+| コードでの組み立てが必要なマルチエージェント | **標準協調パターンを内蔵** — `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation` などのバンドルスキル |
+| 特定ベンダーのモデル・ツールへの束縛 | **自由なスタック選択** — クラウド API からローカル [Ollama](https://ollama.com) まで自由に接続できる MIT ライセンス・ローカル優先設計 |
 
-- Chat ホームまたは [Scheduled Tasks](docs/user/guides/scheduled-tasks.md) から **Morning Briefing** レシピを起動
-- Hacker News + Yahoo Finance プリセットをインストールし、アシスタントを設定、毎日午前 9 時の実行をスケジュール
-- 起きると技術・市場のブリーフィングが用意されている — 無人実行
-
-### 3. 協調パターンを選ぶ（フレームワーク組み立てなし）
-
-- 仕事の形を言うか、スキル名で添付：
-  - _"@skill:pipeline — 調査、下書き、レビューの順；最終レポートを一つ"_
-  - _"@skill:divide-conquer — 独立した断片に分けて結果をマージ"_
-- パターンは製品化されたスキルです — 自分で配線する SDK ではありません。[Sub-agents & orchestration](docs/user/guides/sub-agents.md) を参照。
-
-### 4. モデルの自由を保つ
-
-- クラウド：OpenAI / Anthropic / Gemini / Groq API キーを貼る
-- ローカル：`ollama pull qwen3:14b` して Ollama を選択 — ハーネスは同じ
+[最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディング](#5分オンボーディングの手順) · [デモ仕様書](docs/contributing/hero-demo-spec.md)
 
 ---
 
-## 三つの製品約束
+## 最初の 10 分で体験できること
 
-1. **ハーネス宿題なしで表面に立つ** — GUI、Extensions ワンクリック、レシピ、アプリ内承認、`@skill:` — 「まず設定とシェルを開け」ではない。
-2. **オーケストレーションを製品として** — スキルで Sequential / Hub-and-spoke / Swarm 風フローを選択；耐久チームや cron が必要なら `teamwork` → `org` と `schedule` へ — それでも LangGraph/CrewAI を自分で組まない。
-3. **プロバイダとスタックの自由** — 対応 LLM どれでも、MCP をインフラとして、既存 IDE MCP 設定のインポート、MIT、デフォルトでローカルワークスペースとブラウザ状態。
+### 1. ワンクリックでのツール導入と成果物生成
 
-**最適：** JSON なしでハーネスの深さを欲するオペレーターとパワーユーザー；単一ベンダーのエージェントスタックを拒否する開発者；ブラウザ + 知識 + スケジュールを一製品で要する研究者。
+- **Extensions** メニューから GitHub などのプリセットをワンクリックで導入（JSON 設定不要）。
+- **Workspace** で作業対象のローカルプロジェクトフォルダーを指定。
+- プロンプトを実行：_"このリポジトリを分析し、新規コントリビューターが注意すべきリスクを `DELIVERABLE.md` にまとめて"_
 
----
+### 2. 自動化ワークフローレシピの実行
 
-## 協調パターン（バンドルスキル）
+- チャットホームまたは [スケジュールタスクガイド](docs/user/guides/scheduled-tasks.md) から **Morning Briefing** レシピを実行。
+- Hacker News および Yahoo Finance の連携が構成され、毎朝 09:00 の定期実行がスケジュールされます。
+- 毎朝、最新のテクノロジーおよび市況ブリーフィングが自動生成されます。
 
-**仕事の形** からモデルを選び、チャットから実行します：
+### 3. コード不要の協調パターン選択
 
-| スキル | パターン | 使うとき |
-| ------ | -------- | -------- |
-| `pipeline` | 順次ステージ | 出力が次の入力になる（調査 → 下書き → レビュー） |
-| `hub-spoke` | ハブアンドスポーク | 一人のコーディネータが多数のワーカーを統合 |
-| `divide-conquer` | 並列分割 | 独立した断片、その後マージ |
-| `consensus-delegation` | 多視点 | 同じ質問を複数の専門家へ、その後調整 |
-| `gatekeeper` / `pair-programming` | レビューループ | 厳格レビューまたは二人エージェントのコーディング |
-| `delegate` | 軽量ハンドオフ | 子セッション一つ、系譜を追跡 |
-| `teamwork` → `org` | 耐久チーム | 共有憲章 + Org UI |
-| `schedule` / `loop` / `call-me-back` | 時間とイベント | Cron、セッション内遅延、またはプロセス/webhook で再開 |
+- 複雑なコードを書くことなく、自然言語で協調パターンを指定：
+  - _"@skill:pipeline — 調査、ドラフト作成、レビューの順に進め、最終レポートを 1 つ作成して"_
+  - _"@skill:divide-conquer — このタスクを独立したサブタスクに分割して並列処理し、結果を統合して"_
+- 実証済みの協調パターンがスキルとして組み込まれています。詳細は [サブエージェントとオーケストレーション](docs/user/guides/sub-agents.md) を参照してください。
 
-選択ヒューリスティック：[framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 完全ガイド：[Sub-agents](docs/user/guides/sub-agents.md)。
+### 4. 自由なモデル選択
 
-その他のデイワンスキル：`setup-wizard`、`tool-installer`、`playbook-creator` など — **[Bundled Skills](docs/user/guides/skills.md)**。
+- **クラウドモデル**: OpenAI、Anthropic、Gemini、Groq などの API キーを入力して即座に利用。
+- **ローカルモデル**: `ollama pull qwen3:14b` を実行後、設定で Ollama を選択することで完全ローカル環境で動作。
 
 ---
 
-## MCP プラットフォーム（パワーユーザーにも耐える）
+## 製品の 3 つのコアバリュー
 
-- トランスポート：stdio、HTTP、SSE、OAuth 2.1
-- 15+ 組み込みサーバー（Workspace、Shell、Browser、Knowledge、Planning、Scheduled Tasks、…）
-- ワンクリックプリセット + エージェント支援インストール（`tool-installer`）
-- セッションごとのツール分離；パス/コマンドガード；自動化向け YOLO / unsafe モード
+1. **セットアップ不要の洗練された UI** — GUI、ワンクリック拡張、自動化レシピ、アプリ内承認システムにより、設定ファイルの編集やターミナル操作なしで即座に利用可能。
+2. **組み立て不要の内蔵オーケストレーション** — スキルを通じて Sequential、Hub-and-spoke、Swarm などのワークフローを選択し、長期的なチーム運用（`teamwork`）や定期実行（`schedule`）へスムーズに拡張。
+3. **完全なモデルとデータの独立性** — オープン標準である MCP（Model Context Protocol）を基盤とし、ワークスペースやブラウザセッションのデータはすべて手元のローカル環境に保持。
 
-### 実行基盤
-
-| 基盤 | 能力 |
-| ---- | ---- |
-| **Workspace** | 行単位の精密編集、マルチファイル操作、`@file` / `@skill` / `@playbook` コンテキスト |
-| **Shell** | 隔離・永続シェルと非同期プロセス監視 |
-| **Browser** | 隔離ブラウザサイドカー；任意の保存ログインプロファイル |
-| **Knowledge** | グラフ知識 + BM25 検索 |
-| **Export** | Markdown レポートと ATIF 軌跡エクスポート（[session export](docs/user/guides/session-export.md)） |
-
-長いセッションはコンテキスト圧縮、ループ防止、サーキットブレーカー、stale-response ガードで生産性を保ちます。
+**推奨ユーザー:** 設定に時間をかけず強力なエージェントを活用したい実務者、単一ベンダーロックインを回避したい開発者、ブラウザ自動化・ナレッジベース・定期タスクを統合環境で扱いたい研究者。
 
 ---
 
-## 実世界のシナリオ
+## 内蔵協調パターン（バンドルスキル）
 
-### オペレーター — 空のアプリから毎日のブリーフィングへ
+タスクの特性に合わせた協調パターンを選択し、チャットから直接呼び出すことができます：
 
-1. **Morning Briefing** レシピを実行（プリセット + アシスタント + 午前 9 時スケジュール）
-2. **Run now** を一度クリックして確認
-3. 放置 — ターミナルを開かずにレポートが届く
+| スキル名 | 協調パターン | 推奨用途 |
+| -------- | ------------ | -------- |
+| `pipeline` | 順次ステージ実行 | 前段の出力を次段の入力として順次処理（調査 → ドラフト → レビュー） |
+| `hub-spoke` | ハブ＆スポーク | 1 つの統合コーディネーターが複数の専門エージェントを総括管理 |
+| `divide-conquer` | 並列分割処理 | 独立したサブタスクに分割して並列実行し、結果をマージ |
+| `consensus-delegation` | 多角的比較分析 | 同一の課題を複数の専門エージェントに諮問し、合意を形成 |
+| `gatekeeper` / `pair-programming` | レビーループ | 厳格な品質レビューや 2 エージェントによるペアプログラミング |
+| `delegate` | 軽量タスク委任 | 単一の子セッションにタスクを委任し、系譜を追跡 |
+| `teamwork` → `org` | 永続プロジェクトチーム | 共有憲章と組織 UI（Org UI）に基づくチーム協調 |
+| `schedule` / `loop` / `call-me-back` | 時間・イベント駆動 | Cron スケジュール実行、セッション内遅延、外部イベントによる再開 |
 
-### ソロ開発者 — 設定ファイルではなくプリセット
+選定ガイドライン: [フレームワーク選定基準](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 詳細ガイド: [サブエージェント](docs/user/guides/sub-agents.md)
 
-1. Extensions → GitHub MCP プリセットをインストール
-2. Workspace でローカルリポジトリを接続
-3. ディスクに残る Markdown のセキュリティ/レビューレポートを依頼
+その他の初期スキル: `setup-wizard`、`tool-installer`、`playbook-creator` など — **[バンドルスキル一覧](docs/user/guides/skills.md)**
 
-### フレームワークなしのパワーユーザー — 名前付きオーケストレーション
+---
 
-1. 仕事の形に `@skill:pipeline`（または `hub-spoke` / `divide-conquer`）
-2. エージェントがそのパターンで協調
-3. ワークスペースにマージされた成果物一つ — 維持すべきオーケストレーションライブラリなし
+## 強力な MCP 実行インフラ
 
-### プライバシー重視チーム — 同じ製品、ローカルモデル
+- **多彩なトランスポート**: stdio、HTTP、SSE、OAuth 2.1 をサポート
+- **15 以上の内蔵サーバー**: Workspace、Shell、Browser、Knowledge、Planning、Scheduled Tasks などを標準装備
+- **ワンクリックプリセットと対話型導入**: `tool-installer` によるエージェント支援型セットアップ
+- **強固なセッション分離**: セッションごとのツール分離、パスおよびコマンド実行ガード、安全な自動化モード
 
-1. `ollama pull qwen3:14b`
-2. Workspace + Shell はマシン上に留まる
-3. 後からクラウドキーに切り替えても — ハーネスがベンダーを強制しない
+### コア実行インフラ
+
+| 実行領域 | 主要機能 |
+| -------- | -------- |
+| **Workspace** | 行単位の精密コード編集、複数ファイル一括操作、`@file` / `@skill` / `@playbook` コンテキスト注入 |
+| **Shell** | 分離された永続シェル環境およびバックグラウンドプロセスの非同期監視 |
+| **Browser** | 分離されたブラウザサイドカーおよび日常の Chrome セッションと連動する拡張ブリッジ |
+| **Knowledge** | ナレッジグラフと高速 BM25 ハイブリッド検索 |
+| **Export** | Markdown レポート出力および標準 ATIF セッション軌跡エクスポート（[セッションエクスポート](docs/user/guides/session-export.md)） |
+
+コンテキストの自動圧縮、無限ループ検知、サーキットブレーカー、応答バリデーションガードにより、長時間のセッションでも安定したパフォーマンスを維持します。
+
+---
+
+## 実践的な活用シナリオ
+
+### 業務オペレーター — 朝のブリーフィング自動生成
+
+1. **Morning Briefing** レシピを実行（プリセット導入、アシスタント設定、毎朝 09:00 の定期実行予約）。
+2. **Run now** で動作確認。
+3. ターミナルを開くことなく、毎朝自動生成された最新レポートを確認。
+
+### 個人開発者 — 設定ファイル不要の即時ツール連携
+
+1. Extensions メニューから GitHub MCP プリセットを導入。
+2. Workspace でローカルのリポジトリを接続。
+3. セキュリティとコードレビューの Markdown レポート生成をエージェントに指示。
+
+### パワーユーザー — 協調テンプレートによるタスク委任
+
+1. 入力欄に `@skill:pipeline`（または `hub-spoke`、`divide-conquer`）を指定。
+2. エージェント群がパターンに従って協調動作。
+3. 外部ライブラリを保守することなく、統合された最終成果物をワークスペースに出力。
+
+### プライバシー重視のチーム — 完全ローカル実行
+
+1. `ollama pull qwen3:14b` を実行。
+2. Workspace と Shell の全処理がローカル PC 完結で動作。
+3. 必要に応じてクラウドモデルへの切り替えも可能で、操作フローはそのまま維持。
 
 ---
 
 ## ドキュメント
 
-- **[User Guide](docs/user/README.md)** — インストール、最初のチャット、モデル、スキル（[docs site](https://fritzprix.github.io/libr-agent/)）
-- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)** — 正規の製品デモ（EN/KO/ZH 字幕）
-- **[Product Messaging Guide](docs/contributing/product-messaging-guide.md)** — ポジショニングとコピー
-- **[Recipes](docs/user/guides/recipes.md)** · **[Scheduled Tasks](docs/user/guides/scheduled-tasks.md)** · **[Sub-agents](docs/user/guides/sub-agents.md)** · **[Skills](docs/user/guides/skills.md)**
+- **[ユーザーガイド](docs/user/README.md)** — インストール、チャット、モデル、スキル（[ドキュメントサイト](https://fritzprix.github.io/libr-agent/)）
+- **[ヒーローデモ仕様](docs/contributing/hero-demo-spec.md)** — 製品デモ仕様書（EN/KO/ZH 字幕対応）
+- **[製品メッセージングガイド](docs/contributing/product-messaging-guide.md)** — ポジショニングとコピーライティング
+- **[レシピ](docs/user/guides/recipes.md)** · **[スケジュールタスク](docs/user/guides/scheduled-tasks.md)** · **[サブエージェント](docs/user/guides/sub-agents.md)** · **[スキル](docs/user/guides/skills.md)**
 - **[HTTP API](docs/api/http_api.md)** — リモート制御とプログラマティック承認
-- **[Architecture](docs/architecture/agent-workflow-architecture.md)** — セッション分離と Think-Act-Observe
+- **[アーキテクチャ](docs/architecture/agent-workflow-architecture.md)** — セッション分離と Think-Act-Observe ループ
 
 ---
 
 ## はじめに
 
-**[Releases ページ](https://github.com/fritzprix/libr-agent/releases/latest)** から最新インストーラーをダウンロードしてください。
+**[Releases ページ](https://github.com/fritzprix/libr-agent/releases/latest)**から最新のインストーラーをダウンロードしてください。
 
 <!-- RELEASE_DOWNLOADS_START -->
 - **Windows:** [`LibrAgent_0.9.22_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_x64-setup.exe) · [`LibrAgent_0.9.22_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.9.22_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.9.22_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_amd64.AppImage) · [`LibrAgent_0.9.22_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent_0.9.22_amd64.deb) · [`LibrAgent-0.9.22-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.22/LibrAgent-0.9.22-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.22)
+- **すべてのリリースアセット:** [Releases ページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.22)
 <!-- RELEASE_DOWNLOADS_END -->
 
-### 5分オンボーディングの道筋
+### 5分オンボーディングの手順
 
-**ステップ 1 — モデルを接続**（Settings → LLM Providers）
+**ステップ 1 — モデルの接続**（設定 → LLM Providers）
 
-- クラウド：OpenAI / Anthropic / Gemini / Groq API キーを貼る
-- ローカル：`ollama pull qwen3:14b`、その後 Settings で Ollama を選択
+- クラウド: OpenAI、Anthropic、Gemini、Groq などの API キーを入力。
+- ローカル: `ollama pull qwen3:14b` を実行し、設定で Ollama を選択。
 
-**ステップ 2 — JSON なしでツールを追加**
+**ステップ 2 — ツールの追加（JSON 編集不要）**
 
-- Extensions → プリセットをインストール（例: GitHub）、**または**
-- エージェントに：_"Cursor から MCP サーバーをインポートして"_
+- Extensions メニューから GitHub などのプリセットをインストール、または
+- エージェントに指示：_"Cursor で使っている MCP サーバー設定をインポートして"_
 
-**ステップ 3 — ワークスペースを接続し、残すファイルを依頼**
+**ステップ 3 — ワークスペースの接続と成果物の生成**
 
-- Workspace を実際のプロジェクトフォルダに
-- _"このワークスペースをレビューし、発見を `DELIVERABLE.md` に書いて。"_
+- Workspace で作業対象のローカルプロジェクトフォルダーを指定。
+- エージェントに指示：_"このワークスペースを分析して、結果を `DELIVERABLE.md` にまとめて"_
 
-**次に — 協調と自動化**
+**次のステップ — 協調と自動化の拡張**
 
-- _"@skill:pipeline — 調査、下書き、レビュー；最終レポート一つ。"_
-- _"このリポジトリ用の teamwork ワークスペースを準備して。"_
-- _"毎朝 7 時の競合ブリーフをスケジュールして。"_（または Morning Briefing レシピ）
+- _"@skill:pipeline — 調査、ドラフト、レビューを進め、最終レポートを 1 つ作成して"_
+- _"このリポジトリ用の teamwork ワークスペースを準備して"_
+- _"毎朝 7 時に競合動向をまとめるスケジュールタスクを作成して"_（または Morning Briefing レシピを実行）
 
-### コピー＆ペースト用の最初のプロンプト
+### すぐに使えるサンプルプロンプト
 
-- _"Cursor から MCP サーバーをインポートし、何が追加されたか見せて。"_
-- _"GitHub MCP プリセットをインストールし、コーディングエージェントに付けて。"_
-- _"このワークスペースをレビューし、発見を `DELIVERABLE.md` に書いて。"_
-- _"@skill:pipeline — このトピックを調査し、要約を下書きし、レビュー；最終レポートを保存。"_
-- _"毎朝 7 時の競合ブリーフをスケジュールして。"_
+- _"Cursor で使っている MCP サーバー設定をインポートして、何が追加されたか確認して。"_
+- _"GitHub MCP プリセットを導入して、コーディングエージェントに接続して。"_
+- _"このワークスペースをレビューして、改善点を `DELIVERABLE.md` にまとめて。"_
+- _"@skill:pipeline — このトピックを深く調査し、サマリーを作成してレビューの上、最終レポートとして保存して。"_
+- _"毎朝 7 時に市況ブリーフィングを作成するスケジュールを設定して。"_
 
-### 開発者セットアップ
+### 開発者向けセットアップ
 
 ```bash
 git clone https://github.com/fritzprix/libr-agent
@@ -210,37 +211,25 @@ pnpm tauri dev
 
 ---
 
-## LibrAgent が最も合う場所
-
-| 欲しいもの | LibrAgent が強い理由 |
-| ---------- | -------------------- |
-| **ハーネスの深さ、宿題なし** | Extensions プリセット、レシピ、`@skill:` パターン、承認 — JSON 優先のオンボーディングではない |
-| **フレームワークを組み立てないオーケストレーション** | `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation`、`teamwork` / `org`、`schedule` が製品として提供 |
-| **ベンダーエージェントスタックからの自由** | モデルと MCP ツールは自分で；MIT；デフォルトでローカル優先 |
-| **本物の実行基盤** | Workspace、shell、browser、knowledge、playbooks、長時間セッションガード |
-| **MCP ネイティブなデスクトップ製品** | プリセット、インポート、15+ 組み込み — 薄いチャットラッパーではない |
-
----
-
 ## 設計思想
 
-- **キットより製品**：組み立てなくてもハーネスが使える。
-- **オーケストレーションはスキル**：協調パターンは名前があり、選択可能で文書化されている — サンプルリポジトリに埋まっていない。
-- **スタックの自由**：モデルとツールはユーザーの選択；製品は特定の AI ベンダーを要求しない。
-- **ローカル優先**：ワークスペース、セッション、スキル、ブラウザ状態はあなたの管理下。クラウド LLM / リモート MCP はオプトイン時のみ。
-- **モデルよりハーネス**：ツール、セッション状態、委譲、ガバナンスが単一モデルより重要。
-- **機能より安定**：分離、圧縮、ループ防止 — 機能追いの前に。
-- **オープンスタンダード**：MIT。相互運用レイヤーとしての MCP。
+- **組み立てキットではなく完成品**: 面倒なコード配線なしに、導入直後から実務で活用可能。
+- **スキルとして定義されたオーケストレーション**: 協調パターンが名前付きの仕様として体系化されています。
+- **自由な技術スタック**: モデルやツールはユーザーが自由に選択でき、特定の AI ベンダーを強制しません。
+- **ローカル優先（Local First）**: ワークスペース、セッション、ブラウザ状態はすべてユーザーの PC 内で安全に管理されます。
+- **モデルを支える実行環境の重視**: 優れたツール統合、セッション状態管理、適切なガバナンスが、単一モデルの性能以上に安定した成果を生み出します。
+- **機能拡張よりシステムの安定性**: コンテキスト分離、自動圧縮、ループ防止など、基盤の安定性を最優先に検証。
+- **オープンスタンダードの遵守**: MIT ライセンスを掲げ、MCP（Model Context Protocol）を相互運用の基盤標準として採用。
 
 ---
 
-## 貢献とライセンス
+## コントリビューションとライセンス
 
-LibrAgent は MIT ライセンスでオープンに構築されています。バンドルスキル、MCP 統合、バグ修正、アーキテクチャ改善を歓迎します。
+LibrAgent は MIT ライセンスのもとでオープンに開発されています。バンドルスキル、MCP 連携、バグ修正、アーキテクチャの改善など、あらゆる貢献を歓迎します。
 
-- [Contributing Guide](CONTRIBUTING.md)
-- [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
-- [Discussions](https://github.com/fritzprix/libr-agent/discussions)
-- ベンチマーク（Harbor / Terminal-Bench）：[Harbor guide](benchmarks/harbor/README.md) を参照（`pnpm bench:diverse`、`pnpm bench:terminal`、…）
+- [コントリビューションガイド (Contributing Guide)](CONTRIBUTING.md)
+- [Issue トラッカー](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
+- [ディスカッション (Discussions)](https://github.com/fritzprix/libr-agent/discussions)
+- ベンチマーク (Harbor / Terminal-Bench): [Harbor ガイド](benchmarks/harbor/README.md)（`pnpm bench:diverse`、`pnpm bench:terminal` など）
 
 **License**: MIT

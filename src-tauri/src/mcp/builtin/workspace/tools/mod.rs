@@ -67,6 +67,9 @@ pub fn file_tools() -> Vec<MCPTool> {
         tools.push(file_tools::create_edit_file_tool());
     }
 
+    // Structured JSON mutations — always available (not gated by edit-mode features).
+    tools.push(file_tools::create_edit_object_tool());
+
     tools
 }
 

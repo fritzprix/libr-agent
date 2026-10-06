@@ -154,7 +154,8 @@ export function AgentChatMessages() {
     handleVirtuosoAtBottomStateChange,
     handleTotalListHeightChanged,
     handleManualScrollToBottom,
-    handleStartReached,
+    handleReachTop,
+    handleManualLoadOlder,
     initialTopMostItemIndex,
     bottomThreshold,
     logScrollState,
@@ -167,23 +168,9 @@ export function AgentChatMessages() {
     agentError: error,
     agentLlmError: llmError,
     isLoadingOlderMessages,
-  });
-
-  const handleReachTop = useCallback(() => {
-    handleStartReached();
-    if (!hasOlderMessages || isLoadingOlderMessages) {
-      return;
-    }
-
-    void loadOlderMessages().catch(() => {
-      // Swallowed: loadOlderMessages already handles and logs errors internally.
-    });
-  }, [
-    handleStartReached,
     hasOlderMessages,
-    isLoadingOlderMessages,
     loadOlderMessages,
-  ]);
+  });
 
   const compactedEvent = useMemo(() => {
     if (!compactedRange) {
@@ -222,12 +209,13 @@ export function AgentChatMessages() {
         'agent.messages.loadingOlder',
         'Loading older messages...',
       ),
+      onLoadOlderMessages: handleManualLoadOlder,
       pendingApprovals,
       respondToToolApproval,
       retryMessage,
       scrollToLoadOlderLabel: t(
         'agent.messages.scrollToLoadOlder',
-        'Scroll up to load older messages',
+        'Load older messages',
       ),
       sessionAssistantName: assistantName,
       workflowStatus,
@@ -240,6 +228,7 @@ export function AgentChatMessages() {
       hasOlderMessages,
       isLoadingOlderMessages,
       latestMessage,
+      handleManualLoadOlder,
       t,
       pendingApprovals,
       respondToToolApproval,
@@ -251,13 +240,18 @@ export function AgentChatMessages() {
     ],
   );
 
+  const latestGroupedMessageId =
+    groupedMessages[groupedMessages.length - 1]?.message.id;
+
   const renderMessageGroup = useCallback(
     (_index: number, groupedMessage: GroupedMessage) => {
-      // Only pin nested auto-scroll (thinking / resources) while the list itself
-      // is stick-to-bottom. The old `!isLatest || isPinned` kept followChatScroll
-      // true for every historical bubble, so load-older mounts could briefly
-      // yank a user bubble into view then release it.
-      const followChatScroll = isPinned;
+      // Nested auto-scroll (thinking / resources) only for the latest / streaming
+      // bubble while the list is stick-to-bottom. Passing isPinned to every
+      // historical bubble breaks AgentMessageBubble memoization on scroll.
+      const isLatestOrStreaming =
+        groupedMessage.message.id === latestGroupedMessageId ||
+        !!groupedMessage.message.isStreaming;
+      const followChatScroll = isPinned && isLatestOrStreaming;
       const isCompactBoundary = groupedMessageContainsBoundary(
         groupedMessage,
         compactedRange?.toId,
@@ -357,6 +351,7 @@ export function AgentChatMessages() {
       compactedEvent,
       compactedRange?.toId,
       isPinned,
+      latestGroupedMessageId,
       messageLayout,
       retryMessage,
       toolDetailLevel,

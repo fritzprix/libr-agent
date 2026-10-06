@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LibrAgent Browser Bridge</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 16px;
+        min-width: 280px;
+        color: #111;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        margin-top: 12px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 4px;
+        padding: 6px 8px;
+      }
+      button {
+        margin-top: 16px;
+        padding: 6px 12px;
+      }
+      p {
+        font-size: 12px;
+        color: #555;
+        line-height: 1.4;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 style="font-size: 16px; margin: 0">Bridge connection</h1>
+    <p>
+      Connects to LibrAgent on loopback. Defaults match the app MVP
+      (port <code>3847</code>, token <code>libragent-dev</code>).
+    </p>
+    <label for="bridgePort">Port</label>
+    <input id="bridgePort" type="number" min="1" max="65535" />
+    <label for="bridgeToken">Token</label>
+    <input id="bridgeToken" type="text" autocomplete="off" />
+    <button id="save" type="button">Save</button>
+    <div id="status"></div>
+    <script src="options.js"></script>
+  </body>
+</html>

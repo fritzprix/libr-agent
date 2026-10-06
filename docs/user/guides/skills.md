@@ -140,7 +140,7 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 ### 개발·연동·제작
 
-`git-workflow`, `bench`, `fine-tune`, `email-integration`, `browser-session-assist`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
+`git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
 
 ### 자주 하는 조합
 
@@ -152,7 +152,7 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 | 내 절차를 스킬로            | `skill-creator` → `skill-deployer`                    |
 | 자식 세션·팀 오케스트레이션 | [서브 에이전트 가이드](sub-agents.md)                 |
 | 컴팩션 이전 대화 복구       | `@skill:context-recall`                               |
-| 메일 (IMAP 실패 시 웹메일) | `@skill:email-integration` → `@skill:browser-session-assist` |
+| 메일 (IMAP 실패 시 웹메일) | `@skill:email-integration` (sticky agent browser fallback) |
 | 어시스턴트 설정             | [Assistants](assistants.md)                           |
 | 반복 실행                   | [Playbooks](playbooks.md) · [자동화](automation.md)   |
 

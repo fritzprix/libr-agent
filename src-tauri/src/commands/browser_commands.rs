@@ -1,4 +1,4 @@
-use crate::services::{BrowserSession, InteractiveBrowserServer};
+use crate::services::{BrowserSession, BrowserSessionTarget, InteractiveBrowserServer};
 use log::{debug, error, info};
 use tauri::State;
 
@@ -28,7 +28,7 @@ pub async fn create_browser_session(
     info!("Command: create_browser_session called with URL: {url}");
 
     match server
-        .create_browser_session(&url, title.as_deref(), true, false)
+        .create_browser_session(&url, title.as_deref(), true, BrowserSessionTarget::Sidecar)
         .await
     {
         Ok((session_id, message)) => {
@@ -199,4 +199,61 @@ pub async fn navigate_forward(
             Err(e)
         }
     }
+}
+
+/// Close browser sessions and delete the sticky agent Chromium profile (cookies/logins).
+///
+/// Does not affect everyday Chrome.
+#[tauri::command]
+pub async fn clear_agent_browser_data(
+    server: State<'_, InteractiveBrowserServer>,
+) -> Result<(), String> {
+    info!("Command: clear_agent_browser_data");
+    if let Err(error) = server.close_all_sessions().await {
+        error!("Failed to close browser sessions before clearing agent profile: {error}");
+        return Err(error);
+    }
+    // Chromium may briefly hold SingletonLock after close; retry the full
+    // in-use check + delete (clear_agent_sticky_profile_dir) a few times.
+    const CLEAR_ATTEMPTS: usize = 4;
+    const CLEAR_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(400);
+    let mut last_error = None;
+    for attempt in 1..=CLEAR_ATTEMPTS {
+        match tokio::task::spawn_blocking(crate::browser_sidecar::clear_agent_sticky_profile_dir)
+            .await
+            .map_err(|e| format!("Clear agent browser data task failed: {e}"))?
+        {
+            Ok(()) => {
+                if attempt > 1 {
+                    info!("Cleared sticky agent browser profile after {attempt} attempts");
+                } else {
+                    info!("Cleared sticky agent browser profile");
+                }
+                return Ok(());
+            }
+            Err(error) => {
+                last_error = Some(error);
+                if attempt < CLEAR_ATTEMPTS {
+                    tokio::time::sleep(CLEAR_RETRY_DELAY).await;
+                }
+            }
+        }
+    }
+    let error = last_error.unwrap_or_else(|| "Failed to clear agent browser profile".to_string());
+    error!("Failed to clear agent browser profile after {CLEAR_ATTEMPTS} attempts: {error}");
+    Err(error)
+}
+
+/// Status of the local Chrome MV3 extension WebSocket bridge.
+#[tauri::command]
+pub async fn get_extension_bridge_status(
+) -> Result<crate::browser_extension_bridge::ExtensionBridgeStatus, String> {
+    crate::browser_extension_bridge::ensure_started();
+    Ok(crate::browser_extension_bridge::status())
+}
+
+/// Absolute path to the Load unpacked `chrome-extension/` folder.
+#[tauri::command]
+pub async fn get_extension_unpacked_path() -> Result<String, String> {
+    crate::browser_extension_bridge::extension_unpacked_path()
 }

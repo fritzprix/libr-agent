@@ -40,6 +40,14 @@ pub struct CreateSessionRequest {
     pub org_id: Option<String>,
     pub org_name: Option<String>,
     pub org_root_session_id: Option<String>,
+    /// Optional per-session override for context-management `maxInputContext`.
+    ///
+    /// When set (> 0), only this session's compaction / orchestration path uses
+    /// the value. It is stored on the in-memory `AgentSession` and **never**
+    /// written to the global settings repository / UI `maxInputContext`.
+    /// Ephemeral — not persisted across restart; intended for Harbor trials.
+    #[serde(default)]
+    pub max_input_context: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

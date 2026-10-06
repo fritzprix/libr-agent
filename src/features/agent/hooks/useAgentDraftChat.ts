@@ -329,9 +329,14 @@ export function useAgentDraftChat() {
   }, [searchParams]);
 
   useEffect(() => {
+    let isMounted = true;
     let unlisten: (() => void) | undefined;
 
     void listen<AgentEventPayload>('agent:event', (event) => {
+      if (!isMounted) {
+        return;
+      }
+
       const payload = event.payload;
       if (payload.type !== 'sessionRuntimeStateUpdated') {
         return;
@@ -350,11 +355,20 @@ export function useAgentDraftChat() {
       }
 
       toast.loading(step, { id: activeToast.id });
-    }).then((cleanup) => {
-      unlisten = cleanup;
-    });
+    })
+      .then((cleanup) => {
+        if (isMounted) {
+          unlisten = cleanup;
+        } else {
+          cleanup();
+        }
+      })
+      .catch((err: unknown) => {
+        logger.warn('Failed to subscribe to agent:event for provisioning', err);
+      });
 
     return () => {
+      isMounted = false;
       unlisten?.();
     };
   }, []);

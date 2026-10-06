@@ -13,8 +13,50 @@ LibrAgent empowers agents to browse the web, search and extract live information
 Complex web pages or in-page script crashes will never compromise your desktop workspace:
 
 - **Isolated Sandbox Execution**: Browser automation operates in an isolated background process separate from the main LibrAgent desktop app. Heavy memory consumption or browser crashes cannot freeze or crash your main application.
-- **Privacy Protection**: Uses a dedicated, clean browser profile completely isolated from your personal browser cookies, history, and login sessions by default.
-- **Optional saved browser logins**: Settings → System → **Saved browser logins**. Import from **Chrome, Edge, or Brave** into LibrAgent’s **private copy** (your everyday browser is unchanged — agents do not attach to it). Import may reuse some sessions; for **Google**, if login fails or you see “browser may not be secure”, tap **Open to sign in**, log in once in LibrAgent’s Chrome window, then close it. Agents request that copy with `browser__createSession({ use_profile: true })` (always confirmed; not bypassed by YOLO). Firefox is not supported.
+- **Sticky agent profile**: `browser__createSession` with `browser="sidecar"` (default) reuses a fixed LibrAgent agent browser profile on this device. Logins you make *inside* that browser survive later sessions until you clear them in Settings → System → **Agent browser** → Clear agent browser data. This is not your everyday Chrome. Concurrent agent chats share that same cookie jar while the browser sidecar is running.
+
+---
+
+---
+
+## ✨ New Feature: Everyday Chrome Integration (Stay Logged In)
+
+Instead of opening a blank sandbox browser, agents can directly control tabs in **your personal everyday Chrome browser (`userChrome`)**.
+
+### 💡 Key Benefits for Everyday Users
+
+- **Preserve Logged-in Sessions**: Work directly with services where you are already signed in (Google, GitHub, internal dashboards). You do not need to re-enter passwords.
+- **Reliable Clicks on Protected Sites**: Input simulation bypasses strict Content Security Policies (CSP). Button clicks and keystrokes work reliably on complex websites.
+- **Save Raw Webpage HTML (`saveRawHtml`)**: Saves complete webpage source files to your session workspace for offline inspection and verification.
+
+| Execution Mode | Behavior | Best Suited For |
+| --- | --- | --- |
+| **`sidecar`** (Default) | Dedicated isolated agent browser | Public web search, documentation research, sandbox tasks |
+| **`userChrome`** (Extension Bridge) | Your personal Chrome browser | Tasks requiring personal logins, private intranets, shopping carts |
+
+---
+
+## 🚀 1-Minute Quick Setup
+
+> [!TIP]
+> **Chrome Web Store Release Pending (TBD)**  
+> The extension is currently under review for the Chrome Web Store. Until the public store link is published, you can install it locally via the 1-minute `Load unpacked` method below.
+
+1. **Locate Extension Path**: Open **Settings → System → Agent browser** and copy the Chrome extension folder path.
+2. **Install Extension in Chrome**:
+   - Open `chrome://extensions` in your Chrome browser.
+   - Enable **Developer mode** in the top right corner.
+   - Click **Load unpacked** and select the extension folder path.
+3. **Instruct the Agent**:
+   - Prompt the agent naturally in chat:
+     ```
+     Check the items in my shopping cart in my current Chrome window.
+     ```
+   - The agent switches to `userChrome` mode and controls your active tab.
+
+> [!NOTE]
+> - After installation, the extension reconnects automatically when you restart LibrAgent.
+> - Each agent chat maintains exactly one active browser session (Single Source of Truth). Switching between `sidecar` and `userChrome` closes previous sessions cleanly.
 
 ---
 

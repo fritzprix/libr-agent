@@ -1,4 +1,4 @@
-import { useAgentChat } from '@/context/AgentChatContext';
+import { useAgentChatState } from '@/context/AgentChatContext';
 import { useBusyComposerTip, WaitTipLink } from '@/features/spotlight';
 
 /**
@@ -6,7 +6,7 @@ import { useBusyComposerTip, WaitTipLink } from '@/features/spotlight';
  * Keeps AnalysisLoader jokes untouched in the message list.
  */
 export function ComposerBusyTipStrip() {
-  const { workflowStatus } = useAgentChat();
+  const { workflowStatus } = useAgentChatState();
   const tip = useBusyComposerTip(workflowStatus === 'busy');
 
   if (!tip) {

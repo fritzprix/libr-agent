@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { memo, useRef, useEffect } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -28,7 +28,7 @@ interface FileTreeNodeProps {
   onDragTargetChange?: (targetDir: string | null) => void;
 }
 
-export const FileTreeNode = ({
+function FileTreeNodeComponent({
   node,
   depth = 0,
   onToggle,
@@ -36,7 +36,7 @@ export const FileTreeNode = ({
   onFileDrop,
   activeDropDir,
   onDragTargetChange,
-}: FileTreeNodeProps) => {
+}: FileTreeNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const dnd = useOptionalDnDContext();
   const onFileDropRef = useRef(onFileDrop);
@@ -200,4 +200,22 @@ export const FileTreeNode = ({
       )}
     </div>
   );
-};
+}
+
+export const FileTreeNode = memo(FileTreeNodeComponent, (prev, next) => {
+  if (
+    prev.node !== next.node ||
+    prev.depth !== next.depth ||
+    prev.onToggle !== next.onToggle ||
+    prev.onOpen !== next.onOpen ||
+    prev.onFileDrop !== next.onFileDrop ||
+    prev.onDragTargetChange !== next.onDragTargetChange
+  ) {
+    return false;
+  }
+
+  // Must propagate activeDropDir through ancestors so nested children update.
+  // Comparing only this node's highlight would skip parents (false===false)
+  // and block prop drilling to the actual drop target.
+  return prev.activeDropDir === next.activeDropDir;
+});

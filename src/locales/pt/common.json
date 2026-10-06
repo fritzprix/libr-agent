@@ -1125,7 +1125,7 @@
     },
     "messages": {
       "loadingOlder": "Carregando mensagens antigas...",
-      "scrollToLoadOlder": "Role para cima para carregar mensagens antigas",
+      "scrollToLoadOlder": "Carregar mensagens antigas",
       "scrollToLatest": "Rolar para as mensagens mais recentes",
       "pendingApprovalsJump_one": "{{count}} ferramenta aguardando aprovação — pular para responder",
       "pendingApprovalsJump_other": "{{count}} ferramentas aguardando aprovação — pular para responder"
@@ -1441,6 +1441,7 @@
       "ariaLabel": "Lista de ferramentas disponíveis",
       "badgeBuiltin": "integrada",
       "badgeMcp": "mcp",
+      "viewDescription": "Ver Descrição",
       "viewSchema": "Ver Esquema de Entrada"
     },
     "panels": {
@@ -1881,11 +1882,6 @@
     "waitLine": "Dica · {{title}}",
     "waitOpenHint": "Abrir: {{detail}}",
     "items": {
-      "browserProfile": {
-        "title": "Importar sessões do navegador",
-        "body": "Traga perfis do Chrome, Edge ou Brave para o LibrAgent para o agente navegar já autenticado. Abra Configurações → System.",
-        "cta": "Abrir System"
-      },
       "starterTasks": {
         "title": "Comece com modelos de tarefas agendadas",
         "body": "Daily Standup, monitoramento de notícias e outras automações com um clique estão em Scheduled Tasks.",

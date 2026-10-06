@@ -16,12 +16,12 @@ vi.mock('react-i18next', () => ({
 }));
 
 const tip: Spotlight = {
-  id: 'browser-profile-import',
-  sinceVersion: '0.9.12',
-  titleKey: 'spotlight.items.browserProfile.title',
-  bodyKey: 'spotlight.items.browserProfile.body',
-  ctaLabelKey: 'spotlight.items.browserProfile.cta',
-  href: { type: 'settings', tab: 'system' },
+  id: 'starter-tasks',
+  sinceVersion: '0.9.10',
+  titleKey: 'spotlight.items.starterTasks.title',
+  bodyKey: 'spotlight.items.starterTasks.body',
+  ctaLabelKey: 'spotlight.items.starterTasks.cta',
+  href: { type: 'route', path: '/scheduled-tasks' },
   surfaces: ['release', 'hub'],
   priority: 1,
 };
@@ -47,7 +47,7 @@ describe('ReleaseSpotlightCard', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'spotlight.items.browserProfile.cta',
+        name: 'spotlight.items.starterTasks.cta',
       }),
     );
     expect(onCta).toHaveBeenCalledWith(tip);
@@ -83,7 +83,7 @@ describe('HubHintCard', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'spotlight.items.browserProfile.cta',
+        name: 'spotlight.items.starterTasks.cta',
       }),
     );
     expect(onCta).toHaveBeenCalledWith(tip);

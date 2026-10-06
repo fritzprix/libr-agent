@@ -1,5 +1,6 @@
 use super::context::save_compact_context;
 use super::CompactResponseOutcome;
+use crate::agent::compaction_telemetry::{CompactionTelemetryEventDraft, CompactionTelemetryPhase};
 use crate::agent::llm::types::CompactStatePhase;
 use crate::agent::state::{AgentSession, CompactionResumeAction};
 use crate::agent::tauri_events::{emit_compact_finished, emit_compact_request};
@@ -22,6 +23,9 @@ pub(super) struct CompactSummaryPersistenceContext<'a> {
     pub session_name: Option<String>,
     pub to_id: String,
     pub compacted_delta_count: usize,
+    pub telemetry_phase: CompactionTelemetryPhase,
+    pub epoch_path: Option<String>,
+    pub fallback_path: Option<String>,
 }
 
 pub(super) fn spawn_resume_completion(
@@ -181,6 +185,94 @@ pub(super) async fn retry_invalid_compact_summary_if_possible(
     Ok(Some(CompactResponseOutcome { retried: true }))
 }
 
+/// Empty-delta defense: clear in-flight compaction without rewriting compact
+/// context, emit Failed so UI/telemetry do not count a success, then resume.
+pub(super) async fn abort_empty_delta_compaction_and_resume(
+    context: CompactSummaryPersistenceContext<'_>,
+) -> Result<CompactResponseOutcome, String> {
+    log::warn!(
+        "⏭️ Aborting empty-delta compaction without persist: session={}, to_id={}, compacted_delta_count={}",
+        context.session_id,
+        context.to_id,
+        context.compacted_delta_count
+    );
+
+    let resume_action = {
+        let compaction = {
+            let active = context.active_sessions.read().await;
+            active
+                .get(context.session_id)
+                .map(|session| session.compaction.clone())
+        };
+        if let Some(compaction) = compaction {
+            compaction
+                .push_telemetry_event(CompactionTelemetryEventDraft {
+                    phase: CompactionTelemetryPhase::Failed,
+                    to_id: Some(context.to_id.clone()),
+                    condensed_count: Some(0),
+                    error: Some(
+                        crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR
+                            .to_string(),
+                    ),
+                    epoch_path: None,
+                    fallback_path: None,
+                    prompt_tokens_before: None,
+                    prompt_tokens_after_projection: None,
+                })
+                .await;
+            // complete_success clears request + returns ResumeCompletion for preflight
+            // without treating this as a persisted handoff rewrite.
+            Some(compaction.complete_success().await)
+        } else {
+            None
+        }
+    };
+    let resume_action = resume_action.unwrap_or(CompactionResumeAction::Nothing);
+
+    // Still emit Failed so UI clears compacting/awaiting flags; frontend silences
+    // the toast for EMPTY_DELTA_NOOP_ERROR (intentional skip, not a user error).
+    if let Err(error) = emit_compact_finished(
+        context.app_handle,
+        context.session_id.to_string(),
+        context.session_name,
+        CompactStatePhase::Failed,
+        Some(crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR.to_string()),
+    ) {
+        log::warn!(
+            "Failed to emit compact finished state for session {} after empty-delta abort: {}",
+            context.session_id,
+            error
+        );
+    }
+
+    let session_repo = context.session_repo.clone();
+    let active_sessions = context.active_sessions.clone();
+    let proxy_manager = context.proxy_manager.clone();
+    let app_handle = context.app_handle.clone();
+    let session_id = context.session_id.to_string();
+    crate::agent::workflow::continue_pending_after_compaction(
+        context.session_repo,
+        context.active_sessions,
+        context.proxy_manager,
+        context.app_handle,
+        context.session_id,
+        resume_action,
+        || {
+            spawn_resume_completion(
+                &session_repo,
+                &active_sessions,
+                &proxy_manager,
+                &app_handle,
+                &session_id,
+                "LLM completion after empty-delta compaction abort",
+            );
+        },
+    )
+    .await?;
+
+    Ok(CompactResponseOutcome { retried: false })
+}
+
 pub(super) async fn persist_compact_summary_and_resume(
     context: CompactSummaryPersistenceContext<'_>,
     summary: String,
@@ -200,6 +292,29 @@ pub(super) async fn persist_compact_summary_and_resume(
     )
     .await?;
     save_compact_context(context.active_sessions, context.session_id, record).await?;
+
+    {
+        let compaction = {
+            let active = context.active_sessions.read().await;
+            active
+                .get(context.session_id)
+                .map(|session| session.compaction.clone())
+        };
+        if let Some(compaction) = compaction {
+            compaction
+                .push_telemetry_event(CompactionTelemetryEventDraft {
+                    phase: context.telemetry_phase,
+                    to_id: Some(context.to_id.clone()),
+                    condensed_count: Some(context.compacted_delta_count),
+                    error: None,
+                    epoch_path: context.epoch_path.clone(),
+                    fallback_path: context.fallback_path.clone(),
+                    prompt_tokens_before: None,
+                    prompt_tokens_after_projection: None,
+                })
+                .await;
+        }
+    }
 
     let resume_action = {
         let active = context.active_sessions.read().await;

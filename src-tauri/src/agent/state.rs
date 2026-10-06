@@ -277,6 +277,10 @@ pub struct CompactionRuntimeState {
     /// Most recent compact request payload, retained while compaction is in flight so
     /// the backend can re-emit it without involving the frontend error path.
     current_request: Arc<RwLock<Option<CompactRequest>>>,
+
+    /// Ephemeral compaction telemetry ring for Session API / Harbor harvest.
+    telemetry_events:
+        Arc<RwLock<Vec<crate::agent::compaction_telemetry::CompactionTelemetryEvent>>>,
 }
 
 impl CompactionRuntimeState {
@@ -288,6 +292,7 @@ impl CompactionRuntimeState {
             recovery_phase: Arc::new(RwLock::new(CompactionRecoveryPhase::CacheAligned)),
             summary_retry_count: Arc::new(RwLock::new(0)),
             current_request: Arc::new(RwLock::new(None)),
+            telemetry_events: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -299,7 +304,26 @@ impl CompactionRuntimeState {
             recovery_phase: Arc::new(RwLock::new(CompactionRecoveryPhase::CacheAligned)),
             summary_retry_count: Arc::new(RwLock::new(0)),
             current_request: Arc::new(RwLock::new(None)),
+            telemetry_events: Arc::new(RwLock::new(Vec::new())),
         }
+    }
+
+    pub async fn push_telemetry_event(
+        &self,
+        draft: crate::agent::compaction_telemetry::CompactionTelemetryEventDraft,
+    ) {
+        let mut events = self.telemetry_events.write().await;
+        crate::agent::compaction_telemetry::push_compaction_event(&mut events, draft);
+    }
+
+    pub async fn telemetry_events(
+        &self,
+    ) -> Vec<crate::agent::compaction_telemetry::CompactionTelemetryEvent> {
+        self.telemetry_events.read().await.clone()
+    }
+
+    pub async fn clear_telemetry_events(&self) {
+        self.telemetry_events.write().await.clear();
     }
 
     pub async fn snapshot(&self) -> CompactionSnapshot {
@@ -558,6 +582,11 @@ pub struct AgentSession {
 
     /// In-band poll snapshot trackers keyed by `{tool}:{resource_id}`.
     pub tool_poll_trackers: Arc<RwLock<HashMap<String, PollTracker>>>,
+
+    /// Optional session-scoped override for context-management `maxInputContext`.
+    /// When `Some(n)` with `n > 0`, compaction / orchestration use `n` instead of
+    /// the global settings value. Runtime-only (not persisted).
+    pub max_input_context_override: Option<usize>,
 }
 
 impl AgentSession {
@@ -606,6 +635,7 @@ impl AgentSession {
             session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
             tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
             tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
+            max_input_context_override: None,
         }
     }
 
@@ -618,6 +648,7 @@ impl AgentSession {
         self.pending_execution = None;
         *self.compact_context.write().await = None;
         self.compaction.clear_runtime_state(true).await;
+        self.compaction.clear_telemetry_events().await;
         self.pending_events.write().await.clear();
         *self.expected_response_id.write().await = None;
         *self.last_completion_request.write().await = None;
@@ -730,6 +761,7 @@ mod tests {
             session_context_turns_since_force_fresh: Arc::new(RwLock::new(0)),
             tool_loop_resample_attempts: Arc::new(RwLock::new(HashMap::new())),
             tool_poll_trackers: Arc::new(RwLock::new(HashMap::new())),
+            max_input_context_override: None,
         }
     }
 

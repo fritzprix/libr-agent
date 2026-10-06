@@ -1,7 +1,9 @@
 use serde_json::json;
+#[allow(deprecated)]
 use tauri_mcp_agent_lib::browser_sidecar::{
-    browser_runtime_profile_dir, browser_runtime_profile_root, classify_browser_page,
-    serialize_browser_result_value, BrowserAutomationClient, PageClassification,
+    agent_sticky_user_data_dir, browser_runtime_profile_dir, browser_runtime_profile_root,
+    classify_browser_page, clear_agent_sticky_profile_dir, serialize_browser_result_value,
+    BrowserAutomationClient, PageClassification,
 };
 use tauri_mcp_agent_lib::services::interactive_browser_server::{
     BrowserSession, NavigationUpdateOutcome, SessionStatus,
@@ -170,9 +172,12 @@ fn classify_browser_page_leaves_normal_pages_alone() {
 
 #[test]
 fn browser_runtime_profile_dirs_are_unique_and_not_the_chromiumoxide_default() {
+    #[allow(deprecated)]
     let first = browser_runtime_profile_dir(uuid::Uuid::new_v4());
+    #[allow(deprecated)]
     let second = browser_runtime_profile_dir(uuid::Uuid::new_v4());
     let chromiumoxide_default = std::env::temp_dir().join("chromiumoxide-runner");
+    #[allow(deprecated)]
     let profile_root = browser_runtime_profile_root();
 
     assert_ne!(first, second);
@@ -180,6 +185,56 @@ fn browser_runtime_profile_dirs_are_unique_and_not_the_chromiumoxide_default() {
     assert_ne!(second, chromiumoxide_default);
     assert!(first.starts_with(&profile_root));
     assert!(second.starts_with(&profile_root));
+}
+
+#[test]
+fn agent_sticky_user_data_dir_is_stable_and_under_app_data() {
+    let first = agent_sticky_user_data_dir().expect("sticky dir");
+    let second = agent_sticky_user_data_dir().expect("sticky dir");
+    let chromiumoxide_default = std::env::temp_dir().join("chromiumoxide-runner");
+
+    assert_eq!(first, second);
+    assert_ne!(first, chromiumoxide_default);
+    assert!(
+        first.file_name().and_then(|name| name.to_str()) == Some("browser_agent_profile"),
+        "sticky profile must use fixed browser_agent_profile dir, got {}",
+        first.display()
+    );
+    assert!(
+        !first.starts_with(&{
+            #[allow(deprecated)]
+            {
+                browser_runtime_profile_root()
+            }
+        }),
+        "sticky profile must live in app data, not cache UUID profiles"
+    );
+}
+
+/// #1984 contract: sticky profile is wiped only via explicit clear, never via UUID cache helpers.
+#[test]
+fn sticky_profile_is_not_the_legacy_uuid_cache_layout() {
+    let sticky = agent_sticky_user_data_dir().expect("sticky dir");
+    #[allow(deprecated)]
+    let legacy_root = browser_runtime_profile_root();
+    assert_ne!(sticky, legacy_root);
+    assert!(!sticky.starts_with(&legacy_root));
+    assert_eq!(
+        sticky.file_name().and_then(|n| n.to_str()),
+        Some("browser_agent_profile")
+    );
+}
+
+#[test]
+fn clear_agent_sticky_profile_dir_is_idempotent_when_missing() {
+    // Uses the real sticky path for this process; safe when the dir does not exist.
+    let dir = agent_sticky_user_data_dir().expect("sticky dir");
+    if dir.exists() {
+        // Do not wipe a developer's real sticky profile in unit tests.
+        return;
+    }
+    clear_agent_sticky_profile_dir().expect("clear missing sticky dir");
+    clear_agent_sticky_profile_dir().expect("clear again");
 }
 
 #[test]
@@ -191,5 +246,152 @@ fn browser_automation_client_uses_a_longer_bootstrap_timeout() {
     assert_eq!(
         client.bootstrap_timeout(),
         std::time::Duration::from_secs(60)
+    );
+}
+
+#[test]
+fn browser_session_target_parse_accepts_known_values() {
+    use tauri_mcp_agent_lib::services::BrowserSessionTarget;
+
+    assert_eq!(
+        BrowserSessionTarget::parse("sidecar").unwrap(),
+        BrowserSessionTarget::Sidecar
+    );
+    assert_eq!(
+        BrowserSessionTarget::parse("userChrome").unwrap(),
+        BrowserSessionTarget::UserChrome
+    );
+    assert_eq!(
+        BrowserSessionTarget::parse("  sidecar  ").unwrap(),
+        BrowserSessionTarget::Sidecar
+    );
+}
+
+#[test]
+fn browser_session_target_parse_rejects_unknown_values() {
+    use tauri_mcp_agent_lib::services::BrowserSessionTarget;
+
+    let err = BrowserSessionTarget::parse("auto").unwrap_err();
+    assert!(err.contains("Invalid browser value"));
+    assert!(err.contains("sidecar"));
+    assert!(err.contains("userChrome"));
+
+    let err = BrowserSessionTarget::parse("extension").unwrap_err();
+    assert!(err.contains("Invalid browser value"));
+}
+
+/// Regression: console listener must be attached before createSession navigation
+/// so on-load `console.log` is visible to getConsoleLogs (harbor c03 / S6).
+#[tokio::test(flavor = "multi_thread")]
+async fn create_session_captures_onload_console_log() {
+    use std::path::PathBuf;
+    use std::time::Duration;
+    use tauri_mcp_agent_lib::browser_sidecar::BrowserAutomationClient;
+
+    // Integration test binaries are not the app entrypoint; point sidecar spawn at
+    // the package `libragent` bin (set by cargo as CARGO_BIN_EXE_libragent).
+    let Some(sidecar_exe) = option_env!("CARGO_BIN_EXE_libragent").map(PathBuf::from) else {
+        eprintln!("skip create_session_captures_onload_console_log: no CARGO_BIN_EXE_libragent");
+        return;
+    };
+    if !sidecar_exe.is_file() {
+        eprintln!(
+            "skip create_session_captures_onload_console_log: missing {}",
+            sidecar_exe.display()
+        );
+        return;
+    }
+    // Test-only env for sidecar process selection (serial test body).
+    unsafe { std::env::set_var("LIBRAGENT_BROWSER_SIDECAR_EXE", &sidecar_exe) };
+
+    let client = BrowserAutomationClient::new(Duration::from_secs(30));
+    let session_id = format!(
+        "console-onload-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+    // Percent-encoded so the script runs during the initial goto.
+    let url = "data:text/html;charset=utf-8,<!doctype%20html><script>console.log(%22GATE-CONSOLE-TOKEN:7741%22)</script><body>ok</body>";
+
+    if let Err(err) = client
+        .create_session(&session_id, url, Some("console-onload"), false)
+        .await
+    {
+        // CI hosts without a usable Chromium binary skip rather than fail the suite.
+        let lower = err.to_lowercase();
+        if lower.contains("chromium")
+            || lower.contains("chrome")
+            || lower.contains("executable")
+            || lower.contains("failed to launch")
+            || lower.contains("browser runtime")
+            || lower.contains("closed its stdout")
+        {
+            eprintln!("skip create_session_captures_onload_console_log: {err}");
+            unsafe { std::env::remove_var("LIBRAGENT_BROWSER_SIDECAR_EXE") };
+            return;
+        }
+        unsafe { std::env::remove_var("LIBRAGENT_BROWSER_SIDECAR_EXE") };
+        panic!("create_session failed: {err}");
+    }
+
+    let mut matched = false;
+    for _ in 0..20 {
+        let logs = client
+            .get_console_logs(&session_id, Some(100))
+            .await
+            .expect("get_console_logs");
+        if logs
+            .iter()
+            .any(|entry| entry.text.contains("GATE-CONSOLE-TOKEN:7741"))
+        {
+            matched = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let _ = client.close_session(&session_id).await;
+    unsafe { std::env::remove_var("LIBRAGENT_BROWSER_SIDECAR_EXE") };
+    assert!(
+        matched,
+        "expected on-load console.log to be captured after createSession navigation"
+    );
+}
+
+#[tokio::test]
+async fn user_chrome_create_fails_when_extension_disconnected() {
+    use std::time::Duration;
+    use tauri_mcp_agent_lib::browser_extension_bridge;
+    use tauri_mcp_agent_lib::services::{BrowserSessionTarget, InteractiveBrowserServer};
+
+    if browser_extension_bridge::is_connected() {
+        // Local machine already has everyday Chrome Connected — skip to avoid opening a real tab.
+        return;
+    }
+
+    let server = InteractiveBrowserServer::new(Duration::from_secs(5));
+    let err = server
+        .create_browser_session(
+            "https://example.com",
+            None,
+            false,
+            BrowserSessionTarget::UserChrome,
+        )
+        .await
+        .expect_err("userChrome must fail without Connected extension");
+
+    assert!(
+        err.contains("userChrome unavailable"),
+        "expected unavailable error, got: {err}"
+    );
+    assert!(
+        err.contains("no silent sidecar fallback"),
+        "expected no-fallback wording, got: {err}"
+    );
+    assert!(
+        err.contains("browser=\"sidecar\""),
+        "expected sidecar retry guidance, got: {err}"
     );
 }

@@ -3,6 +3,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, operation_failed_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
+use crate::services::BrowserSessionTarget;
 use serde_json::{json, Value};
 
 pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
@@ -70,10 +71,26 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     let service = server.get_browser_service()?;
     let url_param = args.get("url").and_then(|v| v.as_str());
     let url = url_param.unwrap_or("https://www.google.com");
-    let use_profile = args
-        .get("use_profile")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let browser_raw = args
+        .get("browser")
+        .and_then(|v| v.as_str())
+        .unwrap_or("sidecar");
+    let target = match BrowserSessionTarget::parse(browser_raw) {
+        Ok(t) => t,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                &e,
+                ToolGroup::Browser,
+            )
+            .with_guidance(vec![
+                "Pass browser=\"sidecar\" for LibrAgent's sticky agent browser.".to_string(),
+                "Pass browser=\"userChrome\" only when the user wants everyday Chrome via the extension."
+                    .to_string(),
+            ])
+            .to_mcp_result())
+        }
+    };
 
     // Check if a session already exists. If so, close it to ensure a fresh session.
     // This allows "resetting" the session if it gets into a bad state.
@@ -105,21 +122,31 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             url,
             Some(&format!("Agent {}", server.agent_session_id)),
             true,
-            use_profile,
+            target,
         )
         .await
     {
         Ok(res) => res,
         Err(e) => {
-            return Ok(operation_failed_error(
-                "Create browser session",
-                &e,
+            let guidance = if matches!(target, BrowserSessionTarget::UserChrome) {
+                vec![
+                    "userChrome did not open the sidecar automatically. Retry with browser=\"sidecar\" for a separate sticky agent browser session."
+                        .to_string(),
+                    "Or ask the user to connect LibrAgent Browser Bridge (Settings → System), then retry browser=\"userChrome\"."
+                        .to_string(),
+                ]
+            } else {
                 vec![
                     "Verify the URL format is valid (must include http:// or https://)".to_string(),
                     "Check browser service is available and running".to_string(),
-                ],
+                ]
+            };
+            return Ok(operation_failed_error(
+                "Create browser session",
+                &e,
+                guidance,
                 ToolGroup::Browser,
-            ))
+            ));
         }
     };
 
@@ -133,10 +160,11 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         *id_lock = Some(id.clone());
     }
 
+    let browser_label = target.as_str();
     let (message, suggestions) = if url_param.is_some() {
         if status_msg.contains("load wait timed out") {
             (
-                format!("Browser session created (ID: {}). {}", id, status_msg),
+                format!("Browser session created (ID: {}, browser={}). {}", id, browser_label, status_msg),
                 vec![
                     "Page load timed out, but the session is ready and page may be usable."
                         .to_string(),
@@ -148,8 +176,8 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         } else if status_msg.contains("Initial Health Check Failed") {
             (
                 format!(
-                    "Browser session created (ID: {}) but unresponsive. {}",
-                    id, status_msg
+                    "Browser session created (ID: {}, browser={}) but unresponsive. {}",
+                    id, browser_label, status_msg
                 ),
                 vec![
                     "The browser window failed to initialize the agent runtime.".to_string(),
@@ -160,7 +188,10 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP 403)") || status_msg.contains("(HTTP 401)") {
             (
-                format!("Browser session created (ID: {}). {}", id, status_msg),
+                format!(
+                    "Browser session created (ID: {}, browser={}). {}",
+                    id, browser_label, status_msg
+                ),
                 vec![
                     "The page is blocking access (Forbidden/Unauthorized). Abandon this page."
                         .to_string(),
@@ -170,7 +201,10 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP 404)") {
             (
-                format!("Browser session created (ID: {}). {}", id, status_msg),
+                format!(
+                    "Browser session created (ID: {}, browser={}). {}",
+                    id, browser_label, status_msg
+                ),
                 vec![
                     "The page was not found (404). Check the URL.".to_string(),
                     "Search for the content on the site's homepage or use a search engine."
@@ -179,7 +213,10 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP 5") {
             (
-                format!("Browser session created (ID: {}). {}", id, status_msg),
+                format!(
+                    "Browser session created (ID: {}, browser={}). {}",
+                    id, browser_label, status_msg
+                ),
                 vec![
                     "The website is experiencing server errors (5xx). Abandon this page."
                         .to_string(),
@@ -188,7 +225,10 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("Network Error") {
             (
-                format!("Browser session created (ID: {}). {}", id, status_msg),
+                format!(
+                    "Browser session created (ID: {}, browser={}). {}",
+                    id, browser_label, status_msg
+                ),
                 vec![
                     "A network error occurred. Check the URL and internet connection.".to_string(),
                     "The site may be down or unreachable.".to_string(),
@@ -196,7 +236,10 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP ") {
             (
-                format!("Browser session created (ID: {}). {}", id, status_msg),
+                format!(
+                    "Browser session created (ID: {}, browser={}). {}",
+                    id, browser_label, status_msg
+                ),
                 vec![
                     "The site returned an error. Consider finding an alternative source."
                         .to_string(),
@@ -205,10 +248,11 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         } else {
             (
                 format!(
-                    "Browser session created and set as active (ID: {}). Initial page loaded: {}",
-                    id, url
+                    "Browser session created and set as active (ID: {}, browser={}). Initial page loaded: {}",
+                    id, browser_label, url
                 ),
                 vec![
+                    "This is now the only active browser session for this agent; later browser tools target it until another createSession or closeSession.".to_string(),
                     "Use `browser__getPageContent({})` to read the current page content"
                         .to_string(),
                     "Use browser__listInteractable to see interactive elements".to_string(),
@@ -217,8 +261,9 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         }
     } else {
         (
-            format!("Browser session created (ID: {}). {}", id, status_msg),
+            format!("Browser session created (ID: {}, browser={}). {}", id, browser_label, status_msg),
             vec![
+                "This is now the only active browser session for this agent.".to_string(),
                 "Use `browser__navigateToUrl` to navigate this active session to a webpage".to_string(),
                 "Or call browser__createSession with a `url` next time to open the first page immediately"
                     .to_string(),
@@ -230,6 +275,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     Ok(hint.to_mcp_result_with_data(Some(json!({
         "sessionId": id,
         "url": url,
+        "browser": browser_label,
         "status": "active"
     }))))
 }

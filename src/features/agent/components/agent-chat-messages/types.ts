@@ -25,6 +25,10 @@ export const CHAT_LIST_HEADER_MIN_HEIGHT_PX = 28;
 // Ignore scroll events caused by our own bottom-forcing scroll for one short
 // window so programmatic movement does not look like user intent.
 export const SELF_SCROLL_IGNORE_WINDOW_MS = 160;
+// Streaming reflow can emit negative scrollDelta without a user gesture.
+// Only treat upward movement as follow-release intent while a recent wheel,
+// touchmove, or upward-key event is inside this window.
+export const USER_SCROLL_INTENT_WINDOW_MS = 250;
 
 export type BottomAlignmentPhase =
   | 'idle'
@@ -41,6 +45,8 @@ export interface AgentChatVirtuosoContext {
   isLoadingOlderMessages: boolean;
   latestMessage: Message | undefined;
   loadingOlderLabel: string;
+  /** Manual recovery when Virtuoso startReached was already consumed. */
+  onLoadOlderMessages: () => void;
   pendingApprovals: ReturnType<typeof useAgentSession>['pendingApprovals'];
   respondToToolApproval: ReturnType<
     typeof useAgentSession

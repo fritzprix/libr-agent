@@ -29,6 +29,16 @@ pub fn get_routes(
         .and(agent_manager.clone())
         .and_then(handlers::get_session);
 
+    // GET /api/sessions/:id/compact-context
+    let get_compact_context = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("compact-context"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and_then(handlers::get_compact_context);
+
     // GET /api/sessions/:id/messages
     let get_messages = warp::get()
         .and(warp::path("api"))
@@ -188,6 +198,7 @@ pub fn get_routes(
 
     create_session
         .or(get_session)
+        .or(get_compact_context)
         .or(get_messages)
         .or(send_message)
         .or(inject_channel_message_auto)

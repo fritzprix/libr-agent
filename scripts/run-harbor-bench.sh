@@ -45,6 +45,21 @@ DEBUG_HARBOR=0
 VERIFIER_ENV=()
 ENV_FILE=""
 
+# Append harbor -i flags. Comma-separated globs become repeated -i.
+append_include_globs() {
+  local raw="${1:-}"
+  [[ -z "$raw" ]] && return 0
+  local _g _g_trimmed
+  local IFS=','
+  # shellcheck disable=SC2206
+  local _globs=($raw)
+  for _g in "${_globs[@]}"; do
+    _g_trimmed="${_g#"${_g%%[![:space:]]*}"}"
+    _g_trimmed="${_g_trimmed%"${_g_trimmed##*[![:space:]]}"}"
+    [[ -n "$_g_trimmed" ]] && ARGS+=(-i "$_g_trimmed")
+  done
+}
+
 usage() {
   cat <<'EOF'
 Usage: scripts/run-harbor-bench.sh [options]
@@ -404,7 +419,7 @@ case "$PRESET" in
     fi
     echo "==> Preset: Terminal-Bench ($DATASET)"
     ARGS+=(-d "$DATASET")
-    [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
+    append_include_globs "$INCLUDE"
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;
   harbor-index)
@@ -413,13 +428,13 @@ case "$PRESET" in
     fi
     echo "==> Preset: Harbor Index ($DATASET)"
     ARGS+=(-d "$DATASET")
-    [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
+    append_include_globs "$INCLUDE"
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;
   path)
     [[ -n "$PATH_ARG" ]] || { echo "--path required for preset=path" >&2; exit 1; }
     ARGS+=(-p "$PATH_ARG")
-    [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
+    append_include_globs "$INCLUDE"
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;
   dataset)
@@ -428,7 +443,7 @@ case "$PRESET" in
     fi
     echo "==> Preset: dataset ($DATASET)"
     ARGS+=(-d "$DATASET")
-    [[ -n "$INCLUDE" ]] && ARGS+=(-i "$INCLUDE")
+    append_include_globs "$INCLUDE"
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;
   *)

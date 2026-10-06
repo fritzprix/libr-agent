@@ -177,6 +177,10 @@ describe('AgentChatMessages – Virtuoso list configuration', () => {
       index: 10_000,
       align: 'end',
     });
+    expect(getInitialTopMostItemIndex(10_000, 0)).toEqual({
+      index: 10_000,
+      align: 'end',
+    });
     expect(getInitialTopMostItemIndex(10_000, 1)).toEqual({
       index: 10_000,
       align: 'end',

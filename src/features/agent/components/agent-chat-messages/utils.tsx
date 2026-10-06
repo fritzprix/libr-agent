@@ -85,13 +85,14 @@ export function getPrependedFirstItemIndex(
 export function getInitialTopMostItemIndex(
   firstItemIndex: number,
   itemCount: number,
-): IndexLocationWithAlign | number {
-  return itemCount > 0
-    ? {
-        index: firstItemIndex + itemCount - 1,
-        align: 'end',
-      }
-    : firstItemIndex;
+): IndexLocationWithAlign {
+  // Always align to end — even with itemCount===0. A bare number is treated by
+  // Virtuoso as align:'start' (TOP), which fires startReached on empty mount and
+  // consumes the one-shot edge trigger before hasOlderMessages is known.
+  return {
+    index: firstItemIndex + Math.max(itemCount, 1) - 1,
+    align: 'end',
+  };
 }
 
 export function getVisualBottomThreshold(): number {
