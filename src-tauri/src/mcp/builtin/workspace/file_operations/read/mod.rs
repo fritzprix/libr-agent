@@ -288,7 +288,9 @@ impl WorkspaceServer {
                     format!("\n\n{}", summary_notes.join("\n"))
                 };
 
-                // Format response for clean markdown rendering
+                // Format response for clean markdown rendering.
+                // The leading `📄 **\`path\`**` header is the spillover exception
+                // signal in `agent::tools::spillover` — keep it stable.
                 let text_message = if show_line_anchors {
                     format!(
                         "📄 **`{}`** — {} — {}{}\n\n```\n{}\n```\n\nLine format: `{{lineNumber}}:{{anchor}}|{{content}}`\n- `{{lineNumber}}`: 1-based line number\n- `{{anchor}}`: 6-character hex code (example: `792c6f`)\n- `{{content}}`: line content\n\n{}{}",
