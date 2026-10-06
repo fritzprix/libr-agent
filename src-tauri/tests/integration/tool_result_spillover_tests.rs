@@ -466,3 +466,160 @@ async fn tool_result_spillover_binary_like_output_advises_extraction_not_paginat
     let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
     let _ = fs::remove_dir_all(workspace_dir);
 }
+
+fn oversized_line_block() -> String {
+    let line = "abcdefghijklmnopqrstuvwxyz0123456789\n";
+    let count = (TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES / line.len()) + 40;
+    line.repeat(count)
+}
+
+fn read_file_success_text(path: &str, summary: &str, body: &str) -> String {
+    format!("✓ 📄 **`{path}`** — 500 KB — {summary}\n\n```text\n{body}\n```")
+}
+
+fn paginated_read_file_summary(path: &str) -> String {
+    format!(
+        "lines 1-200 of 4000 (truncated to stay under the inline limit)\n\nNext chunk: workspace__readFile({{\"path\": \"{path}\", \"offset\": 201, \"size\": 200}})"
+    )
+}
+
+async fn spill_tool_text(session_id: &str, tool_call_id: &str, text: &str) -> String {
+    let processed = spill_oversized_tool_result_messages(
+        session_id,
+        vec![make_tool_message(session_id, tool_call_id, text)],
+    )
+    .await
+    .expect("spillover should succeed");
+    let MCPContent::Text { text, .. } = &processed[0].content[0] else {
+        panic!("expected text content");
+    };
+    text.clone()
+}
+
+fn cleanup_session_workspace(session_id: &str) {
+    let session_manager = get_session_manager().expect("session manager");
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(session_id);
+    let _ = fs::remove_dir_all(workspace_dir);
+}
+
+#[tokio::test]
+async fn read_file_of_spillover_file_stays_inline_when_oversized() {
+    let session_id = format!("spillover-read-exempt-{}", uuid::Uuid::new_v4());
+    let path = ".libragent/tool-results/call_text-1.txt";
+    let original = read_file_success_text(
+        path,
+        &paginated_read_file_summary(path),
+        &oversized_line_block(),
+    );
+    assert!(
+        original.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+        "fixture must exceed the inline limit"
+    );
+
+    let text = spill_tool_text(&session_id, "tool_call_read_spillover", &original).await;
+
+    assert_eq!(
+        text, original,
+        "paginated readFile of a spillover file must not be spilled again"
+    );
+    assert!(
+        !text.contains("Full output saved to workspace file"),
+        "exemption must not append another spillover notice"
+    );
+}
+
+#[tokio::test]
+async fn paginated_read_file_of_workspace_file_stays_inline_when_oversized() {
+    let session_id = format!("spillover-read-page-{}", uuid::Uuid::new_v4());
+    let path = "src/big.log";
+    let original = read_file_success_text(
+        path,
+        &paginated_read_file_summary(path),
+        &oversized_line_block(),
+    );
+    assert!(original.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES);
+
+    let text = spill_tool_text(&session_id, "tool_call_read_page", &original).await;
+
+    assert_eq!(
+        text, original,
+        "readFile already paginates; spilling it would replace the next-chunk instructions"
+    );
+}
+
+#[tokio::test]
+async fn complete_read_file_of_spillover_file_stays_inline_when_oversized() {
+    let session_id = format!("spillover-read-complete-{}", uuid::Uuid::new_v4());
+    let path = r"C:\ws\.libragent\tool-results\call_text-1.txt";
+    let original = read_file_success_text(path, "complete (3 lines)", &oversized_line_block());
+    assert!(original.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES);
+
+    let text = spill_tool_text(&session_id, "tool_call_read_complete", &original).await;
+
+    assert_eq!(
+        text, original,
+        "a readFile whose path is a spillover file must stay inline even without pagination markers"
+    );
+}
+
+#[tokio::test]
+async fn oversized_output_mentioning_spillover_path_still_spills() {
+    let session_id = format!("spillover-mention-{}", uuid::Uuid::new_v4());
+    let original = format!(
+        "shell listing mentions .libragent/tool-results/call_text-1.txt\n{}",
+        oversized_line_block()
+    );
+    assert!(original.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES);
+
+    let text = spill_tool_text(&session_id, "tool_call_mention", &original).await;
+
+    assert!(
+        text.contains("output truncated"),
+        "a path mention outside a readFile header must still spill: {text}"
+    );
+    assert!(
+        text.len() < TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+        "spilled preview should stay below the inline threshold"
+    );
+    assert_ne!(text, original);
+    cleanup_session_workspace(&session_id);
+}
+
+#[tokio::test]
+async fn read_file_header_buried_in_oversized_output_still_spills() {
+    let session_id = format!("spillover-buried-{}", uuid::Uuid::new_v4());
+    let buried = read_file_success_text(
+        ".libragent/tool-results/call_text-1.txt",
+        &paginated_read_file_summary(".libragent/tool-results/call_text-1.txt"),
+        "tiny",
+    );
+    let original = format!("{}{}{}", "x".repeat(256), buried, oversized_line_block());
+    assert!(original.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES);
+
+    let text = spill_tool_text(&session_id, "tool_call_buried", &original).await;
+
+    assert!(
+        text.contains("output truncated"),
+        "a readFile header past the leading prefix must not suppress spillover"
+    );
+    assert_ne!(text, original);
+    cleanup_session_workspace(&session_id);
+}
+
+#[tokio::test]
+async fn complete_read_file_of_normal_path_still_spills_when_oversized() {
+    let session_id = format!("spillover-read-normal-{}", uuid::Uuid::new_v4());
+    let original =
+        read_file_success_text("src/big.log", "complete (3 lines)", &oversized_line_block());
+    assert!(original.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES);
+
+    let text = spill_tool_text(&session_id, "tool_call_read_normal", &original).await;
+
+    assert!(
+        text.contains("output truncated"),
+        "an oversized readFile that does not paginate and is not a spillover file still spills"
+    );
+    assert!(text.len() < TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES);
+    assert_ne!(text, original);
+    cleanup_session_workspace(&session_id);
+}
