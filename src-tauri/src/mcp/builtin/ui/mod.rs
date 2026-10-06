@@ -474,7 +474,11 @@ impl UiServer {
                                 .and_then(|n| n.to_str())
                                 .unwrap_or(path_str)
                                 .to_string();
-                            let abs = full_path.to_string_lossy().replace('\\', "/");
+                            // Strip Windows `\\?\` before slash-normalize so UI
+                            // "Open" does not receive an unopenable `//?/` path.
+                            let abs =
+                                crate::mcp::builtin::utils::display_workspace_path(&full_path)
+                                    .replace('\\', "/");
                             (exists, size, ext, file_name, Some(abs))
                         }
                         Err(_) => (false, None, None, path_str.clone(), None),

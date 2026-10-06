@@ -2,6 +2,8 @@
 //!
 //! This module contains commands for handling external URLs and local paths.
 
+use crate::mcp::builtin::utils::strip_windows_verbatim_prefix;
+
 /// Opens a URL in the user's default external web browser.
 ///
 /// This command includes a security check to ensure only `http` or `https` URLs are opened.
@@ -29,15 +31,19 @@ pub async fn open_path_with_default_app(path: String) -> Result<(), String> {
         return Err("path is required".to_string());
     }
 
-    let path_buf = std::path::PathBuf::from(trimmed);
+    // Strip before validate/open: `\\?\` / `//?/` break tauri_plugin_opener,
+    // and existence checks should match the path we actually open.
+    let openable = strip_windows_verbatim_prefix(trimmed);
+
+    let path_buf = std::path::PathBuf::from(openable);
     if !path_buf.is_absolute() {
         return Err("Only absolute paths are allowed".to_string());
     }
     if !path_buf.exists() {
-        return Err(format!("Path does not exist: {trimmed}"));
+        return Err(format!("Path does not exist: {openable}"));
     }
 
-    tauri_plugin_opener::open_path(trimmed, None::<&str>)
+    tauri_plugin_opener::open_path(openable, None::<&str>)
         .map_err(|e| format!("Failed to open path: {e}"))?;
 
     Ok(())
