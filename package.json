@@ -44,6 +44,7 @@
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives",
     "lint:fix": "eslint . --ext ts,tsx --fix",
     "i18n:audit": "node scripts/audit-i18n.cjs",
+    "i18n:standards": "node .agents/skills/i18n-language-standards/scripts/validate_i18n_standards.cjs",
     "format": "prettier --write --log-level warn .",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\" --ignore-path .prettierignore",
     "format:check:all": "prettier --check .",
