@@ -29,12 +29,22 @@ pub fn create_run_shell_tool() -> MCPTool {
             ),
         ),
     );
+    props.insert(
+        "cwd".to_string(),
+        string_prop(
+            None,
+            None,
+            Some(
+                "Optional working directory for THIS call only (under the session workspace). Directory changes inside the command still do not persist to the next call.",
+            ),
+        ),
+    );
 
     MCPTool {
         name: "runShell".to_string(),
         title: Some("Run Shell Command (Isolated)".to_string()),
-        description: "Run a synchronous shell command (bash/sh). Stateless — each call starts fresh at workspace root.\n\
-                       Use 'cd dir && command' for subdirectories.\n\
+        description: "Run a synchronous shell command (bash/sh). Stateless — each call starts fresh at workspace root (or at optional cwd).\n\
+                       `cd` inside a command does NOT persist across tool calls. Prefer cwd='subdir' or 'cd dir && command'.\n\
                        Two outcomes:\n\
                        1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
                        2) Still running after the sync timeout: response includes processId; only then use workspace__waitForProcess/workspace__readProcessOutput/workspace__stopProcess.\n\
@@ -152,13 +162,23 @@ pub fn create_spawn_process_tool() -> MCPTool {
             Some("Optional label shown in spawnProcess/listProcesses results. Control tools still require the returned processId."),
         ),
     );
+    props.insert(
+        "cwd".to_string(),
+        string_prop(
+            None,
+            None,
+            Some(
+                "Optional working directory for THIS process only (under the session workspace). Starts from workspace root when omitted.",
+            ),
+        ),
+    );
 
     MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
         description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
                        Optional name is a label only; workspace__waitForProcess, workspace__stopProcess, and workspace__readProcessOutput still require processId.\n\
-                       Stateless — starts from workspace root each call. No interactive input.\n\
+                       Stateless — starts from workspace root (or optional cwd) each call. No interactive input.\n\
                        Use workspace__waitForProcess(processId) to wait for completion, workspace__readProcessOutput(processId) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
@@ -196,6 +216,16 @@ pub fn create_run_powershell_tool() -> MCPTool {
             ),
         ),
     );
+    props.insert(
+        "cwd".to_string(),
+        string_prop(
+            None,
+            None,
+            Some(
+                "Optional working directory for THIS call only (under the session workspace). Set-Location / cd inside the command still do not persist to the next call.",
+            ),
+        ),
+    );
 
     MCPTool {
         name: "runPowerShell".to_string(),
@@ -204,7 +234,8 @@ pub fn create_run_powershell_tool() -> MCPTool {
                        Guidelines:\n\
                        - Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.\n\
                        - Access environment variables using '$env:VARNAME'.\n\
-                       - Each call starts fresh at the workspace root. For persistent state, use workspace__runInPersistentPowerShell.\n\
+                       - Each call starts fresh at the workspace root (or at optional cwd). `cd`/`Set-Location` does NOT persist across tool calls.\n\
+                       - Prefer cwd='subdir' when the next commands need a different directory, or use workspace__runInPersistentPowerShell for sticky state.\n\
                        Two outcomes:\n\
                        1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
                        2) Still running after the sync timeout: response includes processId; only then use workspace__waitForProcess/workspace__readProcessOutput/workspace__stopProcess.\n\
@@ -317,13 +348,23 @@ pub fn create_spawn_process_tool() -> MCPTool {
             Some("Optional label shown in spawnProcess/listProcesses results. Control tools still require the returned processId."),
         ),
     );
+    props.insert(
+        "cwd".to_string(),
+        string_prop(
+            None,
+            None,
+            Some(
+                "Optional working directory for THIS process only (under the session workspace). Starts from workspace root when omitted.",
+            ),
+        ),
+    );
 
     MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
         description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
                        Optional name is a label only; workspace__waitForProcess, workspace__stopProcess, and workspace__readProcessOutput still require processId.\n\
-                       Stateless — starts from workspace root each call. No interactive input.\n\
+                       Stateless — starts from workspace root (or optional cwd) each call. No interactive input.\n\
                        Use workspace__waitForProcess(processId) to wait for completion, workspace__readProcessOutput(processId) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),

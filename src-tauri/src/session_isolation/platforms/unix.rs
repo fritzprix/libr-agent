@@ -20,7 +20,7 @@ pub async fn create_basic_isolated_command(
     let mut cmd = AsyncCommand::new(shell_type.command());
 
     // Set working directory
-    cmd.current_dir(&config.workspace_path);
+    cmd.current_dir(config.effective_working_directory());
 
     // Apply environment isolation: clear all inherited environment variables so that
     // host-level secrets (e.g., API keys, tokens, credentials) are not exposed inside
@@ -68,7 +68,7 @@ pub async fn create_basic_isolated_command(
     }
 
     // Keep the host home directory for tool config discovery, and pass through host temp variable.
-    cmd.env("PWD", &config.workspace_path);
+    cmd.env("PWD", config.effective_working_directory());
     if let Ok(sys_tmpdir) = std::env::var("TMPDIR") {
         cmd.env("TMPDIR", sys_tmpdir);
     }

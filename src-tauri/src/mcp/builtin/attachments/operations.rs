@@ -161,7 +161,9 @@ pub async fn add_content(
             size: final_size as usize,
             content: &content_text,
             chunks,
-            src_url: args.src_url.clone(),
+            // UI uploads send fileUrl; MCP/API may send srcUrl. Persist either so
+            // list/read can expose localPath for binary_or_unparsed fallbacks.
+            src_url: args.src_url.clone().or_else(|| args.file_url.clone()),
         })
         .await
     {

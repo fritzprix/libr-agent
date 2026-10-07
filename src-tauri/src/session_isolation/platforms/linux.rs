@@ -46,7 +46,8 @@ pub async fn create_high_isolated_command(
     cmd.args(&config.args);
 
     // Set environment and working directory
-    cmd.current_dir(&config.workspace_path);
+    let cwd = config.effective_working_directory();
+    cmd.current_dir(cwd);
 
     // Apply environment isolation
     crate::utils::env::apply_isolated_env_async(&mut cmd);
@@ -54,7 +55,7 @@ pub async fn create_high_isolated_command(
     // Always ensure PATH is present so GUI-launched sessions can still find user-installed tools.
     cmd.env("PATH", crate::utils::env::get_effective_path_os());
 
-    cmd.env("PWD", &config.workspace_path);
+    cmd.env("PWD", cwd);
 
     for (key, value) in &config.env_vars {
         cmd.env(key, value);
