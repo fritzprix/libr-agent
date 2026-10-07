@@ -134,6 +134,46 @@ fn latest_session_output_prefers_report_result_over_earlier_assistant_text() {
 }
 
 #[test]
+fn latest_session_output_prefers_structured_report_result_over_spilled_text() {
+    let report_tool = json!({
+        "id": "tool-report-structured",
+        "role": "tool",
+        "content": [
+            {
+                "type": "text",
+                "text": "Tool output spilled to `.libragent/tool-results/call_x.txt` (too large)."
+            },
+            {
+                "type": "resource",
+                "resource": {
+                    "uri": "ui://result/structured-1",
+                    "mimeType": "text/plain",
+                    "text": ""
+                },
+                "serviceInfo": {
+                    "serverName": "ui",
+                    "toolName": "reportResult",
+                    "backendType": "BuiltInRust"
+                }
+            }
+        ],
+        "metadata": {
+            "structuredContent": {
+                "type": "reportResult",
+                "status": "success",
+                "result": "## Structured deliverable body"
+            }
+        }
+    });
+    let earlier_asst = assistant_json("asst-old", "Earlier assistant chatter should lose.");
+
+    assert_eq!(
+        latest_session_output(&[report_tool, earlier_asst]),
+        "## Structured deliverable body"
+    );
+}
+
+#[test]
 fn latest_session_output_falls_back_to_report_result_text_without_markers() {
     // When the summary format drifts (no Result:/STOP markers), still prefer
     // the reportResult tool text over earlier assistant narration.
