@@ -86,6 +86,7 @@ async fn docker_workspace_run_shell_smoke_test() {
         .create_isolated_command(IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
+            working_directory: None,
             command:
                 "pwd && echo \"$LIBRAGENT_DOCKER_SMOKE\" > docker-smoke.txt && cat docker-smoke.txt"
                     .to_string(),
@@ -408,6 +409,7 @@ async fn docker_workspace_sh_fallback_smoke_test() {
         .create_isolated_command(IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
+            working_directory: None,
             command: "pwd && echo sh-ok > sh-fallback.txt && cat sh-fallback.txt".to_string(),
             args: Vec::new(),
             env_vars: HashMap::new(),

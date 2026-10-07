@@ -256,6 +256,54 @@ pub async fn effective_command_cwd(session_id: &str, host_workspace: &Path) -> S
     effective_workspace_root_with_docker_root(is_docker, host_workspace, &docker_root)
 }
 
+/// Resolve optional `cwd` for host-isolated `runShell` / `runPowerShell`.
+///
+/// Relative paths are anchored at the session workspace. Absolute paths must stay
+/// inside that workspace. Returns `None` when `cwd` is omitted/blank.
+pub fn resolve_isolated_shell_cwd(
+    workspace: &Path,
+    cwd: Option<&str>,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let Some(raw) = cwd.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+
+    let candidate = {
+        let path = std::path::Path::new(raw);
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            workspace.join(path)
+        }
+    };
+
+    let canonical_workspace =
+        std::fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    let canonical_cwd = std::fs::canonicalize(&candidate).map_err(|e| {
+        format!(
+            "cwd '{}' does not exist or cannot be resolved: {e}",
+            candidate.display()
+        )
+    })?;
+
+    if !canonical_cwd.is_dir() {
+        return Err(format!(
+            "cwd '{}' is not a directory",
+            canonical_cwd.display()
+        ));
+    }
+
+    if !canonical_cwd.starts_with(&canonical_workspace) {
+        return Err(format!(
+            "cwd '{}' escapes the session workspace '{}'",
+            canonical_cwd.display(),
+            canonical_workspace.display()
+        ));
+    }
+
+    Ok(Some(canonical_cwd))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -357,6 +405,36 @@ mod tests {
         let host = PathBuf::from("/home/user/project");
         assert_eq!(effective_workspace_root(true, &host), DOCKER_WORKSPACE_ROOT);
         assert_eq!(effective_workspace_root(false, &host), "/home/user/project");
+    }
+
+    #[test]
+    fn test_resolve_isolated_shell_cwd_relative_and_escape() {
+        let root = tempdir().expect("tempdir");
+        let nested = root.path().join("nested");
+        std::fs::create_dir_all(&nested).expect("mkdir nested");
+
+        let resolved = resolve_isolated_shell_cwd(root.path(), Some("nested"))
+            .expect("resolve ok")
+            .expect("some cwd");
+        assert_eq!(
+            std::fs::canonicalize(&resolved).unwrap(),
+            std::fs::canonicalize(&nested).unwrap()
+        );
+
+        assert!(resolve_isolated_shell_cwd(root.path(), None)
+            .unwrap()
+            .is_none());
+
+        let outside = tempdir().expect("outside");
+        let err = resolve_isolated_shell_cwd(
+            root.path(),
+            Some(outside.path().to_str().expect("utf8 path")),
+        )
+        .expect_err("escape must fail");
+        assert!(
+            err.contains("escapes the session workspace"),
+            "unexpected err: {err}"
+        );
     }
 
     #[test]

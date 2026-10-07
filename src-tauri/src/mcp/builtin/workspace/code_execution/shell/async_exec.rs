@@ -42,15 +42,53 @@ impl WorkspaceServer {
             })
             .unwrap_or_default();
 
+        let requested_cwd = _args.get("cwd").and_then(|v| v.as_str());
+        if requested_cwd.is_some() && utils::is_session_docker_isolated(&session_id).await {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "cwd is not supported for Docker-isolated sessions",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Chain directory changes in one command (e.g. 'cd subdir && command').".to_string(),
+                "Or use a persistent shell tool for a sticky working directory.".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
+        let working_directory =
+            match utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd) {
+                Ok(cwd) => cwd,
+                Err(message) => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        message,
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Pass cwd as a path under the session workspace (relative or absolute)."
+                            .to_string(),
+                        "Create the directory first with workspace__createDirectory if needed."
+                            .to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            };
+
+        // Policy after cwd resolve so relative path checks use the real working dir.
         if let Some(result) = self.apply_shell_policy_block(
             "spawnProcess",
             command,
             &workspace_path,
-            None,
+            working_directory.as_deref(),
             Some(&env_vars),
         ) {
             return Ok(result);
         }
+
+        let reported_cwd = working_directory
+            .as_ref()
+            .map(|path| path.display().to_string());
 
         // Check concurrent process limit (max 20 per session)
         const MAX_CONCURRENT_PROCESSES: usize = 20;
@@ -120,6 +158,7 @@ impl WorkspaceServer {
         let isolation_config = IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
+            working_directory,
             command: normalized_command.clone(),
             args: vec![],
             env_vars,
@@ -346,8 +385,13 @@ impl WorkspaceServer {
         // Invalidate service context cache to reflect new process
         self.invalidate_context_cache().await;
 
-        let cwd =
-            super::super::super::utils::effective_command_cwd(&session_id, &workspace_path).await;
+        let cwd = match &reported_cwd {
+            Some(cwd) => cwd.clone(),
+            None => {
+                super::super::super::utils::effective_command_cwd(&session_id, &workspace_path)
+                    .await
+            }
+        };
 
         // Return immediate response with process_id
         let hint = SuccessHint::new(

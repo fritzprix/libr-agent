@@ -17,6 +17,7 @@ use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_s
 
 impl WorkspaceServer {
     /// Execute shell commands with isolation
+    #[allow(clippy::too_many_arguments)] // isolation/timeout/env/cwd are call-site knobs, not worth a wrapper yet
     pub(crate) async fn execute_shell_with_isolation(
         &self,
         command: &str,
@@ -25,6 +26,7 @@ impl WorkspaceServer {
         timeout_secs: u64,
         session_id: &str,
         env_vars: HashMap<String, String>,
+        working_directory: Option<std::path::PathBuf>,
     ) -> Result<MCPResult, String> {
         let session_id = session_id.to_string();
 
@@ -36,11 +38,16 @@ impl WorkspaceServer {
             tool_name,
             command,
             &workspace_path,
-            None,
+            working_directory.as_deref(),
             Some(&env_vars),
         ) {
             return Ok(result);
         }
+
+        // Preserve for response JSON before moving into IsolatedProcessConfig.
+        let reported_cwd = working_directory
+            .as_ref()
+            .map(|path| path.display().to_string());
 
         // Normalize shell command
         let normalized_command = normalization::normalize_shell_command(command);
@@ -108,6 +115,7 @@ impl WorkspaceServer {
         let isolation_config = IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
+            working_directory,
             command: normalized_command,
             args: vec![],
             env_vars,
@@ -383,9 +391,16 @@ impl WorkspaceServer {
                     }
                 };
 
-                let cwd =
-                    super::super::super::utils::effective_command_cwd(&session_id, &workspace_path)
-                        .await;
+                let cwd = match &reported_cwd {
+                    Some(cwd) => cwd.clone(),
+                    None => {
+                        super::super::super::utils::effective_command_cwd(
+                            &session_id,
+                            &workspace_path,
+                        )
+                        .await
+                    }
+                };
 
                 let status_label = if interrupted {
                     "interrupted".to_string()

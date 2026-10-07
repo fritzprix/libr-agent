@@ -8,6 +8,14 @@ use crate::mcp::types::MCPResult;
 use log::error;
 use serde_json::Value;
 
+fn file_url_to_local_path(src_url: &str) -> Option<String> {
+    if src_url.starts_with("file://") {
+        super::helpers::extract_file_path_from_url(src_url).ok()
+    } else {
+        None
+    }
+}
+
 pub async fn list_content(
     server: &AttachmentsServer,
     params: Value,
@@ -84,14 +92,20 @@ pub async fn list_content(
             } else {
                 item.preview.clone()
             };
+            let local_path = item
+                .src_url
+                .as_deref()
+                .and_then(file_url_to_local_path)
+                .unwrap_or_else(|| "(none)".to_string());
             format!(
-                "[{}] ID: {}\n    Title: {}\n    Size: {} bytes, {} lines\n    Line Range: 1-{}\n    Preview: {}\n    Created: {}",
+                "[{}] ID: {}\n    Title: {}\n    Size: {} bytes, {} lines\n    Line Range: 1-{}\n    Local Path: {}\n    Preview: {}\n    Created: {}",
                 idx + 1,
                 item.id,
                 item.filename,
                 item.size,
                 item.line_count,
                 item.line_count,
+                local_path,
                 preview_text,
                 item.uploaded_at
             )
@@ -101,6 +115,7 @@ pub async fn list_content(
     let content_list: Vec<serde_json::Value> = contents
         .into_iter()
         .map(|item| {
+            let local_path = item.src_url.as_deref().and_then(file_url_to_local_path);
             serde_json::json!({
                 "contentId": item.id,
                 "sessionId": item.session_id,
@@ -111,7 +126,9 @@ pub async fn list_content(
                 "preview": item.preview,
                 "uploadedAt": item.uploaded_at,
                 "chunkCount": item.chunk_count,
-                "lastAccessedAt": item.last_accessed_at
+                "lastAccessedAt": item.last_accessed_at,
+                "srcUrl": item.src_url,
+                "localPath": local_path
             })
         })
         .collect();
@@ -223,6 +240,47 @@ pub async fn read_content(
         }
     };
     let total_lines = content_item.line_count;
+
+    // Empty extract (encrypted/scanned/binary): do not emit the misleading
+    // "Requested range [1-0] / File has 0 lines" storage error — give agents a
+    // structured binary_or_unparsed status and optional local path fallback.
+    if total_lines == 0 {
+        let mime_type = content_item.mime_type.clone();
+        let size_bytes = content_item.size;
+        let src_url = content_item.src_url.clone();
+        let local_path = src_url.as_deref().and_then(file_url_to_local_path);
+        drop(storage);
+        let mut guidance = vec![
+            "Text extraction yielded 0 lines (file may be encrypted, scanned, or binary)."
+                .to_string(),
+            "Do not treat this as a zero-byte or corrupted attachment solely from lineCount."
+                .to_string(),
+        ];
+        if let Some(ref path) = local_path {
+            guidance.push(format!(
+                "Inspect the original file with workspace tools at localPath: {path}"
+            ));
+        } else {
+            guidance.push(
+                "No localPath is available on this attachment; ask the user for the source file or re-attach with a file URL."
+                    .to_string(),
+            );
+        }
+        let message = format!(
+            "Attachment '{}' has no extractable text (0 lines). mimeType={}, size={} bytes.",
+            args.content_id, mime_type, size_bytes
+        );
+        let hint = SuccessHint::new(message, guidance);
+        return Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
+            "status": "binary_or_unparsed",
+            "contentId": normalized_content_id,
+            "mimeType": mime_type,
+            "sizeBytes": size_bytes,
+            "lineCount": 0,
+            "srcUrl": src_url,
+            "localPath": local_path
+        }))));
+    }
 
     let content = match storage
         .read_content(
