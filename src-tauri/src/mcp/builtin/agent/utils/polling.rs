@@ -41,9 +41,7 @@ pub fn should_promote_wait_timeout_to_terminal(status: &str) -> bool {
 /// (and covered by unit tests without a live [`AgentSessionManager`]).
 ///
 /// The `u64` is a loop-wake placeholder (`1`); callers currently discard it.
-pub fn promote_settled_session_after_wait_timeout(
-    session: Option<Value>,
-) -> Option<(Value, u64)> {
+pub fn promote_settled_session_after_wait_timeout(session: Option<Value>) -> Option<(Value, u64)> {
     let session = session?;
     let status = extract_session_status(&session);
     if should_promote_wait_timeout_to_terminal(&status) {
