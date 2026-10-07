@@ -8,6 +8,7 @@
 use std::ffi::{OsStr, OsString};
 use tauri_mcp_agent_lib::utils::env::{
     compose_windows_effective_path, get_effective_path, get_isolated_env,
+    strip_windows_apps_shim_dirs,
 };
 use tauri_mcp_agent_lib::utils::windows_path_discovery::find_python_install_root;
 use tauri_mcp_agent_lib::utils::windows_registry_path::get_windows_registry_path_os;
@@ -23,13 +24,18 @@ fn test_effective_path_is_not_empty() {
 
 #[test]
 fn test_isolated_env_uses_effective_path() {
-    let effective_path = get_effective_path();
-    let isolated_path = get_isolated_env()
+    let expected_path = strip_windows_apps_shim_dirs(&get_effective_path());
+    let path_entries: Vec<_> = get_isolated_env()
         .into_iter()
-        .find_map(|(key, value)| (key == "PATH").then_some(value))
-        .expect("isolated env should always include PATH");
+        .filter(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+        .collect();
 
-    assert_eq!(isolated_path, effective_path);
+    assert_eq!(
+        path_entries.len(),
+        1,
+        "isolated env must expose a single PATH entry, got {path_entries:?}"
+    );
+    assert_eq!(path_entries[0].1, expected_path);
 }
 
 #[test]

@@ -306,7 +306,10 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
             get_effective_path()
         }
     };
-    if let Some(entry) = envs.iter_mut().find(|(k, _)| k == "PATH") {
+    if let Some(entry) = envs
+        .iter_mut()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+    {
         entry.1 = effective_path;
     } else {
         envs.push(("PATH".to_string(), effective_path));
@@ -360,7 +363,7 @@ mod tests {
         assert!(isolated.iter().all(|(k, _)| k != "MY_PRIVATE_VAR"));
 
         // Verify some essential vars are kept if they exist in the host
-        assert!(isolated.iter().any(|(k, _)| k == "PATH"));
+        assert!(isolated.iter().any(|(k, _)| k.eq_ignore_ascii_case("PATH")));
     }
 
     #[test]
