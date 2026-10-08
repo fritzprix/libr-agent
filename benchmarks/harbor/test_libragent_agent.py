@@ -81,25 +81,29 @@ def test_workflow_complete_does_not_treat_paused_or_busy_as_done() -> None:
 
 def test_resolve_max_input_context_uses_per_task_map() -> None:
     assert (
-        resolve_max_input_context("compaction-haystack-v1", env={})
-        == COMPACTION_TASK_MAX_INPUT_CONTEXT["haystack"]
+        resolve_max_input_context("compaction-cascade-v1", env={})
+        == COMPACTION_TASK_MAX_INPUT_CONTEXT["cascade"]
     )
     assert (
-        resolve_max_input_context("compaction-puzzle-chain-v1__abc", env={})
-        == COMPACTION_TASK_MAX_INPUT_CONTEXT["puzzle-chain"]
+        resolve_max_input_context("compaction-mutchain-v1__abc", env={})
+        == COMPACTION_TASK_MAX_INPUT_CONTEXT["mutchain"]
+    )
+    assert (
+        resolve_max_input_context("compaction-codesweep-v1", env={})
+        == COMPACTION_TASK_MAX_INPUT_CONTEXT["codesweep"]
     )
 
 
 def test_resolve_max_input_context_matches_versioned_and_unversioned_slugs() -> None:
-    expected = COMPACTION_TASK_MAX_INPUT_CONTEXT["haystack"]
-    assert resolve_max_input_context("compaction-haystack", env={}) == expected
-    assert resolve_max_input_context("compaction-haystack-v2", env={}) == expected
+    expected = COMPACTION_TASK_MAX_INPUT_CONTEXT["cascade"]
+    assert resolve_max_input_context("compaction-cascade", env={}) == expected
+    assert resolve_max_input_context("compaction-cascade-v2", env={}) == expected
 
 
 def test_resolve_max_input_context_env_overrides_task_map() -> None:
     assert (
         resolve_max_input_context(
-            "compaction-haystack-v1",
+            "compaction-cascade-v1",
             env={"LIBRAGENT_BENCH_MAX_INPUT_CONTEXT": "16000"},
         )
         == 16_000
