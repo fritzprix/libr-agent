@@ -1805,7 +1805,9 @@
     "unknownError": "Ocurrió un error desconocido.",
     "retrying": "Reintentando...",
     "tryAgain": "Intentar de nuevo",
-    "goToSettings": "Configurar clave API en Configuración"
+    "goToSettings": "Configurar clave API en Configuración",
+    "invalidContextState": "Esta sesión necesita un límite de contexto mayor. En Ajustes, sube el contexto de entrada máx. y vuelve a intentarlo.",
+    "openContextSettings": "Abrir ajustes de contexto"
   },
   "knowledge": {
     "untitledEntry": "Entrada de conocimiento sin título",

@@ -710,8 +710,8 @@ async fn check_token_limit(
     ) {
         return Err(
             AgentRuntimeError::new(
-                AgentRuntimeErrorType::ValidationError,
-                "Prepared payload exceeds the effective context limit, but there is no ownership-safe compaction split that can reduce the live prompt. This session state is invalid and must not be committed.",
+                AgentRuntimeErrorType::ContextLimitError,
+                "This session needs a larger context limit. Open Settings, raise Max Input Context, then try again.",
             )
             .with_code("INVALID_CONTEXT_STATE")
             .with_original_error(serde_json::json!({
@@ -732,6 +732,7 @@ async fn check_token_limit(
                 // checkpoint-only hard gate. Resume-fit is authoritative.
                 "requiresPromptTokenCheckpoint": false,
                 "requiresOwnershipSafeResumeFitSplit": true,
+                "technicalMessage": "Prepared payload exceeds the effective context limit, but there is no ownership-safe compaction split that can reduce the live prompt. This session state is invalid and must not be committed.",
             })),
         );
     }

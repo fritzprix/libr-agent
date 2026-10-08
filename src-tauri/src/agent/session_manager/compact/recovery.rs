@@ -28,14 +28,21 @@ pub fn should_retry_budget_related_blocking_compaction(
         return false;
     }
 
-    if matches!(error.error_type, AgentRuntimeErrorType::ContextLimitError) {
-        return true;
-    }
-
     let error_code = error
         .details
         .as_ref()
         .and_then(|details| details.error_code.as_deref());
+
+    // Hard session-state failure: no ownership-safe resume-fit split exists.
+    // Retrying compact cannot create one — do not schedule another attempt.
+    if matches!(error_code, Some("INVALID_CONTEXT_STATE")) {
+        return false;
+    }
+
+    if matches!(error.error_type, AgentRuntimeErrorType::ContextLimitError) {
+        return true;
+    }
+
     if matches!(
         error_code,
         Some("CONTEXT_LIMIT_EXCEEDED") | Some("RUST_PREFLIGHT_CONTEXT_LIMIT")

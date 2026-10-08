@@ -1805,7 +1805,9 @@
     "unknownError": "发生未知错误。",
     "retrying": "正在重试...",
     "tryAgain": "重试",
-    "goToSettings": "在设置中配置 API 密钥"
+    "goToSettings": "在设置中配置 API 密钥",
+    "invalidContextState": "此会话需要更大的上下文上限。请在设置中提高最大输入上下文，然后重试。",
+    "openContextSettings": "打开上下文设置"
   },
   "knowledge": {
     "untitledEntry": "未命名知识条目",

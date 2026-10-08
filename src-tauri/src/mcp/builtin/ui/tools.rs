@@ -101,7 +101,8 @@ pub fn report_result_tool() -> MCPTool {
                 "When the request has checkable acceptance criteria, put them in `criteria` and verification evidence (or unmet gaps) in `proof`. Skip both when the outcome is not objectively verifiable.",
                 "If a compact summary is in context and intent/criteria are unclear or unverified, read the latest `.libragent/pre_compaction_epoch_*.md` (context-recall) before `status=success`.",
                 "If your task produced deliverable files, pass their workspace-relative paths to `export_paths` to attach them with Preview/Open/Download actions.",
-                "After this tool returns: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",
+                "For status=success, every `export_paths` entry must already exist on disk — write files first; missing paths reject success without settling the session.",
+                "After a successful return: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",
             ],
             &[
                 "If you still need user input, use ui__presentInteractive with `interaction` instead.",

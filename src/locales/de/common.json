@@ -1805,7 +1805,9 @@
     "unknownError": "Ein unbekannter Fehler ist aufgetreten.",
     "retrying": "Wird wiederholt...",
     "tryAgain": "Erneut versuchen",
-    "goToSettings": "API-Schlüssel in Einstellungen konfigurieren"
+    "goToSettings": "API-Schlüssel in Einstellungen konfigurieren",
+    "invalidContextState": "Diese Sitzung braucht ein größeres Kontextlimit. Erhöhen Sie in den Einstellungen Max. Eingabekontext und versuchen Sie es erneut.",
+    "openContextSettings": "Kontexteinstellungen öffnen"
   },
   "knowledge": {
     "untitledEntry": "Unbenannter Wissenseintrag",

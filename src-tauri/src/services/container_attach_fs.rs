@@ -207,11 +207,21 @@ pub async fn pull_container_file_to_host(
 }
 
 fn is_missing_container_path_error(err: &str) -> bool {
+    // Spawn failures look like "Failed to run docker cp …: No such file or directory
+    // (os error 2)" when the docker binary is absent (macOS CI). That is not a
+    // missing path inside the container; treating it as soft-ok lets stale staging
+    // pass an exists() probe.
+    if err.contains("Failed to run docker") {
+        return false;
+    }
     let lower = err.to_ascii_lowercase();
+    if lower.contains("no such container") {
+        return false;
+    }
     lower.contains("no such file")
         || lower.contains("cannot find the file")
         || lower.contains("could not find the file")
-        || lower.contains("does not exist")
+        || (lower.contains("does not exist") && !lower.contains("container"))
 }
 
 /// List directory entries inside the attached container.
@@ -557,8 +567,24 @@ drwxr-xr-x 2 root root 4096 Jan  1 00:00 src
         assert!(is_missing_container_path_error(
             "docker cp failed: No such file or directory"
         ));
+        assert!(is_missing_container_path_error(
+            "docker cp failed: Error response from daemon: Could not find the file /app/work/task.txt in container abc"
+        ));
         assert!(!is_missing_container_path_error(
             "docker cp failed: permission denied"
+        ));
+        assert!(!is_missing_container_path_error(
+            "docker cp failed: Error response from daemon: No such container: xyz"
+        ));
+        assert!(!is_missing_container_path_error(
+            "docker cp failed: Error: container xyz does not exist"
+        ));
+        // docker binary missing — must not be classified as a missing remote file.
+        assert!(!is_missing_container_path_error(
+            "Failed to run docker cp nosuch:/app/work/task.txt /tmp/task.txt: No such file or directory (os error 2)"
+        ));
+        assert!(!is_missing_container_path_error(
+            "Failed to run docker cp nosuch:/app/work/task.txt C:\\task.txt: The system cannot find the file specified. (os error 2)"
         ));
     }
 }

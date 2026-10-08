@@ -1,7 +1,18 @@
+use crate::common;
 use serde_json::json;
+use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResult};
+use tauri_mcp_agent_lib::models::workspace_isolation::{
+    DockerWorkspaceConfig, WorkspaceIsolationMode,
+};
+use tauri_mcp_agent_lib::repositories::{
+    SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
+};
+use tauri_mcp_agent_lib::services::workspace_service::WorkspaceService;
+use tauri_mcp_agent_lib::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER;
+use tauri_mcp_agent_lib::set_session_repository;
 
 fn extract_text(result: &MCPResult) -> String {
     result
@@ -393,6 +404,8 @@ async fn report_result_renders_and_instructs_stop() {
 async fn report_result_with_export_paths_populates_deliverables() {
     let server = UiServer::new();
 
+    // No session_id → FS is not probed; missing paths must not reject success
+    // (host FS stay untouched; checkSession contracts still use the success path).
     let result = server
         .call_tool(
             "reportResult",
@@ -424,6 +437,480 @@ async fn report_result_with_export_paths_populates_deliverables() {
     assert_eq!(deliverables[1]["path"], "non_existent_file.pdf");
     assert_eq!(deliverables[1]["exists"], false);
     assert_eq!(deliverables[1]["absolute_path"], serde_json::Value::Null);
+}
+
+fn report_result_test_session(session_id: &str) -> SessionMetadata {
+    SessionMetadata {
+        id: session_id.to_string(),
+        name: Some("reportResult export_paths test".to_string()),
+        status: SessionStatus::Idle,
+        model: "gpt-4.1".to_string(),
+        provider: "openai".to_string(),
+        assistant_id: None,
+        parent_session_id: None,
+        lineage_id: None,
+        depth: None,
+        max_depth: None,
+        max_fanout: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
+        created_at: 1,
+        updated_at: 1,
+        last_viewed_at: None,
+        last_message_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
+        is_bookmarked: false,
+        execution_mode: ExecutionMode::Normal,
+        workspace_override: None,
+        workspace_isolation: WorkspaceIsolationMode::Host,
+        docker_config: None,
+        docker_container_name: None,
+        docker_host_workspace_path: None,
+    }
+}
+
+fn report_result_docker_app_session(
+    session_id: &str,
+    host_workspace: &std::path::Path,
+) -> SessionMetadata {
+    let mut session = report_result_test_session(session_id);
+    session.name = Some("reportResult Docker /app export_paths test".to_string());
+    session.workspace_isolation = WorkspaceIsolationMode::Docker;
+    session.docker_config = Some(DockerWorkspaceConfig {
+        image: Some("ubuntu:24.04".to_string()),
+        attach_container: None,
+        workdir: Some("/app".to_string()),
+        manage_lifecycle: Some(false),
+        env: Default::default(),
+        port_bindings: Vec::new(),
+    });
+    session.docker_host_workspace_path = Some(host_workspace.to_string_lossy().to_string());
+    session
+}
+
+#[tokio::test]
+async fn report_result_success_rejects_missing_export_paths_without_settling() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(repo.clone());
+
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let session_id = "report-result-missing-export";
+    repo.upsert_session(&report_result_test_session(session_id))
+        .await
+        .expect("session upsert");
+    WorkspaceService::set_override(session_id, workspace.path().to_string_lossy().to_string())
+        .await
+        .expect("workspace override");
+
+    let server = UiServer::new();
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "status": "success",
+                "result": "Claimed answers.json was written.",
+                "export_paths": ["work/answers.json"]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("reportResult should return guided error MCPResult");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("export_paths not found"),
+        "error must name missing export_paths: {text}"
+    );
+    assert!(
+        !text.contains("STOP: Do not call any more tools"),
+        "must not emit STOP (would poison checkSession settle): {text}"
+    );
+    let content = result.content.as_ref().expect("error content");
+    assert!(
+        !content
+            .iter()
+            .any(|item| matches!(item, MCPContent::Resource { .. })),
+        "must omit ui://result Resource so RecurringStop does not settle"
+    );
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured error data");
+    assert_ne!(
+        structured.get("type").and_then(|v| v.as_str()),
+        Some("reportResult"),
+        "error must not look like an authoritative reportResult: {structured}"
+    );
+    assert!(
+        structured
+            .get("missing_export_paths")
+            .and_then(|v| v.as_array())
+            .is_some_and(|paths| paths
+                .iter()
+                .any(|p| p.as_str() == Some("work/answers.json"))),
+        "missing_export_paths should list the absent file: {structured}"
+    );
+
+    let _ = WorkspaceService::cancel_override(session_id).await;
+}
+
+#[tokio::test]
+async fn report_result_success_with_existing_export_path_keeps_checksession_markers() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(repo.clone());
+
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let work_dir = workspace.path().join("work");
+    std::fs::create_dir_all(&work_dir).expect("work dir");
+    std::fs::write(work_dir.join("answers.json"), b"{\"ok\":true}").expect("answers.json");
+
+    let session_id = "report-result-existing-export";
+    repo.upsert_session(&report_result_test_session(session_id))
+        .await
+        .expect("session upsert");
+    WorkspaceService::set_override(session_id, workspace.path().to_string_lossy().to_string())
+        .await
+        .expect("workspace override");
+
+    let server = UiServer::new();
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "status": "success",
+                "result": "## Haystack complete\n\nanswers.json written.",
+                "export_paths": ["work/answers.json"]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("reportResult should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("Result:\n## Haystack complete"),
+        "success path must keep Result: body for checkSession extract: {text}"
+    );
+    assert!(
+        text.contains("STOP: Do not call any more tools"),
+        "success path must keep STOP marker: {text}"
+    );
+    let content = result.content.expect("success content");
+    assert!(
+        content.iter().any(|item| matches!(
+            item,
+            MCPContent::Resource {
+                resource,
+                ..
+            } if resource.get("uri").and_then(|u| u.as_str()).is_some_and(|u| u.starts_with("ui://result/"))
+        )),
+        "success path must keep ui://result Resource for RecurringStop"
+    );
+    let structured = result
+        .structured_content
+        .expect("structured_content expected");
+    assert_eq!(
+        structured.get("type").and_then(|v| v.as_str()),
+        Some("reportResult")
+    );
+    assert_eq!(
+        structured["deliverables"][0]["exists"],
+        json!(true),
+        "existing export path should report exists=true: {structured}"
+    );
+
+    let _ = WorkspaceService::cancel_override(session_id).await;
+}
+
+#[tokio::test]
+async fn resolve_path_for_session_docker_custom_workdir() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(repo.clone());
+
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let session_id = "resolve-path-docker-app-workdir";
+    repo.upsert_session(&report_result_docker_app_session(
+        session_id,
+        workspace.path(),
+    ))
+    .await
+    .expect("session upsert");
+    WorkspaceService::set_override(session_id, workspace.path().to_string_lossy().to_string())
+        .await
+        .expect("workspace override");
+
+    let resolved =
+        WorkspaceService::resolve_path_for_session(session_id, "/app/output/result.json")
+            .await
+            .expect("Docker /app path should map to host staging");
+    assert_eq!(
+        resolved,
+        workspace.path().join("output").join("result.json"),
+        "container workdir path must map under host workspace"
+    );
+
+    let outside =
+        WorkspaceService::resolve_path_for_session(session_id, "/outside/secret.txt").await;
+    let err = outside.expect_err("paths outside Docker workdir / host roots must fail");
+    assert!(
+        err.contains(OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER)
+            || err.contains("File not found")
+            || err.contains("Access denied"),
+        "outside path must fail mapping or host allow-list: {err}"
+    );
+
+    // Host-absolute under docker staging must still resolve (not treated as
+    // container path outside /app).
+    let host_file = workspace.path().join("work").join("host_abs.txt");
+    std::fs::create_dir_all(host_file.parent().expect("parent")).expect("dirs");
+    std::fs::write(&host_file, b"ok").expect("write host file");
+    let host_abs = host_file.to_string_lossy().to_string();
+    let resolved_host = WorkspaceService::resolve_path_for_session(session_id, &host_abs)
+        .await
+        .expect("host absolute under docker staging workspace must resolve");
+    let canon_expected = tokio::fs::canonicalize(&host_file)
+        .await
+        .expect("canonicalize host file");
+    assert_eq!(
+        resolved_host, canon_expected,
+        "host staging absolute must pass authorized-root allow-list"
+    );
+
+    let _ = WorkspaceService::cancel_override(session_id).await;
+}
+
+#[tokio::test]
+async fn report_result_attach_sync_failure_rejects_without_settling() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(repo.clone());
+
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let work_dir = workspace.path().join("work");
+    std::fs::create_dir_all(&work_dir).expect("work dir");
+    // Stale staging copy would pass exists() if pull errors were ignored.
+    std::fs::write(work_dir.join("task.txt"), b"stale").expect("stale task.txt");
+
+    let session_id = "report-result-attach-sync-fail";
+    let mut session = report_result_docker_app_session(session_id, workspace.path());
+    session.docker_config = Some(DockerWorkspaceConfig {
+        image: None,
+        attach_container: Some("libragent-nonexistent-attach-container-xyz".to_string()),
+        workdir: Some("/app".to_string()),
+        manage_lifecycle: Some(false),
+        env: Default::default(),
+        port_bindings: Vec::new(),
+    });
+    session.docker_container_name = Some("libragent-nonexistent-attach-container-xyz".to_string());
+    repo.upsert_session(&session).await.expect("session upsert");
+    WorkspaceService::set_override(session_id, workspace.path().to_string_lossy().to_string())
+        .await
+        .expect("workspace override");
+
+    let server = UiServer::new();
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "status": "success",
+                "result": "Claimed /app/work/task.txt despite broken attach sync.",
+                "export_paths": ["/app/work/task.txt"]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("reportResult should return guided error MCPResult");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("attach sync failed"),
+        "must surface attach sync failure: {text}"
+    );
+    assert!(
+        !text.contains("STOP: Do not call any more tools"),
+        "must not emit STOP on attach sync failure: {text}"
+    );
+    let content = result.content.as_ref().expect("error content");
+    assert!(
+        !content
+            .iter()
+            .any(|item| matches!(item, MCPContent::Resource { .. })),
+        "must omit ui://result Resource so RecurringStop does not settle"
+    );
+
+    let _ = WorkspaceService::cancel_override(session_id).await;
+}
+
+#[tokio::test]
+async fn report_result_attach_container_absolute_export_path_success() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(repo.clone());
+
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let work_dir = workspace.path().join("work");
+    std::fs::create_dir_all(&work_dir).expect("work dir");
+    std::fs::write(work_dir.join("task.txt"), b"done").expect("task.txt");
+
+    let session_id = "report-result-docker-app-export-ok";
+    repo.upsert_session(&report_result_docker_app_session(
+        session_id,
+        workspace.path(),
+    ))
+    .await
+    .expect("session upsert");
+    WorkspaceService::set_override(session_id, workspace.path().to_string_lossy().to_string())
+        .await
+        .expect("workspace override");
+
+    let server = UiServer::new();
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "status": "success",
+                "result": "Task complete; /app/work/task.txt written.",
+                "export_paths": ["/app/work/task.txt"]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("reportResult should succeed for mapped Docker path");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("STOP: Do not call any more tools"),
+        "success path must keep STOP marker: {text}"
+    );
+    let structured = result
+        .structured_content
+        .expect("structured_content expected");
+    assert_eq!(
+        structured["deliverables"][0]["exists"],
+        json!(true),
+        "Docker /app export path on host staging should exist: {structured}"
+    );
+
+    let _ = WorkspaceService::cancel_override(session_id).await;
+}
+
+#[tokio::test]
+async fn report_result_attach_container_missing_export_path_rejects() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(repo.clone());
+
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let session_id = "report-result-docker-app-export-missing";
+    repo.upsert_session(&report_result_docker_app_session(
+        session_id,
+        workspace.path(),
+    ))
+    .await
+    .expect("session upsert");
+    WorkspaceService::set_override(session_id, workspace.path().to_string_lossy().to_string())
+        .await
+        .expect("workspace override");
+
+    let server = UiServer::new();
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "status": "success",
+                "result": "Claimed /app/work/absent.txt was written.",
+                "export_paths": ["/app/work/absent.txt"]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("reportResult should return guided error MCPResult");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("export_paths not found"),
+        "error must name missing export_paths: {text}"
+    );
+    assert!(
+        !text.contains("STOP: Do not call any more tools"),
+        "must not emit STOP (would poison checkSession settle): {text}"
+    );
+    let content = result.content.as_ref().expect("error content");
+    assert!(
+        !content
+            .iter()
+            .any(|item| matches!(item, MCPContent::Resource { .. })),
+        "must omit ui://result Resource so RecurringStop does not settle"
+    );
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured error data");
+    assert!(
+        structured
+            .get("missing_export_paths")
+            .and_then(|v| v.as_array())
+            .is_some_and(|paths| paths
+                .iter()
+                .any(|p| p.as_str() == Some("/app/work/absent.txt"))),
+        "missing_export_paths should list the absent Docker path: {structured}"
+    );
+
+    let _ = WorkspaceService::cancel_override(session_id).await;
+}
+
+#[tokio::test]
+async fn report_result_partial_allows_missing_export_paths() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(repo.clone());
+
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let session_id = "report-result-partial-missing-export";
+    repo.upsert_session(&report_result_test_session(session_id))
+        .await
+        .expect("session upsert");
+    WorkspaceService::set_override(session_id, workspace.path().to_string_lossy().to_string())
+        .await
+        .expect("workspace override");
+
+    let server = UiServer::new();
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "status": "partial",
+                "result": "Best-effort output; answers.json not written yet.",
+                "export_paths": ["work/answers.json"]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("partial reportResult should execute");
+
+    assert_eq!(result.is_error, Some(false));
+    let structured = result.structured_content.expect("structured_content");
+    assert_eq!(structured["status"], json!("partial"));
+    assert_eq!(structured["deliverables"][0]["exists"], json!(false));
+
+    let _ = WorkspaceService::cancel_override(session_id).await;
 }
 
 #[tokio::test]

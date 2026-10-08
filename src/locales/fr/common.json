@@ -1805,7 +1805,9 @@
     "unknownError": "Une erreur inconnue est survenue.",
     "retrying": "Nouvelle tentative...",
     "tryAgain": "Réessayer",
-    "goToSettings": "Configurer la clé API dans les Paramètres"
+    "goToSettings": "Configurer la clé API dans les Paramètres",
+    "invalidContextState": "Cette session nécessite une limite de contexte plus élevée. Augmentez le contexte d’entrée max dans les paramètres, puis réessayez.",
+    "openContextSettings": "Ouvrir les paramètres de contexte"
   },
   "knowledge": {
     "untitledEntry": "Entrée de connaissance sans titre",
