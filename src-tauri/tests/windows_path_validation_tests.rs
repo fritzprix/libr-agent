@@ -286,3 +286,121 @@ mod windows_workspace_glob {
         );
     }
 }
+
+mod attachment_workspace_path_exposure {
+    use std::fs;
+    use std::path::Path;
+    use tauri_mcp_agent_lib::mcp::builtin::attachments::helpers::{
+        exposed_src_url, exposed_workspace_path_from_src_url, path_is_within_workspace,
+        persistable_attachment_src_url,
+    };
+    use tempfile::tempdir;
+
+    fn path_to_file_url(path: &Path) -> String {
+        url::Url::from_file_path(path)
+            .expect("absolute path")
+            .to_string()
+    }
+
+    #[test]
+    fn exposes_relative_workspace_path_and_never_host_file_urls() {
+        let workspace = tempdir().expect("workspace tempdir");
+        let nested = workspace.path().join("attachments");
+        fs::create_dir_all(&nested).expect("mkdir attachments");
+        let inside = nested.join("note.txt");
+        fs::write(&inside, b"hi").expect("write inside");
+
+        let outside_root = tempdir().expect("outside tempdir");
+        let outside = outside_root.path().join("secret.txt");
+        fs::write(&outside, b"nope").expect("write outside");
+
+        let inside_url = path_to_file_url(&inside);
+        let outside_url = path_to_file_url(&outside);
+
+        assert_eq!(
+            exposed_workspace_path_from_src_url(&inside_url, workspace.path()).as_deref(),
+            Some("attachments/note.txt")
+        );
+        // Agent-facing srcUrl must not echo local file:// paths.
+        assert_eq!(exposed_src_url(Some(&inside_url)), None);
+        assert_eq!(exposed_src_url(Some(&outside_url)), None);
+        assert_eq!(
+            exposed_src_url(Some("https://example.com/doc.pdf")).as_deref(),
+            Some("https://example.com/doc.pdf")
+        );
+
+        assert_eq!(
+            exposed_workspace_path_from_src_url(&outside_url, workspace.path()),
+            None
+        );
+
+        assert_eq!(
+            persistable_attachment_src_url(None, Some(&outside_url), workspace.path()),
+            None
+        );
+        assert_eq!(
+            persistable_attachment_src_url(None, Some(&inside_url), workspace.path()).as_deref(),
+            Some(inside_url.as_str())
+        );
+        assert_eq!(
+            persistable_attachment_src_url(
+                Some("https://example.com/a"),
+                Some(&outside_url),
+                workspace.path()
+            )
+            .as_deref(),
+            Some("https://example.com/a")
+        );
+        // In-workspace file:// wins over remote so workspacePath can be derived.
+        assert_eq!(
+            persistable_attachment_src_url(
+                Some("https://example.com/a"),
+                Some(&inside_url),
+                workspace.path()
+            )
+            .as_deref(),
+            Some(inside_url.as_str())
+        );
+    }
+
+    #[test]
+    fn path_is_within_workspace_fail_closed_when_missing() {
+        let workspace = tempdir().expect("workspace");
+        let missing = workspace.path().join("does-not-exist.txt");
+        assert!(!path_is_within_workspace(&missing, workspace.path()));
+    }
+
+    #[test]
+    fn exposed_and_persistable_reject_raw_paths_and_non_http_schemes() {
+        let workspace = tempdir().expect("workspace");
+        let inside = workspace.path().join("ok.txt");
+        fs::write(&inside, b"ok").expect("write");
+        let inside_url = path_to_file_url(&inside);
+
+        assert_eq!(exposed_src_url(Some(r"C:\Windows\System32\cmd.exe")), None);
+        assert_eq!(exposed_src_url(Some("/etc/passwd")), None);
+        assert_eq!(exposed_src_url(Some("blob:https://example.com/1")), None);
+        assert_eq!(exposed_src_url(Some("data:text/plain,hi")), None);
+
+        // Case-insensitive file scheme still derives workspacePath, never echoed as srcUrl.
+        let upper = inside_url.replacen("file://", "FILE://", 1);
+        assert_eq!(
+            exposed_workspace_path_from_src_url(&upper, workspace.path()).as_deref(),
+            Some("ok.txt")
+        );
+        assert_eq!(exposed_src_url(Some(&upper)), None);
+
+        assert_eq!(
+            persistable_attachment_src_url(
+                Some(r"C:\secret.txt"),
+                Some("blob:https://example.com/x"),
+                workspace.path()
+            ),
+            None
+        );
+        assert_eq!(
+            persistable_attachment_src_url(Some(&upper), None, workspace.path()).as_deref(),
+            Some(upper.as_str())
+        );
+    }
+}

@@ -342,21 +342,18 @@ async function commitAttachmentToStore(
     }
   }
 
-  const result = await saveAgentFile(sessionId, filename, {
-    content,
-    fileUrl: content ? undefined : fileUrl,
-    metadata: {
-      mimeType,
-      size: fileSize,
-      uploadedAt: new Date().toISOString(),
-      filename,
-    },
-  });
-
+  // Retry workspace sync before save so backend can persist provenance for
+  // later workspacePath derivation on list/read.
   let resolvedWorkspacePath = workspacePath;
+  let resolvedFileUrl = fileUrl;
   if (!resolvedWorkspacePath && file) {
     try {
       resolvedWorkspacePath = await syncFileToWorkspace(file, sessionId);
+      const workspaceDir = await getWorkspaceDir(sessionId);
+      resolvedFileUrl = workspacePathToFileUrl(
+        workspaceDir,
+        resolvedWorkspacePath,
+      );
     } catch (error) {
       logger.warn(
         'Workspace sync failed (retry), continuing with content-store only',
@@ -364,6 +361,26 @@ async function commitAttachmentToStore(
       );
     }
   }
+
+  // Prefer a stable workspace file:// as srcUrl so attachments tools can expose
+  // workspacePath even when text content is indexed separately (no fileUrl body).
+  const workspaceSrcUrl =
+    resolvedFileUrl.toLowerCase().startsWith('file:') &&
+    !resolvedFileUrl.startsWith('blob:')
+      ? resolvedFileUrl
+      : undefined;
+
+  const result = await saveAgentFile(sessionId, filename, {
+    content,
+    fileUrl: content ? undefined : resolvedFileUrl,
+    srcUrl: workspaceSrcUrl,
+    metadata: {
+      mimeType,
+      size: fileSize,
+      uploadedAt: new Date().toISOString(),
+      filename,
+    },
+  });
 
   logger.debug('[AgentResourceAttachmentContext] saveAgentFile result:', {
     result,
@@ -381,7 +398,7 @@ async function commitAttachmentToStore(
     uploadedAt: result.uploadedAt ?? new Date().toISOString(),
     chunkCount: result.chunkCount,
     lastAccessedAt: new Date().toISOString(),
-    workspacePath: resolvedWorkspacePath,
+    workspacePath: result.workspacePath ?? resolvedWorkspacePath,
     agentAccess: buildIndexedAgentAccess(),
   };
 }

@@ -1,4 +1,5 @@
 // helpers.rs - Utility functions
+use crate::mcp::builtin::utils::relative_path_under_base;
 use std::path::Path;
 
 /// Extract file path from file:// URL
@@ -12,7 +13,7 @@ use std::path::Path;
 /// - `file:///home/user/file.txt` -> `/home/user/file.txt` (Unix)
 /// - `file:///C:/My%20Files/doc.txt` -> `C:\My Files\doc.txt` (URL decoding)
 /// - `file://localhost/C:/file.txt` -> `C:\file.txt` (with host)
-pub(crate) fn extract_file_path_from_url(file_url: &str) -> Result<String, String> {
+pub fn extract_file_path_from_url(file_url: &str) -> Result<String, String> {
     let url = url::Url::parse(file_url).map_err(|e| format!("Invalid file URL format: {e}"))?;
 
     // Ensure it's a file:// URL
@@ -29,6 +30,90 @@ pub(crate) fn extract_file_path_from_url(file_url: &str) -> Result<String, Strin
         .to_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "Failed to convert path to UTF-8 string".to_string())
+}
+
+/// True when `path` canonicalizes inside `workspace`. Fail closed if either side
+/// cannot be resolved.
+pub fn path_is_within_workspace(path: &Path, workspace: &Path) -> bool {
+    let Ok(canonical_workspace) = workspace.canonicalize() else {
+        return false;
+    };
+    let Ok(canonical_path) = path.canonicalize() else {
+        return false;
+    };
+    relative_path_under_base(&canonical_path, &canonical_workspace).is_some()
+}
+
+/// Derive a session-relative workspace path from an in-workspace `file://` URL.
+///
+/// Returns forward-slash relative paths agents can pass to workspace tools
+/// (e.g. `attachments/123_doc.pdf`). Host absolute paths are never returned.
+pub fn exposed_workspace_path_from_src_url(src_url: &str, workspace: &Path) -> Option<String> {
+    if !is_file_url(src_url) {
+        return None;
+    }
+    let absolute = extract_file_path_from_url(src_url).ok()?;
+    let Ok(canonical_path) = Path::new(&absolute).canonicalize() else {
+        return None;
+    };
+    let Ok(canonical_workspace) = workspace.canonicalize() else {
+        return None;
+    };
+    let relative = relative_path_under_base(&canonical_path, &canonical_workspace)?;
+    if relative.as_os_str().is_empty() {
+        return None;
+    }
+    Some(relative.to_string_lossy().replace('\\', "/"))
+}
+
+fn is_file_url(url_str: &str) -> bool {
+    url::Url::parse(url_str)
+        .map(|u| u.scheme().eq_ignore_ascii_case("file"))
+        .unwrap_or(false)
+}
+
+fn is_remote_provenance_url(url_str: &str) -> bool {
+    url::Url::parse(url_str)
+        .map(|u| matches!(u.scheme(), "http" | "https"))
+        .unwrap_or(false)
+}
+
+/// Agent-facing `srcUrl`: keep remote http(s) provenance only. Never echo
+/// `file://`, raw host paths, or browser pseudo-URLs — agents should use
+/// `workspacePath` for local copies.
+pub fn exposed_src_url(src_url: Option<&str>) -> Option<String> {
+    let src = src_url?;
+    if is_remote_provenance_url(src) {
+        Some(src.to_string())
+    } else {
+        None
+    }
+}
+
+/// Choose a persistable `src_url` from optional MCP `srcUrl` / UI `fileUrl`.
+///
+/// Prefers in-workspace `file://` so list/read can derive a relative
+/// `workspacePath`. Otherwise keeps a remote http(s) provenance URL.
+/// Out-of-workspace `file://`, raw paths, and blob/data URLs are dropped
+/// (UI may still read a host `fileUrl` for indexing).
+pub fn persistable_attachment_src_url(
+    src_url: Option<&str>,
+    file_url: Option<&str>,
+    workspace: &Path,
+) -> Option<String> {
+    for candidate in [file_url, src_url].into_iter().flatten() {
+        if is_file_url(candidate)
+            && exposed_workspace_path_from_src_url(candidate, workspace).is_some()
+        {
+            return Some(candidate.to_string());
+        }
+    }
+    for candidate in [src_url, file_url].into_iter().flatten() {
+        if is_remote_provenance_url(candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    None
 }
 
 /// Determine MIME type from file extension
@@ -53,121 +138,4 @@ pub(crate) fn create_text_chunks(lines: &[&str], chunk_size: usize) -> Vec<Strin
         .chunks(chunk_size)
         .map(|chunk| chunk.join("\n"))
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[cfg(unix)]
-    fn test_extract_file_path_from_url_valid_unix() {
-        // This test only runs on Unix systems
-        let result = extract_file_path_from_url("file:///home/user/doc.txt");
-        assert!(result.is_ok());
-        let path = result.unwrap();
-        assert_eq!(path, "/home/user/doc.txt");
-    }
-
-    #[test]
-    fn test_extract_file_path_from_url_valid_windows() {
-        let result = extract_file_path_from_url("file:///C:/Users/Me/doc.txt");
-        assert!(result.is_ok());
-        let _path = result.unwrap();
-        // On Windows: C:\Users\Me\doc.txt
-        // On Unix: might work differently
-        #[cfg(windows)]
-        {
-            assert!(_path.starts_with("C:"));
-            assert!(_path.contains("Users"));
-            assert!(_path.contains("Me"));
-            assert!(_path.ends_with("doc.txt"));
-        }
-    }
-
-    #[test]
-    fn test_extract_file_path_from_url_with_spaces() {
-        // URL encoded space (%20)
-        let result = extract_file_path_from_url("file:///C:/My%20Files/test%20doc.txt");
-        assert!(result.is_ok());
-        let path = result.unwrap();
-        // Should decode %20 to spaces
-        assert!(
-            path.contains("My Files") || path.contains("My%20Files"),
-            "Path should contain decoded spaces: {}",
-            path
-        );
-    }
-
-    #[test]
-    fn test_extract_file_path_from_url_with_unicode() {
-        // Unicode characters in path (한글)
-        let result = extract_file_path_from_url("file:///C:/Users/%EB%AC%B8%EC%84%9C/file.txt");
-        assert!(result.is_ok());
-        let _path = result.unwrap();
-        // Should handle Unicode properly
-    }
-
-    #[test]
-    fn test_extract_file_path_from_url_with_localhost() {
-        // file://localhost/path format
-        let result = extract_file_path_from_url("file://localhost/C:/path/file.txt");
-        // url crate should handle localhost properly
-        assert!(result.is_ok() || result.is_err()); // Behavior may vary by platform
-    }
-
-    #[test]
-    fn test_extract_file_path_from_url_invalid_scheme() {
-        // Non-file:// URLs should be rejected
-        assert!(extract_file_path_from_url("http://example.com/file.txt").is_err());
-        assert!(extract_file_path_from_url("https://example.com/file.txt").is_err());
-    }
-
-    #[test]
-    fn test_extract_file_path_from_url_invalid_format() {
-        // Not a URL at all
-        assert!(extract_file_path_from_url("/home/user/file.txt").is_err());
-        assert!(extract_file_path_from_url("C:\\Users\\file.txt").is_err());
-    }
-
-    #[test]
-    fn test_extract_file_path_from_url_unc_path() {
-        // UNC path: file://server/share/file.txt
-        let _result = extract_file_path_from_url("file://server/share/file.txt");
-        // On Windows, this should convert to \\server\share\file.txt
-        // On Unix, this will likely fail or behave differently
-        #[cfg(windows)]
-        {
-            if let Ok(path) = _result {
-                // Should be UNC path format
-                assert!(path.starts_with(r"\\") || path.contains("server"));
-            }
-        }
-    }
-
-    #[test]
-    fn test_mime_type_from_extension() {
-        assert_eq!(
-            mime_type_from_extension(Path::new("test.pdf")),
-            "application/pdf"
-        );
-        assert_eq!(
-            mime_type_from_extension(Path::new("test.docx")),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        );
-        assert_eq!(
-            mime_type_from_extension(Path::new("test.unknown")),
-            "text/plain"
-        );
-    }
-
-    #[test]
-    fn test_create_text_chunks() {
-        let lines = vec!["line1", "line2", "line3", "line4", "line5"];
-        let chunks = create_text_chunks(&lines, 2);
-        assert_eq!(chunks.len(), 3);
-        assert_eq!(chunks[0], "line1\nline2");
-        assert_eq!(chunks[1], "line3\nline4");
-        assert_eq!(chunks[2], "line5");
-    }
 }

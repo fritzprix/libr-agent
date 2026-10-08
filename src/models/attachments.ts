@@ -9,6 +9,10 @@ export interface AttachmentItem {
   uploadedAt: string;
   chunkCount: number;
   lastAccessedAt?: string;
+  /** Session-relative workspace path when a local copy was synced (e.g. attachments/…). */
+  workspacePath?: string;
+  /** Remote provenance URL only — never a local file:// path. */
+  srcUrl?: string;
 }
 
 export function isAttachmentItem(value: unknown): value is AttachmentItem {
