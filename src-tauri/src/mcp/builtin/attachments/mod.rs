@@ -9,7 +9,7 @@ mod queries;
 
 // Existing modules
 
-mod helpers;
+pub mod helpers;
 pub mod parsers;
 mod schemas;
 pub mod search;

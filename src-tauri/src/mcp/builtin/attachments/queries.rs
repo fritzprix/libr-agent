@@ -1,3 +1,4 @@
+use super::helpers::{exposed_src_url, exposed_workspace_path_from_src_url};
 use super::search;
 use super::server::AttachmentsServer;
 use super::types::*;
@@ -7,14 +8,6 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 use log::error;
 use serde_json::Value;
-
-fn file_url_to_local_path(src_url: &str) -> Option<String> {
-    if src_url.starts_with("file://") {
-        super::helpers::extract_file_path_from_url(src_url).ok()
-    } else {
-        None
-    }
-}
 
 pub async fn list_content(
     server: &AttachmentsServer,
@@ -63,6 +56,10 @@ pub async fn list_content(
         (offset, limit)
     });
 
+    let workspace = server
+        .session_manager
+        .get_session_workspace_dir_by_id(session_id);
+
     let storage = server.storage.lock().await;
     let (contents, total) = match storage.list_content(session_id, offset, limit).await {
         Ok((contents, total)) => (contents, total),
@@ -92,20 +89,20 @@ pub async fn list_content(
             } else {
                 item.preview.clone()
             };
-            let local_path = item
+            let workspace_path = item
                 .src_url
                 .as_deref()
-                .and_then(file_url_to_local_path)
+                .and_then(|url| exposed_workspace_path_from_src_url(url, &workspace))
                 .unwrap_or_else(|| "(none)".to_string());
             format!(
-                "[{}] ID: {}\n    Title: {}\n    Size: {} bytes, {} lines\n    Line Range: 1-{}\n    Local Path: {}\n    Preview: {}\n    Created: {}",
+                "[{}] ID: {}\n    Title: {}\n    Size: {} bytes, {} lines\n    Line Range: 1-{}\n    Workspace Path: {}\n    Preview: {}\n    Created: {}",
                 idx + 1,
                 item.id,
                 item.filename,
                 item.size,
                 item.line_count,
                 item.line_count,
-                local_path,
+                workspace_path,
                 preview_text,
                 item.uploaded_at
             )
@@ -115,7 +112,11 @@ pub async fn list_content(
     let content_list: Vec<serde_json::Value> = contents
         .into_iter()
         .map(|item| {
-            let local_path = item.src_url.as_deref().and_then(file_url_to_local_path);
+            let src_url = exposed_src_url(item.src_url.as_deref());
+            let workspace_path = item
+                .src_url
+                .as_deref()
+                .and_then(|url| exposed_workspace_path_from_src_url(url, &workspace));
             serde_json::json!({
                 "contentId": item.id,
                 "sessionId": item.session_id,
@@ -127,8 +128,8 @@ pub async fn list_content(
                 "uploadedAt": item.uploaded_at,
                 "chunkCount": item.chunk_count,
                 "lastAccessedAt": item.last_accessed_at,
-                "srcUrl": item.src_url,
-                "localPath": local_path
+                "srcUrl": src_url,
+                "workspacePath": workspace_path
             })
         })
         .collect();
@@ -243,12 +244,18 @@ pub async fn read_content(
 
     // Empty extract (encrypted/scanned/binary): do not emit the misleading
     // "Requested range [1-0] / File has 0 lines" storage error — give agents a
-    // structured binary_or_unparsed status and optional local path fallback.
+    // structured binary_or_unparsed status and optional workspace-path fallback.
     if total_lines == 0 {
         let mime_type = content_item.mime_type.clone();
         let size_bytes = content_item.size;
-        let src_url = content_item.src_url.clone();
-        let local_path = src_url.as_deref().and_then(file_url_to_local_path);
+        let workspace = server
+            .session_manager
+            .get_session_workspace_dir_by_id(session_id);
+        let src_url = exposed_src_url(content_item.src_url.as_deref());
+        let workspace_path = content_item
+            .src_url
+            .as_deref()
+            .and_then(|url| exposed_workspace_path_from_src_url(url, &workspace));
         drop(storage);
         let mut guidance = vec![
             "Text extraction yielded 0 lines (file may be encrypted, scanned, or binary)."
@@ -256,13 +263,13 @@ pub async fn read_content(
             "Do not treat this as a zero-byte or corrupted attachment solely from lineCount."
                 .to_string(),
         ];
-        if let Some(ref path) = local_path {
+        if let Some(ref path) = workspace_path {
             guidance.push(format!(
-                "Inspect the original file with workspace tools at localPath: {path}"
+                "A workspace copy is at workspacePath '{path}'. Use workspace tools with that relative path (e.g. workspace__readFile for text-like files)."
             ));
         } else {
             guidance.push(
-                "No localPath is available on this attachment; ask the user for the source file or re-attach with a file URL."
+                "No workspacePath is recorded for this attachment; ask the user to re-attach so the file syncs into the session workspace."
                     .to_string(),
             );
         }
@@ -278,7 +285,7 @@ pub async fn read_content(
             "sizeBytes": size_bytes,
             "lineCount": 0,
             "srcUrl": src_url,
-            "localPath": local_path
+            "workspacePath": workspace_path
         }))));
     }
 

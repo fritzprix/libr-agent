@@ -142,6 +142,7 @@ export function AgentResourceAttachmentProvider({
           uploadedAt: content.uploadedAt || new Date().toISOString(),
           chunkCount: content.chunkCount,
           lastAccessedAt: content.lastAccessedAt,
+          workspacePath: content.workspacePath ?? undefined,
         }));
 
         logger.info('[AgentResourceAttachmentContext] Mapped files result', {
