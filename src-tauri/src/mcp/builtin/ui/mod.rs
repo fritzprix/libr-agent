@@ -462,6 +462,17 @@ impl UiServer {
                         .await
                     {
                         Ok(full_path) => {
+                            // Attach mode: pull container → staging so shell-written
+                            // deliverables are visible before the host exists() probe.
+                            if let Ok(Some(session)) =
+                                crate::services::container_attach_fs::load_session(sid).await
+                            {
+                                let _ = crate::services::container_attach_fs::pull_container_file_to_host(
+                                    &session,
+                                    &full_path,
+                                )
+                                .await;
+                            }
                             let exists = full_path.exists();
                             let size = if exists {
                                 std::fs::metadata(&full_path).map(|m| m.len()).ok()
