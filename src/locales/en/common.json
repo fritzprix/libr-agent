@@ -1805,7 +1805,9 @@
     "unknownError": "An unknown error occurred.",
     "retrying": "Retrying...",
     "tryAgain": "Try Again",
-    "goToSettings": "Configure API Key in Settings"
+    "goToSettings": "Configure API Key in Settings",
+    "invalidContextState": "This session needs a larger context limit. Open Settings, raise Max Input Context, then try again.",
+    "openContextSettings": "Open Context Settings"
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",

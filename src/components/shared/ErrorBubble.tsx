@@ -114,6 +114,18 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
     };
 
     const errorType = error?.type || 'UNKNOWN_ERROR';
+    const errorCode =
+      typeof error?.details?.errorCode === 'string'
+        ? error.details.errorCode
+        : undefined;
+    const isInvalidContextState = errorCode === 'INVALID_CONTEXT_STATE';
+    const displayMessage = isInvalidContextState
+      ? t(
+          'errorBubble.invalidContextState',
+          'This session needs a larger context limit. Open Settings, raise Max Input Context, then try again.',
+        )
+      : error?.displayMessage ||
+        t('errorBubble.unknownError', 'An unknown error occurred.');
 
     return (
       <BaseBubble
@@ -134,8 +146,7 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
       >
         <div className="space-y-3">
           <p className="text-muted-foreground break-words whitespace-pre-wrap">
-            {error?.displayMessage ||
-              t('errorBubble.unknownError', 'An unknown error occurred.')}
+            {displayMessage}
           </p>
 
           {errorType === 'AUTHENTICATION_ERROR' && (
@@ -149,6 +160,21 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
               {t('errorBubble.goToSettings', 'Configure API Key in Settings')}
             </Button>
           )}
+
+          {isInvalidContextState ? (
+            <Button
+              onClick={() => navigate('/settings?tab=chat-interface')}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              {t(
+                'errorBubble.openContextSettings',
+                'Open Context Settings',
+              )}
+            </Button>
+          ) : null}
 
           {error?.recoverable && (
             <Button
