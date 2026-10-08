@@ -72,11 +72,16 @@ COMPACTION_TELEMETRY_SCHEMA_VERSION = "compaction-telemetry/v1"
 # to minimize compactionCount (see c07 postmortem).
 # Env `LIBRAGENT_BENCH_MAX_INPUT_CONTEXT` wins.
 COMPACTION_TASK_MAX_INPUT_CONTEXT: dict[str, int] = {
+    # Classic fact-recall-1 families (raised empty-resume floors)
     "haystack": 49_000,  # was 42_500; empty-resume floor breached under 42.5k
     "puzzle-chain": 55_500,  # peak 57_519
     "log-triage": 48_000,  # was 41_500; empty-resume > 41.5k
     "coding-spec": 52_500,  # peak 54_577
     "fact-recall": 49_000,  # was 43_500
+    # fact-recall-1 @v0.5 (anti-grep write-window pressure)
+    "cascade": 50_000,  # ~28×13k stage JSON; provisional
+    "mutchain": 50_000,  # 9×~18k excerpt metas; provisional
+    "codesweep": 52_500,  # quality among eligible
 }
 COMPACTION_SUITE_DEFAULT_MAX_INPUT_CONTEXT = 49_000
 
