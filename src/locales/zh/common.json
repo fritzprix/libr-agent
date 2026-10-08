@@ -391,6 +391,15 @@
       "preferences": "模型偏好",
       "fallbackModel": "备用AI模型",
       "fallbackModelDescription": "当默认模型所有重试均失败或无响应时使用。",
+      "complexityRouting": "子代理模型路由",
+      "complexityRoutingDescription": "按任务复杂度为子代理指定模型/提供商。未设置的级别继承默认 AI 模型。",
+      "complexityInherit": "使用默认",
+      "complexityInheriting": "正在使用默认",
+      "complexity": {
+        "low": "低",
+        "normal": "普通",
+        "high": "高"
+      },
       "temperatureOverride": "自定义温度值",
       "temperatureOverrideDescription": "关闭时使用各模型推荐默认值。开启以自定义温度值。",
       "temperatureOverrideTooltipAria": "关于 temperature 默认值",

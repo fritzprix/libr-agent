@@ -161,10 +161,27 @@ pub fn get_routes(
         .and(warp::path::end())
         .and_then(handlers::get_preferred_model);
 
+    // GET /api/settings/complexityModelMapping
+    let get_complexity_mapping = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("settings"))
+        .and(warp::path("complexityModelMapping"))
+        .and(warp::path::end())
+        .and_then(handlers::get_complexity_model_mapping);
+
+    // PUT /api/settings/complexityModelMapping
+    let put_complexity_mapping = warp::put()
+        .and(warp::path("api"))
+        .and(warp::path("settings"))
+        .and(warp::path("complexityModelMapping"))
+        .and(warp::path::end())
+        .and(warp::body::json())
+        .and_then(handlers::put_complexity_model_mapping);
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_headers(vec!["content-type"])
-        .allow_methods(vec!["GET", "POST", "DELETE"]);
+        .allow_methods(vec!["GET", "POST", "PUT", "DELETE"]);
 
     // POST /mcp/:session_id — MCP JSON-RPC endpoint (gated by mcp_enabled flag)
     let mcp_enabled_filter = warp::any().map(move || mcp_enabled);
@@ -212,6 +229,8 @@ pub fn get_routes(
         .or(get_assistant)
         .or(health)
         .or(preferred_model)
+        .or(get_complexity_mapping)
+        .or(put_complexity_mapping)
         .or(mcp_control_route)
         .or(mcp_auto_route)
         .or(mcp_route)

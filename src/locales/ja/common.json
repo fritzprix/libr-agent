@@ -391,6 +391,15 @@
       "preferences": "モデル設定",
       "fallbackModel": "予備のAIモデル",
       "fallbackModelDescription": "既定のモデルが応答しない、またはエラーが発生した場合に使用されます。",
+      "complexityRouting": "サブエージェントのモデル振り分け",
+      "complexityRoutingDescription": "作業の複雑さに応じてサブエージェントのモデル/プロバイダーを指定します。未設定のレベルは既定のAIモデルを継承します。",
+      "complexityInherit": "既定を使う",
+      "complexityInheriting": "既定を使用中",
+      "complexity": {
+        "low": "低",
+        "normal": "通常",
+        "high": "高"
+      },
       "temperatureOverride": "温度（ランダム性）の上書き",
       "temperatureOverrideDescription": "無効にすると各モデルの推奨既定値が適用されます。カスタム値を設定するには有効にしてください。",
       "temperatureOverrideTooltipAria": "Temperature デフォルトについて",

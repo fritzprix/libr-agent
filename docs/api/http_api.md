@@ -452,6 +452,46 @@ Checks if the server is running and reachable.
 
 ---
 
+### Preferred Model
+
+Returns the global preferred model used when session create omits `model`/`provider`.
+
+- **Method**: `GET`
+- **Path**: `/api/settings/preferredModel`
+
+#### Response Body
+
+```json
+{
+  "model": "gpt-4o",
+  "provider": "openai",
+  "harborModel": "openai/gpt-4o"
+}
+```
+
+---
+
+### Complexity Model Mapping
+
+Per-level model overrides for sub-agent tools (`agent__spawnSession` / `agent__messageToSession` `complexity` parameter). A `null` level inherits the normal parent → preferred-model chain.
+
+- **Method**: `GET` | `PUT`
+- **Path**: `/api/settings/complexityModelMapping`
+
+#### GET Response / PUT Body
+
+```json
+{
+  "low": { "model": "gpt-4o-mini", "provider": "openai" },
+  "normal": null,
+  "high": { "model": "claude-opus", "provider": "anthropic" }
+}
+```
+
+`PUT` validates each level as `null` or `{ model, provider }` (both non-empty strings) and returns the normalized object.
+
+---
+
 ## 📦 Data Structures
 
 ### Message Object

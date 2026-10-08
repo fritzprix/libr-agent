@@ -40,6 +40,51 @@ export interface ModelChoice {
   model: string;
 }
 
+/** Sub-agent model override per task complexity. `null` / omitted = inherit preferredModel. */
+export type ComplexityLevel = 'low' | 'normal' | 'high';
+
+export type ComplexityModelMapping = {
+  low?: ModelChoice | null;
+  normal?: ModelChoice | null;
+  high?: ModelChoice | null;
+};
+
+export const COMPLEXITY_LEVELS: ComplexityLevel[] = ['low', 'normal', 'high'];
+
+export function normalizeComplexityModelMapping(
+  value: unknown,
+): ComplexityModelMapping {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return {};
+  }
+  const obj = value as Record<string, unknown>;
+  const result: ComplexityModelMapping = {};
+  for (const level of COMPLEXITY_LEVELS) {
+    const entry = obj[level];
+    if (entry === null || entry === undefined) {
+      result[level] = null;
+      continue;
+    }
+    if (typeof entry !== 'object' || Array.isArray(entry)) {
+      result[level] = null;
+      continue;
+    }
+    const model = (entry as Record<string, unknown>).model;
+    const provider = (entry as Record<string, unknown>).provider;
+    if (
+      typeof model === 'string' &&
+      model.trim() &&
+      typeof provider === 'string' &&
+      provider.trim()
+    ) {
+      result[level] = { model: model.trim(), provider: provider.trim() };
+    } else {
+      result[level] = null;
+    }
+  }
+  return result;
+}
+
 export interface AdvancedSettings {
   maxRetries: number;
   retryDelay: number; // in milliseconds
@@ -164,6 +209,8 @@ export interface Settings {
   customProviders: CustomOpenAIProvider[];
   preferredModel: ModelChoice;
   fallbackModel?: ModelChoice;
+  /** Per-complexity model overrides for sub-agent spawn / message routing. */
+  complexityModelMapping: ComplexityModelMapping;
   /**
    * When true, send `temperature` on AI service requests.
    * When false (default), omit temperature so provider/serving-engine defaults apply.
@@ -199,6 +246,7 @@ export const DEFAULT_SETTING: Settings = {
     model: DEFAULT_MODEL?.modelId || '',
   },
   fallbackModel: undefined,
+  complexityModelMapping: {},
   temperatureOverrideEnabled: false,
   temperature: 0.7,
   contextStrategy: 'compact',

@@ -1,9 +1,12 @@
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::state::try_get_settings_repository;
 use serde::Serialize;
+use serde_json::{json, Value};
 use warp::{http::StatusCode, Rejection, Reply};
 
 use super::types::ErrorResponse;
+
+const COMPLEXITY_SETTING_KEY: &str = "complexityModelMapping";
 
 /// Response for `GET /api/settings/preferredModel`.
 ///
@@ -82,9 +85,132 @@ pub async fn get_preferred_model() -> Result<impl Reply, Rejection> {
     ))
 }
 
+fn empty_complexity_mapping() -> Value {
+    json!({
+        "low": null,
+        "normal": null,
+        "high": null,
+    })
+}
+
+fn normalize_complexity_mapping(value: &Value) -> Result<Value, String> {
+    let obj = value
+        .as_object()
+        .ok_or_else(|| "complexityModelMapping must be a JSON object".to_string())?;
+    let mut out = serde_json::Map::new();
+    for level in ["low", "normal", "high"] {
+        match obj.get(level) {
+            None | Some(Value::Null) => {
+                out.insert(level.to_string(), Value::Null);
+            }
+            Some(entry) => {
+                let model = entry
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                let provider = entry
+                    .get("provider")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                match (model, provider) {
+                    (Some(model), Some(provider)) => {
+                        out.insert(
+                            level.to_string(),
+                            json!({ "model": model, "provider": provider }),
+                        );
+                    }
+                    (None, None) if entry.as_object().is_some_and(|o| o.is_empty()) => {
+                        out.insert(level.to_string(), Value::Null);
+                    }
+                    _ => {
+                        return Err(format!(
+                            "complexityModelMapping.{level} must be null or {{ model, provider }}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(Value::Object(out))
+}
+
+/// GET /api/settings/complexityModelMapping
+pub async fn get_complexity_model_mapping() -> Result<impl Reply, Rejection> {
+    let Some(repo) = try_get_settings_repository() else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&ErrorResponse {
+                error: "Settings repository is not initialized".to_string(),
+            }),
+            StatusCode::SERVICE_UNAVAILABLE,
+        ));
+    };
+
+    let mapping = match repo.get(COMPLEXITY_SETTING_KEY).await {
+        Ok(Some(setting)) => match serde_json::from_str::<Value>(&setting.value) {
+            Ok(val) => match normalize_complexity_mapping(&val) {
+                Ok(normalized) => normalized,
+                Err(_) => empty_complexity_mapping(),
+            },
+            Err(_) => empty_complexity_mapping(),
+        },
+        Ok(None) => empty_complexity_mapping(),
+        Err(e) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: format!("Failed to read {COMPLEXITY_SETTING_KEY}: {e}"),
+                }),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&mapping),
+        StatusCode::OK,
+    ))
+}
+
+/// PUT /api/settings/complexityModelMapping
+pub async fn put_complexity_model_mapping(body: Value) -> Result<impl Reply, Rejection> {
+    let Some(repo) = try_get_settings_repository() else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&ErrorResponse {
+                error: "Settings repository is not initialized".to_string(),
+            }),
+            StatusCode::SERVICE_UNAVAILABLE,
+        ));
+    };
+
+    let normalized = match normalize_complexity_mapping(&body) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse { error }),
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+    };
+
+    if let Err(e) = repo.set(COMPLEXITY_SETTING_KEY, normalized.clone()).await {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&ErrorResponse {
+                error: format!("Failed to save {COMPLEXITY_SETTING_KEY}: {e}"),
+            }),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    }
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&normalized),
+        StatusCode::OK,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{harbor_model_name, preferred_model_from_value};
+    use super::{harbor_model_name, normalize_complexity_mapping, preferred_model_from_value};
     use serde_json::json;
 
     #[test]
@@ -103,5 +229,16 @@ mod tests {
             preferred_model_from_value(&json!({"model": "Qwen3", "provider": "openai"}));
         assert_eq!(model, "Qwen3");
         assert_eq!(provider, "openai");
+    }
+
+    #[test]
+    fn normalize_complexity_mapping_accepts_partial() {
+        let normalized = normalize_complexity_mapping(&json!({
+            "high": { "model": "claude-opus", "provider": "anthropic" }
+        }))
+        .unwrap();
+        assert!(normalized["low"].is_null());
+        assert!(normalized["normal"].is_null());
+        assert_eq!(normalized["high"]["model"], "claude-opus");
     }
 }

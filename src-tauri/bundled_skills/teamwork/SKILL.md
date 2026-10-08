@@ -65,8 +65,8 @@ Coordination model and execution substrate are not the same thing.
 
 Pick the execution substrate that matches the job:
 
-- **Plain child sessions** - use `agent__spawnSession(...)` for one-off delegation that does not need org visibility.
-- **Explicit org lineage** - call `agent__prepareTeamworkWorkspace()` first, then use `agent__createOrg(...)` once from the root session, then use `agent__spawnSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic. Org-visible children inherit the governing session's effective workspace by default.
+- **Plain child sessions** - use `agent__spawnSession(..., complexity=...)` for one-off delegation that does not need org visibility. `complexity` (`low`|`normal`|`high`) is required.
+- **Explicit org lineage** - call `agent__prepareTeamworkWorkspace()` first, then use `agent__createOrg(...)` once from the root session, then use `agent__spawnSession(..., complexity=...)` for org-visible children. Under the explicit org root, org inheritance is automatic. Org-visible children inherit the governing session's effective workspace by default.
 - **Scheduled task groups** - use `scheduled_task__createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
 - **Session-bound clock follow-ups** - use `loop` with `scheduled_task__scheduleCallback(...)` when a delay or reminder must stay inside the current conversation. This does not require teamwork scaffolding.
 - **Completion wakes** - use `call-me-back` when the agent should resume on process exit, kanban/ticket status, or another external signal (not a clock).
@@ -79,7 +79,7 @@ Keep these separate:
 - **Session loops / schedules** are for in-conversation delays and session-scoped recurrence, not teamwork groups.
 - A recurring task group may wake a coordinator session, but that does not make the scheduled group an org.
 
-Before creating a new member for a later task, inspect `agent__listAgents(type="sessions")` and reuse an Idle child with the same assistant ID and compatible workspace through `agent__messageToSession`. Set `reset=true` only for a fresh assignment; create a new member when the role, workspace, or required parallel capacity differs.
+Before creating a new member for a later task, inspect `agent__listAgents(type="sessions")` and reuse an Idle child with the same assistant ID and compatible workspace through `agent__messageToSession` (always pass `complexity`). Set `reset=true` only for a fresh assignment; create a new member when the role, workspace, or required parallel capacity differs.
 
 ### 2.6 Route to the specialist skill
 

@@ -391,6 +391,15 @@
       "preferences": "Préférences de modèle",
       "fallbackModel": "Modèle d'IA de secours",
       "fallbackModelDescription": "Utilisé lorsque le modèle par défaut ne répond pas après toutes les tentatives.",
+      "complexityRouting": "Routage de modèles des sous-agents",
+      "complexityRoutingDescription": "Définissez le modèle/fournisseur des sous-agents selon la complexité. Les niveaux non définis héritent du modèle d'IA par défaut.",
+      "complexityInherit": "Utiliser la valeur par défaut",
+      "complexityInheriting": "Valeur par défaut",
+      "complexity": {
+        "low": "faible",
+        "normal": "normale",
+        "high": "élevée"
+      },
       "temperatureOverride": "Remplacer la température",
       "temperatureOverrideDescription": "Lorsque cette option est désactivée, les paramètres recommandés s'appliquent. Activez-la pour définir une valeur personnalisée.",
       "temperatureOverrideTooltipAria": "À propos des valeurs par défaut de temperature",
