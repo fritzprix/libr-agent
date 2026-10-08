@@ -36,12 +36,12 @@ Do not restart prior work; extend or refine only.
 
 ```text
 agent__listAgents(type="sessions")
-sessionA = agent__messageToSession(sessionId=idle_matching_id, ..., reset=true)
-           or agent__spawnSession(..., waitForResult=true)
+sessionA = agent__messageToSession(sessionId=idle_matching_id, complexity="normal", ..., reset=true)
+           or agent__spawnSession(..., complexity="normal", waitForResult=true)
 handover = extract Stage Complete from A
 agent__listAgents(type="sessions")
-sessionB = agent__messageToSession(sessionId=idle_matching_id, ..., reset=true)
-           or agent__spawnSession(task=handover + criteria, waitForResult=true)
+sessionB = agent__messageToSession(sessionId=idle_matching_id, complexity="normal", ..., reset=true)
+           or agent__spawnSession(task=handover + criteria, complexity="normal", waitForResult=true)
 ```
 
 Reuse only when the child has the same assistant configuration and a compatible

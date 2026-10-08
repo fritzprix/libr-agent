@@ -391,6 +391,15 @@
       "preferences": "모델 설정",
       "fallbackModel": "예비 AI 모델",
       "fallbackModelDescription": "기본 모델이 응답하지 않거나 오류가 발생할 때 대신 사용할 보조 모델입니다.",
+      "complexityRouting": "하위 에이전트 모델 라우팅",
+      "complexityRoutingDescription": "작업 복잡도에 따라 하위 에이전트 모델/제공자를 지정합니다. 비어 있으면 기본 AI 모델을 따릅니다.",
+      "complexityInherit": "기본값 사용",
+      "complexityInheriting": "기본값 사용 중",
+      "complexity": {
+        "low": "낮음",
+        "normal": "보통",
+        "high": "높음"
+      },
       "temperatureOverride": "온도(무작위성) 직접 설정",
       "temperatureOverrideDescription": "끄면 각 모델 제공자의 권장 기본값을 사용합니다. 직접 값을 지정하려면 켜세요.",
       "temperatureOverrideTooltipAria": "Temperature 기본값 안내",

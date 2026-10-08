@@ -7,11 +7,13 @@ import {
   type ServiceConfig,
   type CustomOpenAIProvider,
   type ModelChoice,
+  type ComplexityModelMapping,
   type AdvancedSettings,
   type DisplaySettings,
   type SystemSettings,
   type ExperimentalSettings,
   type StoredExperimentalSettings,
+  normalizeComplexityModelMapping,
   normalizeExperimentalSettings,
   normalizeDisplaySettings,
 } from './settings-service';
@@ -30,6 +32,7 @@ type SettingValue =
   | Record<AIServiceProvider, ServiceConfig> // serviceConfigs
   | CustomOpenAIProvider[] // customProviders
   | ModelChoice // preferredModel / fallbackModel
+  | ComplexityModelMapping // complexityModelMapping
   | null // fallbackModel can be null (cleared)
   | boolean // temperatureOverrideEnabled
   | number // windowSize, toolCallGroupVisibleCount, temperature
@@ -174,6 +177,9 @@ function mapDtosToSettings(dtos: SettingDto[]): {
     fallbackModel:
       (settingsMap.get('fallbackModel') as ModelChoice | null | undefined) ??
       DEFAULT_SETTING.fallbackModel,
+    complexityModelMapping: normalizeComplexityModelMapping(
+      settingsMap.get('complexityModelMapping'),
+    ),
     temperatureOverrideEnabled: getTypedValue(
       'temperatureOverrideEnabled',
       DEFAULT_SETTING.temperatureOverrideEnabled,
@@ -343,6 +349,12 @@ export class RustSettingsService implements ISettingsService {
       // fallbackModel: allow null to explicitly clear it
       if (settings.fallbackModel !== undefined) {
         changes['fallbackModel'] = settings.fallbackModel ?? null;
+      }
+
+      if (settings.complexityModelMapping !== undefined) {
+        changes['complexityModelMapping'] = normalizeComplexityModelMapping(
+          settings.complexityModelMapping,
+        );
       }
 
       if (settings.temperatureOverrideEnabled !== undefined) {

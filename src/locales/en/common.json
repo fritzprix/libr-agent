@@ -391,6 +391,15 @@
       "preferences": "Model Preferences",
       "fallbackModel": "Backup AI Model",
       "fallbackModelDescription": "Used when the default model fails to respond after all retries.",
+      "complexityRouting": "Sub-Agent Model Routing",
+      "complexityRoutingDescription": "Override model/provider for sub-agents by task complexity. Unset levels inherit the default AI model.",
+      "complexityInherit": "Use default",
+      "complexityInheriting": "Using default",
+      "complexity": {
+        "low": "low",
+        "normal": "normal",
+        "high": "high"
+      },
       "temperatureOverride": "Override Temperature",
       "temperatureOverrideDescription": "When disabled, the recommended default of each model applies. Enable to set a custom value.",
       "temperatureOverrideTooltipAria": "About temperature defaults",

@@ -391,6 +391,15 @@
       "preferences": "Modell-Präferenzen",
       "fallbackModel": "Ersatz-KI-Modell",
       "fallbackModelDescription": "Wird verwendet, wenn das Standardmodell nach allen Versuchen nicht antwortet.",
+      "complexityRouting": "Modellrouting für Unteragenten",
+      "complexityRoutingDescription": "Modell/Anbieter für Unteragenten nach Aufgabenkomplexität festlegen. Nicht gesetzte Stufen erben das Standard-KI-Modell.",
+      "complexityInherit": "Standard verwenden",
+      "complexityInheriting": "Standard aktiv",
+      "complexity": {
+        "low": "niedrig",
+        "normal": "normal",
+        "high": "hoch"
+      },
       "temperatureOverride": "Temperatur anpassen",
       "temperatureOverrideDescription": "Wenn deaktiviert, gilt die empfohlene Standardeinstellung des Modells. Aktivieren, um einen eigenen Wert festzulegen.",
       "temperatureOverrideTooltipAria": "Über Temperature-Standardwerte",

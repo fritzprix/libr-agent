@@ -391,6 +391,15 @@
       "preferences": "Preferências de Modelo",
       "fallbackModel": "Modelo de IA reserva",
       "fallbackModelDescription": "Usado quando o modelo padrão não responde após todas as tentativas.",
+      "complexityRouting": "Roteamento de modelos de subagentes",
+      "complexityRoutingDescription": "Defina o modelo/provedor dos subagentes por complexidade da tarefa. Níveis não definidos herdam o modelo de IA padrão.",
+      "complexityInherit": "Usar padrão",
+      "complexityInheriting": "Usando padrão",
+      "complexity": {
+        "low": "baixa",
+        "normal": "normal",
+        "high": "alta"
+      },
       "temperatureOverride": "Substituir temperatura",
       "temperatureOverrideDescription": "Quando desativado, aplica-se o padrão recomendado do modelo. Ative para definir um valor personalizado.",
       "temperatureOverrideTooltipAria": "Sobre os padrões de temperature",

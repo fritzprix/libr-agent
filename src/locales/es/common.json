@@ -391,6 +391,15 @@
       "preferences": "Preferencias de modelo",
       "fallbackModel": "Modelo de IA de respaldo",
       "fallbackModelDescription": "Se utiliza cuando el modelo predeterminado no responde tras todos los reintentos.",
+      "complexityRouting": "Enrutamiento de modelos de subagentes",
+      "complexityRoutingDescription": "Defina el modelo/proveedor de los subagentes según la complejidad. Los niveles sin definir heredan el modelo de IA predeterminado.",
+      "complexityInherit": "Usar predeterminado",
+      "complexityInheriting": "Usando predeterminado",
+      "complexity": {
+        "low": "baja",
+        "normal": "normal",
+        "high": "alta"
+      },
       "temperatureOverride": "Ajustar temperatura",
       "temperatureOverrideDescription": "Si está deshabilitado, se aplica el valor recomendado del modelo. Actívelo para definir un valor personalizado.",
       "temperatureOverrideTooltipAria": "Acerca de los valores predeterminados de temperature",

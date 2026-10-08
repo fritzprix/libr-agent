@@ -21,6 +21,8 @@ title: 서브 에이전트 · 오케스트레이션
 새 자식 세션은 다른 역할, 병렬 처리, 또는 격리 workspace가 필요할 때만 생성합니다. 이후 **시작 → 폴링/`checkSession` → `messageToSession` 보정 → 결과 병합** 순서로 처리합니다.
 형제 세션끼리는 직접 대화하지 않습니다(허브인 부모가 중계).
 
+`spawnSession` / `messageToSession`에는 **complexity** (`low` | `normal` | `high`)가 필수입니다. Settings → AI Models의 **Sub-Agent Model Routing**에서 레벨별 모델을 지정할 수 있고, 비어 있으면 기존처럼 부모/기본 모델을 따릅니다. 가능한 한 낮은 complexity를 고르세요.
+
 ### UI에서 보는 곳
 
 | 화면                      | 내용                                                                             |
