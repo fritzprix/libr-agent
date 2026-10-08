@@ -25,6 +25,8 @@ async fn system_prompt_exposes_agent_runtime_identity() {
     assert!(prompt.contains("checkable acceptance criteria"));
     assert!(prompt.contains("include that proof when reporting"));
     assert!(prompt.contains("when the request has checkable acceptance criteria"));
+    assert!(prompt.contains("After compaction / before ui__reportResult(success)"));
+    assert!(prompt.contains("Working Intent and Recent User Requests"));
     assert!(prompt.contains("Shareable deliverables: workspace files + ui__reportResult"));
     assert!(prompt.contains("Scratchpad is session-private working notes only"));
 }

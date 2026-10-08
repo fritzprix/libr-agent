@@ -212,6 +212,8 @@ pub(super) fn build_compaction_hard_fallback_summary(
     push_bullet_section(&mut lines, "Recent Tool Results", &recent_tool_results);
     push_bullet_section(&mut lines, "Next Actions", &next_actions);
     push_bullet_section(&mut lines, "Fallback Note", &fallback_note);
+    // Working Intent + Recent User Requests are injected by
+    // `ensure_intent_sections_in_summary` after this builder returns.
     lines.join("\n").trim().to_string()
 }
 

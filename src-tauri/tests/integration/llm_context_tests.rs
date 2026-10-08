@@ -392,8 +392,8 @@ fn test_build_compaction_request_payload_incremental_path_injects_latest_externa
     assert!(
         payload
             .instruction_text
-            .contains("Keep its Target Deliverable, Completion Criteria, Active Request, and Required References unless newer messages clearly replace or resolve them."),
-        "incremental compaction should explicitly preserve prior deliverable, criteria, active-request and reference anchors"
+            .contains("Keep its Target Deliverable, Completion Criteria, Working Intent, Active Request, and Required References unless newer messages clearly replace or resolve them."),
+        "incremental compaction should explicitly preserve prior deliverable, criteria, working-intent, active-request and reference anchors"
     );
     assert!(
         payload.instruction_text.contains(
@@ -459,12 +459,22 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
         "instruction should keep the Active Request anchor visible for downstream parsing"
     );
     assert!(
+        payload.instruction_text.contains("- Working Intent"),
+        "instruction should keep the Working Intent anchor visible for intent-gated Done"
+    );
+    assert!(
         payload.instruction_text.contains("- Target Deliverable"),
         "instruction should keep the Target Deliverable anchor visible"
     );
     assert!(
         payload.instruction_text.contains("- Completion Criteria"),
         "instruction should keep the Completion Criteria anchor visible"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Empty Active Request alone is never enough to mark Done"),
+        "instruction should stop treating empty Active Request as a sufficient Done signal"
     );
     assert!(
         !payload.instruction_text.contains(
@@ -3252,6 +3262,17 @@ fn test_build_compaction_hard_fallback_summary_includes_sections_and_artifact_gu
     assert!(summary.contains(".libragent/tool-results/compaction/fallback-123.md"));
     assert!(summary.contains("Open `.libragent/tool-results/compaction/fallback-123.md`"));
     assert!(summary.contains("Auto-saved via fallback summary"));
+    assert!(
+        !summary.contains("### Working Intent"),
+        "fallback builder should defer Working Intent to ensure_intent_sections_in_summary"
+    );
+
+    let ensured = tauri_mcp_agent_lib::agent::llm::completion::ensure_intent_sections_in_summary(
+        &summary, &messages,
+    );
+    assert!(ensured.contains("### Working Intent"));
+    assert!(ensured.contains("### Recent User Requests"));
+    assert!(ensured.contains("Investigate compaction failures"));
 }
 
 #[test]

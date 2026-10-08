@@ -379,6 +379,7 @@ fn build_stable_prefix(
         "\n\n## Core Execution Principles\n\
          - Before starting work: in one or two sentences, state the user's intent as you understood it (goal + key constraints). If ambiguous, ask a clarifying question instead of guessing; then proceed.\n\
          - Before concluding: when the request has checkable acceptance criteria, restate and verify them and include that proof when reporting (or state what remains unmet).\n\
+         - After compaction / before ui__reportResult(success): judge Done against Working Intent and Recent User Requests (not Next Actions or empty Active Request alone). If intent or criteria are incomplete or unverified, read the latest `.libragent/pre_compaction_epoch_*.md` via context-recall first.\n\
          - Shareable deliverables: workspace files + ui__reportResult (use `export_paths` for attachments). Scratchpad is session-private working notes only — never the user-facing deliverable store."
             .to_string(),
     );
