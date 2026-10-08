@@ -4,12 +4,14 @@ description: >
   Retrieve full pre-compaction conversation history from saved transcript
   files when the compact summary is insufficient or earlier session details
   are missing. Use when asked about past decisions, tool results, or content
-  that predates the latest compaction; when the agent would say it does not
-  remember; or when the compact summary's Context recovery / fallback note
-  names a transcript path. Triggers: "what did we discuss earlier", "before
-  the context was reset", "older messages", "pre-compaction", "context
-  recall", "recover history", "컴팩션 이전 대화", "과거 히스토리",
-  "예전에 뭐라고 했지".
+  that predates the latest compaction; when mapping Done to Working Intent /
+  Recent User Requests after compaction; before ui__reportResult(success) if
+  intent or Completion Criteria are incomplete or unverified; when the agent
+  would say it does not remember; or when the compact summary's Context
+  recovery / fallback note names a transcript path. Triggers: "what did we
+  discuss earlier", "before the context was reset", "older messages",
+  "pre-compaction", "context recall", "recover history", "before declaring
+  done", "컴팩션 이전 대화", "과거 히스토리", "예전에 뭐라고 했지".
 ---
 
 # Context Recall
@@ -17,6 +19,10 @@ description: >
 Compaction already saves transcripts on disk. Prefer those files over guessing
 or redoing work. This skill complements the compact summary's
 `### Context recovery` suffix — it does not replace it.
+
+After compaction, empty Active Request is not a Done signal. Before
+`ui__reportResult(success)`, restate Working Intent / Recent User Requests
+against Completion Criteria; if uncertain, read the latest epoch file first.
 
 ## Workflow
 

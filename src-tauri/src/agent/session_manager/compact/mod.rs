@@ -116,6 +116,10 @@ async fn complete_compaction_with_hard_fallback(
         snapshot,
         failure_reason,
     );
+    summary = crate::agent::llm::completion::ensure_intent_sections_in_summary(
+        &summary,
+        &compacted_messages,
+    );
 
     if let Ok((relative_path, _)) = &markdown_result {
         summary.push_str(&md_export::format_transcript_recovery_suffix(relative_path));
@@ -308,7 +312,10 @@ pub async fn handle_compact_response(
     )
     .await;
 
-    let mut final_summary = clamped_summary.summary;
+    let mut final_summary = crate::agent::llm::completion::ensure_intent_sections_in_summary(
+        &clamped_summary.summary,
+        &compacted_messages,
+    );
     if let Ok((relative_path, _)) = &markdown_result {
         final_summary.push_str(&md_export::format_transcript_recovery_suffix(relative_path));
     } else if let Err(e) = &markdown_result {

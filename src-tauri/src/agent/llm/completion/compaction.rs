@@ -15,6 +15,7 @@ mod hints;
 mod instruction;
 mod payload;
 mod preparation;
+mod recent_requests;
 mod selection;
 mod trigger;
 
@@ -27,6 +28,10 @@ pub use payload::{
     CompactionRequestPayloadPreview,
 };
 pub(crate) use preparation::{should_noop_empty_compaction_delta, EMPTY_DELTA_NOOP_ERROR};
+pub use recent_requests::{
+    collect_recent_external_user_requests, ensure_intent_sections_in_summary,
+    format_recent_user_requests_section, RecentUserRequest, RECENT_USER_REQUEST_LIMIT,
+};
 pub use trigger::{
     advance_compaction_overflow_recovery_step_for_testing,
     build_checkpoint_backoff_split_candidates_for_testing,
