@@ -661,10 +661,93 @@ async fn resolve_path_for_session_docker_custom_workdir() {
 
     let outside =
         WorkspaceService::resolve_path_for_session(session_id, "/outside/secret.txt").await;
-    let err = outside.expect_err("paths outside Docker workdir must fail");
+    let err = outside.expect_err("paths outside Docker workdir / host roots must fail");
     assert!(
-        err.contains(OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER),
-        "outside-workdir error should use stable marker: {err}"
+        err.contains(OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER)
+            || err.contains("File not found")
+            || err.contains("Access denied"),
+        "outside path must fail mapping or host allow-list: {err}"
+    );
+
+    // Host-absolute under docker staging must still resolve (not treated as
+    // container path outside /app).
+    let host_file = workspace.path().join("work").join("host_abs.txt");
+    std::fs::create_dir_all(host_file.parent().expect("parent")).expect("dirs");
+    std::fs::write(&host_file, b"ok").expect("write host file");
+    let host_abs = host_file.to_string_lossy().to_string();
+    let resolved_host = WorkspaceService::resolve_path_for_session(session_id, &host_abs)
+        .await
+        .expect("host absolute under docker staging workspace must resolve");
+    let canon_expected = tokio::fs::canonicalize(&host_file)
+        .await
+        .expect("canonicalize host file");
+    assert_eq!(
+        resolved_host, canon_expected,
+        "host staging absolute must pass authorized-root allow-list"
+    );
+
+    let _ = WorkspaceService::cancel_override(session_id).await;
+}
+
+#[tokio::test]
+async fn report_result_attach_sync_failure_rejects_without_settling() {
+    common::register_sqlite_vec();
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    set_session_repository(repo.clone());
+
+    let workspace = tempfile::tempdir().expect("temp workspace");
+    let work_dir = workspace.path().join("work");
+    std::fs::create_dir_all(&work_dir).expect("work dir");
+    // Stale staging copy would pass exists() if pull errors were ignored.
+    std::fs::write(work_dir.join("task.txt"), b"stale").expect("stale task.txt");
+
+    let session_id = "report-result-attach-sync-fail";
+    let mut session = report_result_docker_app_session(session_id, workspace.path());
+    session.docker_config = Some(DockerWorkspaceConfig {
+        image: None,
+        attach_container: Some("libragent-nonexistent-attach-container-xyz".to_string()),
+        workdir: Some("/app".to_string()),
+        manage_lifecycle: Some(false),
+        env: Default::default(),
+        port_bindings: Vec::new(),
+    });
+    session.docker_container_name = Some("libragent-nonexistent-attach-container-xyz".to_string());
+    repo.upsert_session(&session).await.expect("session upsert");
+    WorkspaceService::set_override(session_id, workspace.path().to_string_lossy().to_string())
+        .await
+        .expect("workspace override");
+
+    let server = UiServer::new();
+    let result = server
+        .call_tool(
+            "reportResult",
+            json!({
+                "status": "success",
+                "result": "Claimed /app/work/task.txt despite broken attach sync.",
+                "export_paths": ["/app/work/task.txt"]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("reportResult should return guided error MCPResult");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("attach sync failed"),
+        "must surface attach sync failure: {text}"
+    );
+    assert!(
+        !text.contains("STOP: Do not call any more tools"),
+        "must not emit STOP on attach sync failure: {text}"
+    );
+    let content = result.content.as_ref().expect("error content");
+    assert!(
+        !content
+            .iter()
+            .any(|item| matches!(item, MCPContent::Resource { .. })),
+        "must omit ui://result Resource so RecurringStop does not settle"
     );
 
     let _ = WorkspaceService::cancel_override(session_id).await;

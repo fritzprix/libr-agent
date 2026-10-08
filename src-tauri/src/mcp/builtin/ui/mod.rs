@@ -464,14 +464,35 @@ impl UiServer {
                         Ok(full_path) => {
                             // Attach mode: pull container → staging so shell-written
                             // deliverables are visible before the host exists() probe.
+                            // Propagate non-missing docker failures (same as
+                            // sync_attach_before_host_read) — never trust stale staging.
                             if let Ok(Some(session)) =
                                 crate::services::container_attach_fs::load_session(sid).await
                             {
-                                let _ = crate::services::container_attach_fs::pull_container_file_to_host(
+                                if let Err(err) = crate::services::container_attach_fs::pull_container_file_to_host(
                                     &session,
                                     &full_path,
                                 )
-                                .await;
+                                .await
+                                {
+                                    return Ok(guided_error(
+                                        ErrorCategory::OperationFailed,
+                                        format!(
+                                            "Cannot verify export_paths: attach sync failed for {path_str}: {err}"
+                                        ),
+                                        ToolGroup::UI,
+                                    )
+                                    .with_guidance(vec![
+                                        "Retry after the attach container is reachable (docker cp / sync)."
+                                            .to_string(),
+                                        "Do not claim status=success until export_paths can be synced from the container."
+                                            .to_string(),
+                                    ])
+                                    .to_mcp_result_with_data(Some(json!({
+                                        "attach_sync_failed_path": path_str,
+                                        "error": err,
+                                    }))));
+                                }
                             }
                             let exists = full_path.exists();
                             let size = if exists {
