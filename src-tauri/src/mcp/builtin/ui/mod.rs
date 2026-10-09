@@ -625,6 +625,16 @@ impl UiServer {
             },
         };
 
+        // Episode complete: drop goal/todos/scratchpad so the next user request
+        // is not steered by stale planning context. partial/blocked keep planning
+        // for resume; missing-export reject never reaches here.
+        if status == "success" {
+            if let Some(ref sid) = session_id {
+                crate::agent::planning_reset::clear_planning_state_after_report_result_success(sid)
+                    .await;
+            }
+        }
+
         Ok(MCPResult {
             content: Some(vec![
                 MCPContent::Text { text: summary },
