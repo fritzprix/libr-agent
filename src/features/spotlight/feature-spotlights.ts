@@ -31,7 +31,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     titleKey: 'spotlight.items.visualize.title',
     bodyKey: 'spotlight.items.visualize.body',
     ctaLabelKey: 'spotlight.items.visualize.cta',
-    href: { type: 'route', path: '/agent/draft' },
+    href: { type: 'route', path: '/agent' },
     surfaces: ['release', 'hub'],
     priority: 3,
   },
