@@ -485,6 +485,11 @@ pub fn get_planning_repository() -> &'static SqlitePlanningRepository {
         .expect("Planning repository not initialized. Call set_planning_repository() first.")
 }
 
+/// Gets a reference to the global planning repository if it has been initialized.
+pub fn try_get_planning_repository() -> Option<&'static SqlitePlanningRepository> {
+    PLANNING_REPOSITORY.get()
+}
+
 /// Sets the global scheduled task repository instance.
 ///
 /// # Panics

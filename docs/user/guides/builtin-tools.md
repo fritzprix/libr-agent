@@ -92,6 +92,8 @@ LibrAgent는 별도의 외부 도구 설치 없이도 코딩, 파일 조작, 웹
 | **`scheduled_task`** | `scheduled_task__createScheduledTask` | 백그라운드 Cron 예약 작업 등록          | Core (기본)          |
 |                      | `scheduled_task__listScheduledTasks`  | 등록된 예약 작업 목록 조회              | Core (기본)          |
 
+> 컨텍스트 압축이 성공하면 planning **todo만** 초기화되고 **goal은 유지**됩니다. 체크리스트가 더 필요하면 compact handoff를 보고 `planning__addTodo`로 다시 구성하세요.
+
 ---
 
 ## 🧩 외부 도구가 더 필요한가요?

@@ -293,6 +293,10 @@ pub(super) async fn persist_compact_summary_and_resume(
     .await?;
     save_compact_context(context.active_sessions, context.session_id, record).await?;
 
+    // Drop stale todos before resume Think so handoff is the post-compact
+    // residue SSOT. Goal and scratchpad are retained.
+    crate::agent::planning_reset::clear_todos_after_successful_compaction(context.session_id).await;
+
     {
         let compaction = {
             let active = context.active_sessions.read().await;
