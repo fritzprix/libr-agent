@@ -1,0 +1,97 @@
+{
+  "schema_version": "ATIF-v1.7",
+  "session_id": "session-fixture-1",
+  "agent": {
+    "name": "LibrAgent",
+    "version": "0.9.x",
+    "model_name": "inventory-only/do-not-blame"
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "source": "user",
+      "message": "List routes in the codebase."
+    },
+    {
+      "step_id": 2,
+      "source": "agent",
+      "message": "Searching for route definitions.",
+      "tool_calls": [
+        {
+          "tool_call_id": "call_1",
+          "function_name": "workspace__searchFiles",
+          "arguments": { "pattern": "Route" }
+        }
+      ]
+    },
+    {
+      "step_id": 3,
+      "source": "environment",
+      "message": "",
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "call_1",
+            "content": "[{\"path\": \"src/routes/index.tsx\"}]"
+          }
+        ]
+      }
+    },
+    {
+      "step_id": 4,
+      "source": "agent",
+      "message": "Retrying identical search.",
+      "tool_calls": [
+        {
+          "tool_call_id": "call_2",
+          "function_name": "workspace__searchFiles",
+          "arguments": { "pattern": "Route" }
+        }
+      ]
+    },
+    {
+      "step_id": 5,
+      "source": "environment",
+      "message": "",
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "call_2",
+            "content": "Error: permission denied reading path"
+          }
+        ]
+      }
+    },
+    {
+      "step_id": 6,
+      "source": "agent",
+      "message": "Hallucinated tool.",
+      "tool_calls": [
+        {
+          "tool_call_id": "call_3",
+          "function_name": "workspace__notARealTool",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "step_id": 7,
+      "source": "environment",
+      "message": "",
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "call_3",
+            "content": "Unknown tool: workspace__notARealTool"
+          }
+        ]
+      }
+    }
+  ],
+  "final_metrics": {
+    "total_prompt_tokens": 1000,
+    "total_completion_tokens": 200,
+    "total_cached_tokens": 100,
+    "total_steps": 7
+  }
+}
