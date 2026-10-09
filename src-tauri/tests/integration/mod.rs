@@ -64,6 +64,7 @@ pub mod path_env_recovery_tests;
 pub mod pending_queue_tests;
 pub mod persistent_shell_isolation;
 pub mod persistent_shell_tests;
+pub mod planning_clear_on_report_result_tests;
 pub mod planning_clear_todos_on_compact_tests;
 pub mod planning_context_visibility_tests;
 pub mod planning_duplicate_tests;

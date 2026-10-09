@@ -59,7 +59,7 @@ impl BuiltinMCPServer for PlanningServer {
     }
 
     fn description(&self) -> &str {
-        "Session-scoped planning tools for goal and todo management. Todos reset on successful context compaction; the goal is retained."
+        "Session-scoped planning tools for goal and todo management. Todos reset on successful context compaction (goal retained). Successful ui__reportResult clears goal, todos, and scratchpad."
     }
 
     fn tools(&self) -> Vec<MCPTool> {
