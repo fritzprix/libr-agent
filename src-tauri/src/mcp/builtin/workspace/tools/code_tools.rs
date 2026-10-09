@@ -12,9 +12,9 @@ pub fn create_run_shell_tool() -> MCPTool {
             Some(1000),
             Some("Shell command to execute (bash/sh)"),
             vec![
-                json!("ls -la"),
-                json!("cat README.md"),
-                json!("grep -r 'pattern' src/"),
+                json!("pwd"),
+                json!("python3 --version"),
+                json!("git status --short"),
             ],
         ),
     );
@@ -68,8 +68,8 @@ pub fn create_run_persistent_shell_tool() -> MCPTool {
             Some(1000),
             Some("Shell command to execute (bash/sh)"),
             vec![
-                json!("ls -la"),
-                json!("cd src && ls"),
+                json!("pwd"),
+                json!("cd src && pwd"),
                 json!("export VAR=value && echo $VAR"),
             ],
         ),
@@ -199,9 +199,9 @@ pub fn create_run_powershell_tool() -> MCPTool {
             Some(1000),
             Some("PowerShell command to execute"),
             vec![
-                json!("Get-ChildItem"),
-                json!("Get-Content README.md"),
-                json!("Get-Process | Select-Object -First 10"),
+                json!("Get-Location"),
+                json!("python --version"),
+                json!("git status --short"),
             ],
         ),
     );
@@ -259,9 +259,9 @@ pub fn create_run_persistent_powershell_tool() -> MCPTool {
             Some(1000),
             Some("Command to execute using PowerShell"),
             vec![
-                json!("Get-ChildItem"),
-                json!("Write-Host 'Hello World'"),
-                json!("Get-Content file.txt"),
+                json!("Get-Location"),
+                json!("Set-Location src; Get-Location"),
+                json!("$env:VAR = 'value'; Write-Output $env:VAR"),
             ],
         ),
     );
@@ -432,9 +432,12 @@ mod tests {
                 let command_schema = props.get("command").unwrap();
                 let examples = command_schema.examples.as_ref().unwrap();
 
-                // Unix command examples verification
-                assert!(examples.iter().any(|e| e.as_str().unwrap().contains("ls")));
+                // Unix examples: shell cwd/env — not listDirectory/readFile/grepFiles
+                assert!(examples.iter().any(|e| e.as_str().unwrap().contains("pwd")));
                 assert!(examples.iter().any(|e| e.as_str().unwrap().contains("cd")));
+                assert!(examples
+                    .iter()
+                    .any(|e| e.as_str().unwrap().contains("export")));
             }
             _ => panic!("Expected Object schema type"),
         }
@@ -455,13 +458,16 @@ mod tests {
                 let command_schema = props.get("command").unwrap();
                 let examples = command_schema.examples.as_ref().unwrap();
 
-                // Windows 명령어 예제 확인
+                // Windows examples: shell cwd/env — not listDirectory/readFile
                 assert!(examples
                     .iter()
-                    .any(|e| e.as_str().unwrap().contains("Get-ChildItem")));
+                    .any(|e| e.as_str().unwrap().contains("Get-Location")));
                 assert!(examples
                     .iter()
-                    .any(|e| e.as_str().unwrap().contains("Write-Host")));
+                    .any(|e| e.as_str().unwrap().contains("Set-Location")));
+                assert!(examples
+                    .iter()
+                    .any(|e| e.as_str().unwrap().contains("$env:VAR")));
             }
             _ => panic!("Expected Object schema type"),
         }
