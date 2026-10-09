@@ -21,6 +21,9 @@ pub trait PlanningRepository: Send + Sync {
     // --- Session ---
     async fn clear_session(&self, session_id: &str) -> Result<(), DbError>;
 
+    /// Delete all todos for a session; keep goal and scratchpad.
+    async fn clear_todos(&self, session_id: &str) -> Result<(), DbError>;
+
     // --- Todos ---
     async fn add_todo(
         &self,
@@ -265,6 +268,18 @@ impl PlanningRepository for SqlitePlanningRepository {
                 .map_err(DbError::SeaOrmQueryFailed)?;
 
             txn.commit().await.map_err(DbError::SeaOrmQueryFailed)?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn clear_todos(&self, session_id: &str) -> Result<(), DbError> {
+        self.run_serialized_write("clear_todos", || async {
+            planning_todo::Entity::delete_many()
+                .filter(planning_todo::Column::SessionId.eq(session_id))
+                .exec(&self.db)
+                .await
+                .map_err(DbError::SeaOrmQueryFailed)?;
             Ok(())
         })
         .await

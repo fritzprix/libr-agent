@@ -92,6 +92,8 @@ For power users and prompt engineering, below is the primary built-in tools inve
 | **`scheduled_task`** | `scheduled_task__createScheduledTask` | Register recurring background Cron task     | Core (Default)               |
 |                      | `scheduled_task__listScheduledTasks`  | List registered scheduled tasks             | Core (Default)               |
 
+> On successful context compaction, planning **todos** are cleared and the **goal** is kept. Rebuild the checklist from the compact handoff with `planning__addTodo` if steps remain. A successful `ui__reportResult` clears **goal, todos, and scratchpad** so the next request starts clean.
+
 ---
 
 ## 🧩 Need Additional Tools?

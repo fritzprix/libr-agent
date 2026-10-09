@@ -102,6 +102,7 @@ pub fn report_result_tool() -> MCPTool {
                 "If a compact summary is in context and intent/criteria are unclear or unverified, read the latest `.libragent/pre_compaction_epoch_*.md` (context-recall) before `status=success`.",
                 "If your task produced deliverable files, pass their workspace-relative paths to `export_paths` to attach them with Preview/Open/Download actions.",
                 "For status=success, every `export_paths` entry must already exist on disk — write files first; missing paths reject success without settling the session.",
+                "On status=success, session planning (goal, todos, scratchpad) is cleared so the next request starts clean — recreate a goal if follow-up work continues in the same session.",
                 "After a successful return: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",
             ],
             &[

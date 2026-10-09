@@ -156,6 +156,11 @@ The summary means:
 
 The old `from_id`-centric interpretation is intentionally gone from the contract.
 
+After a successful compact summary persist (not empty-delta abort), the backend
+clears session **planning todos** only. The active planning **goal** and
+**scratchpad** are retained. Post-compact residue/Done judgment uses the compact
+handoff; rebuild todos from the handoff if a checklist is still needed.
+
 ---
 
 ## 4. Request-Time Preflight Rules
